@@ -16,12 +16,22 @@
  * checkbox settles back to the state that implies the correct `skipSummary`
  * is an equivalent, DOM-only observation of the same behaviour.
  *
- * `$t` is left unmocked (as in `UploadStepSpeakers.test.ts`): i18next is
- * uninitialised here, so `$t('key')` returns the raw key, which is what these
- * tests assert on.
+ * `$t` is mocked to return the raw key, which is what these tests assert on.
+ *
+ * The model picker renders read-only when the deployment owns the model choice
+ * (`transcription.model_choice` off; the server ignores a requested model then).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+
+vi.mock('$stores/locale', () => ({
+  t: {
+    subscribe: (run: (value: (key: string) => string) => void) => {
+      run((key: string) => key);
+      return () => {};
+    },
+  },
+}));
 
 import UploadStepModel from './UploadStepModel.svelte';
 
@@ -79,5 +89,21 @@ describe('UploadStepModel — AI summary toggle polarity (#751 item 3)', () => {
     const options = Array.from(container.querySelectorAll('option')).map((o) => o.textContent);
     expect(options.some((t) => t?.includes('uploader.highQualitySuffix'))).toBe(true);
     expect(options.some((t) => t?.includes('uploader.fastProcessingSuffix'))).toBe(true);
+  });
+});
+
+describe('UploadStepModel', () => {
+  it('offers the model select by default', () => {
+    const { container } = render(UploadStepModel);
+    expect(container.querySelector('#whisper-model-select')).not.toBeNull();
+    expect(container.querySelector('[data-testid="model-managed"]')).toBeNull();
+  });
+
+  it('renders a read-only managed note when model choice is locked', () => {
+    const { container } = render(UploadStepModel, { props: { modelChoiceEnabled: false } });
+    expect(container.querySelector('#whisper-model-select')).toBeNull();
+    expect(container.querySelector('[data-testid="model-managed"]')?.textContent).toBe(
+      'uploader.modelManaged'
+    );
   });
 });

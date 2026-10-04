@@ -86,6 +86,9 @@ export interface MediaFile {
   summary?: string;
   file_hash?: string;
   thumbnail_url?: string;
+  // Whether the caller may permanently delete this file (owner, org admin of its
+  // organization, or platform admin). Set by the gallery list; absent elsewhere.
+  can_delete?: boolean | null;
 
   // Formatted fields from backend
   formatted_duration?: string;

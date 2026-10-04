@@ -95,6 +95,11 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # cannot see it. Confirmed real by direct inspection of chatStream.ts.
     "/api/chat/conversations/{conversation_uuid}/regenerate": "Real caller: frontend/src/lib/api/chatStream.ts:streamRegenerate, via the streamPost() helper",
     "/api/chat/conversations/{conversation_uuid}/messages/{message_uuid}/edit": "Real caller: frontend/src/lib/api/chatStream.ts:streamEditMessage, via the streamPost() helper",
+    # The SPA stopped calling this in #1046: chat's context window now comes from
+    # /api/llm/status, which works when the llm-settings router is not mounted.
+    # The route still answers "which configuration is the user's active one",
+    # and the E2E suites read it for exactly that before pinning a model.
+    "/api/llm-settings/status": "Real caller: E2E setup in backend/tests/e2e/test_chat_grounding.py, test_chat_trace_panel.py, test_full_pipeline_smoke.py, test_visual_regression.py (active-config pointer); the SPA uses /api/llm/status since #1046",
     # v400 (#362 lane C5). CommentSection.svelte serves BOTH planes from one
 }
 

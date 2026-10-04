@@ -8,6 +8,7 @@ import logging
 import os
 import time
 
+from app.core import stage_timing
 from app.db.session_utils import session_scope
 from app.utils.task_utils import update_task_status
 
@@ -289,6 +290,7 @@ def _process_transcription_result(
     return {"status": "success", "file_id": ctx.file_id, "segments": len(processed_segments)}
 
 
+@stage_timing.stage("finalize")
 def _process_and_save_critical(
     ctx: TranscriptionContext,
     result: dict,

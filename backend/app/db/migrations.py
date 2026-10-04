@@ -6,6 +6,7 @@ Alembic is the sole authority for database schema creation and upgrades.
 Handles empty databases, existing untracked databases, and tracked databases.
 """
 
+import functools
 import logging
 import os
 import time
@@ -33,6 +34,20 @@ def get_alembic_config() -> Config:
     config = Config(str(alembic_ini))
     config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
     return config
+
+
+@functools.lru_cache(maxsize=1)
+def get_alembic_head() -> str | None:
+    """Head revision of the migration scripts shipped with this build, parsed once per process.
+
+    Loading the script directory imports every revision file (~45-50 ms of CPU), and the
+    answer cannot change while the process runs — new revisions arrive with a new build.
+    ``/health/ready`` asks on every probe (issue #1000), so it must not pay that each time.
+    """
+    from alembic.script import ScriptDirectory
+
+    head: str | None = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+    return head
 
 
 def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
@@ -486,7 +501,45 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'file_pipeline_timing' AND column_name = 'transcript_ready_ms')"
     )
 
-    # v394: media_file.duration_source — where `duration` came from (issue #969).
+    # v397: user.platform_super_admin_link_authorized — the escape hatch for
+    # account_linking's super_admin JIT-link refusal (issue #993). Single ADD
+    # COLUMN, no constraint, so the column is the fingerprint — same shape as v392's
+    # has_redaction_coverage / v393's has_overlap_timing_columns. Numbered v397, not
+    # v394: see the revision file's docstring for why (a reserved-but-unmerged range).
+    has_platform_super_admin_link_authorized = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'platform_super_admin_link_authorized')"
+    )
+
+    # v420: tenant-owned tags (issue #1050). Keyed on uq_tag_org_name rather than on
+    # tag.organization_id: the index is created LAST, after the backfill, so a run that
+    # died mid-backfill leaves the column without it and correctly re-runs v420.
+    has_tag_org_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_tag_org_name')"
+    )
+
+    # v421: media_file.playback_path, the browser-playable rendition of an original no
+    # browser decodes. Single ADD COLUMN, so the column is the fingerprint.
+    has_media_playback_path = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'playback_path')"
+    )
+
+    # v422: tenant-owned collections (issue #1051). Keyed on uq_collection_org_name,
+    # created LAST (after the backfill), for the same reason as v420's marker.
+    has_collection_org_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_collection_org_name')"
+    )
+
+    # v430: per-tenant unique names on speaker profiles, speaker collections and
+    # vocabulary (issue #1110). Keyed on uq_speaker_profile_user_tenant_name, the index
+    # the revision creates LAST (after the tenant-stamp backfill).
+    has_speaker_profile_tenant_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE indexname = 'uq_speaker_profile_user_tenant_name')"
+    )
+
+    # v431: media_file.duration_source — where `duration` came from (issue #969).
     # Single-marker revision (one ADD COLUMN plus one CHECK, no backfill), so the
     # column IS the fingerprint — the same shape v392/v393 use.
     has_duration_source = _check_exists(
@@ -536,17 +589,82 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v394: same as v393 plus media_file.duration_source. The newest revision on
-    # this chain, so this is the top of the ladder.
+    # v431: same as v430 plus media_file.duration_source. The newest revision on this
+    # chain, so this is the top of the ladder.
     if (
         matches_v389
         and has_file_facts
         and has_recorded_date_provenance
         and has_redaction_coverage
         and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
         and has_duration_source
     ):
-        return "v394_add_media_duration_provenance"
+        return "v431_add_media_duration_provenance"
+    # v430: same as v422 plus the per-tenant speaker/vocabulary uniqueness.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+    ):
+        return "v430_per_tenant_speaker_and_vocab_names"
+    # v422: same as v421 plus the per-tenant collection uniqueness.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+    ):
+        return "v422_add_collection_tenancy"
+    # v421: same as v420 plus media_file.playback_path.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+    ):
+        return "v421_add_media_playback_path"
+    # v420: same as v397 plus the per-tenant tag uniqueness.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+    ):
+        return "v420_add_tag_organization_id"
+    # v397: same as v393 plus user.platform_super_admin_link_authorized.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+    ):
+        return "v397_add_platform_super_admin_link_authorized"
     # v393: same as v392 plus file_pipeline_timing's transcribe/diarize overlap markers.
     if (
         matches_v389
@@ -1404,11 +1522,7 @@ def run_migrations() -> None:
 
         config = get_alembic_config()
 
-        # Get the head revision from Alembic scripts
-        from alembic.script import ScriptDirectory
-
-        script_dir = ScriptDirectory.from_config(config)
-        head_rev = script_dir.get_current_head()
+        head_rev = get_alembic_head()
 
         if current_rev:
             logger.info(f"Current migration version: {current_rev}")

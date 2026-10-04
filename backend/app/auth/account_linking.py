@@ -216,12 +216,22 @@ def assert_provider_id_link_permitted(
     assumption is false: JIT provisioning stamps the same identifier on ordinary
     first logins too).
 
-    Two checks, both unconditional — the same shape as ``assert_email_link_permitted``,
-    applied on this branch's own terms:
+    Two checks, both unconditional by default — the same shape as
+    ``assert_email_link_permitted``, applied on this branch's own terms:
 
-    1. **super_admin is never matched by provider ID either.** A platform-owner
-       account is never acquired through an external directory, whichever column
-       matched.
+    1. **super_admin is never matched by provider ID either, unless the row itself
+       says otherwise.** A platform-owner account is never acquired through an
+       external directory, whichever column matched — UNLESS
+       ``user.platform_super_admin_link_authorized`` is ``True`` (issue #993). That
+       column defaults ``False`` and nothing in this codebase ever sets it; it is a
+       narrow escape hatch for a deployment with its own out-of-band, audited,
+       non-self-serve admin-grant mechanism (outside this repo's scope) that
+       deliberately granted ``super_admin`` to an externally-authenticated user and
+       needs that grant to actually be usable on login, rather than refused on
+       every subsequent one forever. Setting the flag changes *who is allowed to be
+       linked*; it does not touch check 2 below, which still runs unconditionally
+       even when the flag is set — a deliberately-authorized super_admin row is not
+       exempt from email corroboration.
     2. **The match must be corroborated by email.** When the source asserts an
        email at all, it must agree with the account's stored address. A stored
        identifier can go stale or be reassigned (a directory recycles a uid, an
@@ -269,7 +279,9 @@ def assert_provider_id_link_permitted(
         HTTPException: 401, when the match is refused.
     """
     reason: str | None = None
-    if str(getattr(user, "role", "")) == ROLE_SUPER_ADMIN:
+    if str(getattr(user, "role", "")) == ROLE_SUPER_ADMIN and not getattr(
+        user, "platform_super_admin_link_authorized", False
+    ):
         reason = "super_admin_never_linked"
     elif asserted_email and not emails_agree(asserted_email, getattr(user, "email", None)):
         reason = "provider_id_email_mismatch"

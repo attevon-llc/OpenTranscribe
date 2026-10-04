@@ -232,16 +232,15 @@ def _store_alignment_results(db: Session, file_id: int, cross_refs: list[dict]) 
         logger.debug(f"Alignment storage skipped: {e}")
 
 
-def _create_llm_service(user_id: int | None) -> LLMService:
-    """Create LLM service based on user settings or system defaults."""
-    if user_id:
-        llm_service = LLMService.create_from_user_settings(user_id)
-    else:
-        llm_service = LLMService.create_from_system_settings()
+def _create_llm_service(user_id: int | None) -> LLMService | None:
+    """Create LLM service based on user settings or system defaults.
 
-    if not llm_service:
-        raise Exception("Could not create LLM service for speaker identification")
-    return llm_service
+    Returns None when no provider is configured — a deployment choice, not a
+    failure, so the caller skips quietly instead of logging an error per file.
+    """
+    if user_id:
+        return LLMService.create_from_user_settings(user_id)
+    return LLMService.create_from_system_settings()
 
 
 def _run_llm_identification(
@@ -536,6 +535,19 @@ def identify_speakers_llm_task(self, file_uuid: str):
             inputs["output_language"],
         )
 
+        if predictions is None:
+            # No LLM configured: the metadata hints stored in phase 1 are all
+            # this file gets. Same outcome shape as ai.extract_topics.
+            with session_scope() as db:
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            send_ws_event_for_file(
+                user_id,
+                "enrichment_task_complete",
+                {"file_id": file_uuid, "task": "speaker_identification"},
+                file_id=file_id,
+            )
+            return {"status": "skipped", "reason": "LLM not configured", "file_id": file_id}
+
         # Phase 3 — write (short sessions, Postgres only).
         _store_speaker_predictions(file_id, predictions)
         with session_scope() as db:
@@ -584,19 +596,31 @@ def _generate_predictions(
     known_speakers: list[dict[str, Any]],
     metadata_context: str = "",
     output_language: str = DEFAULT_LLM_OUTPUT_LANGUAGE,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Phase 2 — run the LLM. **No DB session is held here.**
 
     ``LLMService.create_from_user_settings`` opens and closes its own short
     session internally, which is the shape the rule asks for: a callee that needs
     the DB opens its own scope instead of borrowing one that then spans the
     provider round trip.
+
+    Returns:
+        The predictions, or None when no LLM provider is configured (the caller
+        skips). A configured provider that fails still logs an error and returns
+        empty predictions.
     """
     try:
+        llm_service = _create_llm_service(user_id)
+        if llm_service is None:
+            logger.info(
+                f"LLM not configured for user {user_id}, skipping speaker identification "
+                f"for file {file_id}"
+            )
+            return None
+
         logger.info(f"Starting LLM speaker identification for file {file_id}")
         logger.info(f"Using LLM output language: {output_language}")
 
-        llm_service = _create_llm_service(user_id)
         predictions = _run_llm_identification(
             llm_service,
             full_transcript,

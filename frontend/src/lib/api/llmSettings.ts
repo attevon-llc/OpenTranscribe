@@ -160,13 +160,6 @@ export interface SetActiveConfigRequest {
   configuration_id: string; // UUID
 }
 
-export interface LLMSettingsStatus {
-  has_settings: boolean;
-  active_configuration?: UserLLMSettings;
-  total_configurations: number;
-  using_system_default: boolean;
-}
-
 /**
  * One row of the fixed-allowlist local-endpoint discovery table (issue #644).
  *
@@ -228,14 +221,6 @@ export class LLMSettingsApi {
    */
   static async getSupportedProviders(): Promise<SupportedProvidersResponse> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/providers`);
-    return response.data;
-  }
-
-  /**
-   * Get status information about user's LLM settings
-   */
-  static async getStatus(): Promise<LLMSettingsStatus> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/status`);
     return response.data;
   }
 

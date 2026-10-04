@@ -31,6 +31,8 @@ from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.mfa import MFAService
 from app.auth.oidc import OIDCConfig
+from app.auth.oidc import OIDCTokens
+from app.auth.oidc import OIDCUserData
 from app.auth.oidc import exchange_code_for_tokens
 from app.auth.oidc import get_authorization_url
 from app.auth.oidc import sync_oidc_user_to_db
@@ -180,8 +182,12 @@ async def oidc_callback(
     """
     client_ip, user_agent = _get_client_info(request)
 
+    # Async because the token exchange and ID-token validation are awaited HTTP
+    # calls — which means FastAPI does NOT threadpool this handler, so every
+    # synchronous DB/Redis/audit call below is pushed off the event loop
+    # explicitly, as oidc_login does (issue #997).
     # Load OIDC config from database (DB > .env > defaults)
-    cfg = OIDCConfig.from_db(db)
+    cfg = await run_in_threadpool(OIDCConfig.from_db, db)
     if not cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -189,16 +195,10 @@ async def oidc_callback(
         )
 
     # Retrieve and delete state (single-use, CSRF protection)
-    state_data = _oidc_state_store.get_state(state)
+    state_data = await run_in_threadpool(_oidc_state_store.get_state, state)
     if state_data is None:
         logger.warning("Invalid OIDC state parameter received")
-        audit_logger.log_login_failure(
-            username="unknown",
-            source_ip=client_ip,
-            user_agent=user_agent,
-            error_code="INVALID_STATE",
-            auth_method=AUTH_METHOD,
-        )
+        await run_in_threadpool(_record_refusal, client_ip, user_agent, "INVALID_STATE")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state parameter",
@@ -212,26 +212,14 @@ async def oidc_callback(
     presented = get_oidc_state_binding(request)
     if not expected_binding or not presented:
         logger.warning("OIDC callback missing its state-binding cookie")
-        audit_logger.log_login_failure(
-            username="unknown",
-            source_ip=client_ip,
-            user_agent=user_agent,
-            error_code="MISSING_STATE_BINDING",
-            auth_method=AUTH_METHOD,
-        )
+        await run_in_threadpool(_record_refusal, client_ip, user_agent, "MISSING_STATE_BINDING")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state parameter",
         )
     if not secrets.compare_digest(_hash_binding(presented), expected_binding):
         logger.warning("OIDC callback presented a state-binding cookie that does not match")
-        audit_logger.log_login_failure(
-            username="unknown",
-            source_ip=client_ip,
-            user_agent=user_agent,
-            error_code="STATE_BINDING_MISMATCH",
-            auth_method=AUTH_METHOD,
-        )
+        await run_in_threadpool(_record_refusal, client_ip, user_agent, "STATE_BINDING_MISMATCH")
         # Same message as an unknown state: a mismatch must not be distinguishable.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -250,13 +238,8 @@ async def oidc_callback(
         # shape as proxy_login's unattributable-assertion bucket. Retries still
         # throttle: unlimited retry against a stolen/guessed authorization code
         # is exactly what account lockout (NIST AC-7) exists to bound.
-        check_and_record_attempt("unknown", success=False)
-        audit_logger.log_login_failure(
-            username="unknown",
-            source_ip=client_ip,
-            user_agent=user_agent,
-            error_code="TOKEN_EXCHANGE_FAILED",
-            auth_method=AUTH_METHOD,
+        await run_in_threadpool(
+            _record_refusal, client_ip, user_agent, "TOKEN_EXCHANGE_FAILED", record_attempt=True
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -270,19 +253,47 @@ async def oidc_callback(
     )
     if not oidc_data:
         logger.error("Invalid or missing ID token received from the OIDC provider")
-        check_and_record_attempt("unknown", success=False)
-        audit_logger.log_login_failure(
-            username="unknown",
-            source_ip=client_ip,
-            user_agent=user_agent,
-            error_code="INVALID_TOKEN",
-            auth_method=AUTH_METHOD,
+        await run_in_threadpool(
+            _record_refusal, client_ip, user_agent, "INVALID_TOKEN", record_attempt=True
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid access token",
         )
 
+    return await run_in_threadpool(
+        _complete_oidc_login, request, db, cfg, oidc_data, tokens, client_ip, user_agent
+    )
+
+
+def _record_refusal(
+    client_ip: str, user_agent: str, error_code: str, *, record_attempt: bool = False
+) -> None:
+    """Audit a callback refused before any identity is known (sync; threadpool it).
+
+    ``record_attempt`` also counts it in the shared "unknown" lockout bucket.
+    """
+    if record_attempt:
+        check_and_record_attempt("unknown", success=False)
+    audit_logger.log_login_failure(
+        username="unknown",
+        source_ip=client_ip,
+        user_agent=user_agent,
+        error_code=error_code,
+        auth_method=AUTH_METHOD,
+    )
+
+
+def _complete_oidc_login(
+    request: Request,
+    db: Session,
+    cfg: OIDCConfig,
+    oidc_data: OIDCUserData,
+    tokens: OIDCTokens,
+    client_ip: str,
+    user_agent: str,
+) -> JSONResponse:
+    """The synchronous remainder of :func:`oidc_callback`, run in the threadpool."""
     # Sync user to database. The already-resolved cfg is passed through so the
     # admission check inside runs against the same configuration this flow was
     # validated with, rather than re-reading it mid-login.

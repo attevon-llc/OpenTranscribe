@@ -7,9 +7,9 @@ carry the raw exception text.
 2. `_send_dispatch_failed_ws_event` (`api/endpoints/files/upload.py`) is the one path by
    which raw text has ever reached the gallery — its `file` payload is spread wholesale into
    the client's file object.
-3. `_handle_outer_exception` (`tasks/transcription/context.py`) must still persist the RAW
-   message server-side (`media_file.last_error_message`) even though nothing sends it to a
-   client any more — that's where an operator/admin actually diagnoses a failure.
+3. `_handle_outer_exception` (`tasks/transcription/context.py`) persists the FIXED sentence,
+   not the raw message (issue #959 reversed #786's "keep it in the column" — the raw text is
+   logged at ERROR and stored nowhere), plus the retry code derived from the raw text.
 """
 
 from __future__ import annotations
@@ -90,7 +90,9 @@ def test_the_dispatch_failed_ws_payload_carries_no_raw_message(monkeypatch):
 
 
 @pytest.mark.unit
-def test_the_outer_exception_handler_persists_the_raw_message(db_session, normal_user, monkeypatch):
+def test_the_outer_exception_handler_stores_no_raw_message(
+    db_session, normal_user, monkeypatch, caplog
+):
     media_file = MediaFile(
         uuid=str(uuid.uuid4()),
         filename=f"outer_exc_{uuid.uuid4().hex[:8]}.wav",
@@ -100,7 +102,9 @@ def test_the_outer_exception_handler_persists_the_raw_message(db_session, normal
         file_size=2048,
         status=FileStatus.PROCESSING,
         is_public=False,
-        retry_count=0,
+        # Out of automatic retries, so the unclassified failure is final and its fixed
+        # sentence is what gets stored (with retries left it would be requeued instead).
+        retry_count=3,
         user_id=normal_user.id,
     )
     db_session.add(media_file)
@@ -117,8 +121,12 @@ def test_the_outer_exception_handler_persists_the_raw_message(db_session, normal
         content_type=str(media_file.content_type),
     )
 
-    raw_error = RuntimeError(f"boom: {SENTINEL}")
-    monkeypatch.setattr(transcription_context, "send_error_notification", lambda *a, **kw: None)
+    # Not "boom": the retry classifier substring-matches "oom", which would make this an
+    # out-of-memory failure, stored with the interrupted-and-retried sentence instead.
+    raw_error = RuntimeError(f"kaput: {SENTINEL}")
+    monkeypatch.setattr(
+        "app.tasks.transcription.notifications.send_error_notification", lambda *a, **kw: None
+    )
 
     # `context.py` imports `session_scope` by name (`from ... import session_scope`), so it
     # must be patched on `transcription_context` itself, not on `app.db.session_utils` — the
@@ -131,10 +139,20 @@ def test_the_outer_exception_handler_persists_the_raw_message(db_session, normal
         db_session.commit()
 
     monkeypatch.setattr(transcription_context, "session_scope", _test_session_scope)
+    # The failure itself is handled by the one retry policy, which opens its own sessions.
+    monkeypatch.setattr("app.services.transcription_retry.session_scope", _test_session_scope)
 
-    transcription_context._handle_outer_exception(ctx, "nonexistent-task-id", raw_error)
+    with caplog.at_level(logging.ERROR):
+        transcription_context._handle_outer_exception(ctx, "nonexistent-task-id", raw_error)
 
     db_session.expire_all()
     refreshed = db_session.query(MediaFile).filter(MediaFile.id == media_file.id).one()
-    assert refreshed.last_error_message is not None
-    assert SENTINEL in refreshed.last_error_message
+    assert (
+        refreshed.last_error_message
+        == (ErrorCategorizationService.get_error_info(str(raw_error))["user_message"])
+    )
+    assert SENTINEL not in refreshed.last_error_message
+    assert refreshed.error_category
+    # The raw text is not lost — it is in the ERROR log, with the file id.
+    assert SENTINEL in caplog.text
+    assert str(media_file.id) in caplog.text

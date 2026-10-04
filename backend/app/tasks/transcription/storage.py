@@ -149,38 +149,23 @@ def update_media_file_transcription_status(
         logger.error(f"Media file with ID {file_id} not found when updating transcription status")
         return
 
-    # Duration from the segments, but ONLY when there are segments (issue #455).
+    # `duration` is the MEDIA length the preprocess stage probed from the container,
+    # and it is never replaced here when known (issue #969). It used to be overwritten
+    # with the transcript's speech extent — the last segment's end — which drops any
+    # trailing silence, music or applause: an 11.5 s file stored 9.0 s. That shrank the
+    # gallery badge, mis-bucketed the duration filter, inflated talk-time shares, broke
+    # youtube_metadata_backfill's match-by-duration, and under-reported the duration
+    # the completion hook hands to metered deployments.
     #
-    # This used to be `segments[-1]["end"] if segments else 0.0`, which was wrong
-    # twice. `0.0` OVERWROTE the real ffprobe duration written at
-    # metadata_extractor.py for any file that produced no segments — a silent or
-    # music-only recording, or a provider that returned nothing — and then marked
-    # it COMPLETED, with no path that recovers the value. It also broke
-    # recovery_tasks.youtube_metadata_backfill, which matches rows BY DURATION.
-    #
-    # `[-1]` also assumed the segments were sorted. Overlap marking, boundary
-    # resegmentation and the cloud-ASR adapters can all reorder them, so the
-    # stored duration could be SHORTER than the transcript it describes.
-    #
-    # SPEECH EXTENT — where the last thing anybody SAID ends. This is NOT the
-    # recording's length, and it must never replace a duration the container
-    # already told us (issue #969). A recording that ends on music, applause or
-    # silence is ordinary, and this value is short by exactly that much:
-    # measured at ~11 s on real YouTube content, which is 5x the 2.0 s window
-    # recovery_tasks.youtube_metadata_backfill matches rows in.
-    #
-    # It is still written as a LAST RESORT, because metadata extraction is
-    # best-effort (preprocess.py `_extract_metadata_best_effort`) and can leave
-    # `duration` unset. When that happens this is the only number we have — so
-    # it is recorded WITH its provenance rather than passed off as a measurement.
-    #
-    # `<= 0` counts as unset: no media has zero length, and rows written before
-    # #455 can still carry the 0.0 that bug wrote.
-    speech_extent = max((segment["end"] for segment in segments), default=None)
-
-    if speech_extent is not None and (media_file.duration is None or media_file.duration <= 0):
-        media_file.duration = speech_extent
-        media_file.duration_source = DurationSource.TRANSCRIPT_EXTENT.value
+    # Speech extent is only a last resort for a file whose container duration could
+    # not be read. It is max(end), not `segments[-1]["end"]`, because overlap marking,
+    # boundary resegmentation and the cloud-ASR adapters can reorder segments; and a
+    # file with no segments never gets 0.0 written over it (issue #455).
+    if not media_file.duration:
+        speech_extent = max((segment["end"] for segment in segments), default=None)
+        if speech_extent is not None:
+            media_file.duration = speech_extent
+            media_file.duration_source = DurationSource.TRANSCRIPT_EXTENT.value
     # The ONE place `media_file.language` is assigned by the pipeline, so it is the last
     # boundary before the column every redaction/chat/search reader keys on (issue #545).
     # `ASRResult` already normalizes the cloud providers' output; this also covers the local

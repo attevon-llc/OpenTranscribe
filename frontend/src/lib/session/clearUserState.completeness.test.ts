@@ -46,6 +46,10 @@ const EXEMPT: Record<string, string> = {
     'sessionAbortController / isRefreshing / refreshQueue are reset by abortAllRequests(), ' +
     'which logout() calls before clearUserState() precisely so in-flight responses cannot ' +
     'repopulate a store afterwards.',
+  'lib/passwordPolicy':
+    'Caches the deployment-wide password policy (GET /auth/password-policy, served to ' +
+    'unauthenticated visitors on the register page). It is identical for every user, so ' +
+    'the previous user cannot leak anything through it.',
   'lib/prefetch':
     'inflight / failedCache only hold file UUIDs and timestamps, and every prefetch request ' +
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +
@@ -61,6 +65,11 @@ const EXEMPT: Record<string, string> = {
     'User B after an in-tab logout/login, which is a real regression the always-empty-anyway ' +
     'teardown would not be worth risking.',
 
+  'lib/auth/idleGuard':
+    'Pure factory: every timer, listener and channel lives on the instance ' +
+    'createIdleGuard() returns, and the only instance is held by ' +
+    'lib/auth/sessionTimeouts, which IS registered (stopSessionTimeouts). The ' +
+    'detector matched the `clearInterval(tick)` call inside the factory, not module state.',
   'lib/chat/revealPacer':
     'RevealPacer is a CLASS with instance state only — there is no module-level ' +
     'instance. Each ChatTracePanel constructs its own and it is discarded with the ' +

@@ -6,7 +6,6 @@ the normalized audio.wav in MinIO temp storage for the GPU worker.
 Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess (CPU)
 """
 
-import contextlib
 import logging
 import os
 import re
@@ -14,18 +13,17 @@ import shutil
 import tempfile
 import time
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
+from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import resolve_engine_shared_volume_path
-from app.core.enums import DurationSource
+from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
-from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.utils import benchmark_timing
 from app.utils import scratch_volume
-from app.utils.error_classification import categorize_error
-from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
 from .audio_processor import extract_audio_from_video
@@ -35,10 +33,26 @@ from .metadata_extractor import extract_media_metadata
 from .metadata_extractor import extract_media_metadata_from_url
 from .metadata_extractor import probe_media_duration
 from .metadata_extractor import update_media_file_metadata
-from .notifications import send_error_notification
 from .notifications import send_progress_notification
+from .run_ownership import superseded_result
 
 logger = logging.getLogger(__name__)
+
+
+# Per process: the disabled handoff is a deployment fact, not a per-file event.
+_handoff_disabled_logged = False
+
+
+def _log_handoff_disabled_once() -> None:
+    global _handoff_disabled_logged
+    if _handoff_disabled_logged:
+        return
+    _handoff_disabled_logged = True
+    logger.info(
+        "Engine shared-volume WAV handoff is off (ENGINE_SHARED_VOLUME_ENABLED=false, or "
+        "PIPELINE_SCRATCH_SHARED=false with it unset); GPU tasks will download audio from "
+        "object storage"
+    )
 
 
 def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path: str) -> str:
@@ -65,8 +79,12 @@ def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path
     touchpoints), so the two lifetimes stay independent exactly as before this change; on
     tmpfs the shared inode means the handoff costs one WAV, not two.
 
-    Returns the destination path, or "" on any failure (caller falls back to MinIO).
+    Returns the destination path, or "" when the handoff is disabled
+    (``engine_shared_volume_enabled``, #1151) or on any failure (caller falls back to MinIO).
     """
+    if not engine_shared_volume_enabled():
+        _log_handoff_disabled_once()
+        return ""
     try:
         # resolve_* not a bare env read: a stale .env value naming the removed
         # transcription-temp volume would be recreated container-local here, silently
@@ -128,6 +146,45 @@ def preprocess_for_transcription(
 
     Returns context dict consumed by the GPU transcription task via Celery chain.
     """
+    # issue #1020: a run recovery already replaced must not preprocess (and overwrite the
+    # temp audio of) the file a second time. Its payload makes every later stage stand down.
+    superseded = superseded_result(task_id, file_uuid, stage="Preprocess")
+    if superseded is not None:
+        return superseded
+
+    # The run's lease, held for the whole stage like every other pipeline stage: without it a
+    # worker killed mid-preprocess left the run reading as "queued" and its message stranded
+    # in the broker for the visibility timeout (app/core/broker_orphans.py).
+    with run_heartbeat(task_id), stage_timing.stage("preprocess", task_id=task_id):
+        return _run_preprocess(
+            file_uuid,
+            task_id,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            downstream_tasks,
+            source_language,
+            translate_to_english,
+            disable_diarization,
+            diarization_source,
+            whisper_model,
+        )
+
+
+def _run_preprocess(
+    file_uuid: str,
+    task_id: str,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    downstream_tasks: list[str] | None,
+    source_language: str | None,
+    translate_to_english: bool | None,
+    disable_diarization: bool | None,
+    diarization_source: str | None,
+    whisper_model: str | None,
+) -> dict:
+    """The preprocess stage body (see ``preprocess_for_transcription``)."""
     from app.services.minio_service import upload_temp_audio
     from app.utils.uuid_helpers import get_file_by_uuid
 
@@ -161,7 +218,7 @@ def preprocess_for_transcription(
             temp_audio_path = os.path.join(temp_dir, "audio.wav")
 
             if is_video:
-                _preprocess_video(
+                media_source = _preprocess_video(
                     storage_path,
                     file_ext,
                     temp_dir,
@@ -172,7 +229,7 @@ def preprocess_for_transcription(
                     task_id,
                 )
             else:
-                _preprocess_audio(
+                media_source = _preprocess_audio(
                     storage_path,
                     file_ext,
                     temp_dir,
@@ -182,6 +239,8 @@ def preprocess_for_transcription(
                     content_type,
                     task_id,
                 )
+
+            _dispatch_playback_rendition_if_needed(file_id, file_uuid, media_source)
 
             # Upload preprocessed audio to MinIO temp for GPU worker
             send_progress_notification(user_id, file_id, 0.18, "Staging audio for transcription")
@@ -255,7 +314,11 @@ def preprocess_for_transcription(
 
     except Exception as e:
         logger.exception(f"Preprocess failed for file {file_uuid}")
-        _mark_pipeline_error(file_uuid, task_id, f"Audio preprocessing failed: {e}")
+        cancelled = _mark_pipeline_error(file_uuid, task_id, str(e))
+        if cancelled is not None:
+            # issue #1163: the run was being cancelled, so this is a cancellation, not a
+            # failure. Return (ack) the payload; the next stages forward it to finalize.
+            return cancelled
         raise
 
 
@@ -268,8 +331,11 @@ def _preprocess_video(
     user_id: int,
     content_type: str,
     task_id: str,
-) -> None:
+) -> str:
     """Extract audio + metadata from a video in parallel, with presigned-URL fallback.
+
+    Returns the source that was read (the presigned URL, or the downloaded copy), so the
+    caller can probe it for browser playability without fetching it again.
 
     Phase 2 PR #9 (item D11): FFmpeg audio extraction and ffprobe metadata
     reads are independent subprocess calls against the same source (presigned
@@ -331,7 +397,7 @@ def _preprocess_video(
                 # Wait for metadata so its wall-clock joins the preprocess
                 # window rather than racing into the next stage's markers.
                 metadata_future.result()
-            return
+            return presigned_url
         except Exception as url_err:
             logger.warning(
                 f"Parallel presigned-URL preprocess failed, falling back to download: {url_err}"
@@ -348,6 +414,7 @@ def _preprocess_video(
         metadata_future = pool.submit(_run_metadata_against, local_video_path, False)
         ffmpeg_future.result()
         metadata_future.result()
+    return temp_video_path
 
 
 def _preprocess_audio(
@@ -359,8 +426,8 @@ def _preprocess_audio(
     user_id: int,
     content_type: str,
     task_id: str,
-) -> None:
-    """Download audio file and convert to WAV."""
+) -> str:
+    """Download audio file and convert to WAV. Returns the downloaded original's path."""
     from app.services.minio_service import download_file_to_path
 
     send_progress_notification(user_id, file_id, 0.08, "Processing audio file")
@@ -386,6 +453,7 @@ def _preprocess_audio(
     # If prepare returned a different path (e.g., input was already .wav), copy it
     if result_path != temp_audio_path:
         shutil.copy2(result_path, temp_audio_path)
+    return temp_input_path
 
 
 def _extract_metadata_best_effort(
@@ -412,47 +480,42 @@ def _extract_metadata_best_effort(
         try:
             metadata: dict | None = None
             local_path_for_raw: str | None = existing_local_path
+            # ExifTool's duration is missing for some containers (Ogg/Opus) and an
+            # estimate for others (MP3), so a local file is also asked ffprobe. The
+            # presigned-URL path already IS ffprobe. Probed before the session opens.
+            probed_duration: float | None = None
 
             if existing_local_path and os.path.exists(existing_local_path):
                 metadata = extract_media_metadata(existing_local_path)
+                probed_duration = probe_media_duration(existing_local_path)
             elif presigned_url:
                 metadata = extract_media_metadata_from_url(presigned_url)
             else:
                 fallback_local = os.path.join(temp_dir, f"meta_input{file_ext}")
                 download_file_to_path(storage_path, fallback_local)
                 metadata = extract_media_metadata(fallback_local)
+                probed_duration = probe_media_duration(fallback_local)
                 local_path_for_raw = fallback_local
 
-            with session_scope() as db:
-                mf = get_refreshed_object(db, MediaFile, file_id)
-                if mf:
-                    if metadata:
-                        update_media_file_metadata(
-                            mf, metadata, content_type, local_path_for_raw or ""
-                        )
-
-                    # Direct ffprobe probe — the ONE authoritative guarantee (issue
-                    # #969). Independent of exiftool tag naming, and of whether
-                    # metadata extraction produced anything at all (exiftool may be
-                    # absent entirely, see :424). Only fills a gap; never overwrites
-                    # a duration a source above already set.
-                    if mf.duration is None or mf.duration <= 0:
-                        probed = probe_media_duration(local_path_for_raw or presigned_url or "")
-                        if probed and probed > 0:
-                            mf.duration = probed
-                            mf.duration_source = DurationSource.CONTAINER.value
-
-                    # Persist audio duration into benchmark context when known
-                    duration_val = (
-                        (metadata.get("Duration") or metadata.get("duration")) if metadata else None
-                    ) or mf.duration
-                    if duration_val is not None:
-                        with contextlib.suppress(TypeError, ValueError):
-                            benchmark_timing.set_context(
-                                task_id,
-                                {"audio_duration_s": float(duration_val)},
+            if metadata or probed_duration:
+                with session_scope() as db:
+                    mf = get_refreshed_object(db, MediaFile, file_id)
+                    if mf:
+                        if metadata:
+                            update_media_file_metadata(
+                                mf,
+                                metadata,
+                                content_type,
+                                local_path_for_raw or "",
+                                probed_duration=probed_duration,
                             )
-                    db.commit()
+                        else:
+                            mf.duration = probed_duration
+                        if mf.duration:
+                            benchmark_timing.set_context(
+                                task_id, {"audio_duration_s": float(mf.duration)}
+                            )
+                        db.commit()
         except Exception as e:
             logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
 
@@ -489,29 +552,66 @@ def _dispatch_waveform_if_missing(
         logger.warning(f"Waveform dispatch from preprocess failed (non-fatal): {e}")
 
 
-def _mark_pipeline_error(file_uuid: str, task_id: str, error_msg: str) -> None:
-    """Mark file and task as failed.
+def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source: str) -> None:
+    """Queue a browser-playable rendition when no browser can play the original.
 
-    ``error_msg`` may carry raw exception text — it is classified exactly once here,
-    while still in hand, into the retry-policy code (persisted to
-    ``media_file.error_category``) and a fixed, non-raw sentence (persisted everywhere
-    else). GH #959: the raw text itself is never written to a DB column; the caller's
-    ``logger.exception`` call already put it in the log.
+    One ffprobe of a source preprocessing already holds (tens of milliseconds). A
+    playable original stops here: no task, no encode, no stored copy. The encode itself
+    runs as ``media.create_playback_rendition`` on the CPU queue, beside the GPU stage,
+    because on a long file it takes longer than preprocessing does. Never raises: a file
+    without a rendition still transcribes, and its original stays what plays.
     """
-    from app.services.error_categorization_service import ErrorCategorizationService
-    from app.utils.uuid_helpers import get_file_by_uuid
-
-    sanitized_msg = ErrorCategorizationService.sanitize_for_storage(error_msg)
+    from app.services.playback_rendition import PlaybackNeed
+    from app.services.playback_rendition import classify_playback
+    from app.services.playback_rendition import probe_media
 
     try:
         with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if media_file is None or media_file.playback_path:
+                return
+        need = classify_playback(probe_media(source))
+        if need is PlaybackNeed.NONE:
+            return
+        from app.tasks.playback_rendition import create_playback_rendition_task
+
+        create_playback_rendition_task.delay(file_uuid=file_uuid)
+        logger.info(f"Queued playback rendition ({need.value}) for file {file_id}")
+    except Exception as e:
+        logger.warning(f"Playback rendition dispatch failed for file {file_id} (non-fatal): {e}")
+
+
+def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> dict | None:
+    """Fail or requeue the run through the one retry policy (``services/transcription_retry``).
+
+    ``raw_error`` is classified here, once, and is NOT stored (issue #959): the file and
+    task rows get the fixed user-facing sentence, ``error_category`` gets the retry code.
+    The caller has already logged the raw exception.
+
+    Returns:
+        The cancelled chain payload when the run was being cancelled (the policy recorded it
+        as cancelled, issue #1163), else None.
+    """
+    from app.services.error_categorization_service import ErrorCategorizationService
+    from app.services.transcription_retry import RunOutcome
+    from app.services.transcription_retry import finish_failed_run
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    from .context import cancelled_payload
+
+    failure = ErrorCategorizationService.classify_failure(raw_error)
+    try:
+        with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
-            if media_file:
-                update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
-                media_file.last_error_message = sanitized_msg
-                media_file.error_category = categorize_error(error_msg).value
-                db.commit()
-                send_error_notification(int(media_file.user_id), int(media_file.id), error_msg)
-            update_task_status(db, task_id, "failed", error_message=sanitized_msg, completed=True)
+            file_id = int(media_file.id) if media_file else None
+        if file_id is None:
+            with session_scope() as db:
+                update_task_status(
+                    db, task_id, "failed", error_message=failure.user_message, completed=True
+                )
+            return None
+        if finish_failed_run(task_id, file_id, failure) == RunOutcome.CANCELLED:
+            return cancelled_payload(file_uuid, file_id, task_id)
     except Exception as status_err:
         logger.error(f"Failed to update error status: {status_err}")
+    return None

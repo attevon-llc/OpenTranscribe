@@ -23,6 +23,7 @@ from app.utils.error_handlers import ErrorHandler
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
+from app.utils.media_types import normalize_media_content_type
 from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ def create_media_file_record(
             organization_id=organization_id,
             storage_path="",  # Will be updated after upload
             file_size=file_size,
-            content_type=file.content_type,
+            content_type=normalize_media_content_type(file.content_type),
             status=FileStatus.PENDING,
             is_public=False,
             duration=None,
@@ -308,6 +309,10 @@ def dispatch_upload_pipeline(
     """
     if not whisper_model and db_file.requested_whisper_model:
         whisper_model = str(db_file.requested_whisper_model)
+    # A model stored at /prepare before the deployment locked model choice must not apply.
+    from app.core.locked_settings import effective_whisper_model
+
+    whisper_model = effective_whisper_model(whisper_model, None)
     dispatch_thumbnail_for_video(db_file, user_id)
     return start_transcription_task(
         db_file.id,
@@ -360,11 +365,8 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
     """Persist ERROR + ``last_error_message`` on a stored-but-undispatchable upload.
 
     Best-effort, never raises: the caller re-raises the real failure regardless of
-    whether this bookkeeping succeeds. GH #959: the DB column gets only a fixed,
-    category-derived sentence — never the raw ``message`` — even though the caller
-    still re-raises the original exception unchanged for the synchronous 503 response.
+    whether this bookkeeping succeeds.
     """
-    from app.services.error_categorization_service import ErrorCategorizationService
     from app.utils.task_utils import update_media_file_status
 
     message = getattr(exc, "message", None) or str(exc) or exc.__class__.__name__
@@ -372,9 +374,7 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media_file is None:
             return
-        media_file.last_error_message = (  # type: ignore[assignment]
-            ErrorCategorizationService.sanitize_for_storage(message)
-        )
+        media_file.last_error_message = message  # type: ignore[assignment]
         update_media_file_status(db, file_id, FileStatus.ERROR)  # takedown-aware writer, #824
     except Exception:
         logger.exception("Could not mark file %s ERROR after a dispatch failure", file_id)
@@ -626,6 +626,7 @@ async def process_file_upload(
     # Validate file type first
     validate_file_type(file)
     logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
+    content_type = normalize_media_content_type(file.content_type)
 
     # Duplicate short-circuit (Phase 2 PR #7, item E20): if the client sent a
     # file hash and this is a direct legacy POST (no existing_file_uuid),
@@ -635,7 +636,11 @@ async def process_file_upload(
         from app.utils.file_hash import check_duplicate_by_fingerprint
 
         duplicate_uuid = await run_in_threadpool(
-            check_duplicate_by_fingerprint, db, client_file_hash, current_user.id
+            check_duplicate_by_fingerprint,
+            db,
+            client_file_hash,
+            current_user.id,
+            organization_id=organization_id,
         )
         if duplicate_uuid:
             logger.info(
@@ -673,7 +678,7 @@ async def process_file_upload(
         # 50 GB of garbage to learn the MIME is wrong.
         first_chunk, _first_bytes = await _read_first_chunk(file)
         is_valid, validation_result = validate_uploaded_file(
-            bytes(first_chunk[:64]), file.content_type, file.filename
+            bytes(first_chunk[:64]), content_type, file.filename
         )
         benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:
@@ -690,10 +695,10 @@ async def process_file_upload(
         spooled_upload = file_content
         benchmark_timing.mark(task_id, "http_read_complete")
 
-        # Cloud-edition seam: enforce the tenant's per-tier max upload size now
-        # that the true byte count is known (the content-length header is
-        # advisory). No-op in community. The cleanup path below 413s out.
-        validate_file_size_for_tenant(file_size, organization_id)
+        # Enforce the max upload size now that the true byte count is known (the
+        # content-length header is advisory). A registered resolver may block, so
+        # it runs off the event loop (#1169). The cleanup path below 413s out.
+        await run_in_threadpool(validate_file_size_for_tenant, file_size, organization_id)
 
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
@@ -723,7 +728,7 @@ async def process_file_upload(
                 file_content,
                 file_size,
                 storage_path,
-                file.content_type or "application/octet-stream",
+                content_type or "application/octet-stream",
             )
 
         # Thumbnail generation was previously inline here (3-8s FFmpeg on
@@ -774,7 +779,7 @@ async def process_file_upload(
         task_id,
         {
             "file_size_bytes": int(file_size),
-            "content_type": file.content_type or "",
+            "content_type": content_type or "",
             "http_flow": "legacy",
         },
     )

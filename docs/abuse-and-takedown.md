@@ -209,13 +209,25 @@ request, not at signing time, so:
   policies (unlike root-signed requests under a MinIO service-account Deny) apply regardless of
   which principal signed the request, so this is actually *stronger* than the MinIO mechanism on
   that one axis, at the cost of needing to be applied by hand rather than shipped automatically.
+  It also means the backend itself cannot read a quarantined object until release.
+
+  At startup (`STORAGE_BACKEND=s3`) the backend reads the media bucket's policy
+  (`storage_presign_identity.report_native_s3_revocation_posture`, needs `s3:GetBucketPolicy`)
+  and logs **one WARNING** if this Deny is missing or the policy can't be read, INFO if it is
+  present. Without it, the mitigation is the presigned-URL TTL: an already-minted URL for a
+  quarantined file stays valid for up to `MEDIA_URL_EXPIRE_SECONDS` (6 h default, capped by
+  `PRESIGNED_URL_MAX_SECONDS`) — lower it to shorten that window, at the cost of long
+  recordings needing a fresh URL mid-playback. Presigning itself logs nothing on S3; the old
+  per-process "ROOT MinIO credential" ERROR was MinIO-specific and wrong there (issue #1005).
 
 - **Fails open, visibly.** If the restricted identity cannot be provisioned (MinIO admin API
   unreachable, `STORAGE_PRESIGN_IDENTITY_ENABLED=false`, or a non-MinIO S3-compatible backend
   with no admin API), presigning silently falls back to the root client — today's pre-#907
-  behavior, no regression, but inert. This is made visible: an ERROR is logged once per process,
-  and the takedown/release audit event records whether revocation actually happened
-  (`presign_revoked` / `presign_tag_cleared` in the event's `extra`).
+  behavior, no regression, but inert. This is made visible: a provisioning *failure* on MinIO
+  logs an ERROR at startup and once per process on first presign (disabling the feature is
+  reported once at startup at INFO, native S3 as above), and the takedown/release audit event
+  records whether the quarantine tag was applied (`presign_revoked` / `presign_tag_cleared` in
+  the event's `extra`).
 
 - **Admin review sees the same 403.** Admins presign through the same restricted identity, so an
   admin reviewing a quarantined file's *media* also gets a 403 on its presigned URL — this is a

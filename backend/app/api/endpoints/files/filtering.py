@@ -246,6 +246,8 @@ def apply_transcript_search_filter(
     query: Query,
     transcript_search: str | None,
     user_id: int | None = None,
+    *,
+    organization_id: int | None,
 ) -> Query:
     """
     Apply transcript content search filter using OpenSearch.
@@ -261,6 +263,10 @@ def apply_transcript_search_filter(
         query: Base query
         transcript_search: Search term for transcript content
         user_id: Restrict search to this user's files (None = all)
+        organization_id: The request's tenant scope (None = personal). Required
+            (#1027): the index query carries its own tenant gate rather than relying
+            only on the org-scoped SQL query it is intersected with. That also keeps
+            other tenants' hits from filling the 10,000-hit window below.
 
     Returns:
         Filtered query with only matching file IDs
@@ -270,6 +276,7 @@ def apply_transcript_search_filter(
 
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
+    from app.services.search.tenant_scope import org_filter_clauses
 
     client = get_opensearch_client()
     if not client:
@@ -296,6 +303,7 @@ def apply_transcript_search_filter(
         # Scope to user's files when specified
         if user_id is not None:
             filter_clauses.append({"term": {"user_id": user_id}})
+        filter_clauses.extend(org_filter_clauses(organization_id))
 
         search_body: dict = {
             "query": {
@@ -457,7 +465,8 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
 
     Args:
         query: Base query
-        filters: Dictionary of filter parameters
+        filters: Dictionary of filter parameters. ``organization_id`` is required —
+            the request's tenant scope, forwarded to the transcript-index query.
 
     Returns:
         Filtered query
@@ -480,6 +489,7 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
         query,
         filters.get("transcript_search"),
         user_id=filters.get("user_id"),
+        organization_id=filters["organization_id"],
     )
 
     return query

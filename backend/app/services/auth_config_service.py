@@ -164,6 +164,8 @@ class AuthConfigService:
         "proxy_jit_provisioning": "bool",
         # Password policy settings
         "password_policy_enabled": "bool",
+        "password_policy_profile": "string",
+        "password_max_length": "int",
         "password_min_length": "int",
         "password_require_uppercase": "bool",
         "password_require_lowercase": "bool",
@@ -171,9 +173,13 @@ class AuthConfigService:
         "password_require_special": "bool",
         "password_history_count": "int",
         "password_max_age_days": "int",
+        "password_min_age_hours": "int",
+        "password_blocklist_enabled": "string",
+        "password_hibp_enabled": "bool",
         # MFA settings
         "mfa_enabled": "bool",
         "mfa_required": "bool",
+        "mfa_required_for_admins": "bool",
         "mfa_backup_code_count": "int",
         "mfa_token_expire_minutes": "int",
         # Session settings
@@ -299,6 +305,8 @@ class AuthConfigService:
         "PROXY_JIT_PROVISIONING": "proxy_jit_provisioning",
         # Password policy
         "PASSWORD_POLICY_ENABLED": "password_policy_enabled",
+        "PASSWORD_POLICY_PROFILE": "password_policy_profile",
+        "PASSWORD_MAX_LENGTH": "password_max_length",
         "PASSWORD_MIN_LENGTH": "password_min_length",
         "PASSWORD_REQUIRE_UPPERCASE": "password_require_uppercase",
         "PASSWORD_REQUIRE_LOWERCASE": "password_require_lowercase",
@@ -306,9 +314,13 @@ class AuthConfigService:
         "PASSWORD_REQUIRE_SPECIAL": "password_require_special",
         "PASSWORD_HISTORY_COUNT": "password_history_count",
         "PASSWORD_MAX_AGE_DAYS": "password_max_age_days",
+        "PASSWORD_MIN_AGE_HOURS": "password_min_age_hours",
+        "PASSWORD_BLOCKLIST_ENABLED": "password_blocklist_enabled",
+        "PASSWORD_HIBP_ENABLED": "password_hibp_enabled",
         # MFA
         "MFA_ENABLED": "mfa_enabled",
         "MFA_REQUIRED": "mfa_required",
+        "MFA_REQUIRED_FOR_ADMINS": "mfa_required_for_admins",
         "MFA_ISSUER_NAME": "mfa_issuer_name",
         "MFA_BACKUP_CODE_COUNT": "mfa_backup_code_count",
         "MFA_TOKEN_EXPIRE_MINUTES": "mfa_token_expire_minutes",

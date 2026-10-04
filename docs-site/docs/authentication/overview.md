@@ -71,13 +71,14 @@ Rules the code enforces:
   deployment ceiling also allows it. An unrecognised `auth_type` is refused.
 - **An external identity may not take over an existing account by email coincidence.** See
   [Account linking](#account-linking) below.
-- **`local_enabled` gates sign-in only — it does not gate the password-reset chain.**
-  Turning local login off does not stop the deployment from mailing a reset link to a
-  `local` account. For an ordinary account that's a harmless dead end: the reset succeeds
-  but the next sign-in is still refused. For an active `super_admin` this is deliberate
-  recovery guidance — the reset chain is part of the break-glass path back into a
-  deployment that disabled local login while its identity provider was misconfigured, so a
-  working mail transport matters even when local sign-in is switched off.
+- **With `local_enabled` off, password reset serves only the break-glass account.**
+  Email verification and self-registration are switched off with local login, and the
+  password-reset endpoints answer every other account with the usual generic response
+  without doing any work. For an active `super_admin` the reset chain still completes, by
+  design — it is part of the break-glass path back into a deployment that disabled local
+  login while its identity provider was misconfigured, so a working mail transport matters
+  even when local sign-in is switched off. Invitations keep working: they also provision
+  accounts for external identity providers.
 
 ### The super_admin exemption
 
@@ -236,6 +237,29 @@ the idle/absolute timeouts all key off those rows; there is no second session st
   rejected the new one (`reject` returns 429).
 - Users see and revoke their own sessions in **Settings → Profile → Active sessions**; an admin
   sees and revokes another user's via `GET`/`DELETE /api/admin/users/{uuid}/sessions`.
+
+#### Sessions held by an external identity provider
+
+When sign-in is delegated to an external identity provider that owns the browser session and
+refreshes tokens silently, there is no `refresh_token` row to time out. The same two settings
+still apply, enforced differently (FedRAMP AC-11 / AC-12, NIST SP 800-63B-4 reauthentication):
+
+- **Idle timeout — in the browser.** `GET /api/auth/methods` publishes
+  `session_idle_timeout_minutes` and `session_absolute_timeout_minutes`. Only real input
+  (pointer, keyboard, touch, returning to the tab) counts as activity; background requests and
+  token refresh never do. A warning appears two minutes before the limit ("Stay signed in"). At
+  the limit the page is replaced by an opaque lock screen and the session is signed out at the
+  provider. Open tabs share one clock. In-flight uploads finish before the sign-out (for at most
+  an hour), but the screen locks immediately.
+- **Absolute timeout — in the browser and on the server.** It counts from the provider's
+  `auth_time` (when the person signed in), never from a refreshed token's `iat`. The backend
+  refuses a token whose `auth_time` is older than the limit with **401**
+  `detail.code == "session_expired"`. A provider that does not supply `auth_time` is not
+  enforced server-side (a warning is logged once) rather than locking every user out.
+  `EXTERNAL_SESSION_ABSOLUTE_TIMEOUT_ENFORCED=false` turns the server-side check off.
+- A value of `0` (reachable only through `.env`) disables the corresponding limit.
+- Built-in sign-in (local, LDAP, OIDC, SAML, PKI, trusted header) is unchanged: those sessions
+  are timed out on their `refresh_token` row as described above.
 
 ### Directory-sync deprovisioning (LDAP)
 

@@ -24,7 +24,26 @@ same depth. Read this before assuming a key protects anything:
    in ``app/api/router.py``; disabling one makes every route under that
    router 404, so the UI gate is genuinely cosmetic:
    ``watch_sources``, ``organizations``, ``auth.config_ui``,
-   ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``.
+   ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``,
+   ``chat.rag``.
+
+   **Deployment-locked controls** (issue #1109) are server-enforced too, with
+   no platform-admin bypass — they describe the deployment, not a tier:
+
+   - ``url_ingest``: ``/files/process-url`` and ``/files/youtube/quota`` 404.
+   - ``speaker_attributes.migration``, ``media_sources``, ``audio_extraction``:
+     their routes 404; ``media_sources`` off also stops per-user sources being
+     used for downloads.
+   - ``transcription.model_choice``: a client ``whisper_model`` is ignored on
+     prepare/complete/reprocess (``app/core/locked_settings.py``).
+   - ``transcription.diarization_source`` / ``transcription.advanced``: the
+     user-settings endpoint ignores writes and reports defaults, and the
+     transcription task ignores values stored before the lock.
+   - ``admin.flower``: the Flower ``auth_request`` probe denies.
+
+   ⚠️ The task-time checks run with **no request** (they are inside a Celery
+   task), so a resolver must answer these keys per deployment, not per tier:
+   a tier-gated resolver sees ``request=None`` there and would deny.
 
 2. **UI-only vocabulary** — read *only* by ``SettingsModal.svelte`` to hide a
    settings panel. The underlying endpoints stay fully reachable, so this is
@@ -36,7 +55,7 @@ same depth. Read this before assuming a key protects anything:
 
 3. **Declared but unread** — no router, no task, no UI reads these yet.
    Setting ``upload: False`` or ``search: False`` changes nothing at all:
-   ``upload``, ``url_ingest``, ``search``, ``comments``,
+   ``upload``, ``search``, ``comments``,
    ``collections.shared``, ``speakers.shared``, ``prompts.shared``,
    ``org.defaults``, ``asr.model_selection``, ``llm.byok``.
 
@@ -79,7 +98,7 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     # -- user-facing ------------------------------------------------------------
     "upload": True,  # file upload + presigned flow
     "recording": True,  # in-browser recording
-    "url_ingest": True,  # yt-dlp URL ingestion
+    "url_ingest": True,  # yt-dlp URL ingestion (POST /files/process-url, GET /files/youtube/quota)
     "search": True,  # hybrid/semantic search
     "exports": True,  # SRT/VTT/TXT/bulk exports
     "comments": True,  # per-transcript comments
@@ -97,6 +116,13 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     # assistant into a general-purpose chatbot, so a hosted edition may want to
     # withhold it on a free tier without disabling chat itself.
     "chat.ungrounded": True,
+    # Deployment-locked controls (issue #1109). Off = the deployment owns the value:
+    # the server ignores the user's override (or 404s the surface) and the UI hides it.
+    "transcription.model_choice": True,  # per-file Whisper model pick (upload/reprocess)
+    "transcription.diarization_source": True,  # provider/local/pyannote/off selector
+    "transcription.advanced": True,  # VAD, hallucination threshold, repetition penalty
+    "media_sources": True,  # per-user protected media sources (credentials for URL import)
+    "audio_extraction": True,  # per-user audio-extraction preferences
     # -- team-facing (inner-team collaboration) ----------------------------------
     "sharing.teams": True,  # groups + collection shares
     "collections.shared": True,  # shared/org-visible collections
@@ -122,6 +148,8 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "admin.search_indexing": True,  # reindex / embedding-model management
     "admin.embedding_migration": True,  # embedding migration + consistency panel
     "admin.task_health": True,  # stuck-task recovery / queue health panel
+    "speaker_attributes.migration": True,  # bulk speaker-attribute re-detection (all files)
+    "admin.flower": True,  # Flower task dashboard link + its reverse-proxy auth probe
 }
 
 # Every capability key MUST be classified, and the two maps must carry the
@@ -144,6 +172,11 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "watch_sources": AUDIENCE_USER,
     "chat.rag": AUDIENCE_USER,
     "chat.ungrounded": AUDIENCE_USER,
+    "transcription.model_choice": AUDIENCE_USER,
+    "transcription.diarization_source": AUDIENCE_USER,
+    "transcription.advanced": AUDIENCE_USER,
+    "media_sources": AUDIENCE_USER,
+    "audio_extraction": AUDIENCE_USER,
     "sharing.teams": AUDIENCE_TEAM,
     "collections.shared": AUDIENCE_TEAM,
     "speakers.shared": AUDIENCE_TEAM,
@@ -166,6 +199,8 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "admin.search_indexing": AUDIENCE_PLATFORM,
     "admin.embedding_migration": AUDIENCE_PLATFORM,
     "admin.task_health": AUDIENCE_PLATFORM,
+    "speaker_attributes.migration": AUDIENCE_PLATFORM,
+    "admin.flower": AUDIENCE_PLATFORM,
 }
 
 # Resolver signature: (request | None) -> capability dict. The request is
@@ -182,7 +217,12 @@ _resolver: CapabilityResolver = _community_resolver
 
 
 def set_capability_resolver(resolver: CapabilityResolver) -> None:
-    """Replace the capability resolver (registered by the cloud layer)."""
+    """Replace the capability resolver (registered by an external edition).
+
+    The resolver must return EVERY key it means to grant, as ``True``: anything
+    it omits is denied (see ``get_capabilities``). Build on
+    ``{**COMMUNITY_CAPABILITIES, ...}`` to override only a few keys.
+    """
     global _resolver
     logger.info("Capability resolver overridden (cloud edition)")
     _resolver = resolver
@@ -197,14 +237,50 @@ def reset_capability_resolver() -> None:
 def get_capabilities(request: Request | None = None) -> dict[str, bool]:
     """Effective capability map for this deployment/request.
 
-    Unknown keys from a custom resolver are passed through; missing known
-    keys fall back to the community defaults so a partial resolver cannot
-    accidentally disable surfaces it never considered.
+    Fails CLOSED (issue #868): a capability is on only when the resolver
+    returned it as exactly ``True``. A known key the resolver omitted, a
+    non-bool value, a ``None``/non-dict result, or a resolver that raises all
+    read as *not granted*. Merging over ``COMMUNITY_CAPABILITIES`` instead
+    would silently hand a tier-gated surface to every tenant the moment a
+    resolver skipped a key on some code path. The community resolver returns
+    the full map, so its result is unchanged.
+
+    Unknown keys the resolver grants are passed through.
     """
-    resolved = _resolver(request)
-    caps = dict(COMMUNITY_CAPABILITIES)
-    caps.update(resolved)
+    denied = dict.fromkeys(COMMUNITY_CAPABILITIES, False)
+    try:
+        resolved = _resolver(request)
+    except Exception:
+        logger.exception("Capability resolver raised; denying every capability")
+        return denied
+    if not isinstance(resolved, dict):
+        logger.error(
+            "Capability resolver returned %s, not a dict; denying every capability",
+            type(resolved).__name__,
+        )
+        return denied
+
+    missing = frozenset(COMMUNITY_CAPABILITIES) - resolved.keys()
+    if missing:
+        _warn_once(f"Capability resolver omitted key(s) {sorted(missing)}; denying them")
+    non_bool = sorted(k for k, v in resolved.items() if not isinstance(v, bool))
+    if non_bool:
+        _warn_once(f"Capability resolver returned non-bool value(s) for {non_bool}; denying them")
+
+    caps = denied
+    caps.update({key: value is True for key, value in resolved.items()})
     return caps
+
+
+#: Resolver-drift warnings already logged — one line per distinct problem per
+#: process, not one per request (this runs on every gated request).
+_warned: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    if message not in _warned:
+        _warned.add(message)
+        logger.warning(message)
 
 
 def capability_enabled(key: str, request: Request | None = None) -> bool:

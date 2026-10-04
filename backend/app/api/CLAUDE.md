@@ -24,7 +24,10 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   frontend capability check is cosmetic), and `scope_to_context(query, model, ctx)`.
 - `websockets.py` — `/ws`, the in-process `ConnectionManager`, and the Redis subscriber on the
   `websocket_notifications` channel.
-- `endpoints/metrics.py` — `/metrics`, mounted at **root** (no `/api`), unauthenticated by design.
+- `endpoints/metrics.py` — `/metrics` and `/metrics/queues`, mounted at **root** (no `/api`),
+  unauthenticated by design. `/metrics/queues` is the autoscaler page: only
+  `celery_queue_depth`/`celery_queue_reserved`, one Redis round trip, no DB. On `/metrics` the
+  DB-backed backup/mirror gauges refresh at most once per `JOB_METRICS_TTL_SECONDS` (#1001).
 - `endpoints/scim/` — SCIM 2.0, also mounted at **root** (`/scim/v2`, RFC 7644 §3.1 fixes the
   base path). Bearer-token authenticated, not session-authenticated, and deliberately **not**
   rate limited; its errors are SCIM Error resources via `main.py`'s `SCIMError` handler.
@@ -225,6 +228,14 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   the row + leaked the MinIO object; the presigned route had no handling around dispatch at all,
   so a non-`ASRConfigurationError` failure left the row at PENDING forever — invisible to
   `orphan_upload_sweeper`, which deliberately skips a PENDING row whose object exists.
+- **A size check inside an `UploadFile` handler is too late to protect the disk** (issue #999).
+  FastAPI spools the whole multipart body to a temp file before the handler runs. The byte
+  ceiling for `POST /files` and the speaker-profile avatar upload is enforced while the body
+  streams, by `middleware/upload_limit.py` (Content-Length first, then a running count → 413).
+  A new route that accepts an `UploadFile` needs an entry there. The `POST /files` ceiling is
+  `MAX_UPLOAD_BYTES` + framing allowance — never lower, because the browser falls back to that
+  route for files the presigned flow could not take. Presigned PUT / multipart never carry
+  bytes through the API and are not governed by it.
 - **`user.email` on an existing account is writable through exactly THREE authorities**
   (issue #867 follow-up): the account holder themselves, via `PUT /users/me` (password-proven);
   a super_admin, via `PUT /admin/users/{uuid}/external-email`, for an already-linked account

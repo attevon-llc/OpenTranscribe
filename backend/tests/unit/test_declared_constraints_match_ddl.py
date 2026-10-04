@@ -121,7 +121,9 @@ UNIQUE_INDEXES = [
     ),
     IndexDecl("uq_user_external_id", "user", ("external_id",), predicate="external_id IS NOT NULL"),
     IndexDecl(
-        "_custom_vocab_unique", "custom_vocabulary", ("COALESCE(user_id, 0)", "term", "domain")
+        "uq_custom_vocab_user_tenant_term",
+        "custom_vocabulary",
+        ("COALESCE(user_id, 0)", "COALESCE(organization_id, 0)", "term", "domain"),
     ),
     IndexDecl(
         "_watch_source_file_path_unique", "watch_source_file", ("watch_source_id", "remote_path")

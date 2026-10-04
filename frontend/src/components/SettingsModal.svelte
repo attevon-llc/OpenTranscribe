@@ -320,11 +320,11 @@
     {
       title: $t('settings.sections.mediaOutput'),
       items: [
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'exports' },
-        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'url_ingest' },
+        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link', cap: 'media_sources' },
         { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' }
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio', cap: 'audio_extraction' }
       ]
     },
     // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'

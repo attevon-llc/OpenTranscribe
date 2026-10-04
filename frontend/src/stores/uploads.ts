@@ -7,37 +7,26 @@ interface UploadStoreState {
   uploads: UploadItem[];
   isExpanded: boolean;
   hasNewActivity: boolean;
-  /**
-   * Whether the user has EXPLICITLY collapsed the tray (as opposed to it
-   * simply starting collapsed). Distinct from `isExpanded` so the tray can
-   * auto-expand on new activity (#752 gap 1) without fighting a user who
-   * deliberately closed it: two booleans is the minimum honest model here.
-   * Persisted to localStorage so the choice survives a page reload; cleared
-   * on `reset()` (logout) so it does not leak between users on a shared
-   * device.
-   */
+  /** The user explicitly closed the tray; auto-expand must not reopen it. */
   userCollapsed: boolean;
 }
 
-const USER_COLLAPSED_KEY = 'opentr:uploadTrayCollapsed';
+const USER_COLLAPSED_KEY = 'upload-tray-user-collapsed';
 
-function readUserCollapsed(): boolean {
+function loadUserCollapsed(): boolean {
   try {
-    return localStorage.getItem(USER_COLLAPSED_KEY) === 'true';
+    return localStorage.getItem(USER_COLLAPSED_KEY) === '1';
   } catch {
     return false;
   }
 }
 
-function persistUserCollapsed(collapsed: boolean): void {
+function saveUserCollapsed(value: boolean): void {
   try {
-    if (collapsed) {
-      localStorage.setItem(USER_COLLAPSED_KEY, 'true');
-    } else {
-      localStorage.removeItem(USER_COLLAPSED_KEY);
-    }
+    if (value) localStorage.setItem(USER_COLLAPSED_KEY, '1');
+    else localStorage.removeItem(USER_COLLAPSED_KEY);
   } catch {
-    /* localStorage unavailable (private mode / quota) — in-memory state still works */
+    // persistence is best-effort
   }
 }
 
@@ -47,7 +36,7 @@ function createUploadStore() {
     uploads: [],
     isExpanded: false,
     hasNewActivity: false,
-    userCollapsed: readUserCollapsed(),
+    userCollapsed: loadUserCollapsed(),
   };
 
   const { subscribe, set, update } = writable<UploadStoreState>(initialState);
@@ -60,24 +49,22 @@ function createUploadStore() {
     update((state) => {
       const uploads = uploadService.getAllUploads();
       let hasNewActivity = state.hasNewActivity;
-      let isExpanded = state.isExpanded;
 
       // Mark new activity for certain events
       if (['added', 'completed', 'failed'].includes(event.type)) {
         hasNewActivity = true;
       }
 
-      // Auto-expand the tray (Drive-style) the first time an upload starts,
-      // unless the user has explicitly collapsed it before (#752 gap 1).
-      if (event.type === 'added' && !state.isExpanded && !state.userCollapsed) {
-        isExpanded = true;
-        hasNewActivity = false;
-      }
+      // Surface the tray when the first upload starts, unless the user has
+      // closed it on purpose.
+      const firstUploadStarted =
+        event.type === 'added' && state.uploads.length === 0 && uploads.length > 0;
+      const isExpanded = state.isExpanded || (firstUploadStarted && !state.userCollapsed);
 
       return {
         ...state,
         uploads,
-        hasNewActivity,
+        hasNewActivity: isExpanded && !state.isExpanded ? false : hasNewActivity,
         isExpanded,
       };
     });
@@ -94,7 +81,7 @@ function createUploadStore() {
 
     // Actions
     expand() {
-      persistUserCollapsed(false);
+      saveUserCollapsed(false);
       update((state) => ({
         ...state,
         isExpanded: true,
@@ -104,7 +91,7 @@ function createUploadStore() {
     },
 
     collapse() {
-      persistUserCollapsed(true);
+      saveUserCollapsed(true);
       update((state) => ({
         ...state,
         isExpanded: false,
@@ -114,13 +101,12 @@ function createUploadStore() {
 
     toggle() {
       update((state) => {
-        const nextExpanded = !state.isExpanded;
-        persistUserCollapsed(!nextExpanded);
+        saveUserCollapsed(state.isExpanded);
         return {
           ...state,
-          isExpanded: nextExpanded,
-          hasNewActivity: nextExpanded ? false : state.hasNewActivity, // Clear if expanding
-          userCollapsed: !nextExpanded,
+          userCollapsed: state.isExpanded,
+          isExpanded: !state.isExpanded,
+          hasNewActivity: state.isExpanded ? state.hasNewActivity : false, // Clear if expanding
         };
       });
     },
@@ -214,7 +200,7 @@ function createUploadStore() {
      */
     reset() {
       uploadService.reset();
-      persistUserCollapsed(false);
+      saveUserCollapsed(false);
       set({ uploads: [], isExpanded: false, hasNewActivity: false, userCollapsed: false });
     },
 

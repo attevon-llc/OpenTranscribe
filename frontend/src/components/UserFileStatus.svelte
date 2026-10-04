@@ -9,6 +9,7 @@
   import { t } from '../stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { getFlowerUrl } from '$lib/utils/url';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import SkeletonLoader from './ui/SkeletonLoader.svelte';
   import TaskFilterPanel from '$components/fileStatus/TaskFilterPanel.svelte';
   import TasksGrid from '$components/fileStatus/TasksGrid.svelte';
@@ -17,6 +18,8 @@
   // Flower exposes task arguments (file/user IDs) and worker topology, so the
   // entry is admin-only. Cosmetic only — nginx auth_request is the real gate.
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+  // A deployment may not run Flower at all; its auth probe then denies everyone.
+  $: flowerEnabled = isCapabilityEnabled($capabilities, 'admin.flower');
 
   // Component state
   let loading = false;
@@ -394,7 +397,7 @@
         </svg>
       </span>
 
-      {#if isAdmin}
+      {#if isAdmin && flowerEnabled}
         <button
           class="flower-btn"
           on:click={openFlowerDashboard}

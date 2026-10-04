@@ -22,6 +22,7 @@
   let loading = false;
   let configs: Record<string, any> = {};
   let hasUnsavedChanges = false;
+  let policyRefresh = 0;
   let backendNotReady = false; // Backend is fully implemented
 
   /**
@@ -57,11 +58,17 @@
       'password_require_digit',
       'password_require_special',
       'password_max_age_days',
-      'password_history_count'
+      'password_history_count',
+      'password_policy_profile',
+      'password_max_length',
+      'password_min_age_hours',
+      'password_blocklist_enabled',
+      'password_hibp_enabled'
     ],
     mfa: [
       'mfa_enabled',
       'mfa_required',
+      'mfa_required_for_admins',
       'mfa_issuer_name',
       'mfa_backup_code_count',
       'mfa_token_expire_minutes'
@@ -253,6 +260,7 @@
     }
 
     await loadConfigs();
+    policyRefresh += 1;
   }
 
   /**
@@ -309,25 +317,25 @@
         <div class="config-method">
           <h4>{$t('settings.authentication.method.ldap')}</h4>
           <code>LDAP_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/LDAP_AUTH.md" target="_blank" rel="noopener noreferrer">LDAP_AUTH.md</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/LDAP_AUTH.md" target="_blank" rel="noopener noreferrer">LDAP_AUTH.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.oidc')}</h4>
           <code>OIDC_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/OIDC_SETUP.md" target="_blank" rel="noopener noreferrer">OIDC_SETUP.md</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/OIDC_SETUP.md" target="_blank" rel="noopener noreferrer">OIDC_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.pki')}</h4>
           <code>PKI_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/PKI_SETUP.md" target="_blank" rel="noopener noreferrer">PKI_SETUP.md</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/PKI_SETUP.md" target="_blank" rel="noopener noreferrer">PKI_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.mfa')}</h4>
           <code>MFA_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/example_env.txt" target="_blank" rel="noopener noreferrer">example_env.txt</a></p>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/attevon-llc/OpenTranscribe/blob/master/.env.example" target="_blank" rel="noopener noreferrer">.env.example</a></p>
         </div>
       </div>
 
@@ -355,6 +363,7 @@
         {#if activeTab === 'local'}
           <LocalAuthSettings
             config={localTabConfig}
+            refreshKey={policyRefresh}
             on:save={(e) => handleLocalSave(e.detail)}
             on:change={handleChange}
           />

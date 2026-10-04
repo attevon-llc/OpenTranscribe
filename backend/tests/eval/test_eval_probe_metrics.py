@@ -116,6 +116,31 @@ def test_extract_turn_metrics_deduplicates_files_consulted() -> None:
     assert metrics.files_consulted == 2  # 'a' and 'b', 'a' cited twice
 
 
+def test_files_offered_is_what_reached_the_prompt_not_what_the_mock_cited() -> None:
+    """Issue #975: a 41-file scope whose prompt carried excerpts from 5 files, answered
+    by the mock LLM (which always cites exactly [1]/[2]). ``files_consulted`` reads 2
+    by construction; the metrics row must still show the 5 files retrieval delivered,
+    or a mock run reads as "retrieval collapsed to 2 files" — which is how #975 was
+    filed against a pipeline that was offering 16-23 files per turn."""
+    scope = [f"f{i:02d}" for i in range(41)]
+    offered = [{"id": n + 1, "file_uuid": scope[n % 5], "kind": "chunk"} for n in range(38)]
+    record = _record(
+        scope_file_uuids=scope,
+        files_consulted_uuids=["f00", "f01"],
+        offered_citations=offered,
+    )
+    row = build_probe_rows([record])[0]
+    assert row["files_consulted"] == 2
+    assert row["files_offered"] == 5
+    assert "| 2 | 5 |" in render_probe_table([row])
+
+
+def test_files_offered_is_none_when_the_record_never_captured_offers() -> None:
+    """A record with no ``offered_citations`` key was not measured — ``None``, not 0."""
+    assert extract_turn_metrics(_record()).files_offered is None
+    assert extract_turn_metrics(_record(offered_citations=[])).files_offered == 0
+
+
 def test_extract_turn_metrics_errored_flag() -> None:
     ok = extract_turn_metrics(_record(error=None))
     failed = extract_turn_metrics(_record(error="RuntimeError: boom"))
@@ -322,6 +347,7 @@ def test_probe_turn_metrics_as_json_field_shape() -> None:
         expect_refusal=False,
         errored=False,
         files_consulted=1,
+        files_offered=1,
         chunks_used=4,
         retrieved=48,
         coverage_ratio=1.0,
@@ -336,6 +362,7 @@ def test_probe_turn_metrics_as_json_field_shape() -> None:
         "expect_refusal",
         "errored",
         "files_consulted",
+        "files_offered",
         "chunks_used",
         "retrieved",
         "coverage_ratio",

@@ -146,7 +146,9 @@ def _wired_service(monkeypatch):
 def _resolve_policy_sequence(monkeypatch, configs: list):
     """`_resolve_redaction_config_for_cache` returns `configs` in call order."""
     it = iter(configs)
-    monkeypatch.setattr(hss, "_resolve_redaction_config_for_cache", lambda user_id: next(it))
+    monkeypatch.setattr(
+        hss, "_resolve_redaction_config_for_cache", lambda user_id, organization_id=None: next(it)
+    )
 
 
 class TestLiveSearchDoesNotCollideAcrossPolicies:

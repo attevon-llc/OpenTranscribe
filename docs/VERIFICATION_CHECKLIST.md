@@ -6,7 +6,7 @@
 **✅ CONFIRMED: Copy this command on ANY operating system:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ## 🌍 Platform Support Matrix
@@ -158,7 +158,7 @@ Figures reflect the full pipeline (preprocess + GPU + postprocess) with `large-v
 **✅ CONFIRMED**: OpenTranscribe can be installed on **ANY** operating system with this single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 **What happens automatically:**

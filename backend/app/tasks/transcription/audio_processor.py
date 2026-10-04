@@ -5,6 +5,8 @@ from pathlib import Path
 
 import ffmpeg
 
+from app.utils.cpu_budget import effective_cpu_count
+
 logger = logging.getLogger(__name__)
 
 # Type alias for progress callback: (progress: float 0-1, message: str) -> None
@@ -35,7 +37,7 @@ def _ffmpeg_threads() -> int:
     if raw.isdigit():
         return int(raw)
     if raw == "auto":
-        cores = os.cpu_count() or 4
+        cores = effective_cpu_count()
         try:
             concurrency = max(1, int(os.environ.get("CPU_WORKER_CONCURRENCY", "8")))
         except ValueError:

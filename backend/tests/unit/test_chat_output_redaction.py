@@ -314,7 +314,9 @@ async def _run_turn(monkeypatch, *, deltas, cfg, chunks=None):
         ),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
-    monkeypatch.setattr(chat_service, "_resolve_output_policy", lambda _user_id: cfg)
+    monkeypatch.setattr(
+        chat_service, "_resolve_output_policy", lambda _user_id, _organization_id=None: cfg
+    )
 
     captured: dict = {}
 

@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import EmbeddingPriority
 from app.core.constants import UtilityPriority
@@ -108,6 +109,7 @@ def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[
     max_retries=3,
     default_retry_delay=30,
 )
+@stage_timing.stage("search_indexing")
 def index_transcript_search_task(  # noqa: C901
     self,
     file_id: int,
@@ -280,7 +282,13 @@ def index_transcript_search_task(  # noqa: C901
             full_transcript = generate_full_transcript(seg_dicts_full)
             doc_speaker_names = get_unique_speaker_names(seg_dicts_full)
             index_transcript(
-                file_id, file_uuid, user_id, full_transcript, doc_speaker_names, doc_title
+                file_id,
+                file_uuid,
+                user_id,
+                full_transcript,
+                doc_speaker_names,
+                doc_title,
+                organization_id=meta["organization_id"],
             )
         except Exception as full_doc_err:
             logger.warning(f"Full-document transcript indexing failed (non-fatal): {full_doc_err}")

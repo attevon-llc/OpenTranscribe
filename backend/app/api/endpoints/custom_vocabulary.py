@@ -18,8 +18,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app import models
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.utils.db_helpers import org_stamp_is
 from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
@@ -54,6 +57,46 @@ def _get_vocab_model():
     from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
 
     return CustomVocabulary
+
+
+# ---------------------------------------------------------------------------
+# Tenant scope
+# ---------------------------------------------------------------------------
+#
+# A user's terms are stamped with the tenant they were created in (``organization_id``,
+# NULL = personal) and are listed, exported, edited and applied only there. Rows with
+# no owner are shared terms: unstamped ones are instance-wide, stamped ones belong to
+# that organization. Community edition: every row is unstamped and every caller is in
+# personal scope, so nothing changes there.
+
+
+def _own_terms(vocab: Any, ctx: RequestContext) -> Any:
+    """Predicate: the caller's own terms in the active tenant."""
+    return (vocab.user_id == ctx.user.id) & org_stamp_is(vocab.organization_id, ctx.org_id)
+
+
+def _shared_terms(vocab: Any, org_id: int | None) -> Any:
+    """Predicate: owner-less terms visible in tenant ``org_id``."""
+    visible_stamp = vocab.organization_id.is_(None)
+    if org_id is not None:
+        visible_stamp = visible_stamp | (vocab.organization_id == org_id)
+    return vocab.user_id.is_(None) & visible_stamp
+
+
+def _get_term_in_tenant(db: Session, term_id: int, ctx: RequestContext) -> Any:
+    """Fetch a term visible in the active tenant, else 404."""
+    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+
+    term = db.query(CustomVocabulary).filter(CustomVocabulary.id == term_id).first()
+    if not term:
+        raise HTTPException(status_code=404, detail="Vocabulary term not found")
+    if term.user_id is None:
+        in_tenant = term.organization_id is None or term.organization_id == ctx.org_id
+    else:
+        in_tenant = term.organization_id == ctx.org_id
+    if not in_tenant:
+        raise HTTPException(status_code=404, detail="Vocabulary term not found")
+    return term
 
 
 # ---------------------------------------------------------------------------
@@ -94,20 +137,20 @@ def list_vocabulary(
     domain: str | None = None,
     active_only: bool = True,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
     List vocabulary terms visible to the current user.
 
-    Returns both the user's own terms and system-wide terms (user_id IS NULL).
-    Optionally filter by domain.
+    Returns the user's own terms in the active tenant and the shared terms
+    (user_id IS NULL) visible there. Optionally filter by domain.
     """
     from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
 
     # User's own terms
-    user_q = db.query(CustomVocabulary).filter(CustomVocabulary.user_id == current_user.id)
+    user_q = db.query(CustomVocabulary).filter(_own_terms(CustomVocabulary, ctx))
     # System terms (shared, read-only for non-admins)
-    system_q = db.query(CustomVocabulary).filter(CustomVocabulary.user_id.is_(None))
+    system_q = db.query(CustomVocabulary).filter(_shared_terms(CustomVocabulary, ctx.org_id))
 
     if domain:
         if domain not in SUPPORTED_DOMAINS:
@@ -137,10 +180,12 @@ def list_vocabulary(
 def create_vocabulary_term(
     body: dict,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
-    """Create a new custom vocabulary term for the current user."""
+    """Create a new custom vocabulary term for the current user in the active tenant."""
     from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+
+    current_user = ctx.user
 
     term_text = (body.get("term") or "").strip()
     if not term_text:
@@ -165,11 +210,12 @@ def create_vocabulary_term(
             detail=f"Invalid domain '{domain}'. Supported: {', '.join(SUPPORTED_DOMAINS)}",
         )
 
-    # Duplicate check (per-user + domain)
+    # Duplicate check: per user + domain inside the active tenant, the same rule as
+    # the unique index (v430).
     existing = (
         db.query(CustomVocabulary)
         .filter(
-            CustomVocabulary.user_id == current_user.id,
+            _own_terms(CustomVocabulary, ctx),
             CustomVocabulary.term == term_text,
             CustomVocabulary.domain == domain,
         )
@@ -183,6 +229,7 @@ def create_vocabulary_term(
 
     term = CustomVocabulary(
         user_id=current_user.id,
+        organization_id=ctx.org_id,
         term=term_text,
         domain=domain,
         category=category,
@@ -200,14 +247,11 @@ def update_vocabulary_term(  # noqa: C901
     term_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Update a custom vocabulary term (users can only modify their own terms)."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
-
-    term = db.query(CustomVocabulary).filter(CustomVocabulary.id == term_id).first()
-    if not term:
-        raise HTTPException(status_code=404, detail="Vocabulary term not found")
+    current_user = ctx.user
+    term = _get_term_in_tenant(db, term_id, ctx)
 
     # Ownership check: system terms (user_id=None) are read-only for non-admins
     if term.user_id is None:
@@ -251,6 +295,24 @@ def update_vocabulary_term(  # noqa: C901
     if "is_active" in body:
         term.is_active = bool(body["is_active"])  # type: ignore[assignment]
 
+    if "term" in body or "domain" in body:
+        vocab = _get_vocab_model()
+        with db.no_autoflush:
+            clash = (
+                db.query(vocab.id)
+                .filter(
+                    _own_terms(vocab, ctx),
+                    vocab.term == term.term,
+                    vocab.domain == term.domain,
+                    vocab.id != term.id,
+                )
+                .first()
+            )
+        if clash:
+            detail = f"Term '{term.term}' already exists in domain '{term.domain}'"
+            db.expire(term)  # drop the pending edit so nothing flushes it later
+            raise HTTPException(status_code=409, detail=detail)
+
     db.add(term)
     db.commit()
     db.refresh(term)
@@ -262,12 +324,12 @@ def update_vocabulary_term(  # noqa: C901
 def delete_all_user_vocabulary(
     domain: str | None = None,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> None:
-    """Delete all custom vocabulary terms for the current user (optionally filter by domain)."""
+    """Delete the current user's terms in the active tenant (optionally filter by domain)."""
     from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
 
-    q = db.query(CustomVocabulary).filter(CustomVocabulary.user_id == current_user.id)
+    q = db.query(CustomVocabulary).filter(_own_terms(CustomVocabulary, ctx))
     if domain:
         if domain not in SUPPORTED_DOMAINS:
             raise HTTPException(
@@ -276,7 +338,7 @@ def delete_all_user_vocabulary(
             )
         q = q.filter(CustomVocabulary.domain == domain)
 
-    q.delete()
+    q.delete(synchronize_session=False)
     db.commit()
 
 
@@ -284,14 +346,11 @@ def delete_all_user_vocabulary(
 def delete_vocabulary_term(
     term_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> None:
     """Delete a custom vocabulary term (users can only delete their own terms)."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
-
-    term = db.query(CustomVocabulary).filter(CustomVocabulary.id == term_id).first()
-    if not term:
-        raise HTTPException(status_code=404, detail="Vocabulary term not found")
+    current_user = ctx.user
+    term = _get_term_in_tenant(db, term_id, ctx)
 
     if term.user_id is None:
         raise HTTPException(
@@ -310,10 +369,10 @@ def delete_vocabulary_term(
 def bulk_import_vocabulary(  # noqa: C901
     body: dict,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """
-    Bulk import vocabulary terms.
+    Bulk import vocabulary terms into the active tenant.
 
     Expected body: { "terms": [ {"term": str, "domain": str, "category": str|null}, ... ] }
 
@@ -322,6 +381,7 @@ def bulk_import_vocabulary(  # noqa: C901
     """
     from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
 
+    current_user = ctx.user
     raw_terms = body.get("terms", [])
     if not isinstance(raw_terms, list):
         raise HTTPException(status_code=400, detail="'terms' must be a list")
@@ -384,12 +444,13 @@ def bulk_import_vocabulary(  # noqa: C901
             "message": f"Imported {created} terms, skipped {skipped}",
         }
 
-    # Single query to fetch all existing (term, domain) pairs for this user.
+    # Single query to fetch the existing (term, domain) pairs of this user in the
+    # active tenant — the unique index is per user per tenant (v430).
     # Avoids one DB round-trip per validated term (N+1 → 1 query).
     existing_pairs: set[tuple[str, str]] = {
         (row.term, row.domain)
         for row in db.query(CustomVocabulary.term, CustomVocabulary.domain)
-        .filter(CustomVocabulary.user_id == current_user.id)
+        .filter(_own_terms(CustomVocabulary, ctx))
         .all()
     }
 
@@ -403,6 +464,7 @@ def bulk_import_vocabulary(  # noqa: C901
         db.add(
             CustomVocabulary(
                 user_id=current_user.id,
+                organization_id=ctx.org_id,
                 term=item["term"],
                 domain=item["domain"],
                 category=item["category"],
@@ -427,12 +489,13 @@ def export_vocabulary(
     domain: str | None = None,
     active_only: bool = False,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
-    """Export user's custom vocabulary terms as JSON."""
+    """Export the user's custom vocabulary terms in the active tenant as JSON."""
     from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
 
-    q = db.query(CustomVocabulary).filter(CustomVocabulary.user_id == current_user.id)
+    current_user = ctx.user
+    q = db.query(CustomVocabulary).filter(_own_terms(CustomVocabulary, ctx))
 
     if domain:
         if domain not in SUPPORTED_DOMAINS:

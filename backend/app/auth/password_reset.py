@@ -13,6 +13,7 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import validate_password
@@ -167,6 +168,29 @@ def _audit_reset_complete(
     )
 
 
+def reset_token_owner(db: Session, raw_token: str) -> User | None:
+    """The account a live (unused, unexpired) reset token belongs to, or None.
+
+    Read-only and unaudited: it lets a caller decide whether a redemption may
+    proceed at all before :func:`confirm_password_reset` does the audited work.
+    """
+    if not raw_token:
+        return None
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    record = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > datetime.now(UTC),
+        )
+        .first()
+    )
+    if record is None:
+        return None
+    return db.query(User).filter(User.id == record.user_id).first()
+
+
 def confirm_password_reset(
     db: Session, raw_token: str, new_password: str, ip_address: str | None = None
 ) -> tuple[bool, list[str]]:
@@ -213,7 +237,11 @@ def confirm_password_reset(
     # deployment that enabled the policy in the admin UI while .env still said false
     # got no password validation at all — on the reset path only, while every other
     # path enforced it. The one place a weak password is most likely to be chosen.
-    result = validate_password(new_password, email=str(user.email))
+    result = validate_password(
+        new_password,
+        email=str(user.email),
+        mfa_protected=user_is_mfa_protected(db, user),
+    )
     if not result.is_valid:
         _audit_reset_complete(AuditOutcome.FAILURE, "POLICY_REJECTED", ip_address, user)
         return False, result.errors

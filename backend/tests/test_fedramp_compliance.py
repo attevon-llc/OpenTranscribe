@@ -102,7 +102,13 @@ class TestPasswordPolicy:
         # `min_age_hours` shipped without one and nothing failed.
         assert set(requirements) == {
             "enabled",
+            "profile",
             "min_length",
+            "min_length_with_mfa",
+            "max_length",
+            "blocklist_enabled",
+            "blocklist_status",
+            "online_check_enabled",
             "require_uppercase",
             "require_lowercase",
             "require_digit",

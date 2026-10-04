@@ -576,6 +576,10 @@ def test_provider_error_is_delivered_in_band(client, auth_headers):
             body = b"".join(stream.iter_bytes()).decode()
 
     assert "event: error" in body
+    # Provider prose stays in the server log, never on the wire (issue #1049). The
+    # persisted row is pinned in tests/unit/test_chat_provider_error_frames.py —
+    # this harness's savepoint session is invisible to the turn's own persistence.
+    assert "provider exploded" not in body
 
 
 def test_missing_llm_is_a_clean_400_not_a_broken_stream(client, auth_headers):
@@ -895,11 +899,12 @@ def test_export_rejects_an_unknown_format(client, auth_headers):
 
 def test_disabling_the_capability_hides_the_whole_router(client, auth_headers):
     """404 (not 403): a disabled surface should not exist for this deployment."""
+    from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
 
     def without_chat(_request):
-        return {"chat.rag": False}
+        return {**COMMUNITY_CAPABILITIES, "chat.rag": False}
 
     set_capability_resolver(without_chat)
     try:

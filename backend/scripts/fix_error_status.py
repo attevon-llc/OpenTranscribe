@@ -35,6 +35,7 @@ RETRIABLE_CATEGORIES = (
     ErrorCategory.DUPLICATE_KEY,
     ErrorCategory.WORKER_LOST,
     ErrorCategory.OOM_ERROR,
+    ErrorCategory.GPU_OOM,
     ErrorCategory.SYSTEM_ERROR,
     ErrorCategory.UNKNOWN,
 )

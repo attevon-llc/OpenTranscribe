@@ -52,7 +52,7 @@
   import { downloadStore } from '$stores/downloads';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
-  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
   import Spinner from '../../../components/ui/Spinner.svelte';
   import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
@@ -66,7 +66,11 @@
   let file: any = null;
   let fileId = '';
   let videoUrl = '';
+  let streamContentType = '';
+  let playbackMode: PlaybackMode | null = null;
   let pageErrorMessage = '';
+  // 404/403: the file is missing or not visible to this user; retrying can't help.
+  let fileNotFound = false;
   let videoErrorMessage = '';
   let apiBaseUrl = '';
   let videoPlayerComponent: any = null;
@@ -364,6 +368,7 @@
     try {
       isLoading = true;
       pageErrorMessage = '';
+      fileNotFound = false;
       videoErrorMessage = '';
 
       const response = await axiosInstance.get(`/files/${targetFileId}`, {
@@ -405,7 +410,13 @@
       }
     } catch (error) {
       console.error('Error fetching file details:', error);
-      pageErrorMessage = $t('fileDetail.failedToLoadFile');
+      const status = getErrorStatus(error);
+      if (status === 404 || status === 403) {
+        fileNotFound = true;
+        pageErrorMessage = $t('fileDetail.notFoundOrNoAccess');
+      } else {
+        pageErrorMessage = $t('fileDetail.failedToLoadFile');
+      }
       isLoading = false;
     }
   }
@@ -824,12 +835,19 @@
       clearMediaUrlCache(fileId);
 
       // Get presigned URL from backend (authenticated, time-limited)
-      videoUrl = await getMediaStreamUrl(fileId, 'video');
+      const url = await getMediaStreamUrl(fileId, 'video');
+
+      // What the URL serves can differ from the upload: a converted copy of audio no
+      // browser decodes, or only the audio track of a video no browser shows. Set before
+      // videoUrl so the player picks <audio> vs <video> from the right type.
+      const info = getCachedUrlInfo(fileId, 'video');
+      streamContentType = info?.contentType ?? '';
+      playbackMode = info?.playback ?? null;
+      videoUrl = url;
 
       // Set up automatic URL refresh for long videos, using the URL's real expiry
       // (MEDIA_URL_EXPIRE_SECONDS) rather than a hardcoded interval — avoids needlessly
       // re-fetching and re-setting the video src mid-playback.
-      const info = getCachedUrlInfo(fileId, 'video');
       const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
       urlRefresher = createUrlRefresher(
         fileId,
@@ -2207,7 +2225,8 @@
 </script>
 
 <svelte:head>
-  <title>{file?.filename || $t('fileDetail.loadingFile')}</title>
+  <title>{file?.filename ||
+    (fileNotFound ? $t('fileDetail.notFoundTitle') : $t('fileDetail.loadingFile'))}</title>
 </svelte:head>
 
 <div class="file-detail-page">
@@ -2218,10 +2237,14 @@
   {:else if pageErrorMessage}
     <div class="error-container">
       <p class="error-message">{pageErrorMessage}</p>
-      <button
-        on:click={() => fetchFileDetails()}
-        title={$t('fileDetail.retryTooltip')}
-      >{$t('fileDetail.tryAgain')}</button>
+      {#if fileNotFound}
+        <a href="/" class="back-to-gallery-link">{$t('nav.backToGallery')}</a>
+      {:else}
+        <button
+          on:click={() => fetchFileDetails()}
+          title={$t('fileDetail.retryTooltip')}
+        >{$t('fileDetail.tryAgain')}</button>
+      {/if}
     </div>
   {:else if file}
     <div class="file-header">
@@ -2257,6 +2280,8 @@
         <VideoPlayer
           bind:this={videoPlayerComponent}
           {videoUrl}
+          {streamContentType}
+          {playbackMode}
           {file}
           {isPlayerBuffering}
           {loadProgress}
@@ -2588,6 +2613,17 @@
 
   .error-container button:hover {
     background: var(--primary-hover);
+  }
+
+  .back-to-gallery-link {
+    color: var(--primary-color);
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .back-to-gallery-link:hover {
+    text-decoration: underline;
   }
 
 

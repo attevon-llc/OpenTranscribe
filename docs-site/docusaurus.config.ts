@@ -88,11 +88,33 @@ const isEmbedded = process.env.DOCS_BASE_URL === '/docs/';
 // In embedded mode, links must NOT include the /docs/ prefix — Docusaurus adds the
 // baseUrl automatically. On the public site (baseUrl='/'), /docs/ prefix is needed.
 const docsPrefix = isEmbedded ? '' : '/docs';
+const baseUrl = process.env.DOCS_BASE_URL || '/';
+// Browsers cache favicons aggressively; bump this whenever the icon files change.
+const iconVersion = 'v=2';
 
 const config: Config = {
   title: 'OpenTranscribe',
   tagline: 'AI-Powered Transcription and Media Analysis Platform',
-  favicon: 'img/favicon.ico',
+  favicon: `img/favicon.ico?${iconVersion}`,
+  headTags: [
+    ...[16, 32, 48].map((size) => ({
+      tagName: 'link',
+      attributes: {
+        rel: 'icon',
+        type: 'image/png',
+        sizes: `${size}x${size}`,
+        href: `${baseUrl}img/favicon-${size}.png?${iconVersion}`,
+      },
+    })),
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'apple-touch-icon',
+        sizes: '180x180',
+        href: `${baseUrl}img/apple-touch-icon.png?${iconVersion}`,
+      },
+    },
+  ],
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -111,7 +133,7 @@ const config: Config = {
   // DOCS_BASE_URL env var allows building with /docs/ prefix for in-app embedding
   // (the Docker build sets this to /docs/ so internal links work when proxied at /docs/)
   // The public site at docs.opentranscribe.app builds with the default '/'
-  baseUrl: process.env.DOCS_BASE_URL || '/',
+  baseUrl,
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
@@ -190,7 +212,6 @@ const config: Config = {
       logo: {
         alt: 'OpenTranscribe Logo',
         src: 'img/logo.png',
-        srcDark: 'img/logo-dark.png',
       },
       items: [
         {

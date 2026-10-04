@@ -59,6 +59,9 @@ def get_system_capabilities(request: Request) -> dict[str, Any]:
         # invent one. Kept in step with `validate_file_size_for_tenant`
         # (files/upload.py), which is what actually enforces it.
         "max_upload_bytes": settings.MAX_UPLOAD_BYTES,
+        # False when POST /api/files is disabled (issue #1008): the upload service must
+        # then never fall back from the presigned path to the API-mediated POST.
+        "api_mediated_upload_enabled": settings.API_MEDIATED_UPLOAD_ENABLED,
     }
 
 
@@ -243,7 +246,7 @@ def get_protected_media_auth(current_user: User = Depends(get_current_active_use
     (or other credentials) when processing media URLs.
     """
     try:
-        return get_protected_media_auth_config()
+        return get_protected_media_auth_config(user_id=current_user.id)
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422

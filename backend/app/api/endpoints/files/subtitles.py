@@ -38,11 +38,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
+def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool, organization_id=None):
     """Resolve (cfg, reveal_categories) for a subtitle export.
 
     Honors the admin forced-export lock: when ``export_locked`` is set, the original
     can never be exported regardless of the ``redact`` flag.
+
+    Args:
+        organization_id: The requester's active tenant scope (``ctx.org_id``),
+            threaded into ``resolve_effective_config`` so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
 
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
@@ -50,7 +55,7 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, current_user.id)
+        cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
     except Exception as e:
         # FAIL CLOSED. Returning None skipped the `export_locked` branch three
         # lines below and handed SubtitleService a None config, whose masking
@@ -102,7 +107,9 @@ def get_subtitles(
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
 
     # Resolve read-time redaction (export honors the censor toggle + admin floor).
-    cfg, reveal = _resolve_subtitle_redaction(db, media_file, current_user, redact)
+    cfg, reveal = _resolve_subtitle_redaction(
+        db, media_file, current_user, redact, organization_id=ctx.org_id
+    )
 
     # Withhold the export until detection has produced spans to apply. Note this
     # is checked AFTER the reveal is resolved and ignores it: `?redact=false`
@@ -231,6 +238,34 @@ def validate_subtitles(
         raise HTTPException(status_code=500, detail="Failed to validate subtitles.") from e
 
 
+def _bulk_job_signature(user_id: int | None, nonce: str) -> str:
+    """HMAC binding a bulk-export job id to the user who prepared it."""
+    import hashlib
+    import hmac
+
+    from app.core.config import settings
+
+    message = f"opentranscribe/bulk-export/v1:{user_id}:{nonce}".encode()
+    return hmac.new(settings.JWT_SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()[:32]
+
+
+def new_bulk_job_id(user_id: int | None) -> str:
+    """A job id only ``user_id`` can open the result stream for (nonce + signature)."""
+    from uuid import uuid4
+
+    nonce = uuid4().hex
+    return nonce + _bulk_job_signature(user_id, nonce)
+
+
+def bulk_job_owned_by(job: str, user_id: int | None) -> bool:
+    """True when ``job`` was issued by ``new_bulk_job_id`` for ``user_id``."""
+    import hmac
+
+    if len(job) != 64 or any(c not in "0123456789abcdef" for c in job):
+        return False
+    return hmac.compare_digest(job[32:], _bulk_job_signature(user_id, job[:32]))
+
+
 class BulkExportPrepareRequest(BaseModel):
     """Request for async bulk subtitle export."""
 
@@ -292,11 +327,9 @@ def prepare_bulk_export(
             detail="No accessible completed files to export.",
         )
 
-    from uuid import uuid4
-
     from app.tasks.media_download import prepare_bulk_subtitles_task
 
-    job_id = uuid4().hex
+    job_id = new_bulk_job_id(current_user.id)
     prepare_bulk_subtitles_task.delay(
         file_specs=file_specs,
         subtitle_format=request.subtitle_format,
@@ -306,6 +339,9 @@ def prepare_bulk_export(
         # matching the single-file export beside it (issue #85). The worker re-resolves
         # the policy from this id at run time; nothing about the policy is sent here.
         user_id=current_user.id,
+        # The requester's active tenant scope, so the worker's re-resolve actually
+        # consults a registered per-org redaction floor (issue #982/#987, #988).
+        organization_id=ctx.org_id,
     )
     return {"status": "processing", "job_id": job_id}
 
@@ -321,7 +357,12 @@ def bulk_export_stream(
     ``error`` (``{message}``). The reconnect-safe result cache is read both before and
     after subscribing, so a dropped EventSource — or a job that finishes inside the
     subscribe window (issue #334) — still delivers without polling.
+
+    The job id is signed for the user who prepared it; anyone else gets 404.
     """
+    if not bulk_job_owned_by(job, current_user.id):
+        raise HTTPException(status_code=404, detail="Export job not found")
+
     import asyncio
     import contextlib
     import json as _json

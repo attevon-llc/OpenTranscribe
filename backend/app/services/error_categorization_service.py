@@ -18,17 +18,28 @@ Error reasons include:
 - NETWORK_ERROR: Connectivity, download, or URL access issues
 - PERMISSION_ERROR: Access control, DRM, or authentication failures
 - PROCESSING_ERROR: Generic server-side processing failures
+- INTERRUPTED: Server-side interruptions (a worker lost, out of memory) that outlasted
+  every automatic retry
 - UNCLASSIFIED: Unclassified errors with fallback handling
 
 ⚠️ No-raw-echo contract: every ``user_message`` and suggestion this service returns is a
 FIXED sentence chosen by category. The raw exception text is NEVER embedded in any value
 this module returns — it is a bug to add an f-string that re-inserts ``error_message`` into
-a handler's output. The raw message stays server-side (``media_file.last_error_message`` and
-the ERROR-level log), which is where `task_detection_service.py` reads it for OOM detection.
+a handler's output. The raw exception stays in the ERROR-level log and nowhere else.
 
 ``UserErrorReason`` is the USER-FACING vocabulary, distinct from
 ``app.utils.error_classification.ErrorCategory`` — that module's enum drives RETRY policy
 (is this worth retrying, and how long to wait) and is never serialized to a client.
+
+Classify ONCE, at the failure site (issue #959): a pipeline failure handler calls
+``classify_failure(raw)`` while it still holds the raw exception, persists
+``user_message`` to ``media_file.last_error_message`` / ``task.error_message`` and
+``retry_category`` to ``media_file.error_category``. Retry policy then reads the stored
+category column and never re-derives it from stored prose, so rewording a sentence here
+cannot change retry behaviour. Read edges call ``get_error_info`` / ``error_fields_for``; a
+stored fixed sentence maps back to its own reason by exact match (``_REASON_BY_MESSAGE``),
+and legacy rows that still hold raw text fall through to the pattern match.
+``scripts/audit-error-disclosure.py`` gates the read edges.
 
 All error processing is designed to be non-breaking - if categorization fails,
 the service gracefully falls back to generic error handling.
@@ -45,8 +56,14 @@ Classes:
 """
 
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+from app.utils.error_classification import INFRASTRUCTURE_CATEGORIES
+from app.utils.error_classification import ErrorCategory
+from app.utils.error_classification import categorize_error as categorize_retry
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +76,47 @@ class UserErrorReason(StrEnum):
     NO_SPEECH = "no_speech"
     FORMAT_ISSUE = "format_issue"
     PROCESSING_ERROR = "processing_error"
+    INTERRUPTED = "interrupted"
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
     UNCLASSIFIED = "unclassified"
+
+
+#: User-facing reasons that say the INPUT is unusable. Running the same file again cannot
+#: succeed, so ``classify_failure`` gives them the permanent ``INVALID_MEDIA`` retry
+#: category unless the raw text carries an infrastructure signal (see
+#: ``INFRASTRUCTURE_CATEGORIES``). PERMISSION_ERROR is deliberately absent: "access denied"
+#: is as often our own object store as a DRM-locked upload.
+INPUT_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
+    {
+        UserErrorReason.FILE_QUALITY,
+        UserErrorReason.NO_AUDIO_TRACK,
+        UserErrorReason.NO_SPEECH,
+        UserErrorReason.FORMAT_ISSUE,
+    }
+)
+
+
+#: The PERMISSION_ERROR sub-cases that are a property of the upload itself.
+_PROTECTED_INPUT_PATTERNS = ("drm", "encrypted", "password-protected", "password protected")
+
+
+def _is_input_failure(reason: UserErrorReason, raw_error: str | None) -> bool:
+    if reason in INPUT_ERROR_REASONS:
+        return True
+    if reason == UserErrorReason.PERMISSION_ERROR and raw_error:
+        lowered = raw_error.lower()
+        return any(pattern in lowered for pattern in _PROTECTED_INPUT_PATTERNS)
+    return False
+
+
+@dataclass(frozen=True)
+class FailureClassification:
+    """What a failure site persists instead of the raw exception (issue #959)."""
+
+    retry_category: ErrorCategory
+    reason: UserErrorReason
+    user_message: str
 
 
 class ErrorCategorizationService:
@@ -85,6 +140,9 @@ class ErrorCategorizationService:
         "file damaged",
         "unreadable",
         "malformed",
+        # audio_processor.py / transcription/audio.py: an empty upload, a clip too short
+        "is empty and contains no content",
+        "too short to contain meaningful content",
     ]
 
     NO_SPEECH_PATTERNS = [
@@ -168,6 +226,10 @@ class ErrorCategorizationService:
         if len(error_message) > 10000:
             logger.warning(f"Error message truncated from {len(error_message)} to 10000 characters")
             error_message = error_message[:10000]
+
+        exact = _REASON_BY_MESSAGE.get(error_message.strip())
+        if exact is not None:
+            return exact()
 
         error_lower = error_message.lower()
 
@@ -296,6 +358,19 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
+    def _handle_interrupted_error() -> tuple[UserErrorReason, str, list[str]]:
+        """Handle a server-side interruption that outlasted every automatic retry."""
+        return (
+            UserErrorReason.INTERRUPTED,
+            "Processing was interrupted by a temporary server problem and still could not "
+            "finish after several automatic retries.",
+            [
+                'Use the "Retry" button to try processing again',
+                "If it keeps failing, ask your administrator to check the processing workers",
+            ],
+        )
+
+    @staticmethod
     def _handle_generic_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle generic processing errors."""
         return (
@@ -331,8 +406,8 @@ class ErrorCategorizationService:
         Note:
             The is_retryable field helps frontends determine whether to show
             retry buttons or encourage users to fix the underlying issue first.
-            The raw error message is deliberately NOT included here — it stays
-            server-side in `media_file.last_error_message` and the ERROR log.
+            The raw error message is deliberately NOT included here — it lives
+            only in the ERROR log (issue #959).
 
         Example:
             >>> info = get_error_info("network timeout")
@@ -351,51 +426,62 @@ class ErrorCategorizationService:
             in [
                 UserErrorReason.NETWORK_ERROR,
                 UserErrorReason.PROCESSING_ERROR,
+                UserErrorReason.INTERRUPTED,
                 UserErrorReason.UNCLASSIFIED,
             ],
         }
 
     @staticmethod
-    def build_error_response_fields(last_error_message: str | None) -> dict[str, Any]:
-        """Build the four wire-response error fields from a media file's stored message.
+    def classify_failure(raw_error: str | None) -> FailureClassification:
+        """Classify a raw failure ONCE, at the failure site, into everything that is stored.
 
-        Single home for the ``error_reason`` / ``error_suggestions`` / ``user_message`` /
-        ``is_retryable`` block, previously duplicated between
-        ``api/endpoints/files/crud.py`` and ``services/formatting_service.py`` (GH #959
-        item 4).
-
-        Args:
-            last_error_message: ``media_file.last_error_message``, or None.
-
-        Returns:
-            A dict with keys ``error_reason``, ``error_suggestions``, ``user_message``,
-            ``is_retryable``, ready to spread onto a response model.
+        The single entry point for a failure handler: it yields the retry-policy category
+        (derived from the RAW text, which carries the signal) and the fixed user-facing
+        sentence that is persisted in place of the raw text. Callers log the raw exception
+        themselves and store only ``user_message`` and ``retry_category``.
         """
-        error_info = ErrorCategorizationService.get_error_info(last_error_message)
+        reason, user_message, _ = ErrorCategorizationService.categorize_error(raw_error)
+        retry_category = categorize_retry(raw_error or "")
+        if _is_input_failure(reason, raw_error) and retry_category not in INFRASTRUCTURE_CATEGORIES:
+            retry_category = ErrorCategory.INVALID_MEDIA
+        return FailureClassification(
+            retry_category=retry_category,
+            reason=reason,
+            user_message=user_message,
+        )
+
+    @staticmethod
+    def interrupted_message() -> str:
+        """The fixed sentence stored when transient retries are exhausted."""
+        return ErrorCategorizationService._handle_interrupted_error()[1]
+
+    @staticmethod
+    def error_fields_for(media_file: Any) -> dict[str, Any] | None:
+        """Wire fields for a failed file, or None when the file has not failed.
+
+        The one read edge from ``media_file.last_error_message`` to a file response —
+        shared by the file-detail endpoint and ``FormattingService`` so the sanitization
+        cannot drift between them.
+        """
+        from app.models.media import FileStatus
+
+        if media_file.status != FileStatus.ERROR:
+            return None
+        stored = media_file.last_error_message
+        info = ErrorCategorizationService.get_error_info(str(stored) if stored else None)
         return {
-            "error_reason": error_info["category"],
-            "error_suggestions": error_info["suggestions"],
-            "user_message": error_info["user_message"],
-            "is_retryable": error_info["is_retryable"],
+            "error_reason": info["category"],
+            "error_suggestions": info["suggestions"],
+            "user_message": info["user_message"],
+            "is_retryable": info["is_retryable"],
         }
 
     @staticmethod
-    def sanitize_for_storage(raw_message: str | None) -> str:
-        """Classify a raw error ONCE and return the only text that may be PERSISTED.
-
-        GH #959 item 1: the raw exception text must never be written to
-        ``media_file.last_error_message`` / ``Task.error_message`` — only this fixed,
-        category-derived sentence may. Call this at the failure site, while the raw
-        text is still in hand for classification; the raw text itself belongs only in
-        a log line (``logger.error``/``logger.exception``), never in a DB column.
-
-        Args:
-            raw_message: The raw exception text. Can be None.
-
-        Returns:
-            A fixed, non-raw sentence safe to persist and to serve to a client.
-        """
-        return str(ErrorCategorizationService.get_error_info(raw_message)["user_message"])
+    def user_message_for(stored_error: str | None) -> str | None:
+        """The client-safe sentence for a stored error column, or None when there is none."""
+        if not stored_error:
+            return None
+        return str(ErrorCategorizationService.get_error_info(str(stored_error))["user_message"])
 
     @staticmethod
     def should_show_enhanced_notification(error_message: str | None) -> bool:
@@ -441,3 +527,23 @@ class ErrorCategorizationService:
         )
 
         return quality_issues or speech_issues
+
+
+_FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str]]], ...] = (
+    ErrorCategorizationService._handle_file_quality_error,
+    ErrorCategorizationService._handle_no_audio_track_error,
+    ErrorCategorizationService._handle_no_speech_error,
+    ErrorCategorizationService._handle_format_error,
+    ErrorCategorizationService._handle_network_error,
+    ErrorCategorizationService._handle_permission_error,
+    ErrorCategorizationService._handle_interrupted_error,
+    ErrorCategorizationService._handle_generic_error,
+)
+
+# A persisted fixed sentence must read back as the reason it was written for. Several of
+# the sentences do not contain their own category's substring patterns (the network one
+# says "could not be retrieved", not "network"), so without this exact-match table a stored
+# FORMAT_ISSUE would read back as a generic PROCESSING_ERROR.
+_REASON_BY_MESSAGE: dict[str, Callable[[], tuple[UserErrorReason, str, list[str]]]] = {
+    handler()[1]: handler for handler in _FIXED_MESSAGE_HANDLERS
+}

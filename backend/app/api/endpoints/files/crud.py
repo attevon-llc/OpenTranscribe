@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core import constants as C  # noqa: N812
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -25,6 +26,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import Speaker as SpeakerResponseSchema
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
@@ -33,6 +35,7 @@ from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.time_format import format_timestamp_simple as format_timestamp
@@ -91,7 +94,12 @@ def get_media_file_by_uuid(
 
 
 def get_media_file_by_id(
-    db: Session, file_id: int, user_id: int, is_admin: bool = False
+    db: Session,
+    file_id: int,
+    user_id: int,
+    is_admin: bool = False,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
     Get a media file by ID and user ID (legacy - internal use only).
@@ -101,6 +109,8 @@ def get_media_file_by_id(
         file_id: File ID
         user_id: User ID
         is_admin: Whether the current user is an admin (can access any file)
+        organization_id: Active tenant (org id, or None for org-less files); a
+            non-admin's file outside it is not found. UNSCOPED = no tenant gate.
 
     Returns:
         MediaFile object
@@ -111,7 +121,9 @@ def get_media_file_by_id(
     # Admin users can access any file, regular users only their own
     query = db.query(MediaFile).filter(MediaFile.id == file_id)
     if not is_admin:
-        query = query.filter(MediaFile.user_id == user_id)
+        query = query.filter(
+            owned_in_tenant(MediaFile, user_id=user_id, organization_id=organization_id)
+        )
 
     db_file = query.first()
 
@@ -172,18 +184,38 @@ def get_file_tags(db: Session, file_id: int, user_id: int) -> list[TagSchema]:
         return []
 
 
-def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
-    """Get collections that contain a media file."""
+def get_file_collections(
+    db: Session, file_id: int, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> list[dict]:
+    """Get the caller's collections, in the file's tenant, that contain a media file.
+
+    That is the caller's personal collections for a personal file and the
+    organization's collections (shared by every member, v422) for an org file.
+    ``organization_id`` is the request's tenant; ``UNSCOPED`` falls back to the
+    file's own, which is the tenant any collection holding it lives in.
+    """
+    from app.services.permission_service import PermissionService
+
     try:
-        collection_objs = (
-            db.query(Collection)
+        tenant: int | None = (
+            db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+            if isinstance(organization_id, _Unscoped)
+            else organization_id
+        )
+        accessible = {
+            cid for cid, _perm in PermissionService.get_accessible_collection_ids(db, user_id)
+        }
+        collection_objs = [
+            col
+            for col in db.query(Collection)
             .join(CollectionMember)
             .filter(
                 CollectionMember.media_file_id == file_id,
-                Collection.user_id == user_id,
+                PermissionService.collection_tenant_pred(user_id, tenant),
             )
             .all()
-        )
+            if col.id in accessible
+        ]
 
         return [
             {
@@ -357,13 +389,11 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
         response: MediaFileDetail response to update
         db_file: MediaFile object
     """
-    if db_file.status != FileStatus.ERROR or not hasattr(db_file, "last_error_message"):
-        return
-
     from app.services.error_categorization_service import ErrorCategorizationService
 
-    error_message = str(db_file.last_error_message) if db_file.last_error_message else None
-    fields = ErrorCategorizationService.build_error_response_fields(error_message)
+    fields = ErrorCategorizationService.error_fields_for(db_file)
+    if fields is None:
+        return
     response.error_reason = fields["error_reason"]
     response.error_suggestions = fields["error_suggestions"]
     response.user_message = fields["user_message"]
@@ -520,11 +550,19 @@ def _resolve_redaction_for_request(
     *,
     is_admin: bool,
     redact: bool,
+    organization_id: OrgScope = UNSCOPED,
 ) -> tuple[Any, set]:
     """Resolve (effective_cfg, reveal_categories) for a transcript read.
 
     The owner (and admins, audited) may set ``redact=false`` to reveal NON-forced
     categories; admin-forced categories stay masked. Non-owners never reveal.
+
+    Args:
+        organization_id: The requester's active tenant scope. ``UNSCOPED`` (the
+            legacy/non-HTTP default) normalizes to personal scope, since
+            ``resolve_effective_config`` takes a strict ``int | None`` — never
+            the sentinel itself (#988). The one production caller always passes
+            the request's own ``ctx.org_id`` instead.
 
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
@@ -532,7 +570,8 @@ def _resolve_redaction_for_request(
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, current_user.id)
+        resolved_org_id = None if isinstance(organization_id, _Unscoped) else organization_id
+        cfg = resolve_effective_config(db, current_user.id, organization_id=resolved_org_id)
     except Exception as e:
         # FAIL CLOSED. Returning (None, set()) told every downstream reader that
         # redaction was off: `_apply_redaction` short-circuits on a None config
@@ -788,7 +827,10 @@ def _build_media_file_response(
     response = MediaFileDetail.model_validate(db_file)
     response.tags = tags
     response.collections = collections  # type: ignore[assignment]
-    response.speakers = speakers  # type: ignore[assignment]
+    # Validated into the response schema here, while the instances are loaded: that is
+    # what maps the internal user/file ids to UUIDs. Assigning the ORM rows directly
+    # left serialization to whatever the instance held at response time.
+    response.speakers = [SpeakerResponseSchema.model_validate(s) for s in speakers]
 
     # Set lightweight summary indicator and strip heavy JSONB from response
     response.has_summary = bool(
@@ -868,9 +910,18 @@ def get_media_file_detail(
     """
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
-        )
+        try:
+            db_file = get_media_file_by_uuid(
+                db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+            )
+        except HTTPException as denied:
+            if denied.status_code != status.HTTP_403_FORBIDDEN:
+                raise
+            # A file the caller cannot see must answer like a missing one: 403 would
+            # confirm the UUID exists in another user's/tenant's scope.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+            ) from None
         # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
         # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
         db.expire(db_file, ["waveform_data", "metadata_raw"])
@@ -878,7 +929,14 @@ def get_media_file_detail(
 
         # Get related data
         tags = get_file_tags(db, file_id, current_user.id)
-        collections = get_file_collections(db, file_id, current_user.id)
+        collections = get_file_collections(
+            db, file_id, current_user.id, organization_id=organization_id
+        )
+
+        # Get analytics (compute on-demand if needed). First, because computing them is
+        # the read path's one legitimate write and commits — which expires every loaded
+        # instance, including the speakers decorated below (#1152).
+        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
         # Get speakers and add computed status. Eager-load the linked profile so
         # add_computed_status (which reads speaker.profile) doesn't fire one lazy
@@ -891,9 +949,6 @@ def get_media_file_detail(
         )
         for speaker in speakers:
             SpeakerStatusService.add_computed_status(speaker)
-
-        # Get analytics (compute on-demand if needed)
-        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
         # Get transcript segments with pagination
         transcript_segments, total_segments = _get_transcript_segments(
@@ -927,7 +982,12 @@ def get_media_file_detail(
 
         # Resolve read-time redaction config for the caller.
         redaction_cfg, reveal_categories = _resolve_redaction_for_request(
-            db, db_file, current_user, is_admin=is_admin, redact=redact
+            db,
+            db_file,
+            current_user,
+            is_admin=is_admin,
+            redact=redact,
+            organization_id=organization_id,
         )
 
         # If redaction is enabled but detection hasn't finished, withhold the transcript
@@ -961,7 +1021,6 @@ def get_media_file_detail(
         # Set caller's permission on the response
         response.my_permission = my_permission
 
-        db.commit()
         return response
 
     except HTTPException:
@@ -1071,6 +1130,7 @@ def delete_media_file(
     force: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    is_org_admin: bool = False,
 ) -> None:
     """
     Delete a media file and all associated data with safety checks.
@@ -1081,18 +1141,22 @@ def delete_media_file(
         current_user: Current user
         force: Force deletion even if processing is active (admin only)
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        is_org_admin: Caller is ``org:admin`` of ``organization_id``
+            (``ctx.is_org_admin``); lets an org admin delete members' files.
     """
+    from app.services.delete_permissions import get_deletable_file
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import is_file_safe_to_delete
 
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(
+    # Delete is its own right, not "editor" (issue #1103): owner, org admin of
+    # the file's organization, or platform admin.
+    db_file = get_deletable_file(
         db,
         file_uuid,
-        current_user.id,
-        is_admin=is_admin,
+        current_user,
         organization_id=organization_id,
-        min_permission="editor",
+        is_org_admin=is_org_admin,
     )
     file_id = db_file.id  # Get internal ID for task operations
 

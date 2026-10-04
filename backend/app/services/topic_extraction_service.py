@@ -32,6 +32,8 @@ from app.models.topic import TopicSuggestion
 from app.schemas.topic import LLMSuggestionResponse
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.utils.llm_log_safety import describe_llm_text
+from app.utils.llm_log_safety import log_llm_text_excerpt
 
 logger = logging.getLogger(__name__)
 
@@ -572,7 +574,7 @@ IMPORTANT GUIDELINES:
 
         if llm_service.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             # Claude: Use response prefilling to force structured output
-            messages.append({"role": "assistant", "content": "<thinking>\n"})
+            messages.append({"role": "assistant", "content": "<thinking>"})
         elif llm_service.config.provider == LLMProvider.OLLAMA:
             # Ollama: Don't use format parameter - some models (like gpt-oss) don't support it well
             # Instead rely on prompt engineering and normal JSON extraction
@@ -618,8 +620,11 @@ IMPORTANT GUIDELINES:
                     json_str = json_match.group(0)
 
             if not json_str:
-                logger.error("Could not find JSON in LLM response")
-                logger.error(f"Response text (first 1000 chars): {response_text[:1000]}")
+                logger.error(
+                    "Could not find JSON in topic extraction response (%s)",
+                    describe_llm_text(response_text),
+                )
+                log_llm_text_excerpt(logger, "Topic extraction response", response_text)
                 return None
 
             # Parse JSON
@@ -629,13 +634,24 @@ IMPORTANT GUIDELINES:
             return LLMSuggestionResponse(**data)
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from LLM response: {e}")
-            logger.error(f"Attempted to parse: {json_str[:500] if json_str else 'None'}")
-            logger.error(f"Full response text (first 1000 chars): {response_text[:1000]}")
+            # A JSONDecodeError's message is position info only ("line 1 column 5").
+            logger.error(
+                "Failed to parse JSON from topic extraction response: %s (%s; extracted %s)",
+                e,
+                describe_llm_text(response_text),
+                describe_llm_text(json_str),
+            )
+            log_llm_text_excerpt(logger, "Topic extraction response", response_text)
             return None
         except Exception as e:
-            logger.error(f"Error parsing LLM response: {e}")
-            logger.error(f"Response text (first 1000 chars): {response_text[:1000]}")
+            # Class name only: a pydantic ValidationError's message embeds the
+            # offending input values, i.e. the model's output.
+            logger.error(
+                "Error parsing topic extraction response: %s (%s)",
+                type(e).__name__,
+                describe_llm_text(response_text),
+            )
+            log_llm_text_excerpt(logger, "Topic extraction response", response_text)
             return None
 
     def _store_suggestion(

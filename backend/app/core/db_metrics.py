@@ -7,6 +7,12 @@ the engine is created) observe every SQL statement:
     duplicate/N+1 detector), and
   - a slow-query WARNING above ``settings.SLOW_QUERY_MS``.
 
+Durations are WALL-CLOCK between the cursor events, so they include any time the
+thread spent waiting for the GIL. Under CPU pressure in the API process (issue
+#1001: an autoscaler polling ``/metrics``) trivial statements were logged at
+500-950 ms that the database itself served in microseconds — read a burst of slow
+queries alongside process CPU before blaming Postgres.
+
 Per-request counter — ContextVar propagation trap (critical):
 ``BaseHTTPMiddleware`` runs ``call_next`` in a CHILD task; a ContextVar value
 **set** inside that child does NOT propagate back to the middleware's own
@@ -88,7 +94,7 @@ def _log_slow_query(statement: str, duration: float) -> None:
     from app.middleware.audit import get_request_id
 
     logging.getLogger("app.core.db_metrics").warning(
-        "Slow query (%.1f ms) request_id=%s: %s",
+        "Slow query (%.1f ms wall-clock, includes GIL wait) request_id=%s: %s",
         duration * 1000.0,
         get_request_id() or "-",
         statement[:120].replace("\n", " "),

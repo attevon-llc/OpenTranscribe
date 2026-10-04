@@ -15,6 +15,8 @@
   export let status: StreamStatus = 'idle';
   /** No LLM configured — the composer is inert and explains why. */
   export let disabled = false;
+  /** Seconds left on a rate-limit wait; sending is held (the draft is kept) until 0. */
+  export let blockedFor = 0;
   export let maxLength = 8000;
 
   const MIN_ROWS = 1;
@@ -27,7 +29,7 @@
 
   $: isStreaming = status === 'submitting' || status === 'retrieving' || status === 'thinking' || status === 'streaming';
   $: tooLong = value.length > maxLength;
-  $: canSend = value.trim().length > 0 && !tooLong && !disabled && !isStreaming;
+  $: canSend = value.trim().length > 0 && !tooLong && !disabled && !isStreaming && blockedFor <= 0;
   $: showCounter = value.length > maxLength * 0.9;
 
   async function autoGrow(): Promise<void> {
@@ -88,7 +90,11 @@
       on:click={handleButton}
       disabled={!isStreaming && !canSend}
       aria-label={isStreaming ? $t('chat.composer.stop') : $t('chat.composer.send')}
-      title={isStreaming ? $t('chat.composer.stop') : $t('chat.composer.send')}
+      title={blockedFor > 0
+        ? $t('chat.errors.rate_limitedWait', { seconds: blockedFor })
+        : isStreaming
+          ? $t('chat.composer.stop')
+          : $t('chat.composer.send')}
       data-testid={isStreaming ? 'chat-stop' : 'chat-send'}
     >
       {#if isStreaming}

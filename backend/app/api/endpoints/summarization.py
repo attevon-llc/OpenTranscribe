@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
@@ -97,6 +98,11 @@ async def trigger_summarization(
         min_permission="editor",
     )
     file_id = media_file.id
+
+    # An explicit prompt must be one the caller may use (system, own, or shared within
+    # the caller's tenant); the worker applies it as given.
+    if request.prompt_uuid:
+        require_usable_prompt_uuid(db, request.prompt_uuid, ctx)
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:
@@ -231,7 +237,9 @@ def get_file_summary(
     return SummaryResponse(
         file_id=UUID(str(media_file.uuid)),
         filename=media_file.title or media_file.filename,
-        summary_data=_redacted_summary(db, current_user, dict(media_file.summary_data)),
+        summary_data=_redacted_summary(
+            db, current_user, dict(media_file.summary_data), organization_id=ctx.org_id
+        ),
     )
 
 
@@ -297,7 +305,9 @@ def export_summary(
             detail="No summary available for this file. Please generate one first.",
         )
 
-    masked = _redacted_summary(db, current_user, dict(media_file.summary_data))
+    masked = _redacted_summary(
+        db, current_user, dict(media_file.summary_data), organization_id=ctx.org_id
+    )
 
     labels = SummaryExportLabels(
         title=title_label,
@@ -350,7 +360,10 @@ def export_summary(
 
 
 def _redacted_summary(
-    db: Session, current_user: User, summary_data: dict[str, Any]
+    db: Session,
+    current_user: User,
+    summary_data: dict[str, Any],
+    organization_id: int | None = None,
 ) -> dict[str, Any]:
     """Apply the requesting user's redaction policy to a summary (#465).
 
@@ -390,7 +403,7 @@ def _redacted_summary(
     from app.services.redaction.summary_redaction import mask_summary
 
     try:
-        cfg = resolve_effective_config(db, current_user.id)
+        cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
     except Exception as e:
         logger.exception("Failed to resolve redaction config; refusing the summary read")
         raise HTTPException(

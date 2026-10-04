@@ -53,7 +53,7 @@ git push origin master
 
 ### 2.2. Enable GitHub Pages in Repository Settings
 
-1. **Go to your GitHub repository**: https://github.com/davidamacey/OpenTranscribe
+1. **Go to your GitHub repository**: https://github.com/attevon-llc/OpenTranscribe
 2. **Click "Settings"** (top right)
 3. **Click "Pages"** (left sidebar)
 4. **Configure Source**:
@@ -410,7 +410,7 @@ Already configured in `docusaurus.config.ts` footer:
 ## Monitoring
 
 ### Check Site Health
-- **GitHub Actions**: Monitor builds at https://github.com/davidamacey/OpenTranscribe/actions
+- **GitHub Actions**: Monitor builds at https://github.com/attevon-llc/OpenTranscribe/actions
 - **GitHub Pages Status**: Settings → Pages shows site status
 - **Uptime Monitoring**: Use services like UptimeRobot (free) to monitor docs.opentranscribe.io
 

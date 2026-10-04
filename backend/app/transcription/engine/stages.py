@@ -29,6 +29,7 @@ import numpy as np
 # stand-down triggers — worker shutdown (#809, requeue) and a user cancel of THIS file (#823,
 # stop for good) — so a checkpoint cannot accidentally honour only one of them. That is why
 # #823 extended these call sites instead of adding a second set beside them.
+from app.core import stage_timing
 from app.core.task_cancellation import stand_down_if_requested
 from app.core.worker_shutdown import shutdown_requested
 
@@ -129,9 +130,6 @@ def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int)
         hw.log_vram_usage("after transcriber release")
         profiler.snapshot("diarizer_only_warm")
 
-    if tc.concurrent_requests > 1:
-        _wait_for_vram(2000, "diarization")
-
 
 def _run_diarize(
     diarizer,
@@ -206,7 +204,7 @@ def _collect_diarization(
     overlapped = None
     provider: str | None = None
     model: str | None = None
-    with profiler.step("diarization"):
+    with stage_timing.stage("diarization"), profiler.step("diarization"):
         if async_diarization is not None:
             overlapped = async_diarization.result()
         if overlapped is not None:
@@ -439,9 +437,6 @@ class _GpuStage:
         audio_thread = threading.Thread(target=_load_audio, name="audio-load", daemon=True)
         audio_thread.start()
 
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(1500, "transcriber_load")
-
         with profiler.step("model_load_transcriber"):
             transcriber = manager.get_transcriber(tc)
         audio_thread.join()
@@ -487,7 +482,7 @@ class _GpuStage:
             emit(progress_callback, 0.43, "Running AI transcription", "transcribe")
             step_start = time.perf_counter()
             with profiler.step("transcription"):
-                transcript = transcriber.transcribe(audio)
+                transcript = transcriber.transcribe(audio, options=tc)
             logger.info(
                 f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
             )
@@ -632,7 +627,7 @@ class _GpuStage:
         # Step 6: Assign speakers
         emit(progress_callback, 0.65, "Assigning speakers to transcript", "finalize")
         step_start = time.perf_counter()
-        with profiler.step("speaker_assignment"):
+        with stage_timing.stage("speaker_assignment"), profiler.step("speaker_assignment"):
             from app.transcription.speaker_assigner import assign_speakers
 
             result = assign_speakers(diarize_df, transcript)
@@ -780,9 +775,6 @@ class _GpuRawStage:
                 "Stage 1 must write the WAV before Stage 2 runs."
             )
 
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(1500, "transcriber_load")
-
         with profiler.step("model_load_transcriber"):
             transcriber = manager.get_transcriber(tc)
 
@@ -820,7 +812,7 @@ class _GpuRawStage:
             emit(callback, 0.43, "Running AI transcription", "transcribe")
             step_start = time.perf_counter()
             with profiler.step("transcription"):
-                transcript = transcriber.transcribe(audio)
+                transcript = transcriber.transcribe(audio, options=tc)
             logger.info(
                 f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
             )
@@ -957,7 +949,8 @@ class _FinalizeStage:
             emit(callback, 0.65, "Assigning speakers to transcript", "finalize")
             from app.transcription.speaker_assigner import assign_speakers
 
-            result = assign_speakers(diarize_df, transcript)
+            with stage_timing.stage("speaker_assignment"):
+                result = assign_speakers(diarize_df, transcript)
 
             if raw.overlap_info.get("count", 0) > 0:
                 result["overlap_info"] = raw.overlap_info
@@ -1029,9 +1022,6 @@ class _TranscribeOnlyStage:
                 "Stage 1 must write the WAV before Stage 2a runs."
             )
 
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(1500, "transcriber_load")
-
         with profiler.step("model_load_transcriber"):
             transcriber = manager.get_transcriber(tc)
 
@@ -1040,7 +1030,7 @@ class _TranscribeOnlyStage:
         emit(callback, 0.43, "Running AI transcription", "transcribe")
         step_start = time.perf_counter()
         with profiler.step("transcription"):
-            transcript = transcriber.transcribe(audio)
+            transcript = transcriber.transcribe(audio, options=tc)
         logger.info(
             f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
         )
@@ -1130,12 +1120,9 @@ class _DiarizerOnlyStage:
             # constructs an _AsyncDiarization (it IS the diarization leg).
             stand_down_if_requested("_DiarizerOnlyStage.run before diarization")
 
-            if tc.concurrent_requests > 1:
-                _wait_for_vram(2000, "diarization")
-
             emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
             step_start = time.perf_counter()
-            with profiler.step("diarization"):
+            with stage_timing.stage("diarization"), profiler.step("diarization"):
                 diarizer = manager.get_diarizer(tc)
                 diarize_df, overlap_info, native_embeddings = _run_diarize(
                     diarizer, audio, transcript.local_wav_path
@@ -1191,30 +1178,6 @@ class _DiarizerOnlyStage:
             diarization_provider=diar_provider,
             diarization_model=diar_model,
         )
-
-
-def _wait_for_vram(min_free_mb: int, stage: str, timeout: int = 120) -> None:
-    """Block until the GPU has enough free VRAM. Mirrors TranscriptionPipeline._wait_for_vram."""
-    try:
-        import torch
-
-        if not torch.cuda.is_available():
-            return
-        deadline = time.perf_counter() + timeout
-        while time.perf_counter() < deadline:
-            free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
-            if free_mb >= min_free_mb:
-                return
-            logger.info(
-                f"VRAM gate [{stage}]: {free_mb:.0f}MB free < {min_free_mb}MB required, waiting..."
-            )
-            time.sleep(2)
-        free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
-        logger.warning(
-            f"VRAM gate [{stage}]: timeout after {timeout}s, proceeding with {free_mb:.0f}MB free"
-        )
-    except Exception as e:
-        logger.debug(f"VRAM gate check skipped: {e}")
 
 
 def _get_total_vram_mb() -> int:

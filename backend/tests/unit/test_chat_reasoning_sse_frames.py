@@ -131,7 +131,11 @@ async def _run(monkeypatch, *, reasoning: list[str], deltas: list[str]):
         ),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
-    monkeypatch.setattr(chat_service, "_resolve_output_policy", lambda _user_id: _cfg_disabled())
+    monkeypatch.setattr(
+        chat_service,
+        "_resolve_output_policy",
+        lambda _user_id, _organization_id=None: _cfg_disabled(),
+    )
 
     captured: dict[str, Any] = {}
 

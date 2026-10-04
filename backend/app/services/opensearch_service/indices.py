@@ -1,6 +1,7 @@
 """Index creation / bootstrap for the transcript and speaker indices."""
 
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
@@ -123,6 +124,83 @@ def _restore_v3_from_backup(v3_index: str) -> None:
         logger.warning(f"Reindex failure: {f.get('cause', {}).get('reason', f)}")
 
 
+def transcript_index_body() -> dict[str, Any]:
+    """Settings + mapping of the legacy whole-document ``transcripts`` index."""
+    return {
+        "settings": {
+            "index": {"number_of_shards": 1, "number_of_replicas": 0},
+            "analysis": {"analyzer": {"default": {"type": "standard"}}},
+        },
+        "mappings": {
+            "properties": {
+                "file_id": {"type": "integer"},
+                "file_uuid": {"type": "keyword"},
+                "user_id": {"type": "integer"},
+                # Tenant stamp (#1027): present only on org files, so the
+                # personal scope's ``must_not exists`` gate matches the rest.
+                "organization_id": {"type": "integer"},
+                "content": {"type": "text"},
+                "speakers": {"type": "keyword"},
+                "tags": {"type": "keyword"},
+                "upload_time": {"type": "date"},
+                "title": {"type": "text"},
+                "embedding": {
+                    "type": "knn_vector",
+                    "dimension": SENTENCE_TRANSFORMER_DIMENSION,
+                },
+            }
+        },
+    }
+
+
+#: Transcript indices whose tenant mapping was already verified by this process, so
+#: the hot ``ensure_indices_exist`` path pays the ``get_mapping`` round trip once.
+_tenant_mapping_checked: set[str] = set()
+
+
+def ensure_transcript_tenant_mapping(client: Any, index_name: str) -> str:
+    """Add ``organization_id`` to an existing ``transcripts`` index that predates it.
+
+    ``transcript_index_body`` carries the field, but only a NEW index is created from
+    it; an index from before the tenant stamp would otherwise get the field only through
+    dynamic mapping, on the first stamped write, as ``long``. Adding a field no document
+    has yet is an additive ``put_mapping``: no reindex and no downtime. Documents written
+    before the stamp still need ``app.tasks.tenant_backfill_task`` to be stamped.
+
+    Args:
+        client: OpenSearch client.
+        index_name: The transcripts index (or an alias of it).
+
+    Returns:
+        ``"absent"`` (no such index), ``"added"``, ``"present"``, or
+        ``"present_as_<type>"`` when dynamic mapping already created the field with
+        another type — left alone: ``term``/``exists`` still work on it, and changing a
+        field's type needs a reindex.
+    """
+    if not client.indices.exists(index=index_name):
+        return "absent"
+    mapping = client.indices.get_mapping(index=index_name)
+    # A read through an alias answers under the concrete index name.
+    properties: dict[str, Any] = {}
+    for index_mapping in mapping.values():
+        properties.update(index_mapping.get("mappings", {}).get("properties", {}))
+    field = properties.get("organization_id")
+    if field is None:
+        client.indices.put_mapping(
+            index=index_name, body={"properties": {"organization_id": {"type": "integer"}}}
+        )
+        logger.info(f"Added the organization_id mapping to existing index '{index_name}'")
+        return "added"
+    field_type = field.get("type")
+    if field_type == "integer":
+        return "present"
+    logger.warning(
+        f"Index '{index_name}' maps organization_id as {field_type!r} (dynamic mapping), "
+        "not integer; the tenant gate still works, a reindex would normalise it"
+    )
+    return f"present_as_{field_type}"
+
+
 def ensure_indices_exist():
     """
     Ensure the transcript and speaker indices exist, creating them if necessary.
@@ -141,34 +219,22 @@ def ensure_indices_exist():
     try:
         # Create transcript index if it doesn't exist
         if not _client.opensearch_client.indices.exists(index=settings.OPENSEARCH_TRANSCRIPT_INDEX):
-            transcript_index_config = {
-                "settings": {
-                    "index": {"number_of_shards": 1, "number_of_replicas": 0},
-                    "analysis": {"analyzer": {"default": {"type": "standard"}}},
-                },
-                "mappings": {
-                    "properties": {
-                        "file_id": {"type": "integer"},
-                        "file_uuid": {"type": "keyword"},
-                        "user_id": {"type": "integer"},
-                        "content": {"type": "text"},
-                        "speakers": {"type": "keyword"},
-                        "tags": {"type": "keyword"},
-                        "upload_time": {"type": "date"},
-                        "title": {"type": "text"},
-                        "embedding": {
-                            "type": "knn_vector",
-                            "dimension": SENTENCE_TRANSFORMER_DIMENSION,
-                        },
-                    }
-                },
-            }
+            transcript_index_config = transcript_index_body()
 
             _client.opensearch_client.indices.create(
                 index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=transcript_index_config
             )
 
             logger.info(f"Created transcript index: {settings.OPENSEARCH_TRANSCRIPT_INDEX}")
+        elif settings.OPENSEARCH_TRANSCRIPT_INDEX not in _tenant_mapping_checked:
+            # Its own guard: a failed mapping check must not skip the speaker bootstrap.
+            try:
+                ensure_transcript_tenant_mapping(
+                    _client.opensearch_client, settings.OPENSEARCH_TRANSCRIPT_INDEX
+                )
+                _tenant_mapping_checked.add(settings.OPENSEARCH_TRANSCRIPT_INDEX)
+            except Exception as e:
+                logger.error(f"Could not verify the transcripts index tenant mapping: {e}")
 
         # Migrate concrete 'speakers' index to alias-based scheme (0.3.3 upgrade)
         migration_result = migrate_to_alias_based_indices()

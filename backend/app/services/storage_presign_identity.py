@@ -18,15 +18,19 @@ pinned MinIO image; see the module functions below for the specific constraints 
 also measured (case sensitivity, the write/read action split, least privilege).
 
 **MinIO-only.** There is no admin API on native AWS S3 (``STORAGE_BACKEND=s3``): the tag is
-still written (harmless) but nothing enforces it there — see
+still written but nothing here can enforce it — see
 :func:`ensure_presign_identity`'s docstring and ``docs/abuse-and-takedown.md`` for the
-equivalent bucket-policy JSON an S3 operator would attach by hand.
+equivalent bucket-policy JSON an S3 operator would attach by hand. At startup
+:func:`report_native_s3_revocation_posture` checks whether that policy is attached and logs a
+single WARNING (not a per-presign ERROR) if it isn't: until it is, an already-minted URL stays
+valid until it expires, so ``MEDIA_URL_EXPIRE_SECONDS`` is the exposure window.
 
 **Fails open, visibly.** If the service account cannot be created or refreshed (admin API
 unreachable, a non-MinIO S3-compatible backend, ``STORAGE_PRESIGN_IDENTITY_ENABLED=false``),
 presigning falls back to the root client — today's exact pre-#907 behavior, no regression, but
-silently inert unless something logs it. :func:`presign_client` logs ERROR once per process on
-that fallback.
+silently inert unless something logs it. :func:`presign_client` logs ERROR once per process when
+provisioning *failed* on MinIO; the two expected no-identity cases (feature disabled, native S3)
+are reported once at startup instead, since neither is a fault.
 
 **Admin bypass, on purpose (decision, not a bug):** admins presign through this same
 restricted identity, so an admin also gets 403 on a quarantined file's media URL — the same
@@ -61,10 +65,6 @@ logger = logging.getLogger(__name__)
 #: Every tagger (``minio_service.set_object_quarantine_tag``) must write exactly
 #: this lowercase string; do not "normalize" it to a bool-ish value elsewhere.
 QUARANTINE_TAG_VALUE = "true"
-
-# The buckets covered by the presign identity's policy. Both are GET-presigned by
-# browser-facing helpers today (media originals + the processed-videos derived cache).
-_PROCESSED_VIDEOS_BUCKET = "processed-videos"
 
 _SERVICE_ACCOUNT_NAME = "ot-presign"
 _SERVICE_ACCOUNT_DESCRIPTION = "OpenTranscribe presigned-GET identity (issue #907)"
@@ -175,8 +175,14 @@ def build_presign_policy(buckets: list[str], tag_key: str) -> dict:
 
 
 def _presign_buckets() -> list[str]:
-    """Buckets the presign identity's policy must cover."""
-    return [settings.MEDIA_BUCKET_NAME, _PROCESSED_VIDEOS_BUCKET]
+    """Buckets the presign identity's policy must cover.
+
+    Both are GET-presigned by browser-facing helpers today (media originals + the
+    derived/bulk-export cache), so both are read from settings — a deployment that
+    repoints ``CACHE_BUCKET_NAME`` (issue #985) would otherwise get a policy scoped to
+    a bucket it no longer uses, and every presigned derived-asset URL would 403.
+    """
+    return [settings.MEDIA_BUCKET_NAME, settings.CACHE_BUCKET_NAME]
 
 
 def presign_identity_available() -> bool:
@@ -228,9 +234,10 @@ def ensure_presign_identity() -> bool:
 
     if storage_backend.is_native_s3():
         logger.info(
-            "Presign identity skipped: STORAGE_BACKEND=s3 has no MinIO admin API. "
-            "Quarantine tags are still written to objects; see "
-            "docs/abuse-and-takedown.md for the equivalent bucket-policy JSON."
+            "Presign identity skipped: STORAGE_BACKEND=s3 has no admin API to create a "
+            "restricted signing identity, so presigned URLs are signed with the configured "
+            "S3 credentials. Quarantine tags are still written to objects; revoking "
+            "presigned URLs relies on the bucket policy in docs/abuse-and-takedown.md."
         )
         _ensure_result = False
         return False
@@ -296,7 +303,13 @@ def presign_client() -> Minio:
     global _restricted_client, _fallback_error_logged
 
     if not ensure_presign_identity():
-        if not _fallback_error_logged:
+        # Only a provisioning FAILURE is an error. Disabled-by-config and native S3 are
+        # expected states, already reported once at startup — logging them here fired in
+        # every API/worker process that presigned anything (issue #1005).
+        provisioning_failed = (
+            settings.STORAGE_PRESIGN_IDENTITY_ENABLED and not storage_backend.is_native_s3()
+        )
+        if provisioning_failed and not _fallback_error_logged:
             logger.error(
                 "Presigning media URLs with the ROOT MinIO credential (presign identity "
                 "unavailable) — quarantine will NOT revoke already-minted URLs until this "
@@ -317,3 +330,113 @@ def presign_client() -> Minio:
         )
 
     return _restricted_client
+
+
+def bucket_policy_denies_quarantined_reads(policy_json: str | None, bucket: str) -> bool:
+    """Whether a bucket policy carries the quarantine Deny from ``docs/abuse-and-takedown.md``.
+
+    Looks for a statement that Denies ``s3:GetObject`` to every principal on the bucket's
+    objects when ``s3:ExistingObjectTag/<STORAGE_QUARANTINE_TAG_KEY>`` equals
+    :data:`QUARANTINE_TAG_VALUE`. On native S3 a bucket-policy Deny applies whichever
+    principal signed the request, so it revokes already-minted presigned URLs the same way
+    the MinIO presign identity does. Deliberately strict — a statement scoped to specific
+    principals or a different condition operator is not counted, so a WARNING errs toward
+    "not enforced" rather than toward a false all-clear.
+
+    Args:
+        policy_json: The bucket policy document as returned by ``get_bucket_policy``.
+        bucket: Bucket whose object ARNs the Deny must cover.
+
+    Returns:
+        True if a matching Deny statement is present.
+    """
+    import fnmatch
+    import json
+
+    if not policy_json:
+        return False
+    try:
+        policy = json.loads(policy_json)
+    except (TypeError, ValueError):
+        return False
+
+    statements = policy.get("Statement", []) if isinstance(policy, dict) else []
+    if isinstance(statements, dict):
+        statements = [statements]
+
+    def _as_list(value) -> list:
+        return value if isinstance(value, list) else [value]
+
+    probe_arn = f"arn:aws:s3:::{bucket}/probe-object"
+    condition_key = f"s3:existingobjecttag/{STORAGE_QUARANTINE_TAG_KEY}".lower()
+
+    for stmt in statements:
+        if not isinstance(stmt, dict) or stmt.get("Effect") != "Deny":
+            continue
+        principal = stmt.get("Principal")
+        if not (principal == "*" or (isinstance(principal, dict) and principal.get("AWS") == "*")):
+            continue
+        actions = [str(a).lower() for a in _as_list(stmt.get("Action", []))]
+        if not any(a in ("s3:getobject", "s3:*", "*") for a in actions):
+            continue
+        resources = [str(r) for r in _as_list(stmt.get("Resource", []))]
+        if not any(fnmatch.fnmatchcase(probe_arn, r) for r in resources):
+            continue
+        string_equals = (stmt.get("Condition") or {}).get("StringEquals") or {}
+        for key, value in string_equals.items():
+            # Condition key names are case-insensitive on S3; values are not.
+            if key.lower() == condition_key and QUARANTINE_TAG_VALUE in _as_list(value):
+                return True
+    return False
+
+
+def report_native_s3_revocation_posture(client: Minio) -> bool:
+    """Log, once at startup, whether quarantine can revoke presigned URLs on native S3.
+
+    The MinIO presign identity doesn't exist on S3, so revocation depends on the operator
+    having attached the bucket policy from ``docs/abuse-and-takedown.md``. This reads the
+    media bucket's policy and logs INFO if the quarantine Deny is present, otherwise a
+    single WARNING naming the exposure window (``MEDIA_URL_EXPIRE_SECONDS``) — replacing a
+    MinIO-worded ERROR that used to fire from every process on its first presign (#1005).
+    Never raises.
+
+    Args:
+        client: The storage client (``minio_service.minio_client``).
+
+    Returns:
+        True if the media bucket's policy enforces quarantine revocation.
+    """
+    bucket = settings.MEDIA_BUCKET_NAME
+    exposure = (
+        f"an already-minted presigned URL for a quarantined file stays valid until it "
+        f"expires (MEDIA_URL_EXPIRE_SECONDS={settings.MEDIA_URL_EXPIRE_SECONDS}s, capped by "
+        f"PRESIGNED_URL_MAX_SECONDS={settings.PRESIGNED_URL_MAX_SECONDS}s). Attach the "
+        f"quarantine Deny bucket policy from docs/abuse-and-takedown.md to revoke such URLs "
+        f"immediately, or lower MEDIA_URL_EXPIRE_SECONDS to shorten the window."
+    )
+    try:
+        policy_json = client.get_bucket_policy(bucket)
+    except Exception as e:  # noqa: BLE001 — no policy, or no permission to read it
+        code = getattr(e, "code", None) or type(e).__name__
+        if code == "NoSuchBucketPolicy":
+            policy_json = None
+        else:
+            logger.warning(
+                f"STORAGE_BACKEND=s3: could not read the bucket policy of '{bucket}' ({code}) "
+                f"to confirm presigned-URL revocation on quarantine; assuming it is not "
+                f"enforced — {exposure}"
+            )
+            return False
+
+    if bucket_policy_denies_quarantined_reads(policy_json, bucket):
+        logger.info(
+            f"STORAGE_BACKEND=s3: bucket policy on '{bucket}' denies reads of quarantined "
+            f"objects — quarantine revokes already-minted presigned media URLs."
+        )
+        return True
+
+    logger.warning(
+        f"STORAGE_BACKEND=s3: the bucket policy on '{bucket}' has no quarantine Deny, so "
+        f"quarantine cannot revoke presigned media URLs — {exposure}"
+    )
+    return False

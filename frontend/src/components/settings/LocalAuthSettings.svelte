@@ -1,9 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import PasswordPolicySettings from './PasswordPolicySettings.svelte';
+  import { normalizeTier } from '$lib/passwordPolicyTiers';
 
   // All fields come from a single config object (saved under "local" category)
   export let config: Record<string, any> = {};
+  // Bumped by the parent after a save so the panel re-reads the policy the server enforces.
+  export let refreshKey = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -37,9 +41,18 @@
       password_max_age_days: getVal('password_max_age_days', 60),
       // FedRAMP IA-5 requires 24 remembered passwords, not 5.
       password_history_count: getVal('password_history_count', 24),
+      // Coded default for an install that never chose a tier: hardened (the DoD-style
+      // rules above), so the form never invents a policy the server is not enforcing.
+      password_policy_profile: normalizeTier(getVal('password_policy_profile', 'hardened')),
+      password_max_length: getVal('password_max_length', 0),
+      password_min_age_hours: getVal('password_min_age_hours', 24),
+      // '' = the tier's own default; 'true' / 'false' override it.
+      password_blocklist_enabled: getVal('password_blocklist_enabled', ''),
+      password_hibp_enabled: getVal('password_hibp_enabled', false),
       // MFA
       mfa_enabled: getVal('mfa_enabled', false),
       mfa_required: getVal('mfa_required', false),
+      mfa_required_for_admins: getVal('mfa_required_for_admins', false),
       mfa_issuer_name: getVal('mfa_issuer_name', 'OpenTranscribe'),
       mfa_backup_code_count: getVal('mfa_backup_code_count', 10),
       mfa_token_expire_minutes: getVal('mfa_token_expire_minutes', 5),
@@ -78,18 +91,6 @@
     saving = true;
     dispatch('save', formData);
     setTimeout(() => saving = false, 500);
-  }
-
-  function getPasswordStrengthPreview(): string {
-    const requirements: string[] = [];
-    if (formData.password_min_length > 0) {
-      requirements.push(`${formData.password_min_length}+ ${$t('settings.localAuth.characters')}`);
-    }
-    if (formData.password_require_uppercase) requirements.push($t('settings.localAuth.uppercase'));
-    if (formData.password_require_lowercase) requirements.push($t('settings.localAuth.lowercase'));
-    if (formData.password_require_digit) requirements.push($t('settings.localAuth.numbers'));
-    if (formData.password_require_special) requirements.push($t('settings.localAuth.specialChars'));
-    return requirements.join(', ');
   }
 </script>
 
@@ -167,96 +168,12 @@
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
-    <h3>{$t('settings.localAuth.passwordPolicy')}</h3>
-
-    <div class="policy-preview">
-      <strong>{$t('settings.localAuth.currentRequirements')}</strong> {getPasswordStrengthPreview()}
-    </div>
-
-    <div class="form-group">
-      <label for="password_min_length">{$t('settings.localAuth.minPasswordLength')}</label>
-      <input
-        id="password_min_length"
-        type="number"
-        bind:value={formData.password_min_length}
-        on:input={handleChange}
-        min="8"
-        max="128"
-        disabled={!formData.local_enabled}
-      />
-    </div>
-
-    <div class="checkbox-grid">
-      <label class="checkbox-label">
-        <input
-          type="checkbox"
-          bind:checked={formData.password_require_uppercase}
-          on:change={handleChange}
-          disabled={!formData.local_enabled}
-        />
-        <span>{$t('settings.localAuth.requireUppercase')}</span>
-      </label>
-
-      <label class="checkbox-label">
-        <input
-          type="checkbox"
-          bind:checked={formData.password_require_lowercase}
-          on:change={handleChange}
-          disabled={!formData.local_enabled}
-        />
-        <span>{$t('settings.localAuth.requireLowercase')}</span>
-      </label>
-
-      <label class="checkbox-label">
-        <input
-          type="checkbox"
-          bind:checked={formData.password_require_digit}
-          on:change={handleChange}
-          disabled={!formData.local_enabled}
-        />
-        <span>{$t('settings.localAuth.requireNumbers')}</span>
-      </label>
-
-      <label class="checkbox-label">
-        <input
-          type="checkbox"
-          bind:checked={formData.password_require_special}
-          on:change={handleChange}
-          disabled={!formData.local_enabled}
-        />
-        <span>{$t('settings.localAuth.requireSpecial')}</span>
-      </label>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label for="password_max_age_days">{$t('settings.localAuth.passwordExpiry')}</label>
-        <input
-          id="password_max_age_days"
-          type="number"
-          bind:value={formData.password_max_age_days}
-          on:input={handleChange}
-          min="0"
-          max="365"
-          disabled={!formData.local_enabled}
-        />
-        <span class="help-text">{$t('settings.localAuth.passwordExpiryHelp')}</span>
-      </div>
-
-      <div class="form-group">
-        <label for="password_history_count">{$t('settings.localAuth.passwordHistoryCount')}</label>
-        <input
-          id="password_history_count"
-          type="number"
-          bind:value={formData.password_history_count}
-          on:input={handleChange}
-          min="0"
-          max="24"
-          disabled={!formData.local_enabled}
-        />
-        <span class="help-text">{$t('settings.localAuth.passwordHistoryHelp')}</span>
-      </div>
-    </div>
+    <PasswordPolicySettings
+      bind:data={formData}
+      disabled={!formData.local_enabled}
+      {refreshKey}
+      on:change={handleChange}
+    />
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
@@ -272,6 +189,17 @@
       <span>{$t('settings.localAuth.enableTotp')}</span>
     </label>
     <span class="help-text indented">{$t('settings.localAuth.totpHelp')}</span>
+
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.mfa_required_for_admins}
+        on:change={handleChange}
+        disabled={!formData.local_enabled}
+      />
+      <span>{$t('settings.localAuth.requireMfaAdmins')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.requireMfaAdminsHelp')}</span>
 
     {#if formData.mfa_enabled}
       <div class="mfa-options">
@@ -534,19 +462,6 @@
     line-height: 1.5;
   }
 
-  .policy-preview {
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-    font-size: 0.875rem;
-  }
-
-  .policy-preview strong {
-    color: var(--color-text);
-  }
-
   .form-row {
     display: flex;
     gap: 1rem;
@@ -604,12 +519,6 @@
     margin-bottom: 0.75rem;
   }
 
-  .checkbox-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
 
   .checkbox-label {
     display: flex;
@@ -649,8 +558,5 @@
       gap: 0;
     }
 
-    .checkbox-grid {
-      grid-template-columns: 1fr;
-    }
   }
 </style>

@@ -266,6 +266,7 @@ def _get_organization_context(db: Session, user_id: int) -> str:
     """
     from app import models
     from app.utils.prompt_manager import get_user_active_prompt_info
+    from app.utils.tenant_sharing import owner_shares_tenant_with
 
     # Check if user is using someone else's shared context
     use_shared_setting = (
@@ -280,13 +281,15 @@ def _get_organization_context(db: Session, user_id: int) -> str:
     context_owner_id = user_id
     if use_shared_setting and use_shared_setting.setting_value:
         shared_from_id = int(use_shared_setting.setting_value)
-        # Verify the shared context is still shared
+        # Verify the shared context is still shared, within a tenant both users are
+        # in: the stored pointer outlives membership changes.
         is_still_shared = (
             db.query(models.UserSetting)
             .filter(
                 models.UserSetting.user_id == shared_from_id,
                 models.UserSetting.setting_key == "org_context_is_shared",
                 models.UserSetting.setting_value == "true",
+                owner_shares_tenant_with(models.UserSetting.user_id, user_id),
             )
             .first()
         )

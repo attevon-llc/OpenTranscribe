@@ -102,7 +102,9 @@ async def _run_turn_with_slow_retrieval(monkeypatch) -> dict:
     monkeypatch.setattr(
         chat_service,
         "_resolve_output_policy",
-        lambda _user_id: SimpleNamespace(enabled=False, enabled_categories=set()),
+        lambda _user_id, _organization_id=None: SimpleNamespace(
+            enabled=False, enabled_categories=set()
+        ),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

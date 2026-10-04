@@ -5,7 +5,6 @@
   import { onMount, onDestroy } from "svelte";
   import NotificationsPanel from "./NotificationsPanel.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
-  import AboutModal from "./AboutModal.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
   import UserDropdown from "$components/navbar/UserDropdown.svelte";
   import UsageBadge from "$lib/cloud/components/UsageBadge.svelte";
@@ -45,6 +44,11 @@
 
   // About modal state
   let showAboutModal = false;
+  // Fetched on first open; once loaded it stays mounted so the close state is preserved.
+  let AboutModal: typeof import('svelte').SvelteComponent<{ showModal: boolean }> | null = null;
+  $: if (showAboutModal && !AboutModal) {
+    void import('./AboutModal.svelte').then((m) => (AboutModal = m.default as typeof AboutModal));
+  }
 
   // Mobile menu state
   let mobileMenuOpen = false;
@@ -596,7 +600,9 @@
 {/if}
 
 <!-- About Modal -->
-<AboutModal bind:showModal={showAboutModal} />
+{#if AboutModal}
+  <svelte:component this={AboutModal} bind:showModal={showAboutModal} />
+{/if}
 
 <style>
   .navbar {

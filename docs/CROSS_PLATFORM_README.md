@@ -16,7 +16,7 @@ The system automatically detects available hardware and optimizes configuration 
 
 ```bash
 # Get the setup script
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/feat/cross-platform-compatibility/setup-opentranscribe.sh -o setup-opentranscribe.sh
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/feat/cross-platform-compatibility/setup-opentranscribe.sh -o setup-opentranscribe.sh
 
 # Make it executable and run
 chmod +x setup-opentranscribe.sh

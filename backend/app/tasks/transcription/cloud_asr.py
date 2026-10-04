@@ -11,6 +11,7 @@ from .context import TranscriptionContext
 from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
+from .user_settings import load_vocabulary_terms
 
 logger = logging.getLogger(__name__)
 
@@ -206,18 +207,7 @@ def _run_cloud_asr_pipeline(
             provider = ASRProviderFactory.create_for_user(ctx.user_id, db)
         user_lang_settings = _get_user_language_settings(db, ctx.user_id)
 
-        # Load active custom vocabulary terms for this user
-        from app.models.custom_vocabulary import CustomVocabulary
-
-        vocab_terms: list[str] = [
-            row.term
-            for row in db.query(CustomVocabulary.term)
-            .filter(
-                (CustomVocabulary.user_id == ctx.user_id) | CustomVocabulary.user_id.is_(None),
-                CustomVocabulary.is_active.is_(True),
-            )
-            .all()
-        ]
+        vocab_terms = load_vocabulary_terms(db, ctx.user_id, ctx.file_id)
 
     logger.info(
         f"Running cloud ASR pipeline with provider '{provider.provider_name}' "

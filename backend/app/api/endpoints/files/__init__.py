@@ -39,6 +39,8 @@ from app.auth.rate_limit import get_directory_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.auth.utils import mask_email_for_display
+from app.core.capabilities import require_capability
+from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -52,8 +54,11 @@ from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.schemas.user import UserSearchResult
+from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
+from app.services.playback_rendition import resolve_playback
 from app.utils.error_handlers import ErrorHandler
+from app.utils.media_types import normalize_media_content_type
 
 from . import cancel_upload
 from . import complete_upload
@@ -143,7 +148,14 @@ router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 router.include_router(transcript_export_router, prefix="", tags=["files"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
-router.include_router(url_processing_router, prefix="", tags=["url-processing"])
+# URL import is a deployment decision (legal exposure, egress), so no account
+# bypasses it when the capability is off.
+router.include_router(
+    url_processing_router,
+    prefix="",
+    tags=["url-processing"],
+    dependencies=[Depends(require_capability("url_ingest", platform_admin_bypass=False))],
+)
 router.include_router(segments_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
@@ -348,6 +360,7 @@ def list_media_files(
         "transcript_search": transcript_search,
         "user_id": effective_user_id,
         "owner_user_ids": resolve_owner_user_ids(db, owner),
+        "organization_id": org_scope,
     }
 
     # Apply all filters
@@ -391,6 +404,9 @@ def list_media_files(
         # Use the FormattingService method which handles formatting correctly
         # Pass speakers for speaker_summary in list view
         formatted_file = FormattingService.format_media_file(file, file.speakers)
+        formatted_file.can_delete = can_delete_file(
+            current_user, file, organization_id=org_scope, is_org_admin=ctx.is_org_admin
+        )
         formatted_files.append(formatted_file)
 
     # Calculate pagination metadata
@@ -612,6 +628,9 @@ def get_media_file_stream_url(
         url: Presigned URL for direct MinIO access
         expires_in: Seconds until URL expires
         content_type: MIME type of the content
+        playback: For media, what the URL serves: "original", "converted" (a
+            browser-playable copy of an audio original), or "audio_only" (the audio
+            track of a video no browser decodes). None for a thumbnail.
         is_public: Whether the file is public
     """
     from app.core.config import settings
@@ -631,6 +650,7 @@ def get_media_file_stream_url(
     )
 
     # Determine storage path and expiration based on media type
+    playback: str | None = None
     if media_type == "thumbnail":
         storage_path = db_file.thumbnail_path
         expires_seconds = settings.THUMBNAIL_URL_EXPIRE_SECONDS
@@ -638,11 +658,15 @@ def get_media_file_stream_url(
             "image/webp" if storage_path and str(storage_path).endswith(".webp") else "image/jpeg"
         )
     else:
-        storage_path = db_file.storage_path
+        # A file no browser decodes plays its rendition instead (AAC/M4A); the original
+        # stays the download. resolve_playback also normalises the stored type: rows from
+        # before issue #1044 can hold an alias such as audio/vnd.wave that the player's
+        # <source type> rejects.
+        source = resolve_playback(db_file.content_type, db_file.storage_path, db_file.playback_path)
+        storage_path = source.object_name if source else None
+        content_type = source.content_type if source else "application/octet-stream"
+        playback = source.mode.value if source else None
         expires_seconds = settings.MEDIA_URL_EXPIRE_SECONDS
-        content_type = (
-            str(db_file.content_type) if db_file.content_type else "application/octet-stream"
-        )
 
     if not storage_path:
         raise HTTPException(
@@ -660,11 +684,16 @@ def get_media_file_stream_url(
             "url": f"/api/files/{db_file.uuid}/{media_type}",
             "expires_in": expires_seconds,
             "content_type": content_type,
+            "playback": playback,
             "is_public": getattr(db_file, "is_public", False),
         }
 
     try:
-        presigned_url = get_file_url(str(storage_path), expires=expires_seconds)
+        presigned_url = get_file_url(
+            str(storage_path),
+            expires=expires_seconds,
+            content_type=content_type if media_type != "thumbnail" else None,
+        )
         logger.info(
             f"Generated presigned URL for {media_type} (file: {file_uuid}, expires: {expires_seconds}s)"
         )
@@ -673,6 +702,7 @@ def get_media_file_stream_url(
             "url": presigned_url,
             "expires_in": expires_seconds,
             "content_type": content_type,
+            "playback": playback,
             "is_public": getattr(db_file, "is_public", False),
         }
     except HTTPException:
@@ -742,7 +772,9 @@ def _resolve_ready_download(
         url = get_presigned_download_url(
             str(db_file.storage_path),
             download_filename=filename,
-            content_type=str(db_file.content_type) if db_file.content_type else None,
+            content_type=normalize_media_content_type(
+                str(db_file.content_type) if db_file.content_type else None
+            ),
         )
         return {"url": url, "filename": filename}
 
@@ -777,7 +809,9 @@ def _resolve_ready_download(
     return None
 
 
-def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, mode: str) -> str:
+def _download_redaction_variant(
+    db: Session, db_file: MediaFile, user_id: int, mode: str, organization_id: int | None = None
+) -> str:
     """The caller's redaction fingerprint for a burned-in-subtitle download.
 
     Only ``video_subtitles`` carries transcript text; every audio mode is the original
@@ -786,6 +820,11 @@ def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, m
 
     Refuses the download when the reader's policy masks this file and its detection
     scan has not produced spans yet — burned-in text cannot be masked afterwards.
+
+    Args:
+        organization_id: The requester's active tenant scope (``ctx.org_id``),
+            threaded into ``resolve_effective_config`` so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
 
     Raises:
         HTTPException: 503 when the policy cannot be resolved, 409 while the file's
@@ -806,7 +845,7 @@ def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, m
     from app.services.redaction.export_policy import export_policy_fingerprint
 
     try:
-        cfg = resolve_effective_config(db, user_id)
+        cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
     except Exception as e:
         # FAIL CLOSED, as the subtitle endpoint does: an unresolvable policy must not
         # degrade to "no policy", which is exactly what produced the unmasked renders.
@@ -888,7 +927,9 @@ def prepare_download(
         db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
 
-    variant = _download_redaction_variant(db, db_file, current_user.id, mode)
+    variant = _download_redaction_variant(
+        db, db_file, current_user.id, mode, organization_id=ctx.org_id
+    )
 
     ready = _resolve_ready_download(db_file, mode, variant)
     if ready:
@@ -954,7 +995,7 @@ def download_stream(
     user_id = current_user.id
     # Resolved once, on the request thread, while the request's session is open: the
     # generator below runs on the event loop and its DB work is threadpooled.
-    variant = _download_redaction_variant(db, db_file, user_id, mode)
+    variant = _download_redaction_variant(db, db_file, user_id, mode, organization_id=ctx.org_id)
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
@@ -1163,6 +1204,7 @@ def update_transcript_segment(
 @router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
 def reprocess_media_file(
     file_uuid: str,
+    http_request: Request,
     reprocess_request: ReprocessRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -1174,7 +1216,9 @@ def reprocess_media_file(
     max_speakers = reprocess_request.max_speakers if reprocess_request else None
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
     stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
-    whisper_model = reprocess_request.whisper_model if reprocess_request else None
+    whisper_model = effective_whisper_model(
+        reprocess_request.whisper_model if reprocess_request else None, http_request
+    )
 
     return process_file_reprocess(
         file_uuid,

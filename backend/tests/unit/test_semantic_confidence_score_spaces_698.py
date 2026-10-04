@@ -266,10 +266,22 @@ def test_backfill_starved_groups_never_labels_confidence(monkeypatch):
     svc = HybridSearchService()
 
     class _FakeClient:
-        def search(self, index: str, body: dict) -> dict:
-            return _collapsed_response(15.0)
+        """Answers both halves of the split BM25 execution (#1064)."""
 
-    grouped = svc._backfill_starved_groups(
+        def search(self, index: str, body: dict) -> dict:
+            response = _collapsed_response(15.0)
+            if "files" not in body.get("aggs", {}):
+                return response
+            outer = response["hits"]["hits"][0]
+            segments = outer["inner_hits"]["segments"]["hits"]
+            bucket = {
+                "key": outer["_source"]["file_uuid"],
+                "doc_count": 1,
+                "segments": {"hits": {"hits": segments["hits"]}},
+            }
+            return {"hits": {"hits": []}, "aggregations": {"files": {"buckets": [bucket]}}}
+
+    grouped, _ = svc._backfill_starved_groups(
         client=_FakeClient(),
         grouped=[],
         search_query="widgets",

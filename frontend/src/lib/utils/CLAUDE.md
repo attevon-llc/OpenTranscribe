@@ -18,6 +18,17 @@ and domain formatting belong in the backend (thin-frontend rule).
   restart doesn't bring every client back in lockstep. Pass a deterministic `random` in tests.
 - `sanitizeHtml.ts` — DOMPurify allowlist wrappers (`sanitizeHighlightHtml`, `sanitizeToPlainText`); every `{@html}` must go through this.
 - `speakerColors.ts` — deterministic speaker color assignment (`getSpeakerColor*`).
+- `mediaType.ts` — `playableSourceType(contentType)` is the only `<source type>` hint a
+  player may render. It returns the canonical type, or `undefined` to omit the attribute,
+  because a hint the browser rejects (e.g. `audio/vnd.wave`) stops playback before any bytes
+  are fetched (issue #1044). This is the twin of backend `app/utils/media_types.py`.
+  Pass it the type `/stream-url` reports (`getCachedUrlInfo(...).contentType`), not the
+  upload's: a file no browser decodes is served as an AAC/M4A playback rendition.
+- `mediaFormats.ts` — what the player does with each accepted format (plays / converted /
+  audio-only preview), plus the extension→MIME fallback map. The upload panel advertises
+  these groups, so they must follow backend `services/playback_rendition.py`'s measured
+  tables. Moving a format into "playable" without measuring it in both browsers advertises
+  playback the user won't get.
 - `searchHighlight.ts`, `metadataMapper.ts`, `scrollbarCalculations.ts`, `url.ts`, `ids.ts`.
 
 ## Conventions / patterns

@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
+from app.core.task_liveness import run_heartbeat
 from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
@@ -24,10 +25,13 @@ from .cancellation import finish_cancelled
 from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import is_cancelled
 from .context import requeue_after_abort
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
+from .pipelines import _load_file_vocabulary
 from .pipelines import _resolve_language_settings
+from .run_ownership import superseded_or_none
 from .user_settings import _get_user_transcription_settings
 
 logger = logging.getLogger(__name__)
@@ -64,6 +68,7 @@ def _run_cpu_transcription(
         vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
+        vocabulary=_load_file_vocabulary(ctx),
     )
 
     if whisper_model and whisper_model in LIGHTWEIGHT_MODELS:
@@ -113,6 +118,10 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
     """
     task_id = preprocess_context["task_id"]
     file_uuid = preprocess_context["file_uuid"]
+    # issue #1020: a run recovery already replaced must not resurrect its Task row.
+    superseded = superseded_or_none(preprocess_context, stage="CPU transcription")
+    if superseded is not None:
+        return superseded
     file_id = preprocess_context["file_id"]
     user_id = preprocess_context["user_id"]
 
@@ -135,7 +144,7 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
     # inside this block -- outside it `stand_down_if_requested` has no run to ask about and
     # silently never fires. The context manager's reset is what stops celery's REUSED pool
     # thread from carrying this run's id into the next task.
-    with cancellation_scope(task_id, file_uuid):
+    with cancellation_scope(task_id, file_uuid), run_heartbeat(task_id):
         try:
             # issue #823: the cheapest place to catch a cancel that landed while this
             # message sat in the broker queue -- one Redis read, before any download,
@@ -231,5 +240,7 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             requeue_after_abort(file_uuid, abort, stage="CPU transcription")
         except Exception as e:
             logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
-            _handle_transcription_failure(ctx, task_id, str(e), "cpu_processing_error")
+            outcome = _handle_transcription_failure(ctx, task_id, str(e), "cpu_processing_error")
+            if is_cancelled(outcome):
+                return outcome  # issue #1163: cancelled mid-stage -- ack, do not fail
             raise

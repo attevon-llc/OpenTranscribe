@@ -226,7 +226,7 @@ def _match_and_finalize_embeddings(
     user_id = inputs["user_id"]
 
     with session_scope() as db:
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, user_id)
+        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(db, user_id, file_id)
 
         # ``embedding_service=None`` because the embeddings arrive already
         # aggregated and normalized from phase 2 — the matching service's only

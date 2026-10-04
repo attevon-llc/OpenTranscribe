@@ -13,6 +13,13 @@ survive API restarts (values re-sync from the DB on the next scrape; a shrinking
 value is ignored, preserving monotonicity).
 
 The whole refresh degrades gracefully: any DB error leaves the collectors untouched.
+
+Scrape cost (issue #1001): ``/metrics`` calls :func:`refresh_job_metrics`, which
+runs both projections at most once per :data:`JOB_METRICS_TTL_SECONDS`. The
+underlying state changes a few times a day, so re-reading it on every scrape —
+two DB sessions per poll from an autoscaler hitting ``/metrics`` every few
+seconds — bought nothing. Updating on job completion is not an option: the jobs
+run in Celery workers, whose registries are never scraped.
 """
 
 from __future__ import annotations
@@ -20,6 +27,8 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import threading
+import time
 from datetime import datetime
 
 from prometheus_client import REGISTRY
@@ -34,6 +43,14 @@ from app.core.metrics import media_mirror_last_success_timestamp_seconds
 from app.core.metrics import media_mirror_runs_total
 
 logger = logging.getLogger(__name__)
+
+#: How stale the backup/media-mirror gauges may be on ``/metrics``. Both jobs run
+#: on a schedule measured in hours; a minute of lag is invisible on any alert.
+JOB_METRICS_TTL_SECONDS = 60.0
+
+_clock = time.monotonic
+_refresh_lock = threading.Lock()
+_last_refresh_at: float | None = None
 
 
 def _sync_counter_to_db(counter, metric_name: str, pairs, vals: dict[str, str | None]) -> None:
@@ -167,3 +184,20 @@ def update_media_mirror_metrics(db: Session | None = None) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — scrape must never fail on DB issues
         logger.debug("Media mirror metric sampling skipped: %s", exc)
+
+
+def refresh_job_metrics() -> None:
+    """Run both job-state projections if the last run is older than the TTL.
+
+    The timestamp is claimed under the lock BEFORE the DB reads, so concurrent
+    scrapes that arrive together trigger one refresh, not one each.
+    """
+    global _last_refresh_at
+    with _refresh_lock:
+        now = _clock()
+        # A negative age means a different clock was installed (tests); treat it as stale.
+        if _last_refresh_at is not None and 0 <= now - _last_refresh_at < JOB_METRICS_TTL_SECONDS:
+            return
+        _last_refresh_at = now
+    update_backup_metrics()
+    update_media_mirror_metrics()

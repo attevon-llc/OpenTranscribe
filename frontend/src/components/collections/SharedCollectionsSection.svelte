@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SHARE_PERMISSION_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
@@ -37,7 +38,7 @@
         {/if}
         <div class="meta">
           <span class="media-count">{shared.media_count} {shared.media_count !== 1 ? $t('collectionsPanel.files') : $t('collectionsPanel.file')}</span>
-          <span class="badge shared-permission">{$t('sharing.permission' + shared.my_permission.charAt(0).toUpperCase() + shared.my_permission.slice(1))}</span>
+          <span class="badge shared-permission">{labelFor($t, SHARE_PERMISSION_KEYS, shared.my_permission)}</span>
         </div>
         <SharedByAttribution sharedBy={shared.shared_by} />
       </div>

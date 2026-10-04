@@ -28,6 +28,7 @@ from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
+from app.core.task_liveness import mark_queued
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -35,6 +36,9 @@ from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
+
+from .hooks import DispatchBlockedError
+from .hooks import QuotaExceededError
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +155,18 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
     return CeleryQueues.GPU
 
 
+def stage_priorities(*, retry: bool) -> tuple[int, int]:
+    """``(cpu_priority, gpu_priority)`` for a pipeline's stages.
+
+    A retry outranks a fresh submission on every queue it touches, which is what keeps a
+    requeued file in front of work submitted after it (kombu's Redis transport serves the
+    lower priority number first).
+    """
+    if retry:
+        return CPUPriority.PIPELINE_RETRY, GPUPriority.TRANSCRIPTION_RETRY
+    return CPUPriority.PIPELINE_CRITICAL, GPUPriority.USER_IMPORT
+
+
 def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
     """Record a failed pipeline publish on the file and its task row.
 
@@ -159,13 +175,8 @@ def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
     session. A broker failure there leaves an in_progress task and a PROCESSING
     file nothing will ever advance — link_error only fires for a chain that was
     actually published. Best-effort: never raises, never masks the real exception.
-
-    ``message`` may carry raw exception text — GH #959: only the fixed, category-derived
-    sentence is persisted; the raw text was already logged by the caller.
     """
-    from app.services.error_categorization_service import ErrorCategorizationService
-
-    truncated = ErrorCategorizationService.sanitize_for_storage(message[:2000])
+    truncated = message[:2000]
     try:
         with session_scope() as db:
             # Task row first, file status LAST: update_task_status's terminal
@@ -193,6 +204,66 @@ def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
         send_error_notification(user_id, file_id, truncated)
 
 
+def _run_pre_dispatch_gate(db, media_file: MediaFile, file_uuid: str, task_id: str) -> None:
+    """Checks every dispatch path runs before it creates a task record.
+
+    Shared by :func:`dispatch_transcription_pipeline` and
+    :func:`dispatch_batch_transcription` so a registered gate cannot be bypassed by
+    dispatching as a batch (#1169).
+
+    1. The per-organization duration ceiling from the upload-limits resolver (``None``
+       when no resolver is registered). Enforced here, the earliest point where the true
+       duration is known; upload-time checks only see bytes. The global URL-ingest cap
+       is enforced separately at ingest.
+    2. Registered before-dispatch hooks (none by default).
+
+    Raises:
+        ValueError: The media is longer than the organization's ceiling; the file has
+            been marked ERROR.
+        QuotaExceededError: A hook refused because the account is over quota.
+        DispatchBlockedError: A hook refused for any other deliberate reason.
+    """
+    from decimal import Decimal
+
+    from app.core.tenant_limits import resolve_upload_limits
+
+    from .hooks import DispatchContext
+    from .hooks import fire_before_dispatch
+
+    # est_audio_hours stays None when the duration is genuinely unknown (metadata
+    # extraction hasn't populated it yet). Coercing unknown to 0 would let a quota
+    # hook wave every such job through; only a positive, known duration becomes a
+    # concrete estimate, and the hook decides what to do with None.
+    duration_s = media_file.duration
+
+    limits = resolve_upload_limits(media_file.organization_id)
+    if (
+        limits is not None
+        and limits.max_duration_seconds is not None
+        and duration_s
+        and duration_s > limits.max_duration_seconds
+    ):
+        update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
+        raise ValueError(
+            f"Media duration {duration_s:.0f}s exceeds the plan limit of "
+            f"{limits.max_duration_seconds}s"
+        )
+
+    est_audio_hours = (
+        Decimal(str(duration_s)) / Decimal(3600) if duration_s and duration_s > 0 else None
+    )
+    fire_before_dispatch(
+        DispatchContext(
+            file_id=int(media_file.id),
+            file_uuid=file_uuid,
+            user_id=int(media_file.user_id),
+            organization_id=media_file.organization_id,
+            est_audio_hours=est_audio_hours,
+            task_id=task_id,
+        )
+    )
+
+
 def dispatch_transcription_pipeline(
     file_uuid: str,
     min_speakers: int | None = None,
@@ -206,6 +277,8 @@ def dispatch_transcription_pipeline(
     diarization_source: str | None = None,
     whisper_model: str | None = None,
     task_id: str | None = None,
+    retry: bool = False,
+    countdown: int | None = None,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -228,6 +301,11 @@ def dispatch_transcription_pipeline(
             (e.g., from the HTTP upload handler) it is reused so HTTP-phase
             benchmark markers share the ``benchmark:{task_id}`` Redis hash
             with the pipeline markers. When None, a fresh UUID is generated.
+        retry: An automatic retry of a run the infrastructure interrupted. Every stage
+            is published at the retry priority (``CPUPriority.PIPELINE_RETRY`` /
+            ``GPUPriority.TRANSCRIPTION_RETRY``) so the file goes ahead of submissions
+            that arrived after it rather than to the back of the queue.
+        countdown: Seconds to hold the first stage before it runs (retry backoff).
     """
     from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
@@ -247,55 +325,10 @@ def dispatch_transcription_pipeline(
         file_id = int(media_file.id)
         user_id = int(media_file.user_id)
 
-        # Cloud-edition seam: quota reservation hook (no-op in community).
-        # QuotaExceededError (HTTP 402) and DispatchBlockedError (403 by default,
-        # a hook's non-quota refusal) propagate BEFORE the task record is
-        # created, so a blocked job leaves no trace and nothing dispatches.
-        from decimal import Decimal
-
-        from .hooks import DispatchContext
-        from .hooks import fire_before_dispatch
-
-        # Pass est_audio_hours=None through when the duration is genuinely
-        # unknown (metadata extraction hasn't populated it yet). We must NOT
-        # coerce unknown->0 here: a 0 silently "always passes" the quota gate,
-        # which is the unknown-duration bypass the cloud enforcer needs to
-        # decide on (it blocks pessimistically when the org is at/over limit).
-        # Only a positive, known duration becomes a concrete estimate.
-        duration_s = media_file.duration
-
-        # Per-tenant duration ceiling (cloud seam; community resolver -> None).
-        # Enforced here — the earliest point where the true duration is known
-        # (upload-time checks can only see bytes). Global 4h URL-ingest cap is
-        # enforced separately at ingest.
-        from app.core.tenant_limits import resolve_upload_limits
-
-        limits = resolve_upload_limits(media_file.organization_id)
-        if (
-            limits is not None
-            and limits.max_duration_seconds is not None
-            and duration_s
-            and duration_s > limits.max_duration_seconds
-        ):
-            update_media_file_status(db, file_id, FileStatus.ERROR)
-            raise ValueError(
-                f"Media duration {duration_s:.0f}s exceeds the plan limit of "
-                f"{limits.max_duration_seconds}s"
-            )
-
-        est_audio_hours = (
-            Decimal(str(duration_s)) / Decimal(3600) if duration_s and duration_s > 0 else None
-        )
-        fire_before_dispatch(
-            DispatchContext(
-                file_id=file_id,
-                file_uuid=file_uuid,
-                user_id=user_id,
-                organization_id=media_file.organization_id,
-                est_audio_hours=est_audio_hours,
-                task_id=task_id,
-            )
-        )
+        # Pre-dispatch gate (duration ceiling + before-dispatch hooks). A refusal
+        # propagates BEFORE the task record is created, so a blocked job leaves no
+        # trace and nothing dispatches.
+        _run_pre_dispatch_gate(db, media_file, file_uuid, task_id)
 
         # Auto-resolve queue from user's ASR provider if not specified
         if not use_cpu and gpu_queue is None:
@@ -313,16 +346,20 @@ def dispatch_transcription_pipeline(
         update_media_file_status(db, file_id, FileStatus.PROCESSING)
         update_task_status(db, task_id, "in_progress", progress=0.0)
 
+    cpu_priority, gpu_priority = stage_priorities(retry=retry)
+
     # Build the 3-stage chain — route lightweight models to CPU
     if use_cpu:
         logger.info(f"Routing file {file_uuid} to CPU transcription (model={whisper_model})")
         transcribe_task = transcribe_cpu_task.s().set(
-            queue=CeleryQueues.CPU_TRANSCRIBE, priority=CPUPriority.PIPELINE_CRITICAL
+            queue=CeleryQueues.CPU_TRANSCRIBE, priority=cpu_priority
         )
     else:
-        transcribe_task = transcribe_gpu_task.s().set(
-            queue=gpu_queue, priority=GPUPriority.USER_IMPORT
-        )
+        transcribe_task = transcribe_gpu_task.s().set(queue=gpu_queue, priority=gpu_priority)
+
+    first_stage_options: dict = {"queue": CeleryQueues.CPU, "priority": cpu_priority}
+    if countdown:
+        first_stage_options["countdown"] = countdown
 
     pipeline = chain(
         preprocess_for_transcription.s(
@@ -337,11 +374,9 @@ def dispatch_transcription_pipeline(
             disable_diarization=True if use_cpu else disable_diarization,
             diarization_source="off" if use_cpu else diarization_source,
             whisper_model=whisper_model,
-        ).set(queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL),
+        ).set(**first_stage_options),
         transcribe_task,
-        finalize_transcription.s().set(
-            queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
-        ),
+        finalize_transcription.s().set(queue=CeleryQueues.CPU, priority=cpu_priority),
     )
 
     # Record dispatch timestamp + queue depth snapshot for inter-stage gap
@@ -350,6 +385,9 @@ def dispatch_transcription_pipeline(
 
     benchmark_timing.mark(task_id, "dispatch_timestamp")
     benchmark_timing.capture_queue_depth(task_id)
+
+    # issue #1020: recovery must be able to tell a run waiting for a worker from a lost one.
+    mark_queued(task_id)
 
     # Dispatch with error callback for cleanup
     try:
@@ -367,7 +405,8 @@ def dispatch_transcription_pipeline(
 
     route = "cpu-transcribe" if use_cpu else gpu_queue
     logger.info(
-        f"Dispatched transcription pipeline for file {file_uuid} (task_id={task_id}, route={route})"
+        f"Dispatched transcription pipeline for file {file_uuid} (task_id={task_id}, "
+        f"route={route}{', retry' if retry else ''})"
     )
 
     return task_id
@@ -410,6 +449,14 @@ def dispatch_batch_transcription(
 
                 file_id = int(media_file.id)
                 owner_id = int(media_file.user_id)
+
+                try:
+                    _run_pre_dispatch_gate(db, media_file, file_uuid, task_id)
+                except (QuotaExceededError, DispatchBlockedError) as e:
+                    # A deliberate refusal: skip this file exactly as the single-file
+                    # path would (no task record, status untouched), keep the batch going.
+                    logger.warning(f"Dispatch of {file_uuid} refused by a hook: {e.detail}")
+                    continue
 
                 resolved_queue = gpu_queue
                 if not use_cpu and resolved_queue is None:
@@ -469,6 +516,9 @@ def dispatch_batch_transcription(
     if not chains:
         return {"batch_id": None, "task_ids": []}
 
+    for queued_task_id in task_ids:
+        mark_queued(queued_task_id)  # issue #1020, as in dispatch_transcription_pipeline
+
     batch = group(chains)
     result = batch.apply_async()
 
@@ -513,6 +563,20 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
 
     logger.warning(f"Pipeline error handler triggered for file {file_uuid}")
 
+    # A failure that the retry policy already answered with a NEW run must not touch the file:
+    # the temp audio is keyed by file and the replacement run is using it, and marking the file
+    # ERROR here would overwrite the replacement's PROCESSING status.
+    from .run_ownership import replaced_by_newer_run
+
+    if replaced_by_newer_run(task_id):
+        logger.info(
+            "Pipeline error for file %s belongs to run %s, which a newer run has replaced "
+            "-- leaving the file to it",
+            file_uuid,
+            task_id,
+        )
+        return
+
     # Clean up temp audio
     with contextlib.suppress(Exception):
         cleanup_temp_audio(file_uuid)
@@ -520,6 +584,21 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
     # Record a terminal marker so the analysis layer can distinguish
     # error-mode completions from successful ones (Phase 2 PR #8, G27).
     benchmark_timing.mark(task_id, "pipeline_error_end")
+
+    # Issue #1163: an exception that ended a run whose cancellation was requested is a
+    # cancellation. Marking the file ERROR here is what turned user cancels into "Transcription
+    # pipeline failed unexpectedly" and an error notification.
+    cancelled_run = _cancelled_run_owner(file_uuid, task_id)
+    if cancelled_run is not None:
+        from app.services.transcription_retry import finish_cancelled_run
+
+        file_id, user_id = cancelled_run
+        logger.info(
+            "Pipeline error for file %s ended a cancelled run; recording it cancelled", file_uuid
+        )
+        finish_cancelled_run(task_id, file_id, file_uuid, user_id)
+        _flush_error_timing(task_id, file_id, user_id)
+        return
 
     # Track the captured file id for the error-path timing flush below —
     # avoids running the flush inside the closed session_scope.
@@ -559,6 +638,7 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
             if media_file and media_file.status not in (
                 FileStatus.ERROR,
                 FileStatus.COMPLETED,
+                FileStatus.CANCELLED,
             ):
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
 
@@ -583,6 +663,25 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
         logger.error(f"Error in pipeline error handler: {e}")
     finally:
         _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
+
+
+def _cancelled_run_owner(file_uuid: str, task_id: str) -> tuple[int, int] | None:
+    """``(file_id, user_id)`` when run ``task_id`` was being cancelled, else None.
+
+    None also when the file or the cancel state cannot be read: the error handler then
+    proceeds as it always has.
+    """
+    from app.services.transcription_retry import run_cancel_requested
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    try:
+        with session_scope() as db:
+            media_file = get_file_by_uuid(db, file_uuid)
+            ids = (int(media_file.id), int(media_file.user_id))
+    except Exception as e:  # noqa: BLE001 - see docstring
+        logger.debug("Could not read file %s for the cancel check: %s", file_uuid, e)
+        return None
+    return ids if run_cancel_requested(task_id, ids[0]) else None
 
 
 def _flush_error_timing(task_id: str, file_id: int | None, user_id: int | None) -> None:

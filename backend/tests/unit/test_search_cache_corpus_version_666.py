@@ -87,7 +87,9 @@ def _wired_service(monkeypatch):
     monkeypatch.setattr(
         hss, "_ensure_infrastructure", lambda fusion=None: "transcript-hybrid-search"
     )
-    monkeypatch.setattr(hss, "_resolve_redaction_config_for_cache", lambda user_id: None)
+    monkeypatch.setattr(
+        hss, "_resolve_redaction_config_for_cache", lambda user_id, organization_id=None: None
+    )
     monkeypatch.setattr(
         hss.HybridSearchService, "_redact_snippets", lambda self, result, user_id, cfg: None
     )

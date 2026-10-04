@@ -68,6 +68,7 @@ vi.mock('$stores/auth', async () => {
     changeOwnPassword: mockChangeOwnPassword,
     acknowledgeBanner: mockAcknowledgeBanner,
     logout: mockLogout,
+    sessionEndReason: writable(null),
   };
 });
 
@@ -186,42 +187,12 @@ describe('login/+page — credential submission', () => {
       expect(mockLogin).toHaveBeenCalledWith('user@example.com', 'wrong-password')
     );
 
-    // Issue #788: the toast call now always carries a (possibly-undefined)
-    // retryAfterSeconds option -- undefined here since a 401 is not a 429.
-    expect(mockToast.error).toHaveBeenCalledWith('auth.error.invalidCredentials', undefined, {
-      retryAfterSeconds: undefined,
-    });
+    expect(mockToast.error).toHaveBeenCalledWith('auth.error.invalidCredentials');
     const passwordInput = container.querySelector('#password') as HTMLInputElement;
     expect(passwordInput.value).toBe('');
     // The credential form is still the thing on screen — no success transition,
     // no inline `.error-message`/`.field-error` element carries this failure.
     expect(container.querySelector('.login-success-fullpage')).toBeNull();
-  });
-
-  it('rate limited (429): forwards retryAfterSeconds to the toast (issue #788)', async () => {
-    mockLogin.mockResolvedValue({
-      success: false,
-      status: 429,
-      message: 'Too many requests. Please try again later.',
-      retryAfterSeconds: 43,
-    });
-
-    const { container } = await renderLogin();
-
-    await fillAndSubmit(container, 'user@example.com', 'wrong-password');
-    await waitFor(() =>
-      expect(mockLogin).toHaveBeenCalledWith('user@example.com', 'wrong-password')
-    );
-
-    // The wait time rides as a SEPARATE option, not concatenated into the
-    // message string -- `Toast.svelte` renders it on its own line via
-    // `retryWaitLabel`, and concatenating would risk truncation by
-    // `.toast-message`'s single-line ellipsis.
-    expect(mockToast.error).toHaveBeenCalledWith(
-      'Too many requests. Please try again later.',
-      undefined,
-      { retryAfterSeconds: 43 }
-    );
   });
 
   it('valid credentials: calls the auth store with trimmed input, then redirects home', async () => {
@@ -428,5 +399,29 @@ describe('login/+page — auth-method branches', () => {
     });
     expect(container.querySelector('.auth-form')).toBeNull();
     expect(container.querySelector('.external-auth-buttons')).toBeNull();
+  });
+});
+
+describe('login/+page — why the last session ended (#1106)', () => {
+  afterEach(async () => {
+    const { sessionEndReason } = await import('$stores/auth');
+    (sessionEndReason as unknown as { set: (v: unknown) => void }).set(null);
+  });
+
+  it.each([
+    ['idle_timeout', 'auth.sessionTimeout.endedIdle'],
+    ['absolute_timeout', 'auth.sessionTimeout.endedAbsolute'],
+  ])('explains a %s sign-out', async (reason, key) => {
+    const { sessionEndReason } = await import('$stores/auth');
+    (sessionEndReason as unknown as { set: (v: unknown) => void }).set(reason);
+
+    const { container } = await renderLogin();
+
+    expect(container.querySelector('.session-ended-notice')?.textContent?.trim()).toBe(key);
+  });
+
+  it('says nothing after a voluntary sign-out', async () => {
+    const { container } = await renderLogin();
+    expect(container.querySelector('.session-ended-notice')).toBeNull();
   });
 });

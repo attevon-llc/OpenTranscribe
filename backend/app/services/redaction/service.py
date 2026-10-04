@@ -238,7 +238,9 @@ class RedactionService:
             media.language, supported, skipped
         )
         # Run LLM detector only if the owner enabled it (it needs their provider).
-        run_llm = RedactionService._owner_wants_llm(db, int(media.user_id))
+        run_llm = RedactionService._owner_wants_llm(
+            db, int(media.user_id), organization_id=getattr(media, "organization_id", None)
+        )
         if skipped:
             logger.info(
                 "Redaction: skipping detectors %s for file %s (language=%s not supported)",
@@ -503,7 +505,11 @@ class RedactionService:
         blocking: list[str] = []
         if failures:
             try:
-                cfg = resolve_effective_config(db, int(media_file.user_id))
+                cfg = resolve_effective_config(
+                    db,
+                    int(media_file.user_id),
+                    organization_id=getattr(media_file, "organization_id", None),
+                )
                 blocking = sorted(blocking_detector_failures(failures, cfg.enabled_categories))
             except Exception:  # noqa: BLE001
                 # Fail CLOSED: an unresolvable policy is not an absent policy. If
@@ -569,11 +575,12 @@ class RedactionService:
         return "stale"
 
     @staticmethod
-    def _owner_wants_llm(db: Session, user_id: int) -> bool:
+    def _owner_wants_llm(db: Session, user_id: int, *, organization_id: int | None = None) -> bool:
         try:
             from app.services.redaction.config import resolve_effective_config
 
-            return "llm" in resolve_effective_config(db, user_id).detectors
+            cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
+            return "llm" in cfg.detectors
         except Exception:  # noqa: BLE001
             return False
 

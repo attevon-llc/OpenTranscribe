@@ -962,7 +962,7 @@ def gather_recurrence_source_items(
         from app.services.redaction.config import resolve_effective_config
 
         try:
-            cfg = resolve_effective_config(db, user_id)
+            cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
         except Exception:  # noqa: BLE001 — an unresolvable policy declines, never sends raw text
             logger.exception("Could not resolve redaction config for recurrence")
             coverage["declined"] = "redaction policy could not be resolved"

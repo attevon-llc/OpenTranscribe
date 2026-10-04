@@ -157,7 +157,7 @@ def fake_redis(monkeypatch) -> _FakeRedis:
 def mfa_required(monkeypatch):
     """Deployment-wide MFA requirement, as the admin UI / .env would set it."""
     monkeypatch.setattr(login_module, "_is_mfa_enabled", lambda db: True)
-    monkeypatch.setattr(login_module, "_is_mfa_required", lambda db: True)
+    monkeypatch.setattr(login_module, "_is_mfa_required", lambda db, user=None: True)
 
 
 # ── MFA_REQUIRED is enforced at login, not just reported ─────────────────────────
@@ -196,7 +196,7 @@ class TestEnrollmentIsEnforcedAtLogin:
     def test_unenrolled_user_passes_when_mfa_is_optional(self, monkeypatch):
         """MFA enabled but not required stays opt-in — the pre-existing behaviour."""
         monkeypatch.setattr(login_module, "_is_mfa_enabled", lambda db: True)
-        monkeypatch.setattr(login_module, "_is_mfa_required", lambda db: False)
+        monkeypatch.setattr(login_module, "_is_mfa_required", lambda db, user=None: False)
 
         assert (
             login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")

@@ -111,7 +111,9 @@ def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | N
             policy must not be read as an absent policy — if we cannot tell
             whether masking is required, we must not send.
     """
-    cfg = resolve_effective_config(db, int(media_file.user_id))
+    cfg = resolve_effective_config(
+        db, int(media_file.user_id), organization_id=getattr(media_file, "organization_id", None)
+    )
     if not (cfg.enabled and cfg.redact_before_llm):
         return None
 

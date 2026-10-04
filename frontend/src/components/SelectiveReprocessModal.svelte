@@ -10,6 +10,7 @@
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
 
   export let showModal: boolean = false;
@@ -39,6 +40,8 @@
 
   // Model selection for reprocessing
   let selectedReprocessModel: string | null = null;
+  // Off = the deployment owns the model; the server ignores a requested one.
+  $: modelChoiceEnabled = isCapabilityEnabled($capabilities, 'transcription.model_choice');
   let adminDefaultModel = '';
 
   // Computed state
@@ -206,7 +209,7 @@
         if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
       }
 
-      if (selectedReprocessModel) {
+      if (selectedReprocessModel && modelChoiceEnabled) {
         requestBody.whisper_model = selectedReprocessModel;
       }
 
@@ -521,7 +524,11 @@
               <!-- Step 2: Settings (only when needsSettingsStep && currentStep === 2) -->
               {:else if isOnSettingsStep()}
                 <!-- Model Selection -->
-                {#if selectedStages.has('transcription')}
+                {#if selectedStages.has('transcription') && !modelChoiceEnabled}
+                  <p class="model-hint-text" style="margin-bottom: 1rem;" data-testid="reprocess-model-managed">
+                    {$t('uploader.modelManaged')}
+                  </p>
+                {:else if selectedStages.has('transcription')}
                   <div class="setting-field" style="margin-bottom: 1rem;">
                     <label for="reprocess-model-select">
                       {$t('uploader.whisperModel')}

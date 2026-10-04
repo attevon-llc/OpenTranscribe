@@ -180,6 +180,15 @@ Required IAM permissions:
 | `bedrock:InvokeModelWithResponseStream` | Chat (streaming) |
 | `bedrock:InvokeModel` | Summaries, topics, speaker ID (non-streaming) |
 
+**Transient capacity errors are retried before they reach the user.** Every
+Bedrock call (streaming chat included) uses botocore's `adaptive` retry mode with
+up to 8 attempts — jittered exponential backoff — so a short
+`ServiceUnavailableException` / `ThrottlingException` blip is absorbed. Tune with
+`BEDROCK_RETRY_MODE` (`adaptive` | `standard` | `legacy`) and
+`BEDROCK_MAX_ATTEMPTS`. If the provider is still unavailable after the retries,
+chat shows a translated "temporarily unavailable, try again" message; the
+provider's own error text is written to the server log only.
+
 **Cross-region inference profiles are applied automatically.** A bare
 foundation-model ID only works where that model is provisioned in your exact
 region; OpenTranscribe prefixes it with the geography derived from

@@ -30,9 +30,11 @@ from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.takedown_service import exclude_quarantined
 from app.services.task_recovery_service import task_recovery_service
+from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import get_task_summary_for_media_file
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -74,16 +76,19 @@ def _status_fields(file_status: FileStatus | None) -> dict[str, Any]:
 
 @router.get("/status", response_model=dict[str, Any])
 def get_user_file_status(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db), ctx: RequestContext = Depends(get_current_context)
 ):
     """
     Get status summary of current user's files including any problems.
 
     Returns counts of files by status and identifies files that may need attention.
+    Covers the caller's own files in the ACTIVE tenant only.
     """
+    current_user = ctx.user
     try:
         now = datetime.now(UTC)
         user_id = current_user.id
+        own_in_tenant = owned_in_tenant(MediaFile, user_id=user_id, organization_id=ctx.org_id)
 
         # --- Status counts via SQL GROUP BY (single aggregation query) ---
         # Quarantine exclusion applied BEFORE the GROUP BY, not by filtering the
@@ -92,7 +97,7 @@ def get_user_file_status(
         # without it mypy infers the narrower `RowReturningQuery[tuple[...]]` from the
         # multi-column `db.query(...)` below and rejects the reassignment.
         status_query: Query = db.query(MediaFile.status, func.count(MediaFile.id)).filter(
-            MediaFile.user_id == user_id
+            own_in_tenant
         )
         status_query = exclude_quarantined(status_query, include_quarantined=current_user.is_admin)
         status_rows = status_query.group_by(MediaFile.status).all()
@@ -124,7 +129,7 @@ def get_user_file_status(
                 defer(MediaFile.summary_data),  # type: ignore[arg-type]
             )
             .filter(
-                MediaFile.user_id == user_id,
+                own_in_tenant,
                 (
                     (MediaFile.status == FileStatus.PROCESSING)
                     & (MediaFile.upload_time < one_hour_ago)
@@ -182,7 +187,7 @@ def get_user_file_status(
                 defer(MediaFile.summary_data),  # type: ignore[arg-type]
             )
             .filter(
-                MediaFile.user_id == user_id,
+                own_in_tenant,
                 MediaFile.upload_time >= twenty_four_hours_ago,
             )
             .order_by(MediaFile.upload_time.desc())
@@ -280,7 +285,8 @@ def get_file_detailed_status(
                 "created_at": task.created_at,
                 "updated_at": task.updated_at,
                 "completed_at": task.completed_at,
-                "error_message": task.error_message,
+                # Never the raw exception on the wire (#786/#959).
+                "error_message": ErrorCategorizationService.user_message_for(task.error_message),
                 # Add formatted processing time
                 "formatted_processing_time": FormattingService.format_processing_time(
                     task.created_at,
@@ -509,12 +515,15 @@ def retry_file_processing(
 def request_user_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Request recovery for all of the current user's problem files.
-    This triggers the same recovery process that admins can run.
+    This triggers the same recovery process that admins can run, limited to the
+    caller's files in the ACTIVE tenant.
     """
+    current_user = ctx.user
+    org_id = ctx.org_id
     try:
         # Check rate limiting (prevent spam requests)
         # This could be implemented with Redis or database tracking
@@ -524,7 +533,9 @@ def request_user_recovery(
             try:
                 from app.tasks.recovery import recover_user_files_task
 
-                result = recover_user_files_task.delay(current_user.id)
+                result = recover_user_files_task.delay(
+                    current_user.id, tenant_scoped=True, organization_id=org_id
+                )
                 logger.info(f"User {current_user.id} requested file recovery, task ID: {result.id}")
             except Exception as e:
                 logger.exception(f"Error in user recovery request: {e}")

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PROVENANCE_SOURCE_KEYS, keyFor } from '$lib/i18n/keyMaps';
   /**
    * A derived value, WHERE IT CAME FROM, and a way to correct it.
    *
@@ -20,7 +21,6 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { DerivedFieldProvenance } from '$lib/types/media';
-  import { resolveProvenanceSourceI18nKey } from '$lib/i18n/provenanceSource';
 
   export let label: string;
   export let value: string | null | undefined = null;
@@ -44,12 +44,8 @@
    */
   $: unresolved = !provenance;
   $: hasValue = Boolean(value);
-  // GH #970: was `$t(`provenance.source.${sourceKey}`)`, the same interpolation-built-key
-  // construct that made #964 render nine raw keys. `resolveProvenanceSourceI18nKey` is
-  // exhaustive over `DerivedSource` at compile time (see `lib/i18n/provenanceSource.ts`).
-  $: sourceLabel = provenance
-    ? $t(resolveProvenanceSourceI18nKey(provenance.source))
-    : $t('provenance.source.unresolved');
+  $: sourceKey = provenance?.source ?? 'unresolved';
+  $: sourceLabel = $t(keyFor(PROVENANCE_SOURCE_KEYS, sourceKey, PROVENANCE_SOURCE_KEYS.unresolved));
 
   function startEditing() {
     // The <input type="date"> wants YYYY-MM-DD; the stored value is a full ISO instant.
@@ -121,7 +117,7 @@
         <ul>
           {#each provenance.candidates as candidate (candidate.source + (candidate.evidence ?? ''))}
             <li>
-              <strong>{$t(resolveProvenanceSourceI18nKey(candidate.source))}</strong>
+              <strong>{$t(keyFor(PROVENANCE_SOURCE_KEYS, candidate.source, PROVENANCE_SOURCE_KEYS.unresolved))}</strong>
               {#if candidate.date}— {format(candidate.date)}{/if}
               {#if candidate.evidence}<em>{candidate.evidence}</em>{/if}
             </li>

@@ -1,0 +1,269 @@
+Package,Author,License,Status,Reason,URL
+Cython,"Robert Bradshaw, Stefan Behnel, David Woods, Greg Ewing, et al.",Apache-2.0,OK,permissive,https://cython.org/
+Deprecated,Laurent LAPORTE,MIT,OK,permissive,https://github.com/laurent-laporte-pro/deprecated
+Events,Nicola Iarocci,BSD-3-Clause,OK,permissive,http://github.com/pyeve/events
+Jinja2,UNKNOWN,BSD-3-Clause,OK,permissive,https://github.com/pallets/jinja/
+Mako,Mike Bayer <mike@zzzcomputing.com>,MIT,OK,permissive,https://www.makotemplates.org/
+MarkupSafe,UNKNOWN,BSD-3-Clause,OK,permissive,https://github.com/pallets/markupsafe/
+PyExifTool,"Kevin M (sylikc), Sven Marnach, various contributors",BSD-3-Clause OR GPL-3.0-or-later,OK,satisfied by an OR'd permissive option: BSD-3-Clause OR GPL-3.0-or-later,http://github.com/sylikc/pyexiftool
+PyJWT,Jose Padilla <hello@jpadilla.com>,MIT,OK,permissive,https://github.com/jpadilla/pyjwt
+PyOTP,Andrey Kislyuk,MIT,OK,permissive,https://github.com/pyauth/pyotp
+PyYAML,Kirill Simonov,MIT,OK,permissive,https://pyyaml.org/
+Pygments,Georg Brandl <georg@python.org>,BSD-2-Clause,OK,permissive,https://pygments.org
+SQLAlchemy,Mike Bayer,MIT,OK,permissive,https://www.sqlalchemy.org
+aiofiles,Tin Tvrtkovic <tinchester@gmail.com>,Apache-2.0,OK,permissive,https://github.com/Tinche/aiofiles
+aiohappyeyeballs,J. Nick Koston,Python Software Foundation License,OK,permissive,https://github.com/aio-libs/aiohappyeyeballs
+aiohttp,UNKNOWN,Apache-2.0 AND MIT,OK,"AND expression, worst component governs: Apache-2.0 AND MIT",https://github.com/aio-libs/aiohttp
+aiosignal,UNKNOWN,Apache-2.0,OK,permissive,https://github.com/aio-libs/aiosignal
+alembic,Mike Bayer <mike_mp@zzzcomputing.com>,MIT,OK,permissive,https://alembic.sqlalchemy.org
+amqp,Barry Pederson,BSD-3-Clause,OK,permissive,http://github.com/celery/py-amqp
+annotated-doc,=?utf-8?q?Sebasti=C3=A1n_Ram=C3=ADrez?= <tiangolo@gmail.com>,MIT,OK,permissive,https://github.com/fastapi/annotated-doc
+annotated-types,"Adrian Garcia Badaracco <1755071+adriangb@users.noreply.github.com>, Samuel Colvin <s@muelcolvin.com>, Zac Hatfield-Dodds <zac@zhd.dev>",MIT,OK,permissive,https://github.com/annotated-types/annotated-types
+antlr4-python3-runtime,"Eric Vergnaud, Terence Parr, Sam Harwell",BSD-3-Clause,OK,permissive,http://www.antlr.org
+anyio,Alex Grönholm <alex.gronholm@nextday.fi>,MIT,OK,permissive,https://anyio.readthedocs.io/en/stable/versionhistory.html
+argon2-cffi,Hynek Schlawack <hs@ox.cx>,MIT,OK,permissive,https://github.com/hynek/argon2-cffi/blob/main/CHANGELOG.md
+argon2-cffi-bindings,Hynek Schlawack <hs@ox.cx>,MIT,OK,permissive,https://github.com/hynek/argon2-cffi-bindings/blob/main/CHANGELOG.md
+assemblyai,AssemblyAI,MIT,OK,permissive,https://github.com/AssemblyAI/assemblyai-python-sdk
+asteroid-filterbanks,Manuel Pariente,MIT,OK,permissive,https://github.com/asteroid-team/asteroid-filterbanks
+attrs,Hynek Schlawack <hs@ox.cx>,MIT,OK,permissive,https://www.attrs.org/en/stable/changelog.html
+autocommand,,LGPL-3.0-only,REVIEW,weak copyleft,
+av,"WyattBlue <wyattblue@auto-editor.com>, Jeremy Lainé <jeremy.laine@m4x.org>",BSD-3-Clause,OK,permissive,https://pyav.basswood.io
+azure-cognitiveservices-speech,Microsoft,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',UNKNOWN
+azure-core,Microsoft Corporation <azpysdkhelp@microsoft.com>,MIT,OK,permissive,https://github.com/Azure/azure-sdk-for-python/tree/main/sdk/core/azure-core
+backports.tarfile,,MIT,OK,permissive,
+bcrypt,The Python Cryptographic Authority developers <cryptography-dev@python.org>,Apache-2.0,OK,permissive,https://github.com/pyca/bcrypt/
+billiard,R Oudkerk / Python Software Foundation,BSD-3-Clause,OK,permissive,https://github.com/celery/billiard
+blis,Matthew Honnibal,BSD-3-Clause,OK,permissive,https://github.com/explosion/cython-blis
+boto3,Amazon Web Services,Apache-2.0,OK,permissive,https://github.com/boto/boto3
+botocore,Amazon Web Services,Apache-2.0,OK,permissive,https://github.com/boto/botocore
+brotli,The Brotli Authors,MIT,OK,permissive,https://github.com/google/brotli
+cachetools,Thomas Kemmer <tkemmer@computer.org>,MIT,OK,permissive,https://github.com/tkem/cachetools/
+catalogue,Explosion,MIT,OK,permissive,https://github.com/explosion/catalogue
+celery,Ask Solem,BSD-3-Clause,OK,permissive,https://docs.celeryq.dev/
+certifi,Kenneth Reitz,MPL-2.0,REVIEW,weak copyleft,https://github.com/certifi/python-certifi
+cffi,"Armin Rigo, Maciej Fijalkowski",MIT,OK,permissive,https://cffi.readthedocs.io/en/latest/whatsnew.html
+charset-normalizer,"""Ahmed R. TAHRI"" <tahri.ahmed@proton.me>",MIT,OK,permissive,https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md
+click,UNKNOWN,BSD-3-Clause,OK,permissive,https://github.com/pallets/click/
+click-didyoumean,Timo Furrer,MIT,OK,permissive,https://github.com/click-contrib/click-didyoumean
+click-plugins,"Kevin Wurster, Sean Gillies",BSD-3-Clause,OK,permissive,https://github.com/click-contrib/click-plugins
+click-repl,Markus Unterwaditzer,MIT,OK,permissive,https://github.com/click-contrib/click-repl
+cloudpathlib,DrivenData <info@drivendata.org>,MIT,OK,permissive,https://github.com/drivendataorg/cloudpathlib
+cloudpickle,The cloudpickle developer team,BSD-3-Clause,OK,permissive,https://github.com/cloudpipe/cloudpickle
+colorama,Jonathan Hartley <tartley@tartley.com>,BSD-3-Clause,OK,permissive,https://github.com/tartley/colorama
+colorlog,Sam Clements,MIT,OK,permissive,https://github.com/borntyping/python-colorlog
+confection,Explosion,MIT,OK,permissive,https://github.com/explosion/confection
+contourpy,Ian Thomas <ianthomas23@gmail.com>,BSD-3-Clause,OK,permissive,https://github.com/contourpy/contourpy
+cryptography,The Python Cryptographic Authority and individual contributors <cryptography-dev@python.org>,Apache-2.0 OR BSD-3-Clause,OK,satisfied by an OR'd permissive option: Apache-2.0 OR BSD-3-Clause,https://github.com/pyca/cryptography
+ctranslate2,OpenNMT,MIT,OK,permissive,https://opennmt.net
+cuda-bindings,NVIDIA Corporation <cuda-python-conduct@nvidia.com>,Apache-2.0,OK,permissive,https://github.com/NVIDIA/cuda-python
+cuda-pathfinder,NVIDIA Corporation <cuda-python-conduct@nvidia.com>,Apache-2.0,OK,permissive,https://github.com/NVIDIA/cuda-python
+cycler,Thomas A Caswell <matplotlib-users@python.org>,BSD-3-Clause,OK,permissive,https://matplotlib.org/cycler/
+cymem,Matthew Honnibal,MIT,OK,permissive,https://github.com/explosion/cymem
+deepgram-sdk,UNKNOWN,MIT,OK,permissive,https://github.com/deepgram/deepgram-python-sdk
+defusedxml,Christian Heimes,Python Software Foundation License,OK,permissive,https://github.com/tiran/defusedxml
+detoxify,Unitary,Apache-2.0,OK,permissive,https://github.com/unitaryai/detoxify
+dnspython,Bob Halley <halley@dnspython.org>,ISC,OK,permissive,https://www.dnspython.org
+einops,Alex Rogozhnikov,MIT,OK,permissive,https://github.com/arogozhnikov/einops
+email-validator,Joshua Tauberer,Unlicense,OK,permissive,https://github.com/JoshData/python-email-validator
+en_core_web_sm,Explosion,MIT,OK,permissive,https://explosion.ai
+fastapi,=?utf-8?q?Sebasti=C3=A1n_Ram=C3=ADrez?= <tiangolo@gmail.com>,MIT,OK,permissive,https://github.com/fastapi/fastapi
+faster-whisper,Guillaume Klein,MIT,OK,permissive,https://github.com/SYSTRAN/faster-whisper
+ffmpeg-python,Karl Kroening,Apache-2.0,OK,permissive,https://github.com/kkroening/ffmpeg-python
+filelock,UNKNOWN,MIT,OK,permissive,https://github.com/tox-dev/py-filelock
+flatbuffers,Derek Bailey,Apache-2.0,OK,permissive,https://google.github.io/flatbuffers/
+flower,Mher Movsisyan,BSD-3-Clause,OK,permissive,https://github.com/mher/flower
+fonttools,Just van Rossum,MIT,OK,permissive,http://github.com/fonttools/fonttools
+frozenlist,UNKNOWN,Apache-2.0,OK,permissive,https://github.com/aio-libs/frozenlist
+fsspec,UNKNOWN,BSD-3-Clause,OK,permissive,https://github.com/fsspec/filesystem_spec
+future,Ed Schofield,MIT,OK,permissive,https://python-future.org
+gliner,"Urchade Zaratiana, Nadi Tomeh, Pierre Holat, Thierry Charnois",Apache-2.0,OK,permissive,https://github.com/urchade/GLiNER
+global_gender_predictor,Rianne Klaver,MIT,OK,permissive,https://github.com/attract-ai/global-gender-predictor
+google-api-core,Google LLC <googleapis-packages@google.com>,Apache-2.0,OK,permissive,https://github.com/googleapis/google-cloud-python/tree/main/packages/google-api-core
+google-auth,Google Cloud Platform,Apache-2.0,OK,permissive,https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth
+google-cloud-speech,Google LLC,Apache-2.0,OK,permissive,https://github.com/googleapis/google-cloud-python/tree/main/packages/google-cloud-speech
+googleapis-common-protos,Google LLC <googleapis-packages@google.com>,Apache-2.0,OK,permissive,https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos
+greenlet,Alexey Borzenkov <snaury@gmail.com>,MIT AND PSF-2.0,OK,"AND expression, worst component governs: MIT AND PSF-2.0",https://greenlet.readthedocs.io
+grpcio,The gRPC Authors <grpc-io@googlegroups.com>,Apache-2.0,OK,permissive,https://grpc.io
+grpcio-status,The gRPC Authors <grpc-io@googlegroups.com>,Apache-2.0,OK,permissive,https://grpc.io
+h11,Nathaniel J. Smith,MIT,OK,permissive,https://github.com/python-hyper/h11
+hf-xet,UNKNOWN,Apache-2.0,OK,permissive,https://github.com/huggingface/xet-core
+httpcore,Tom Christie <tom@tomchristie.com>,BSD-3-Clause,OK,permissive,https://www.encode.io/httpcore/
+httpcore2,Tom Christie <tom@tomchristie.com>,BSD-3-Clause,OK,permissive,https://github.com/pydantic/httpx2
+httptools,Yury Selivanov <yury@magic.io>,MIT,OK,permissive,https://github.com/MagicStack/httptools
+httpx,Tom Christie <tom@tomchristie.com>,BSD-3-Clause,OK,permissive,https://github.com/encode/httpx
+httpx2,Tom Christie <tom@tomchristie.com>,BSD-3-Clause,OK,permissive,https://github.com/pydantic/httpx2
+huggingface_hub,"Hugging Face, Inc.",Apache-2.0,OK,permissive,https://github.com/huggingface/huggingface_hub
+humanize,Jason Moiron <jmoiron@jmoiron.net>,MIT,OK,permissive,https://github.com/python-humanize/humanize
+idna,Kim Davies <kim+pypi@gumleaf.org>,BSD-3-Clause,OK,permissive,https://github.com/kjd/idna
+imohash,Jim Kalafut <jim@kalafut.net>,MIT,OK,permissive,https://github.com/kalafut/py-imohash
+importlib_metadata,,Apache-2.0,OK,permissive,
+isodate,Gerhard Weis,BSD-3-Clause,OK,permissive,https://github.com/gweis/isodate/
+jaraco.context,,MIT,OK,permissive,
+jaraco.functools,,MIT,OK,permissive,
+jaraco.text,,MIT,OK,permissive,
+jiter,Samuel Colvin <s@muelcolvin.com>,MIT,OK,permissive,https://github.com/pydantic/jiter/
+jmespath,James Saryerwinnie,MIT,OK,permissive,https://github.com/jmespath/jmespath.py
+joblib,Gael Varoquaux <gael.varoquaux@normalesup.org>,BSD-3-Clause,OK,permissive,https://joblib.readthedocs.io
+joserfc,Hsiaoming Yang <me@lepture.com>,BSD-3-Clause,OK,permissive,https://github.com/authlib/joserfc
+json_repair,Stefano Baccianella <4247706+mangiucugna@users.noreply.github.com>,MIT,OK,permissive,https://github.com/mangiucugna/json_repair/
+julius,Alexandre Défossez <alexandre.defossez@gmail.com>,MIT,OK,permissive,https://github.com/adefossez/julius
+kaldialign,Piotr Żelasko,Apache-2.0,OK,permissive,https://github.com/pzelasko/kaldialign
+kiwisolver,The Nucleic Development Team <sccolbert@gmail.com>,BSD-3-Clause,OK,permissive,https://github.com/nucleic/kiwi
+kombu,Ask Solem,BSD-3-Clause,OK,permissive,https://kombu.readthedocs.io
+ldap3,Giovanni Cannata,LGPL-3.0-only,REVIEW,weak copyleft,https://github.com/cannatag/ldap3
+lightning,Lightning AI et al.,Apache-2.0,OK,permissive,https://github.com/Lightning-AI/lightning
+lightning-utilities,Lightning AI et al.,Apache-2.0,OK,permissive,https://github.com/Lightning-AI/utilities
+limits,Ali-Akber Saifee <ali@indydevs.org>,MIT,OK,permissive,https://limits.readthedocs.org
+lxml,lxml dev team,BSD-3-Clause,OK,permissive,https://lxml.de/
+markdown-it-py,Chris Sewell <chrisj_sewell@hotmail.com>,MIT,OK,permissive,https://github.com/executablebooks/markdown-it-py
+matplotlib,"John D. Hunter, Michael Droettboom",Python Software Foundation License,OK,permissive,https://matplotlib.org
+mdurl,Taneli Hukkinen <hukkin@users.noreply.github.com>,MIT,OK,permissive,https://github.com/executablebooks/mdurl
+meeteval,"Department of Communications Engineering, Paderborn University",MIT,OK,permissive,https://github.com/fgnt/meeteval/
+minio,"MinIO, Inc.",Apache-2.0,OK,permissive,https://github.com/minio/minio-py
+ml_dtypes,ml_dtypes authors <ml_dtypes@google.com>,Apache-2.0,OK,permissive,https://github.com/jax-ml/ml_dtypes
+mmh3,Hajime Senuma <hajime.senuma@gmail.com>,MIT,OK,permissive,https://pypi.org/project/mmh3/
+more-itertools,,MIT,OK,permissive,
+mpmath,Fredrik Johansson,BSD-3-Clause,OK,permissive,http://mpmath.org/
+msal,Microsoft Corporation,MIT,OK,permissive,https://github.com/AzureAD/microsoft-authentication-library-for-python
+multidict,Andrew Svetlov,Apache-2.0,OK,permissive,https://github.com/aio-libs/multidict
+murmurhash,Explosion,MIT,OK,permissive,https://github.com/explosion/murmurhash
+mutagen,Christoph Reiter <reiter.christoph@gmail.com>,GPL-2.0-or-later,BLOCKER,no acceptable option in OR expression: GPL-2.0-or-later,https://mutagen.readthedocs.io
+narwhals,Marco Gorelli,MIT,OK,permissive,https://github.com/narwhals-dev/narwhals
+networkx,Aric Hagberg <hagberg@lanl.gov>,BSD-3-Clause,OK,permissive,https://networkx.org/
+nltk,NLTK Team,Apache-2.0,OK,permissive,https://www.nltk.org/
+numpy,Travis E. Oliphant et al.,BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0,OK,"AND expression, worst component governs: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",https://numpy.org
+nvidia-cublas-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cuda-cupti-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cuda-nvrtc-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cuda-runtime-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cudnn-cu12,Nvidia CUDA Installer Team,LicenseRef-NVIDIA-Proprietary,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'licenseref-nvidia',https://developer.nvidia.com/cuda-zone
+nvidia-cufft-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cufile-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-curand-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cusolver-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cusparse-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-cusparselt-cu12,NVIDIA Corporation,NVIDIA Proprietary Software,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'proprietary software',https://developer.nvidia.com/cusparselt
+nvidia-nccl-cu12,Nvidia CUDA Installer Team,LicenseRef-NVIDIA-Proprietary,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'licenseref-nvidia',https://developer.nvidia.com/cuda-zone
+nvidia-nvjitlink-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+nvidia-nvshmem-cu12,Nvidia CUDA Installer Team,LicenseRef-NVIDIA-Proprietary,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'licenseref-nvidia',https://developer.nvidia.com/cuda-zone
+nvidia-nvtx-cu12,Nvidia CUDA Installer Team,Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://developer.nvidia.com/cuda-zone
+omegaconf,Omry Yadan,BSD-3-Clause,OK,permissive,https://github.com/omry/omegaconf
+onnx,ONNX Contributors <onnx-technical-discuss@lists.lfaidata.foundation>,Apache-2.0,OK,permissive,https://onnx.ai/
+onnx-ir,ONNX Contributors <onnx-technical-discuss@lists.lfaidata.foundation>,Apache-2.0,OK,permissive,https://onnx.ai/ir-py
+onnxconverter-common,Microsoft Corporation,MIT,OK,permissive,https://github.com/microsoft/onnxconverter-common
+onnxruntime-gpu,Microsoft Corporation,MIT,OK,permissive,https://onnxruntime.ai
+onnxscript,Microsoft Corporation <onnx@microsoft.com>,MIT,OK,permissive,https://microsoft.github.io/onnxscript/
+onnxslim,inisis <desmond.yao@buaa.edu.cn>,MIT,OK,permissive,https://github.com/inisis/OnnxSlim
+openai,OpenAI <support@openai.com>,Apache-2.0,OK,permissive,https://github.com/openai/openai-python
+opensearch-protobufs,OpenSearch Team,Apache-2.0,OK,permissive,https://opensearch.org/
+opensearch-py,"Aleksei Atavin, Denis Zalevskiy, Rushi Agrawal, Shephali Mittal",Apache-2.0,OK,permissive,https://github.com/opensearch-project/opensearch-py
+opentelemetry-api,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api
+opentelemetry-exporter-otlp,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp
+opentelemetry-exporter-otlp-proto-common,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common
+opentelemetry-exporter-otlp-proto-grpc,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-http,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-http
+opentelemetry-proto,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto
+opentelemetry-sdk,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk
+opentelemetry-semantic-conventions,OpenTelemetry Authors <cncf-opentelemetry-contributors@lists.cncf.io>,Apache-2.0,OK,permissive,https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions
+optuna,Takuya Akiba,MIT,OK,permissive,https://optuna.org/
+packaging,Donald Stufft <donald@stufft.io>,Apache-2.0 OR BSD-2-Clause,OK,satisfied by an OR'd permissive option: Apache-2.0 OR BSD-2-Clause,https://github.com/pypa/packaging
+pandas,The Pandas Development Team <pandas-dev@python.org>,BSD-3-Clause,OK,permissive,https://pandas.pydata.org
+passlib,Eli Collins,BSD-3-Clause,OK,permissive,https://passlib.readthedocs.io
+phonenumbers,David Drysdale <dmd@lurklurk.org>,Apache-2.0,OK,permissive,https://github.com/daviddrysdale/python-phonenumbers
+pillow,Jeffrey 'Alex' Clark <aclark@aclark.net>,MIT-CMU,OK,permissive,https://python-pillow.github.io
+pip,,MIT,OK,permissive,
+platformdirs,UNKNOWN,MIT,OK,permissive,https://github.com/tox-dev/platformdirs
+preshed,Explosion,MIT,OK,permissive,https://github.com/explosion/preshed
+presidio_analyzer,Presidio,MIT,OK,permissive,https://github.com/data-privacy-stack/presidio
+presidio_anonymizer,Presidio,MIT,OK,permissive,https://github.com/Microsoft/presidio
+primePy,Indrajit Jana,MIT,OK,permissive,https://github.com/janaindrajit/primePy
+prometheus_client,The Prometheus Authors <prometheus-developers@googlegroups.com>,Apache-2.0 AND BSD-2-Clause,OK,"AND expression, worst component governs: Apache-2.0 AND BSD-2-Clause",https://github.com/prometheus/client_python
+prompt_toolkit,Jonathan Slenders,BSD-3-Clause,OK,permissive,https://github.com/prompt-toolkit/python-prompt-toolkit
+propcache,Andrew Svetlov,Apache-2.0,OK,permissive,https://github.com/aio-libs/propcache
+proto-plus,Google LLC <googleapis-packages@google.com>,Apache-2.0,OK,permissive,https://github.com/googleapis/google-cloud-python/tree/main/packages/proto-plus
+protobuf,protobuf@googlegroups.com,BSD-3-Clause,OK,permissive,https://developers.google.com/protocol-buffers/
+psutil,Giampaolo Rodola,BSD-3-Clause,OK,permissive,https://github.com/giampaolo/psutil
+psycopg2,Federico Di Gregorio,LGPL-2.1-only,REVIEW,weak copyleft,https://psycopg.org/
+pyasn1,Ilya Etingof <etingof@gmail.com>,BSD-2-Clause,OK,permissive,https://github.com/pyasn1/pyasn1
+pyasn1_modules,Ilya Etingof,BSD-3-Clause,OK,permissive,https://github.com/pyasn1/pyasn1-modules
+pycparser,Eli Bendersky <eliben@gmail.com>,BSD-3-Clause,OK,permissive,https://github.com/eliben/pycparser
+pycryptodome,Helder Eijs,BSD-3-Clause OR Public Domain,OK,satisfied by an OR'd permissive option: BSD-3-Clause OR Public Domain,https://www.pycryptodome.org
+pycryptodomex,Helder Eijs,BSD-3-Clause OR Public Domain,OK,satisfied by an OR'd permissive option: BSD-3-Clause OR Public Domain,https://www.pycryptodome.org
+pydantic,"Samuel Colvin <s@muelcolvin.com>, Eric Jolibois <em.jolibois@gmail.com>, Hasan Ramezani <hasan.r67@gmail.com>, Adrian Garcia Badaracco <1755071+adriangb@users.noreply.github.com>, Terrence Dorsey <terry@pydantic.dev>, David Montague <david@pydantic.dev>, Serge Matveenko <lig@countzero.co>, Marcelo Trylesinski <marcelotryle@gmail.com>, Sydney Runkle <sydneymarierunkle@gmail.com>, David Hewitt <mail@davidhewitt.dev>, Alex Hall <alex.mojaki@gmail.com>, Victorien Plot <contact@vctrn.dev>",MIT,OK,permissive,https://github.com/pydantic/pydantic
+pydantic-settings,"Samuel Colvin <s@muelcolvin.com>, Eric Jolibois <em.jolibois@gmail.com>, Hasan Ramezani <hasan.r67@gmail.com>",MIT,OK,permissive,https://github.com/pydantic/pydantic-settings
+pydantic_core,"Samuel Colvin <s@muelcolvin.com>, Adrian Garcia Badaracco <1755071+adriangb@users.noreply.github.com>, David Montague <david@pydantic.dev>, David Hewitt <mail@davidhewitt.dev>, Sydney Runkle <sydneymarierunkle@gmail.com>, Victorien Plot <contact@vctrn.dev>",MIT,OK,permissive,https://github.com/pydantic
+pyparsing,Paul McGuire <ptmcg.gm+pyparsing@gmail.com>,MIT,OK,permissive,https://github.com/pyparsing/pyparsing/
+pyspnego,Jordan Borean <jborean93@gmail.com>,MIT,OK,permissive,https://github.com/jborean93/pyspnego
+python-dateutil,Gustavo Niemeyer,Apache-2.0 OR BSD-3-Clause,OK,satisfied by an OR'd permissive option: Apache-2.0 OR BSD-3-Clause,https://github.com/dateutil/dateutil
+python-dotenv,Saurabh Kumar <me+github@saurabh-kumar.com>,BSD-3-Clause,OK,permissive,https://github.com/theskumar/python-dotenv
+python-json-logger,"Zakaria Zajac <zak@madzak.com>, Nicholas Hairs <info+python-json-logger@nicholashairs.com>",BSD-2-Clause,OK,permissive,https://nhairs.github.io/python-json-logger
+python-multipart,Andrew Dunham <andrew@du.nham.ca>,Apache-2.0,OK,permissive,https://github.com/Kludex/python-multipart
+python3-saml,UNKNOWN,MIT,OK,permissive,https://github.com/SAML-Toolkits/python3-saml
+pytorch-lightning,Lightning AI et al.,Apache-2.0,OK,permissive,https://github.com/Lightning-AI/lightning
+pytorch-metric-learning,Kevin Musgrave,MIT,OK,permissive,https://github.com/KevinMusgrave/pytorch-metric-learning
+pytz,Stuart Bishop,MIT,OK,permissive,http://pythonhosted.org/pytz
+qrcode,Lincoln Loop,BSD-3-Clause OR Other/Proprietary License,PROPRIETARY-REVIEW,vendor EULA / proprietary license marker 'other/proprietary license',https://github.com/lincolnloop/python-qrcode
+redis,"""Redis Inc."" <oss@redis.com>",MIT,OK,permissive,https://github.com/redis/redis-py
+regex,Matthew Barnett <regex@mrabarnett.plus.com>,Apache-2.0 AND CNRI-Python,OK,"AND expression, worst component governs: Apache-2.0 AND CNRI-Python",https://github.com/mrabarnett/mrab-regex
+requests,Kenneth Reitz <me@kennethreitz.org>,Apache-2.0,OK,permissive,https://github.com/psf/requests
+requests-file,David Shea <reallylongword@gmail.com>,Apache-2.0,OK,permissive,https://codeberg.org/dashea/requests-file
+rich,Will McGugan,MIT,OK,permissive,https://github.com/Textualize/rich
+s3transfer,Amazon Web Services,Apache-2.0,OK,permissive,https://github.com/boto/s3transfer
+safetensors,"Nicolas Patry <patry.nicolas@protonmail.com>, Luc Georges <luc@huggingface.co>, Daniël De Kok <daniel.dekok@huggingface.co>",Apache-2.0,OK,permissive,https://github.com/huggingface/safetensors
+scikit-learn,UNKNOWN,BSD-3-Clause,OK,permissive,https://scikit-learn.org
+scipy,UNKNOWN,BSD-3-Clause,OK,permissive,https://scipy.org/
+sentence-transformers,"Nils Reimers <info@nils-reimers.de>, Tom Aarsen <tom.aarsen@huggingface.co>",Apache-2.0,OK,permissive,https://www.SBERT.net
+sentencepiece,Taku Kudo <taku@google.com>,Apache-2.0,OK,permissive,https://github.com/google/sentencepiece
+setuptools,,MIT,OK,permissive,
+shellingham,Tzu-ping Chung,ISC,OK,permissive,https://github.com/sarugaku/shellingham
+six,Benjamin Peterson,MIT,OK,permissive,https://github.com/benjaminp/six
+slowapi,Laurent Savaete,MIT,OK,permissive,https://github.com/laurents/slowapi
+smart_open,Radim Rehurek <me@radimrehurek.com>,MIT,OK,permissive,https://github.com/piskvorky/smart_open
+smbprotocol,Jordan Borean <jborean93@gmail.com>,MIT,OK,permissive,https://github.com/jborean93/smbprotocol
+sniffio,"""Nathaniel J. Smith"" <njs@pobox.com>",Apache-2.0 OR MIT,OK,satisfied by an OR'd permissive option: Apache-2.0 OR MIT,https://github.com/python-trio/sniffio
+sortedcontainers,Grant Jenks,Apache-2.0,OK,permissive,http://www.grantjenks.com/docs/sortedcontainers/
+spacy,Explosion,MIT,OK,permissive,https://spacy.io
+spacy-legacy,Explosion,MIT,OK,permissive,https://spacy.io
+spacy-loggers,Explosion,MIT,OK,permissive,https://github.com/explosion/spacy-loggers
+speechmatics-batch,Speechmatics <support@speechmatics.com>,MIT,OK,permissive,https://github.com/speechmatics/speechmatics-python-sdk
+srsly,Explosion,MIT,OK,permissive,https://github.com/explosion/srsly
+starlette,Tom Christie <tom@tomchristie.com>,BSD-3-Clause,OK,permissive,https://github.com/Kludex/starlette
+sympy,SymPy development team,BSD-3-Clause,OK,permissive,https://sympy.org
+thinc,Explosion,MIT,OK,permissive,https://github.com/explosion/thinc
+threadpoolctl,Thomas Moreau <thomas.moreau.2010@gmail.com>,BSD-3-Clause,OK,permissive,https://github.com/joblib/threadpoolctl
+tldextract,John Kurkowski <john.kurkowski@gmail.com>,BSD-3-Clause,OK,permissive,https://github.com/john-kurkowski/tldextract
+tokenizers,"Nicolas Patry <patry.nicolas@protonmail.com>, Anthony Moi <anthony@huggingface.co>",Apache-2.0,OK,permissive,https://github.com/huggingface/tokenizers
+tomli,,MIT,OK,permissive,
+torch,PyTorch Team <packages@pytorch.org>,BSD-3-Clause,OK,permissive,https://pytorch.org
+torch-audiomentations,Iver Jordal,MIT,OK,permissive,https://github.com/asteroid-team/torch-audiomentations
+torch_pitch_shift,KentoNishi,MIT,OK,permissive,https://github.com/KentoNishi/torch-pitch-shift
+torchaudio,"Soumith Chintala, David Pollack, Sean Naren, Peter Goldsborough, Moto Hira, Caroline Chen, Jeff Hwang, Zhaoheng Ni, Xiaohui Zhang",BSD-3-Clause,OK,permissive,https://github.com/pytorch/audio
+torchmetrics,Lightning-AI et al.,Apache-2.0,OK,permissive,https://github.com/Lightning-AI/torchmetrics
+tornado,Facebook,Apache-2.0,OK,permissive,http://www.tornadoweb.org/
+tqdm,UNKNOWN,MPL-2.0 AND MIT,REVIEW,"AND expression, worst component governs: MPL-2.0 AND MIT",https://tqdm.github.io
+transformers,The Hugging Face team (past and future) with the help of all our contributors (https://github.com/huggingface/transformers/graphs/contributors),Apache-2.0,OK,permissive,https://github.com/huggingface/transformers
+truststore,"Seth Michael Larson <sethmichaellarson@gmail.com>, David Glick <david@glicksoftware.com>",MIT,OK,permissive,https://github.com/sethmlarson/truststore
+typer,=?utf-8?q?Sebasti=C3=A1n_Ram=C3=ADrez?= <tiangolo@gmail.com>,MIT,OK,permissive,https://github.com/fastapi/typer
+typing-inspection,Victorien Plot <contact@vctrn.dev>,MIT,OK,permissive,https://github.com/pydantic/typing-inspection
+typing_extensions,"""Guido van Rossum, Jukka Lehtosalo, Łukasz Langa, Michael Lee"" <levkivskyi@gmail.com>",PSF-2.0,OK,permissive,https://github.com/python/typing_extensions
+tzdata,Python Software Foundation,Apache-2.0,OK,permissive,https://github.com/python/tzdata
+tzlocal,Lennart Regebro <regebro@gmail.com>,MIT,OK,permissive,https://github.com/regebro/tzlocal/blob/master/CHANGES.txt
+urllib3,Andrey Petrov <andrey.petrov@shazow.net>,MIT,OK,permissive,https://github.com/urllib3/urllib3/blob/main/CHANGES.rst
+uvicorn,Tom Christie <tom@tomchristie.com>,BSD-3-Clause,OK,permissive,https://uvicorn.dev/
+uvloop,Yury Selivanov <yury@magic.io>,Apache-2.0 OR MIT,OK,satisfied by an OR'd permissive option: Apache-2.0 OR MIT,UNKNOWN
+varint,Peter Ruibal,MIT,OK,permissive,http://github.com/fmoo/python-varint
+vine,Ask Solem,BSD-3-Clause,OK,permissive,https://github.com/celery/vine
+wasabi,Explosion,MIT,OK,permissive,https://github.com/explosion/wasabi
+watchdog,Mickaël Schoentgen,Apache-2.0,OK,permissive,https://github.com/gorakhargosh/watchdog
+watchfiles,Samuel Colvin <s@muelcolvin.com>,MIT,OK,permissive,https://github.com/samuelcolvin/watchfiles
+wcwidth,,MIT,OK,permissive,
+weasel,Explosion,MIT,OK,permissive,https://github.com/explosion/weasel/
+websockets,Aymeric Augustin <aymeric.augustin@m4x.org>,BSD-3-Clause,OK,permissive,https://github.com/python-websockets/websockets
+wheel,,MIT,OK,permissive,
+whisperx,Max Bain,BSD-2-Clause,OK,permissive,https://github.com/m-bain/whisperx
+wrapt,Graham Dumpleton <Graham.Dumpleton@gmail.com>,BSD-2-Clause,OK,permissive,https://github.com/GrahamDumpleton/wrapt
+xmlsec,Bulat Gaifullin,MIT,OK,permissive,https://github.com/mehcode/python-xmlsec
+yarl,Andrew Svetlov,Apache-2.0,OK,permissive,https://github.com/aio-libs/yarl
+yt-dlp,pukkandan <pukkandan.ytdlp@gmail.com>,Unlicense,OK,permissive,https://github.com/yt-dlp/yt-dlp
+yt-dlp-ejs,Simon Sawicki <contact@grub4k.dev>,Unlicense AND MIT AND ISC,OK,"AND expression, worst component governs: Unlicense AND MIT AND ISC",https://github.com/yt-dlp/ejs
+zipp,,MIT,OK,permissive,

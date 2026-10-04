@@ -210,6 +210,12 @@ def test_duplicate_in_progress_skip_path_creates_skipped_task_row(
         def set(self, *args, **kwargs):
             return False  # simulate: another dispatch already holds the lock
 
+        def get(self, key):
+            return b"another-live-task-id"
+
+        def exists(self, key):
+            return 1  # ...and that holder is still heartbeating (issue #1067)
+
         def delete(self, *args, **kwargs):
             pass
 

@@ -7,12 +7,14 @@
   account-wide equivalents live in Settings → Chat.
 -->
 <script lang="ts">
+  import { SEARCH_MODE_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { clickOutside } from '$lib/actions/clickOutside';
   import { focusTrap } from '$lib/actions/focusTrap';
   import ModelSwitcher from './ModelSwitcher.svelte';
   import { LLMSettingsApi } from '$lib/api/llmSettings';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import type { ReasoningOffSwitch } from '$lib/api/llmSettings';
   import type { ConversationSettings, SearchMode } from '$lib/types/chat';
 
@@ -59,8 +61,16 @@
   $: reasoningSupported = reasoningOffSwitch === 'works';
   $: reasoningOn = settings.reasoning !== false;
 
+  // Both the picker and the reasoning verdicts come from the per-user
+  // configurations list, whose router is unmounted without this capability.
+  $: userLlmSettings = isCapabilityEnabled($capabilities, 'llm.user_settings');
+
   async function loadReasoningCapability(pinned: string | null): Promise<void> {
     reasoningLoadedFor = pinned;
+    if (!userLlmSettings) {
+      reasoningOffSwitch = null;
+      return;
+    }
     try {
       const data = await LLMSettingsApi.getUserConfigurations();
       const uuid = pinned ?? data.active_configuration_id ?? null;
@@ -182,13 +192,15 @@
       <span class="range-hint">{$t('chat.controls.temperatureHint')}</span>
     </div>
 
-    <div class="control-group">
-      <ModelSwitcher
-        selectedUuid={llmConfigUuid}
-        {disabled}
-        on:change={(e) => dispatch('model', e.detail)}
-      />
-    </div>
+    {#if userLlmSettings}
+      <div class="control-group">
+        <ModelSwitcher
+          selectedUuid={llmConfigUuid}
+          {disabled}
+          on:change={(e) => dispatch('model', e.detail)}
+        />
+      </div>
+    {/if}
 
     <div class="control-group">
       <label class="field-label" for="chat-search-mode">{$t('chat.controls.searchMode')}</label>
@@ -203,7 +215,7 @@
         data-testid="chat-search-mode"
       >
         {#each SEARCH_MODES as mode}
-          <option value={mode}>{$t(`chat.searchMode.${mode}`)}</option>
+          <option value={mode}>{$t(SEARCH_MODE_KEYS[mode])}</option>
         {/each}
       </select>
     </div>

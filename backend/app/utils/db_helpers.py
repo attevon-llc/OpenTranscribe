@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
@@ -55,6 +56,33 @@ def apply_tenant_scope(
     if organization_id is not None:
         return query.filter(model.organization_id == organization_id)
     return query.filter(model.user_id == user_id, model.organization_id.is_(None))
+
+
+def org_stamp_is(org_col: Any, organization_id: int | None) -> ColumnElement[bool]:
+    """NULL-safe predicate: a row's ``organization_id`` stamp names the active tenant.
+
+    An org id matches that org's rows only; ``None`` (personal scope) matches org-less
+    rows only. Community-edition invariance: every row is org-less and every caller is
+    in personal scope, so this is always true there.
+    """
+    if organization_id is None:
+        return org_col.is_(None)  # type: ignore[no-any-return]
+    return org_col == organization_id  # type: ignore[no-any-return]
+
+
+def owned_in_tenant(
+    model: Any, *, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> ColumnElement[bool]:
+    """Owner-listing predicate: the caller's OWN rows, restricted to the active tenant.
+
+    Unlike ``apply_tenant_scope`` this never widens an org-context listing to other
+    members' rows — it keeps ``user_id == caller`` and only adds the tenant stamp.
+    ``UNSCOPED`` (no context threaded) is plain ``user_id`` filtering.
+    """
+    owner: ColumnElement[bool] = model.user_id == user_id
+    if isinstance(organization_id, _Unscoped):
+        return owner
+    return and_(owner, org_stamp_is(model.organization_id, organization_id))
 
 
 def _invalidate_tag_cache_for_file(db: Session, file_id: int) -> None:

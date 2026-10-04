@@ -77,7 +77,14 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         )
         .all()
     )
-    settings_map = {s.setting_key: s.setting_value for s in user_settings}
+    # Values the deployment has locked (issue #1109) fall back to the defaults below,
+    # including ones the user stored before the lock.
+    from app.core.locked_settings import locked_transcription_db_keys
+
+    locked_keys = locked_transcription_db_keys()
+    settings_map = {
+        s.setting_key: s.setting_value for s in user_settings if s.setting_key not in locked_keys
+    }
 
     hal_raw = settings_map.get("transcription_hallucination_silence_threshold", "")
     hal_value = float(hal_raw) if hal_raw else DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
@@ -109,3 +116,34 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "disable_diarization": settings_map.get("transcription_diarization_source", "provider")
         == "off",
     }
+
+
+def load_vocabulary_terms(db, user_id: int, file_id: int) -> list[str]:
+    """Active custom vocabulary for a file, in the file's tenant.
+
+    The owner's terms stamped with the file's organization (none = personal) plus
+    the owner-less terms visible there — never the owner's terms from another
+    tenant. Community edition: nothing is stamped, so this is the owner's terms
+    plus the system terms, as before.
+    """
+    from app.models.custom_vocabulary import CustomVocabulary
+    from app.models.media import MediaFile
+    from app.utils.db_helpers import org_stamp_is
+
+    file_org_id = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+    shared_stamp = CustomVocabulary.organization_id.is_(None)
+    if file_org_id is not None:
+        shared_stamp = shared_stamp | (CustomVocabulary.organization_id == file_org_id)
+    return [
+        row.term
+        for row in db.query(CustomVocabulary.term)
+        .filter(
+            (
+                (CustomVocabulary.user_id == user_id)
+                & org_stamp_is(CustomVocabulary.organization_id, file_org_id)
+            )
+            | (CustomVocabulary.user_id.is_(None) & shared_stamp),
+            CustomVocabulary.is_active.is_(True),
+        )
+        .all()
+    ]

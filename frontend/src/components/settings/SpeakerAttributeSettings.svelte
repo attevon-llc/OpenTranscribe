@@ -4,6 +4,7 @@
   import { settingsModalStore } from '$stores/settingsModalStore';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import {
     getSpeakerAttributeSettings,
     updateSpeakerAttributeSettings,
@@ -107,8 +108,15 @@
     }
   }
 
+  // The bulk re-detection job spans every file, so a deployment can withhold it
+  // (the server 404s its routes when the capability is off).
+  $: migrationAvailable = isCapabilityEnabled($capabilities, 'speaker_attributes.migration');
+
   onMount(async () => {
-    await Promise.allSettled([loadSettings(), loadMigrationStatus()]);
+    await Promise.allSettled([
+      loadSettings(),
+      ...(migrationAvailable ? [loadMigrationStatus()] : []),
+    ]);
 
     // WebSocket events provide real-time progress — no polling needed
     window.addEventListener('attribute-migration-progress', handleMigrationProgress as EventListener);
@@ -341,6 +349,7 @@
     </div>
 
     <!-- Bulk Processing Section -->
+    {#if migrationAvailable}
     <div class="bulk-section">
       <div class="bulk-separator"></div>
       <h4 class="bulk-title">{$t('settings.speakerAttributes.bulkProcessing')}</h4>
@@ -430,6 +439,7 @@
         </div>
       {/if}
     </div>
+    {/if}
   {/if}
 </div>
 

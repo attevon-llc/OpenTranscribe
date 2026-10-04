@@ -62,6 +62,16 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_ANONYMOUS_ENABLED=false
+      # No phone-home: usage stats to stats.grafana.org, update/plugin-update checks and
+      # the news feed (grafana.com), feedback links, and browser-side Gravatar lookups.
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+      - GF_ANALYTICS_FEEDBACK_LINKS_ENABLED=false
+      - GF_NEWS_NEWS_FEED_ENABLED=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      # Plugin-signature keys: use the bundled set instead of fetching from grafana.com.
+      - GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED=true
       # Passed through to the provisioned PostgreSQL datasource (read-only product metrics).
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

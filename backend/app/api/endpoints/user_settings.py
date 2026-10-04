@@ -10,6 +10,7 @@ that need to persist across sessions and devices. Supports:
 - Download settings (video/audio quality for URL downloads)
 """
 
+import logging
 from datetime import UTC
 from typing import Any
 from typing import Literal
@@ -19,11 +20,15 @@ from fastapi import APIRouter
 from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
 from app import models
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.capabilities import require_capability
 from app.core.config import settings as app_settings
 from app.core.constants import AUDIO_QUALITY_OPTIONS
 from app.core.constants import COMMON_LANGUAGES
@@ -79,6 +84,9 @@ from app.schemas.topic import AutoLabelSettingsSchema
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
+from app.utils.tenant_sharing import owner_in_tenant
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -286,7 +294,11 @@ def reset_recording_settings(
     }
 
 
-@router.get("/audio-extraction", response_model=dict[str, Any])
+@router.get(
+    "/audio-extraction",
+    response_model=dict[str, Any],
+    dependencies=[Depends(require_capability("audio_extraction", platform_admin_bypass=False))],
+)
 def get_audio_extraction_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
@@ -339,7 +351,11 @@ def get_audio_extraction_settings(
     return settings
 
 
-@router.put("/audio-extraction", response_model=dict[str, Any])
+@router.put(
+    "/audio-extraction",
+    response_model=dict[str, Any],
+    dependencies=[Depends(require_capability("audio_extraction", platform_admin_bypass=False))],
+)
 def update_audio_extraction_settings(
     *,
     db: Session = Depends(get_db),
@@ -587,6 +603,7 @@ def _upsert_user_setting(
 
 @router.get("/transcription", response_model=TranscriptionSettings)
 def get_transcription_settings(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> TranscriptionSettings:
@@ -630,9 +647,15 @@ def get_transcription_settings(
         .all()
     )
 
-    # Build settings map from database results
+    # Build settings map from database results. A value the deployment has locked
+    # (issue #1109) is dropped so the response reports the default that applies.
+    from app.core.locked_settings import locked_transcription_db_keys
+
+    locked_keys = locked_transcription_db_keys(request)
     settings_map: dict[str, str] = {
-        str(setting.setting_key): str(setting.setting_value) for setting in transcription_settings
+        str(setting.setting_key): str(setting.setting_value)
+        for setting in transcription_settings
+        if str(setting.setting_key) not in locked_keys
     }
 
     # Get system defaults from environment (via app_settings)
@@ -705,6 +728,7 @@ def get_transcription_settings(
 @router.put("/transcription", response_model=TranscriptionSettings)
 def update_transcription_settings(
     *,
+    request: Request,
     db: Session = Depends(get_db),
     settings_data: TranscriptionSettingsUpdate,
     current_user: models.User = Depends(get_current_active_user),
@@ -739,13 +763,29 @@ def update_transcription_settings(
         if "hallucination_silence_threshold" in raw:
             update_data["hallucination_silence_threshold"] = None
 
+    # Fields the deployment owns (issue #1109) are ignored rather than rejected: the
+    # settings form sends every field on save, and the rest of the request is valid.
+    from app.core.locked_settings import locked_transcription_fields
+
+    locked = locked_transcription_fields(request) & update_data.keys()
+    if locked:
+        logger.info(
+            "Ignoring deployment-locked transcription settings %s for user %s",
+            sorted(locked),
+            current_user.id,
+        )
+        for field in locked:
+            del update_data[field]
+
     if not update_data:
-        return get_transcription_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+        return get_transcription_settings(request=request, db=db, current_user=current_user)  # type: ignore[no-any-return]
 
     # Get current settings only if needed for validation
     needs_current = ("min_speakers" in update_data) != ("max_speakers" in update_data)
     current_settings = (
-        get_transcription_settings(db=db, current_user=current_user) if needs_current else None
+        get_transcription_settings(request=request, db=db, current_user=current_user)
+        if needs_current
+        else None
     )
 
     # Validate speaker range and prompt behavior
@@ -800,7 +840,7 @@ def update_transcription_settings(
 
     db.commit()
 
-    return get_transcription_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+    return get_transcription_settings(request=request, db=db, current_user=current_user)  # type: ignore[no-any-return]
 
 
 @router.delete("/transcription")
@@ -1059,16 +1099,17 @@ def reset_organization_context(
 @router.get("/organization-context/shared", response_model=SharedOrganizationContextList)
 def get_shared_organization_contexts(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> SharedOrganizationContextList:
-    """Get organization contexts shared by other users."""
-    # Find all users who have shared their org context
+    """Get organization contexts shared by other users in the caller's active tenant."""
+    current_user = ctx.user
     shared_settings = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.setting_key == "org_context_is_shared",
             models.UserSetting.setting_value == "true",
             models.UserSetting.user_id != current_user.id,
+            owner_in_tenant(models.UserSetting.user_id, ctx.org_id),
         )
         .all()
     )
@@ -1126,9 +1167,10 @@ def use_shared_organization_context(
     *,
     db: Session = Depends(get_db),
     body: dict = Body(...),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Start or stop using another user's shared organization context."""
+    current_user = ctx.user
     shared_user_id = body.get("user_id")
 
     if shared_user_id is None:
@@ -1140,13 +1182,15 @@ def use_shared_organization_context(
         db.commit()
         return _build_org_context_response(db, current_user.id)
 
-    # Verify the target user's context is actually shared
+    # Verify the target user's context is shared within the caller's tenant; another
+    # tenant's context answers exactly like one that does not exist.
     is_shared = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == int(shared_user_id),
             models.UserSetting.setting_key == "org_context_is_shared",
             models.UserSetting.setting_value == "true",
+            owner_in_tenant(models.UserSetting.user_id, ctx.org_id),
         )
         .first()
     )
@@ -1527,12 +1571,17 @@ def _media_source_to_response(
     }
 
 
-@router.get("/media-sources", response_model=UserMediaSourcesList)
+@router.get(
+    "/media-sources",
+    response_model=UserMediaSourcesList,
+    dependencies=[Depends(require_capability("media_sources", platform_admin_bypass=False))],
+)
 def get_media_sources(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
-    """Get user's own media sources and shared sources from other users."""
+    """Get user's own media sources and sources shared within the caller's active tenant."""
+    current_user = ctx.user
     # Own sources
     own_sources = (
         db.query(models.UserMediaSource)
@@ -1541,7 +1590,7 @@ def get_media_sources(
         .all()
     )
 
-    # Shared sources from other active users
+    # Shared sources from other active users in the caller's tenant
     shared_sources = (
         db.query(models.UserMediaSource)
         .join(models.User, models.User.id == models.UserMediaSource.user_id)
@@ -1550,6 +1599,7 @@ def get_media_sources(
             models.UserMediaSource.is_active == True,  # noqa: E712
             models.UserMediaSource.user_id != current_user.id,
             models.User.is_active == True,  # noqa: E712
+            owner_in_tenant(models.UserMediaSource.user_id, ctx.org_id),
         )
         .order_by(models.UserMediaSource.shared_at.desc().nullslast())
         .all()
@@ -1572,7 +1622,11 @@ def get_media_sources(
     }
 
 
-@router.post("/media-sources", response_model=UserMediaSourceResponse)
+@router.post(
+    "/media-sources",
+    response_model=UserMediaSourceResponse,
+    dependencies=[Depends(require_capability("media_sources", platform_admin_bypass=False))],
+)
 def create_media_source(
     data: UserMediaSourceCreate,
     db: Session = Depends(get_db),
@@ -1628,7 +1682,11 @@ def create_media_source(
     return _media_source_to_response(new_source, current_user, is_own=True)
 
 
-@router.put("/media-sources/{source_uuid}", response_model=UserMediaSourceResponse)
+@router.put(
+    "/media-sources/{source_uuid}",
+    response_model=UserMediaSourceResponse,
+    dependencies=[Depends(require_capability("media_sources", platform_admin_bypass=False))],
+)
 def update_media_source(
     source_uuid: str,
     data: UserMediaSourceUpdate,
@@ -1696,7 +1754,10 @@ def update_media_source(
     return _media_source_to_response(source, current_user, is_own=True)
 
 
-@router.delete("/media-sources/{source_uuid}")
+@router.delete(
+    "/media-sources/{source_uuid}",
+    dependencies=[Depends(require_capability("media_sources", platform_admin_bypass=False))],
+)
 def delete_media_source(
     source_uuid: str,
     db: Session = Depends(get_db),

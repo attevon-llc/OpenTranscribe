@@ -58,7 +58,7 @@ _ALLOWED: dict[str, str] = {
         "G5, same shape: tags are denormalised onto every document of the file, "
         "digests included, or a tag-scoped chat query silently skips them."
     ),
-    "tasks/tenant_backfill_task.py::_backfill_transcript_chunks": (
+    "tasks/tenant_backfill_task.py::_backfill_file_uuid_docs": (
         "G5: the tenant stamp keys on file_uuid and must reach every plane, or a "
         "digest stays personal-scope inside an organization."
     ),
@@ -79,6 +79,11 @@ _ALLOWED: dict[str, str] = {
         "seven of the eight have no planes. Extracted from repair_indices, which "
         "held this same exemption before the session-lifetime split."
     ),
+    "api/endpoints/search.py::_scope_doc_counts_to_caller": (
+        "The non-admin twin of get_index_health's _cat/indices doc count: the "
+        "caller's own document count per index, every plane included, so it "
+        "measures the same thing the admin number does."
+    ),
     "api/endpoints/search.py::search_transcripts": (
         "Not a reader — the HTTP endpoint. It builds no OpenSearch body: the sweep "
         "matches `HybridSearchService.search(...)` on the `.search` call name and "
@@ -93,6 +98,13 @@ _ALLOWED: dict[str, str] = {
     ),
     "services/search/hybrid_search_service.py::_search_with_two_phase": (
         "Same: the filters are passed in, already armed by _build_filters."
+    ),
+    "services/search/hybrid_search_service.py::_execute_split_bm25_collapse": (
+        "Same: it re-sends the filters of the collapse body it is handed, which "
+        "_build_filters armed, narrowed to that body's own result files (#1064)."
+    ),
+    "services/search/hybrid_search_service.py::_hydrate_page_highlights": (
+        "Same: the collapse body's own filters, narrowed to ids that body returned."
     ),
 }
 

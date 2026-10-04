@@ -14,6 +14,8 @@
 # `docs-site/.nvmrc` and `frontend/.nvmrc` must both read the same major as this line —
 # backend/tests/unit/test_node_version_consistency.py enforces it.
 FROM node:26-alpine AS build
+# npm's update-notifier phones registry.npmjs.org for a newer npm on every run; off.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 WORKDIR /app
 
 # Install dependencies first (layer caching)

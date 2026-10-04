@@ -14,9 +14,15 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   is the sole user-facing vocabulary (wire field `error_reason`), distinct from
   `app.utils.error_classification.ErrorCategory` (retry policy, `media_file.error_category`,
   never on the wire). No-raw-echo contract (issue #786): every `user_message` and suggestion
-  is a FIXED sentence — the raw exception never reaches a client, only the ERROR log and
-  `media_file.last_error_message`. `tasks/transcription/notifications.py::send_error_notification`
-  is the one chokepoint every failure-notification caller routes through.
+  is a FIXED sentence — the raw exception never reaches a client. Classify ONCE, at the
+  failure site (#959): a failure handler calls `ErrorCategorizationService.classify_failure(raw)`,
+  stores `user_message` in `last_error_message`/`task.error_message` and `retry_category` in
+  `error_category`; the raw text goes to the ERROR log only. Retry policy reads
+  `stored_category(media_file.error_category)` — never `categorize_error` over stored prose.
+  Read edges use `user_message_for` / `error_fields_for`; `scripts/audit-error-disclosure.py`
+  (pre-commit) fails on an un-sanitized edge or a prose re-derivation.
+  `tasks/transcription/notifications.py::send_error_notification` is the one chokepoint every
+  failure-notification caller routes through.
 - **Search / retrieval** — `search/` (transcript chunks + hybrid/neural; **has its own
   CLAUDE.md** with the critical `cosinesimil` score gotcha), `opensearch_service/` (the
   speaker/voiceprint kNN plane + file docs; a package since #284 A3.5 — `client` owns the
@@ -46,6 +52,18 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
   **Every export surface takes a required redaction config** (#85, see the gotcha below).
+- **Browser playback renditions** — `playback_rendition.py`. Every format is accepted, but
+  AIFF, WMA, ALAC, AC-3, MP2 and ADPCM audio, and AVI/WMV/MPEG/TS/FLV/3GP/MPEG-4-Part-2/
+  Theora video, don't play in Firefox or Chromium. Preprocessing probes the original and,
+  only for those, queues `media.create_playback_rendition` (`tasks/playback_rendition.py`,
+  CPU queue). That task encodes an AAC/M4A copy at `<storage_path>.playback.m4a` and
+  records it in `media_file.playback_path`. For video, the copy is the audio track only.
+  `resolve_playback` is the one place that picks what plays; `/stream-url` and the
+  speaker-preview URL both call it. The playability tables were measured with Playwright
+  in both browsers. Anything not listed gets a rendition, because an unneeded copy still
+  plays and a missing one leaves the player at 00:00. ⚠️ `playback_path` is a third media
+  object beside `storage_path`/`thumbnail_path`: purge, takedown tag/untag and the startup
+  quarantine backfill all handle it. A new path that touches those two must handle it too.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).
@@ -138,6 +156,10 @@ three are needed, and dropping any one reproduces a defect that shipped.
   `requested_at`/`sla_due_at` so a restore cannot buy another month of Art. 12(3) time.
   Its limit is honest: one file on one volume. Off-host replication is deployment
   config; the audit stream is the second copy that already leaves the host.
+  `ERASURE_JOURNAL_BACKEND=object_storage` writes one object per entry to the media
+  bucket instead, for containers with no durable writable volume (read-only root fs) —
+  never "fix" an unwritable `DATA_DIR` with an ephemeral mount; the journal would die
+  with the pod.
 
 Two judgement calls worth not re-litigating blindly:
 
@@ -269,7 +291,10 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   and measured least-privilege containment depends on it staying that way. MinIO-only (no
   admin API on native S3) and fails open to the root client if the identity can't be
   provisioned — see `storage_presign_identity.py`'s module docstring and
-  `docs/abuse-and-takedown.md`.
+  `docs/abuse-and-takedown.md`. On native S3 revocation needs an operator-attached bucket-policy
+  Deny; `report_native_s3_revocation_posture` checks for it once at startup and WARNs if absent
+  (exposure = `MEDIA_URL_EXPIRE_SECONDS`). `presign_client()` logs ERROR **only** for a MinIO
+  provisioning failure — never on S3 or when disabled, where it fired from every process (#1005).
 
 ## LLM features (optional)
 
@@ -282,6 +307,13 @@ deprecated alias for `anthropic`).
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.
+- **"Is an LLM configured?" has ONE answer: `LLMService.is_configured_for_user(db, user_id)`.**
+  DB-only, no network, and built from the same helpers the factories use
+  (`_resolve_user_llm_settings`, `_resolve_system_provider`, `_endpoint_resolves`), so it is
+  true exactly when `create_from_settings` would return a service. Never re-derive it as
+  `bool(settings.LLM_PROVIDER)`: a provider with no key or endpoint passes that check while
+  every task skips, which made the post-transcription sweep re-dispatch topic extraction for
+  every file every 10 minutes (issue #1017).
 - **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
   Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
   chain (IAM role, profile, or environment) — and no per-configuration region: both
@@ -297,6 +329,12 @@ deprecated alias for `anthropic`).
   multi-section stitching for long transcripts (`_chunk_transcript_intelligently` →
   `_summarize_section` → `_combine_sections`). Output languages: `core/constants.py:
   LLM_OUTPUT_LANGUAGES` (12: en es fr de it pt **nl** ru zh ja ko ar — no Hindi).
+- **Never log prompt or model-output text at INFO or above (issue #1022).** Output is derived
+  from the transcript, so it would copy transcript content into log aggregation. On a parse
+  failure log `utils/llm_log_safety.describe_llm_text(text)` (`len=N sha256=<12 hex>`) and, if
+  an excerpt helps debugging, `log_llm_text_excerpt` (DEBUG only). Watch for indirect leaks:
+  a pydantic `ValidationError`'s message embeds its `input_value`, so log `type(e).__name__`.
+  `tests/unit/test_llm_parse_failure_log_hygiene.py` drives each parse-failure path.
 - **Speaker suggestions are never auto-applied.** `identify_speakers` returns confidence-scored
   predictions stored for manual verification (`tasks/speaker_identification_task.py`). Only
   tags/collections have an auto-apply path (`auto_label_service.auto_apply_suggestions`).

@@ -273,11 +273,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # Create non-root user for security
+# /models is DIAR_MODELS_DIR's default (native_provision.DEFAULT_MODELS_DIR). It sits at the
+# filesystem root, so appuser cannot create it: without this, provisioning diar-native
+# models without a bind mount (e.g. baking them into an image) fails with EACCES (#1003).
 # Add to video group for GPU access
 RUN groupadd -r appuser && \
     useradd -r -g appuser -G video -u 1000 -m -s /bin/bash appuser && \
     mkdir -p /app /app/models /app/temp && \
     chown -R appuser:appuser /app && \
+    mkdir -p /models && \
+    chown appuser:appuser /models && \
     mkdir -p /home/appuser/.cache/huggingface \
              /home/appuser/.cache/torch \
              /home/appuser/.cache/nltk_data \
@@ -385,6 +390,16 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     NLTK_DATA=/home/appuser/.cache/nltk_data \
     SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers
 
+# No third-party telemetry or update checks from a running container: pyannote's OTLP
+# metrics to otel.pyannote.ai, huggingface_hub telemetry, DO_NOT_TRACK for any library
+# honoring it, and deno's daily dl.deno.land release check. Evidence per switch:
+# app/core/privacy_env.py (the in-code backstop); guarded by
+# tests/unit/test_telemetry_disabled.py.
+ENV PYANNOTE_METRICS_ENABLED=false \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    DO_NOT_TRACK=1 \
+    DENO_NO_UPDATE_CHECK=1
+
 # Copy application code
 COPY --chown=appuser:appuser . .
 
@@ -465,6 +480,19 @@ RUN mkdir -p /scratch/opentranscribe/engine /scratch/opentranscribe/diar && \
 # volume created against this image starts out correctly owned.
 RUN mkdir -p /app/data /var/log/opentranscribe && \
     chown appuser:appuser /app/data /var/log/opentranscribe
+
+# Remove pip from the runtime image. Nothing runs pip after the build, and pip vendors
+# its own urllib3/requests that lag the app's pinned versions, so every vulnerability
+# scan flags the vendored copy. Two copies exist: the base image's (/usr/local) and the
+# one the builder stage upgraded into the copied-over user site. Done as root, then back
+# to the app user below. The explicit globs avoid matching unrelated pip-* packages.
+USER root
+RUN rm -rf /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* \
+        /usr/local/lib/python3.13/site-packages/pip \
+        /usr/local/lib/python3.13/site-packages/pip-[0-9]*.dist-info \
+        /home/appuser/.local/bin/pip /home/appuser/.local/bin/pip3 /home/appuser/.local/bin/pip3.* \
+        /home/appuser/.local/lib/python3.13/site-packages/pip \
+        /home/appuser/.local/lib/python3.13/site-packages/pip-[0-9]*.dist-info
 
 # Switch to non-root user
 USER appuser

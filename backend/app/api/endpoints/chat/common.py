@@ -224,22 +224,25 @@ def to_detail(
     )
 
 
-def resolve_llm_config_id(db: Session, user_id: int, llm_config_uuid: str | None) -> int | None:
-    """Map a user-visible LLM config uuid to its row id, if the caller may use it."""
+def resolve_llm_config_id(
+    db: Session, ctx: RequestContext, llm_config_uuid: str | None
+) -> int | None:
+    """Map a user-visible LLM config uuid to its row id, if the caller may use it.
+
+    Usable = the caller's own, or shared within the caller's active tenant.
+    """
     if not llm_config_uuid:
         return None
 
-    from sqlalchemy import or_
-
     from app.models.user_llm_settings import UserLLMSettings
+    from app.utils.tenant_sharing import shared_visible_in_tenant
 
     row = (
         db.query(UserLLMSettings.id)
         .filter(
             UserLLMSettings.uuid == llm_config_uuid,
-            or_(
-                UserLLMSettings.user_id == user_id,
-                UserLLMSettings.is_shared == True,  # noqa: E712
+            shared_visible_in_tenant(
+                UserLLMSettings.user_id, UserLLMSettings.is_shared, ctx.user.id, ctx.org_id
             ),
         )
         .first()

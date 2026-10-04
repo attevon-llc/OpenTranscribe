@@ -62,9 +62,33 @@ def organizations_capability_on():
     under that prefix has to turn the surface on first, exactly as the cloud
     resolver does.
     """
+    from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
 
-    set_capability_resolver(lambda _request: {"organizations": True})
+    # The full map: a resolver's omitted keys are denied (#868), not defaulted.
+    set_capability_resolver(lambda _request: {**COMMUNITY_CAPABILITIES, "organizations": True})
     yield
     reset_capability_resolver()
+
+
+@pytest.fixture
+def rate_limiting_enabled():
+    """Turn the real slowapi limiter on for one test, with clean counters either side.
+
+    ``tests/conftest.py`` builds the module-level ``limiter`` with ``enabled=False`` so no
+    other test is rate-limited by accident; ``Limiter.enabled`` is a plain attribute, so it
+    can be flipped per test. Counters are cleared on entry too, because a rate-limited
+    request made by a test that did NOT use this fixture would otherwise leak in.
+    """
+    from app.auth.rate_limit import limiter
+    from tests.helpers import reset_rate_limiter
+
+    was_enabled = limiter.enabled
+    limiter.enabled = True
+    reset_rate_limiter()
+    try:
+        yield
+    finally:
+        limiter.enabled = was_enabled
+        reset_rate_limiter()

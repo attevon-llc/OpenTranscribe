@@ -17,46 +17,12 @@ and reset its storage on the way out so no count leaks into another test file.
 
 from __future__ import annotations
 
-import pytest
 from fastapi import status
 
-from app.auth.rate_limit import limiter
 from app.core.config import settings
 
 _BASE = "/api/llm-settings"
 _LOOPBACK = "http://127.0.0.1:11434"
-
-
-@pytest.fixture
-def rate_limiting_enabled():
-    """Turn the real slowapi limiter on for one test, then clean up after it.
-
-    `RATE_LIMIT_ENABLED=false` in `tests/conftest.py` builds the module-level
-    `limiter` singleton with `enabled=False` at import time — every other test in
-    the suite relies on that so it isn't rate-limited by accident. `Limiter.enabled`
-    is a plain mutable attribute (not baked into the decorator), so it can be
-    flipped per-test; `limiter.reset()` clears the storage bucket the flipped-on
-    window created so the next test (rate-limited or not) starts clean.
-    """
-    was_enabled = limiter.enabled
-    limiter.enabled = True
-    try:
-        yield
-    finally:
-        limiter.enabled = was_enabled
-        try:
-            limiter.reset()
-        except Exception:
-            # `.reset()` talks to the configured Redis storage directly, unlike a
-            # normal rate-limit check (which degrades to in-memory on its own, see
-            # `_create_limiter`'s docstring). Host test runs routinely have no
-            # Redis reachable at `settings.REDIS_URL` (dev's is auth'd on a
-            # non-default port; conftest deliberately does not wire it up — see
-            # its Redis note). Deployments where the limiter really did run
-            # against Redis during the test still had their state cleared by the
-            # *successful* branch above; this only guards the common "no Redis on
-            # the host" case from failing an otherwise-passing test at teardown.
-            pass
 
 
 def _hit_ollama_models(client, headers):

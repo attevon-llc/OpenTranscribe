@@ -16,6 +16,7 @@ Run:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -189,3 +190,69 @@ def test_a_real_reservation_with_no_worker_is_counted_as_reserved(
         monkeypatch.setattr("app.core.redis.get_redis", lambda: raw_client)
         depths = get_queue_depths()
         assert depths[queue_name] == 1
+
+
+def test_the_oldest_waiting_message_is_the_consuming_end_of_the_list(raw_client, queue_name):
+    """Issue #1172: kombu LPUSHes and BRPOPs, so ``LINDEX key -1`` is the OLDEST message.
+
+    Proven on the real transport two ways: the message a real consumer receives first is the
+    one at index -1, and ``queue_snapshot`` ages the queue by the first-published stamp.
+    """
+    import time
+
+    now = time.time()
+    with Connection(
+        _redis_url(),
+        transport_options={"priority_steps": list(range(10)), "queue_order_strategy": "priority"},
+    ) as conn:
+        producer = Producer(conn.channel())
+        for label, published_at in (("first", now - 600), ("second", now - 10)):
+            producer.publish(
+                {"task": label, "args": [], "kwargs": {}},
+                routing_key=queue_name,
+                headers={"x-ot-published-at": published_at, "id": label},
+                declare=[Queue(queue_name)],
+            )
+
+        head = json.loads(raw_client.lindex(queue_name, -1))
+        assert head["headers"]["id"] == "first"
+
+        snapshot = queue_snapshot(raw_client)
+        assert snapshot[queue_name]["pending"] == 2
+        assert abs(snapshot[queue_name]["oldest_pending_age"] - 600) <= 2
+
+        received: list[str] = []
+
+        def _on_message(body, message):
+            received.append(message.headers["id"])
+            message.ack()
+
+        with conn.Consumer(queues=[Queue(queue_name)], callbacks=[_on_message], no_ack=False):
+            conn.drain_events(timeout=5)
+
+        assert received == ["first"], "the consumer takes from the same end LINDEX -1 peeks"
+        snapshot = queue_snapshot(raw_client)
+        assert abs(snapshot[queue_name]["oldest_pending_age"] - 10) <= 2
+
+
+def test_a_celery_publish_carries_the_stamp_the_gauge_reads(raw_client, queue_name):
+    """End to end: the app's ``before_task_publish`` handler stamps a real Celery publish."""
+    import time
+
+    from celery import Celery
+
+    import app.core.celery  # noqa: F401 - connects the publish handler
+
+    producer_app = Celery("queue-wait-live", broker=_redis_url(), set_as_current=False)
+    producer_app.conf.broker_transport_options = {
+        "priority_steps": list(range(10)),
+        "queue_order_strategy": "priority",
+    }
+    before = time.time()
+    producer_app.send_task("noop.never.consumed", queue=queue_name)
+
+    head = json.loads(raw_client.lindex(queue_name, -1))
+    stamp = head["headers"]["x-ot-published-at"]
+    assert before <= stamp <= time.time()
+    snapshot = queue_snapshot(raw_client)
+    assert snapshot[queue_name]["oldest_pending_age"] <= 2

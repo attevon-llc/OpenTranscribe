@@ -1,39 +1,34 @@
 #!/usr/bin/env python3
-"""Find raw exception text flowing into a persisted/user-facing error field.
+"""Keep stored failure text off the wire, and retry policy off stored prose (issues #786, #959).
 
-GH #959 item 5. Issue #786 established a no-raw-echo contract for
-``ErrorCategorizationService`` (every ``user_message``/suggestion it returns is a fixed
-sentence), and #959 closed the two write-time residuals — ``preprocess.py``'s
-``_mark_pipeline_error`` and the two ``task_recovery_service.py`` retry-classification
-sites that re-derived a category from stored prose. Without a gate, a SEVENTH un-sanitized
-call site can appear at any time: nothing stopped the five #959 named — this script is
-that stop.
+A pipeline failure stores a fixed user-facing sentence in ``media_file.last_error_message`` /
+``task.error_message`` and a retry code in ``media_file.error_category``. Rows written before
+#959, and the download path, can still hold raw exception text (paths, command lines,
+tracebacks), so every read edge that puts either column on the wire must go through
+``ErrorCategorizationService``. #786 fixed five such edges by hand; #959 found two more it had
+missed. This script makes "every edge is sanitized" an enforced property, not a count of
+hand-fixed sites.
 
-What it flags
-    An assignment (attribute or keyword argument) to one of the WATCHED_FIELDS whose
-    right-hand side is:
+Detectors
+    raw-error-read
+        A wire-layer function (``app/api/``, ``formatting_service.py``, the transcription
+        notification module) that reads ``.last_error_message``, ``getattr(x,
+        "last_error_message")`` or a task's ``.error_message`` and never calls a sanitizer
+        (``user_message_for``, ``error_fields_for``, ``get_error_info``). Column references on a
+        model class (``MediaFile.last_error_message`` in a query) are not reads of a value and
+        are ignored; so are writes.
+    prose-retry-rederivation
+        ``categorize_error(...)`` fed ``.last_error_message`` anywhere under ``app/``. Retry
+        policy reads the category the failure site stored (``stored_category``); re-deriving
+        it from stored prose is what made rewording a message change retry behaviour.
 
-    - an f-string (``JoinedStr``) containing a ``{e}``/``{exc}``/``{error}``/
-      ``{exception}``-shaped interpolation (any of EXCEPTION_VAR_NAMES), or
-    - a bare ``str(e)`` call (or a bare reference to such a variable) with no
-      ``ErrorCategorizationService`` / ``sanitize_for_storage`` / ``get_error_info`` /
-      ``categorize_error`` call anywhere in the same expression.
+Usage::
 
-This is a heuristic, not a type checker — it looks at the shape of the expression, not
-whether a helper further up the call chain already sanitized the value. That is why it is
-allowlist-gated rather than a hard ban: a legitimate false positive (e.g. a curated,
-non-raw exception message that happens to be built from a variable named ``e``) is
-expected occasionally, and should be resolved by fixing the shape (name the variable
-`message`/`sanitized`) rather than reaching for the allowlist as a default.
+    scripts/audit-error-disclosure.py backend/app
+    scripts/audit-error-disclosure.py --selftest
 
-Usage
-    python3 scripts/audit-error-disclosure.py [path ...]   # defaults to backend/app
-    python3 scripts/audit-error-disclosure.py --list        # print all findings, ignore allowlist
-
-Allowlist
-    scripts/error-disclosure-allowlist.txt, one ``<file>::<lineno>::<reason>`` per line.
-    A written reason is mandatory. An allowlist entry for a line the scanner no longer
-    flags fails the run (count-aware: the file may only shrink to match reality).
+Exits 1 on any finding. There is deliberately no allowlist: a read edge is either sanitized
+or it is a disclosure.
 """
 
 from __future__ import annotations
@@ -44,207 +39,261 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-WATCHED_FIELDS = {
-    'last_error_message',
-    'error_message',
-    'user_message',
-}
+CATEGORIES = ('raw-error-read', 'prose-retry-rederivation')
 
-EXCEPTION_VAR_NAMES = {
-    'e',
-    'exc',
-    'err',
-    'error',
-    'exception',
-    'status_err',
-    'update_err',
-    'cleanup_err',
-}
+STORED_COLUMN = 'last_error_message'
+TASK_COLUMN = 'error_message'
+SANITIZERS = frozenset({'user_message_for', 'error_fields_for', 'get_error_info'})
 
-SANITIZER_MARKERS = (
-    'sanitize_for_storage',
-    'get_error_info',
-    'categorize_error',
-    'build_error_response_fields',
-    'ErrorCategorizationService',
+# Paths (relative to the scanned app root) whose functions build client-facing payloads.
+WIRE_PREFIXES = (
+    'api/',
+    'services/formatting_service.py',
+    'tasks/transcription/notifications.py',
 )
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_ALLOWLIST_PATH = Path(__file__).resolve().parent / 'error-disclosure-allowlist.txt'
-_DEFAULT_SCAN_ROOT = _REPO_ROOT / 'backend' / 'app'
 
 
 @dataclass(frozen=True)
 class Finding:
-    file: str
-    lineno: int
-    field: str
-    snippet: str
-
-    @property
-    def key(self) -> str:
-        return f'{self.file}::{self.lineno}'
+    path: str
+    line: int
+    scope: str
+    category: str
+    detail: str
 
 
-def _expr_source(node: ast.AST) -> str:
-    try:
-        return ast.unparse(node)
-    except Exception:  # pragma: no cover - defensive, ast.unparse is stable on py3.9+
-        return '<unparsable>'
+def _is_wire(relpath: str) -> bool:
+    return any(relpath == p or relpath.startswith(p) for p in WIRE_PREFIXES)
 
 
-def _mentions_sanitizer(node: ast.AST) -> bool:
-    src = _expr_source(node)
-    return any(marker in src for marker in SANITIZER_MARKERS)
+def _receiver_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
 
 
-def _is_exception_name(node: ast.AST) -> bool:
-    return isinstance(node, ast.Name) and node.id in EXCEPTION_VAR_NAMES
+def _is_model_column(node: ast.Attribute) -> bool:
+    """``MediaFile.last_error_message`` / ``TaskModel.error_message`` — a column, not a value."""
+    name = _receiver_name(node.value)
+    return bool(name) and name[0].isupper()
 
 
-def _joinedstr_leaks_exception(node: ast.JoinedStr) -> bool:
-    for value in node.values:
-        if not isinstance(value, ast.FormattedValue):
-            continue
-        inner = value.value
-        if _is_exception_name(inner):
-            return True
-        if (
-            isinstance(inner, ast.Call)
-            and isinstance(inner.func, ast.Name)
-            and inner.func.id == 'str'
-            and inner.args
-            and _is_exception_name(inner.args[0])
+def _raw_reads(func: ast.AST) -> list[tuple[int, str]]:
+    reads: list[tuple[int, str]] = []
+    for node in ast.walk(func):
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            if _is_model_column(node):
+                continue
+            if node.attr == STORED_COLUMN:
+                reads.append((node.lineno, f'reads .{STORED_COLUMN}'))
+            elif node.attr == TASK_COLUMN and 'task' in (_receiver_name(node.value) or '').lower():
+                reads.append((node.lineno, f'reads {_receiver_name(node.value)}.{TASK_COLUMN}'))
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == 'getattr'
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == STORED_COLUMN
         ):
+            reads.append((node.lineno, f'getattr(..., "{STORED_COLUMN}")'))
+    return reads
+
+
+def _calls(func: ast.AST, names: frozenset[str]) -> bool:
+    for node in ast.walk(func):
+        if isinstance(node, ast.Call):
+            called = _receiver_name(node.func)
+            if called in names:
+                return True
+    return False
+
+
+def _mentions_stored_column(node: ast.AST) -> bool:
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Attribute) and sub.attr == STORED_COLUMN:
+            return True
+        if isinstance(sub, ast.Constant) and sub.value == STORED_COLUMN:
             return True
     return False
 
 
-def _value_is_raw(node: ast.AST) -> bool:
-    """True if ``node`` looks like raw exception text with no sanitizer in sight."""
-    if _mentions_sanitizer(node):
-        return False
-    if isinstance(node, ast.JoinedStr):
-        return _joinedstr_leaks_exception(node)
-    if _is_exception_name(node):
-        return True
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == 'str'
-        and bool(node.args)
-        and _is_exception_name(node.args[0])
-    )
+def _outermost_functions(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Top-level functions and methods; a nested helper is judged with its enclosing function."""
+    found: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                found.append(child)
+            elif isinstance(child, ast.ClassDef):
+                visit(child)
+
+    visit(tree)
+    return found
 
 
-def _scan_file(path: Path) -> list[Finding]:
-    try:
-        source = path.read_text(encoding='utf-8')
-        tree = ast.parse(source, filename=str(path))
-    except (SyntaxError, UnicodeDecodeError):
-        return []
-
-    try:
-        rel = str(path.relative_to(_REPO_ROOT))
-    except ValueError:
-        # A caller (e.g. a test fixture under a tmp dir) scanning a file outside the repo —
-        # report the path as given rather than crashing.
-        rel = str(path)
+def scan_source(source: str, relpath: str) -> list[Finding]:
+    tree = ast.parse(source)
     findings: list[Finding] = []
 
-    for node in ast.walk(tree):
-        # `media_file.last_error_message = <expr>` / `task.error_message = <expr>`
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if (
-                    isinstance(target, ast.Attribute)
-                    and target.attr in WATCHED_FIELDS
-                    and _value_is_raw(node.value)
-                ):
+    if _is_wire(relpath):
+        for func in _outermost_functions(tree):
+            reads = _raw_reads(func)
+            if reads and not _calls(func, SANITIZERS):
+                for line, detail in reads:
                     findings.append(
-                        Finding(rel, node.lineno, target.attr, _expr_source(node.value))
+                        Finding(
+                            relpath,
+                            line,
+                            func.name,
+                            'raw-error-read',
+                            f'{detail} with no sanitizer call in the function',
+                        )
                     )
-        # `update_task_status(..., error_message=<expr>)` and similar keyword calls
-        if isinstance(node, ast.Call):
-            for kw in node.keywords:
-                if kw.arg in WATCHED_FIELDS and _value_is_raw(kw.value):
-                    findings.append(Finding(rel, node.lineno, kw.arg, _expr_source(kw.value)))
 
+    scope_by_line: dict[int, str] = {}
+    for func in _outermost_functions(tree):
+        for node in ast.walk(func):
+            if hasattr(node, 'lineno'):
+                scope_by_line.setdefault(node.lineno, func.name)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and _receiver_name(node.func) == 'categorize_error'
+            and any(_mentions_stored_column(arg) for arg in node.args)
+        ):
+            findings.append(
+                Finding(
+                    relpath,
+                    node.lineno,
+                    scope_by_line.get(node.lineno, '<module>'),
+                    'prose-retry-rederivation',
+                    f'retry category re-derived from stored .{STORED_COLUMN}; '
+                    'use stored_category(media_file.error_category)',
+                )
+            )
     return findings
 
 
-def scan(paths: list[Path]) -> list[Finding]:
-    findings: list[Finding] = []
-    for root in paths:
-        if root.is_file():
-            findings.extend(_scan_file(root))
-            continue
-        for py_file in sorted(root.rglob('*.py')):
-            if '/tests/' in str(py_file) or py_file.name.startswith('test_'):
-                continue
-            findings.extend(_scan_file(py_file))
-    return findings
+def scan_file(path: Path, root: Path) -> list[Finding]:
+    relpath = path.relative_to(root).as_posix()
+    return scan_source(path.read_text(encoding='utf-8'), relpath)
 
 
-def load_allowlist(path: Path = _ALLOWLIST_PATH) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    entries: dict[str, str] = {}
-    for line in path.read_text(encoding='utf-8').splitlines():
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        parts = line.split('::', 2)
-        if len(parts) != 3:
-            continue
-        file_, lineno, reason = parts
-        if not reason.strip():
-            continue
-        entries[f'{file_}::{lineno}'] = reason.strip()
-    return entries
+# ------------------------------------------------------------------------------ self-test
+
+SELFTEST_CASES: tuple[tuple[str, str, str], ...] = (
+    (
+        'raw-error-read',
+        'api/endpoints/x.py',
+        'def f(db_file):\n    return {"error": db_file.last_error_message}\n',
+    ),
+    (
+        'raw-error-read',
+        'api/endpoints/x.py',
+        'def f(task):\n    return {"error_message": task.error_message}\n',
+    ),
+    (
+        'raw-error-read',
+        'services/formatting_service.py',
+        'class S:\n    def f(self, m):\n        return getattr(m, "last_error_message", None)\n',
+    ),
+    (
+        'prose-retry-rederivation',
+        'services/task_recovery_service.py',
+        'def f(m):\n    return categorize_error(m.last_error_message or "")\n',
+    ),
+)
+
+SELFTEST_CLEAN: tuple[tuple[str, str], ...] = (
+    (
+        'api/endpoints/x.py',
+        'def f(task):\n'
+        '    return {"error_message": ErrorCategorizationService.user_message_for(\n'
+        '        task.error_message)}\n',
+    ),
+    (
+        'api/endpoints/x.py',
+        'def f(db):\n    return db.query(MediaFile.last_error_message, TaskModel.error_message)\n',
+    ),
+    ('api/endpoints/x.py', 'def f(m):\n    m.last_error_message = "fixed"\n'),
+    # A watch-source row's error_message is another table, not a task's.
+    ('api/endpoints/x.py', 'def f(r):\n    return {"error_message": r.error_message}\n'),
+    # Outside the wire layer, reading the column server-side is fine.
+    ('services/task_detection_service.py', 'def f(m):\n    return m.last_error_message\n'),
+    (
+        'tasks/youtube_processing.py',
+        'def f(e):\n    return categorize_error(str(e))\n',
+    ),
+)
+
+
+def run_selftest(verbose: bool = True) -> list[str]:
+    """Return failure descriptions — empty means every detector is alive."""
+    failures: list[str] = []
+    for category, relpath, source in SELFTEST_CASES:
+        got = {f.category for f in scan_source(source, relpath)}
+        ok = category in got
+        if not ok:
+            failures.append(f'{category} did not fire on {relpath} (got {sorted(got)})')
+        if verbose:
+            print(f'  {"ok  " if ok else "FAIL"} fires {category} ({relpath})')
+    for i, (relpath, source) in enumerate(SELFTEST_CLEAN, start=1):
+        found = scan_source(source, relpath)
+        if found:
+            failures.append(f'clean case {i} produced {[f.category for f in found]}')
+        if verbose:
+            print(f'  {"FAIL" if found else "ok  "} clean case {i} produces no finding')
+    return failures
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument('paths', nargs='*', default=[str(_DEFAULT_SCAN_ROOT)])
-    ap.add_argument(
-        '--list', action='store_true', help='print all findings, ignoring the allowlist'
-    )
+    ap.add_argument('root', type=Path, nargs='?', help='app tree to scan (backend/app)')
+    ap.add_argument('--selftest', action='store_true', help='audit the auditor')
     args = ap.parse_args()
 
-    findings = scan([Path(p) for p in args.paths])
-    allowlist = load_allowlist()
-
-    if args.list:
-        for f in findings:
-            print(f'{f.key}  [{f.field}]  {f.snippet}')
-        print(f'\n{len(findings)} finding(s)')
+    if args.selftest:
+        failures = run_selftest()
+        if failures:
+            print(f'\n{len(failures)} self-test failure(s) — a detector is broken:')
+            for line in failures:
+                print(f'  {line}')
+            return 1
+        print(f'\nall {len(SELFTEST_CASES) + len(SELFTEST_CLEAN)} self-test cases pass')
         return 0
 
-    unallowed = [f for f in findings if f.key not in allowlist]
-    stale = sorted(set(allowlist) - {f.key for f in findings})
+    if args.root is None:
+        ap.error('root is required unless --selftest is given')
+    if not args.root.is_dir():
+        print(f'error: {args.root} is not a directory', file=sys.stderr)
+        return 2
 
-    if unallowed:
-        print('\033[31mUn-allowlisted raw-error-disclosure findings:\033[0m')
-        for f in unallowed:
-            print(f'  {f.key}  [{f.field}]  {f.snippet}')
+    # A broken detector reports zero findings, so never let the tree scan speak without it.
+    selftest_failures = run_selftest(verbose=False)
+    findings: list[Finding] = []
+    for path in sorted(args.root.rglob('*.py')):
+        findings.extend(scan_file(path, args.root))
+
+    for f in findings:
+        print(f'{args.root}/{f.path}:{f.line} [{f.category}] {f.scope} — {f.detail}')
+    if selftest_failures:
+        print('SELF-TEST BROKEN — the scan above is not trustworthy:')
+        for line in selftest_failures:
+            print(f'  {line}')
+    if findings or selftest_failures:
         print(
-            f'\nFix the finding (sanitize via ErrorCategorizationService before persisting), '
-            f'or add a reasoned entry to {_ALLOWLIST_PATH.relative_to(_REPO_ROOT)} '
-            f'in the form <file>::<lineno>::<reason>.'
+            f'\n{len(findings)} finding(s). Route the read through '
+            'ErrorCategorizationService.user_message_for / error_fields_for, and read retry '
+            'policy from stored_category(media_file.error_category).'
         )
-
-    if stale:
-        print('\033[31mStale allowlist entries (no longer a finding — delete the line):\033[0m')
-        for key in stale:
-            print(f'  {key}')
-
-    if unallowed or stale:
         return 1
-
-    print(f'\033[32mno un-allowlisted findings ({len(findings)} allowlisted)\033[0m')
+    print('no error-disclosure findings')
     return 0
 
 

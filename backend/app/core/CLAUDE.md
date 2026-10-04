@@ -66,6 +66,15 @@ should import `app.api` or `app.services` at module scope.
   invisible; outside it, a worker that cannot answer `inspect stats` already fails the
   healthcheck. Read `init_worker_process`'s `fork init started`/`finished` pairs when the
   `asynpool` line is missing — those come from the child.
+  ⚠️ **Redis socket settings are what let a worker survive a SILENT broker drop (issue #1144).**
+  kombu passes `socket_keepalive=None`, which turns redis-py's keepalive OFF, and on a
+  connection error `Channel.close()` drains the in-flight BRPOP with a blocking `recv()` — with
+  no `socket_timeout` that wedged the MainProcess loop forever (alive, Ready, consuming
+  nothing). `broker_transport_options` therefore sets keepalive (+ TCP_USER_TIMEOUT) and a
+  finite `socket_timeout` (`CELERY_REDIS_SOCKET_TIMEOUT`, 30 s — must stay well above kombu's
+  1 s BRPOP wait). Keep the broker's `retry_on_timeout` **False**: its one redis-py retry
+  reconnects a dead pubsub socket and re-issues `parse_response(block=True)`, which reads with
+  `timeout=None` by design and re-wedges the loop (reproduced with py-spy).
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
   break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,
@@ -93,6 +102,14 @@ should import `app.api` or `app.services` at module scope.
   async clients) are listed in its docstring.
 - `capabilities.py` — server-driven feature gating; `require_capability()` dependency,
   `set_capability_resolver()` for the cloud edition, plus the audience taxonomy.
+  ⚠️ A registered resolver's result **fails closed** (#868, `CLOUD_SEAM_VERSION` 6): only an
+  explicit `True` grants. Omitted keys, non-bool values, `None`, or a raising resolver all deny —
+  they no longer inherit the (mostly `True`) community defaults. Test doubles that override one
+  key must spread `{**COMMUNITY_CAPABILITIES, key: value}`.
+  Deployment-locked user settings (#1109) go through `locked_settings.py`
+  (`effective_whisper_model`, `locked_transcription_fields`): enforce them wherever the value is
+  USED (endpoint and task), with no platform-admin bypass. Task-time reads pass no request, so
+  those keys must resolve per deployment, not per tier.
 - `settings_cache.py` — in-process TTL cache in front of `SystemSettings` reads.
 - `opensearch_auth.py` — `opensearch_connection_kwargs()`, the single builder for every
   `OpenSearch(...)` client (search plane ×2, audit writer + reader, admin audit export).
@@ -155,6 +172,30 @@ should import `app.api` or `app.services` at module scope.
   up and not yet acknowledged (prefetched, or RUNNING under `acks_late=True`). Autoscale on
   `celery_queue_depth + celery_queue_reserved`, which is exactly what the admin Statistics UI
   now displays via `stats_helpers.get_queue_depths`.
+  ⚠️ `reserved` **excludes orphans**: a transcription-stage `unacked` entry whose run holds no
+  lease (a worker killed while holding it) is counted in `orphaned` instead — before, it stayed
+  "reserved" for the whole 6 h visibility timeout and kept autoscaled GPUs up for nothing.
+  Other `acks_late` tasks have no lease to check and still count as reserved.
+- `broker_orphans.py` — the orphan reaper (beat `system.reclaim_orphaned_deliveries`, every
+  `BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS`). Restores a dead worker's stage to the **head** of its
+  queue with kombu's own `QoS.restore_by_tag(leftmost=False)` (so it is also gone from
+  `unacked` and can never come back as a 6 h duplicate), and re-dispatches runs whose message
+  is gone too. Never act on an `unacked` entry without the three checks it makes: no live lease,
+  older than `BROKER_ORPHAN_STALE_SECONDS`/its ETA, and not reported by `inspect` as held by a
+  live worker. Don't "fix" slow recovery by lowering `CELERY_VISIBILITY_TIMEOUT`: Redis has no
+  per-message lease, so a lower value re-runs every long live task.
+  ⚠️ A run whose file is being cancelled (`CANCELLING`/`cancellation_requested`) still has an
+  `in_progress` Task row, so `transcription_retry.run_status` reports it as `"cancelled"`, not
+  `"current"`: the reaper discards its delivery and `recover_lost_run` never re-dispatches it
+  (a replacement run carries no cancel flag). `reconcile_cancellation` resolves the file.
+  Non-stage deliveries have no lease: they are restored only after
+  `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` past delivery/ETA with no live holder and no
+  `task_replay` heartbeat, capped by `BROKER_ORPHAN_MAX_REQUEUES`; a `task_replay`-recorded one
+  is discarded, since that sweep re-sends it under the same id.
+- `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
+  Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — verified: celery's
+  cold-shutdown cancel ACKS a running `acks_late` task on Redis, and a "queued" marker there
+  hid the lost run for `TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS` (a week).
 - `db_metrics` per-request counting stores a **mutable dict** in a ContextVar: `BaseHTTPMiddleware`
   runs `call_next` in a child task, so re-`set()`ing the var would not propagate back.
 - `FileStatus` is `(str, enum.Enum)` and deliberately **not** `StrEnum` — `str(FileStatus.X) ==

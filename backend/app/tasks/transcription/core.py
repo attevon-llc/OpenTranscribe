@@ -16,19 +16,20 @@ import logging
 import os
 import tempfile
 import time
-from typing import NoReturn
 
 from celery import chain
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
+from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import gpu_split_enabled
 from app.core.exceptions import ASRConfigurationError
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
+from app.core.task_liveness import run_heartbeat
 from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
@@ -43,7 +44,9 @@ from .cloud_asr import _run_cloud_asr_pipeline
 from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
+from .context import is_cancelled
 from .context import requeue_after_abort
+from .context import requeue_if_context_poisoned
 from .context import retry_transcribe_gpu_exception
 from .cpu_task import transcribe_cpu_task
 from .diarize_task import diarize_gpu_task
@@ -58,6 +61,7 @@ from .notifications import send_progress_notification
 from .pipelines import _run_engine_pipeline
 from .pipelines import _run_transcribe_only_stage
 from .pipelines import _run_transcription_pipeline
+from .run_ownership import superseded_or_none as _superseded_or_none
 from .user_settings import _get_user_transcription_settings
 
 logger = logging.getLogger(__name__)
@@ -231,20 +235,32 @@ def _dispatch_gpu_split_diarize_chain(
         return False
 
     from .dispatch import on_pipeline_error
+    from .dispatch import stage_priorities
     from .postprocess import finalize_transcription
 
+    # A retried run keeps its retry priority on this second leg too.
+    cpu_priority, gpu_priority = stage_priorities(retry=_running_at_retry_priority())
     diarize_chain = chain(
         diarize_gpu_task.s(transcript_data, preprocess_context).set(
-            queue=_resolve_gpu_diarize_queue(), priority=GPUPriority.USER_IMPORT
+            queue=_resolve_gpu_diarize_queue(), priority=gpu_priority
         ),
-        finalize_transcription.s().set(
-            queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
-        ),
+        finalize_transcription.s().set(queue=CeleryQueues.CPU, priority=cpu_priority),
     )
     diarize_chain.apply_async(
         link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)],
     )
     return True
+
+
+def _running_at_retry_priority() -> bool:
+    """Whether the GPU stage executing now was published at the retry priority."""
+    try:
+        from celery import current_task
+
+        delivery = getattr(current_task.request, "delivery_info", None) or {}
+        return delivery.get("priority") == GPUPriority.TRANSCRIPTION_RETRY
+    except Exception:  # noqa: BLE001 - outside a worker: a fresh run
+        return False
 
 
 def _resolve_asr_provider_or_none(user_id: int):
@@ -280,7 +296,12 @@ def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) ->
     indistinguishable from the two entirely expected reasons. That silence is what let the
     fast path stay off on real installs without anyone noticing.
     """
-    if not local_wav_path:
+    if not engine_shared_volume_enabled():
+        # Handoff deliberately off (multi-node, #1151): the download is the normal path.
+        logger.debug(
+            "GPU task: shared-volume handoff disabled; MinIO download for file %d", file_id
+        )
+    elif not local_wav_path:
         logger.info(
             "GPU task: no shared-volume WAV recorded by preprocess for file %d — "
             "falling back to MinIO download",
@@ -317,7 +338,7 @@ def _cleanup_wav_quietly(local_wav_path: str) -> None:
 
 def _finish_failed_or_aborted(
     ctx, task_id: str, file_uuid: str, local_wav_path: str, exc: Exception
-) -> NoReturn:
+) -> dict:
     """Terminal handler for ``transcribe_gpu_task``: distinguish ABORT from FAILURE (#809).
 
     One handler rather than two ``except`` clauses because the task body sits at the C901
@@ -345,15 +366,27 @@ def _finish_failed_or_aborted(
        during a shutdown, so unlinking the WAV here could pull the file out from under a live
        reader. The two changes are interlocked and must not be split.
 
+    A failure of a run whose cancellation was requested is not a failure (issue #1163): the
+    failure policy records it as cancelled, and this RETURNS the cancelled payload instead of
+    re-raising, so the message is acked and no ``on_pipeline_error`` runs.
+
+    Returns:
+        The cancelled chain payload, only when the run was being cancelled.
+
     Raises:
         Reject: on abort, to requeue.
         Exception: the original exception, on a real failure.
     """
     if isinstance(exc, TranscriptionAbortedError):
         requeue_after_abort(file_uuid, exc, stage="GPU transcription")
+    # Issue #1081: a broken CUDA context is this worker's fault, not the file's. Before the
+    # WAV cleanup, because the requeued attempt needs that WAV.
+    requeue_if_context_poisoned(task_id, file_uuid, exc, stage="GPU transcription")
     _cleanup_wav_quietly(local_wav_path)
     logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
-    _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")
+    outcome = _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")
+    if is_cancelled(outcome):
+        return outcome
     raise exc
 
 
@@ -377,6 +410,11 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     """
     task_id = preprocess_context["task_id"]
     file_uuid = preprocess_context["file_uuid"]
+    # issue #1020: before anything else, including the in_progress write that used to
+    # resurrect a run recovery had already failed and replaced.
+    superseded = _superseded_or_none(preprocess_context, stage="GPU transcription")
+    if superseded is not None:
+        return superseded
     file_id = preprocess_context["file_id"]
     user_id = preprocess_context["user_id"]
 
@@ -403,7 +441,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     # inside this block -- outside it `stand_down_if_requested` has no run to ask about and
     # silently never fires. The context manager's reset is what stops celery's REUSED pool
     # thread from carrying this run's id into the next task.
-    with cancellation_scope(task_id, file_uuid):
+    with cancellation_scope(task_id, file_uuid), run_heartbeat(task_id):
         try:
             # issue #823: the cheapest place to catch a cancel that landed while this
             # message sat in the broker queue -- one Redis read, before any download,
@@ -544,15 +582,16 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                             "whisper_model override '%s' ignored for cloud ASR provider",
                             whisper_model,
                         )
-                    result = _run_cloud_asr_pipeline(
-                        ctx,
-                        local_audio_path,
-                        preprocess_context.get("min_speakers"),
-                        preprocess_context.get("max_speakers"),
-                        preprocess_context.get("num_speakers"),
-                        provider=provider,
-                        diarization_source=diarization_source,
-                    )
+                    with stage_timing.stage("asr"):
+                        result = _run_cloud_asr_pipeline(
+                            ctx,
+                            local_audio_path,
+                            preprocess_context.get("min_speakers"),
+                            preprocess_context.get("max_speakers"),
+                            preprocess_context.get("num_speakers"),
+                            provider=provider,
+                            diarization_source=diarization_source,
+                        )
                 else:
                     result = _run_transcription_pipeline(
                         ctx,
@@ -600,8 +639,9 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
         except TranscriptionCancelledError as cancelled:
             # issue #823: MUST sit before `except Exception` below, and it is deliberately NOT
-            # folded into _finish_failed_or_aborted's isinstance dispatch — that helper is
-            # `-> NoReturn`, and a cancel is the one outcome here that RETURNS. Returning is
+            # folded into _finish_failed_or_aborted's isinstance dispatch — that helper raises
+            # for everything but a cancel that landed mid-failure (#1163), and a cancel is the
+            # outcome here that RETURNS. Returning is
             # what acks the message under acks_late, i.e. what stops the job coming back; the
             # user asked it to stop, unlike #809's shutdown abort which must requeue.
             #
@@ -624,6 +664,6 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # `autoretry_for` policy below — worth this comment, not a fix here).
             retry_transcribe_gpu_exception(self, exc, file_uuid)
         except Exception as e:
-            _finish_failed_or_aborted(
+            return _finish_failed_or_aborted(
                 ctx, task_id, file_uuid, locals().get("local_wav_path", ""), e
             )

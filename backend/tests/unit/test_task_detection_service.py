@@ -44,6 +44,8 @@ from app.core.task_config import TaskRecoveryConfig
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.llm_service import LLMService
 from app.services.task_detection_service import TaskDetectionService
 from app.utils.error_classification import ErrorCategory
 
@@ -81,6 +83,23 @@ def _file(db, user, **kwargs) -> MediaFile:
     db.commit()
     db.refresh(media_file)
     return media_file
+
+
+def _failed_file(db, user, raw_error: str, **kwargs) -> MediaFile:
+    """An ERROR file recorded exactly as a pipeline failure site records one (#959).
+
+    The raw text is classified once; the row gets the fixed sentence and the retry code,
+    never the raw text — so detection can only see what production actually stores.
+    """
+    failure = ErrorCategorizationService.classify_failure(raw_error)
+    return _file(
+        db,
+        user,
+        status=FileStatus.ERROR,
+        last_error_message=failure.user_message,
+        error_category=failure.retry_category.value,
+        **kwargs,
+    )
 
 
 def _task(db, user, media_file, **kwargs) -> Task:
@@ -151,14 +170,17 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
     """Staleness alone is not enough — the duration check is the second half.
 
     Catches the duration filter being dropped from ``identify_stuck_tasks``: any
-    pending task quiet for 5 minutes would be failed, which for a transcription
-    that is legitimately mid-GPU-run destroys in-flight work.
+    pending task quiet for 5 minutes would be failed, destroying in-flight work.
+    A summarization, because it creates its Task row when it starts, so its age is its
+    run time; a transcription is judged by its liveness markers instead (#1020,
+    ``test_queued_transcription_recovery.py``).
     """
     media_file = _file(db_session, normal_user)
     stale_and_over = _task(
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="in_progress",
         created_at=NOW - timedelta(seconds=4000),
         updated_at=NOW - timedelta(seconds=600),
@@ -167,6 +189,7 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="in_progress",
         created_at=NOW - timedelta(seconds=600),
         updated_at=NOW - timedelta(seconds=600),
@@ -178,10 +201,26 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
 
 
 def test_orphaned_tasks_use_the_hour_threshold(service, db_session, normal_user):
-    """Only tasks untouched for longer than ORPHANED_TASK_THRESHOLD hours count."""
+    """Only tasks untouched for longer than ORPHANED_TASK_THRESHOLD hours count.
+
+    A summarization for the same reason as the stuck-task test above: a quiet
+    transcription is usually just queued, and is orphaned only when provably dead (#1020).
+    """
     media_file = _file(db_session, normal_user)
-    old = _task(db_session, normal_user, media_file, updated_at=NOW - timedelta(hours=2))
-    recent = _task(db_session, normal_user, media_file, updated_at=NOW - timedelta(minutes=10))
+    old = _task(
+        db_session,
+        normal_user,
+        media_file,
+        task_type="summarization",
+        updated_at=NOW - timedelta(hours=2),
+    )
+    recent = _task(
+        db_session,
+        normal_user,
+        media_file,
+        task_type="summarization",
+        updated_at=NOW - timedelta(minutes=10),
+    )
 
     ids = {t.id for t in service.identify_orphaned_tasks(db_session)}
     assert old.id in ids
@@ -194,31 +233,18 @@ def test_orphaned_tasks_use_the_hour_threshold(service, db_session, normal_user)
 def test_oom_detection_requires_both_cuda_and_out_of_memory(service, db_session, normal_user):
     """The signature is the conjunction; either word alone is a different failure.
 
-    Catches the two ``ilike`` clauses becoming an OR: a plain host-RAM
-    "out of memory" or any message merely mentioning CUDA would enter the OOM
-    backoff path and be retried on the GPU forever instead of surfacing as an
-    error the user can act on.
+    Catches the GPU-OOM code being widened: a plain host-RAM "out of memory" or
+    any message merely mentioning CUDA would enter the OOM backoff path and be
+    retried on the GPU forever instead of surfacing as an error the user can act
+    on. The conjunction now lives in the failure-site classifier
+    (``GPU_OOM``), not in an ``ilike`` over stored prose (#959).
     """
-    both = _file(
-        db_session,
-        normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="CUDA out of memory. Tried to allocate 2.00 GiB",
-        retry_count=0,
+    both = _failed_file(
+        db_session, normal_user, "CUDA out of memory. Tried to allocate 2.00 GiB", retry_count=0
     )
-    memory_only = _file(
-        db_session,
-        normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="Worker ran out of memory",
-        retry_count=0,
-    )
-    cuda_only = _file(
-        db_session,
-        normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="CUDA driver initialization failed",
-        retry_count=0,
+    memory_only = _failed_file(db_session, normal_user, "Worker ran out of memory", retry_count=0)
+    cuda_only = _failed_file(
+        db_session, normal_user, "CUDA driver initialization failed", retry_count=0
     )
 
     ids = {f.id for f in service.identify_oom_error_files(db_session)}
@@ -237,19 +263,17 @@ def test_oom_backoff_grows_with_the_retry_count(service, db_session, normal_user
     has and starving every other queued transcription.
     """
     message = "CUDA out of memory"
-    too_soon = _file(
+    too_soon = _failed_file(
         db_session,
         normal_user,
-        status=FileStatus.ERROR,
-        last_error_message=message,
+        message,
         retry_count=1,
         last_recovery_attempt=NOW - timedelta(minutes=5),
     )
-    elapsed = _file(
+    elapsed = _failed_file(
         db_session,
         normal_user,
-        status=FileStatus.ERROR,
-        last_error_message=message,
+        message,
         retry_count=1,
         last_recovery_attempt=NOW - timedelta(minutes=25),
     )
@@ -280,11 +304,10 @@ def test_oom_detection_treats_a_null_retry_count_as_zero(service, db_session, no
     """
     from sqlalchemy import update
 
-    null_count = _file(
+    null_count = _failed_file(
         db_session,
         normal_user,
-        status=FileStatus.ERROR,
-        last_error_message="CUDA out of memory",
+        "CUDA out of memory",
         last_recovery_attempt=NOW - timedelta(minutes=30),
     )
     db_session.execute(
@@ -480,12 +503,14 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
     task failure whose message merely mentions "stuck in processing" would be
     reset to pending and re-dispatched in a loop. The 5-day-old row is the control
     for the recency window that stops the sweeper resurrecting ancient failures.
+    Summarizations: transcriptions are never reset by this step (#1020).
     """
     media_file = _file(db_session, normal_user)
     recovered = _task(
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="failed",
         error_message="Task recovered after being stuck in processing",
         created_at=NOW - timedelta(hours=1),
@@ -494,6 +519,7 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="failed",
         error_message="ffmpeg exited with code 1",
         created_at=NOW - timedelta(hours=1),
@@ -502,6 +528,7 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
         db_session,
         normal_user,
         media_file,
+        task_type="summarization",
         status="failed",
         error_message="Task recovered after being stuck in processing",
         created_at=NOW - timedelta(days=5),
@@ -563,7 +590,7 @@ def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
     db_session.commit()
     db_session.refresh(speaker)
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         _reject_speaker_suggestion(speaker, speaker.id, db_session)
 
         results = service.identify_incomplete_post_transcription_files(db_session)
@@ -618,7 +645,7 @@ def test_skipping_every_llm_suggestion_does_not_re_offer_speaker_id(
     )
     assert result["updated_count"] == 2, f"expected both speakers skipped, got {result}"
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]
@@ -663,7 +690,7 @@ def test_a_completed_speaker_identification_task_survives_a_voice_match_clobber(
     )
     db_session.commit()
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]
@@ -700,7 +727,7 @@ def test_legacy_suggestion_source_alone_still_works_with_no_task_row(
     db_session.add(speaker)
     db_session.commit()
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]
@@ -733,7 +760,7 @@ def test_negative_control_neither_leg_present_reports_missing(service, db_sessio
     db_session.add(speaker)
     db_session.commit()
 
-    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+    with patch.object(LLMService, "is_configured_for_user", return_value=True):
         results = service.identify_incomplete_post_transcription_files(db_session)
 
     ours = [r for r in results if r.media_file_id == media_file.id]

@@ -7,6 +7,7 @@ Falls back to in-memory storage if Redis is unavailable.
 Configuration is managed via settings:
 - RATE_LIMIT_AUTH_PER_MINUTE: Rate limit for auth endpoints (default: 10)
 - RATE_LIMIT_API_PER_MINUTE: Rate limit for general API endpoints (default: 100)
+- RATE_LIMIT_AUTH_METHODS_PER_MINUTE: Rate limit for GET /auth/methods (default: 60)
 - RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE: Rate limit for handlers that fetch a caller-supplied
   LLM base_url (default: 10)
 - RATE_LIMIT_DIRECTORY_PER_MINUTE: Rate limit for GET /users/search (default: 60)
@@ -203,6 +204,18 @@ def get_auth_rate_limit() -> str:
         Rate limit string in slowapi format (e.g., "10/minute").
     """
     return f"{settings.RATE_LIMIT_AUTH_PER_MINUTE}/minute"
+
+
+def get_auth_methods_rate_limit() -> str:
+    """Rate limit string for ``GET /auth/methods`` (issue #1131).
+
+    Separate from :func:`get_auth_rate_limit`: that one guards credential guessing, but
+    this endpoint is public, read-only and hit on every SPA page load.
+
+    Returns:
+        Rate limit string in slowapi format (e.g., "60/minute").
+    """
+    return f"{settings.RATE_LIMIT_AUTH_METHODS_PER_MINUTE}/minute"
 
 
 def get_api_rate_limit() -> str:

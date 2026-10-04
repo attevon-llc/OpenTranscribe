@@ -18,8 +18,9 @@ The backend instruments every HTTP request and database query and exposes them i
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). |
-| `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
+| `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). Backup and media-mirror gauges are read from the database at most once a minute, not on every scrape. |
+| `GET /metrics/queues` | Only the per-queue Celery gauges (`celery_queue_depth`, `celery_queue_reserved`, `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`, `celery_queue_oldest_message_age_seconds`), in the same Prometheus text format — one Redis round trip (plus one read of run leases when a transcription stage is in flight), no database access. Point autoscalers that poll every few seconds here instead of at `/metrics`, whose full page renders every HTTP histogram series. Internal-only, like `/metrics`. |
+| `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The Redis, OpenSearch and object-storage checks are each bounded at 2 s (one attempt), and the migration head is computed once per process, so a probe stays cheap and cannot hang on one slow dependency. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
 
 Key metric names (stable; dashboards are built against these):
 
@@ -33,6 +34,11 @@ Key metric names (stable; dashboards are built against these):
 | `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
 | `celery_queue_depth` | Gauge | `queue` |
 | `celery_queue_reserved` | Gauge | `queue` |
+| `celery_queue_orphaned` | Gauge | `queue` |
+| `celery_queue_oldest_unacked_age_seconds` | Gauge | `queue` |
+| `celery_queue_oldest_message_age_seconds` | Gauge | `queue` |
+| `transcription_runs_without_lease` | Gauge | — |
+| `transcription_files_infra_requeued` | Gauge | — |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 
@@ -83,7 +89,118 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
   (tasks a worker has picked up and not yet acknowledged — prefetched, or RUNNING under
   `acks_late=True`) is exposed on `/metrics` but has no panel of its own yet. Autoscale on
   `celery_queue_depth + celery_queue_reserved` — depth alone trends to zero as the fleet
-  saturates.
+  saturates. `GET /metrics/queues` serves the queue gauges for an autoscaler.
+
+### Per-task worker metrics
+
+The backend's `/metrics` sees queues, not tasks. Set `WORKER_METRICS_PORT` and every Celery worker
+serves `celery_task_total{task, outcome}` and `celery_task_runtime_seconds{task}` on that port (see
+[Environment variables → Worker Task Metrics](../configuration/environment-variables.md#worker-task-metrics)).
+The bundled Prometheus does not scrape the workers; add a job per worker service, for example
+`celery-cpu-worker:9808`. Useful queries:
+
+- failure ratio per task: `sum by (task) (rate(celery_task_total{outcome="failure"}[15m])) / sum by (task) (rate(celery_task_total[15m]))`
+- p95 run time per task: `histogram_quantile(0.95, sum by (task, le) (rate(celery_task_runtime_seconds_bucket[1h])))`
+
+### Queue wait: how long work waits before a worker starts it
+
+Queue depth says how many messages are waiting, not for how long. Every task message is stamped
+with its publish time (header `x-ot-published-at`, wall clock), and two metrics read it:
+
+| Metric | Type | Labels | Served by |
+|--------|------|--------|-----------|
+| `celery_task_queue_wait_seconds` | Histogram | `queue`, `task` | each worker on `WORKER_METRICS_PORT` — work that has **started** |
+| `celery_task_queue_wait_missing_total` | Counter | `queue` | each worker on `WORKER_METRICS_PORT` |
+| `celery_queue_oldest_message_age_seconds` | Gauge | `queue` | the backend, `GET /metrics` and `GET /metrics/queues` (port 8080) — work **still waiting** |
+
+- **`celery_task_queue_wait_seconds`** is observed when a worker starts a task: `now - published_at`,
+  clamped at 0. Buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600,
+  7200 seconds. A task published with a countdown or ETA is measured from when it became due, not
+  from when it was published.
+- **`celery_task_queue_wait_missing_total`** counts started messages that carried no stamp — published
+  by an older version during a rolling upgrade. They are not observed in the histogram.
+- **`celery_queue_oldest_message_age_seconds`** is sampled at scrape time: the oldest message at the
+  head of each queue's broker lists (one `LINDEX` per priority sub-list, in the same Redis round trip
+  as `celery_queue_depth`). 0 when the queue is empty or its oldest message is unstamped. A broker
+  error never fails the scrape.
+- **Labels are bounded.** `queue` is one of the configured queue names or `other`; `task` is the
+  registered task name or `other` (as for `celery_task_total`).
+
+Caveats:
+
+- **Clock skew.** The publish time comes from the producer's clock (API or another worker) and is
+  compared with the worker's or backend's clock. Keep hosts NTP-synchronised; skew shifts every
+  observation, and a producer clock running ahead is clamped to 0.
+- **Redelivery.** A message put back on the queue after its worker was lost (or its visibility
+  timeout expired) is the same message with its original stamp, so its wait includes the failed
+  attempt. A **retry** is a new message and gets a fresh stamp, so each retry's wait is its own.
+
+Useful queries:
+
+- p95 wait per queue: `histogram_quantile(0.95, sum by (queue, le) (rate(celery_task_queue_wait_seconds_bucket[15m])))`
+- starvation alert: `max by (queue) (celery_queue_oldest_message_age_seconds) > 1800`
+
+### Per-stage pipeline timing
+
+Each processing-pipeline stage records one observation per run, whether it succeeds or fails,
+in two places.
+
+**Logs.** One line per stage run, carrying the same `TIMING:` marker as the free-text timing
+lines, so `grep "TIMING:"` picks it up:
+
+```text
+TIMING: stage=asr outcome=success seconds=12.345 task_id=<task id> file_id=<file id>
+```
+
+`task_id` and `file_id` are `-` where the stage cannot see them. They appear in logs only.
+
+**Metrics.** Served by every worker with `WORKER_METRICS_PORT` set, next to the per-task
+metrics above:
+
+| Metric | Type | Labels |
+|---|---|---|
+| `pipeline_stage_duration_seconds` | histogram (50 ms to 2 h) | `stage` |
+| `pipeline_stage_total` | counter | `stage`, `outcome` (`success`, `failure`) |
+
+`stage` is always one of the values below, or `other` for a name the code does not know, so the
+label set is fixed. No file, user or task id is ever a label.
+
+| `stage` | Runs on | What it covers |
+|---|---|---|
+| `preprocess` | CPU worker | fetch the media, extract 16 kHz audio, stage it for the GPU task |
+| `vad` | GPU (or CPU) worker | voice-activity detection and feature extraction before the first decoded batch |
+| `asr` | GPU (or CPU) worker | Whisper decoding, or the cloud ASR provider call |
+| `diarization` | GPU worker | speaker diarization; when it overlaps with ASR, the time still spent waiting for it |
+| `speaker_assignment` | GPU worker | assigning diarized speakers to transcript words |
+| `finalize` | GPU worker | resegment/merge and writing segments and speakers to the database |
+| `speaker_embedding` | GPU worker | speaker embedding extraction and profile matching (one observation per attempt) |
+| `postprocess` | CPU worker | completion, speaker matching, downstream dispatch |
+| `search_indexing` | embedding worker | chunk-level search indexing |
+
+There is no separate alignment stage: word timestamps come from the decoder itself. A
+`postprocess` run whose result reports an error counts as `failure` even though it did not
+raise. Useful queries:
+
+- p95 per stage: `histogram_quantile(0.95, sum by (stage, le) (rate(pipeline_stage_duration_seconds_bucket[1h])))`
+- share of pipeline time per stage: `sum by (stage) (rate(pipeline_stage_duration_seconds_sum[1h]))`
+- failure ratio per stage: `sum by (stage) (rate(pipeline_stage_total{outcome="failure"}[15m])) / sum by (stage) (rate(pipeline_stage_total[15m]))`
+
+### Worker-loss metrics (alert on these, never scale on them)
+
+`celery_queue_reserved` counts only work a live worker holds. A transcription stage left
+unacknowledged by a worker that died (no live lease) is reported in **`celery_queue_orphaned`**
+instead — it used to count as reserved for up to the 6 h visibility timeout, keeping autoscaled
+GPU capacity up with nothing to run. The orphan reaper puts it back on its queue (where it counts
+as depth) within about a minute, so:
+
+| Alert | Expression | Meaning |
+|---|---|---|
+| Orphans not being reaped | `max(celery_queue_orphaned) > 0` for 5 min | the `system.reclaim_orphaned_deliveries` beat task is not running |
+| Lost runs | `transcription_runs_without_lease > 0` for 5 min | in-flight transcriptions neither running nor queued; recovery should clear them within minutes |
+| Stuck delivery | `celery_queue_oldest_unacked_age_seconds` above your longest expected stage | a held message is older than any legitimate run |
+| Poison input | `transcription_files_infra_requeued > 0` | a file has lost its worker `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD` times |
+
+Recovery behaviour and its settings: [Environment variables → Task Recovery](../configuration/environment-variables.md#task-recovery).
 - **Signups / uploads rate** product counters (API-process events).
 
 **OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):

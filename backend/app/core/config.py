@@ -1,12 +1,16 @@
+import json
 import logging
 import os
 from pathlib import Path
+from typing import Annotated
 from typing import ClassVar
+from typing import Literal
 
 from pydantic import ValidationInfo
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
 from app.core.legacy_auth_env import oidc_bool_env
@@ -21,6 +25,12 @@ _config_logger = logging.getLogger(__name__)
 #: DEFAULT independently of whatever an operator set in the running environment.
 DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 
+#: Shipped default for :attr:`Settings.CACHE_BUCKET_NAME` — the historical hardcoded
+#: value, so an existing deployment that sets nothing keeps the bucket it already has.
+#: Same module-constant rationale as above: a test can pin the DEFAULT without being
+#: at the mercy of the running environment.
+DEFAULT_CACHE_BUCKET_NAME = "processed-videos"
+
 
 # The ONLY environment names that relax security controls. Anything else — including
 # a typo, an empty string, or an unset variable falling back to the default — is
@@ -28,6 +38,9 @@ DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 # name here disables default-secret refusal, DEBUG enforcement, the Redis-password
 # requirement, and the cookie Secure flag for that value (issue #284 A0.3).
 RELAXED_ENVIRONMENTS = frozenset({"development", "dev", "testing", "test", "local"})
+
+# The Vite dev server's origins — CORS_ORIGINS' default in a relaxed environment only.
+DEV_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 
 
 def is_relaxed_environment(environment: str) -> bool:
@@ -291,6 +304,11 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_MINUTES: int = 15
     # Session absolute timeout: 8 hours (force re-authentication)
     SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = 480
+    # Apply SESSION_ABSOLUTE_TIMEOUT_MINUTES to tokens from a registered external
+    # identity provider, keyed on the token's auth_time (issue #1106). A verifier
+    # that supplies no auth_time is not enforced (logged), so this cannot lock
+    # everyone out. No effect when no external verifier is registered.
+    EXTERNAL_SESSION_ABSOLUTE_TIMEOUT_ENFORCED: bool = True
 
     # ===== FIPS 140-2 Password Hashing =====
     # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)
@@ -318,8 +336,36 @@ class Settings(BaseSettings):
     # ===== Password Policy (FedRAMP IA-5) =====
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
+    # Which tier applies: "basic" (min 8, no composition, no expiry/history; light, opt-in),
+    # "standard" (NIST SP 800-63B-4: min 15 / 8 with MFA, no composition rules, no periodic
+    # expiry, blocklist on), "hardened" (DoD STIG style: the individual values below, forced
+    # rotation, history 24) or "custom" (the individual PASSWORD_* values exactly as set).
+    # "nist" and "stig" are accepted as aliases of "standard" and "hardened". Code default is
+    # "hardened" so an install that never set it keeps its behaviour on upgrade; .env.example
+    # ships "standard" for fresh installs. See docs-site/docs/configuration/password-policy.md.
+    PASSWORD_POLICY_PROFILE: str = "hardened"  # noqa: S105 # nosec B105
+    # Upper length cap. 0 = profile default (basic/standard: 128, never below 64; others: none).
+    PASSWORD_MAX_LENGTH: int = 0
+    # Breached/common-password blocklist. Empty = profile default (basic/standard on, hardened/custom off);
+    # "true"/"false" overrides the profile.
+    PASSWORD_BLOCKLIST_ENABLED: str = ""
+    # Operator-supplied blocklist file (SHA-1 hashes or plaintext, one per line). Empty = the
+    # list installed by `./opentranscribe.sh download-models password-blocklist`; if none is
+    # installed the check is skipped with a startup warning.
+    PASSWORD_BLOCKLIST_PATH: str = ""
+    # Extra context-specific words a password may not contain (comma-separated); the product
+    # name is always included.
+    PASSWORD_CONTEXT_WORDS: str = ""
+    # Optional online k-anonymity range lookup (HIBP-style). OFF by default: air-gapped
+    # installs must never make an outbound call. Fails OPEN (logged) on timeout/error.
+    PASSWORD_HIBP_ENABLED: bool = False
+    PASSWORD_HIBP_URL: str = "https://api.pwnedpasswords.com/range"  # noqa: S105 # nosec B105
+    PASSWORD_HIBP_TIMEOUT_SECONDS: float = 3.0
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
     PASSWORD_MIN_LENGTH: int = 12
+    # Hours a password must be kept before it can be changed again (0 disables). Applies to
+    # hardened/custom only; basic/standard never enforce a minimum age.
+    PASSWORD_MIN_AGE_HOURS: int = 24
     # Require at least one uppercase letter
     PASSWORD_REQUIRE_UPPERCASE: bool = (
         os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
@@ -341,6 +387,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MINUTE: int = 10
     # Rate limit for general API endpoints
     RATE_LIMIT_API_PER_MINUTE: int = 100
+    # Rate limit for GET /auth/methods (issue #1131). Public and read-only, but every SPA page
+    # load calls it (the root layout and the login page each do), so the credential-endpoint
+    # limit above (10/min) is exhausted by a handful of reloads. 60/min is one per second:
+    # ample for reloads and tabs behind a shared NAT, still a hard ceiling for scraping.
+    RATE_LIMIT_AUTH_METHODS_PER_MINUTE: int = 60
     # Rate limit for handlers that make a server-side outbound request to a caller-supplied
     # base_url (LLM connection-test + model-discovery, issue #676). Deliberately tighter than
     # the general API limit: a connection test is a human-scale action, and this router has
@@ -466,6 +517,20 @@ class Settings(BaseSettings):
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
+    # Second bucket: the REGENERABLE cache. Subtitle-embedded videos and extracted audio
+    # under derived/, bulk-export ZIPs under bulk/. It is separate from the media bucket
+    # so one lifecycle rule can expire the whole thing without ever touching an original.
+    # Configurable for the same reason MEDIA_BUCKET_NAME is (issue #985): S3 bucket names
+    # are ONE GLOBAL NAMESPACE, so no deployment can assume a bucket literally called
+    # "processed-videos" is reachable by its credentials. While this was a hardcoded
+    # literal in VideoProcessingService, such a deployment booted fine and then failed at
+    # request time — bulk subtitle export, subtitle-embedded video download and the
+    # derived-cache admin endpoints all construct that service, whose
+    # _ensure_cache_bucket_exists re-raises — with no knob to point it anywhere else.
+    # Plain field default (no class-body os.getenv): pydantic-settings sources the env var
+    # itself, and with env_ignore_empty an explicit `CACHE_BUCKET_NAME=` falls back here
+    # instead of resolving to "" — the DATABASE_URL/S3_REGION bug class documented below.
+    CACHE_BUCKET_NAME: str = DEFAULT_CACHE_BUCKET_NAME
 
     # ===== Object-storage backend (issue #284 A1.11) =====
     # "minio" (default) keeps the bundled MinIO container exactly as it was: the
@@ -541,6 +606,13 @@ class Settings(BaseSettings):
     # resumable, so the default sits far under it. Raise it to keep more uploads on the
     # single-PUT path; it can never disable multipart for objects that need it.
     MULTIPART_THRESHOLD_MB: int = 512
+    # Whether POST /api/files — the fallback that streams a whole file THROUGH the API
+    # process instead of browser -> object storage — is accepted (issue #1008). Set false
+    # to keep every file byte out of the API: the route 404s before reading the body,
+    # /system/capabilities advertises it so the browser never falls back, and
+    # /files/prepare reports "direct upload unavailable" (503) instead of handing out
+    # a fallback. Presigned single-PUT and multipart uploads are unaffected.
+    API_MEDIATED_UPLOAD_ENABLED: bool = True
     # Presigned-URL revocation on quarantine (issue #907). Browser-facing GET presigns
     # (get_file_url, get_presigned_download_url, MinIOService.get_presigned_url) are
     # signed with a dedicated, least-privilege MinIO service-account identity instead
@@ -663,6 +735,14 @@ class Settings(BaseSettings):
     # their own engines, so these sizes mainly control API concurrency.
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 40
+    # Worker threads for the API's sync handlers, sync dependencies and
+    # run_in_threadpool calls (Starlette's default is 40). 0 = size it to the DB
+    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A request
+    # holds its pooled connection from authentication until it ends, so with fewer
+    # threads than connections a burst can leave every thread blocked waiting for a
+    # connection while the requests holding them wait for a thread (#1169). See
+    # app/core/threadpool.py.
+    API_THREADPOOL_SIZE: int = 0
 
     # Server-side backstop for the "transaction held open across slow work"
     # bug class (issue #440). Postgres terminates a backend that has an OPEN
@@ -685,6 +765,7 @@ class Settings(BaseSettings):
     @field_validator(
         "DB_POOL_SIZE",
         "DB_MAX_OVERFLOW",
+        "API_THREADPOOL_SIZE",
         "SEARCH_BULK_BATCH_SIZE",
         "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS",
     )
@@ -704,6 +785,7 @@ class Settings(BaseSettings):
         floors = {
             "DB_POOL_SIZE": 1,
             "DB_MAX_OVERFLOW": 0,
+            "API_THREADPOOL_SIZE": 0,
             "SEARCH_BULK_BATCH_SIZE": 1,
             "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS": 0,
         }
@@ -809,16 +891,29 @@ class Settings(BaseSettings):
         """
         return self.FIPS_MODE and self.FIPS_VERSION == "140-3"
 
-    # CORS settings
-    # Note: Remove "*" in production and specify exact origins for security
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # CORS settings. The Vite dev origins are the default only in a relaxed environment:
+    # a hardened deployment that leaves CORS_ORIGINS unset resolves to [] in
+    # validate_auth_settings. The SPA is served same-origin and needs no CORS entry, while
+    # the dev default let any page on a user's localhost:5173 make credentialed requests
+    # and still never listed the app's own origin (issue #1029).
+    #
+    # NoDecode: pydantic-settings JSON-decodes a list field's env value before any
+    # validator runs, so the documented comma-separated form
+    # (`CORS_ORIGINS=https://a,https://b`) raised SettingsError at startup. The
+    # validator below parses both forms itself.
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = list(DEV_CORS_ORIGINS)
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            if v.lstrip().startswith("["):
+                parsed = json.loads(v)
+                if not isinstance(parsed, list):
+                    raise ValueError(v)
+                return [str(i).strip() for i in parsed]
+            return [i.strip() for i in v.split(",") if i.strip()]
+        if isinstance(v, list):
             return v
         raise ValueError(v)
 
@@ -848,6 +943,13 @@ class Settings(BaseSettings):
             self.MFA_REQUIRE_REDIS = not is_relaxed_environment(self.ENVIRONMENT)
         if self.PKI_REVOCATION_SOFT_FAIL is None:
             self.PKI_REVOCATION_SOFT_FAIL = is_relaxed_environment(self.ENVIRONMENT)
+        # CORS_ORIGINS keeps a list type (every consumer iterates it), so "unset" is read
+        # from model_fields_set, which pydantic-settings fills from env, .env and init
+        # kwargs alike. An explicit value — including `[]` — is always honoured.
+        if "CORS_ORIGINS" not in self.model_fields_set and not is_relaxed_environment(
+            self.ENVIRONMENT
+        ):
+            self.CORS_ORIGINS = []
 
         # Same bug class, for str fields whose default is assembled from other
         # already-resolved fields instead of a bool computed from ENVIRONMENT.
@@ -1089,6 +1191,10 @@ class Settings(BaseSettings):
     MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"
     # When MFA_REQUIRED is true, users must set up MFA on first login
     MFA_REQUIRED: bool = os.getenv("MFA_REQUIRED", "false").lower() == "true"
+    # Require admins (role "admin") to enrol and use MFA even when MFA_REQUIRED is false.
+    # Recommended true wherever MFA_ENABLED is true; defaults false so an upgrade cannot lock
+    # an existing admin out before they have enrolled. Has no effect while MFA_ENABLED is false.
+    MFA_REQUIRED_FOR_ADMINS: bool = False
     # Issuer name shown in authenticator apps
     MFA_ISSUER_NAME: str = os.getenv("MFA_ISSUER_NAME", "OpenTranscribe")
     # Number of backup codes to generate (one-time use)
@@ -1210,6 +1316,12 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-haiku-4.5")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    # OpenRouter app attribution (sent only when OpenRouter is the configured provider).
+    # Defaults to the public project repo so no install identifies itself by accident;
+    # set to an empty string to omit the header entirely.
+    OPENROUTER_HTTP_REFERER: str = os.getenv(
+        "OPENROUTER_HTTP_REFERER", "https://github.com/attevon-llc/OpenTranscribe"
+    )
 
     # ===== Amazon Bedrock =====
     # AWS-native LLM access via the Converse API. There is deliberately NO API-key
@@ -1229,6 +1341,12 @@ class Settings(BaseSettings):
     BEDROCK_MODEL_NAME: str = os.getenv(
         "BEDROCK_MODEL_NAME", "anthropic.claude-haiku-4-5-20251001-v1:0"
     )
+    # botocore retry policy for every Bedrock client, streaming included (issue #1049).
+    # `adaptive` adds client-side rate limiting on top of `standard`'s jittered
+    # exponential backoff; 8 attempts rides out a short capacity blip
+    # (ServiceUnavailable/Throttling) that the botocore default surfaced as an error.
+    BEDROCK_RETRY_MODE: str = "adaptive"
+    BEDROCK_MAX_ATTEMPTS: int = 8
 
     # ===== ASR (Speech Recognition) Provider =====
     ASR_PROVIDER: str = os.getenv("ASR_PROVIDER", "local")
@@ -1366,6 +1484,17 @@ class Settings(BaseSettings):
 
     # Storage paths (container paths, mounted from host via docker-compose volumes)
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
+
+    # Where the GDPR erasure journal (services/erasure_ledger_service) is written — the
+    # out-of-database copy of every erasure request that lets a restore of an older dump
+    # be detected and the erasure re-run. "file" (default): DATA_DIR/gdpr/ on the data
+    # volume, unchanged. "object_storage": one object per entry under
+    # ERASURE_JOURNAL_OBJECT_PREFIX in the media bucket, for deployments whose containers
+    # have no durable writable volume (read-only root filesystem, ephemeral pods) — a
+    # journal on an ephemeral path vanishes with the pod, which is the same as no journal.
+    # A typo must fail at startup, not silently fall back to a path that cannot be written.
+    ERASURE_JOURNAL_BACKEND: Literal["file", "object_storage"] = "file"
+    ERASURE_JOURNAL_OBJECT_PREFIX: str = "gdpr/erasure-journal/"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", "/app/temp"))
 

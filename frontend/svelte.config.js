@@ -29,6 +29,10 @@ const config = {
     // omitted (invalid in a <meta> CSP — nginx's X-Frame-Options: SAMEORIGIN covers clickjacking).
     // `wasm-unsafe-eval` is required by the ffmpeg.wasm worker; `style-src 'unsafe-inline'` stays
     // (Svelte scoped styles + the app.html font/base <style> blocks).
+    // `connect-src` is 'self' only: CSP Level 3 matches ws:/wss: to the page's own host under
+    // 'self', which is all the notifications socket needs (its URL is built from
+    // window.location). Bare `ws:`/`wss:` would allow a socket to ANY host — an exfiltration
+    // path for injected script — and `ws:` a plaintext one (issue #1028).
     csp: {
       mode: 'hash',
       directives: {
@@ -37,7 +41,7 @@ const config = {
         'style-src': ['self', 'unsafe-inline'],
         'img-src': ['self', 'data:', 'blob:'],
         'font-src': ['self', 'data:'],
-        'connect-src': ['self', 'ws:', 'wss:'],
+        'connect-src': ['self'],
         'media-src': ['self', 'blob:'],
         'worker-src': ['self', 'blob:'],
         'object-src': ['none'],

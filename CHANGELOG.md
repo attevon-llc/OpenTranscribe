@@ -7,6 +7,290 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Celery queue-wait metrics (#1172).** Every task message is stamped with its publish time
+  (header `x-ot-published-at`). Workers with `WORKER_METRICS_PORT` set now serve
+  `celery_task_queue_wait_seconds{queue, task}` (publish, or ETA if later, to task start; buckets
+  0.1 s to 2 h) and `celery_task_queue_wait_missing_total{queue}` (messages from an older
+  producer); the backend's `/metrics` and `/metrics/queues` serve
+  `celery_queue_oldest_message_age_seconds{queue}`, the age of the oldest message still waiting.
+  Labels are bounded to the configured queues and registered tasks plus `other`. Caveats
+  (producer/worker clock skew; redelivered messages include the failed attempt) are in
+  Operations → Monitoring.
+- **Password security levels in the admin UI (#1127).** Settings -> Authentication -> Local has a four-card picker (Basic / Standard / Hardened / Custom) that previews the exact rules before saving, and controls for the individual values under Custom (length, composition, expiry, history, minimum age), the breached-password check (level default / on / off, with installed-list status), the optional online lookup, and MFA for administrators. New `basic` level: 8 characters, no composition rules, no expiry or history; opt-in only. `standard` and `hardened` are the new names of `nist` and `stig`, which keep working as aliases. Defaults are unchanged: existing installs stay on `hardened`, new installs get `standard` from `.env.example`. Saves are validated server-side and audit-logged.
+- **Breached-password list is now an on-demand download built from Have I Been Pwned (#1107).** No password list is shipped in the repository. `./opentranscribe.sh download-models password-blocklist` builds the top 100,000 most-breached passwords as SHA-1 hashes only from the Pwned Passwords range API (no licensing or attribution requirement) into the model cache; the offline package includes it. If none is installed the check is skipped with one startup warning. `PASSWORD_BLOCKLIST_PATH` accepts hash files and legacy plaintext files.
+- **Deployment-locked settings via capability keys (#1109).** New capabilities, all `True` by
+  default (no change for self-hosted installs), let an operator's capability resolver lock
+  values the deployment owns. Each is enforced on the server, not just hidden:
+  `transcription.model_choice` (a client `whisper_model` on prepare/complete/reprocess is
+  ignored, so a request can no longer route a file to CPU transcription),
+  `transcription.diarization_source` and `transcription.advanced` (writes are ignored, reads
+  report the default, and the transcription task ignores values stored before the lock),
+  `speaker_attributes.migration`, `media_sources` and `audio_extraction` (their routes return
+  404; per-user media sources are not used for downloads), and `admin.flower` (the Flower
+  `auth_request` probe denies). The UI hides each control, and the upload and reprocess model
+  pickers show "managed by your deployment" instead. None of these has a platform-admin
+  bypass, and the task-time checks run without a request, so a resolver should answer them
+  per deployment rather than per tier.
+
+- **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
+  `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
+  reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
+  browser never falls back from the presigned path to that route (a failed presigned attempt
+  is retried on the presigned path), and `/files/prepare` answers 503 instead of handing out a
+  fallback when it cannot plan a presigned upload. Presigned single-PUT and multipart uploads
+  are unchanged.
+
+### Changed
+
+- `celery_queue_reserved` excludes orphaned transcription stages; new gauges
+  `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`,
+  `transcription_runs_without_lease` and `transcription_files_infra_requeued` are for alerting.
+- Transcription lease defaults: `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS` 30 -> 15 and
+  `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS` 300 -> 90. New: `BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS`,
+  `BROKER_ORPHAN_STALE_SECONDS`, `TRANSCRIPTION_MAX_INFRA_REQUEUES`,
+  `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD`, `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT`,
+  `CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE`. `CELERY_VISIBILITY_TIMEOUT` stays at 6 h on purpose.
+
+### Security
+
+- **An `editor` share could permanently delete another user's file (#1103).** Every delete
+  path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
+  editor permission, so anyone a collection was shared with as an editor could destroy the
+  files in it. Delete is now its own right: the file's owner, an organization admin of the
+  file's organization, or a platform admin. Editors keep every edit right. A refused delete
+  answers 403 (the bulk action reports a per-file `FORBIDDEN` result and carries on with the
+  rest of the batch) and is audited as `file.delete.denied`. The gallery list now carries
+  `can_delete` per file and disables **Delete** when no selected file can be deleted.
+- **`url_ingest: False` did not disable URL import (#1109).** The capability was declared but
+  read by nothing: `POST /api/files/process-url` and `GET /api/files/youtube/quota` stayed
+  reachable and the upload dialog always offered the URL tab. Both routes now return 404 when
+  the capability is off (for every account, including platform admins), and the URL tab is
+  hidden.
+- **A partial capability-resolver result granted features instead of withholding them (#868).**
+  `get_capabilities()` merged a registered resolver's result over the community defaults, which
+  are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path
+  silently granted it. The merge now fails closed: only a key the resolver returns as exactly
+  `True` is on. An omitted known key, a non-bool value, a `None`/non-dict result, or a resolver
+  that raises now denies (logged, once per distinct problem) rather than defaulting on or
+  propagating. The default community resolver's result is unchanged. `CLOUD_SEAM_VERSION` is now
+  **6**: a custom resolver that relied on omission meaning "community default" must return every
+  key it grants — start from `{**COMMUNITY_CAPABILITIES, ...}` to keep that behaviour on purpose.
+- **The CSP allowed WebSocket connections to any host (#1028).** `connect-src` was
+  `'self' ws: wss:`; bare scheme sources let script open a socket to any host, and `ws:` a
+  plaintext one. It is now `'self'`, which under CSP Level 3 still matches the app's own
+  same-host notifications socket. `npm run build` now fails if the emitted CSP carries a bare
+  `ws:`/`wss:`/`http:`/`https:` source. The reverse-proxy template's CSP header got the same
+  change. Deployers who rewrite that directive with `sub_filter` must update the match string.
+- **Production defaulted `CORS_ORIGINS` to the Vite dev origins (#1029).** A hardened
+  deployment that leaves it unset now allows no cross-origin origins (same-origin needs
+  none). Development keeps `http://localhost:5173` / `http://127.0.0.1:5173`. The resolved
+  list is logged at startup. The documented comma-separated form
+  (`CORS_ORIGINS=https://a,https://b`) also used to fail at startup with a settings parse
+  error; it now parses, as does a JSON list.
+- **Frontend nginx sends `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy:
+  same-origin` (#1030)** on every response, including the static-asset and HTML locations
+  that re-declare their headers. HTML and static assets now carry one `Cache-Control` header
+  each, not two. `Cross-Origin-Embedder-Policy` is deliberately not sent, because it would
+  block presigned media.
+- **Anonymous local-account routes did real work with local authentication disabled
+  (#997).** With `local_enabled` off, `verify-email` / `verify-email/resend` now return 404,
+  `register` is refused even when the env fallback says open, and `password-reset/*` serve
+  only the active `super_admin` break-glass account — every other caller gets the usual
+  generic answer with no reset work and no audit write. Invitations and `/token` are
+  unchanged (they also serve external identity providers and LDAP).
+- **Audit indexing no longer costs a HEAD round trip per event (#997).** The audit index's
+  existence is checked once per monthly index per process, and the audit writer's OpenSearch
+  client uses a 2 s timeout with no retries, so a slow OpenSearch can no longer hold every
+  audited request for the library's default timeout.
+- **SAML and OIDC handlers no longer block the event loop (#997).** Their synchronous config
+  loads, user sync, lockout, audit and session work now run in the threadpool.
+
+### Fixed
+
+- **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
+  worker-loss replay allowlist named the bulk waveform backfill task
+  (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches
+  (`media.generate_waveform`), and did not include `redaction.detect`. Both are acked on
+  receipt, so a worker killed mid-run lost them for good: the file kept no waveform, or its
+  redaction status stayed in progress and the summary and topic tasks waiting on it deferred
+  until they gave up. Both are now replayed. A test now fails if the per-file pipeline
+  dispatches a task that is neither replayable nor excluded for a stated reason.
+- **A cancelled file is no longer run again after its worker dies.** When the worker holding a
+  stage of a file in `CANCELLING` died, the orphan reaper read the run as current, spent one of
+  the file's infrastructure requeues and put the stage back at the head of its queue; if the
+  stage's message was gone too, the lost-run recovery dispatched a brand-new run with no
+  cancellation flag, so the cancelled file was transcribed after all. Both now leave the run to
+  `reconcile_cancellation`, and the stage's delivery is dropped.
+- **Non-transcription tasks held by a dead worker no longer wait out the 6 h visibility
+  timeout.** The orphan reaper only considered transcription stages, so a utility, CPU or
+  enrichment task (or a countdown task a worker was holding until its time) stayed in the
+  unacked set, counted as reserved work, until it was redelivered six hours later. It is now
+  put back at the head of its queue once no live worker has reported holding it for
+  `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` (600) after delivery or its ETA, at most
+  `BROKER_ORPHAN_MAX_REQUEUES` (5) times per message. A task the worker-loss replay sweep
+  already tracks is left to that sweep.
+- **A file is never stranded or failed because its worker died.** A worker killed while it held
+  a transcription stage (out of memory, SIGKILL at the end of a stop grace period, node loss, a
+  container restart) left that stage in the broker's unacked set for the 6 h visibility
+  timeout, kept counting it in `celery_queue_reserved` (holding autoscaled GPU capacity up with
+  nothing to run), and recovery then marked the file ERROR instead of retrying it — in a load
+  test with workers restarted under load, 84 of 418 files ended that way. An orphan reaper now
+  puts the exact interrupted stage back at the head of its queue within about 2.5 minutes, and
+  re-dispatches the file when the message itself is gone. Every pipeline stage holds a lease
+  while it runs; a second delivery of a running or finished stage stands down.
+- **Two failure classes with one retry policy.** Unusable input (corrupt or undecodable media,
+  no audio, no speech, empty or too short, unsupported format, DRM) fails at once and is never
+  retried. Infrastructure failures (out of memory, lost connection, timeout, worker lost) and
+  unclassified ones are requeued within minutes with backoff and jitter, ahead of files
+  submitted after them, until the admin retry limit — and only then fail, with a reason that
+  says they were interrupted and retried. Worker losses use their own per-file cap
+  (`TRANSCRIPTION_MAX_INFRA_REQUEUES`) and never spend the retry limit.
+- **A stage that stands down for a graceful shutdown keeps its place in line.** It used to be
+  requeued at the back of its queue, behind everything submitted while it ran.
+- **An existing `transcripts` index never received the tenant field's mapping (#1115).** The
+  `organization_id` mapping added for the legacy whole-document index in #1027 was applied only
+  when the index was created, so on an upgraded deployment the field appeared through dynamic
+  mapping on the first stamped write. Backend startup now adds `organization_id: integer` to an
+  existing index that lacks it (an additive mapping change, no reindex) and logs an index whose
+  field was already mapped dynamically. After deploying, run
+  `python -m app.tasks.tenant_backfill_task` to stamp documents written before the field existed.
+
+- **Legacy speaker profiles, speaker collections and vocabulary terms had no tenant, and
+  their names were unique across tenants (#1110).** Migration
+  `v430_per_tenant_speaker_and_vocab_names` stamps each unstamped row with its tenant where
+  that is unambiguous (a profile from the files its speakers are in, a collection from its
+  member profiles, otherwise the owner's single organization) and leaves the rest personal.
+  Profile, speaker-collection and vocabulary-term names are now unique per user **per
+  tenant** (personal counts as one tenant), so one name can be used in two organizations
+  and a duplicate no longer reveals that the name exists elsewhere. After upgrading, run
+  `python -m app.scripts.backfill_tenant_stamps` in a backend container: it lists the rows
+  whose evidence spans tenants (left for an administrator to decide) and, with
+  `--sync-voiceprints`, copies the new stamps onto the profiles' voiceprint documents so
+  organization voice matching finds them. Community installs have no organizations:
+  nothing is stamped and the uniqueness rule is unchanged.
+
+- **A task whose worker was killed stayed `in_progress` forever (#1067).** After an OOM kill,
+  14 speaker-attribute and 2 speaker-clustering tasks were left with nothing running.
+  Speaker attributes were acknowledged on receipt, so the message was gone. Clustering
+  acknowledges late, but a container-level kill leaves its message in the broker until the
+  6 h visibility timeout. Tasks that are safe to run twice now heartbeat while they run, and
+  a new `system.reclaim_lost_tasks` sweep re-sends any whose heartbeat has lapsed, under the
+  same task id, within about `TASK_HEARTBEAT_TTL_SECONDS` (120 s) plus the 2-minute sweep
+  interval. After `TASK_REPLAY_MAX_ATTEMPTS` (2) re-sends the task is marked failed. The
+  health check no longer fails a task the sweep is handling. Transcription is never re-sent
+  this way. The speaker-attribute dedupe guard now records its owner and is taken over from
+  a dead one, instead of making the retry skip itself for 2 h.
+- **Speaker gender detection could OOM-kill the CPU worker on long meetings (#1066).** Each
+  detection gave wav2vec2 a speaker's longest merged speaking turns whole, and in a meeting
+  those run to minutes. One process peaked at 1.7 GB on a 60 s clip and 5.5 GB on 300 s, and
+  one 40-minute AMI meeting took 4.1 GB. Clips are now capped at
+  `SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS` (default 20 s, from the middle of the turn), both when
+  fetched and when inferred. At most `SPEAKER_ATTRIBUTE_MAX_CONCURRENCY` (default 2)
+  detections run at once per worker host; the rest re-queue themselves. A CPU worker unloads
+  the model after each detection. The same meeting now peaks at 1.6 GB and finishes in 97 s
+  instead of 258 s, with the same predicted genders.
+- **Chat showed a raw i18n key and the raw provider exception when the LLM provider failed
+  (#1049).** Observed with AWS Bedrock during a transient `ServiceUnavailableException`: the
+  banner read `chat.errors.provider_error` and the message read "Bedrock error: An error
+  occurred (ServiceUnavailableException) when calling the ConverseStream operation (reached max
+  retries: 4)...". A capacity failure (Bedrock throttling/503, HTTP 429/502/503/504, Anthropic
+  `overloaded_error`) is now the new `provider_unavailable` error code ("The AI provider is
+  temporarily unavailable. Please try again in a moment."), anything else stays
+  `provider_error` with a generic sentence, and both are translated in all 12 locales. Provider
+  text is logged server-side only — it is no longer sent in the SSE frame or stored on the
+  message row. The code is persisted in `msg_metadata.error_code` so a reloaded thread renders
+  the same message. Every `ChatErrorCode` now has a `chat.errors.*` string (`timeout`,
+  `quota_exceeded`, `rate_limited` and others were missing; the unused camelCase
+  `quotaExceeded`/`rateLimited` keys were renamed to the codes the client emits).
+- **Bedrock calls now retry through short capacity blips (#1049).** Every Bedrock client,
+  streaming included, uses botocore's `adaptive` retry mode with 8 attempts instead of the
+  default (`legacy`, 5). Configurable with `BEDROCK_RETRY_MODE` and `BEDROCK_MAX_ATTEMPTS`.
+
+- **An env-configured Bedrock provider was reported unavailable, disabling chat and summary
+  actions (#1046).** `GET /api/llm/status` answered `available: false` because its probe GETs
+  `{base_url}/v1/models`, and Bedrock is an SDK provider with no `base_url`. Every surface gated
+  on that status (the chat composer, "Generate summary" and retry, the LLM reprocess options, and
+  `POST /api/files/{uuid}/summarize`, which returned 503) was disabled, while background summaries
+  through the same provider succeeded. The probe now reports an SDK provider as healthy once it
+  is configured, the same verdict `is_configured_for_user` gives. `/api/llm/status` also returns
+  `context_window`, so chat's token panel no longer reads `/api/llm-settings/status`, which is
+  not mounted when `llm.user_settings` is disabled. With that capability off, the chat model
+  picker and its configurations lookup are hidden, and the no-LLM empty state tells the user to
+  contact an administrator instead of linking to a settings section that is not shown.
+
+- **A failed transcription no longer stores the raw exception, and retry policy no longer
+  reads error prose (#959).** The preprocessing, transcription, diarization and rediarization
+  failure handlers now classify the exception once and store only the fixed user-facing
+  sentence in `last_error_message` / the task's `error_message`; the raw text is logged at
+  ERROR. Automatic retries read the stored `error_category` instead of re-matching stored
+  text, so rewording a message can no longer change retry behaviour. GPU out-of-memory
+  failures get their own `gpu_oom` category, which drives the GPU-OOM retry backoff; files
+  that failed with a GPU OOM before upgrading are not picked up by that backoff
+  automatically. Two responses that still echoed the stored text were fixed: task rows in
+  `GET /api/my-files/{uuid}/status` and the 409 for re-adding a URL that previously failed.
+  A new pre-commit gate, `scripts/audit-error-disclosure.py`, fails on any new read edge that
+  skips sanitization.
+
+- **In-process diarization crashed on CPU-only hosts** (#1007). The pinned pyannote fork's
+  cache-release hook called `torch.mps.empty_cache()` whenever CUDA was absent, so every
+  diarization on a CPU worker without a GPU failed with `Cannot execute emptyCache() without
+  MPS backend`. The fork now releases the MPS cache only when an MPS backend exists, and the
+  pin (`requirements.txt` and `Dockerfile.blackwell`) moves to that commit. Rebuild images or
+  reinstall `backend/venv` to pick it up.
+- **The post-transcription sweep no longer re-dispatches topic extraction every 10 minutes
+  when `LLM_PROVIDER` is set without credentials** (#1017). Three fixes: a topic-extraction
+  run that finds no usable provider now records no task row (it used to leave one
+  `in_progress`, with `active_task_id` pointing at it, on every dispatch); `missing_topics`
+  honours the same recently-attempted cooldown as the other post-transcription checks; and
+  the sweep's "LLM configured" check is now `LLMService.is_configured_for_user`, which
+  requires what the tasks require (provider set **and** its credentials or endpoint present)
+  instead of a bare `LLM_PROVIDER` check. Summarization and speaker identification already
+  closed their rows on the no-LLM path and are unchanged.
+- **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
+  configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
+  skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way
+  `ai.extract_topics` does, and still closes out its task record. ERROR is reserved for a
+  configured provider that actually fails.
+- **S3 storage backend no longer logs a misleading "ROOT MinIO credential" ERROR from every
+  process on its first presign** (#1005). On `STORAGE_BACKEND=s3` there is no MinIO admin API, so
+  quarantine cannot revoke already-issued presigned media URLs by itself. The backend now checks
+  once at startup whether the media bucket carries the quarantine Deny bucket policy and logs a
+  single backend-aware WARNING if not, naming `MEDIA_URL_EXPIRE_SECONDS` as the exposure window.
+  The production-deployment docs describe the bucket policy and the TTL trade-off.
+- **`GET /api/auth/saml/metadata` returned 500 with SAML disabled (#998).** It now returns
+  404 when SAML is off, and a configuration python3-saml rejects (on any SAML route) is a
+  503 with one log line instead of an unhandled 500 and traceback.
+- **`POST /api/files` had no size limit while the body streamed (#999).** FastAPI spooled
+  the whole multipart body to `/tmp` before the handler's size check ran, so one oversized
+  or endless chunked request could fill the temp volume. A `Content-Length` over
+  `MAX_UPLOAD_BYTES` (plus a small framing allowance) is now refused with 413 before any
+  byte is read, and chunked bodies are counted and cut off with 413 as soon as they pass
+  it. The speaker-profile avatar upload is capped the same way. The no-op
+  `app.router.default_max_upload_size` assignment is removed. Presigned single-PUT and
+  multipart uploads are unaffected, so multi-GB uploads work as before.
+- **The default model download failed on CPU-only hosts** such as a `docker build` stage that
+  bakes models into an image (#1003). `scripts/download-models.py` now makes
+  `torch.mps.empty_cache()` a no-op when no MPS backend exists (the pinned pyannote fork calls
+  it whenever CUDA is absent and it raised `Cannot execute emptyCache() without MPS backend`),
+  and the WhisperX step falls back to `cpu`/`int8` when `USE_GPU=true` but no GPU is present.
+  `Dockerfile.prod` and `Dockerfile.lite` now create `DIAR_MODELS_DIR`'s default `/models`
+  owned by `appuser`, which previously could not create it (EACCES).
+- **Task recovery no longer fails or duplicates transcriptions that are waiting for a GPU
+  worker** (#1020). Recovery decided a transcription was dead from the checking process's start
+  time and its age since dispatch, so restarting a worker or the API, or simply waiting an hour,
+  failed a queued file or dispatched a second pipeline beside the first. Each run now carries a
+  queued marker and a worker heartbeat in Redis, and only a run with neither is recovered; the
+  duration budget is measured from when a worker started the run. Recovery cancels the run it
+  replaces, and every pipeline stage stands down when its run has been failed or replaced, so
+  exactly one transcription runs. Step 5.7 no longer resets transcription rows, and its reset
+  counter survives the next failure, so the stuck/reset cycle ends after two attempts. The
+  thresholds are now environment variables (`TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS`,
+  `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS`, `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS`,
+  `TASK_MAX_DURATION_TRANSCRIPTION_SECONDS`, `TASK_MAX_DURATION_DEFAULT_SECONDS`,
+  `TASK_RECOVERY_STALENESS_SECONDS`, `TASK_RECOVERY_ORPHANED_HOURS`).
+
 ## [0.5.1] - 2026-09-19
 
 ### Changed

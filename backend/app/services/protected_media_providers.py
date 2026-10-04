@@ -12,6 +12,7 @@ Each provider implements a small interface for:
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 import pkgutil
 from collections.abc import Callable
@@ -66,8 +67,8 @@ class ProtectedMediaProvider(Protocol):
         - info: the same kind of dict as extract_info() returns
         """
 
-    def get_public_auth_config(self) -> dict[str, Any]:
-        """Return public auth config for this provider.
+    def get_public_auth_config(self, user_id: int | None = None) -> dict[str, Any]:
+        """Return public auth config for this provider, as seen by ``user_id``.
 
         Expected shape (per host or combined):
         {
@@ -136,8 +137,8 @@ def _load_providers() -> list[ProtectedMediaProvider]:
 PROTECTED_MEDIA_PROVIDERS: list[ProtectedMediaProvider] = _load_providers()
 
 
-def get_protected_media_auth_config() -> list[dict[str, Any]]:
-    """Aggregate public auth config for all protected media providers.
+def get_protected_media_auth_config(user_id: int | None = None) -> list[dict[str, Any]]:
+    """Aggregate public auth config for all protected media providers, as seen by ``user_id``.
 
     Each entry is expected to have at minimum:
       - hosts: list of hostnames
@@ -151,7 +152,9 @@ def get_protected_media_auth_config() -> list[dict[str, Any]]:
         if not callable(get_config):
             continue
         try:
-            cfg = get_config()
+            # Plugins written before per-user sources take no arguments.
+            accepts_user = "user_id" in inspect.signature(get_config).parameters
+            cfg = get_config(user_id=user_id) if accepts_user else get_config()
             if cfg:
                 configs.append(cfg)
         except Exception as e:

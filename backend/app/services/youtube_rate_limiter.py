@@ -15,6 +15,7 @@ from datetime import UTC
 from datetime import datetime
 
 from app.core.config import settings
+from app.core.redis import redis_tls_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class YouTubeRateLimiter:
                     db=1,  # Use cache DB (separate from Celery broker)
                     decode_responses=True,
                     socket_timeout=2,
+                    **redis_tls_kwargs(),
                     socket_connect_timeout=2,
                 )
                 self._redis.ping()

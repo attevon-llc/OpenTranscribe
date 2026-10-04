@@ -194,30 +194,40 @@ class TestGetAccessibleProfileIds:
 
     def test_user_sees_own_profiles(self, db_session, user_a, sharing_setup):
         """User A sees their own profiles."""
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_a.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_a.id), organization_id=None
+        )
         assert int(sharing_setup["profile_a"].id) in ids
 
     def test_shared_user_sees_shared_profiles(self, db_session, user_b, sharing_setup):
         """User B sees User A's profile through collection sharing."""
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_b.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_b.id), organization_id=None
+        )
         assert int(sharing_setup["profile_a"].id) in ids
 
     def test_unshared_user_cannot_see_profiles(self, db_session, user_c, sharing_setup):
         """User C (no sharing) cannot see User A's profile."""
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_c.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_c.id), organization_id=None
+        )
         assert int(sharing_setup["profile_a"].id) not in ids
 
     def test_user_sees_both_own_and_shared(
         self, db_session, user_b, sharing_setup, user_b_own_profile
     ):
         """User B sees both own profile and shared profile."""
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_b.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_b.id), organization_id=None
+        )
         assert int(sharing_setup["profile_a"].id) in ids
         assert int(user_b_own_profile.id) in ids
 
     def test_empty_when_no_profiles(self, db_session, user_c):
         """User with no profiles and no shares gets empty set."""
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_c.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_c.id), organization_id=None
+        )
         assert len(ids) == 0
 
 
@@ -232,7 +242,7 @@ class TestGetAccessibleProfileIdsWithSource:
     def test_own_profiles_flagged_correctly(self, db_session, user_a, sharing_setup):
         """Own profiles are flagged as is_own=True."""
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_a.id)
+            db_session, int(user_a.id), organization_id=None
         )
         profile_map = {pid: is_own for pid, is_own in result}
         assert profile_map[int(sharing_setup["profile_a"].id)] is True
@@ -240,7 +250,7 @@ class TestGetAccessibleProfileIdsWithSource:
     def test_shared_profiles_flagged_correctly(self, db_session, user_b, sharing_setup):
         """Shared profiles are flagged as is_own=False."""
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_b.id)
+            db_session, int(user_b.id), organization_id=None
         )
         profile_map = {pid: is_own for pid, is_own in result}
         assert profile_map[int(sharing_setup["profile_a"].id)] is False
@@ -248,7 +258,7 @@ class TestGetAccessibleProfileIdsWithSource:
     def test_mixed_own_and_shared(self, db_session, user_b, sharing_setup, user_b_own_profile):
         """User B has both own (True) and shared (False) profiles."""
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_b.id)
+            db_session, int(user_b.id), organization_id=None
         )
         profile_map = {pid: is_own for pid, is_own in result}
         assert profile_map[int(user_b_own_profile.id)] is True
@@ -340,7 +350,9 @@ class TestGroupSharing:
         db_session.commit()
 
         # User C should see User A's profile via group membership
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_c.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_c.id), organization_id=None
+        )
         assert int(profile.id) in ids
 
 
@@ -385,7 +397,9 @@ class TestDataIsolation:
         db_session.commit()
 
         # User C should NOT see this profile
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_c.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_c.id), organization_id=None
+        )
         assert int(private_profile.id) not in ids
 
     def test_profile_without_speaker_in_shared_file_not_visible(self, db_session, user_a, user_b):
@@ -400,13 +414,17 @@ class TestDataIsolation:
         db_session.commit()
 
         # User B should NOT see this orphan profile (no sharing chain)
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_b.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_b.id), organization_id=None
+        )
         assert int(orphan_profile.id) not in ids
 
     def test_revoked_share_hides_profile(self, db_session, user_a, user_b, sharing_setup):
         """Deleting a collection share immediately hides the profile."""
         # Verify User B can see it initially
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_b.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_b.id), organization_id=None
+        )
         assert int(sharing_setup["profile_a"].id) in ids
 
         # Revoke the share
@@ -414,7 +432,9 @@ class TestDataIsolation:
         db_session.commit()
 
         # User B should no longer see the profile
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_b.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_b.id), organization_id=None
+        )
         assert int(sharing_setup["profile_a"].id) not in ids
 
 
@@ -690,12 +710,14 @@ class TestMultipleSharingChains:
         db_session.commit()
 
         # Profile should appear once in accessible IDs
-        ids = PermissionService.get_accessible_profile_ids(db_session, int(user_b.id))
+        ids = PermissionService.get_accessible_profile_ids(
+            db_session, int(user_b.id), organization_id=None
+        )
         assert int(profile.id) in ids
 
         # With source should also have it once
         result = PermissionService.get_accessible_profile_ids_with_source(
-            db_session, int(user_b.id)
+            db_session, int(user_b.id), organization_id=None
         )
         profile_ids = [pid for pid, _ in result]
         assert profile_ids.count(int(profile.id)) == 1

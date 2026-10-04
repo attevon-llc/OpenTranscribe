@@ -2,6 +2,7 @@ import contextlib
 import datetime
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -121,35 +122,38 @@ def _parse_media_date(date_str: str) -> datetime.datetime | None:
     raise ValueError(f"Unable to parse date format: {date_str}")
 
 
-#: Fields where the exiftool GROUP prefix carries no meaning, so a group-prefixed
-#: tag may fill the slot. PyExifTool's ExifToolHelper returns prefixed keys
-#: ("Composite:Duration"), and the exact-match pass in ``get_important_metadata``
-#: silently dropped all of them for every non-QuickTime container — issue #969.
-#: Date fields are deliberately EXCLUDED: their group is load-bearing
-#: (QuickTime:ContentCreateDate outranks File:FileModifyDate) and ``recorded_date``
-#: provenance keys on that ordering.
-#:
-#: ⚠️ This is prefix-insensitive, not NAME-synonym-aware: a RIFF/WAV container's
-#: audio specs are reported under different literal field names entirely
-#: ("RIFF:NumChannels"/"RIFF:SampleRate"/"RIFF:BitsPerSample", not
-#: "RIFF:AudioChannels" etc.), so this pass repairs ``Duration`` for a WAV
-#: ("Composite:Duration" shares its suffix with the exact-match list's own
-#: "Duration" candidate) but NOT the RIFF audio-spec fields — measured against a
-#: real exiftool run, see ``test_riff_specs_are_not_recognised_by_this_pass``.
-#: ``AudioChannels``/``AudioSampleRate``/``AudioBitsPerSample`` stay in this
-#: allowlist because they DO help for a container whose exiftool group uses the
-#: exact-match field name under a different prefix (e.g. a future/other group
-#: literally emitting "<Group>:AudioChannels").
-_GROUP_INSENSITIVE_FIELDS = frozenset(
-    {
-        "Duration",
-        "AudioChannels",
-        "AudioSampleRate",
-        "AudioBitsPerSample",
-        "FrameCount",
-        "VideoFrameRate",
-    }
-)
+# Purely technical fields that may be filled from ANY ExifTool group when the exact
+# mappings in get_important_metadata() missed (issue #974). PyExifTool runs with -G, so
+# every key is group-prefixed: a WAV's duration is "Composite:Duration", its channel
+# count "RIFF:NumChannels", a FLAC's "FLAC:Channels". The exact lists only spell the
+# QuickTime/unprefixed forms, so audio uploads never got a duration at all.
+# Dates are deliberately NOT here: the group is load-bearing for recorded_date provenance.
+_GROUP_INSENSITIVE_TECHNICAL_FIELDS: dict[str, tuple[str, ...]] = {
+    "Duration": ("Duration",),
+    "AudioChannels": ("AudioChannels", "NumChannels", "Channels"),
+    "AudioSampleRate": ("AudioSampleRate", "SampleRate"),
+    "AudioBitsPerSample": ("AudioBitsPerSample", "BitsPerSample"),
+}
+
+# ExifTool's MPEG group, read with -n, reports raw header bitfields: an MP3's
+# "MPEG:SampleRate" of 2 is an index into a rate table, not 2 Hz.
+_RAW_BITFIELD_GROUPS = frozenset({"MPEG"})
+
+
+def _fill_technical_fields_from_any_group(
+    metadata: dict[str, Any], important_fields: dict[str, Any]
+) -> None:
+    """Fill still-missing technical fields from group-prefixed ExifTool tags."""
+    for field_name, tag_names in _GROUP_INSENSITIVE_TECHNICAL_FIELDS.items():
+        if field_name in important_fields:
+            continue
+        for key, value in metadata.items():
+            group, sep, tag = key.rpartition(":")
+            if not sep or value is None or group in _RAW_BITFIELD_GROUPS:
+                continue
+            if tag in tag_names:
+                important_fields[field_name] = value
+                break
 
 
 def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -250,34 +254,7 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
                 important_fields[field_name] = metadata[key]
                 break
 
-    # Gap-filling second pass, group-INSENSITIVE (issue #969). PyExifTool's
-    # ExifToolHelper returns group-prefixed tags ("Composite:Duration",
-    # "RIFF:SampleRate", "RIFF:NumChannels") for containers with no QuickTime
-    # atom — every WAV/MP3/Matroska file. The exact-match pass above only knows
-    # "QuickTime:Duration"/"Duration"/"MediaDuration", so it silently dropped
-    # Duration (and the audio specs) for every non-QuickTime container, and
-    # `_set_duration` never fired: the container duration was never written at
-    # all, only the transcript's speech extent survived in the DB. Restricted to
-    # a named allowlist of purely TECHNICAL fields — date fields are excluded on
-    # purpose, because their group prefix is load-bearing precedence
-    # (QuickTime:ContentCreateDate must outrank File:FileModifyDate) and this
-    # pass has no way to preserve that ordering.
-    for field_name in _GROUP_INSENSITIVE_FIELDS:
-        if field_name in important_fields:
-            continue
-        for key in field_mappings.get(field_name, []):
-            candidate_suffix = key.rsplit(":", 1)[-1]
-            match_key = next(
-                (
-                    k
-                    for k in metadata
-                    if metadata[k] is not None and k.rsplit(":", 1)[-1] == candidate_suffix
-                ),
-                None,
-            )
-            if match_key is not None:
-                important_fields[field_name] = metadata[match_key]
-                break
+    _fill_technical_fields_from_any_group(metadata, important_fields)
 
     # Look for any additional fields that might be useful
     for key, value in metadata.items():
@@ -315,8 +292,9 @@ def _run_ffprobe_json(url: str, timeout: int) -> dict[str, Any] | None:
         logger.warning("ffprobe binary not found on PATH")
         return None
     try:
-        # Security: ffprobe_path resolved via shutil.which; URL is a
-        # MinIO-internal presigned URL we generated, not user-supplied.
+        # Security: ffprobe_path resolved via shutil.which; the source is a
+        # MinIO-internal presigned URL we generated or a worker temp path, not
+        # user-supplied.
         proc = subprocess.run(  # noqa: S603 # nosec B603
             [
                 ffprobe_path,
@@ -336,55 +314,17 @@ def _run_ffprobe_json(url: str, timeout: int) -> dict[str, Any] | None:
             check=False,
         )
     except (subprocess.SubprocessError, FileNotFoundError) as e:
-        logger.warning(f"ffprobe failed for presigned URL: {e}")
+        logger.warning(f"ffprobe failed: {e}")
         return None
 
     if proc.returncode != 0 or not proc.stdout:
-        logger.debug(f"ffprobe non-zero exit for URL ({proc.returncode}): {proc.stderr[:200]}")
+        logger.debug(f"ffprobe non-zero exit ({proc.returncode}): {proc.stderr[:200]}")
         return None
     try:
         return json.loads(proc.stdout)  # type: ignore[no-any-return]
     except json.JSONDecodeError as e:
         logger.debug(f"ffprobe JSON decode failed: {e}")
         return None
-
-
-def probe_media_duration(source: str, timeout: int = 15) -> float | None:
-    """Container duration in seconds via ffprobe, or None.
-
-    The ONE authoritative source for ``MediaFile.duration`` (issue #969).
-    Independent of exiftool tag naming — it does not depend on exiftool being
-    installed, on the container carrying a ``Duration``-shaped tag, or on that
-    tag surviving ``get_important_metadata``'s field mapping. ``source`` may be
-    a local file path or a presigned URL; ffprobe treats both identically.
-
-    Prefers ``format.duration`` (the container's own claim), and falls back to
-    the first stream that declares one — the same preference order
-    ``waveform_generator.py`` already uses for its own ffprobe duration read.
-    """
-    if not source:
-        return None
-    data = _run_ffprobe_json(source, timeout)
-    if not data:
-        return None
-
-    fmt = data.get("format", {}) or {}
-    with contextlib.suppress(TypeError, ValueError):
-        duration = fmt.get("duration")
-        if duration is not None:
-            parsed = float(duration)
-            if parsed > 0:
-                return parsed
-
-    for stream in data.get("streams", []) or []:
-        with contextlib.suppress(TypeError, ValueError):
-            duration = stream.get("duration")
-            if duration is not None:
-                parsed = float(duration)
-                if parsed > 0:
-                    return parsed
-
-    return None
 
 
 def _map_ffprobe_format(fmt: dict[str, Any], out: dict[str, Any]) -> None:
@@ -472,6 +412,31 @@ def extract_media_metadata_from_url(url: str, timeout: int = 15) -> dict[str, An
     _map_ffprobe_format(fmt, out)
 
     return out if out else None
+
+
+def probe_media_duration(source: str, timeout: int = 15) -> float | None:
+    """Return the container duration ffprobe reports for a local path or URL.
+
+    This is the authoritative media length. ExifTool is not: it has no duration at
+    all for Ogg/Opus, and for an MP3 without a Xing/Info header it estimates one from
+    the first frame's bitrate — measured 9.31 s for an 11.59 s file.
+
+    Returns:
+        The duration in seconds, or None when ffprobe cannot answer.
+    """
+    if not source:
+        return None
+    data = _run_ffprobe_json(source, timeout)
+    if not data:
+        return None
+    raw = (data.get("format") or {}).get("duration")
+    if raw is None:
+        return None
+    try:
+        duration = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return duration if math.isfinite(duration) and duration > 0 else None
 
 
 def extract_media_metadata(file_path: str) -> dict[str, Any] | None:
@@ -607,7 +572,11 @@ def _set_content_info(media_file, important_metadata: dict[str, Any]) -> None:
 
 
 def update_media_file_metadata(
-    media_file, extracted_metadata: dict[str, Any], content_type: str, file_path: str
+    media_file,
+    extracted_metadata: dict[str, Any],
+    content_type: str,
+    file_path: str,
+    probed_duration: float | None = None,
 ) -> None:
     """
     Update a MediaFile object with extracted metadata.
@@ -620,8 +589,13 @@ def update_media_file_metadata(
             when metadata came from a remote source (e.g. ffprobe against a
             presigned URL) — file-size and mtime fallbacks are skipped in
             that case.
+        probed_duration: The ffprobe container duration (``probe_media_duration``).
+            When given it wins over any ExifTool ``Duration``, which can be an
+            estimate.
     """
     important_metadata = get_important_metadata(extracted_metadata)
+    if probed_duration:
+        important_metadata["Duration"] = probed_duration
 
     # Store metadata
     media_file.metadata_raw = extracted_metadata
@@ -665,3 +639,7 @@ def update_media_file_metadata(
 
     # Device and content information
     _set_content_info(media_file, important_metadata)
+
+    # Store both important and full metadata
+    media_file.important_metadata = important_metadata
+    media_file.metadata = extracted_metadata

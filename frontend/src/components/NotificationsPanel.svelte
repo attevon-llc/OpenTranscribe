@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ENRICHMENT_TASK_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { derived } from 'svelte/store';
@@ -10,7 +11,6 @@
   import { showNotificationsPanel } from '../stores/notificationsPanel';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
-  import { resolveEnrichmentTaskI18nKey } from '$lib/i18n/enrichmentTasks';
 
 
   // Subscribe to the showNotificationsPanel store
@@ -450,7 +450,7 @@
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="20 6 9 17 4 12"></polyline>
                           </svg>
-                          {$t(resolveEnrichmentTaskI18nKey(task))}
+                          {labelFor($t, ENRICHMENT_TASK_KEYS, task)}
                         </span>
                       {/each}
                     </div>

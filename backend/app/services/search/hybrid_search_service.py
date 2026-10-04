@@ -1,5 +1,6 @@
 """Hybrid BM25 + vector search service using OpenSearch 3.4 native features."""
 
+import copy
 import functools
 import hashlib
 import html as html_module
@@ -64,6 +65,16 @@ _NOT_GIVEN = _NotGiven()
 #: preview is a fail-closed choice: an unmasked one is a policy bypass, and the
 #: result itself (title, timestamps, ranking) is unaffected.
 WITHHELD_SNIPPET = "[redacted — masking unavailable]"
+
+
+@dataclass(frozen=True)
+class _BackfillHighlights:
+    """What highlighting the backfilled groups on a hybrid page needs (#1079)."""
+
+    response: dict[str, Any]
+    body: dict[str, Any]
+    highlight: dict[str, Any]
+    file_uuids: frozenset[str]
 
 
 def _withhold_snippets(occurrences: list) -> None:
@@ -529,7 +540,9 @@ def _search_corpus_version() -> str:
         return "0"
 
 
-def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConfig | None":
+def _resolve_redaction_config_for_cache(
+    user_id: int, organization_id: int | None = None
+) -> "EffectiveRedactionConfig | None":
     """Resolve the requesting user's redaction policy BEFORE the cache lookup.
 
     Must run here rather than only inside :meth:`_redact_snippets` — the config
@@ -545,6 +558,9 @@ def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConf
 
     Args:
         user_id: The requesting user (matches ``_redact_snippets``'s subject).
+        organization_id: The requester's active tenant scope, threaded into
+            ``resolve_effective_config`` so a registered per-org redaction
+            floor (issue #982/#987) is actually consulted (#988).
 
     Returns:
         The effective config, or ``None`` when it could not be resolved at all
@@ -556,7 +572,7 @@ def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConf
 
     try:
         with session_scope() as db:
-            return resolve_effective_config(db, user_id)
+            return resolve_effective_config(db, user_id, organization_id=organization_id)
     except Exception:  # noqa: BLE001 — a config read must not break search
         logger.exception("Redaction config unavailable while resolving the search cache key")
         return None
@@ -953,7 +969,9 @@ class HybridSearchService:
         # `SEARCH_CACHE_TTL_SECONDS` to take effect on a repeated query, and two
         # policies could collide on one key if `user_id` were ever reused for a
         # tenant-shared cache in the future.
-        redaction_cfg = _resolve_redaction_config_for_cache(user_id)
+        redaction_cfg = _resolve_redaction_config_for_cache(
+            user_id, organization_id=organization_id
+        )
         policy_fingerprint = _redaction_policy_fingerprint(redaction_cfg)
 
         # Check cache
@@ -1088,6 +1106,7 @@ class HybridSearchService:
         result: SearchResponse,
         user_id: int,
         cfg: "EffectiveRedactionConfig | None | _NotGiven" = _NOT_GIVEN,
+        organization_id: int | None = None,
     ) -> None:
         """Mask this page's snippets under the requesting user's redaction policy.
 
@@ -1128,9 +1147,12 @@ class HybridSearchService:
                 for callers outside ``search()``'s own cache-key flow, so this
                 method's original resolve-it-yourself contract still holds for
                 anyone driving it directly.
+            organization_id: Only consulted on that same self-resolve fallback
+                path (#988) — ``search()`` passes its own already-resolved
+                ``cfg`` instead and never reaches this branch.
         """
         if isinstance(cfg, _NotGiven):
-            cfg = _resolve_redaction_config_for_cache(user_id)
+            cfg = _resolve_redaction_config_for_cache(user_id, organization_id=organization_id)
 
         occurrences = [
             occ
@@ -2022,6 +2044,20 @@ class HybridSearchService:
             }
         return fields
 
+    @staticmethod
+    def _unshingled_fields(search_fields: list[str]) -> list[str]:
+        """Drop the shingled ``content`` field when ``content.exact`` is also searched.
+
+        ``content`` indexes filler shingles (``remot control _`` for a removed stopword).
+        A fuzzy match can land on one, and the highlighter then marks its whole offset
+        range, running past the matched phrase. ``content.exact`` still carries the typo
+        tolerance; the non-fuzzy clauses keep the stemmed ``content`` field.
+        """
+        has_exact = any(f.split("^")[0] == "content.exact" for f in search_fields)
+        if not has_exact:
+            return search_fields
+        return [f for f in search_fields if f.split("^")[0] != "content"]
+
     def _build_text_query(
         self,
         query: str,
@@ -2166,7 +2202,7 @@ class HybridSearchService:
                     {
                         "multi_match": {
                             "query": query,
-                            "fields": search_fields,
+                            "fields": self._unshingled_fields(search_fields),
                             "type": "best_fields",
                             "operator": "and",
                             "fuzziness": "AUTO",
@@ -2231,8 +2267,12 @@ class HybridSearchService:
         pagination is handled client-side via over-fetch. For non-relevance sorts
         with a search pipeline (hybrid/RRF), over-fetch is used because the RRF
         normalization pipeline does not support mixing _score with other sort
-        criteria. For BM25-only non-relevance sorts, native sort and pagination
-        are applied server-side.
+        criteria. For BM25-only non-relevance sorts, OpenSearch sorts natively so
+        the over-fetch window holds the first files IN THAT ORDER, and the page
+        is still cut client-side like every other path. It used to be cut
+        server-side too (``from``/``size=page_size``), and the caller then paged
+        that one-page response a second time, so page 2+ was always empty and
+        ``total_pages`` was always 1 (issue #1078).
 
         Args:
             body: Search body dict (modified in place).
@@ -2246,12 +2286,14 @@ class HybridSearchService:
         Returns:
             The outer_size to use for the query.
         """
+        # Dynamic over-fetch: scale with page depth for full coverage.
+        # Page 1/20 → 200, page 5/20 → 500, capped at SEARCH_MAX_OVERFETCH.
+        min_fetch = page * page_size
+        over_fetch = min(
+            max(page_size * 10, min_fetch + page_size * 5), settings.SEARCH_MAX_OVERFETCH
+        )
         if sort_by == "relevance" or use_search_pipeline:
-            # Dynamic over-fetch: scale with page depth for full coverage.
-            # Page 1/20 → 200, page 5/20 → 500, capped at SEARCH_MAX_OVERFETCH.
-            min_fetch = page * page_size
-            over_fetch = max(page_size * 10, min_fetch + page_size * 5)
-            return min(over_fetch, settings.SEARCH_MAX_OVERFETCH)
+            return over_fetch
 
         # BM25-only: server-side sort with _score as tiebreaker is safe
         sort_map = {
@@ -2266,8 +2308,7 @@ class HybridSearchService:
             {sort_field: {"order": sort_order}},
             {"_score": {"order": "desc"}},
         ]
-        body["from"] = (page - 1) * page_size
-        return page_size
+        return over_fetch
 
     def _build_collapsed_search_body(
         self,
@@ -2402,8 +2443,16 @@ class HybridSearchService:
                     # ArrayIndexOutOfBoundsException in score-ranker-processor.
                     # total_files is computed from collapsed results instead.
                 }
+                # The fused window is sized as for page 1 on EVERY page (#1079).
+                # Its groups are the head of the result list and the BM25
+                # backfill (`_backfill_starved_groups`) is the tail; a window that
+                # grew with the page number would pull tail files into the head
+                # on deep pages and shift every boundary — measured: 5 files
+                # shown twice across 9 pages. Keyword matches past the window
+                # stay reachable through the backfill, whose BM25 order is stable
+                # as ITS window grows.
                 body["size"] = self._apply_sort_clause(
-                    body, sort_by, sort_order, page, page_size, use_search_pipeline=True
+                    body, sort_by, sort_order, 1, page_size, use_search_pipeline=True
                 )
                 return body, True
 
@@ -2544,6 +2593,177 @@ class HybridSearchService:
         body["size"] = self._apply_sort_clause(body, sort_by, sort_order, page, page_size)
         return body
 
+    def _execute_split_bm25_collapse(
+        self, client: Any, body: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Run a BM25 collapse body as two requests instead of one (issue #1064).
+
+        ``collapse.inner_hits`` is executed by OpenSearch as one sub-search PER
+        collapsed group, and every sub-search re-parses the query, rebuilds the
+        fuzzy clauses' Levenshtein automata for its rewrite, then rebuilds them
+        again to set up the highlighter. That is a fixed cost per group, so it
+        multiplies by the relevance over-fetch (200 groups at page 1) and does not
+        shrink with the corpus: measured on a 2-vCPU node, a 2,000-chunk index
+        answered a minimal ``match`` in ~10 ms and this body in 0.4-2.2 s. A
+        ``neural`` query has no terms to rewrite or highlight, which is why the
+        semantic path never showed it.
+
+        Instead:
+
+        1. the same body **without** ``inner_hits`` (and without the outer
+           ``highlight``, which nothing reads) picks the groups, ranking and the
+           ``total_files`` agg exactly as before;
+        2. one ``terms`` + ``top_hits`` aggregation over those groups returns
+           each file's top segments — same query, same ``sort``/``size``/
+           ``_source`` as the inner hits, so the same documents with the same
+           scores (``doc_count`` is the inner-hits total) — with the query
+           rewritten once, and **without highlights**.
+
+        The segments are grafted back onto the outer hits in the inner-hits
+        shape, so ``_process_collapsed_results`` reads the response unchanged.
+        Highlights are fetched afterwards for the displayed page only
+        (``_hydrate_page_highlights``): highlighting costs ~0.25 ms per segment
+        even in one request, and the over-fetched groups never display theirs.
+        What those groups fed — keyword counts — needs none, since every hit of
+        a BM25 body matched the text query.
+
+        Args:
+            client: OpenSearch client.
+            body: A body from ``_build_collapsed_bm25_body``. Not mutated.
+
+        Returns:
+            (collapsed response with inner hits grafted on, the inner hits'
+            highlight config to use for the page).
+        """
+        body = copy.deepcopy(body)
+        inner = body["collapse"].pop("inner_hits")
+        body["collapse"].pop("max_concurrent_group_searches", None)
+        body.pop("highlight", None)
+        response: dict[str, Any] = client.search(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)
+
+        outer_hits = response.get("hits", {}).get("hits", [])
+        uuids = [u for h in outer_hits if (u := h.get("_source", {}).get("file_uuid"))]
+        buckets: dict[str, dict[str, Any]] = {}
+        if uuids:
+            query_bool = body["query"]["bool"]
+            segments_body = {
+                "size": 0,
+                "track_total_hits": False,
+                "query": {
+                    "bool": {
+                        "must": query_bool["must"],
+                        "filter": [*query_bool["filter"], {"terms": {"file_uuid": uuids}}],
+                    }
+                },
+                "aggs": {
+                    "files": {
+                        "terms": {"field": "file_uuid", "size": len(uuids)},
+                        "aggs": {
+                            "segments": {
+                                "top_hits": {
+                                    "size": inner["size"],
+                                    "sort": inner["sort"],
+                                    "_source": inner["_source"],
+                                }
+                            }
+                        },
+                    }
+                },
+            }
+            seg_resp = client.search(index=settings.OPENSEARCH_CHUNKS_INDEX, body=segments_body)
+            for bucket in seg_resp.get("aggregations", {}).get("files", {}).get("buckets", []):
+                buckets[bucket["key"]] = bucket
+
+        for hit in outer_hits:
+            bucket = buckets.get(hit.get("_source", {}).get("file_uuid"), {})
+            hit["inner_hits"] = {
+                "segments": {
+                    "hits": {
+                        "total": {"value": bucket.get("doc_count", 0)},
+                        "hits": bucket.get("segments", {}).get("hits", {}).get("hits", []),
+                    }
+                }
+            }
+        return response, inner["highlight"]
+
+    def _hydrate_page_highlights(
+        self,
+        client: Any,
+        page_hits: list[SearchHit],
+        response: dict[str, Any],
+        search_body: dict[str, Any],
+        highlight: dict[str, Any],
+        query: str,
+        sources: frozenset[str] | None = None,
+    ) -> None:
+        """Highlight the displayed page's segments in ONE request (issue #1064).
+
+        The second half of ``_execute_split_bm25_collapse``. The page's segment
+        ids are re-queried with the SAME scoring query and filters (the
+        highlighter takes its terms from the query, so anything else would
+        highlight differently), and each page hit's occurrences are rebuilt from
+        its segments with those highlights attached — the processing the
+        single-request body got. Scores, order and counts are untouched.
+
+        Best-effort: a failure leaves the page's snippets as unhighlighted text
+        and logs a warning, rather than failing a search that already has results.
+        """
+        segments_by_file: dict[str, tuple[list[dict[str, Any]], float, str | None]] = {}
+        for outer in response.get("hits", {}).get("hits", []):
+            src = outer.get("_source", {})
+            segs = outer.get("inner_hits", {}).get("segments", {}).get("hits", {}).get("hits", [])
+            segments_by_file[src.get("file_uuid", "")] = (
+                segs,
+                outer.get("_score", 0.0) or 0.0,
+                src.get("language"),
+            )
+        ids = [
+            seg["_id"]
+            for hit in page_hits
+            for seg in segments_by_file.get(hit.file_uuid, ([], 0.0, None))[0]
+        ]
+        if not ids:
+            return
+        query_bool = search_body["query"]["bool"]
+        try:
+            resp = client.search(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body={
+                    "size": len(ids),
+                    "_source": False,
+                    "track_total_hits": False,
+                    "query": {
+                        "bool": {
+                            "must": query_bool["must"],
+                            "filter": [*query_bool["filter"], {"ids": {"values": ids}}],
+                        }
+                    },
+                    "highlight": highlight,
+                },
+            )
+        except Exception as e:  # noqa: BLE001 — display-only enrichment, see docstring
+            logger.warning(f"Page highlight request failed for query='{query}': {e}")
+            return
+        by_id = {h["_id"]: h.get("highlight", {}) for h in resp.get("hits", {}).get("hits", [])}
+
+        for hit in page_hits:
+            segs, outer_score, language = segments_by_file.get(hit.file_uuid, ([], 0.0, None))
+            if not segs:
+                continue
+            highlighted = [{**seg, "highlight": by_id.get(seg["_id"], {})} for seg in segs]
+            occurrences, title_hl, hl_sources, *_ = self._process_inner_hits(
+                highlighted,
+                outer_score,
+                query,
+                language,
+                sources=sources,
+                assume_keyword_match=True,
+            )
+            occurrences.sort(key=lambda o: -(o.score + (0.001 if o.has_keyword_match else 0)))
+            hit.occurrences = occurrences
+            hit.title_highlighted = title_hl
+            hit.match_sources = hl_sources + [s for s in hit.match_sources if s not in hl_sources]
+
     @staticmethod
     def _detect_keyword_match_fallback(
         inner_source: dict[str, Any],
@@ -2623,6 +2843,7 @@ class HybridSearchService:
         query: str = "",
         language: str | None = None,
         sources: frozenset[str] | None = None,
+        assume_keyword_match: bool = False,
     ) -> tuple[list[SearchOccurrence], str, list[str], int, int, float]:
         """Convert inner hits into SearchOccurrence objects.
 
@@ -2637,6 +2858,11 @@ class HybridSearchService:
             language: ISO 639-1 code of THIS file, so the keyword fallback stems the
                 query the way the document was analyzed. Defaulting to English made
                 the fallback match nothing on a non-English file.
+            assume_keyword_match: Every inner hit is a keyword match whether or
+                not it carries a highlight. True only for a BM25-only body with a
+                non-empty query, whose every hit matched the text query by
+                construction — the split path (#1064) fetches highlights for the
+                displayed page only, so the rest of the groups arrive without them.
 
         Returns:
             Tuple of (occurrences, title_highlighted, match_sources,
@@ -2670,7 +2896,7 @@ class HybridSearchService:
             inner_source = inner_hit.get("_source", {})
             inner_score = inner_hit.get("_score", 0.0) or 0.0
             highlight = inner_hit.get("highlight", {})
-            has_keyword_match = bool(highlight)
+            has_keyword_match = bool(highlight) or assume_keyword_match
 
             # Hybrid + collapse fallback: when inner hits lose scores and
             # highlights (OpenSearch RRF limitation), detect keyword matches
@@ -2691,7 +2917,10 @@ class HybridSearchService:
 
             # Synthetic highlights: when RRF collapse strips OpenSearch highlights
             # from keyword matches, generate <mark> tags using word patterns.
-            if has_keyword_match and not highlight and word_patterns:
+            # Not for an assumed match: its real highlights come later, for the
+            # page only, and regex-marking every over-fetched segment first was
+            # most of the split path's Python time (#1064).
+            if has_keyword_match and not highlight and word_patterns and not assume_keyword_match:
                 content = inner_source.get("content", "")
                 if content:
                     synthetic = self._generate_synthetic_snippet(content, word_patterns)
@@ -2801,7 +3030,7 @@ class HybridSearchService:
         sort_order: str,
         query: str,
         sources: frozenset[str] | None = None,
-    ) -> list["SearchHit"]:
+    ) -> tuple[list["SearchHit"], "_BackfillHighlights | None"]:
         """Backfill file groups starved out of the hybrid RRF rank window.
 
         Runs the plain BM25 collapse query (immune to window starvation) and
@@ -2809,6 +3038,11 @@ class HybridSearchService:
         relevance scores rescaled strictly below the lowest hybrid score —
         BM25 raw scores live on a different scale than RRF scores and must
         never outrank the hybrid-ranked results.
+
+        The BM25 query runs split (``_execute_split_bm25_collapse``, #1064), so
+        backfilled groups arrive WITHOUT highlights. The second return value is
+        what ``_hydrate_page_highlights`` needs to highlight the ones that land
+        on the displayed page (None when nothing was backfilled).
 
         Best-effort: any failure returns the hybrid groups unchanged.
         """
@@ -2823,21 +3057,22 @@ class HybridSearchService:
                 sort_order=sort_order,
                 sources=sources,
             )
-            bm25_response = client.search(
-                index=settings.OPENSEARCH_CHUNKS_INDEX,
-                body=bm25_body,
-            )
+            bm25_response, highlight = self._execute_split_bm25_collapse(client, bm25_body)
         except Exception as e:
             logger.warning(f"BM25 group backfill failed for query='{query}': {e}")
-            return grouped
+            return grouped, None
 
         bm25_grouped, _ = self._process_collapsed_results(
-            bm25_response, query, is_fused_rrf=False, sources=sources
+            bm25_response,
+            query,
+            is_fused_rrf=False,
+            sources=sources,
+            assume_keyword_match=True,
         )
         seen = {hit.file_uuid for hit in grouped}
         new_hits = [hit for hit in bm25_grouped if hit.file_uuid not in seen]
         if not new_hits:
-            return grouped
+            return grouped, None
 
         # Rescale below the hybrid floor, preserving BM25 relative order
         floor = min((hit.relevance_score for hit in grouped), default=0.0)
@@ -2848,7 +3083,12 @@ class HybridSearchService:
             f"Backfilled {len(new_hits)} file groups starved from the hybrid "
             f"window for query='{query}' (hybrid returned {len(grouped)})"
         )
-        return grouped + new_hits
+        return grouped + new_hits, _BackfillHighlights(
+            response=bm25_response,
+            body=bm25_body,
+            highlight=highlight,
+            file_uuids=frozenset(hit.file_uuid for hit in new_hits),
+        )
 
     def _process_collapsed_results(
         self,
@@ -2856,6 +3096,7 @@ class HybridSearchService:
         query: str,
         is_fused_rrf: bool = False,
         sources: frozenset[str] | None = None,
+        assume_keyword_match: bool = False,
     ) -> tuple[list[SearchHit], int]:
         """Process collapsed OpenSearch response into SearchHit objects.
 
@@ -2873,6 +3114,7 @@ class HybridSearchService:
                 arm) that same threshold reads "high" for nearly every result
                 (issue #698). Confidence is only labelled when this is True —
                 everywhere else `semantic_confidence` stays "".
+            assume_keyword_match: Passed to `_process_inner_hits`; see there.
 
         Returns:
             Tuple of (list of SearchHit, estimated total_files).
@@ -2921,6 +3163,7 @@ class HybridSearchService:
                 query,
                 source.get("language"),
                 sources,
+                assume_keyword_match=assume_keyword_match,
             )
 
             if not occurrences:
@@ -3571,17 +3814,25 @@ class HybridSearchService:
         t_opensearch = time.time()
         response: dict[str, Any] | None = None
         fell_back_to_bm25 = False
+        # A keyword-only body is executed split (issue #1064) — see
+        # `_execute_split_bm25_collapse`. Not for an empty query: that body is a
+        # `match_all` browse, whose hits are NOT keyword matches.
+        split_bm25 = not use_neural and bool(search_query and search_query.strip())
+        page_highlight: dict[str, Any] = {}
         try:
             if not client:
                 return self._empty_response(query, page, page_size)
             search_params: dict[str, Any] = {}
             if needs_search_pipeline:
                 search_params["search_pipeline"] = search_pipeline
-            response = client.search(
-                index=settings.OPENSEARCH_CHUNKS_INDEX,
-                body=search_body,
-                params=search_params,
-            )
+            if split_bm25:
+                response, page_highlight = self._execute_split_bm25_collapse(client, search_body)
+            else:
+                response = client.search(
+                    index=settings.OPENSEARCH_CHUNKS_INDEX,
+                    body=search_body,
+                    params=search_params,
+                )
         except Exception as e:
             if use_neural:
                 # Retry once before falling back — transient errors are common
@@ -3636,7 +3887,11 @@ class HybridSearchService:
         t_process = time.time()
         is_fused_rrf = needs_search_pipeline and not fell_back_to_bm25
         grouped, total_files_est = self._process_collapsed_results(
-            response, query, is_fused_rrf=is_fused_rrf, sources=sources
+            response,
+            query,
+            is_fused_rrf=is_fused_rrf,
+            sources=sources,
+            assume_keyword_match=split_bm25,
         )
         process_ms = round((time.time() - t_process) * 1000)
 
@@ -3645,12 +3900,18 @@ class HybridSearchService:
         # file's chunks (e.g. a speaker name hitting every chunk's speaker^3
         # metadata on a labeled file) fills the window with that single file
         # and starves every other group — "Joe Rogan" returned 1 file from a
-        # 2,500-file library. When the hybrid pass returns fewer groups than a
-        # page, backfill missing groups from the BM25 collapse query (which
-        # discovers groups normally); hybrid-ranked hits keep their positions,
-        # backfilled keyword groups rank strictly below them.
-        if use_neural and not fell_back_to_bm25 and search_query and len(grouped) < page_size:
-            grouped = self._backfill_starved_groups(
+        # 2,500-file library. Backfill missing groups from the BM25 collapse
+        # query (which discovers groups normally); hybrid-ranked hits keep their
+        # positions, backfilled keyword groups rank strictly below them.
+        #
+        # ALWAYS, not only when the hybrid pass returned less than a page (the
+        # old condition, issue #1079): the window is ~200 CHUNKS, so a corpus
+        # whose files each match in several chunks yields ~40 groups — more than
+        # a page, so no backfill ran, and every other keyword-matching file was
+        # unreachable on any page (43 of 165 measured).
+        backfill: _BackfillHighlights | None = None
+        if use_neural and not fell_back_to_bm25 and search_query:
+            grouped, backfill = self._backfill_starved_groups(
                 client=client,
                 grouped=grouped,
                 search_query=search_query,
@@ -3686,8 +3947,23 @@ class HybridSearchService:
         result.total_pages = max(1, (result.total_files + page_size - 1) // page_size)
         sort_ms = round((time.time() - t_sort) * 1000)
 
-        # Deferred semantic highlighting for current page
         t_highlight = time.time()
+        if split_bm25:
+            self._hydrate_page_highlights(
+                client, result.results, response, search_body, page_highlight, query, sources
+            )
+        if backfill is not None:
+            self._hydrate_page_highlights(
+                client,
+                [h for h in result.results if h.file_uuid in backfill.file_uuids],
+                backfill.response,
+                backfill.body,
+                backfill.highlight,
+                query,
+                sources,
+            )
+
+        # Deferred semantic highlighting for current page
         self._apply_semantic_highlights(result.results, query)
         highlight_ms = round((time.time() - t_highlight) * 1000)
 

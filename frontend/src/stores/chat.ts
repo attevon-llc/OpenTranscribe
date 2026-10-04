@@ -59,6 +59,8 @@ export interface ChatState {
   contextEstimate: ContextEstimate | null;
   tokenUsage: TokenUsage | null;
   error: string | null;
+  /** Epoch ms until which a 429's `Retry-After` says to wait; null when not rate-limited. */
+  rateLimitedUntil: number | null;
 }
 
 const initialState: ChatState = {
@@ -81,6 +83,7 @@ const initialState: ChatState = {
   contextEstimate: null,
   tokenUsage: null,
   error: null,
+  rateLimitedUntil: null,
 };
 
 function createChatStore() {
@@ -390,6 +393,10 @@ function createChatStore() {
         update((s) => ({
           ...s,
           error: event.code,
+          rateLimitedUntil:
+            event.code === 'rate_limited' && event.retryAfter
+              ? Date.now() + event.retryAfter * 1000
+              : null,
           messages: s.messages.map((m) => {
             if (m.uuid !== s.streamingMessageId) return m;
             const reasoningDurationMs =
@@ -400,8 +407,9 @@ function createChatStore() {
               ...m,
               status: 'error',
               error: event.message,
-              errorCode: event.code,
-              retryAfter: event.retryAfter ?? null,
+              // Same place the server persists it, so live and reloaded turns
+              // render through one path (issue #1049).
+              msg_metadata: { ...(m.msg_metadata ?? {}), error_code: event.code },
               pending: false,
               reasoningStreaming: false,
               reasoningDurationMs,
@@ -417,6 +425,7 @@ function createChatStore() {
     update((s) => ({
       ...s,
       error: null,
+      rateLimitedUntil: null,
       tokenUsage: null,
       messages: [
         ...s.messages,

@@ -32,6 +32,14 @@ export interface CapabilitiesState {
    * hasn't resolved yet never reads as "no limit".
    */
   maxUploadBytes: number | null | undefined;
+  /**
+   * Whether the server accepts the API-mediated upload (`POST /files`, the whole file
+   * streamed through the API). `false` only when the server explicitly says so; the
+   * upload service must then never fall back to it from the presigned path. Anything
+   * else — not yet fetched, fetch failed, an older server without the field — keeps
+   * today's behaviour (fallback allowed).
+   */
+  apiMediatedUploadEnabled?: boolean;
 }
 
 const COMMUNITY_DEFAULTS: CapabilitiesState = {
@@ -40,6 +48,7 @@ const COMMUNITY_DEFAULTS: CapabilitiesState = {
   capabilities: {},
   audience: {},
   maxUploadBytes: undefined,
+  apiMediatedUploadEnabled: true,
 };
 
 export const capabilities = writable<CapabilitiesState>(COMMUNITY_DEFAULTS);
@@ -92,6 +101,7 @@ export async function loadCapabilities(): Promise<void> {
       // into the "unknown" bucket — only an actually missing/malformed field does.
       maxUploadBytes:
         rawMaxUpload === null ? null : typeof rawMaxUpload === 'number' ? rawMaxUpload : undefined,
+      apiMediatedUploadEnabled: response.data?.api_mediated_upload_enabled !== false,
     });
   } catch {
     // Fail-open for feature visibility (community defaults, everything shown), but NOT

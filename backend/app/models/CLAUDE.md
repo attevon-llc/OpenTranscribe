@@ -86,18 +86,34 @@ authority. See `backend/app/db/CLAUDE.md`.
   `MediaFile.user_id`+`quarantined_by`, `SummaryPrompt.user_id`+`shared_by`,
   `CollectionShare.shared_by_id`+`target_user_id`, `WatchSource.user_id`+`created_by`,
   `AuthConfig.created_by`+`updated_by`, `SpeakerMatch.speaker1_id`+`speaker2_id`.
-- **`Tag` is per-owner, and `Tag.name` is NOT unique** (migration `v374_add_tag_user_id`).
-  `user_id IS NULL` = *system tag* (the seeded `Important`/`Meeting`/`Interview`/`Personal`,
-  visible to everyone); non-NULL = that user's private tag. Uniqueness is two **partial** unique
-  indexes — `uq_tag_user_name` on `(user_id, name) WHERE user_id IS NOT NULL` and
-  `uq_tag_system_name` on `(name) WHERE user_id IS NULL` — because a plain composite `UNIQUE`
-  would let duplicate system rows through (Postgres treats NULLs as distinct). Consequences:
-  **never look a tag up by name alone** — scope by owner (`Tag.user_id == uid | Tag.user_id
-  IS NULL`, ordered `Tag.user_id` so an owned row beats the system row) or join through
-  `FileTag` for a specific file; and any tag you create in a background task must be attributed
-  to the **file owner**, since an ownerless row is published to every account.
-  `tag.user_id` is a plain FK, so user deletion must remove the rows (`admin._delete_user_owned_records`,
-  `gdpr_erasure_service._delete_owner_scoped_rows`) before the `user` row goes.
+- **`Tag` belongs to a TENANT, and `Tag.name` is NOT unique** (`v374_add_tag_user_id`, then
+  `v420_add_tag_organization_id`, issue #1050). Three kinds: **system** = `user_id IS NULL AND
+  organization_id IS NULL` (the seeded `Important`/`Meeting`/`Interview`/`Personal`, in every
+  tenant); **personal** = `organization_id IS NULL`, `user_id` = owner; **organization** =
+  `organization_id` set, shared by every member, `user_id` = creator (attribution only, and
+  NULL once that account is gone — so `user_id IS NULL` alone does **not** mean system; use
+  `tag_service.is_system_tag` / `system_tag()`). Uniqueness is one partial unique index per
+  kind: `uq_tag_user_name` `(user_id, name)` personal, `uq_tag_org_name`
+  `(organization_id, name)`, `uq_tag_system_name` `(name)`. Consequences: **never look a tag
+  up by name alone** — scope by tenant (`tag_service.owned_or_system(user_id,
+  organization_id)`, ordered `tenant_first()` so a tenant row beats the system row) or join
+  through `FileTag`; a tag created in a background task goes in the **file's** tenant
+  (`MediaFile.organization_id`), credited to the file owner; and a merge never crosses
+  tenants except *into* a system tag (`tag_operations.TagTenantMismatchError`). User deletion
+  deletes personal tags and de-attributes org tags (`admin._delete_user_owned_records`,
+  `gdpr_erasure_service._delete_owner_scoped_rows`); `erase_organization` deletes the org's
+  tags, because `tag.organization_id` is a plain FK.
+- **`Collection` belongs to a TENANT** (`v422_add_collection_tenancy`, issue #1051). **personal**
+  = `organization_id IS NULL`, `user_id` = owner; **organization** = `organization_id` set,
+  shared by every member of the org (members are editors, the creator and org admins are
+  owners — `permission_service.org_collection_permission`), `user_id` = creator, NULL once
+  that account is gone (`ck_collection_owner_or_org` keeps a personal row owned). Names are
+  unique per tenant (`uq_collection_user_name` personal, `uq_collection_org_name`). Create in
+  the request's tenant (`ctx.org_id`), or on background paths the **file's** tenant; scope any
+  "the caller's collections" lookup with `PermissionService.collection_tenant_pred(user_id,
+  org_id)`, never `Collection.user_id == uid` alone; and never put a file into a collection
+  of another tenant. User deletion/erasure deletes personal collections and de-attributes
+  org ones; `erase_organization` deletes the org's.
 - **`user.oidc_subject` is an OIDC `sub`, which is unique only per ISSUER.** The UNIQUE index on
   it is sound only while exactly one provider is configured; multi-provider means keying on
   `(iss, sub)`. The old column name asserted a global identifier, which is why `v380` renamed it

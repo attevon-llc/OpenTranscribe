@@ -353,10 +353,10 @@ def send_completion_notification(
 def send_error_notification(user_id: int, file_id: int, error_message: str) -> None:
     """Send transcription error notification.
 
-    Routes the raw error through `ErrorCategorizationService` so the notification carries
-    a fixed, user-facing sentence rather than the raw exception text (issue #786) — the raw
-    message is logged here at ERROR, with the file id, and stays in
-    `media_file.last_error_message` for anyone who needs it.
+    Routes the message through `ErrorCategorizationService` so the notification carries a
+    fixed, user-facing sentence rather than raw exception text (issue #786). The pipeline
+    failure handlers already pass the fixed sentence they stored (#959) and log the raw
+    exception themselves; a raw message passed here is logged at ERROR with the file id.
     """
     from app.services.error_categorization_service import ErrorCategorizationService
 

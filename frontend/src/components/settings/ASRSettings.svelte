@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import Spinner from '../ui/Spinner.svelte';
@@ -443,7 +444,7 @@
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
                 {#if config.test_status && config.test_status !== 'untested'}
-                  <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(`settings.asrProvider.status.${config.test_status === 'success' ? 'connected' : 'failed'}`)}</span>
+                  <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(config.test_status === 'success' ? ASR_TEST_STATUS_KEYS.connected : ASR_TEST_STATUS_KEYS.failed)}</span>
                 {/if}
               </div>
               <div class="config-name">{config.name}

@@ -191,7 +191,11 @@ def _handle_speaker_change(
         # Don't fail the operation if analytics refresh fails
         logger.warning(f"Failed to refresh analytics after segment speaker change: {e}")
 
-    # Dispatch background task to update speaker embeddings
+    # Dispatch background task to update speaker embeddings. It stays on the
+    # GPU-preferred route (issue #1083 review): unlike recluster it runs the neural
+    # embedding model, which is cached warm only on GPU workers — the full-mode CPU
+    # worker mounts no model cache and would cold-load it per child. It also runs
+    # after the reassignment has already returned, so it blocks no user action.
     if segment_uuid and media_file_uuid and user_id and target_speaker_uuid:
         try:
             from app.tasks.speaker_tasks import update_speaker_embedding_on_reassignment

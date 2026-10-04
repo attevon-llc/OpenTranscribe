@@ -9,11 +9,13 @@
     getSpeakerBehaviorDescription,
     groupLanguages,
     type TranscriptionSettings,
+    type TranscriptionSettingsUpdate,
     type TranscriptionSystemDefaults,
     type SpeakerPromptBehavior,
     type LanguageOption
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi, type ASRModelCapabilities } from '$lib/api/asrSettings';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
@@ -60,6 +62,10 @@
 
   // Advanced section collapsed state
   let advancedExpanded = false;
+
+  // Deployment-owned settings: hidden here, and the server ignores writes to them.
+  $: diarizationSourceEnabled = isCapabilityEnabled($capabilities, 'transcription.diarization_source');
+  $: advancedEnabled = isCapabilityEnabled($capabilities, 'transcription.advanced');
 
   // System defaults
   let systemDefaults: TranscriptionSystemDefaults | null = null;
@@ -242,7 +248,7 @@
 
     saving = true;
     try {
-      const updatedSettings = await updateTranscriptionSettings({
+      const update: TranscriptionSettingsUpdate = {
         min_speakers: minSpeakers,
         max_speakers: maxSpeakers,
         speaker_prompt_behavior: speakerBehavior,
@@ -251,14 +257,19 @@
         source_language: sourceLanguage,
         translate_to_english: translateToEnglish,
         llm_output_language: llmOutputLanguage,
-        vad_threshold: vadThreshold,
-        vad_min_silence_ms: vadMinSilenceMs,
-        vad_min_speech_ms: vadMinSpeechMs,
-        vad_speech_pad_ms: vadSpeechPadMs,
-        hallucination_silence_threshold: hallucinationSilenceThreshold,
-        repetition_penalty: repetitionPenalty,
-        diarization_source: diarizationSource
-      });
+      };
+      if (advancedEnabled) {
+        Object.assign(update, {
+          vad_threshold: vadThreshold,
+          vad_min_silence_ms: vadMinSilenceMs,
+          vad_min_speech_ms: vadMinSpeechMs,
+          vad_speech_pad_ms: vadSpeechPadMs,
+          hallucination_silence_threshold: hallucinationSilenceThreshold,
+          repetition_penalty: repetitionPenalty,
+        });
+      }
+      if (diarizationSourceEnabled) update.diarization_source = diarizationSource;
+      const updatedSettings = await updateTranscriptionSettings(update);
 
       storeOriginalValues(updatedSettings);
       settingsModalStore.clearDirty('transcription');
@@ -314,6 +325,7 @@
         <p class="section-desc">{$t('settings.transcription.speakerDetectionDesc')}</p>
 
         <!-- Diarization Source -->
+        {#if diarizationSourceEnabled}
         <div class="form-group">
           <label for="diarization-source" class="form-label">
             {$t('settings.transcription.diarizationSource')}
@@ -348,6 +360,7 @@
             </p>
           {/if}
         </div>
+        {/if}
 
         <!-- Speaker Behavior -->
         <div class="form-group">
@@ -583,6 +596,7 @@
       </div>
 
       <!-- Advanced Transcription Settings (collapsible) -->
+      {#if advancedEnabled}
       <div class="settings-section">
         <button
           type="button"
@@ -829,6 +843,7 @@
           </div>
         {/if}
       </div>
+      {/if}
 
       <!-- Validation Error -->
       {#if validationError}

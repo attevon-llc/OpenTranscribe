@@ -1,0 +1,65 @@
+Package,License,Status,Reason
+alpine-baselayout,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+alpine-baselayout-data,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+alpine-keys,MIT,OK,permissive
+alpine-release,MIT,OK,permissive
+aom-libs,BSD-2-Clause AND custom,UNKNOWN,"AND expression, worst component governs: BSD-2-Clause AND custom"
+apk-tools,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+brotli-libs,MIT,OK,permissive
+busybox,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+busybox-binsh,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+ca-certificates,MIT AND MPL-2.0,REVIEW,"AND expression, worst component governs: MIT AND MPL-2.0"
+ca-certificates-bundle,MIT AND MPL-2.0,REVIEW,"AND expression, worst component governs: MIT AND MPL-2.0"
+fontconfig,MIT,OK,permissive
+freetype,FTL AND GPL-2.0-or-later,BLOCKER,no acceptable option in OR expression: FTL AND GPL-2.0-or-later
+geoip,LGPL-2.1-or-later,REVIEW,"OR expression, best option is weak-copyleft: LGPL-2.1-or-later"
+gettext-envsubst,GPL-3.0-or-later AND LGPL-2.1-or-later AND MIT,BLOCKER,no acceptable option in OR expression: GPL-3.0-or-later AND LGPL-2.1-or-later AND MIT
+libapk,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+libavif,BSD-2-Clause,OK,permissive
+libbsd,BSD-3-Clause,OK,permissive
+libbz2,bzip-2-1.0.6,UNKNOWN,unrecognized license identifier: bzip-2-1.0.6
+libcrypto3,Apache-2.0,OK,permissive
+libdav1d,BSD-2-Clause,OK,permissive
+libedit,BSD-3-Clause,OK,permissive
+libexpat,MIT,OK,permissive
+libgcc,GPL-2.0-or-later AND LGPL-2.1-or-later,BLOCKER,no acceptable option in OR expression: GPL-2.0-or-later AND LGPL-2.1-or-later
+libgd,GD,UNKNOWN,unrecognized license identifier: GD
+libice,X-11,UNKNOWN,unrecognized license identifier: X-11
+libintl,LGPL-2.1-or-later,REVIEW,"OR expression, best option is weak-copyleft: LGPL-2.1-or-later"
+libjpeg-turbo,BSD-3-Clause AND IJG AND Zlib,UNKNOWN,"AND expression, worst component governs: BSD-3-Clause AND IJG AND Zlib"
+libmd,BSD-2-Clause AND BSD-3-Clause AND Beerware AND Domain AND ISC AND Public,UNKNOWN,"AND expression, worst component governs: BSD-2-Clause AND BSD-3-Clause AND Beerware AND Domain AND ISC AND Public"
+libncursesw,X-11,UNKNOWN,unrecognized license identifier: X-11
+libpng,Libpng,OK,permissive
+libsharpyuv,BSD-3-Clause,OK,permissive
+libsm,MIT,OK,permissive
+libssl3,Apache-2.0,OK,permissive
+libstdc++,GPL-2.0-or-later AND LGPL-2.1-or-later,BLOCKER,no acceptable option in OR expression: GPL-2.0-or-later AND LGPL-2.1-or-later
+libuuid,BSD-3-Clause,OK,permissive
+libwebp,BSD-3-Clause,OK,permissive
+libx11,X-11,UNKNOWN,unrecognized license identifier: X-11
+libxau,MIT,OK,permissive
+libxcb,MIT,OK,permissive
+libxdmcp,MIT,OK,permissive
+libxext,MIT,OK,permissive
+libxml2,MIT,OK,permissive
+libxpm,X-11,UNKNOWN,unrecognized license identifier: X-11
+libxslt,X-11,UNKNOWN,unrecognized license identifier: X-11
+libxt,MIT,OK,permissive
+libyuv,BSD-3-Clause,OK,permissive
+musl,MIT,OK,permissive
+musl-utils,BSD-2-Clause AND GPL-2.0-or-later AND MIT,BLOCKER,no acceptable option in OR expression: BSD-2-Clause AND GPL-2.0-or-later AND MIT
+ncurses-terminfo-base,X-11,UNKNOWN,unrecognized license identifier: X-11
+nginx,2-clause AND BSD-3-Clause AND license,UNKNOWN,"AND expression, worst component governs: 2-clause AND BSD-3-Clause AND license"
+nginx-module-acme,2-clause AND BSD-3-Clause AND license,UNKNOWN,"AND expression, worst component governs: 2-clause AND BSD-3-Clause AND license"
+nginx-module-geoip,2-clause AND BSD-3-Clause AND license,UNKNOWN,"AND expression, worst component governs: 2-clause AND BSD-3-Clause AND license"
+nginx-module-image-filter,2-clause AND BSD-3-Clause AND license,UNKNOWN,"AND expression, worst component governs: 2-clause AND BSD-3-Clause AND license"
+nginx-module-njs,2-clause AND BSD-3-Clause AND license,UNKNOWN,"AND expression, worst component governs: 2-clause AND BSD-3-Clause AND license"
+nginx-module-xslt,2-clause AND BSD-3-Clause AND license,UNKNOWN,"AND expression, worst component governs: 2-clause AND BSD-3-Clause AND license"
+pcre2,BSD-3-Clause,OK,permissive
+scanelf,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+ssl_client,GPL-2.0-only,BLOCKER,strong copyleft / source-available / no-license
+tiff,libtiff,UNKNOWN,unrecognized license identifier: libtiff
+tzdata,Public-Domain,UNKNOWN,unrecognized license identifier: Public-Domain
+xz-libs,0BSD AND GPL-2.0-or-later AND LGPL-2.1-or-later AND Public-Domain,BLOCKER,no acceptable option in OR expression: 0BSD AND GPL-2.0-or-later AND LGPL-2.1-or-later AND Public-Domain
+zlib,Zlib,OK,permissive
+zstd-libs,BSD-3-Clause AND GPL-2.0-or-later,BLOCKER,no acceptable option in OR expression: BSD-3-Clause AND GPL-2.0-or-later

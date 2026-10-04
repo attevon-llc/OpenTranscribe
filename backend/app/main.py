@@ -1,3 +1,8 @@
+# Telemetry opt-outs must be in os.environ before anything can import pyannote or
+# huggingface_hub (both read them at import). Keep this the first import.
+from app.core import privacy_env  # noqa: F401  # isort: skip
+
+# isort: split
 import asyncio
 import logging
 import os
@@ -33,6 +38,7 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
+from app.middleware.upload_limit import UploadBodyLimitMiddleware
 
 # Set up logging (text or structured JSON per settings.LOG_FORMAT)
 configure_logging()
@@ -266,6 +272,13 @@ def _validate_production_secrets():
         )
         raise ValueError("Wildcard CORS_ORIGINS is not permitted with credentialed requests")
 
+    # The default depends on ENVIRONMENT (issue #1029), so state what was resolved: an
+    # operator whose separate-origin frontend is refused can see why from the boot log.
+    logger.info(
+        "CORS allowed origins: %s (same-origin requests need no entry)",
+        settings.CORS_ORIGINS or "none",
+    )
+
     if is_production:
         logger.info("Production security validation passed")
 
@@ -308,6 +321,8 @@ def _backfill_quarantine_tags() -> None:
                 tagged += 1
             if row.thumbnail_path:
                 set_object_quarantine_tag(str(row.thumbnail_path), True)
+            if row.playback_path:
+                set_object_quarantine_tag(str(row.playback_path), True)
         logger.info(
             f"Quarantine-tag backfill: tagged {tagged}/{len(rows)} already-quarantined file(s)"
         )
@@ -378,7 +393,9 @@ def _setup_minio():
 
         if storage_presign_identity.ensure_presign_identity():
             logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
-        elif not native_s3 and settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
+        elif native_s3:
+            storage_presign_identity.report_native_s3_revocation_posture(minio_client)
+        elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
             logger.error(
                 "Presign identity NOT provisioned — presigned media URLs will be signed "
                 "with the root credential and quarantine will NOT revoke them. See the "
@@ -797,9 +814,31 @@ def _provision_native_diarizer() -> None:
         logger.warning(f"diar-native provisioning could not run (non-fatal): {e}")
 
 
+def _log_password_blocklist_status() -> None:
+    """One WARNING when the breached-password check is on but no list is installed.
+
+    Never fatal: the check is skipped and the rest of the password policy still applies.
+    """
+    try:
+        from app.auth import password_blocklist
+        from app.auth.password_policy import password_policy
+
+        password_blocklist.log_startup_status(
+            password_policy.blocklist_enabled, str(settings.PASSWORD_BLOCKLIST_PATH)
+        )
+    except Exception as e:
+        logger.warning(f"Password blocklist status check failed (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
+    # First, and in test mode too: the thread limiter belongs to this event loop, and
+    # every request it serves depends on its size relative to the DB pool (#1169).
+    from app.core.threadpool import configure_api_threadpool
+
+    configure_api_threadpool()
+
     if os.environ.get("TESTING", "").lower() == "true":
         logger.info("Test mode: skipping startup tasks")
         yield
@@ -846,6 +885,8 @@ async def lifespan(app: FastAPI):
     _provision_native_diarizer()
 
     _register_chat_usage_hook()
+
+    _log_password_blocklist_status()
 
     # Seed initial data (admin user, default tags, system prompts)
     try:
@@ -1012,6 +1053,11 @@ app = FastAPI(
     default_timeout=3600,
 )
 
+# Upload size limits enforced while the body streams (issue #999). Added BEFORE CORS so
+# it runs INSIDE it (see the ordering note at ObservabilityMiddleware): its early 413
+# still carries the CORS headers a browser needs to read the error.
+app.add_middleware(UploadBodyLimitMiddleware)
+
 # Set up CORS
 app.add_middleware(
     CORSMiddleware,
@@ -1032,9 +1078,6 @@ app.add_middleware(
     # split-host or third-party client that isn't.
     expose_headers=["Retry-After", "X-RateLimit-Limit"],
 )
-
-# Configure maximum upload size (50GB)
-app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # type: ignore[attr-defined]  # 50GB
 
 # Mark every API response as non-indexable (issue #668, finding 3). Response-header-only,
 # so its position relative to the other middleware below is not load-bearing.
@@ -1127,8 +1170,14 @@ def readiness_check():
     503; OpenSearch/MinIO failures are reported but do not fail readiness, since
     queued transcription survives a brief search/storage outage. Plain ``def``
     so Starlette threadpools the short, synchronous probes.
+
+    Probed several times a minute, so it must stay cheap and bounded (issue #1000):
+    Redis, OpenSearch and object storage each get ``DEPENDENCY_PROBE_TIMEOUT_SECONDS``
+    via probe-only clients, and the Alembic head is parsed once per process.
     """
     from sqlalchemy import text
+
+    from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
 
     checks: dict[str, str] = {}
 
@@ -1145,11 +1194,11 @@ def readiness_check():
     except Exception as exc:  # noqa: BLE001
         checks["postgres"] = f"error: {type(exc).__name__}"
 
-    # Redis (critical) — ping the shared db-0 singleton.
+    # Redis (critical) — db 0 through the time-bounded probe client.
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_probe_redis
 
-        get_redis().ping()
+        get_probe_redis().ping()
         checks["redis"] = "ok"
     except Exception as exc:  # noqa: BLE001
         checks["redis"] = f"error: {type(exc).__name__}"
@@ -1159,18 +1208,18 @@ def readiness_check():
         from app.services.opensearch_service import get_opensearch_client
 
         client = get_opensearch_client()
-        if client is not None and client.ping():
+        if client is not None and client.ping(request_timeout=DEPENDENCY_PROBE_TIMEOUT_SECONDS):
             checks["opensearch"] = "ok"
         else:
             checks["opensearch"] = "unavailable"
     except Exception as exc:  # noqa: BLE001
         checks["opensearch"] = f"error: {type(exc).__name__}"
 
-    # MinIO (degraded-but-ready) — reuse the existing client singleton.
+    # MinIO (degraded-but-ready) — same backend, time-bounded single-attempt transport.
     try:
-        from app.services.minio_service import minio_client
+        from app.services.minio_service import get_probe_client
 
-        minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME)
+        get_probe_client().bucket_exists(settings.MEDIA_BUCKET_NAME)
         checks["minio"] = "ok"
     except Exception as exc:  # noqa: BLE001
         checks["minio"] = f"error: {type(exc).__name__}"
@@ -1191,12 +1240,11 @@ def readiness_check():
     schema_detail: dict[str, str] = {}
     try:
         from alembic.migration import MigrationContext
-        from alembic.script import ScriptDirectory
 
         from app.db.base import engine
-        from app.db.migrations import get_alembic_config
+        from app.db.migrations import get_alembic_head
 
-        head = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+        head = get_alembic_head()
         with engine.connect() as conn:
             current = MigrationContext.configure(conn).get_current_revision()
         checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"

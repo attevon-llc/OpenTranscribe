@@ -18,6 +18,11 @@ x-diarization-gpu-common: &diarization-gpu-common
     - OPENTRANSCRIBE_IN_CONTAINER=1
     - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}
+    # Third-party telemetry / update checks OFF by default (see app/core/privacy_env.py).
+    - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+    - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+    - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+    - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
   deploy:
     resources:
       reservations:

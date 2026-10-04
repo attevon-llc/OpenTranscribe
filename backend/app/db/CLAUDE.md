@@ -59,9 +59,31 @@ without that CHECK can store the personal data the ledger exists not to retain a
 therefore *should* re-run the revision), `v390_add_file_facts`,
 `v391_add_recorded_date_provenance`, `v392_add_redaction_coverage`,
 `v393_add_overlap_timing_columns`, `v394_add_document_tables`,
-`v395_add_watch_source_file_document_id`, head currently
-`v396_add_document_chunk_redaction_cache`. **Derive the head, never trust this sentence** —
-`scripts/release-tests/lib/alembic-head.py` walks the `down_revision` graph.
+`v395_add_watch_source_file_document_id`,
+`v396_add_document_chunk_redaction_cache` (all four on `origin/feat/doc-ingestion`,
+unmerged as of `v397`), `v397_add_platform_super_admin_link_authorized`
+(`user.platform_super_admin_link_authorized` — the escape hatch for
+`account_linking.assert_provider_id_link_permitted`'s super_admin JIT-link refusal,
+issue #993; chained off `v393` rather than `v394` specifically to avoid colliding
+with the doc-ingestion range above — see that revision's own docstring),
+`v420_add_tag_organization_id` (tenant-owned tags, issue #1050: `tag.organization_id`,
+per-tenant partial unique indexes, and a move/split/merge backfill; numbered v420 to stay
+clear of every range another branch had used — its detection arm keys on
+`uq_tag_org_name`, created after the backfill, not on the column),
+`v421_add_media_playback_path` (nullable `media_file.playback_path` — the object key of
+a browser-playable AAC/M4A rendition for originals no browser decodes),
+`v422_add_collection_tenancy` (tenant-owned collections, issue #1051: nullable
+`collection.user_id` + `ck_collection_owner_or_org`, per-tenant partial unique indexes
+replacing `UNIQUE (user_id, name)`, and a move/split/merge backfill by member-file tenant;
+detection arm keys on `uq_collection_org_name`),
+`v430_per_tenant_speaker_and_vocab_names` (issue #1110: stamps legacy speaker profiles,
+speaker collections and vocabulary terms with their tenant where unambiguous, and makes their
+unique names per user per tenant via `COALESCE(organization_id, 0)` expression indexes;
+numbered v430 to stay clear of parallel branches; its stamping SQL is re-used by
+`app/services/tenant_stamp_backfill.py`, so keep `STAMP_STATEMENTS`/`AMBIGUOUS_REPORT_SQL`
+stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created last). **Derive
+the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
+walks the `down_revision` graph.
 
 **Renumbering note 3 (2026-08-19) — a THIRD instance of the same fork shape.** The
 document-ingestion lane (`feat/doc-ingestion`, issue #362) originally took `v393`, `v394`, and

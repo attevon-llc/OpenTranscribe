@@ -1,7 +1,20 @@
+# Telemetry opt-outs must be in os.environ before anything can import pyannote or
+# huggingface_hub (both read them at import). Keep this the first import.
+from app.core import privacy_env  # noqa: F401  # isort: skip
+
+# isort: split
+
 # Skip heavy AI imports during testing - speeds up test startup significantly
 import logging
 import os
+import socket
 import ssl
+
+from app.core import worker_metrics
+
+# Issue #1161: before anything imports prometheus_client, so a worker with WORKER_METRICS_PORT
+# set builds every collector in multiprocess mode and its prefork children inherit that.
+worker_metrics.configure()
 
 logger = logging.getLogger(__name__)
 
@@ -26,22 +39,60 @@ def _float_env(key: str, default: float) -> float:
 
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
-if not _SKIP_CELERY:
-    # PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
-    # Patch torch.load to default to weights_only=False for trusted HuggingFace models
-    # This must be at the TOP of celery.py because Celery's include= imports task modules
-    # which import pyannote/whisperx that cache torch.load at import time
-    import torch
 
-    _original_torch_load = torch.load
+def _patch_torch_load(torch_module) -> None:
+    """PyTorch 2.6+ compat: default ``weights_only=False`` for trusted HuggingFace models."""
+    original = torch_module.load
 
     def _patched_torch_load(*args, **kwargs):
         # Handle both missing weights_only AND weights_only=None (which PyTorch 2.8 treats as True)
         if kwargs.get("weights_only") is None:
             kwargs["weights_only"] = False
-        return _original_torch_load(*args, **kwargs)
+        return original(*args, **kwargs)
 
-    torch.load = _patched_torch_load
+    torch_module.load = _patched_torch_load
+
+
+class _TorchLoadPatchFinder:
+    """meta_path hook: patch ``torch.load`` the moment anything first imports torch.
+
+    Importing torch eagerly here made every process that imports the Celery app (beat,
+    Flower, download/NLP workers) pay hundreds of MB and seconds for a library it never
+    uses. Patching on first import keeps the ordering guarantee — the patch is applied
+    when torch's own import finishes, before pyannote/whisperx (which cache
+    ``torch.load`` at import time) get the module back.
+    """
+
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        if fullname != "torch":
+            return None
+        import importlib.machinery
+        import sys
+
+        if cls in sys.meta_path:
+            sys.meta_path.remove(cls)
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path)
+        loader = spec.loader if spec is not None else None
+        if loader is None or not hasattr(loader, "exec_module"):
+            return spec
+        original_exec = loader.exec_module
+
+        def exec_module(module):
+            original_exec(module)
+            _patch_torch_load(module)
+
+        vars(loader)["exec_module"] = exec_module
+        return spec
+
+
+if not _SKIP_CELERY:
+    import sys as _sys
+
+    if "torch" in _sys.modules:
+        _patch_torch_load(_sys.modules["torch"])
+    else:
+        _sys.meta_path.insert(0, _TorchLoadPatchFinder)
 
     # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 
@@ -63,6 +114,7 @@ from kombu import Queue  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.constants import CeleryQueues  # noqa: E402
 from app.core.constants import gpu_preferred_queue  # noqa: E402
+from app.core.task_config import task_recovery_config  # noqa: E402
 
 # Speaker/diarization work that PREFERS a GPU but produces a correct result on CPU
 # (issue #865). All eight were pinned to 'gpu' — a queue `docker-compose.lite.yml`
@@ -119,6 +171,45 @@ _redis_ssl_options = (
     else None
 )
 
+# Dead-connection detection for every Redis socket (broker AND result backend) — issue #1144.
+#
+# A worker<->Redis flow can vanish without a FIN/RST ever reaching the worker (NAT/conntrack
+# expiry, firewall or network-policy reload, idle reset). Before this, such a worker stopped
+# consuming FOREVER while the process stayed alive:
+#
+#   * kombu passes socket_keepalive=None to redis-py, which turns OFF redis-py's keepalive
+#     default. The consumer's BRPOP waits in epoll for a reply on a dead socket and nothing
+#     ever wakes it.
+#   * When some other timer did hit an RST, the consumer's reconnect path ran
+#     Channel.close(), which drains the outstanding BRPOP with a BLOCKING recv(). With
+#     socket_timeout=None that recv never returned on the half-open socket: the main loop
+#     wedged inside its own reconnect, with one "Connection to broker lost" line and then
+#     silence.
+#
+# Keepalive makes the kernel error a dead socket in ~KEEPIDLE + KEEPINTVL*KEEPCNT seconds
+# (30 + 10*3 = 60 s), which wakes epoll; TCP_USER_TIMEOUT covers the case keepalive
+# cannot (it is suspended while unacknowledged data is in flight). socket_timeout bounds
+# every blocking read, including that drain.
+#
+# socket_timeout MUST stay well above kombu's BRPOP wait (Transport.brpop_timeout = 1 s,
+# or polling_interval if one is ever set): the drain in Channel.close() may legitimately
+# wait that long, and a timeout under it would turn every idle poll into a reconnect.
+# 30 s also leaves room for a slow-but-alive managed Redis under load.
+_REDIS_SOCKET_TIMEOUT = _float_env("CELERY_REDIS_SOCKET_TIMEOUT", 30.0)
+_REDIS_CONNECT_TIMEOUT = _float_env("CELERY_REDIS_CONNECT_TIMEOUT", 10.0)
+_REDIS_HEALTH_CHECK_INTERVAL = 25  # kombu's own default, pinned so it cannot drift to 0
+_REDIS_KEEPALIVE_OPTIONS = {
+    opt: value
+    for name, value in (
+        ("TCP_KEEPIDLE", 30),
+        ("TCP_KEEPINTVL", 10),
+        ("TCP_KEEPCNT", 3),
+        ("TCP_USER_TIMEOUT", 60_000),  # milliseconds
+    )
+    # Linux names; skip any the platform lacks rather than fail at import.
+    if (opt := getattr(socket, name, None)) is not None
+}
+
 celery_app = Celery(
     "transcribe_app",
     broker=settings.CELERY_BROKER_URL,
@@ -132,6 +223,7 @@ celery_app = Celery(
         "app.tasks.transcription.cancellation",
         "app.tasks.waveform",
         "app.tasks.waveform_generation",
+        "app.tasks.playback_rendition",
         "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.cleanup",
@@ -185,6 +277,19 @@ celery_app = Celery(
 celery_app.conf.update(
     broker_use_ssl=_redis_ssl_options,
     redis_backend_use_ssl=_redis_ssl_options,
+    # Result-backend half of the dead-connection fix (see _REDIS_SOCKET_TIMEOUT). The
+    # backend client does not accept keepalive tunables, so redis-py's own keepalive
+    # defaults apply once socket_keepalive is on.
+    redis_socket_keepalive=True,
+    redis_socket_timeout=_REDIS_SOCKET_TIMEOUT,
+    redis_socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
+    redis_retry_on_timeout=True,
+    redis_backend_health_check_interval=_REDIS_HEALTH_CHECK_INTERVAL,
+    # Keep reconnecting through any broker outage. The default of 100 retries makes a
+    # worker give up and sit idle after a long one.
+    broker_connection_retry=True,
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=None,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
@@ -200,6 +305,12 @@ celery_app.conf.update(
     # — and see backend/app/core/celery_metrics.py for why the *effective*
     # prefetch also bounds the cost of reading Redis's `unacked` hash.
     worker_prefetch_multiplier=1,
+    # Prefork child recycling for any launcher (Helm, systemd, bare `celery worker`), not
+    # just compose. 0/unset = no recycling. Explicit CLI flags override these. Prefork
+    # only; the threads pool ignores both. Memory is in KiB and recycles a child AFTER
+    # the task that pushed its RSS over the limit finishes.
+    worker_max_tasks_per_child=_int_env("CELERY_WORKER_MAX_TASKS_PER_CHILD", 0) or None,
+    worker_max_memory_per_child=_int_env("CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB", 0) or None,
     # Global task time limits (issue #284 A1.2). There were NONE, so a hung CUDA call
     # held the single GPU slot forever and no later transcription could start.
     #
@@ -246,15 +357,39 @@ celery_app.conf.update(
     # `init_worker_process`'s own "fork init started/finished" pairs, which are emitted
     # regardless of the hub.
     worker_proc_alive_timeout=_float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0),
+    # --- Worker-loss and shutdown behaviour (see app/core/broker_orphans.py) -------------
+    # Soft shutdown (Celery 5.5+): on a COLD shutdown (SIGQUIT, or SIGTERM when the worker
+    # runs with REMAP_SIGTERM=SIGQUIT) wait this long for running tasks, then cancel the rest
+    # so kombu returns their unacked messages to the HEAD of their queues before the process
+    # exits, instead of leaving them to the visibility timeout. It does nothing on a warm
+    # shutdown (plain SIGTERM), which waits for running tasks with no limit; there a SIGKILL
+    # at the end of the container's stop grace period is answered by the orphan reaper.
+    worker_soft_shutdown_timeout=_float_env("CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT", 30.0),
+    # Also wait (and so also requeue cleanly) when the worker holds only reserved or
+    # ETA-scheduled messages and runs nothing.
+    worker_enable_soft_shutdown_on_idle=os.getenv(
+        "CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE", "true"
+    ).lower()
+    in ("1", "true", "yes"),
+    # Explicitly OFF. On Redis an unacked message survives a dropped connection in the
+    # broker's `unacked` hash and the worker can still ack it after reconnecting; turning
+    # this on would kill every running transcription on a transient broker blip and leave
+    # its message unacked -- creating the orphan it is meant to prevent.
+    worker_cancel_long_running_tasks_on_connection_loss=False,
+    # A REDELIVERED acks_late message whose task already succeeded (per the result backend)
+    # is acked and skipped instead of run again. The stage ownership check
+    # (tasks/transcription/run_ownership.py) covers the rest of the duplicate cases.
+    worker_deduplicate_successful_tasks=True,
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
     # Enable Redis priority queues: lower number = higher priority (runs first).
     # Priorities are PER-QUEUE — GPUPriority.X is independent of CPUPriority.X.
     # Named constants defined in app.core.constants: GPUPriority, CPUPriority, etc.
-    # GPU queue:  0=speaker-reassign  1=embed-extract  3=transcription  4=rediarize
-    #             5=recluster  7=admin-migration-batches
-    # CPU queue:  2=pipeline-critical  4=user-triggered  5=system  6=admin  8=maintenance
+    # GPU queue:  0=speaker-reassign  1=embed-extract  2=transcription-retry
+    #             3=transcription  4=rediarize  5=recluster  7=admin-migration-batches
+    # CPU queue:  1=pipeline-retry  2=pipeline-critical  4=user-triggered  5=system
+    #             6=admin  8=maintenance
     # NLP queue:  3=user-triggered  5=auto-pipeline  7=admin-batch  9=background
     # Download:   3=single-url  6=playlist
     # Embedding:  2=pipeline-critical
@@ -276,10 +411,30 @@ celery_app.conf.update(
         # makes that reachable with an ordinary file, not just a pathological one.
         #
         # 21600 (6h) covers the longest supported job with headroom. Do NOT set it
-        # absurdly high "to be safe": crash recovery keys off DB status
-        # (tasks/recovery.py), not off redelivery, so an inflated value only delays
-        # requeueing after a genuine worker loss.
+        # absurdly high "to be safe" -- and do NOT lower it to speed up recovery
+        # either. Redis has no per-message lease (nothing like SQS's
+        # ChangeMessageVisibility), so this one value applies to every acks_late task
+        # however long it legitimately runs, counted from DELIVERY: lowering it below
+        # the longest run plus its time held in a worker re-runs live work. Worker
+        # loss is recovered in minutes WITHOUT it: transcription stages hold an app
+        # lease and the orphan reaper (app/core/broker_orphans.py) returns a dead
+        # holder's message to the head of its queue as soon as the lease lapses. This
+        # timeout is only the backstop for acks_late tasks that hold no lease.
         "visibility_timeout": int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")),
+        # Dead-connection detection — see _REDIS_SOCKET_TIMEOUT above (issue #1144).
+        "socket_keepalive": True,
+        "socket_keepalive_options": _REDIS_KEEPALIVE_OPTIONS,
+        "socket_timeout": _REDIS_SOCKET_TIMEOUT,
+        "socket_connect_timeout": _REDIS_CONNECT_TIMEOUT,
+        "health_check_interval": _REDIS_HEALTH_CHECK_INTERVAL,
+        # Deliberately False for the BROKER (the result backend below sets it True).
+        # It gives every redis-py connection Retry(NoBackoff(), 1), and that one retry
+        # swallows the ConnectionError a dead fanout/pubsub socket raises: redis-py
+        # reconnects and re-issues PubSub.parse_response(block=True), which reads with
+        # timeout=None by design — so the main loop wedges again, now waiting on a
+        # healthy socket for a broadcast that may never come. Reproduced with py-spy.
+        # Letting the error reach kombu makes the consumer rebuild its connection.
+        "retry_on_timeout": False,
     },
     task_routes={
         # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
@@ -309,6 +464,7 @@ celery_app.conf.update(
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},
+        "media.create_playback_rendition": {"queue": CeleryQueues.CPU},
         "analytics.analyze_transcript": {"queue": CeleryQueues.CPU},
         "detect_speaker_attributes": {"queue": CeleryQueues.CPU},
         "migrate_speaker_attributes": {"queue": CeleryQueues.CPU},
@@ -378,6 +534,8 @@ celery_app.conf.update(
         "system.startup_recovery": {"queue": CeleryQueues.UTILITY},
         "system.recover_user_files": {"queue": CeleryQueues.UTILITY},
         "system.health_check": {"queue": CeleryQueues.UTILITY},
+        "system.reclaim_lost_tasks": {"queue": CeleryQueues.UTILITY},
+        "system.reclaim_orphaned_deliveries": {"queue": CeleryQueues.UTILITY},
         "cleanup_expired_files": {"queue": CeleryQueues.UTILITY},
         "cleanup.run_periodic_cleanup": {"queue": CeleryQueues.UTILITY},
         "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
@@ -422,6 +580,20 @@ celery_app.conf.update(
         "periodic-health-check": {
             "task": "system.health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
+            "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
+        },
+        # Requeues transcription stages a dead worker took with it (app/core/broker_orphans.py).
+        # A plain interval, not a crontab, so it can run more often than once a minute.
+        "reclaim-orphaned-deliveries": {
+            "task": "system.reclaim_orphaned_deliveries",
+            "schedule": float(task_recovery_config.BROKER_ORPHAN_SWEEP_INTERVAL),
+            "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
+        },
+        # Replays idempotent tasks whose worker died mid-run (issue #1067). Cheap when
+        # nothing is lost: one HGETALL of the replay records plus one MGET of heartbeats.
+        "reclaim-lost-tasks": {
+            "task": "system.reclaim_lost_tasks",
+            "schedule": crontab(minute="*/2"),
             "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
         },
         "search-index-maintenance": {
@@ -594,14 +766,39 @@ def configure_celery_logging(**kwargs):
 # for the duration of the task (reset in close_session_after_task below). Tasks
 # that spawn sub-tasks propagate automatically — publish happens inside the
 # task context, so before_task_publish re-reads the now-set ContextVar.
+#
+# The same handler stamps the publish time the queue-wait metrics read (issue #1172,
+# app/core/queue_wait.py). One receiver for both: they are two headers on the same message.
 @before_task_publish.connect
 def inject_request_id_header(headers=None, **kwargs):
-    """Stamp the current request_id onto outgoing task headers (no-op if empty)."""
+    """Stamp the request_id (if any) and the publish time onto outgoing task headers."""
+    from app.core.queue_wait import stamp_published_at
     from app.middleware.audit import get_request_id
 
+    stamp_published_at(headers)
     request_id = get_request_id()
     if request_id and headers is not None:
         headers["request_id"] = request_id
+
+
+@task_prerun.connect
+def record_replayable_task(task=None, task_id=None, args=None, kwargs=None, **_):
+    """Record an idempotent task so it can be replayed if its worker dies (issue #1067)."""
+    if task is None or task_id is None:
+        return
+    from app.core.task_replay import on_task_start
+
+    on_task_start(task, task_id, args, kwargs)
+
+
+@task_postrun.connect
+def clear_replayable_task(task=None, task_id=None, **_):
+    """The run ended, whatever its outcome, so it no longer needs replaying."""
+    if task is None or task_id is None:
+        return
+    from app.core.task_replay import on_task_end
+
+    on_task_end(task, task_id)
 
 
 @task_prerun.connect
@@ -666,6 +863,48 @@ def publish_hf_token_to_environment() -> bool:
     return True
 
 
+def _pool_concurrency() -> int:
+    """Best-effort prefork concurrency of this worker, from its own argv/env."""
+    import sys
+
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg.startswith("--concurrency="):
+            value = arg.split("=", 1)[1]
+        elif arg in ("--concurrency", "-c") and i + 1 < len(argv):
+            value = argv[i + 1]
+        else:
+            continue
+        try:
+            return max(1, int(value))
+        except ValueError:
+            break
+    return max(1, _int_env("CELERY_WORKER_CONCURRENCY", 1))
+
+
+def _cap_torch_threads_to_cpu_quota() -> None:
+    """Divide the container CPU quota across prefork children for torch intra-op threads.
+
+    Without this every child defaults to one thread per HOST core. Cheap and I/O-free:
+    torch is only touched if something already imported it (never imported here), and an
+    explicit OMP_NUM_THREADS / TORCH_NUM_THREADS wins.
+    """
+    import sys
+
+    torch_mod = sys.modules.get("torch")
+    if torch_mod is None or os.getenv("OMP_NUM_THREADS") or os.getenv("TORCH_NUM_THREADS"):
+        return
+    from app.utils.cpu_budget import effective_cpu_count
+
+    threads = max(1, effective_cpu_count() // _pool_concurrency())
+    try:
+        torch_mod.set_num_threads(threads)
+    except Exception as exc:  # noqa: BLE001 - never block fork init
+        logger.debug("Could not cap torch threads: %s", exc)
+        return
+    logger.info("torch intra-op threads set to %d (CPU quota / pool concurrency)", threads)
+
+
 # Signal handlers for proper database connection management
 @worker_process_init.connect
 def init_worker_process(**kwargs):
@@ -707,6 +946,8 @@ def init_worker_process(**kwargs):
 
     engine.dispose()
 
+    _cap_torch_threads_to_cpu_quota()
+
     logger.info(
         "Celery fork init finished (pid=%s, elapsed=%.3fs)", pid, time.monotonic() - started
     )
@@ -734,15 +975,26 @@ def warn_inert_max_tasks_per_child(**kwargs):
     argv = " ".join(sys.argv)
     if "--pool=threads" not in argv and os.getenv("GPU_WORKER_POOL", "threads") != "threads":
         return
-    if "--max-tasks-per-child" not in argv:
-        return
 
+    memory_limit = celery_app.conf.worker_max_memory_per_child
+    if "--max-memory-per-child" in argv or memory_limit:
+        logger.warning(
+            "A max-memory-per-child limit (%s) is set but this worker uses the threads pool, "
+            "where Celery IGNORES it — there is no worker recycling on memory growth. "
+            "Set GPU_WORKER_POOL=prefork if you need recycling (models reload per task).",
+            memory_limit or "CLI flag",
+        )
+
+    configured = 0
+    if "--max-tasks-per-child" in argv:
+        try:
+            configured = int(argv.split("--max-tasks-per-child=")[1].split()[0])
+        except (IndexError, ValueError):
+            configured = 0
+    else:
+        configured = int(celery_app.conf.worker_max_tasks_per_child or 0)
     # A deliberately huge value means "never recycle" and is not a misconfiguration.
-    try:
-        configured = int(argv.split("--max-tasks-per-child=")[1].split()[0])
-    except (IndexError, ValueError):
-        return
-    if configured >= 10000:
+    if configured <= 0 or configured >= 10000:
         return
 
     logger.warning(
@@ -751,6 +1003,57 @@ def warn_inert_max_tasks_per_child(**kwargs):
         "Set GPU_WORKER_POOL=prefork if you need recycling (models reload per task).",
         configured,
     )
+
+
+def _pool_is_threads() -> bool:
+    """Whether this worker runs celery's threads pool, from its argv (or GPU_WORKER_POOL)."""
+    import sys
+
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg.startswith("--pool="):
+            return arg.split("=", 1)[1] == "threads"
+        if arg in ("--pool", "-P") and i + 1 < len(argv):
+            return argv[i + 1] == "threads"
+    return os.getenv("GPU_WORKER_POOL", "threads") == "threads"
+
+
+def reconcile_gpu_concurrent_requests() -> None:
+    """Keep a GPU worker's engine slots in step with its thread count (issue #1072).
+
+    ``celery --pool=threads --concurrency=N`` runs N transcriptions at once in this process;
+    ``GPU_CONCURRENT_REQUESTS`` sets CTranslate2's ``num_workers`` and switches the stage
+    logic between single-request and concurrent behaviour. Left at 1 with N > 1, all N
+    threads queue on one CTranslate2 worker (Whisper is serialised) while every stage acts
+    as if it had the card to itself.
+
+    Unset on a GPU threads worker -> default it to the pool concurrency. Set and different
+    -> one WARNING naming both; the operator's value is kept. Prefork is left alone: each
+    child there loads its own models, so engine slots are per process by construction.
+    """
+    if os.environ.get("PRELOAD_GPU_MODELS", "").lower() != "true" or not _pool_is_threads():
+        return
+    threads = _pool_concurrency()
+    configured = os.environ.get("GPU_CONCURRENT_REQUESTS", "").strip()
+    if not configured:
+        os.environ["GPU_CONCURRENT_REQUESTS"] = str(threads)
+        logger.info(
+            "GPU_CONCURRENT_REQUESTS unset; matched to the worker's thread concurrency (%d)",
+            threads,
+        )
+        return
+    from app.transcription.config import TranscriptionConfig
+
+    slots = TranscriptionConfig._resolve_concurrent_requests()
+    if slots != threads:
+        logger.warning(
+            "GPU_CONCURRENT_REQUESTS=%s gives %d engine slot(s) but this worker runs "
+            "--concurrency=%d threads. Set them to the same value: fewer slots than threads "
+            "serialises Whisper, more slots than threads loads CTranslate2 workers nothing uses.",
+            configured,
+            slots,
+            threads,
+        )
 
 
 # Wall-clock bound on the CPU-lightweight Whisper warm-up (issue #631). Matched to
@@ -788,13 +1091,20 @@ def preload_models(**kwargs):
         if is_gpu_worker:
             from app.transcription.config import TranscriptionConfig
 
+            # Before the config is built: it reads GPU_CONCURRENT_REQUESTS, which sets
+            # CTranslate2's num_workers at load time (issue #1072).
+            reconcile_gpu_concurrent_requests()
             config = TranscriptionConfig.from_environment()
             if config.device == "cuda":
                 import torch
 
+                from app.transcription import vram_budget
                 from app.transcription.model_manager import ModelManager
 
                 ModelManager.get_instance().ensure_models_loaded(config)
+                # Measure the card now that the models are resident, so their footprint
+                # (and anything else sharing the GPU) is outside the admission budget.
+                vram_budget.configure_from_device(config.device_index)
 
                 # Enable TF32 AFTER model loading. PyAnnote's fix_reproducibility()
                 # disables TF32 during Pipeline.from_pretrained(). Re-enabling here
@@ -1020,6 +1330,10 @@ def release_gpu_resources_on_worker_shutdown(**kwargs):
     from app.core.worker_shutdown import release_worker_resources
 
     release_worker_resources()
+
+
+# Issue #1161: per-task counters and run times, served on WORKER_METRICS_PORT when set.
+worker_metrics.connect_signals()
 
 
 @worker_process_shutdown.connect

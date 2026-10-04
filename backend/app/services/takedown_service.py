@@ -45,6 +45,7 @@ import uuid as uuid_pkg
 from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
@@ -70,7 +71,11 @@ OWNER_TAKEDOWN_EVENT = "file_takedown"
 OWNER_RELEASE_EVENT = "file_takedown_released"
 
 
-def exclude_quarantined(query: Query, *, include_quarantined: bool = False) -> Query:
+# Generic so a column-projecting RowReturningQuery keeps its row type through the
+# optional filter instead of being widened to a plain Query.
+def exclude_quarantined[QueryT: Query[Any]](
+    query: QueryT, *, include_quarantined: bool = False
+) -> QueryT:
     """Drop quarantined (taken-down) files from a ``MediaFile`` query.
 
     The list/gallery/search read paths call this so a taken-down file never
@@ -483,6 +488,18 @@ def quarantine_file(
             logger.warning(
                 f"Presigned-URL revocation tag failed for file {file.id}'s thumbnail: {e}"
             )
+    # The playback rendition is the same media in another codec, so an already-minted
+    # URL for it must die with the original's. It is not put under legal hold: it is a
+    # regenerable copy, and the original is the evidentiary one.
+    if file.playback_path:
+        try:
+            from app.services.minio_service import set_object_quarantine_tag
+
+            set_object_quarantine_tag(str(file.playback_path), True)
+        except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
+            logger.warning(
+                f"Presigned-URL revocation tag failed for file {file.id}'s playback rendition: {e}"
+            )
 
     # Non-persisted (not a DB column — see the TYPE_CHECKING-only declaration on
     # MediaFile): the admin quarantine endpoint reads this off the returned object
@@ -594,6 +611,11 @@ def release_file(
         logger.error(
             f"Presign-tag clear FAILED after {_PRESIGN_UNTAG_RETRIES} attempts for file "
             f"{file.id}'s ({file.uuid}) thumbnail."
+        )
+    if file.playback_path and not _untag_quarantine_with_retry(str(file.playback_path)):
+        logger.error(
+            f"Presign-tag clear FAILED after {_PRESIGN_UNTAG_RETRIES} attempts for file "
+            f"{file.id}'s ({file.uuid}) playback rendition — it will not play until retried."
         )
 
     # Non-persisted (not a DB column — see the TYPE_CHECKING-only declaration on

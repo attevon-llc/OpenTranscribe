@@ -113,6 +113,33 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     return CeleryQueues.CPU if mode.strip().lower() == "lite" else CeleryQueues.GPU
 
 
+# Speaker re-clustering runs its similarity matrix on CUDA only once a tenant
+# partition has at least this many speakers (benchmarked: larger sets are faster on
+# the GPU; smaller ones pay a ~1.4 GB CUDA context for nothing). Read by BOTH
+# SpeakerClusteringService._compute_similarity_groups (device choice) and
+# speaker_clustering_queue() (queue choice) so the two cannot drift (issue #1083).
+# Both read it as a module attribute at call time, never via `from ... import`.
+SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS = 500
+
+
+def speaker_clustering_queue(largest_partition: int, deployment_mode: str | None = None) -> str:
+    """Queue for a speaker re-cluster whose largest tenant partition has this many speakers.
+
+    Below the GPU threshold the clustering math runs on CPU wherever it lands, so
+    publishing it to ``gpu`` only added latency and, on a deployment whose GPU
+    workers scale to zero, forced a GPU cold start for an interactive click
+    (issue #1083). At or above it the work is routed like any other GPU-preferred
+    task (``gpu`` in a full deployment, ``cpu`` in lite).
+
+    The dispatcher passes the queue explicitly; the static ``task_routes`` entry
+    (``GPU_PREFERRED_TASKS`` in ``core/celery.py``) is only the fallback for a
+    publisher that does not.
+    """
+    if largest_partition >= SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS:
+        return gpu_preferred_queue(deployment_mode)
+    return CeleryQueues.CPU
+
+
 def gpu_split_enabled() -> bool:
     """Whether THIS process's environment ASKS FOR the gpu-split topology.
 
@@ -148,6 +175,10 @@ class GPUPriority:
 
     INTERACTIVE = 0  # User action awaiting instant feedback (~5s), e.g. speaker drag
     NEAR_REALTIME = 1  # User action with response in <30s, e.g. manual embedding re-extract
+    # An automatic retry of a transcription interrupted by the infrastructure (worker lost,
+    # OOM, a lost connection). Ahead of USER_IMPORT so a requeued file keeps its place in
+    # front of submissions that arrived after it, instead of going to the back of the line.
+    TRANSCRIPTION_RETRY = 2
     USER_IMPORT = 3  # User-submitted transcription/import (~5-60min)
     USER_REDIARIZ = 4  # User-triggered re-diarization of an existing file (~5-30min)
     USER_RECLUSTER = 5  # User-triggered full speaker re-clustering (~5-15min)
@@ -157,6 +188,9 @@ class GPUPriority:
 class CPUPriority:
     """CPU queue (concurrency=8). Controls ordering when all workers are busy."""
 
+    # The CPU stages of an automatically retried transcription; see
+    # GPUPriority.TRANSCRIPTION_RETRY for why a retry runs ahead of new submissions.
+    PIPELINE_RETRY = 1
     PIPELINE_CRITICAL = 2  # Completes the import pipeline the user is watching
     #                        e.g. waveform, thumbnail, post-transcription clustering
     USER_TRIGGERED = 4  # Explicit user action outside the import pipeline
@@ -243,6 +277,9 @@ else:
 
 # File upload constants
 UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads
+# Speaker-profile avatar ceiling. Enforced while the body streams by
+# app/middleware/upload_limit.py and again on the parsed file by the endpoint.
+MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
 MAX_FILENAME_LENGTH = 255
 DEFAULT_FILE_NAME = "unnamed_file"
 
@@ -256,6 +293,11 @@ THUMBNAIL_FORMAT = "webp"  # Primary format
 SPEAKER_CONFIDENCE_HIGH = 0.75  # Auto-accept (green)
 SPEAKER_CONFIDENCE_MEDIUM = 0.50  # Requires validation (yellow)
 SPEAKER_CONFIDENCE_LOW = 0.0  # Requires user input (red)
+
+# Per-dependency bound for the /health/ready checks (issue #1000). Library defaults
+# (no Redis socket timeout, minio-py's 300 s + 5 retries) let one slow dependency
+# outlast the prober's own timeout and pull a healthy instance from service.
+DEPENDENCY_PROBE_TIMEOUT_SECONDS = 2.0
 
 # Cache control settings
 CACHE_CONTROL_MEDIA_MAX_AGE = 86400  # 1 day for media files
@@ -1471,6 +1513,27 @@ DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
 # the real mount, found nothing, and silently fell back to MinIO with no log distinguishing the
 # two cases — the exact per-job re-serialization cost this shared-volume path exists to avoid.
 ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
+
+# pyannoteAI's diarization model for its cloud diarization and STT-orchestration APIs.
+# precision-2 is deprecated by the vendor on 2026-10-17 (#1153); precision-3 replaces it
+# and, like precision-2, supports transcription (community-1 does not).
+PYANNOTE_DEFAULT_DIARIZATION_MODEL = "precision-3"
+
+
+def engine_shared_volume_enabled() -> bool:
+    """Whether preprocess hands the WAV to the GPU task through the shared volume (#1151).
+
+    ``ENGINE_SHARED_VOLUME_ENABLED`` decides when set. Unset, it follows
+    ``PIPELINE_SCRATCH_SHARED``: a deployment that has declared its workers do not share a
+    filesystem cannot share this directory either. Both default to on, so a single-host
+    deployment keeps the fast path. Off, the GPU task always downloads the WAV from object
+    storage — the right behaviour when preprocess and GPU workers run on different nodes,
+    where a written WAV is never readable by the GPU worker and never cleaned up by anyone.
+    """
+    explicit = _os.environ.get("ENGINE_SHARED_VOLUME_ENABLED", "").strip().lower()
+    if explicit:
+        return explicit != "false"
+    return _os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
 
 
 def resolve_engine_shared_volume_path() -> str:

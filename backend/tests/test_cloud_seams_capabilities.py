@@ -82,12 +82,17 @@ class TestCapabilities:
         assert caps["organizations"] is False
 
     def test_resolver_override_and_reset(self):
-        set_capability_resolver(lambda _req: {"watch_sources": False, "billing": True})
+        set_capability_resolver(
+            lambda _req: {**COMMUNITY_CAPABILITIES, "watch_sources": False, "billing": True}
+        )
         caps = get_capabilities()
         assert caps["watch_sources"] is False
         assert caps["billing"] is True
-        # Partial resolvers can't accidentally disable unconsidered surfaces
         assert caps["engine.settings"] is True
+        # A key the resolver omits is denied, not defaulted (#868) — see
+        # tests/unit/test_capability_fail_closed.py for the full contract.
+        set_capability_resolver(lambda _req: {"billing": True})
+        assert get_capabilities()["engine.settings"] is False
 
         reset_capability_resolver()
         assert get_capabilities() == COMMUNITY_CAPABILITIES
@@ -149,6 +154,7 @@ class TestRouterGating:
     def test_cloud_resolver_hides_gated_routers(self, client):
         set_capability_resolver(
             lambda _req: {
+                **COMMUNITY_CAPABILITIES,
                 "watch_sources": False,
                 "asr.user_providers": False,
                 "engine.settings": False,

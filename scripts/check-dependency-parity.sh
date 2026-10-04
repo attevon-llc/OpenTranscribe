@@ -19,7 +19,7 @@
 # lock file plus its generator script: with one pinned requirements file per environment,
 # installed by both the container and the venv, there is no second artefact to disagree.
 #
-# Read-only. Reads `pip freeze` from a running container; changes nothing anywhere.
+# Read-only. Reads the installed distributions from a running container; changes nothing anywhere.
 
 set -uo pipefail
 
@@ -43,11 +43,12 @@ if [[ ! -x "${VENV_PIP}" ]]; then
 fi
 
 echo "Comparing backend/venv against container '${container}'..."
-docker exec "${container}" pip freeze --all 2>/dev/null | sort > /tmp/ot-parity-image.txt
+# The image ships no pip, so read the installed distributions from the interpreter itself.
+docker exec "${container}" python -c 'import importlib.metadata as m; print("\n".join(d.metadata["Name"] + "==" + d.version for d in m.distributions()))' 2>/dev/null | sort > /tmp/ot-parity-image.txt
 "${VENV_PIP}" freeze --all 2>/dev/null | sort > /tmp/ot-parity-venv.txt
 
 if [[ ! -s /tmp/ot-parity-image.txt ]]; then
-    echo "FAIL: could not read 'pip freeze' from ${container}."
+    echo "FAIL: could not read installed packages from ${container}."
     exit 1
 fi
 

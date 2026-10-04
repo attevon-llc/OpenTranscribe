@@ -22,18 +22,24 @@ from sqlalchemy.orm import Session
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.permission_service import file_ids_in_scope
 
 logger = logging.getLogger(__name__)
 
 
-def _clear_profile_embedding_from_opensearch(profile_id: int) -> None:
-    """Clear a profile embedding from OpenSearch."""
+def _clear_profile_embedding_from_opensearch(profile_uuid: str) -> None:
+    """Clear a profile embedding from OpenSearch.
+
+    Keyed by UUID: the document id is ``profile_<uuid>``. This took the integer id
+    once, which matched no document, so a profile left with no speakers kept its
+    averaged voiceprint indexed.
+    """
     try:
         from app.services.opensearch_service import remove_profile_embedding
 
-        remove_profile_embedding(str(profile_id))
+        remove_profile_embedding(profile_uuid)
     except Exception as e:
-        logger.warning(f"Could not clear profile {profile_id} embedding from OpenSearch: {e}")
+        logger.warning(f"Could not clear profile {profile_uuid} embedding from OpenSearch: {e}")
 
 
 def _store_profile_embedding_to_opensearch(
@@ -97,7 +103,7 @@ def _process_profile_with_no_speakers(
     """Handle case when profile has no speakers assigned."""
     profile.embedding_count = 0  # type: ignore[assignment]
     profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
-    _clear_profile_embedding_from_opensearch(profile_id)
+    _clear_profile_embedding_from_opensearch(str(profile.uuid))
     return True
 
 
@@ -323,8 +329,17 @@ class ProfileEmbeddingService:
                 logger.error(f"Profile {profile_id} not found")
                 return False
 
-            # Get all speakers assigned to this profile
-            speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
+            # Get the speakers assigned to this profile whose file is of the
+            # profile's tenant — a speaker linked across tenants never shapes the
+            # voiceprint (NULL-safe: personal profile <-> personal files).
+            speakers = (
+                db.query(Speaker)
+                .filter(
+                    Speaker.profile_id == profile_id,
+                    Speaker.media_file_id.in_(file_ids_in_scope(profile.organization_id)),
+                )
+                .all()
+            )
 
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")

@@ -729,8 +729,14 @@
         removeFilesSmooth(successfulIds);
       }
 
-      if (failed.length > 0) {
-        toastStore.error($t('gallery.deleteFailed', { count: failed.length }));
+      // Files the caller may see but not delete (not the owner, not an org admin).
+      const forbidden = failed.filter((r: any) => r.error === 'FORBIDDEN');
+      const otherFailed = failed.length - forbidden.length;
+      if (forbidden.length > 0) {
+        toastStore.error($t('gallery.deleteForbidden', { count: forbidden.length }));
+      }
+      if (otherFailed > 0) {
+        toastStore.error($t('gallery.deleteFailed', { count: otherFailed }));
       }
 
       clearSelection();

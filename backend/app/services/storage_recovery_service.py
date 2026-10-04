@@ -44,6 +44,7 @@ from app.core.config import settings
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ def content_type_for(object_name: str) -> str:
     if ext in _CONTENT_TYPE_BY_EXT:
         return _CONTENT_TYPE_BY_EXT[ext]
     guessed, _ = mimetypes.guess_type(object_name)
-    return guessed or "application/octet-stream"
+    return normalize_media_content_type(guessed) or "application/octet-stream"
 
 
 def resolve_user(db: Session, user_email: str) -> User:

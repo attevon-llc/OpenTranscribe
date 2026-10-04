@@ -54,6 +54,13 @@ class ExternalIdentity:
     is_admin: bool = False
     email_verified: bool = False
     raw_claims: dict[str, Any] = field(default_factory=dict)
+    #: When the person actually authenticated at the provider (epoch seconds; the
+    #: OIDC ``auth_time`` claim). NOT the token's ``iat``: a silently refreshed
+    #: token is re-minted continuously, so its ``iat`` is always recent. Used by
+    #: ``auth.external_session`` to apply SESSION_ABSOLUTE_TIMEOUT_MINUTES. When
+    #: None, ``raw_claims["auth_time"]`` is consulted; when that is absent too, the
+    #: absolute timeout is not enforced server-side for this provider.
+    auth_time: int | None = None
 
 
 class TokenVerifier(Protocol):

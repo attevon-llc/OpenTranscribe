@@ -91,6 +91,7 @@ const sidebars: SidebarsConfig = {
         'configuration/nginx-setup',
         'configuration/neural-search-setup',
         'configuration/embedding-migration',
+        'configuration/password-policy',
       ],
     },
     {

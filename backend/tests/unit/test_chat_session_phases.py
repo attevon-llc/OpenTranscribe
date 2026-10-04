@@ -185,7 +185,9 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
     monkeypatch.setattr(
         chat_service,
         "_resolve_output_policy",
-        lambda _user_id: SimpleNamespace(enabled=False, enabled_categories=set()),
+        lambda _user_id, _organization_id=None: SimpleNamespace(
+            enabled=False, enabled_categories=set()
+        ),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 
@@ -373,7 +375,9 @@ async def _run_fanout_turn(monkeypatch) -> tuple[_Ledger, dict]:
     monkeypatch.setattr(
         chat_service,
         "_resolve_output_policy",
-        lambda _user_id: SimpleNamespace(enabled=False, enabled_categories=set()),
+        lambda _user_id, _organization_id=None: SimpleNamespace(
+            enabled=False, enabled_categories=set()
+        ),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

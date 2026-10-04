@@ -341,7 +341,7 @@ def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
     # itself is exercised again (that is every other test in this module).
     monkeypatch.setattr(
         "app.services.redaction.config.resolve_effective_config",
-        lambda db, user_id: SimpleNamespace(
+        lambda db, user_id, organization_id=None: SimpleNamespace(
             enabled=False,
             redact_before_llm=False,
             redact_before_llm_locked=False,

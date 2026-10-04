@@ -7,6 +7,7 @@
   whole history.
 -->
 <script lang="ts">
+  import { CHAT_GROUP_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { isThisMonth, isThisWeek, isToday, isYesterday, parseISO } from 'date-fns';
   import { t } from '$stores/locale';
@@ -238,7 +239,7 @@
 
     {#each grouped as group (group.key)}
       <div class="group">
-        <h2 class="group-label">{$t(`chat.groups.${group.key}`)}</h2>
+        <h2 class="group-label">{$t(CHAT_GROUP_KEYS[group.key])}</h2>
         <ul>
           {#each group.items as conversation (conversation.uuid)}
             <ConversationListItem

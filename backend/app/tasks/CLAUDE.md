@@ -109,6 +109,38 @@ indexing → WebSocket notification.
     The id being revoked had never belonged to a celery message anywhere. Don't "restore" it.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
+  ⚠️ **A transcription's Task row is created at DISPATCH, so neither its age nor "last
+  touched before this process started" says it is dead** (issue #1020 — both failed or
+  duplicated runs that were only waiting for a GPU worker). Its liveness is
+  `core/task_liveness.py`: a queued marker (set by `dispatch.py`, re-armed when a stage
+  returns) and a heartbeat (`run_heartbeat`, wrapped around every executing stage). Only a
+  run with neither is recovered, an unreadable Redis means "unknown, do nothing", and the
+  duration budget runs from the heartbeat's start. Any code that fails a transcription on
+  recovery's behalf calls `supersede_run`, and every stage calls
+  `transcription/run_ownership.py` first, so a stale message stands down instead of
+  resurrecting its failed row. Other task types create their row when they start and keep
+  the older checks.
+  **Every** pipeline stage (preprocess, GPU/CPU transcribe, diarize, finalize) holds the run's
+  lease (`run_heartbeat`) for its whole body — a stage without one is invisible to recovery.
+- **ONE retry policy: `services/transcription_retry.py`.** Every way a run ends early goes
+  through it — a stage that raised (`_handle_transcription_failure`, preprocess's
+  `_mark_pipeline_error`), a worker that died (`core/broker_orphans.py` reaper, and the health
+  check's `recover_stuck_task`). Don't add a parallel path. Two classes:
+  **permanent** (`ErrorCategory.INVALID_MEDIA` — set by `classify_failure` from an input-shaped
+  user reason; also `PRIVATE_OR_REMOVED`, `FILE_TOO_LARGE`, `USER_CANCELLED`,
+  `RETRIES_EXHAUSTED`) fails fast, never retried; **transient** (everything in
+  `RETRIABLE_CATEGORIES`, including UNKNOWN) is requeued with backoff + jitter until the admin
+  retry limit, then ERROR with `RETRIES_EXHAUSTED`. Worker loss spends a SEPARATE per-file
+  budget (`TRANSCRIPTION_MAX_INFRA_REQUEUES`, a Redis sorted set), never `retry_count`.
+  ⚠️ Never fail a transcription Task row with `update_task_status` on a recovery path: its
+  aggregate turned the still-PROCESSING file ERROR (or COMPLETED, with an older completed
+  sibling task) before any retry branch could see it — that is how worker restarts under load
+  ended 84 of 418 files in ERROR. `transcription_retry._retire_run` sets the row directly.
+- **Retries keep their place.** `dispatch_transcription_pipeline(retry=True)` publishes every
+  stage at `CPUPriority.PIPELINE_RETRY` / `GPUPriority.TRANSCRIPTION_RETRY` (ahead of new
+  submissions); the reaper and `requeue_after_abort` restore the exact stage to the HEAD of
+  its priority list. A plain `Reject(requeue=True)` LPUSHes to the BACK — it is only the
+  fallback when the message can't be found.
 - `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
   Finishes GDPR Art. 17 erasures that a legal hold deferred, and re-erases subjects a
   backup restore brought back. `takedown_service.release_file` calls its
@@ -289,7 +321,9 @@ A structural "does it call session_scope" test is not enough.
   used to be unset, so `acks_late=True` transcription tasks (`core.py`, `preprocess.py`,
   `postprocess.py`) running past one hour were redelivered to another worker and transcribed
   twice — fixed, single source of truth is `core/celery.py`. Raising a file-length limit still
-  needs this value to stay above the longest job it enables.
+  needs this value to stay above the longest job it enables. It is NOT how a dead worker's
+  stage comes back any more (the orphan reaper does that in minutes) — so never lower it to
+  speed recovery up; it applies to every acks_late task, alive or not.
 - **Model loading is per-worker and must not leak across queues.** `PRELOAD_GPU_MODELS=true`
   only on the GPU workers; `PRELOAD_REDACTION_MODELS=true` only on `celery-redaction`
   (dedicated CPU service owning the `redaction` queue, run under `nice`). Importing a

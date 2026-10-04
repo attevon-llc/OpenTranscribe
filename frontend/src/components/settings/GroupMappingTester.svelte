@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { GROUP_MAPPING_ROLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -124,9 +125,7 @@
       <div class="result-row">
         <span class="result-label">{$t('settings.groupMappings.test.effectiveRole')}</span>
         <Badge variant={result.effective_role === 'admin' ? 'warning' : 'default'}>
-          {$t(`settings.groupMappings.role.${result.effective_role}`, {
-            defaultValue: result.effective_role
-          })}
+          {labelFor($t, GROUP_MAPPING_ROLE_KEYS, result.effective_role)}
         </Badge>
       </div>
 
@@ -174,7 +173,7 @@
       {#if result.grants_role}
         <p class="result-note">
           {$t('settings.groupMappings.test.roleFromMapping', {
-            role: $t(`settings.groupMappings.role.${result.grants_role}`)
+            role: labelFor($t, GROUP_MAPPING_ROLE_KEYS, result.grants_role)
           })}
         </p>
       {/if}

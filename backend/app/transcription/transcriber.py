@@ -7,11 +7,15 @@ word_timestamps off in its batched pipeline.
 """
 
 import logging
+import os
 import time
 from typing import Any
 
 import numpy as np
 
+from app.core import stage_timing
+from app.transcription import cuda_health
+from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 
 logger = logging.getLogger(__name__)
@@ -160,6 +164,85 @@ def _interpolate_low_confidence_words(words: list[dict], seg_start: float, seg_e
             words[j]["end"] = left_time + (offset + 1) * step
 
 
+#: Per-process count of OOM backoffs by stage, for the log line (issue #1081).
+_OOM_BACKOFFS: dict[str, int] = {}
+
+
+def _max_oom_halvings() -> int:
+    raw = os.getenv("GPU_OOM_MAX_HALVINGS", "2").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 2
+
+
+def _collect_segments(segments_gen, audio_duration: float) -> tuple[list[dict], int]:
+    """Consume faster-whisper's segment generator (this is where decoding runs).
+
+    Converts each segment to a dict with validated word timestamps. ``audio_duration`` is
+    in seconds (16 kHz samples / 16000).
+    """
+    segments: list[dict] = []
+    total_words = 0
+    # Cooperative stand-down checkpoint (issues #809 + #823), resolved ONCE rather than
+    # per iteration — this is the decode hot loop. Imported here rather than at module
+    # scope because transcriber.py is imported by CPU-only workers too, and this
+    # keeps the shutdown machinery off their import path.
+    from app.core.task_cancellation import stand_down_if_requested
+
+    for seg in segments_gen:
+        # The only unbounded loop in the hot path, so checking here bounds stand-down
+        # latency to a single decode batch rather than to the whole file. This is also
+        # the ONLY checkpoint the CPU leg reaches once it is under way
+        # (transcribe_cpu_task runs the legacy TranscriptionPipeline, not the engine
+        # stages), so #823's cancel depends on it for that leg.
+        #
+        # The per-task cancel half polls Redis at most once every
+        # CANCEL_POLL_INTERVAL_S, not once per segment — see that constant's rationale.
+        stand_down_if_requested("transcriber.transcribe segment loop")
+
+        seg_start = max(float(seg.start), 0.0)
+        seg_end = min(float(seg.end), audio_duration)
+        if seg_end <= seg_start:
+            continue  # Skip invalid segments
+
+        words = []
+        if seg.words:
+            for w in seg.words:
+                word_start = max(float(w.start), seg_start)
+                word_end = min(float(w.end), seg_end)
+                if word_end <= word_start:
+                    word_end = min(word_start + 0.01, seg_end)
+                words.append(
+                    {
+                        "word": w.word,
+                        "start": word_start,
+                        "end": word_end,
+                        "probability": float(w.probability),
+                    }
+                )
+
+            # Timestamp sanity: enforce monotonicity and cap implausible durations
+            _validate_word_timestamps(words, seg_start, seg_end)
+
+            # Interpolate timestamps for low-confidence words (probability < 0.3)
+            # whose cross-attention DTW timestamps are unreliable
+            _interpolate_low_confidence_words(words, seg_start, seg_end)
+
+            total_words += len(words)
+
+        segments.append(
+            {
+                "text": seg.text.strip(),
+                "start": seg_start,
+                "end": seg_end,
+                "words": words,
+            }
+        )
+
+    return segments, total_words
+
+
 class Transcriber:
     """Faster-whisper BatchedInferencePipeline with native word timestamps."""
 
@@ -213,11 +296,26 @@ class Transcriber:
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: transcriber model loaded in {elapsed:.3f}s")
 
-    def transcribe(self, audio: np.ndarray) -> dict:
+    def transcribe(self, audio: np.ndarray, options: TranscriptionConfig | None = None) -> dict:
         """Batched transcription with word-level timestamps.
+
+        The decode options come from ``options``, the config of the task being processed:
+        language, translate, beam and batch size, VAD, accuracy settings and the custom
+        vocabulary. A worker shares one cached transcriber across tasks and threads, and
+        ``self.config`` is only the config its weights were loaded with, so a caller that
+        decodes a task must pass that task's config (issue #1117). Without ``options`` the
+        load config is used, which is right only for a transcriber built for one job.
+
+        On CUDA the decode first reserves its VRAM estimate from the worker's admission
+        budget (``vram_budget``), sized by the batch it is about to run. A CUDA OOM frees the
+        cached allocator memory, halves the batch and retries, at most
+        ``GPU_OOM_MAX_HALVINGS`` (default 2) times, before the error propagates (issue
+        #1081). The halved batch applies to this call only: the cached transcriber is
+        shared by every thread, so its configured batch size is left alone.
 
         Args:
             audio: Audio waveform as 16kHz mono float32 numpy array.
+            options: The task's config. Defaults to the load config.
 
         Returns:
             Dict with keys:
@@ -228,99 +326,104 @@ class Transcriber:
         if not self.is_loaded:
             raise RuntimeError("Transcriber model not loaded. Call load_model() first.")
 
+        opts = options if options is not None else self.config
+        batch_size = opts.batch_size
+        halvings_left = _max_oom_halvings()
+        while True:
+            try:
+                with vram_budget.admit(
+                    "asr",
+                    device=self.config.device,
+                    batch_size=batch_size,
+                    device_index=self.config.device_index,
+                ):
+                    return self._transcribe_once(audio, batch_size, opts)
+            except Exception as exc:
+                if (
+                    self.config.device != "cuda"
+                    or halvings_left <= 0
+                    or batch_size <= 1
+                    or not self._is_memory_pressure(exc)
+                ):
+                    raise
+                smaller = max(1, batch_size // 2)
+                halvings_left -= 1
+                _OOM_BACKOFFS["asr"] = _OOM_BACKOFFS.get("asr", 0) + 1
+                logger.warning(
+                    "CUDA OOM in Whisper decode; freeing cached VRAM and retrying with "
+                    "batch_size %d -> %d (%d halving(s) left, %d OOM backoffs this process)",
+                    batch_size,
+                    smaller,
+                    halvings_left,
+                    _OOM_BACKOFFS["asr"],
+                )
+                cuda_health.free_cached_vram()
+                batch_size = smaller
+
+    def _is_memory_pressure(self, exc: BaseException) -> bool:
+        """An OOM, or a context-looking CUDA error while the context is in fact healthy.
+
+        CTranslate2 reports some decodes that collide with an OOM as ``cudaErrorInvalidDevice``
+        (see ``cuda_health.cuda_context_healthy``). Backing those off like an OOM recovers
+        them; a genuinely broken context fails the probe and propagates, so the task layer
+        can take the worker out of service.
+        """
+        if cuda_health.is_cuda_oom(exc):
+            return True
+        return cuda_health.is_context_poisoned_error(exc) and cuda_health.cuda_context_healthy(
+            self.config.device_index
+        )
+
+    def _transcribe_once(
+        self, audio: np.ndarray, batch_size: int, opts: TranscriptionConfig
+    ) -> dict:
         step_start = time.perf_counter()
 
+        # Capabilities are those of the LOADED model, so the model name comes from the load
+        # config; the language and translate request come from this task.
         task, language = _resolve_task_and_language(
             self.config.model_name,
-            self.config.source_language,
-            self.config.translate_to_english,
+            opts.source_language,
+            opts.translate_to_english,
         )
+        terms = [t.strip() for t in (opts.vocabulary or ()) if t and t.strip()]
+        hotwords = ", ".join(terms) if terms else None
 
         logger.info(
             f"Transcribing: task={task}, language={language or 'auto'}, "
-            f"batch_size={self.config.batch_size}, beam_size={self.config.beam_size}"
+            f"batch_size={batch_size}, beam_size={opts.beam_size}, "
+            f"vocabulary_terms={len(terms)}"
         )
 
         assert self._pipeline is not None, "Pipeline not initialized"
         kwargs: dict = dict(
-            batch_size=self.config.batch_size,
+            batch_size=batch_size,
             word_timestamps=True,
-            beam_size=self.config.beam_size,
+            beam_size=opts.beam_size,
             task=task,
             language=language,
             vad_filter=True,
             vad_parameters={
-                "threshold": self.config.vad_threshold,
-                "min_silence_duration_ms": self.config.vad_min_silence_ms,
-                "min_speech_duration_ms": self.config.vad_min_speech_ms,
-                "speech_pad_ms": self.config.vad_speech_pad_ms,
+                "threshold": opts.vad_threshold,
+                "min_silence_duration_ms": opts.vad_min_silence_ms,
+                "min_speech_duration_ms": opts.vad_min_speech_ms,
+                "speech_pad_ms": opts.vad_speech_pad_ms,
             },
-            repetition_penalty=self.config.repetition_penalty,
+            repetition_penalty=opts.repetition_penalty,
+            # faster-whisper puts these in the decoder prompt (truncated to half the context);
+            # it is ignored when a prefix is set, and none is.
+            hotwords=hotwords,
         )
-        if self.config.hallucination_silence_threshold is not None:
-            kwargs["hallucination_silence_threshold"] = self.config.hallucination_silence_threshold
+        if opts.hallucination_silence_threshold is not None:
+            kwargs["hallucination_silence_threshold"] = opts.hallucination_silence_threshold
 
-        segments_gen, info = self._pipeline.transcribe(audio, **kwargs)
+        # faster-whisper's batched pipeline runs VAD and feature extraction here, before it
+        # returns; decoding happens as the generator below is consumed (#1134 stages).
+        with stage_timing.stage("vad"):
+            segments_gen, info = self._pipeline.transcribe(audio, **kwargs)
 
-        # Convert generator to list of dicts with timestamp validation
-        audio_duration = len(audio) / 16000  # 16kHz sample rate
-        segments = []
-        total_words = 0
-        # Cooperative stand-down checkpoint (issues #809 + #823), resolved ONCE rather than
-        # per iteration — this is the decode hot loop. Imported here rather than at module
-        # scope because transcriber.py is imported by CPU-only workers too, and this
-        # keeps the shutdown machinery off their import path.
-        from app.core.task_cancellation import stand_down_if_requested
-
-        for seg in segments_gen:
-            # The only unbounded loop in the hot path, so checking here bounds stand-down
-            # latency to a single decode batch rather than to the whole file. This is also
-            # the ONLY checkpoint the CPU leg reaches once it is under way
-            # (transcribe_cpu_task runs the legacy TranscriptionPipeline, not the engine
-            # stages), so #823's cancel depends on it for that leg.
-            #
-            # The per-task cancel half polls Redis at most once every
-            # CANCEL_POLL_INTERVAL_S, not once per segment — see that constant's rationale.
-            stand_down_if_requested("transcriber.transcribe segment loop")
-
-            seg_start = max(float(seg.start), 0.0)
-            seg_end = min(float(seg.end), audio_duration)
-            if seg_end <= seg_start:
-                continue  # Skip invalid segments
-
-            words = []
-            if seg.words:
-                for w in seg.words:
-                    word_start = max(float(w.start), seg_start)
-                    word_end = min(float(w.end), seg_end)
-                    if word_end <= word_start:
-                        word_end = min(word_start + 0.01, seg_end)
-                    words.append(
-                        {
-                            "word": w.word,
-                            "start": word_start,
-                            "end": word_end,
-                            "probability": float(w.probability),
-                        }
-                    )
-
-                # Timestamp sanity: enforce monotonicity and cap implausible durations
-                _validate_word_timestamps(words, seg_start, seg_end)
-
-                # Interpolate timestamps for low-confidence words (probability < 0.3)
-                # whose cross-attention DTW timestamps are unreliable
-                _interpolate_low_confidence_words(words, seg_start, seg_end)
-
-                total_words += len(words)
-
-            segments.append(
-                {
-                    "text": seg.text.strip(),
-                    "start": seg_start,
-                    "end": seg_end,
-                    "words": words,
-                }
-            )
+        with stage_timing.stage("asr"):
+            segments, total_words = _collect_segments(segments_gen, len(audio) / 16000)
 
         # CrisperWhisper's verbatim tokenizer emits comma-prefixed, punctuation-glued
         # word tokens with no internal spacing. Reshape them into the standard

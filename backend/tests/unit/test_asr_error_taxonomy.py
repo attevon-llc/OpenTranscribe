@@ -210,7 +210,6 @@ def _run_gpu_task_with_cloud_pipeline_raising(preprocess_context, error: Excepti
         patch.object(core_module, "_resolve_asr_provider_or_none", return_value=_FakeProvider()),
         patch.object(core_module, "_run_cloud_asr_pipeline", side_effect=error),
         patch.object(core_module, "update_task_status"),
-        patch.object(core_module, "_get_user_friendly_error_message", return_value="failed"),
         patch.object(core_module, "_handle_transcription_failure"),
         patch("tempfile.TemporaryDirectory") as mock_tmpdir,
         patch.object(task, "retry", side_effect=_fake_retry) as mock_retry,

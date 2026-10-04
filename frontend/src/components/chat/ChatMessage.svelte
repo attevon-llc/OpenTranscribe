@@ -14,13 +14,15 @@
   import ChatMessageMeta from './ChatMessageMeta.svelte';
   import ChatReasoning from './ChatReasoning.svelte';
   import ChatSources from './ChatSources.svelte';
-  import { formatLanguageNames, retryWaitLabel } from '$lib/utils/formatting';
+  import { formatLanguageNames } from '$lib/utils/formatting';
+  import { chatErrorMessageKey } from '$lib/utils/chatErrors';
   import type { ChatMessage } from '$lib/types/chat';
 
   export let message: ChatMessage;
   /** True for the newest assistant message (gets the regenerate affordance). */
   export let isLast = false;
   export let streaming = false;
+  export let retryBlocked = false;
 
   const dispatch = createEventDispatcher<{
     regenerate: void;
@@ -157,15 +159,8 @@
 
       {#if hasError}
         <p class="error-text" data-testid="chat-message-error">
-          {message.error || $t('chat.message.errorGeneric')}
+          {$t(chatErrorMessageKey(message.msg_metadata?.error_code))}
         </p>
-        {#if message.errorCode === 'rate_limited' && message.retryAfter}
-          <p class="error-retry-hint" data-testid="chat-message-retry-after">
-            {$t(retryWaitLabel(message.retryAfter).key, {
-              count: retryWaitLabel(message.retryAfter).count,
-            })}
-          </p>
-        {/if}
       {/if}
 
       {#if wasCancelled}
@@ -243,6 +238,7 @@
           type="button"
           class="action-btn"
           on:click={() => dispatch('regenerate')}
+          disabled={retryBlocked}
           title={$t('chat.message.regenerate')}
           aria-label={$t('chat.message.regenerate')}
           data-testid="chat-regenerate"
@@ -267,6 +263,7 @@
           type="button"
           class="action-btn"
           on:click={() => dispatch('retry')}
+          disabled={retryBlocked}
           data-testid="chat-retry"
         >
           {$t('chat.message.retry')}
@@ -317,12 +314,6 @@
     border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.25);
     color: var(--error-color, #dc3545);
     font-size: 0.85rem;
-  }
-
-  .error-retry-hint {
-    margin: 0.25rem 0 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
   }
 
   .context-warning {

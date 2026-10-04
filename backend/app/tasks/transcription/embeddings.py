@@ -9,6 +9,7 @@ import os
 import time
 from typing import Any
 
+from app.core import stage_timing
 from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import session_scope
 from app.services.speaker_matching_service import SpeakerMatchingService
@@ -62,6 +63,7 @@ def _wait_for_migration_lock_to_clear() -> None:
         )
 
 
+@stage_timing.stage("speaker_embedding")
 def _process_speaker_embeddings(
     ctx: TranscriptionContext, audio_file_path: str, processed_segments: list, speaker_mapping: dict
 ) -> None:
@@ -117,7 +119,9 @@ def _process_speaker_embeddings(
         # Compute accessible profiles for cross-user matching via shared collections
         from app.services.permission_service import PermissionService
 
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, ctx.user_id)
+        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(
+            db, ctx.user_id, ctx.file_id
+        )
 
         # ``embedding_service=None``: the embeddings arrive already aggregated
         # and normalized, which is the only thing the matching service used it
@@ -144,6 +148,7 @@ def _process_speaker_embeddings(
     )
 
 
+@stage_timing.stage("speaker_embedding")
 def _process_speaker_embeddings_native(
     ctx: TranscriptionContext,
     native_embeddings: dict,
@@ -186,7 +191,9 @@ def _process_speaker_embeddings_native(
         # Compute accessible profiles for cross-user matching via shared collections
         from app.services.permission_service import PermissionService
 
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, ctx.user_id)
+        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(
+            db, ctx.user_id, ctx.file_id
+        )
 
         matching_service = SpeakerMatchingService(db, embedding_service=None)
         logger.info(

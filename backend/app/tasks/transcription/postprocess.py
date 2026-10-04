@@ -16,10 +16,14 @@ import time
 
 import numpy as np
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import gpu_preferred_queue
+from app.core.task_liveness import clear_infra_requeues
+from app.core.task_liveness import clear_run_markers
+from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
@@ -28,6 +32,7 @@ from app.utils.websocket_notify import send_ws_event_for_file
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
+from .run_ownership import SUPERSEDED
 
 # How long to wait before folding the enrichment tail into the timing row. Long enough for
 # indexing, clustering, summary and redaction to finish on a normal file; the upsert merges,
@@ -50,6 +55,83 @@ logger = logging.getLogger(__name__)
     retry_jitter=True,
 )
 def finalize_transcription(self, gpu_result: dict) -> dict:
+    """Stage 3 of the pipeline: :func:`_finalize`, run under the run's lease.
+
+    Like every other stage it holds the run lease while it works, so a worker killed here is
+    noticed within one lease TTL (``app/core/broker_orphans.py``) instead of leaving the run
+    reading as "queued". Once the run is COMPLETED its liveness markers are dropped: nothing
+    of it is queued or running any more. A run still waiting on an asynchronous embedding
+    task stays handed back to the broker, as before.
+    """
+    task_id = gpu_result.get("task_id")
+    if not task_id or gpu_result.get("status") in _NO_WORK_STATUSES:
+        return _finalize(gpu_result)
+    with (
+        run_heartbeat(str(task_id)),
+        stage_timing.stage(
+            "postprocess", task_id=task_id, file_id=gpu_result.get("file_id")
+        ) as run,
+    ):
+        result = _finalize(gpu_result)
+        if result.get("status") != "success":
+            run.fail()
+    if result.get("status") == "success" and _run_completed(str(task_id)):
+        clear_run_markers(str(task_id))
+        clear_infra_requeues(str(gpu_result.get("file_uuid") or ""))
+    return result
+
+
+#: Payload statuses for which finalize only cleans up (no real work, so no lease).
+_NO_WORK_STATUSES = frozenset({"error", "cancelled", SUPERSEDED, "split_forwarded"})
+
+
+def _run_completed(task_id: str) -> bool:
+    try:
+        from app.models.media import Task
+
+        with session_scope() as db:
+            row = db.query(Task.status).filter(Task.id == task_id).first()
+            return row is not None and row[0] == "completed"
+    except Exception as e:  # noqa: BLE001 - only decides whether to drop two Redis keys early
+        logger.debug("Could not read the status of run %s: %s", task_id, e)
+        return False
+
+
+def _record_postprocess_failure(gpu_result: dict, error: Exception) -> dict:
+    """Record a postprocess failure on the run's Task row; return the chain payload.
+
+    A run whose cancellation was requested is recorded as cancelled instead (issue #1163): a
+    user who stopped the file must not see it reported as a failure.
+    """
+    from app.services.transcription_retry import finish_cancelled_run
+    from app.services.transcription_retry import run_cancel_requested
+
+    task_id = gpu_result["task_id"]
+    file_id = gpu_result["file_id"]
+    if run_cancel_requested(task_id, file_id):
+        return finish_cancelled_run(
+            task_id, file_id, gpu_result["file_uuid"], gpu_result["user_id"]
+        )
+    try:
+        with session_scope() as db:
+            update_task_status(
+                db,
+                task_id,
+                "failed",
+                error_message=f"Post-processing error: {error}",
+                completed=True,
+            )
+    except Exception as task_err:
+        logger.debug(f"Failed to mark task as failed: {task_err}")
+    return {
+        "status": "error",
+        "file_id": file_id,
+        "error": str(error),
+        "segment_count": gpu_result.get("segment_count", 0),
+    }
+
+
+def _finalize(gpu_result: dict) -> dict:
     """CPU postprocessing: speaker matching → mark COMPLETED → background enrichment.
 
     Stage 3 of the 3-stage pipeline chain. Receives result from GPU task.
@@ -90,7 +172,11 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         _cleanup_temp(gpu_result.get("file_uuid"))
         return gpu_result
 
-    if gpu_result.get("status") == "split_forwarded":
+    if gpu_result.get("status") in (SUPERSEDED, "split_forwarded"):
+        # issue #1020 (superseded): a stage found its run replaced by a newer one and stood
+        # down. Unlike the cancelled branch above this must NOT release the temp audio: it is
+        # keyed by file, and the replacement run owns it now.
+        #
         # gpu-split topology (core.py::transcribe_gpu_task): this dict is what the
         # transcribe-only leg returns to satisfy the OUTER pipeline chain's
         # unconditional third link. It carries no user_id/speaker_mapping/etc. — the
@@ -100,8 +186,8 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         # must be a no-op, not a KeyError (issue that made every --with-gpu-split job
         # fail visibly even though diarization went on to complete correctly).
         logger.debug(
-            "finalize_transcription: no-op for split_forwarded result (file_id=%s, "
-            "task_id=%s) — the real finalize runs after diarize_gpu_task",
+            "finalize_transcription: no-op for %s result (file_id=%s, task_id=%s)",
+            gpu_result.get("status"),
             gpu_result.get("file_id"),
             gpu_result.get("task_id"),
         )
@@ -280,25 +366,8 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
 
     except Exception as e:
         logger.error(f"Postprocess failed for file {file_id}: {e}")
-        try:
-            with session_scope() as db:
-                update_task_status(
-                    db,
-                    task_id,
-                    "failed",
-                    error_message=f"Post-processing error: {e}",
-                    completed=True,
-                )
-        except Exception as task_err:
-            logger.debug(f"Failed to mark task as failed: {task_err}")
         # Don't re-raise — segments are already saved by GPU task
-
-        return {
-            "status": "error",
-            "file_id": file_id,
-            "error": str(e),
-            "segment_count": gpu_result.get("segment_count", 0),
-        }
+        return _record_postprocess_failure(gpu_result, e)
 
     finally:
         if defer_temp_cleanup:
@@ -532,7 +601,7 @@ def _process_native_embeddings(
         return
 
     with session_scope() as db:
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, user_id)
+        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(db, user_id, file_id)
         matching_service = SpeakerMatchingService(db, embedding_service=None)
         logger.info(
             f"Starting native speaker matching for {len(db_embeddings)} speakers "
@@ -612,13 +681,21 @@ def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None
     (or an admin forces it). Redaction is opt-out by default, so we skip the (potentially
     expensive) scan for the common case. If a user enables redaction later, detection is
     dispatched lazily the first time they open the file.
+
+    Consults the FILE's own ``organization_id`` for the tenant floor (issue #982/
+    #987) — this pipeline callback carries only ``file_id``/``user_id``, no request
+    context, and the file's own tenant is what the floor governs (#988).
     """
     try:
         from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
         from app.services.redaction.config import resolve_effective_config
 
         with session_scope() as db:
-            cfg = resolve_effective_config(db, user_id)
+            organization_id = (
+                db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+            )
+            cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
         if not cfg.enabled:
             logger.info(f"Redaction off for owner of file {file_id}; skipping detection")
             return

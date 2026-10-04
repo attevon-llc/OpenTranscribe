@@ -143,20 +143,17 @@
   $: visibleStartIndex = visibleStartRow * columnsPerRow;
   $: visibleEndIndex = Math.min(items.length, visibleEndRow * columnsPerRow);
   $: visibleItems = items.slice(visibleStartIndex, visibleEndIndex);
-  $: topSpacerHeight = visibleStartRow * ROW_HEIGHT;
-  $: bottomSpacerHeight = Math.max(0, (totalRows - visibleEndRow) * ROW_HEIGHT);
-
-  // ARIA requires `role="grid"` > `role="row"` > `role="gridcell"` (issue #967) — but the
-  // visual layout is a CSS `auto-fill` grid, not a literal per-row DOM structure. Group the
-  // flat visible-items window into rows (each rendered with `display: contents` so it adds
-  // no box and cannot perturb the CSS grid's column tracks) purely to carry the row role.
-  $: visibleRows = Array.from(
+  // role="row" groups: visibleStartIndex is always row-aligned, so chunking by
+  // columnsPerRow reproduces the visual rows.
+  $: visibleRowGroups = Array.from(
     { length: Math.ceil(visibleItems.length / columnsPerRow) },
     (_, r) => ({
-      rowIndex: visibleStartRow + r + 1,
-      files: visibleItems.slice(r * columnsPerRow, r * columnsPerRow + columnsPerRow),
+      rowIndex: visibleStartRow + r,
+      files: visibleItems.slice(r * columnsPerRow, (r + 1) * columnsPerRow),
     })
   );
+  $: topSpacerHeight = visibleStartRow * ROW_HEIGHT;
+  $: bottomSpacerHeight = Math.max(0, (totalRows - visibleEndRow) * ROW_HEIGHT);
 
   // Track which file is currently navigating to prevent double-clicks and
   // provide immediate visual feedback while the route change is in flight.
@@ -222,9 +219,9 @@
 
     <!-- Visible items in CSS grid -->
     <div class="file-grid">
-      {#each visibleRows as row (row.rowIndex)}
-        <div class="grid-row" role="row" aria-rowindex={row.rowIndex}>
-          {#each row.files as file (file.uuid)}
+      {#each visibleRowGroups as rowGroup (rowGroup.rowIndex)}
+        <div class="grid-row" role="row" aria-rowindex={rowGroup.rowIndex + 1}>
+          {#each rowGroup.files as file (file.uuid)}
             <div
               class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
               role="gridcell"
@@ -364,18 +361,16 @@
     margin-top: -0.5rem;
   }
 
+  /* Row wrappers exist for ARIA only; the cards still lay out in .file-grid. */
+  .grid-row {
+    display: contents;
+  }
+
   .file-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 0.75rem;
     padding: 0 2px 0.5rem;
-  }
-
-  /* Carries the ARIA `role="row"` layer (issue #967) without affecting the CSS Grid
-     layout above — `display: contents` removes this element's own box, so its
-     `.file-card` children still participate directly in `.file-grid`'s tracks. */
-  .grid-row {
-    display: contents;
   }
 
   /* --- Card --- */

@@ -15,6 +15,8 @@ from typing import NoReturn
 import numpy as np
 import torch
 
+from app.core import privacy_env  # noqa: F401  -- telemetry opt-outs before pyannote loads
+from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
 from app.utils.pyannote_utils import build_native_embeddings
@@ -294,9 +296,25 @@ class SpeakerDiarizer:
             else:
                 stage_timing[step_name]["last"] = now
 
-        raw_output = self._run_pipeline_with_oom_retry(
-            audio_input, pipeline_kwargs, hook=timing_hook
-        )
+        # Reserve the in-process diarizer's working set from the worker's VRAM budget
+        # (issue #1081) so concurrent threads cannot all peak together; a no-op on CPU.
+        diar_device = str(self.config.diarization_device)
+        on_cuda = diar_device.startswith("cuda")
+        with vram_budget.admit(
+            "diarization",
+            device="cuda" if on_cuda else diar_device,
+            device_index=self.config.device_index,
+        ):
+            try:
+                raw_output = self._run_pipeline_with_oom_retry(
+                    audio_input, pipeline_kwargs, hook=timing_hook
+                )
+            finally:
+                if on_cuda:
+                    # Hand torch's cached blocks back before the reservation is released.
+                    # Whisper runs on CTranslate2, which cannot use torch's cache, so memory
+                    # the budget counts as free must actually be free on the device.
+                    torch.cuda.empty_cache()
 
         centroids = getattr(raw_output, "speaker_embeddings", None)
         output = raw_output

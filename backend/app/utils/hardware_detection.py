@@ -15,6 +15,8 @@ import os
 import platform
 from typing import Any
 
+from app.utils.cpu_budget import effective_cpu_count
+
 logger = logging.getLogger(__name__)
 
 
@@ -538,9 +540,7 @@ class HardwareConfig:
 
         if self.device == "cpu":
             # CPU optimizations
-            import multiprocessing
-
-            cpu_count = multiprocessing.cpu_count()
+            cpu_count = effective_cpu_count()
 
             env_vars.update(
                 {

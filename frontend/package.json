@@ -11,6 +11,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "prebuild": "node scripts/download-fonts.js && node scripts/build-ffmpeg.js",
+    "postbuild": "node scripts/check-built-csp.mjs && node scripts/check-bundle-budget.mjs && node scripts/precompress.mjs",
     "build:analyze": "node scripts/download-fonts.js && node scripts/build-ffmpeg.js && ANALYZE=true vite build && node -e \"require('fs').copyFileSync('.bundle-stats/stats.html','dist/stats.html')\" && echo \"bundle report: dist/stats.html\"",
     "deadcode": "knip",
     "cycles": "madge --circular --extensions ts,js,svelte --ts-config tsconfig.json src",

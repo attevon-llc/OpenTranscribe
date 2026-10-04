@@ -8,9 +8,11 @@ import logging
 import os
 import tempfile
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
 from app.core.exceptions import ASRConfigurationError
+from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -172,15 +174,16 @@ def _process_file_in_temp_dir(
 
         # Cloud pipeline — errors propagate so the task is marked FAILED, not silently
         # re-attempted on local GPU.
-        result = _run_cloud_asr_pipeline(
-            ctx,
-            audio_file_path,
-            min_speakers,
-            max_speakers,
-            num_speakers,
-            provider=provider,
-            diarization_source=diarization_source,
-        )
+        with stage_timing.stage("asr"):
+            result = _run_cloud_asr_pipeline(
+                ctx,
+                audio_file_path,
+                min_speakers,
+                max_speakers,
+                num_speakers,
+                provider=provider,
+                diarization_source=diarization_source,
+            )
         # Validate transcription result
         validation_error = _validate_transcription_result(result, ctx, ctx.task_id)
         if validation_error:
@@ -260,7 +263,9 @@ def transcribe_audio_task(
 
         # Process in temporary directory
         try:
-            with tempfile.TemporaryDirectory() as temp_dir:
+            # issue #1020: this task creates its "transcription" row itself, at run start, and
+            # recovery reads a transcription with neither a heartbeat nor a queued marker as dead.
+            with run_heartbeat(task_id), tempfile.TemporaryDirectory() as temp_dir:
                 return _process_file_in_temp_dir(
                     ctx,
                     temp_dir,

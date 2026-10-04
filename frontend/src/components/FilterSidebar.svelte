@@ -13,6 +13,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { DURATION_CHIP_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { createDebouncedHandler } from '$lib/utils/debounce';
   import { formatClock } from '$lib/utils/formatting';
 
@@ -1021,7 +1022,7 @@
               selected={isDurationChipActive(chip)}
               on:click={() => selectDurationChip(chip)}
             >
-              {$t(`filter.${chip.code}`)}
+              {labelFor($t, DURATION_CHIP_KEYS, chip.code)}
             </FilterChipButton>
           {/each}
         </div>

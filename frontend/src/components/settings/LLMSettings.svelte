@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CONTEXT_WINDOW_RELATION_KEYS, CONTEXT_WINDOW_STATUS_KEYS, REASONING_OFF_SWITCH_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
@@ -9,11 +10,6 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import axiosInstance from '$lib/axios';
-  import {
-    resolveReasoningOffSwitchI18nKey,
-    resolveContextWindowStatusI18nKey,
-    resolveContextWindowRelationI18nKey,
-  } from '$lib/i18n/llmProbeVerdicts';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin: boolean = false;
@@ -293,9 +289,7 @@
 
     try {
       const result = await LLMSettingsApi.probeReasoningCapability(config.uuid);
-      // GH #970: was interpolated straight into the key, the same construct that made #964
-      // render nine raw keys. `ReasoningOffSwitch` is exhaustively mapped at compile time.
-      const message = $t(resolveReasoningOffSwitchI18nKey(result.off_switch));
+      const message = $t(keyFor(REASONING_OFF_SWITCH_KEYS, result.off_switch, REASONING_OFF_SWITCH_KEYS.unknown));
 
       if (result.off_switch === 'works') {
         toastStore.success(`${config.name}: ${message}`, 8000);
@@ -329,8 +323,7 @@
           window: result.context_window ?? 0,
           configured: result.configured_max_tokens ?? 0
         };
-        // GH #970: same fix — `relation` is exhaustively mapped at compile time.
-        const message = $t(resolveContextWindowRelationI18nKey(result.relation), params);
+        const message = $t(CONTEXT_WINDOW_RELATION_KEYS[result.relation], params);
         if (result.relation === 'match') {
           toastStore.success(`${config.name}: ${message}`, 8000);
         } else {
@@ -339,8 +332,7 @@
           toastStore.warning(`${config.name}: ${message}`, 10000);
         }
       } else {
-        // GH #970: same fix — `status` is exhaustively mapped at compile time.
-        const message = $t(resolveContextWindowStatusI18nKey(result.status));
+        const message = $t(keyFor(CONTEXT_WINDOW_STATUS_KEYS, result.status, CONTEXT_WINDOW_STATUS_KEYS.unknown));
         toastStore.info(`${config.name}: ${message}`, 8000);
       }
     } catch (err: unknown) {

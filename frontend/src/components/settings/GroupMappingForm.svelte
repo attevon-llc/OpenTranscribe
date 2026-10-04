@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { GROUP_MAPPING_ROLE_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import BaseModal from '../ui/BaseModal.svelte';
   import { t } from '$stores/locale';
@@ -136,7 +137,7 @@
         <select id="mapping-role" class="form-control" bind:value={grantsRole}>
           <option value="">{$t('settings.groupMappings.noRole')}</option>
           {#each GRANTABLE_ROLES as role (role)}
-            <option value={role}>{$t(`settings.groupMappings.role.${role}`)}</option>
+            <option value={role}>{$t(GROUP_MAPPING_ROLE_KEYS[role])}</option>
           {/each}
         </select>
         <span class="form-hint">{$t('settings.groupMappings.grantsRoleHelp')}</span>

@@ -95,6 +95,14 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
   Active model id persists as SystemSettings `search.opensearch_model_id`.
 - Every query must AND in `tenant_scope.org_filter_clauses(organization_id)` — personal scope is
   `must_not exists organization_id`, so org docs can never leak into personal results.
+  That includes the legacy whole-document `transcripts` index (#1027): `index_transcript` takes
+  a required `organization_id` and stamps org files only, and its readers (the gallery's
+  `apply_transcript_search_filter`, `find_speaker_across_media`) gate on it instead of relying
+  only on the SQL query they are intersected with. Docs written before that carry no stamp —
+  `tasks/tenant_backfill_task.py` stamps them (its runbook covers both indices). An index
+  created before the field existed gets the `organization_id: integer` mapping on bootstrap
+  (`opensearch_service/indices.py:ensure_transcript_tenant_mapping`, #1115) — additive
+  `put_mapping`, no reindex; run the backfill after that deploy.
 - Embeddings are generated **server-side** by the ingest pipeline; `_generate_query_embedding`
   returns `None` for the vector by design. There is no client-side encoder here.
 
@@ -195,6 +203,31 @@ speaker plane exists to let people *set*.
   cardinality aggs meet hybrid + collapse + RRF. `total_files` is derived from collapsed results.
 - RRF + collapse **strips inner-hit highlights** — hence `_detect_keyword_match_fallback` and
   `_generate_synthetic_snippet`. Don't "simplify" those away.
+- **Keyword (BM25-only) search does NOT send `collapse.inner_hits` (#1064).** OpenSearch runs
+  inner hits as one sub-search per collapsed group, and each one rewrites the fuzzy clauses and
+  sets up the highlighter again. That fixed cost multiplied by the 200-group over-fetch made
+  keyword search 0.4-2.0 s on a 2,000-chunk index, where a minimal `match` took 2-6 ms and
+  neural took ~100 ms. `profile: true` doesn't show it: the shard query and fetch come to ~60 ms,
+  and the rest of `took` is the unprofiled expand phase. `_execute_split_bm25_collapse` instead
+  sends the collapse without inner hits, then one `terms` + `top_hits` agg for the segments, and
+  `_hydrate_page_highlights` highlights **only the displayed page**. The page is byte-identical
+  to the single-request body (`tests/integration/test_keyword_search_latency_opensearch.py`
+  proves this and gates the latency). Two consequences: every hit of that body counts as a
+  keyword match without needing a highlight (`assume_keyword_match`), and an empty query (a
+  `match_all` browse) still takes the single-request path. The hybrid backfill runs split too.
+  The hybrid, neural, fallback and two-phase bodies still use inner hits.
+- **Every matching file must be reachable by paging (#1078, #1079).** Three rules, each learned
+  from a bug. `tests/integration/test_search_completeness_opensearch.py` pages through every
+  result set and fails on the first file that is missing or shown twice.
+  - Pagination is cut **client-side only**. A BM25 non-relevance sort used `from`/`size=page_size`
+    as well, so the one-page response got paged a second time and page 2+ came back empty.
+  - Hybrid **always** backfills keyword files the fused window missed, below the hybrid-ranked
+    head. The window is ~200 *chunks*, not files. It used to backfill only when the window held
+    less than one page, and then 43 of 165 keyword-matching files were reachable.
+  - The fused window is sized as for **page 1 on every page**. If it grew with the page number,
+    deep pages pulled tail files into the head and moved every page boundary, so some files
+    appeared twice and others never. The backfill's BM25 window may grow, because its order is
+    stable as it grows.
 - Relevance sorts can't mix `_score` with other sort criteria under the pipeline; non-relevance
   sorts therefore take the `_search_with_two_phase` path (hybrid aggs → BM25 collapse per page).
 - `recreate_index_for_dimension` **deletes the index**. Switching embedding model = full reindex —

@@ -59,6 +59,11 @@ services:
       # copied the template unmodified, so a CPU-only host got a sidecar it could not
       # start. Uncommenting it there re-breaks that.
       - DIAR_MODE=${DIAR_NATIVE_MODE:-cpu}
+      # Third-party telemetry / update checks OFF by default (see app/core/privacy_env.py).
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # ⚠️ BARE ENTRY, NO `=` AND NO DEFAULT — same reasoning as SPEAKRS_ARENA_SHRINK below:
       # it is not established whether diar-server treats an empty string the same as
       # "unset", so `DIAR_DEVICES=${DIAR_NATIVE_DEVICES:-}` would risk always defining the

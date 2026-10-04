@@ -1,10 +1,12 @@
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';
+import { capabilities } from '$stores/capabilities';
 import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 import { generateId } from '$lib/utils/ids';
+import { normalizeMediaType } from '$lib/utils/mediaType';
 import { fingerprintFile } from '$lib/services/fileFingerprint';
 import {
   createStallWatchdog,
@@ -445,6 +447,26 @@ class UploadService {
   }
 
   /**
+   * Whether this server accepts the API-mediated `POST /files` fallback. When it does
+   * not, a failed presigned attempt is rethrown so the queue retries the presigned
+   * path, instead of re-sending the body to a route that will refuse it.
+   */
+  private apiMediatedUploadAllowed(): boolean {
+    return get(capabilities).apiMediatedUploadEnabled !== false;
+  }
+
+  /**
+   * The legacy `POST /files` is about to be used. With the fallback disabled that can
+   * only mean the server handed out no presigned plan, which it does not do in that
+   * mode (it answers 503 instead) — fail retryably rather than send the body.
+   */
+  private assertLegacyFallbackAllowed(): void {
+    if (!this.apiMediatedUploadAllowed()) {
+      throw new Error('Direct upload is unavailable right now; the upload will be retried.');
+    }
+  }
+
+  /**
    * Detect a deterministic, non-retryable failure from `POST /files/complete`.
    *
    * A 503 here is `main.py`'s global `OpenTranscribeError` handler surfacing
@@ -682,13 +704,17 @@ class UploadService {
     }
     const clientHashEndMs = Date.now();
 
+    // Canonical spelling (issue #1044): a single presigned PUT stores this as the
+    // object's Content-Type, and aliases such as audio/vnd.wave don't play.
+    const mediaType = normalizeMediaType(file instanceof File ? file.type : 'audio/webm') ?? '';
+
     // Step 1: Prepare the upload — try presigned direct-to-MinIO first,
     // fall back to the legacy multipart POST if the server doesn't support
     // it or anything goes wrong during the direct PUT.
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: file.size,
-      content_type: file instanceof File ? file.type : 'audio/webm',
+      content_type: mediaType,
       file_hash: fingerprint,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
@@ -743,7 +769,7 @@ class UploadService {
         await this.sendBody((watchdog) =>
           axios.put(uploadUrl, file, {
             headers: {
-              'Content-Type': file instanceof File ? file.type : 'audio/webm',
+              'Content-Type': mediaType,
             },
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
@@ -759,6 +785,10 @@ class UploadService {
         // presigned uploads" — re-sending the whole body through the API
         // container would stall too. Let the queue retry the presigned path.
         if (axios.isCancel(err) || err instanceof UploadStalledError) {
+          throw err;
+        }
+        // No API-mediated fallback on this server: let the queue retry presigned.
+        if (!this.apiMediatedUploadAllowed()) {
           throw err;
         }
         // Fall through to the legacy flow below.
@@ -794,7 +824,7 @@ class UploadService {
           // fail identically through the legacy path — don't pay for a full re-upload
           // to learn that twice. Surface it directly; the row is already visible at
           // ERROR (issue #905) so the gallery's normal error display picks it up.
-          if (this.isNonRetryableCompleteFailure(err)) {
+          if (this.isNonRetryableCompleteFailure(err) || !this.apiMediatedUploadAllowed()) {
             throw err;
           }
           // Fall through to the legacy flow below.
@@ -803,6 +833,7 @@ class UploadService {
     }
 
     // --- Legacy flow (multipart POST through the API container) ----------
+    this.assertLegacyFallbackAllowed();
     const formData = new FormData();
     formData.append('file', file);
 
@@ -948,6 +979,10 @@ class UploadService {
         if (axios.isCancel(err) || err instanceof UploadStalledError) {
           throw err;
         }
+        // No API-mediated fallback on this server: let the queue retry presigned.
+        if (!this.apiMediatedUploadAllowed()) {
+          throw err;
+        }
         // Fall through to the legacy flow below.
       }
 
@@ -974,7 +1009,7 @@ class UploadService {
           }
           // See uploadFile(): a deterministic dispatch refusal must not pay for a
           // full re-upload to learn the same refusal twice.
-          if (this.isNonRetryableCompleteFailure(err)) {
+          if (this.isNonRetryableCompleteFailure(err) || !this.apiMediatedUploadAllowed()) {
             throw err;
           }
           // Fall through to the legacy flow below.
@@ -983,6 +1018,7 @@ class UploadService {
     }
 
     // --- Legacy fallback (multipart POST through the API container) -------
+    this.assertLegacyFallbackAllowed();
     const formData = new FormData();
     formData.append('file', audioBlob, upload.name);
 

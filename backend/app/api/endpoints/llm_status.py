@@ -34,7 +34,13 @@ async def get_llm_status(
         # Check if LLM is available for this user
         is_available = await is_llm_available(user_id=current_user.id)
 
-        status_info: dict[str, Any] = {"available": is_available, "user_id": current_user.id}
+        # context_window: the resolved service's window, so chat's token panel does not
+        # depend on /api/llm-settings/status, which is unmounted without llm.user_settings.
+        status_info: dict[str, Any] = {
+            "available": is_available,
+            "user_id": current_user.id,
+            "context_window": None,
+        }
 
         if is_available:
             # Get additional info about the configured LLM
@@ -45,6 +51,7 @@ async def get_llm_status(
                         {
                             "provider": llm_service.config.provider.value,
                             "model": llm_service.config.model,
+                            "context_window": llm_service.config.max_tokens,
                             "message": "LLM service is available and configured",
                         }
                     )
@@ -84,6 +91,7 @@ async def get_llm_status(
             "user_id": current_user.id,
             "provider": None,
             "model": None,
+            "context_window": None,
             "message": "An error occurred while checking LLM status. Check server logs for details.",
         }
 

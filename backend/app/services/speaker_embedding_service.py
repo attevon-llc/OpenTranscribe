@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     import torch
     from pyannote.audio import Inference
 
+from app.core import privacy_env  # noqa: F401  -- telemetry opt-outs before pyannote loads
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.services.embedding_mode_service import MODE_V4

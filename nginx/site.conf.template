@@ -48,7 +48,9 @@ server {
     add_header X-XSS-Protection "0" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(self), geolocation=(), payment=()" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';" always;
+    # connect-src 'self' already covers same-host ws:/wss: (CSP3); a bare ws:/wss: source
+    # would permit a socket to any host (issue #1028).
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     # File upload size limit (for audio/video transcription)
@@ -138,6 +140,10 @@ server {
     # advertised. Note: /health/ready is intentionally NOT proxied or denied — it
     # is not under /api/ so nginx never routes it to the backend anyway.
     location = /metrics {
+        deny all;
+        return 404;
+    }
+    location = /metrics/queues {
         deny all;
         return 404;
     }

@@ -1,14 +1,18 @@
 import datetime
+import functools
 import io
 import logging
 import os
 from typing import BinaryIO
 from urllib.parse import quote
 
+import certifi
 import urllib3
+from minio import Minio
 from minio.error import S3Error
 
 from app.core.config import settings
+from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
 from app.services import storage_backend
 from app.services import storage_presign_identity
@@ -24,6 +28,24 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # or native AWS S3; both are minio-py clients so every call site below is shared.
 # See app/services/storage_backend.py for the backend differences.
 minio_client = storage_backend.build_storage_client()
+
+
+@functools.lru_cache(maxsize=1)
+def get_probe_client() -> Minio:
+    """The storage client for health probes: same backend and credentials, bounded transport.
+
+    One attempt, ``DEPENDENCY_PROBE_TIMEOUT_SECONDS`` to connect and to read — the
+    shared client's 5-minute timeouts and 5 retries are what a probe must not inherit.
+    TLS verification mirrors minio-py's own default pool (``SSL_CERT_FILE`` or certifi).
+    """
+    bound = DEPENDENCY_PROBE_TIMEOUT_SECONDS
+    http_client = urllib3.PoolManager(
+        timeout=urllib3.Timeout(connect=bound, read=bound),
+        retries=urllib3.Retry(total=0),
+        cert_reqs="CERT_REQUIRED",
+        ca_certs=os.environ.get("SSL_CERT_FILE") or certifi.where(),
+    )
+    return storage_backend.build_storage_client(http_client=http_client)
 
 
 def ensure_bucket_exists():
@@ -118,7 +140,7 @@ def download_file_to_path(object_name: str, file_path: str) -> None:
     minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, file_path)
 
 
-def get_file_url(object_name: str, expires: int = 0) -> str:
+def get_file_url(object_name: str, expires: int = 0, content_type: str | None = None) -> str:
     """
     Get a browser-reachable presigned URL for a file in object storage.
 
@@ -127,6 +149,10 @@ def get_file_url(object_name: str, expires: int = 0) -> str:
         expires: URL lifetime in seconds. Clamped to ``PRESIGNED_URL_MAX_SECONDS``
             (6 h default); 0 or invalid means "use the ceiling". The old 24 h
             default could not survive an IAM-role STS session (issue #284 A1.12).
+        content_type: If given, signed in as ``response-content-type`` so the
+            response carries this type rather than the object's stored
+            Content-Type. An object uploaded before issue #1044 can still carry
+            the uploading browser's alias, e.g. ``audio/vnd.wave``.
 
     Returns:
         Presigned URL that directly accesses the media file
@@ -143,6 +169,9 @@ def get_file_url(object_name: str, expires: int = 0) -> str:
         # handed to a browser. Falls back to the root client if the identity is
         # unavailable — see storage_presign_identity.presign_client.
         client = storage_presign_identity.presign_client()
+        response_headers: dict[str, str | list[str] | tuple[str]] | None = (
+            {"response-content-type": content_type} if content_type else None
+        )
 
         # Create a direct URL using the get_presigned_url method
         try:
@@ -152,6 +181,7 @@ def get_file_url(object_name: str, expires: int = 0) -> str:
                 bucket_name=settings.MEDIA_BUCKET_NAME,
                 object_name=object_name,
                 expires=delta,
+                response_headers=response_headers,
             )
         except Exception as inner_e:
             logger.info(f"First attempt failed: {inner_e}, trying alternative method")
@@ -161,6 +191,7 @@ def get_file_url(object_name: str, expires: int = 0) -> str:
                 settings.MEDIA_BUCKET_NAME,
                 object_name,
                 expires=datetime.timedelta(seconds=expires),
+                response_headers=response_headers,
             )
 
         # Verify the URL is valid

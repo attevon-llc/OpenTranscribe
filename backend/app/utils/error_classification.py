@@ -6,9 +6,14 @@ and prevent wasting retries on permanent failures like private/removed videos.
 """
 
 import logging
+import random
+import re
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# "oom" only as its own token ("OOM", "oom-killer", "OOMKilled"), never inside "boom"/"zoom".
+_OOM_WORD = re.compile(r"\boom")
 
 
 class ErrorCategory(Enum):
@@ -23,6 +28,15 @@ class ErrorCategory(Enum):
     PRIVATE_OR_REMOVED = "private_removed"
     USER_CANCELLED = "user_cancelled"
     FILE_TOO_LARGE = "file_too_large"
+    # The input itself is unusable: corrupt or undecodable media, no audio track, no
+    # speech, an unsupported format. Running it again produces the same failure, so it
+    # fails fast and is never retried automatically. Set by
+    # ``ErrorCategorizationService.classify_failure`` from the user-facing reason.
+    INVALID_MEDIA = "invalid_media"
+    # A transient failure that outlasted every automatic retry (the error-retry budget, or the
+    # infrastructure-requeue cap). Terminal for the automatic paths; the user's own Retry
+    # button still works, because a manual retry clears the category.
+    RETRIES_EXHAUSTED = "retries_exhausted"
 
     # Auth/Rate limit hybrid - retry with very long backoff
     AUTH_OR_RATE_LIMIT = "auth_or_rate_limit"
@@ -34,6 +48,10 @@ class ErrorCategory(Enum):
 
     # Resource errors - retry with reduced resources
     OOM_ERROR = "oom"
+    # GPU memory exhausted. Its own code because the GPU-OOM backoff path
+    # (`identify_oom_error_files`) must key off a stored code, and a host-RAM OOM
+    # must not enter it (issue #959).
+    GPU_OOM = "gpu_oom"
 
     # Transient errors - retry with backoff
     NETWORK_ERROR = "network"
@@ -52,6 +70,7 @@ RETRIABLE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
         ErrorCategory.WORKER_LOST,
         ErrorCategory.DUPLICATE_KEY,
         ErrorCategory.OOM_ERROR,
+        ErrorCategory.GPU_OOM,
         ErrorCategory.NETWORK_ERROR,
         ErrorCategory.TEMPORARY_SERVICE_ERROR,
         ErrorCategory.UNKNOWN,
@@ -59,34 +78,30 @@ RETRIABLE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
 )
 
 
-def resolve_persisted_error_category(
-    stored_category: str | None, last_error_message: str | None
-) -> ErrorCategory:
-    """Resolve the retry-policy code for an already-failed file, GH #959 item 2.
+#: Retriable categories whose cause is the infrastructure (a worker, a GPU, the network),
+#: never the input. A classification that lands here outranks an input-shaped user reason:
+#: "connection reset while decoding" is a lost connection, not a corrupt file.
+INFRASTRUCTURE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
+    {
+        ErrorCategory.SYSTEM_ERROR,
+        ErrorCategory.WORKER_LOST,
+        ErrorCategory.OOM_ERROR,
+        ErrorCategory.GPU_OOM,
+        ErrorCategory.NETWORK_ERROR,
+        ErrorCategory.TEMPORARY_SERVICE_ERROR,
+    }
+)
 
-    Prefer the code already persisted on ``media_file.error_category`` — it was computed
-    once, at the original failure site, from the raw exception text while it was still in
-    hand. Only fall back to re-parsing ``last_error_message`` when no code was ever
-    recorded (e.g. a file stuck in PROCESSING that crashed before any failure handler ran).
-    That fallback is a last resort, not the normal path: since #959, stored messages are
-    fixed, category-derived sentences rather than raw exception text, so re-classifying
-    one by substring match would silently regress to a generic bucket. Recovery code must
-    never key retry decisions on prose that a later refactor could reword.
 
-    Args:
-        stored_category: ``media_file.error_category``, if already set.
-        last_error_message: ``media_file.last_error_message``, used only when
-            ``stored_category`` is absent.
+def is_transient(error_category: ErrorCategory) -> bool:
+    """Whether a failure of this category is worth running again unchanged.
 
-    Returns:
-        The resolved :class:`ErrorCategory`.
+    The two-class rule every automatic retry follows: a TRANSIENT failure (the
+    infrastructure failed, or the cause is unknown) is requeued within minutes up to the
+    retry limit; a PERMANENT one (the input is unusable, the content is gone, the user
+    cancelled) fails at once with its reason and is never retried.
     """
-    if stored_category:
-        try:
-            return ErrorCategory(stored_category)
-        except ValueError:
-            logger.warning(f"Unrecognized persisted error_category {stored_category!r}")
-    return categorize_error(last_error_message or "")
+    return error_category in RETRIABLE_CATEGORIES
 
 
 def categorize_error(error_message: str) -> ErrorCategory:
@@ -134,11 +149,9 @@ def categorize_error(error_message: str) -> ErrorCategory:
         return ErrorCategory.WORKER_LOST
 
     # Resource errors
-    if (
-        "out of memory" in msg_lower
-        or "oom" in msg_lower
-        or ("cuda" in msg_lower and "out of memory" in msg_lower)
-    ):
+    if "cuda" in msg_lower and "out of memory" in msg_lower:
+        return ErrorCategory.GPU_OOM
+    if "out of memory" in msg_lower or _OOM_WORD.search(msg_lower):
         return ErrorCategory.OOM_ERROR
 
     # Temporary service errors (check before network to match HTTP status codes first)
@@ -150,6 +163,24 @@ def categorize_error(error_message: str) -> ErrorCategory:
         return ErrorCategory.NETWORK_ERROR
 
     return ErrorCategory.UNKNOWN
+
+
+def stored_category(value: str | None) -> ErrorCategory:
+    """Read the retry category a failure site persisted to ``media_file.error_category``.
+
+    Retry policy keys off this stored code, never off ``last_error_message`` (issue #959):
+    that column now holds a fixed user-facing sentence, and re-classifying prose after the
+    fact would make rewording a message silently change retry behaviour. A NULL or
+    unrecognised value is UNKNOWN — retriable, the same default ``categorize_error`` gives
+    an empty message.
+    """
+    if not value:
+        return ErrorCategory.UNKNOWN
+    try:
+        return ErrorCategory(value)
+    except ValueError:
+        logger.warning(f"Unrecognised stored error_category {value!r}; treating as unknown")
+        return ErrorCategory.UNKNOWN
 
 
 def should_retry(error_category: ErrorCategory, retry_count: int, max_retries: int = 3) -> bool:
@@ -195,3 +226,29 @@ def get_retry_delay(error_category: ErrorCategory, retry_count: int) -> int:
 
     # Immediate retry for system errors (task will be queued anyway)
     return 0
+
+
+#: Exponential-backoff parameters for an automatic transcription retry, per category:
+#: ``(first delay, ceiling)`` in seconds. Short on purpose — a requeued file should be
+#: running again within minutes — but long enough that a GPU still full from the run that
+#: just ran out of memory, or a dependency that just dropped a connection, has time to recover.
+_BACKOFF_SECONDS: dict[ErrorCategory, tuple[int, int]] = {
+    ErrorCategory.NETWORK_ERROR: (30, 300),
+    ErrorCategory.TEMPORARY_SERVICE_ERROR: (30, 300),
+    ErrorCategory.GPU_OOM: (60, 600),
+    ErrorCategory.OOM_ERROR: (60, 600),
+}
+_DEFAULT_BACKOFF_SECONDS = (15, 240)
+
+
+def transient_retry_delay(error_category: ErrorCategory, retry_count: int) -> int:
+    """Seconds to wait before automatic retry number ``retry_count + 1``.
+
+    Exponential backoff with "equal jitter": half the delay is fixed and half random, so
+    files that failed together (one OOM, one dropped connection) do not all come back at the
+    same instant and fail together again.
+    """
+    base, ceiling = _BACKOFF_SECONDS.get(error_category, _DEFAULT_BACKOFF_SECONDS)
+    delay = min(base * (2 ** max(0, retry_count)), ceiling)
+    half = delay / 2
+    return int(half + random.uniform(0, half))  # noqa: S311  # nosec B311 - jitter, not crypto

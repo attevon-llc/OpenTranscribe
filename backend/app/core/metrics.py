@@ -17,11 +17,18 @@ added, migrate to ``prometheus_client.multiprocess`` with a
 ``PROMETHEUS_MULTIPROC_DIR`` — a plain in-process registry would then under-
 report (each worker scraped independently).
 
-Worker-process trap: Celery workers have their own registries that are never
-scraped. A counter incremented inside a task is invisible. Product counters
-here (``user_signups_total``, ``files_uploaded_total``) are incremented at
+Worker-process trap: Celery workers have their own registries, and this
+module's ``/metrics`` endpoint (the API process) never sees them. A counter
+incremented inside a task is invisible HERE. Product counters here
+(``user_signups_total``, ``files_uploaded_total``) are incremented at
 API-process call sites only; worker-side product events are dashboarded from
-the database instead.
+the database instead. Per-task outcome counts and run times
+(``celery_task_total``, ``celery_task_runtime_seconds``) are the worker's own,
+recorded by ``app.core.worker_metrics`` and served by each worker on
+``WORKER_METRICS_PORT`` (off by default). A worker with that port set runs
+``prometheus_client`` in multiprocess mode, so a collector from this module
+that a task updates is served on the worker's port as well -- but only there,
+and only when it is enabled; do not build an API-side alert on it.
 
 Test-reimport guard: importing this module twice in one process (some pytest
 collection orders) would raise ``Duplicated timeseries``. Collectors are built
@@ -89,6 +96,11 @@ cache_operations_total: Counter
 security_state_degraded_total: Counter
 celery_queue_depth: Gauge
 celery_queue_reserved: Gauge
+celery_queue_orphaned: Gauge
+celery_queue_oldest_unacked_age_seconds: Gauge
+celery_queue_oldest_message_age_seconds: Gauge
+transcription_runs_without_lease: Gauge
+transcription_files_infra_requeued: Gauge
 user_signups_total: Counter
 files_uploaded_total: Counter
 backup_runs_total: Counter
@@ -112,6 +124,11 @@ def _register() -> None:
     global security_state_degraded_total
     global celery_queue_depth
     global celery_queue_reserved
+    global celery_queue_orphaned
+    global celery_queue_oldest_unacked_age_seconds
+    global celery_queue_oldest_message_age_seconds
+    global transcription_runs_without_lease
+    global transcription_files_infra_requeued
     global user_signups_total
     global files_uploaded_total
     global backup_runs_total
@@ -176,8 +193,40 @@ def _register() -> None:
         "Tasks delivered to a worker and not yet acknowledged, per Celery queue "
         "(prefetched, plus RUNNING acks_late tasks). Autoscale on "
         "celery_queue_depth + celery_queue_reserved: depth alone trends to zero "
-        "as the fleet saturates.",
+        "as the fleet saturates. Excludes orphans (see celery_queue_orphaned).",
         ["queue"],
+    )
+    celery_queue_orphaned = Gauge(
+        "celery_queue_orphaned",
+        "Transcription-stage messages still unacknowledged although their run holds no "
+        "lease: a dead worker took them. The orphan reaper requeues them within about a "
+        "minute, so a value that stays above zero means the reaper is not running. Alert "
+        "on it; never scale on it.",
+        ["queue"],
+    )
+    celery_queue_oldest_unacked_age_seconds = Gauge(
+        "celery_queue_oldest_unacked_age_seconds",
+        "Age of the oldest unacknowledged message per queue (live or orphaned). Compare "
+        "with the longest expected task duration.",
+        ["queue"],
+    )
+    celery_queue_oldest_message_age_seconds = Gauge(
+        "celery_queue_oldest_message_age_seconds",
+        "Seconds the oldest message still WAITING on each Celery queue has been there (from "
+        "its publish stamp; 0 when the queue is empty or the message is unstamped). A "
+        "redelivered message includes its failed attempt; producer clock skew shifts it.",
+        ["queue"],
+    )
+    transcription_runs_without_lease = Gauge(
+        "transcription_runs_without_lease",
+        "Transcriptions in a non-terminal state that are neither running (no live lease) "
+        "nor waiting in the broker. Should be zero; recovery requeues them within minutes.",
+    )
+    transcription_files_infra_requeued = Gauge(
+        "transcription_files_infra_requeued",
+        "Files whose run has been requeued by infrastructure recovery (dead worker) at "
+        "least TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD times: candidates for a poison "
+        "input that kills every worker it reaches.",
     )
     user_signups_total = Counter(
         "user_signups_total",
@@ -191,8 +240,8 @@ def _register() -> None:
     )
     # Backup collectors run in a Celery worker, so their state is persisted to
     # SystemSettings by the run task and projected here at scrape time by
-    # ``app.core.backup_metrics.update_backup_metrics`` (same sample-at-scrape
-    # pattern as celery_queue_depth).
+    # ``app.core.backup_metrics.update_backup_metrics`` — at most once per
+    # ``JOB_METRICS_TTL_SECONDS``, not on every scrape (issue #1001).
     backup_runs_total = Counter(
         "backup_runs_total",
         "Scheduled/manual database backup runs by result (synced from the DB at scrape).",

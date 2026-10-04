@@ -87,6 +87,8 @@ class CompletionContext:
     file_uuid: str
     user_id: int
     organization_id: int | None
+    # The recording's media length from the container probe (MediaFile.duration),
+    # NOT where the transcript's last word ends; 0.0 when neither is known.
     audio_duration_s: float
     run_id: str  # task_id of this pipeline run — idempotency scope
     provider: str  # "local" | cloud-ASR provider name

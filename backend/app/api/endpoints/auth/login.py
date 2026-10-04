@@ -392,7 +392,7 @@ def _check_mfa_requirement(
             }
         )
 
-    if _is_mfa_required(db):
+    if _is_mfa_required(db, user):
         # Deployment requires MFA and this user has not enrolled. Enrolment used to be
         # enforced only by the SPA, so any API/CLI client that ignored the hint received
         # a full, unrestricted session on an MFA_REQUIRED deployment.

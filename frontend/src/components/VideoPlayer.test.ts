@@ -91,3 +91,84 @@ describe('seekToTime without a constructed Plyr instance', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+/**
+ * Issue #1044: the `<source type>` hint came verbatim from `file.content_type`, so a
+ * row stored as `audio/vnd.wave` (Firefox on Linux declares WAVs that way) rendered
+ * a hint Firefox and Chromium both reject. The player never fetched the bytes and
+ * showed 00:00.
+ */
+describe('<source type> hint', () => {
+  async function sourceFor(contentType: string | undefined) {
+    const { container } = render(VideoPlayer, {
+      props: { videoUrl: 'blob:test-media', file: { content_type: contentType } },
+    });
+    await flushMicrotasks();
+    return container.querySelector('#player source') as HTMLSourceElement;
+  }
+
+  it('maps a stored audio/vnd.wave to the playable audio/wav', async () => {
+    expect((await sourceFor('audio/vnd.wave')).getAttribute('type')).toBe('audio/wav');
+  });
+
+  it('omits the hint for a type browsers reject but can still sniff (QuickTime)', async () => {
+    expect((await sourceFor('video/quicktime')).hasAttribute('type')).toBe(false);
+  });
+
+  it('omits the hint instead of claiming video/mp4 when the type is unknown', async () => {
+    expect((await sourceFor(undefined)).hasAttribute('type')).toBe(false);
+  });
+});
+
+/**
+ * AIFF, WMA, AVI and the like don't play in Firefox or Chromium, so /stream-url can serve
+ * an AAC/M4A playback rendition instead of the original. The player must pick
+ * <audio> vs <video> and the source hint from what the URL actually serves, not from
+ * the upload's type. An AVI's rendition is audio only, and the user is told so.
+ */
+describe('playback rendition', () => {
+  async function renderWith(props: Record<string, unknown>) {
+    const { container } = render(VideoPlayer, {
+      props: { videoUrl: 'blob:test-media', ...props },
+    });
+    await flushMicrotasks();
+    return container;
+  }
+
+  it('plays an AVI audio-only rendition in <audio> and says the video is unavailable', async () => {
+    const container = await renderWith({
+      file: { content_type: 'video/x-msvideo' },
+      streamContentType: 'audio/mp4',
+      playbackMode: 'audio_only',
+    });
+
+    expect(container.querySelector('audio#player')).not.toBeNull();
+    expect(container.querySelector('video')).toBeNull();
+    expect(container.querySelector('#player source')?.getAttribute('type')).toBe('audio/mp4');
+    expect(container.querySelector('.audio-only-notice')?.textContent).toBe(
+      'videoPlayer.audioOnlyPreview'
+    );
+  });
+
+  it('hints the converted AAC type for an AIFF, with no notice', async () => {
+    const container = await renderWith({
+      file: { content_type: 'audio/x-aiff' },
+      streamContentType: 'audio/mp4',
+      playbackMode: 'converted',
+    });
+
+    expect(container.querySelector('#player source')?.getAttribute('type')).toBe('audio/mp4');
+    expect(container.querySelector('.audio-only-notice')).toBeNull();
+  });
+
+  it('keeps a playable video in <video> with no notice', async () => {
+    const container = await renderWith({
+      file: { content_type: 'video/mp4' },
+      streamContentType: 'video/mp4',
+      playbackMode: 'original',
+    });
+
+    expect(container.querySelector('video#player')).not.toBeNull();
+    expect(container.querySelector('.audio-only-notice')).toBeNull();
+  });
+});

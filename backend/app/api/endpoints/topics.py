@@ -209,14 +209,16 @@ def retroactive_auto_label(
         default=RetroactiveAutoLabelRequest()  # type: ignore[call-arg]  # file_uuids defaults to None
     ),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
-    """Apply auto-labeling to existing files with pending suggestions."""
+    """Apply auto-labeling to the caller's files in the active tenant with pending suggestions."""
     from app.tasks.auto_labeling import retroactive_auto_label_task
 
     task = retroactive_auto_label_task.delay(
-        user_id=current_user.id,
+        user_id=ctx.user.id,
         file_uuids=request_data.file_uuids,
+        tenant_scoped=True,
+        organization_id=ctx.org_id,
     )
 
     return {

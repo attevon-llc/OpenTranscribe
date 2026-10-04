@@ -36,6 +36,42 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v7: external-IdP session timeouts (issue #1106). Additive.
+#   Backend: ExternalIdentity gained ``auth_time: int | None`` (epoch seconds the
+#   person authenticated at the provider; NOT ``iat``). When set (or present as
+#   ``raw_claims["auth_time"]``) and EXTERNAL_SESSION_ABSOLUTE_TIMEOUT_ENFORCED is on
+#   (default), a token whose auth_time is older than SESSION_ABSOLUTE_TIMEOUT_MINUTES
+#   is refused: 401 ``detail.code == "session_expired"`` on required-auth routes,
+#   anonymous on optional-auth routes, socket refused. A verifier that supplies
+#   neither is NOT enforced (one warning per provider) -- a v6 verifier keeps working
+#   unchanged, but gets no server-side absolute timeout until it populates auth_time.
+#   ``GET /auth/methods`` gained ``session_idle_timeout_minutes`` /
+#   ``session_absolute_timeout_minutes``.
+#   Frontend ``$lib/cloud`` seam gained two OPTIONAL exports, both resolved at
+#   runtime so an overlay that lacks them still builds and runs:
+#   ``getExternalSessionAuthTime(): Promise<number | null>`` (epoch seconds; the
+#   idle guard falls back to first-seen when null) and
+#   ``externalReauthenticate(reason): Promise<boolean>`` (true = the overlay started
+#   its own re-authentication; false = core signs out via ``externalSignOut``).
+#
+# v6: capability resolver results fail CLOSED (issue #868). core.capabilities.
+# get_capabilities no longer merges a resolver's result over COMMUNITY_CAPABILITIES:
+# a known key the resolver omits, a non-bool value, a None/non-dict result, or a
+# resolver that raises now reads as DENIED instead of inheriting the community
+# default (True for almost every key) or propagating the exception. BREAKING for a
+# resolver that relied on omission to mean "community default" — it must return
+# every key it grants (start from {**COMMUNITY_CAPABILITIES, ...} to keep that
+# behaviour deliberately). The community resolver is unaffected.
+#
+# v5: user.platform_super_admin_link_authorized (issue #993). Additive escape hatch
+# for auth.account_linking.assert_provider_id_link_permitted's rule 1, which
+# otherwise unconditionally refuses to JIT-link/refresh an external identity onto a
+# role == super_admin row. Defaults False and nothing in core ever sets it; a v4
+# cloud layer keeps working exactly as before (still unconditionally refused) until
+# it deliberately opts a specific row in via its own out-of-band admin-grant
+# mechanism. Rule 2 (email corroboration) is untouched and still runs
+# unconditionally, flag or not.
+#
 # v4 (0.6.0): the before-dispatch pipeline hook gained an explicit fail-closed
 # signal. ``tasks.transcription.hooks.DispatchBlockedError`` propagates out of
 # fire_before_dispatch alongside QuotaExceededError; every OTHER hook exception is
@@ -69,7 +105,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 4
+CLOUD_SEAM_VERSION = 7
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

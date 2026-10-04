@@ -12,6 +12,9 @@ from datetime import datetime
 from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
 from app.core.task_config import task_recovery_config
+from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
+from app.core.task_liveness import supersede_run
+from app.core.tenancy import UNSCOPED
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import Task
@@ -67,6 +70,10 @@ def startup_recovery_task(self):
             for task_id in stale_task_ids:
                 task = db.query(Task).get(task_id)
                 if task:
+                    # issue #1020: stop the dead run's message if it is ever redelivered
+                    # beside the retry dispatched below.
+                    if task.task_type == TRANSCRIPTION_TASK_TYPE:
+                        supersede_run(str(task.id))
                     task.status = "failed"  # type: ignore[assignment]
                     task.error_message = "Celery task lost after system restart"  # type: ignore[assignment]
                     task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
@@ -119,13 +126,22 @@ def startup_recovery_task(self):
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def recover_user_files_task(self, user_id: int | None = None):
+def recover_user_files_task(
+    self,
+    user_id: int | None = None,
+    tenant_scoped: bool = False,
+    organization_id: int | None = None,
+):
     """
     Task to recover files for a specific user or all users.
     Useful when a user reports missing/stuck files.
 
     Args:
         user_id: If provided, only recover files for this user. Otherwise recover all.
+        tenant_scoped: When True, only ``user_id``'s files in tenant
+            ``organization_id`` (None = org-less files) are recovered — the
+            self-service request path. False is the admin sweep (no tenant gate).
+        organization_id: The tenant, when ``tenant_scoped``.
 
     Returns:
         Dictionary with summary of recovery actions
@@ -147,7 +163,11 @@ def recover_user_files_task(self, user_id: int | None = None):
                 summary["users_processed"] = user_count
 
             # Find problem files
-            problem_files = task_detection_service.find_user_problem_files(db, user_id)
+            problem_files = task_detection_service.find_user_problem_files(
+                db,
+                user_id,
+                organization_id=organization_id if tenant_scoped else UNSCOPED,
+            )
             summary["files_checked"] = len(problem_files)
 
             # Recover the files
@@ -166,6 +186,53 @@ def recover_user_files_task(self, user_id: int | None = None):
         logger.error(f"Error in user file recovery: {str(e)}")
         summary["error"] = str(e)  # type: ignore[assignment]
 
+    return summary
+
+
+@celery_app.task(
+    name="system.reclaim_lost_tasks",
+    bind=True,
+    priority=UtilityPriority.OPERATIONAL,
+    soft_time_limit=90,
+    time_limit=110,
+)
+@with_task_lock("system.reclaim_lost_tasks", timeout=120)
+def reclaim_lost_tasks_task(self):
+    """Replay idempotent tasks whose worker died mid-run (issue #1067).
+
+    See ``app/core/task_replay.py``. Runs every two minutes; a run lost to a dead worker is
+    re-sent within about ``TASK_HEARTBEAT_TTL_SECONDS`` plus one sweep interval.
+    """
+    from app.core.task_replay import reclaim_lost_tasks
+
+    summary = reclaim_lost_tasks()
+    if summary.get("replayed") or summary.get("exhausted"):
+        logger.warning("Lost-task sweep: %s", summary)
+    return summary
+
+
+@celery_app.task(
+    name="system.reclaim_orphaned_deliveries",
+    bind=True,
+    priority=UtilityPriority.OPERATIONAL,
+    soft_time_limit=50,
+    time_limit=60,
+)
+@with_task_lock("system.reclaim_orphaned_deliveries", timeout=60)
+def reclaim_orphaned_deliveries_task(self):
+    """Requeue transcription stages that a dead worker took with it.
+
+    See ``app/core/broker_orphans.py``. Runs every ``BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS``;
+    a stage held by a killed worker is back at the front of its queue within about
+    ``TRANSCRIPTION_HEARTBEAT_TTL_SECONDS`` plus one sweep, instead of the six-hour
+    visibility timeout. Cheap when nothing is lost: one HGETALL/ZRANGE of the broker's
+    unacked set plus one MGET of run leases.
+    """
+    from app.core.broker_orphans import reclaim_orphaned_deliveries
+
+    summary = reclaim_orphaned_deliveries()
+    if summary.get("requeued") or summary.get("exhausted") or summary.get("discarded"):
+        logger.warning("Orphaned-delivery sweep: %s", summary)
     return summary
 
 

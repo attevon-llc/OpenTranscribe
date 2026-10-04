@@ -74,7 +74,7 @@ System where OpenTranscribe will be installed:
 
 2. **Clone Repository:**
    ```bash
-   git clone https://github.com/davidamacey/opentranscribe.git
+   git clone https://github.com/attevon-llc/OpenTranscribe.git
    cd opentranscribe
    ```
 
@@ -638,8 +638,8 @@ Backend (FastAPI)
 ### Support
 
 For issues and questions:
-- GitHub Issues: https://github.com/davidamacey/opentranscribe/issues
-- Documentation: https://github.com/davidamacey/opentranscribe
+- GitHub Issues: https://github.com/attevon-llc/OpenTranscribe/issues
+- Documentation: https://github.com/attevon-llc/OpenTranscribe
 
 ### License
 

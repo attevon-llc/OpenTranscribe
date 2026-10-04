@@ -63,7 +63,7 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # When processing completed
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)  # Duration in seconds
-    # Where ``duration`` came from (v394, issue #969) — mirrors ``recorded_date_source``.
+    # Where ``duration`` came from (v431, issue #969) — mirrors ``recorded_date_source``.
     # NULL means "written before #969 was fixed; provenance unknown" — the pre-fix
     # pipeline unconditionally overwrote this column with the transcript's speech
     # extent, so an un-backfilled NULL row's duration is presumptively wrong. See
@@ -144,6 +144,10 @@ class MediaFile(Base):
     thumbnail_path: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Path to video thumbnail in storage
+    # A browser-playable AAC/M4A copy, for originals no browser decodes (AIFF, WMA, AVI,
+    # ...). NULL means the original plays as-is. Written by media.create_playback_rendition,
+    # served by /stream-url, deleted and quarantine-tagged together with the original.
+    playback_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Detailed metadata fields
     metadata_raw: Mapped[dict[str, Any] | None] = mapped_column(
@@ -379,10 +383,10 @@ class MediaFile(Base):
             "NOT recorded_date_locked OR recorded_date_source = 'manual'",
             name="ck_media_file_recorded_date_locked_is_manual",
         ),
-        # v394 (#969). No provenance-required companion CHECK like
+        # v431 (#969). No provenance-required companion CHECK like
         # ``ck_media_file_recorded_date_provenance``: every pre-existing row already
         # has a duration and a NULL source, and the migration deliberately does not
-        # backfill (see v394's docstring) — that pairing would refuse to insert on
+        # backfill (see v431's docstring) — that pairing would refuse to insert on
         # a live production schema.
         CheckConstraint(
             "duration_source IS NULL OR duration_source IN "
@@ -561,7 +565,17 @@ class SpeakerProfile(Base):
         Integer, ForeignKey("speaker_cluster.id", ondelete="SET NULL"), nullable=True
     )
 
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_speaker_profile_user_name"),)
+    # A name is unique per user per tenant (v430). COALESCE makes the personal
+    # workspace one tenant, so two personal rows of one name still collide.
+    __table_args__ = (
+        Index(
+            "uq_speaker_profile_user_tenant_name",
+            "user_id",
+            text("COALESCE(organization_id, 0)"),
+            "name",
+            unique=True,
+        ),
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="speaker_profiles")
@@ -698,14 +712,23 @@ class Comment(Base):
 
 
 class Tag(Base):
-    """A tag, owned by one user or shared as system vocabulary.
+    """A tag, belonging to one tenant or shared as system vocabulary.
 
-    ``user_id`` is NULL for **system tags** (the seeded ``Important`` /
-    ``Meeting`` / ``Interview`` / ``Personal`` set, visible to everyone) and set
-    for a user's private tags. Uniqueness is therefore per owner, not global —
-    ``name`` alone can match several rows, so never look a tag up by name
-    without an owner predicate or a join through ``file_tag`` (migration
-    ``v374_add_tag_user_id``).
+    Three kinds (migrations ``v374_add_tag_user_id`` and
+    ``v420_add_tag_organization_id``):
+
+    * **system** — ``user_id IS NULL AND organization_id IS NULL``: the seeded
+      ``Important`` / ``Meeting`` / ``Interview`` / ``Personal`` set, visible in
+      every tenant.
+    * **personal** — ``organization_id IS NULL``, ``user_id`` = the owner.
+    * **organization** — ``organization_id`` set; shared by every member of that
+      org. ``user_id`` is the creator (attribution only) and may be NULL once
+      their account is gone, which is why ``user_id IS NULL`` alone never means
+      "system".
+
+    Uniqueness is per tenant, so ``name`` alone can match several rows — never
+    look a tag up by name without a tenant predicate
+    (``tag_service.owned_or_system``) or a join through ``file_tag``.
     """
 
     __tablename__ = "tag"
@@ -717,6 +740,11 @@ class Tag(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("user.id"), nullable=True, index=True
+    )
+    # No ON DELETE, like every other org stamp: tenant erasure deletes the org's
+    # tags explicitly (gdpr_erasure_service.erase_organization).
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True
     )
     source: Mapped[str | None] = mapped_column(
         String(50), nullable=True
@@ -731,8 +759,8 @@ class Tag(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=True
     )
 
-    # Two partial unique indexes rather than one composite UNIQUE: Postgres
-    # treats NULLs as distinct, so UNIQUE(user_id, name) alone would allow
+    # One partial unique index per tenant kind rather than one composite
+    # UNIQUE: Postgres treats NULLs as distinct, so a plain composite would allow
     # duplicate system tags and break the idempotent seeder.
     __table_args__ = (
         Index(
@@ -740,13 +768,25 @@ class Tag(Base):
             "user_id",
             "name",
             unique=True,
-            postgresql_where=text("user_id IS NOT NULL"),
+            postgresql_where=text("user_id IS NOT NULL AND organization_id IS NULL"),
         ),
         Index(
             "uq_tag_system_name",
             "name",
             unique=True,
-            postgresql_where=text("user_id IS NULL"),
+            postgresql_where=text("user_id IS NULL AND organization_id IS NULL"),
+        ),
+        Index(
+            "uq_tag_org_name",
+            "organization_id",
+            "name",
+            unique=True,
+            postgresql_where=text("organization_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_tag_organization_id",
+            "organization_id",
+            postgresql_where=text("organization_id IS NOT NULL"),
         ),
     )
 
@@ -861,6 +901,21 @@ class Analytics(Base):
 
 
 class Collection(Base):
+    """A named set of media files, belonging to one tenant.
+
+    Two kinds (migration ``v422_add_collection_tenancy``, issue #1051):
+
+    * **personal** — ``organization_id IS NULL``, ``user_id`` = the owner; seen by
+      the owner and whoever they share it with explicitly.
+    * **organization** — ``organization_id`` set; shared by every member of that
+      org (members are editors; the creator and org admins are owners).
+      ``user_id`` is the creator (attribution) and becomes NULL once their account
+      is gone — the collection stays with the tenant.
+
+    Names are unique per tenant, so never look a collection up by name without a
+    tenant predicate (``PermissionService.collection_tenant_pred``).
+    """
+
     __tablename__ = "collection"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -869,7 +924,7 @@ class Collection(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
     organization_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("organization.id"), nullable=True, index=True
     )
@@ -890,11 +945,31 @@ class Collection(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Unique constraint
-    __table_args__ = (UniqueConstraint("user_id", "name", name="_user_collection_uc"),)
+    # One partial unique index per tenant kind (v422): a user may hold one name in
+    # several tenants, and an org holds each name once across all its members.
+    __table_args__ = (
+        CheckConstraint(
+            "user_id IS NOT NULL OR organization_id IS NOT NULL",
+            name="ck_collection_owner_or_org",
+        ),
+        Index(
+            "uq_collection_user_name",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where=text("organization_id IS NULL"),
+        ),
+        Index(
+            "uq_collection_org_name",
+            "organization_id",
+            "name",
+            unique=True,
+            postgresql_where=text("organization_id IS NOT NULL"),
+        ),
+    )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="collections")
+    user: Mapped["User | None"] = relationship("User", back_populates="collections")
     collection_members: Mapped[list["CollectionMember"]] = relationship(
         "CollectionMember", back_populates="collection", cascade="all, delete-orphan"
     )
@@ -965,8 +1040,16 @@ class SpeakerCollection(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Unique constraint
-    __table_args__ = (UniqueConstraint("user_id", "name", name="_user_speaker_collection_uc"),)
+    # Unique per user per tenant (v430), NULL-safe like the profile index.
+    __table_args__ = (
+        Index(
+            "uq_speaker_collection_user_tenant_name",
+            "user_id",
+            text("COALESCE(organization_id, 0)"),
+            "name",
+            unique=True,
+        ),
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="speaker_collections")
@@ -1175,3 +1258,10 @@ class SpeakerProfileBlacklist(Base):
     __table_args__ = (
         UniqueConstraint("speaker_id", "profile_id", name="uq_speaker_profile_blacklist"),
     )
+
+
+# Issue #1162: clear a file's infrastructure-requeue count on every terminal status write.
+# Registered here so every process that can write a MediaFile status has it.
+from app.core.infra_requeue_reset import register as _register_infra_requeue_reset  # noqa: E402
+
+_register_infra_requeue_reset()

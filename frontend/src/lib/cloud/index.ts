@@ -13,6 +13,8 @@
  *    paths under `$lib/cloud/components/` — never a submodule of the overlay.
  *  - Every call site must be gated by `isCloudEdition` (a compile-time
  *    constant), so all of this dead-code-eliminates out of community bundles.
+ *  - Component seams: `UserMenuExtras.svelte` renders inside the user dropdown; overrides
+ *    dispatch `select` when an entry is chosen so the menu closes.
  *  - This stub defines the seam contract: the managed edition must export the
  *    same symbols with compatible signatures. Change here first, mirror there.
  */
@@ -38,6 +40,26 @@ export async function getSessionToken(): Promise<string | null> {
 
 /** Sign out of the managed-edition session. Community stub: no-op. */
 export async function externalSignOut(): Promise<void> {}
+
+/**
+ * When the current external session was authenticated, in epoch SECONDS (the
+ * session's `auth_time`, not a refreshed token's `iat`). The idle guard uses it
+ * for the absolute timeout and falls back to first-seen when this returns null.
+ * Optional in an overlay: core resolves it at runtime. Community stub: `null`.
+ */
+export async function getExternalSessionAuthTime(): Promise<number | null> {
+  return null;
+}
+
+/**
+ * Start the provider's own re-authentication after the absolute session timeout.
+ * Return `true` if the overlay took over (e.g. redirected to a hosted sign-in),
+ * `false` to let core sign out via {@link externalSignOut} instead. Optional in an
+ * overlay: core resolves it at runtime. Community stub: `false`.
+ */
+export async function externalReauthenticate(_reason: 'absolute' | 'idle'): Promise<boolean> {
+  return false;
+}
 
 /** Subscribe to auth-state changes. Community stub: no-op unsubscriber. */
 export async function onAuthChange(_cb: (payload: unknown) => void): Promise<() => void> {

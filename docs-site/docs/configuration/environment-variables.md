@@ -454,6 +454,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 # Amazon Bedrock — no API key: boto3 uses the standard AWS credential chain
 BEDROCK_REGION=            # falls back to AWS_REGION / AWS_DEFAULT_REGION
 BEDROCK_MODEL_NAME=anthropic.claude-haiku-4-5-20251001-v1:0
+BEDROCK_RETRY_MODE=adaptive  # botocore retry mode: adaptive | standard | legacy
+BEDROCK_MAX_ATTEMPTS=8       # total attempts per call, including the first
 ```
 
 ## GPU Concurrent Processing
@@ -500,6 +502,142 @@ NLP_MAX_TASKS=50           # Restart after N tasks
 CLOUD_ASR_CONCURRENCY=16   # Default: 16
 ```
 
+### Speaker attribute (gender) detection memory
+
+Gender detection runs a wav2vec2 model on the CPU worker. Its memory grows with the length of
+the clip it is given. Each detection costs about 0.7 GB for the model plus about 0.4 GB of
+working memory at the default clip cap, and every CPU worker process shares one container
+memory limit. Two settings bound it:
+
+```bash
+# Longest clip (seconds, taken from the middle of a speaking turn) the model is given
+SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS=20   # Default: 20 (minimum 2)
+# Detections allowed at once per worker host/container; extra ones re-queue themselves
+SPEAKER_ATTRIBUTE_MAX_CONCURRENCY=2     # Default: 2 (0 = unbounded)
+```
+
+A CPU worker also unloads the model after each detection, so idle worker processes don't each
+keep their own copy.
+
+## Task Recovery
+
+A periodic health check (every 10 minutes) and a startup recovery pass reclaim work whose worker
+died. They never fail, or dispatch a second copy of, a transcription that is only **waiting** for
+a worker — for example while GPU workers are scaled to zero, paused, or behind a long backlog.
+
+Each transcription run carries two markers in Redis:
+
+- a **queued** marker, set when the pipeline is published and whenever a stage hands the run back
+  to the queue;
+- a **lease** (heartbeat), refreshed by a worker while it is executing a stage, which also records
+  which broker message holds it.
+
+A run is treated as dead only when it has neither — its worker stopped heartbeating, or its
+message is gone from the queue. When recovery does retry a file, it cancels the old run, and a
+stage that picks up a run which has since been replaced exits without doing any work. If Redis
+cannot be read, recovery leaves transcriptions alone.
+
+### When a worker dies mid-transcription
+
+A worker killed while it holds a stage (out of memory, SIGKILL at the end of a container's stop
+grace period, node loss, container restart) used to leave that stage's message in the broker's
+*unacked* set until the 6 h visibility timeout, and recovery then marked the file **failed**. Now
+an **orphan reaper** runs every minute:
+
+- If the stage's message is still in the broker, it is put back at the **head** of its queue (so
+  the file keeps its place ahead of newer submissions) and removed from the unacked set, so it is
+  never redelivered as a duplicate later. The file stays in processing throughout.
+- If the message is gone too (a cold shutdown's cancel drops it on Redis), a replacement run is
+  dispatched at retry priority.
+
+A worker loss is noticed within one lease TTL plus one sweep — about 2.5 minutes by default.
+Infrastructure requeues are counted per file, separately from the admin retry limit, and a file
+that keeps killing workers fails with *"interrupted ... after several automatic retries"* once
+`TRANSCRIPTION_MAX_INFRA_REQUEUES` is spent.
+
+A stage of a file that is being cancelled is never put back; its delivery is dropped and the
+cancellation backstop resolves the file. Every other late-acknowledged task (utility, CPU and
+enrichment tasks, and countdown tasks a worker was holding until their time) has no lease, so
+the reaper puts it back once no live worker has reported holding it for
+`BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` after delivery or after its ETA. A task the
+worker-loss replay sweep already tracks is left to that sweep.
+
+```bash
+TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=15   # Default: 15 — lease refresh
+TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=90        # Default: 90 — detection latency for a dead worker
+BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS=60       # Default: 60 — how often the reaper runs
+BROKER_ORPHAN_STALE_SECONDS=120               # Default: 120 — grace for a delivery not yet started
+BROKER_ORPHAN_UNTRACKED_STALE_SECONDS=600     # Default: 600 — grace for a non-transcription delivery
+BROKER_ORPHAN_MAX_REQUEUES=5                  # Default: 5 — worker losses per non-transcription message
+TRANSCRIPTION_MAX_INFRA_REQUEUES=5            # Default: 5 — worker losses per file before it fails
+TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD=3 # Default: 3 — for the poison-file alert gauge
+```
+
+**Keep `CELERY_VISIBILITY_TIMEOUT` at 6 h.** Redis has no per-message lease, so that one value
+applies to every late-acknowledged task however long it legitimately runs; lowering it re-runs
+live work. Recovery no longer depends on it.
+
+### Failures: permanent vs transient
+
+Every processing failure is sorted into one of two classes:
+
+- **Permanent** — the input is unusable: corrupt or undecodable media, no audio track, no
+  speech, an empty or too-short file, an unsupported format, DRM/encrypted content. The file
+  fails at once with that reason and is never retried automatically.
+- **Transient** — the infrastructure failed (out of memory, a lost connection, a timeout, a
+  worker that died) or the cause is unknown. The file is put back in the queue within minutes,
+  with exponential backoff and jitter, **ahead of files submitted after it**, until the admin's
+  *max retries* setting (Settings → Transcription) is used up. Only then does it fail, with a
+  reason that says it was interrupted and retried.
+
+Celery's own shutdown settings: `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT` (default 30) and
+`CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE` (default true) apply to a **cold** shutdown (SIGQUIT) only;
+a plain SIGTERM is a warm shutdown that waits for running tasks without limit, so give worker
+containers a stop grace period longer than your longest stage. Prefer the warm shutdown: on the
+Redis broker a cold shutdown's cancel acknowledges (drops) the running stage's message, and the
+file then waits for the reaper to re-dispatch it.
+
+```bash
+# Longest a transcription may wait in the queue before its message is treated as lost
+TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS=604800   # Default: 7 days
+
+
+# Longest a transcription may RUN, measured from when a worker started it (not from upload)
+TASK_MAX_DURATION_TRANSCRIPTION_SECONDS=3600  # Default: 3600
+# Budget for other task types, which record their start when they begin running
+TASK_MAX_DURATION_DEFAULT_SECONDS=1800        # Default: 1800
+
+# How long a task must go without an update before the health check considers it
+TASK_RECOVERY_STALENESS_SECONDS=300           # Default: 300
+# ...and before startup recovery considers it orphaned
+TASK_RECOVERY_ORPHANED_HOURS=1                # Default: 1
+```
+
+An invalid value (non-numeric, or below 1) logs a warning and falls back to the default. The
+values are read when a worker starts, so restart the workers after changing them.
+
+### Tasks whose worker dies
+
+When a worker is killed mid-task (out of memory, SIGKILL, node loss), Celery can't hand the
+task to another worker. Most tasks are acknowledged as soon as a worker receives them, so the
+message is gone. A task that acknowledges late waits in the broker until the visibility
+timeout (6 h). So the tasks that are safe to run twice (speaker attributes, speaker
+clustering, analytics, waveform, thumbnail, playback rendition, search indexing, file facts,
+summary, topics, LLM speaker identification) record themselves while they run and send a
+heartbeat. A sweep every two minutes re-sends any whose heartbeat has lapsed, under the same
+task id, and gives up (marking the task failed) after a set number of re-sends, so a task
+that kills its worker every time can't loop. Transcription is never re-sent this way.
+
+```bash
+# Heartbeat refresh interval, and how long a worker may go silent before its tasks are re-sent
+TASK_HEARTBEAT_INTERVAL_SECONDS=30   # Default: 30
+TASK_HEARTBEAT_TTL_SECONDS=120       # Default: 120 (must exceed the interval)
+# How many times one task is re-sent after losing its worker before it is failed
+TASK_REPLAY_MAX_ATTEMPTS=2           # Default: 2 (0 = never re-send)
+# Records older than this are dropped instead of re-sent
+TASK_REPLAY_MAX_AGE_SECONDS=86400    # Default: 86400
+```
+
 ## Flower Monitoring Dashboard
 
 ```bash
@@ -509,6 +647,48 @@ FLOWER_URL_PREFIX=flower  # URL prefix (must match nginx proxy_pass path)
 ```
 
 Flower provides industry-standard Celery task monitoring with persistent task history, queue visibility, and worker status. Access at `http://localhost:5175/flower` (or via NGINX at `/flower/`).
+
+## Worker Task Metrics
+
+```bash
+WORKER_METRICS_PORT=          # Default: unset (off). A TCP port, e.g. 9808, to turn it on
+```
+
+Each Celery worker can serve per-task Prometheus metrics at `http://<worker>:<port>/metrics`:
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `celery_task_total` | `task`, `outcome` | Tasks that ended in this worker. `outcome` is `success`, `failure`, `retry` or `revoked` |
+| `celery_task_runtime_seconds` | `task` | Histogram of run time, start to end, whatever the outcome (buckets 0.5 s to 2 h) |
+| `pipeline_stage_duration_seconds` | `stage` | Histogram of one pipeline stage's wall time (buckets 50 ms to 2 h); see Monitoring → Per-stage pipeline timing |
+| `pipeline_stage_total` | `stage`, `outcome` | Pipeline stage runs; `outcome` is `success` or `failure` |
+| `celery_task_queue_wait_seconds` | `queue`, `task` | Histogram of how long the message waited on the broker before this worker started it, from its publish time (or ETA, if later). Buckets 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200 s |
+| `celery_task_queue_wait_missing_total` | `queue` | Started messages without a publish stamp (published by an older version), so no wait was observed |
+
+- `task` is the registered task name (for example `transcription.gpu_transcribe`). A name the
+  worker has not registered is counted as `other`, so the label set is bounded by the task list.
+  No file, user or task ids are ever used as labels. `queue` is a configured queue name or
+  `other`.
+- Queue wait compares the producer's clock with the worker's, and a message redelivered after a
+  lost worker keeps its original publish time, so its wait includes the failed attempt. See
+  Monitoring → Queue wait, which also covers `celery_queue_oldest_message_age_seconds` (served
+  by the backend, not the workers) for work still waiting.
+- A task whose worker died and that was put back on its queue is not counted: it has not ended.
+  A task that failed because its worker process died is counted as `failure`.
+- Unset, empty or invalid means off: nothing is recorded and no port is opened. `.env` is shared by
+  every service, but only `celery ... worker` processes read the variable, so the API, beat and
+  Flower are unaffected. Each worker container has its own network namespace, so the same port
+  works for all of them; the port is not published to the host, so scrape it from the compose
+  network (for example `celery-cpu-worker:9808`).
+- **Prefork workers.** Tasks run in forked child processes, which cannot share one port. A worker
+  with this variable set runs `prometheus_client` in multiprocess mode: every process writes its
+  samples to a file in `PROMETHEUS_MULTIPROC_DIR` and the worker's main process serves them all,
+  including the counts of children already recycled by `--max-tasks-per-child`. The directory is a
+  fresh temporary one by default, emptied at startup and removed at shutdown; set
+  `PROMETHEUS_MULTIPROC_DIR` only to choose where it lives (one directory per worker). Threads and
+  solo pools (the GPU and redaction workers) use the same mechanism with a single process.
+- Because multiprocess mode applies to the whole worker process, other collectors a worker updates
+  (for example `db_query_duration_seconds`) are served on the same port.
 
 ## Object Storage
 
@@ -520,6 +700,24 @@ native AWS S3 backend is also available for cloud deployments.
 # Storage Backend Selection
 STORAGE_BACKEND=minio  # minio (default, self-hosted) or s3 (native AWS S3 / S3-compatible)
 ```
+
+### Buckets (both backends)
+
+```bash
+MEDIA_BUCKET_NAME=opentranscribe    # uploaded originals — the source of truth
+CACHE_BUCKET_NAME=processed-videos  # regenerable derived assets and bulk-export ZIPs
+```
+
+Two buckets, on purpose: everything in `CACHE_BUCKET_NAME` (subtitle-embedded videos and
+extracted audio under `derived/`, bulk-export ZIPs under `bulk/`) is a duplicate re-created on
+demand, so a lifecycle rule can expire that bucket wholesale without a rule that could ever
+match an original. Both buckets are created on first use if missing.
+
+Set `CACHE_BUCKET_NAME` whenever a bucket named `processed-videos` is not available to the
+configured credentials — S3 bucket names are one global namespace, so on native S3 the default
+generally is not yours. Getting this wrong is not a boot failure: the backend starts, and bulk
+subtitle export, subtitle-embedded video download and the admin media-cache screens fail at
+request time instead.
 
 ### MinIO (default)
 
@@ -550,19 +748,51 @@ AWS provider chain with automatic rotation. Set `S3_USE_IAM_ROLE=false` to sign 
 drives both backends; switching `STORAGE_BACKEND` changes endpoint/credential/addressing
 construction, not the call sites.
 
+On S3, quarantining a file does not by itself revoke media URLs already issued for it: they stay
+valid for up to `MEDIA_URL_EXPIRE_SECONDS`. See
+[Production Deployment](../operations/production-deployment.md#native-aws-s3-backend-alternative-to-minio)
+for the bucket policy that enforces revocation and the TTL trade-off.
+
 ### Presigned URLs and large uploads (both backends)
 
 ```bash
 STORAGE_PUBLIC_URL=               # backend-agnostic alias for MINIO_PUBLIC_URL; empty keeps the /s3 proxy path on MinIO and leaves native S3 URLs untouched
 PRESIGNED_URL_MAX_SECONDS=21600   # 6h default -- a presigned URL cannot outlive the credentials that signed it (IAM-role STS sessions expire well inside 24h)
 MULTIPART_THRESHOLD_MB=512        # objects at/above this size use browser-side multipart upload
+API_MEDIATED_UPLOAD_ENABLED=true  # false = refuse POST /api/files (file streamed through the API); uploads go browser -> storage only
 ```
+
+:::note[Disabling the API-mediated upload]
+Uploads normally go straight from the browser to object storage over presigned URLs;
+`POST /api/files` is only a fallback that streams the whole file through the API process.
+With `API_MEDIATED_UPLOAD_ENABLED=false` that route answers 404 before reading the body, the
+browser is told (via `/api/system/capabilities`) never to fall back to it, and a failed
+presigned attempt is retried on the presigned path instead. Multi-GB uploads are unaffected:
+they already use the presigned multipart path. With it enabled (the default), the route's
+body is capped at `MAX_UPLOAD_BYTES` while it streams.
+:::
 
 :::note[S3 vs MinIO single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB. AWS S3 rejects a single PUT above 5 GiB
 (`EntityTooLarge`), so on `STORAGE_BACKEND=s3` an upload above that size always goes through the
 multipart path regardless of `MULTIPART_THRESHOLD_MB`.
 :::
+
+### GDPR erasure journal
+
+```bash
+ERASURE_JOURNAL_BACKEND=file                    # file | object_storage
+ERASURE_JOURNAL_OBJECT_PREFIX=gdpr/erasure-journal/  # object_storage only; key prefix in the media bucket
+```
+
+Every GDPR erasure request is also written outside the database, so restoring an older dump
+cannot silently undo it (the reconciliation sweep re-opens anything the database lost). With
+`file` (the default) that journal is `DATA_DIR/gdpr/erasure-journal.jsonl` on the data volume.
+Set `object_storage` when containers have **no durable writable volume** — a read-only root
+filesystem, or pods whose local disk does not outlive them. Each entry then becomes one object
+under the prefix in `MEDIA_BUCKET_NAME` (surrogate keys only, no personal data). Do not point
+`DATA_DIR` at an ephemeral volume instead: the journal would vanish with the pod, which is the
+failure it exists to prevent. Keep the prefix out of any bucket lifecycle expiration rule.
 
 ## Storage Encryption
 
@@ -588,6 +818,31 @@ POSTGRES_SSLMODE=prefer  # disable/allow/prefer/require/verify-ca/verify-full
 ```
 
 Database initialization is handled entirely by Alembic migrations on backend startup. No external SQL init file is needed.
+
+### API connection pool and threadpool
+
+```bash
+DB_POOL_SIZE=20          # API process SQLAlchemy pool
+DB_MAX_OVERFLOW=40       # extra connections above the pool under load
+API_THREADPOOL_SIZE=0    # 0 = match DB_POOL_SIZE + DB_MAX_OVERFLOW (never below 40)
+```
+
+The API runs synchronous handlers, synchronous dependencies and `run_in_threadpool` calls on
+one thread pool. A request holds its pooled database connection from authentication until the
+response is sent, including while it waits for a thread for its next step. With `C` connections
+(`DB_POOL_SIZE + DB_MAX_OVERFLOW`) and `T` threads, a burst of `C + T` or more concurrent requests
+can leave every connection with a request waiting for a thread and every thread with a request
+waiting for a connection, until the pool timeout (30 s) fails the waiters.
+
+The default therefore sizes the thread pool to the pool capacity, so one API process handles up
+to twice its pool capacity of concurrent requests (120 with the defaults) without reaching that
+state. To serve more, raise the pool (and `PG_MAX_CONNECTIONS`, which must stay above the sum of
+every service's pool) or run more API processes; setting `API_THREADPOOL_SIZE` below the pool
+capacity logs a warning at startup.
+
+Hooks registered by a deployment (for example an upload-limits resolver) run on this thread
+pool, never on the event loop, but they run while the request holds a connection: keep them
+fast, and put a timeout on any network call they make.
 
 ## Ports
 
@@ -627,15 +882,31 @@ See [NGINX Setup Guide](/docs/configuration/nginx-setup) for full documentation.
 
 ## Content Security Policy
 
-OpenTranscribe's production NGINX configuration includes a Content Security Policy header to mitigate cross-site scripting (XSS) and other injection attacks ([#124](https://github.com/attevon-llc/OpenTranscribe/issues/124)). The CSP restricts script sources, style sources, connection targets, and frame ancestors. Key directives include:
+OpenTranscribe ships a Content Security Policy to mitigate cross-site scripting (XSS) and other injection attacks ([#124](https://github.com/attevon-llc/OpenTranscribe/issues/124)). It is generated by SvelteKit from `kit.csp` in `frontend/svelte.config.js` and emitted as a `<meta http-equiv="content-security-policy">` in the built `index.html`, in hash mode, so the inline SPA bootstrap is hashed and `script-src` needs no `'unsafe-inline'`. Key directives include:
 
 - `default-src 'self'` -- baseline restriction to same-origin resources
-- `script-src 'self' 'unsafe-inline'` -- inline scripts required by Svelte hydration (nonce-based CSP is a planned improvement)
-- `connect-src 'self' ws: wss:` -- allows WebSocket connections for real-time updates
-- `frame-ancestors 'self'` -- prevents clickjacking
+- `script-src 'self' 'wasm-unsafe-eval'` -- plus the bootstrap's hash; `wasm-unsafe-eval` is for the FFmpeg.wasm worker
+- `connect-src 'self'` -- same-origin API calls and the real-time notifications WebSocket. Under CSP Level 3, `'self'` matches `ws:`/`wss:` on the page's own host, which is all the socket needs (its URL is built from the page's location). Bare `ws:`/`wss:` sources are deliberately absent: they would allow a socket to **any** host ([#1028](https://github.com/attevon-llc/OpenTranscribe/issues/1028)), and `npm run build` fails if one reappears.
 - `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` -- defense-in-depth directives
 
-CSP is enforced in production via `frontend/nginx.conf`. Development mode (Vite dev server) does not apply CSP headers.
+`frame-ancestors` is not valid in a `<meta>` policy; `X-Frame-Options: SAMEORIGIN` from the frontend nginx covers clickjacking. The optional reverse-proxy overlay (`nginx/site.conf.template`) additionally sends a CSP **header**; the browser enforces both, so a source must be allowed by each. The Vite dev server (`./opentr.sh start dev`) sends the same policy as a response header instead of a `<meta>` tag. Its hot-reload socket is same-host, so `'self'` covers it too.
+
+:::note Deployers who rewrite the CSP
+If you rewrite `connect-src` with an nginx `sub_filter` (or similar), the string to match is now `connect-src 'self'` rather than `connect-src 'self' ws: wss:`. Add an explicit scheme+host (for example `wss://realtime.example.com`), never a bare scheme.
+:::
+
+## CORS Origins
+
+`CORS_ORIGINS` lists the browser origins allowed to make **credentialed cross-origin** API calls. Every shipped deployment serves the SPA and the API from the same origin, which needs no CORS entry, so leave it unset unless your frontend is served from a different origin.
+
+| `ENVIRONMENT` | `CORS_ORIGINS` unset resolves to |
+|---|---|
+| hardened (`production`, unset, or anything not listed below) | `[]` -- no cross-origin access |
+| `development`, `dev`, `testing`, `test`, `local` | `http://localhost:5173`, `http://127.0.0.1:5173` (the Vite dev server) |
+
+An explicit value always wins, as a comma-separated list (`CORS_ORIGINS=https://app.example.com,https://admin.example.com`) or a JSON list (`CORS_ORIGINS=["https://app.example.com"]`). A wildcard (`*`) is refused at startup in a hardened deployment. The backend logs the resolved list at startup as `CORS allowed origins: ...`.
+
+Before [#1029](https://github.com/attevon-llc/OpenTranscribe/issues/1029), a production deployment that never set the variable allowed the Vite dev origins, so any page served on `localhost:5173` on a user's machine could make credentialed requests. Behind the shipped nginx configs, the WebSocket same-origin check does not depend on this list. The Vite dev server's proxy rewrites `Host`, so in development the notifications socket is admitted through the list instead, which is why the relaxed default keeps the Vite origins. A dev stack on a non-default frontend port (for example `--fresh --port-offset`) needs that origin in `CORS_ORIGINS`.
 
 ## File Retention
 
@@ -731,7 +1002,16 @@ PKI_ADMIN_DNS=CN=Admin User,O=Company,C=US
 ### Security Features
 
 ```bash
-# Password Policy (FedRAMP IA-5)
+# Password Policy (FedRAMP IA-5 / NIST SP 800-63B-4) - see Password Policy page
+PASSWORD_POLICY_PROFILE=standard      # basic | standard | hardened | custom (nist/stig = aliases; code default hardened; new installs standard)
+PASSWORD_MAX_LENGTH=0                 # 0 = level default
+PASSWORD_BLOCKLIST_ENABLED=           # empty = level default
+PASSWORD_BLOCKLIST_PATH=
+PASSWORD_CONTEXT_WORDS=
+PASSWORD_HIBP_ENABLED=false           # online k-anonymity lookup; fails open
+PASSWORD_HIBP_URL=https://api.pwnedpasswords.com/range
+PASSWORD_HIBP_TIMEOUT_SECONDS=3
+MFA_REQUIRED_FOR_ADMINS=false         # recommended true when MFA_ENABLED=true
 PASSWORD_POLICY_ENABLED=true
 PASSWORD_MIN_LENGTH=12
 PASSWORD_REQUIRE_UPPERCASE=true

@@ -87,10 +87,44 @@ _PROGRESS_KEY = "auto_label_progress:{user_id}"
 _LOCK_KEY = "auto_label_lock:{user_id}"
 
 
+def pending_suggestion_ids(
+    db,
+    user_id: int,
+    file_uuids: list[str] | None = None,
+    *,
+    tenant_scoped: bool = False,
+    organization_id: int | None = None,
+) -> list[int]:
+    """IDs of ``user_id``'s suggestions not yet auto-applied.
+
+    With ``tenant_scoped`` only suggestions on files of tenant ``organization_id``
+    (None = org-less files) are returned, so a run started in one workspace never
+    labels files that belong to another.
+    """
+    from app.models.media import MediaFile
+    from app.models.topic import TopicSuggestion
+    from app.utils.db_helpers import org_stamp_is
+
+    query = db.query(TopicSuggestion.id).filter(
+        TopicSuggestion.user_id == user_id,
+        TopicSuggestion.auto_apply_completed_at.is_(None),
+    )
+    if tenant_scoped:
+        query = query.join(MediaFile, MediaFile.id == TopicSuggestion.media_file_id).filter(
+            org_stamp_is(MediaFile.organization_id, organization_id)
+        )
+    if file_uuids:
+        file_ids = [r[0] for r in db.query(MediaFile.id).filter(MediaFile.uuid.in_(file_uuids))]
+        query = query.filter(TopicSuggestion.media_file_id.in_(file_ids))
+    return [r[0] for r in query.all()]
+
+
 @celery_app.task(name="ai.retroactive_auto_label", priority=NLPPriority.BACKGROUND)
 def retroactive_auto_label_task(
     user_id: int,
     file_uuids: list[str] | None = None,
+    tenant_scoped: bool = False,
+    organization_id: int | None = None,
 ):
     """Coordinator: dispatch parallel batch workers for retroactive auto-labeling.
 
@@ -101,6 +135,8 @@ def retroactive_auto_label_task(
     Args:
         user_id: User ID
         file_uuids: Optional list of specific file UUIDs to process
+        tenant_scoped: Restrict to files of tenant ``organization_id``
+        organization_id: Active tenant of the request (None = personal)
     """
     from app.core.redis import get_redis
 
@@ -114,34 +150,19 @@ def retroactive_auto_label_task(
 
     try:
         with session_scope() as db:
-            from app.models.topic import TopicSuggestion
             from app.services.auto_label_service import AutoLabelService
 
             service = AutoLabelService(db)
             user_settings = service.get_user_auto_label_settings(user_id)
             threshold = user_settings.get("confidence_threshold", 0.75)
 
-            # Query pending suggestion IDs
-            query = db.query(TopicSuggestion.id).filter(
-                TopicSuggestion.user_id == user_id,
-                TopicSuggestion.auto_apply_completed_at.is_(None),
+            suggestion_ids = pending_suggestion_ids(
+                db,
+                user_id,
+                file_uuids,
+                tenant_scoped=tenant_scoped,
+                organization_id=organization_id,
             )
-            if file_uuids:
-                from app.models.media import MediaFile
-
-                file_rows = (
-                    db.query(MediaFile.id)
-                    .filter(
-                        MediaFile.uuid.in_(file_uuids),
-                    )
-                    .all()
-                )
-                file_ids = [r[0] for r in file_rows]
-                query = query.filter(
-                    TopicSuggestion.media_file_id.in_(file_ids),
-                )
-
-            suggestion_ids = [r[0] for r in query.all()]
 
         total = len(suggestion_ids)
         if total == 0:

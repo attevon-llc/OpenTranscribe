@@ -73,10 +73,23 @@ class TestCategorizeError:
 
     # Resource errors
     def test_cuda_oom(self):
-        assert categorize_error("CUDA out of memory") == ErrorCategory.OOM_ERROR
+        # Its own code: the GPU-OOM backoff path keys off it, and a host OOM must not (#959).
+        assert categorize_error("CUDA out of memory") == ErrorCategory.GPU_OOM
+
+    def test_host_out_of_memory_is_not_gpu_oom(self):
+        assert categorize_error("Worker ran out of memory") == ErrorCategory.OOM_ERROR
 
     def test_oom(self):
         assert categorize_error("Process killed: OOM") == ErrorCategory.OOM_ERROR
+
+    def test_oom_killer_and_oomkilled(self):
+        assert categorize_error("oom-killer invoked") == ErrorCategory.OOM_ERROR
+        assert categorize_error("container OOMKilled") == ErrorCategory.OOM_ERROR
+
+    def test_oom_inside_a_word_is_not_oom(self):
+        # A bare substring match classified "boom"/"room"/"zoom" as out-of-memory.
+        assert categorize_error("boom") == ErrorCategory.UNKNOWN
+        assert categorize_error("no room left in the zoom recording") == ErrorCategory.UNKNOWN
 
     # Network errors
     def test_connection_timeout(self):

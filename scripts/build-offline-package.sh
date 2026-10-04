@@ -187,6 +187,9 @@ setup_directories() {
     # same reasoning as every other model group here, just mounted at /models rather
     # than under a ~/.cache/* subdirectory.
     mkdir -p "${PACKAGE_DIR}/models/diar-native"
+    # Breached-password list (SHA-1 hashes, built from Have I Been Pwned). The backend reads
+    # it from models/password-blocklist/; absent is fine (the check is skipped).
+    mkdir -p "${PACKAGE_DIR}/models/password-blocklist"
     mkdir -p "${PACKAGE_DIR}/config"
     mkdir -p "${PACKAGE_DIR}/database"
     mkdir -p "${PACKAGE_DIR}/scripts"
@@ -312,6 +315,29 @@ download_models() {
     else
         print_warning "No native diarizer export found to copy — DIAR_NATIVE_MODEL_SET may be"
         print_warning "unset, HUGGINGFACE_TOKEN may lack access, or this backend image predates it"
+    fi
+
+    # Breached-password list. Optional (set INCLUDE_PASSWORD_BLOCKLIST=false to skip): it
+    # needs a few hours of API calls, and an air-gapped host cannot fetch it for itself.
+    if [ "${INCLUDE_PASSWORD_BLOCKLIST:-true}" = "true" ]; then
+        print_info "Building the breached-password list (a few hours; resumable)..."
+        mkdir -p "${temp_model_cache}/password-blocklist"
+        if docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e MODELS_DIR=/app/models \
+            -v "${temp_model_cache}/password-blocklist:/app/models/password-blocklist" \
+            davidamacey/opentranscribe-backend:latest \
+            python -m app.scripts.build_password_blocklist; then
+            cp -r "${temp_model_cache}/password-blocklist"/*.txt \
+                "${temp_model_cache}/password-blocklist"/*.json \
+                "${PACKAGE_DIR}/models/password-blocklist/"
+            print_info "  Copied breached-password list"
+        else
+            print_warning "Breached-password list could not be built - the package will not include it."
+            print_warning "Install later with: ./opentranscribe.sh download-models password-blocklist"
+        fi
+    else
+        print_info "Skipping breached-password list (INCLUDE_PASSWORD_BLOCKLIST=false)"
     fi
 
     # Check if model manifest was created (it's inside the huggingface cache dir)

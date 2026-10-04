@@ -1,17 +1,19 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { loadPasswordPolicy, buildPasswordRequirements, FALLBACK_PASSWORD_POLICY, type PasswordPolicy } from '$lib/passwordPolicy';
   import { browser } from '$app/environment';
   import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
   import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
+  import { createRetryCountdown } from '$lib/utils/retryAfter';
 
   // Cloud edition: the hosted sign-in component mounts into this node; an
   // auth-state listener hydrates our local user store once a session exists.
@@ -27,6 +29,9 @@
   let email = "";
   let password = "";
   let loading = false;
+  // A 429 carries Retry-After; hold the submit button for that long (#788).
+  const retryCountdown = createRetryCountdown();
+  const retryRemaining = retryCountdown.remaining;
   let oidcLoading = false;
   let pkiLoading = false;
   let formSubmitted = false;
@@ -134,6 +139,14 @@
   let passwordValid = true;
 
   // Focus the email field on mount and fetch auth methods
+  // Requirement bullets come from the server's active policy (nist / stig / custom), not a
+  // hardcoded list: under nist there are no composition rules and the minimum is 15.
+  let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
+  $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
+  onMount(() => {
+    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+  });
+
   onMount(() => {
     let handleVisibilityChange: (() => void) | undefined;
     let handlePageShow: (() => void) | undefined;
@@ -344,6 +357,7 @@
 
   // Tear down the hosted component + listener on unmount (cloud only).
   onDestroy(() => {
+    retryCountdown.stop();
     if (externalUnmount) externalUnmount();
     if (externalUnlisten) externalUnlisten();
   });
@@ -460,9 +474,8 @@
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
-        toastStore.error(result.message || $t('auth.loginFailed'), undefined, {
-          retryAfterSeconds: result.retryAfterSeconds,
-        });
+        if (result.status === 429) retryCountdown.start(result.retry_after);
+        toastStore.error(result.message || $t('auth.loginFailed'));
 
         // Steer focus from the HTTP status, never from the message text: the
         // message is localised, so matching English substrings ('email',
@@ -632,9 +645,7 @@
         loginSuccess = true;
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
-        toastStore.error(result.message || $t('auth.mfaVerificationFailed'), undefined, {
-          retryAfterSeconds: result.retryAfterSeconds,
-        });
+        toastStore.error(result.message || $t('auth.mfaVerificationFailed'));
         mfaCode = "";
       }
     } catch (err) {
@@ -805,6 +816,13 @@
       {#if !lifecyclePanel && !emailNotVerified}
         <h1>{$t('auth.login')}</h1>
         <p>{$t('auth.signInToAccount')}</p>
+        {#if $sessionEndReason}
+          <p class="session-ended-notice" role="status">
+            {$sessionEndReason === 'absolute_timeout'
+              ? $t('auth.sessionTimeout.endedAbsolute')
+              : $t('auth.sessionTimeout.endedIdle')}
+          </p>
+        {/if}
       {/if}
     </div>
     {#if lifecyclePanel}
@@ -859,11 +877,9 @@
             <div class="password-policy">
               <strong>{$t('auth.passwordRequirements')}</strong>
               <ul>
-                <li>{$t('auth.passwordReqLength')}</li>
-                <li>{$t('auth.passwordReqUppercase')}</li>
-                <li>{$t('auth.passwordReqLowercase')}</li>
-                <li>{$t('auth.passwordReqNumber')}</li>
-                <li>{$t('auth.passwordReqSpecial')}</li>
+                {#each passwordRequirements as req (req.key)}
+                  <li>{$t(req.key, req.params)}</li>
+                {/each}
               </ul>
             </div>
 
@@ -904,7 +920,7 @@
             <button type="button" class="text-button" on:click={() => window.location.reload()}>
               {$t('auth.pendingApproval.checkAgain')}
             </button>
-            <button type="button" class="text-button cancel-button" on:click={logout}>
+            <button type="button" class="text-button cancel-button" on:click={() => logout()}>
               {$t('nav.logout')}
             </button>
           </div>
@@ -1184,10 +1200,12 @@
       <button
         type="submit"
         class="auth-button"
-        disabled={loading}
+        disabled={loading || $retryRemaining > 0}
       >
         {#if loading}
           <Spinner size="small" color="white" /> {$t('auth.signingIn')}
+        {:else if $retryRemaining > 0}
+          {$t('auth.retryIn', { seconds: $retryRemaining })}
         {:else}
           {$t('auth.signIn')}
         {/if}
@@ -1314,6 +1332,14 @@
   .auth-header p {
     color: var(--text-light);
     font-size: 0.9rem;
+  }
+
+  .auth-header p.session-ended-notice {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
   }
 
   .auth-form {

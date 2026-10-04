@@ -296,7 +296,7 @@ Runs all pre-commit hooks on every push/PR:
 Add to README.md:
 
 ```markdown
-[![Security Scanning](https://github.com/davidamacey/opentranscribe/actions/workflows/security-scan.yml/badge.svg)](https://github.com/davidamacey/opentranscribe/actions/workflows/security-scan.yml)
+[![Security Scanning](https://github.com/attevon-llc/OpenTranscribe/actions/workflows/security-scan.yml/badge.svg)](https://github.com/attevon-llc/OpenTranscribe/actions/workflows/security-scan.yml)
 ```
 
 ## Understanding Reports

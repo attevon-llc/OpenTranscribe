@@ -40,7 +40,13 @@ from app.core.exceptions import ExternalIdentityLinkRefusedError
 
 
 class _FakeUser:
-    def __init__(self, email="victim@example.com", role="user", auth_type="ldap"):
+    def __init__(
+        self,
+        email="victim@example.com",
+        role="user",
+        auth_type="ldap",
+        platform_super_admin_link_authorized=False,
+    ):
         self.id = 1
         self.email = email
         self.role = role
@@ -50,6 +56,7 @@ class _FakeUser:
         self.oidc_subject = "existing-sub"
         self.saml_subject = "existing-nameid"
         self.external_id = "existing-ext"
+        self.platform_super_admin_link_authorized = platform_super_admin_link_authorized
 
 
 class _FakeQuery:
@@ -125,6 +132,54 @@ class TestProviderIdLinkGuardRule:
                 asserted_email="victim@example.com",
                 failure_detail="Invalid access token",
             )
+
+    def test_super_admin_is_still_refused_by_default_when_the_flag_is_absent(self):
+        """Regression (issue #993): with no explicit opt-in, self-serve/JIT login can
+        never produce or refresh a super_admin — the pre-fix behavior is unchanged."""
+        with pytest.raises(HTTPException) as exc:
+            account_linking.assert_provider_id_link_permitted(
+                _FakeUser(
+                    email="victim@example.com",
+                    role="super_admin",
+                    platform_super_admin_link_authorized=False,
+                ),
+                provider="oidc",
+                source_identifier="existing-sub",
+                asserted_email="victim@example.com",
+                failure_detail="Invalid access token",
+            )
+        assert exc.value.status_code == 401
+
+    def test_flagged_super_admin_row_is_linked_when_the_flag_is_set(self):
+        """Issue #993's escape hatch: the out-of-band-authorized row is permitted."""
+        account_linking.assert_provider_id_link_permitted(
+            _FakeUser(
+                email="victim@example.com",
+                role="super_admin",
+                platform_super_admin_link_authorized=True,
+            ),
+            provider="oidc",
+            source_identifier="existing-sub",
+            asserted_email="victim@example.com",
+            failure_detail="Invalid access token",
+        )
+
+    def test_flagged_super_admin_row_still_refused_on_a_divergent_email(self):
+        """The flag lifts ONLY the super_admin refusal — email corroboration (check 2)
+        still runs unconditionally, even on an explicitly-authorized row."""
+        with pytest.raises(HTTPException) as exc:
+            account_linking.assert_provider_id_link_permitted(
+                _FakeUser(
+                    email="victim@example.com",
+                    role="super_admin",
+                    platform_super_admin_link_authorized=True,
+                ),
+                provider="oidc",
+                source_identifier="existing-sub",
+                asserted_email="attacker@example.com",
+                failure_detail="Invalid access token",
+            )
+        assert exc.value.status_code == 401
 
     def test_refusal_is_audited_as_provider_id_match(self):
         with patch.object(account_linking.audit_logger, "log") as log:

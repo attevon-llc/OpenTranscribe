@@ -31,6 +31,8 @@ import os
 import threading
 from concurrent.futures import ProcessPoolExecutor
 
+from app.utils.cpu_budget import effective_cpu_count
+
 logger = logging.getLogger(__name__)
 
 #: Worker count. Beyond ~12 the gain flattens while memory grows (each worker holds its own
@@ -72,7 +74,7 @@ def _worker_count() -> int:
             return max(1, min(MAX_WORKERS, int(env)))
         except ValueError:
             logger.warning("REDACTION_PII_WORKERS=%r is not an integer; using default", env)
-    cores = os.cpu_count() or 2
+    cores = effective_cpu_count()
     return max(1, min(DEFAULT_WORKERS, MAX_WORKERS, cores - 1))
 
 

@@ -77,7 +77,10 @@ def run_session_cap_sweep(db: Session) -> dict:
 
     total_revoked = 0
     users_touched = 0
-    for user_id, active_count in offenders:
+    for row in offenders:
+        # Raw text() rows carry no column types; name them explicitly.
+        user_id: int = row.user_id
+        active_count: int = row.active_count
         try:
             revoked_jtis = enforce_session_ceiling(
                 db, user_id, limit, batch_limit=SESSION_CAP_SWEEP_MAX_PER_USER

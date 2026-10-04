@@ -67,8 +67,12 @@ from app.models.watch_source import WatchSource
 from app.tasks import media_download as mdl
 from app.tasks import reindex_task as rix
 from app.tasks import speaker_embedding_task as seb
+from app.tasks import speaker_identification_task as _sid_module
 from app.tasks import watch_source_tasks as wst
 from app.tasks.transcription import embeddings as temb
+
+# Captured before any fixture swaps it for a fake.
+_REAL_CREATE_LLM_SERVICE = _sid_module._create_llm_service
 
 
 class _ScopeTracker:
@@ -1187,6 +1191,37 @@ def test_speaker_identification_read_phase_returns_plain_data(
         assert not isinstance(value, (MediaFile, Speaker, TranscriptSegment))
 
 
+def test_speaker_identification_skips_quietly_without_an_llm(
+    db_session, normal_user, identification_env, monkeypatch, caplog
+):
+    """No provider configured is a deployment choice, not a failure (issue #1004).
+
+    It must skip the way ai.extract_topics does — no ERROR, no traceback — and still
+    close out the task record so the file's enrichment doesn't look stuck.
+    """
+    from app.tasks import speaker_identification_task as sid
+
+    # Undo the fixture's fake so the REAL resolution runs, with no provider behind it.
+    monkeypatch.setattr(sid, "_create_llm_service", _REAL_CREATE_LLM_SERVICE)
+    monkeypatch.setattr(sid.LLMService, "create_from_user_settings", lambda user_id: None)
+    media_file, _ = _make_transcribed_file(db_session, normal_user)
+
+    with caplog.at_level("DEBUG"):
+        result = sid.identify_speakers_llm_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "skipped", result
+    assert result["reason"] == "LLM not configured"
+    errors = [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
+    assert errors == [], [r.getMessage() for r in errors]
+    assert not any(r.exc_info for r in caplog.records), "a traceback was logged"
+    assert identification_env.depth == 0
+
+    db_session.expire_all()
+    task_row = db_session.query(TaskModel).filter(TaskModel.media_file_id == media_file.id).one()
+    assert task_row.status == "completed"
+    assert task_row.error_message is None
+
+
 # --------------------------------------------------------------------------- #
 # 8. watch_source.scan_single — the INTERPROCEDURAL one
 #
@@ -1676,6 +1711,18 @@ def test_topic_extraction_calls_the_llm_outside_the_session(
     assert stored is not None
     assert str(stored.uuid) == result["suggestion_id"]
     assert {t["name"] for t in stored.suggested_tags} == {"budget", "hiring"}
+
+    # A run that did the work is tracked, and its row is closed (issue #1017 moved
+    # the record creation behind the provider check; this pins that it still runs).
+    task_row = (
+        db_session.query(TaskModel)
+        .filter(
+            TaskModel.media_file_id == media_file.id,
+            TaskModel.task_type == "topic_extraction",
+        )
+        .one()
+    )
+    assert task_row.status == "completed"
 
 
 def test_topic_extraction_read_phase_returns_plain_data(

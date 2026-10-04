@@ -4,6 +4,7 @@ import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
+import { retryAfterFromHeaders } from '$lib/utils/retryAfter';
 
 /**
  * Minimal shape of an axios error used for status- and detail-based message
@@ -12,12 +13,11 @@ import { loadCapabilities } from '$stores/capabilities';
 interface AuthRequestError {
   response?: {
     status?: number;
+    headers?: unknown;
     data?: { detail?: unknown; message?: unknown };
   };
   request?: unknown;
   message?: string;
-  /** Issue #788: parsed off `Retry-After` by `$lib/axios`'s response interceptor. */
-  retryAfterSeconds?: number;
 }
 
 function asAuthError(error: unknown): AuthRequestError {
@@ -89,6 +89,9 @@ export interface AuthMethods {
   login_banner_enabled: boolean;
   login_banner_text: string;
   login_banner_classification: string;
+  /** Session limits in minutes (0 = off). Absent from an older backend. */
+  session_idle_timeout_minutes?: number;
+  session_absolute_timeout_minutes?: number;
 }
 
 // Define auth store interface
@@ -158,6 +161,17 @@ export const user = derived(authStore, ($store) => $store.user);
 export const isAuthenticated = derived(authStore, ($store) => $store.isAuthenticated);
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
+
+/**
+ * Why the last session was ended by the app rather than by the user (issue
+ * #1106), so the login page can say so. Null for a voluntary sign-out. Cleared
+ * as soon as a new session is established.
+ */
+export type SessionEndReason = 'idle_timeout' | 'absolute_timeout';
+export const sessionEndReason = writable<SessionEndReason | null>(null);
+authStore.subscribe(($store) => {
+  if ($store.isAuthenticated && get(sessionEndReason) !== null) sessionEndReason.set(null);
+});
 
 // ---------------------------------------------------------------------------
 // Account lifecycle (FedRAMP AC-2 / AC-8 / IA-5)
@@ -506,15 +520,11 @@ export async function login(
   // 403 — `assert_email_verified_for_local_login` — so the STATUS identifies it
   // and no substring match on the localised message is needed.
   email_not_verified?: boolean;
+  /** Seconds from the 429 `Retry-After` header; null when absent or unparseable. */
+  retry_after?: number | null;
   // The account carries `must_change_password`. The session is real, but every
   // route except `PUT /users/me` and logout will answer 403 until it clears.
   must_change_password?: boolean;
-  // Issue #788: seconds until a 429 may be retried, carried SEPARATELY from
-  // `message` rather than baked into its text — the caller's toast renders
-  // this in its own line via `retryWaitLabel`, and `.toast-message` truncates
-  // long single-line text with an ellipsis, which would have silently eaten
-  // a hint appended to an already-long generic message.
-  retryAfterSeconds?: number;
 }> {
   try {
     const params = new URLSearchParams();
@@ -596,6 +606,7 @@ export async function login(
 
     // Extract meaningful error message from backend response
     let errorMessage = get(t)('auth.error.loginFailedCheckCredentials');
+    let retryAfter: number | null = null;
 
     if (err.response) {
       // Server responded with an error status
@@ -609,10 +620,11 @@ export async function login(
             (err.response.data?.detail as string) || get(t)('auth.error.invalidRequest');
           break;
         case 429:
-          // Was: discarded `err.response.data.detail` unconditionally, unlike
-          // every other arm here (issue #788).
+          retryAfter = retryAfterFromHeaders(err.response.headers);
           errorMessage =
-            (err.response.data?.detail as string) || get(t)('auth.error.tooManyLoginAttempts');
+            retryAfter !== null
+              ? get(t)('auth.error.tooManyLoginAttemptsWait', { seconds: retryAfter })
+              : get(t)('auth.error.tooManyLoginAttempts');
           break;
         case 500:
         case 502:
@@ -638,9 +650,7 @@ export async function login(
       message: errorMessage,
       status: err.response?.status,
       email_not_verified: err.response?.status === 403,
-      // Issue #788: only meaningful alongside a 429; `$lib/axios`'s response
-      // interceptor already parsed it off `Retry-After`.
-      retryAfterSeconds: err.response?.status === 429 ? err.retryAfterSeconds : undefined,
+      retry_after: retryAfter,
     };
   }
 }
@@ -763,8 +773,13 @@ async function disconnectRealtime(): Promise<void> {
   }
 }
 
-// Logout function
-export async function logout() {
+// Logout function. `reason` is set only when the app ends the session on the
+// user's behalf (idle / absolute timeout); the login page explains it.
+export async function logout(reason: SessionEndReason | null = null) {
+  // Only the two timeout reasons are meaningful. Anything else (e.g. a DOM event,
+  // when logout is wired straight to on:click) is a voluntary sign-out.
+  const endReason: SessionEndReason | null =
+    reason === 'idle_timeout' || reason === 'absolute_timeout' ? reason : null;
   // A voluntary sign-out ends any lifecycle hold. `handleAccountLifecycleError`
   // re-publishes it afterwards for `account_expired`, which must survive the
   // teardown so the login page can explain why the session ended.
@@ -799,6 +814,7 @@ export async function logout() {
     abortAllRequests('User logged out');
     await clearUserState();
     authStore.reset();
+    sessionEndReason.set(endReason);
     return;
   }
 
@@ -822,6 +838,7 @@ export async function logout() {
   await clearUserState();
 
   authStore.reset();
+  sessionEndReason.set(endReason);
 }
 
 // Get available authentication methods
@@ -1014,7 +1031,7 @@ export async function verifyMFA(
   mfaToken: string,
   code: string,
   isBackupCode: boolean = false
-): Promise<{ success: boolean; message?: string; retryAfterSeconds?: number }> {
+): Promise<{ success: boolean; message?: string }> {
   try {
     const response = await axiosInstance.post('/auth/mfa/verify', {
       mfa_token: mfaToken,
@@ -1045,17 +1062,15 @@ export async function verifyMFA(
     console.error('MFA verification error:', rawError);
 
     let message = get(t)('auth.error.mfaFailed');
-    let retryAfterSeconds: number | undefined;
     if (error.response?.status === 401) {
       message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
     } else if (error.response?.status === 400) {
       message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
     } else if (error.response?.status === 429) {
       message = get(t)('auth.error.mfaTooManyAttempts');
-      retryAfterSeconds = error.retryAfterSeconds;
     }
 
-    return { success: false, message, retryAfterSeconds };
+    return { success: false, message };
   }
 }
 

@@ -221,6 +221,7 @@ def _try_authenticate_token(
         from app.auth.provider_registry import has_verifiers
 
         if has_verifiers():
+            from app.auth.external_session import external_session_expired
             from app.auth.external_sync import sync_external_user_to_db
             from app.auth.provider_registry import verify_external_token
 
@@ -229,6 +230,8 @@ def _try_authenticate_token(
             # it is a safe stand-in for the HTTP Request on this path.
             external_identity = verify_external_token(token, websocket)  # type: ignore[arg-type]
             if external_identity is not None:
+                if external_session_expired(external_identity):
+                    return None
                 external_user = sync_external_user_to_db(db, external_identity)
                 if not external_user.is_active:
                     return None

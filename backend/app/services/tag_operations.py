@@ -4,16 +4,19 @@ Split out of :mod:`app.services.tag_service`, which owns *resolution* (one
 supplied name → one ``Tag`` row). This module owns the destructive side, and it
 carries a different set of hazards:
 
-* **A tag reaches files the caller cannot see.** Since ``v374_add_tag_user_id``
-  a tag is owned (``Tag.user_id``) or *system* (``user_id IS NULL``), and a
-  system tag is attached across every account. ``GET /tags`` reports counts
-  scoped to what the caller can see, so a confirmation reading "3 files" in
+* **A tag reaches files the caller cannot see.** A tag belongs to a tenant
+  (an organization, or one user's personal space — ``v420``) or is *system*
+  (no owner, no tenant), and a system tag is attached across every account.
+  ``GET /tags`` reports counts scoped to what the caller can see, so a
+  confirmation reading "3 files" in
   front of a delete that strips the tag from 500 is a lie:
   :func:`preview_tag_impact` reports the caller-visible count and the true
   deployment-wide count as **separate** numbers. Which tags a caller may reach
   at all is decided before this module runs, by
-  ``endpoints/tags.py:_writable_tag_ids`` — own tags always, system tags for an
-  admin, never another account's.
+  ``endpoints/tags/_common._writable_tag_ids`` — own tags in the request's
+  tenant, an org admin's org tags, system tags for an admin, never another
+  tenant's. :func:`merge_tags` additionally refuses to fold one tenant's tag
+  into another's.
 * **``file_tag`` carries ``UNIQUE(media_file_id, tag_id)``** (declared in the DDL
   at ``alembic/versions/v010_baseline.py``, and now on the ORM model too). A bare
   ``UPDATE file_tag SET tag_id = survivor`` therefore aborts the transaction the
@@ -56,12 +59,32 @@ from app.models.watch_source import WatchSource
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import clean_tag_name
+from app.services.tag_service import is_system_tag
 from app.services.tag_service import lookup_existing_tag
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import stored_normalized_name
+from app.services.tag_service import system_tag
 
 logger = logging.getLogger(__name__)
+
+
+class TagTenantMismatchError(OpenTranscribeError):
+    """A merge would move associations across a tenant boundary.
+
+    Folding tenant A's tag into tenant B's would attach B's row to A's files —
+    B's word, visible to A. Only folding *into* the system vocabulary (which is
+    already in every tenant) or within one tenant is allowed.
+    """
+
+
+def tenant_key(tag: Tag) -> tuple:
+    """The tenant a tag belongs to: system, one organization, or one user's personal space."""
+    if is_system_tag(tag):
+        return ("system",)
+    if tag.organization_id is not None:
+        return ("org", int(tag.organization_id))
+    return ("user", tag.user_id)
 
 
 class TagNotFoundError(OpenTranscribeError):
@@ -160,7 +183,7 @@ def _better_confidence(a: float | None, b: float | None) -> float | None:
 
 
 def touches_system_tag(tags: Iterable[Tag | None]) -> bool:
-    """Whether any of these tags is a system tag (``user_id IS NULL``).
+    """Whether any of these tags is a system tag (no owner and no tenant).
 
     Decides how wide the cache invalidation has to be. A system tag is in every
     account's list, so a mutation touching one leaves every other account's
@@ -168,7 +191,7 @@ def touches_system_tag(tags: Iterable[Tag | None]) -> bool:
     the files it was on. Read the flag from the rows **before** they are
     deleted — afterwards the answer is unavailable.
     """
-    return any(tag is not None and tag.user_id is None for tag in tags)
+    return any(tag is not None and is_system_tag(tag) for tag in tags)
 
 
 def lock_tags(db: Session, tag_ids: Iterable[int]) -> dict[int, Tag]:
@@ -438,6 +461,8 @@ def merge_tags(
 
     Raises:
         TagNotFoundError: The target, or any named source, no longer exists.
+        TagTenantMismatchError: A source belongs to a different tenant than a
+            non-system target.
     """
     wanted = {int(target_id)} | {int(i) for i in source_ids}
     locked = lock_tags(db, wanted)
@@ -450,6 +475,14 @@ def merge_tags(
     missing = [i for i in doomed_ids if i not in locked]
     if missing:
         raise TagNotFoundError(f"Tags no longer exist: {missing}")
+
+    target_tenant = tenant_key(target)
+    if target_tenant != ("system",):
+        crossing = [i for i in doomed_ids if tenant_key(locked[i]) != target_tenant]
+        if crossing:
+            raise TagTenantMismatchError(
+                "Tags from different tenants cannot be merged into one another"
+            )
 
     # Only the disappearing tags' files are counted: a file carrying just the
     # survivor is untouched, and folding it into the number would overstate the
@@ -520,7 +553,23 @@ def rename_tag(
     if tag is None:
         raise TagNotFoundError(f"Tag {tag_id} no longer exists")
 
-    existing = lookup_existing_tag(db, normalized, cleaned, user_id)
+    # The collision is looked up in the RENAMED TAG's tenant, not the caller's:
+    # renaming a system tag onto a word some tenant happens to own must not
+    # fold the global row into that tenant's.
+    if is_system_tag(tag):
+        existing = (
+            db.query(Tag)
+            .filter(system_tag(), Tag.normalized_name == normalized, Tag.id != tag.id)
+            .first()
+        )
+    else:
+        existing = lookup_existing_tag(
+            db,
+            normalized,
+            cleaned,
+            int(tag.user_id) if tag.user_id is not None else user_id,
+            int(tag.organization_id) if tag.organization_id is not None else None,
+        )
     if existing is not None and existing.id != tag.id:
         if not confirm_merge:
             impact = preview_tag_impact(
@@ -597,7 +646,13 @@ def delete_tags(
     return TagMutationOutcome(impact=impact, deleted_uuids=deleted_uuids)
 
 
-def cleanup_unreferenced_tags(db: Session, *, acting_user_id: int, all_users: bool = False) -> int:
+def cleanup_unreferenced_tags(
+    db: Session,
+    *,
+    acting_user_id: int,
+    organization_id: int | None = None,
+    all_users: bool = False,
+) -> int:
     """Delete owned tags that no ``file_tag`` row anywhere references.
 
     "Unreferenced" is deliberately measured **globally**, not against the acting
@@ -608,14 +663,17 @@ def cleanup_unreferenced_tags(db: Session, *, acting_user_id: int, all_users: bo
     "provably attached to nothing" — which makes it safe to run without an impact
     preview, unlike :func:`delete_tags`.
 
-    System tags (``user_id IS NULL``) are always exempt. They are the shared
+    System tags (no owner, no tenant) are always exempt. They are the shared
     vocabulary every account's picker shows and being unattached is their normal
     state, so sweeping them would empty the picker for everyone.
 
     Args:
         db: Database session. Committed when anything is deleted.
-        acting_user_id: The caller — the owner whose tags are swept, and the
+        acting_user_id: The caller — the creator whose tags are swept, and the
             cache-invalidation scope.
+        organization_id: The request's tenant. The caller-scoped sweep only
+            touches their tags **in that tenant**, never the ones they made in
+            another organization.
         all_users: Sweep every user's tags rather than only the caller's. The
             deployment-wide form: irreversible, and it removes rows the caller
             was never able to see.
@@ -624,9 +682,13 @@ def cleanup_unreferenced_tags(db: Session, *, acting_user_id: int, all_users: bo
         How many tag rows were deleted.
     """
     used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
-    query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), Tag.user_id.is_not(None))
+    query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), ~system_tag())
     if not all_users:
         query = query.filter(Tag.user_id == acting_user_id)
+        if organization_id is not None:
+            query = query.filter(Tag.organization_id == organization_id)
+        else:
+            query = query.filter(Tag.organization_id.is_(None))
 
     # Report the DELETE's own rowcount rather than a preceding count(): the two
     # are evaluated at different instants, so a tag attached between them is
@@ -653,7 +715,7 @@ def promote_tags_to_shared(
     user_id: int,
     organization_id: int | None = None,
 ) -> TagMutationOutcome:
-    """Publish owned tags into the shared vocabulary (``user_id`` → NULL).
+    """Publish tenant tags into the shared vocabulary (``user_id`` and org → NULL).
 
     The consolidation half of tag management. Ownership stops one account's
     "Interview" from being renamed out from under another's, but it also lets a
@@ -695,7 +757,7 @@ def promote_tags_to_shared(
     if missing:
         raise TagNotFoundError(f"Tags no longer exist: {missing}")
 
-    promoted = [locked[tag_id] for tag_id in wanted if locked[tag_id].user_id is not None]
+    promoted = [locked[tag_id] for tag_id in wanted if not is_system_tag(locked[tag_id])]
     if not promoted:
         # Every requested tag is already shared. Idempotent, not an error.
         return TagMutationOutcome(
@@ -713,7 +775,7 @@ def promote_tags_to_shared(
         normalized = stored_normalized_name(tag)
         already_shared = (
             db.query(Tag)
-            .filter(Tag.user_id.is_(None), Tag.normalized_name == normalized, Tag.id != tag.id)
+            .filter(system_tag(), Tag.normalized_name == normalized, Tag.id != tag.id)
             .first()
         )
         if already_shared is not None:
@@ -727,6 +789,7 @@ def promote_tags_to_shared(
             continue
 
         tag.user_id = None
+        tag.organization_id = None
         affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
 
         # Fold every other account's same-named row into the new shared one, so

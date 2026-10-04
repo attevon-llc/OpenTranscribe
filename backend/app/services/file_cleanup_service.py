@@ -414,6 +414,11 @@ def _count_surviving(index: str, query: dict[str, Any]) -> int:
     try:
         if not client.indices.exists(index=index):
             return 0
+        # The deletes this verifies are by id, which is realtime; ``count`` reads a
+        # searcher, which keeps seeing a deleted document until the next refresh. Without
+        # this, every purge that landed inside the refresh window reported its (already
+        # deleted) voiceprints as survivors and audited a clean erasure as PARTIAL.
+        client.indices.refresh(index=index)
         return int(client.count(index=index, body={"query": query})["count"])
     except NotFoundError:
         return 0
@@ -476,7 +481,8 @@ def _cleanup_opensearch_for_file(target: dict[str, Any], file_uuid: str) -> list
 def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], None]) -> None:
     """Delete the file's speaker embeddings (biometric data) and verify.
 
-    ``remove_speaker_embedding`` already sweeps v3 + v4 + the alias, so there is
+    ``remove_speaker_embedding`` already sweeps every index in
+    ``speaker_embedding_indices()`` (v3, v4, the alias, the legacy v3 backup), so there is
     exactly one deletion path — but it swallows its own errors and returns
     ``False`` for "absent" and "failed" alike, so the surviving-document count is
     what actually proves the embeddings are gone.
@@ -492,11 +498,9 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
         except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
             fail("speakers", e)
 
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
 
-    for idx in {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}:
+    for idx in speaker_embedding_indices():
         try:
             left = _count_surviving(idx, {"ids": {"values": speaker_uuids}})
             if left:
@@ -613,7 +617,8 @@ def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> No
 def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bool:
     """Delete every object-storage artifact for a media file.
 
-    Covers the original, its thumbnail, and the regenerable derived cache
+    Covers the original, its thumbnail, its playback rendition, and the regenerable
+    derived cache
     (subtitle-embedded videos + extracted audio under ``processed-videos/derived/``).
     Single source of truth shared by the interactive delete endpoint and the
     retention/auto-delete path so neither can orphan storage. Best-effort per
@@ -630,7 +635,7 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
     Args:
         file_id: Internal media file id — the derived-cache keys are keyed on it.
         artifacts: Plain values read in the caller's DB phase —
-            ``filename``, ``storage_path`` and ``thumbnail_path``.
+            ``filename``, ``storage_path``, ``thumbnail_path`` and ``playback_path``.
 
     Returns:
         True when every artifact this file has was deleted or was already
@@ -643,7 +648,7 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
     from app.services.minio_service import delete_file
 
     all_deleted = True
-    for path_key in ("storage_path", "thumbnail_path"):
+    for path_key in ("storage_path", "thumbnail_path", "playback_path"):
         path = artifacts.get(path_key)
         if not path:
             continue
@@ -726,7 +731,7 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
 
     Returns:
         ``file_id``, ``file_uuid``, ``owner_id``, ``filename``,
-        ``storage_path``, ``thumbnail_path``, ``speaker_uuids`` and — when the
+        ``storage_path``, ``thumbnail_path``, ``playback_path``, ``speaker_uuids`` and — when the
         speaker enumeration itself failed — ``speaker_read_error``.
     """
     plan: dict[str, Any] = {
@@ -736,6 +741,7 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
         "filename": str(file.filename) if file.filename else None,
         "storage_path": str(file.storage_path) if file.storage_path else None,
         "thumbnail_path": str(file.thumbnail_path) if file.thumbnail_path else None,
+        "playback_path": str(file.playback_path) if file.playback_path else None,
         "speaker_uuids": [],
         "speaker_read_error": None,
     }
@@ -768,6 +774,7 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "filename": plan["filename"],
             "storage_path": plan["storage_path"],
             "thumbnail_path": plan["thumbnail_path"],
+            "playback_path": plan.get("playback_path"),
         },
     )
     if not storage_ok:
@@ -854,6 +861,7 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
             MediaFile.filename,
             MediaFile.storage_path,
             MediaFile.thumbnail_path,
+            MediaFile.playback_path,
         )
         .filter(MediaFile.user_id == user_id)
         .all()
@@ -866,6 +874,7 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
             "filename": str(row.filename) if row.filename else None,
             "storage_path": str(row.storage_path) if row.storage_path else None,
             "thumbnail_path": str(row.thumbnail_path) if row.thumbnail_path else None,
+            "playback_path": str(row.playback_path) if row.playback_path else None,
             "speaker_uuids": [],
             "speaker_read_error": None,
         }
@@ -955,7 +964,7 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     everywhere and no path can drift or leak. Steps (each best-effort, DB delete is the
     commit point):
 
-    1. Object storage: original + thumbnail + regenerable derived cache.
+    1. Object storage: original + thumbnail + playback rendition + regenerable derived cache.
     2. OpenSearch: speaker embeddings (v3+v4), transcript doc, transcript chunks, summaries.
     3. Database row (CASCADE removes child rows).
     4. Redis caches for the owner.

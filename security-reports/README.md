@@ -2,6 +2,10 @@
 
 This directory contains automated security scan reports for OpenTranscribe container images.
 
+Third-party dependency **license** compliance (a different concern from vulnerability
+scanning) is tracked separately in [`license-compliance/`](./license-compliance/) —
+see its own README for scope and how to regenerate it.
+
 ## Purpose
 
 We believe in **security transparency**. All security scan results are published here so users can:

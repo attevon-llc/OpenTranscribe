@@ -45,12 +45,17 @@ _CONTENT_TYPES = {
 }
 
 
-def _resolve_export_redaction(db, media_file, current_user, redact: bool):
+def _resolve_export_redaction(db, media_file, current_user, redact: bool, organization_id=None):
     """Resolve (cfg, reveal_categories) for a transcript export.
 
     Identical fail-closed shape to ``subtitles._resolve_subtitle_redaction``: honors the
     admin ``export_locked`` floor unconditionally, and refuses the export outright (503)
     rather than resolving to "unmasked" when the policy itself cannot be read.
+
+    Args:
+        organization_id: The requester's active tenant scope (``ctx.org_id``),
+            threaded into ``resolve_effective_config`` so a registered per-org
+            redaction floor (issue #982/#987) is actually consulted (#988).
 
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
@@ -58,7 +63,7 @@ def _resolve_export_redaction(db, media_file, current_user, redact: bool):
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, current_user.id)
+        cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
     except Exception as e:
         # FAIL CLOSED — see subtitles.py:_resolve_subtitle_redaction for why returning
         # None here would silently skip the export_locked branch below and export raw.
@@ -111,7 +116,9 @@ def export_transcript(
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
 
-    cfg, reveal = _resolve_export_redaction(db, media_file, current_user, redact)
+    cfg, reveal = _resolve_export_redaction(
+        db, media_file, current_user, redact, organization_id=ctx.org_id
+    )
 
     # Withheld until detection has produced spans to apply — same rule and same reasoning
     # as the subtitle export (files/subtitles.py:116-123).

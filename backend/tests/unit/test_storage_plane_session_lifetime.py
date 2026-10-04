@@ -633,8 +633,9 @@ def test_complete_upload_touches_storage_after_ending_the_read(
 
     response = cu.complete_upload(
         cu.CompleteUploadRequest(file_id=str(media_file.uuid), task_id=None),
-        db_session,
-        normal_user,
+        http_request=None,
+        db=db_session,
+        current_user=normal_user,
     )
 
     assert response["file_size"] == 2048

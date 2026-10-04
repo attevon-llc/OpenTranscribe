@@ -305,7 +305,9 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("files/__init__.py", "clear_video_cache"),
     ("files/__init__.py", "refresh_analytics"),
     ("files/crud.py", "update_media_file"),
-    ("files/crud.py", "delete_media_file"),
+    # ``delete_media_file`` left this table in issue #1103: delete is no longer an
+    # editor right and resolves through ``services/delete_permissions.py`` instead
+    # (owner, org admin of the file's organization, or platform admin).
     ("files/crud.py", "update_single_transcript_segment"),
     ("files/management.py", "cancel_file_processing"),
     ("files/management.py", "retry_file_processing"),
@@ -314,6 +316,15 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("files/reprocess.py", "process_file_reprocess"),
     ("files/summary_status.py", "retry_summary"),
     ("files/waveform.py", "generate_waveform_for_file"),
+    # Speaker writes: a speaker is reached through its file (``require_speaker_access``).
+    ("speaker_profiles.py", "assign_speaker_to_profile"),
+    ("speakers.py", "create_speaker"),
+    ("speakers.py", "verify_speaker_identification"),
+    ("speakers.py", "confirm_speaker_gender"),
+    ("speakers.py", "merge_speakers"),  # source and target
+    ("speakers.py", "merge_speakers"),
+    ("speakers.py", "update_speaker"),
+    ("speakers.py", "delete_speaker"),
     ("media_collections.py", "update_collection"),
     ("media_collections.py", "add_media_to_collection"),
     ("media_collections.py", "remove_media_from_collection"),
@@ -448,15 +459,20 @@ def test_viewer_cannot_delete_shared_file(
     assert db_session.get(MediaFile, media_file.id) is not None
 
 
-def test_editor_can_delete_shared_file(
+def test_editor_cannot_delete_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
+    """Delete is not an editor right (issue #1103): only the owner, an org admin of
+    the file's organization, or a platform admin may delete. Full matrix in
+    ``test_delete_permissions.py``."""
     media_file = _make_file(db_session, normal_user)
     _share_file(db_session, media_file, normal_user, other_user, permission="editor")
 
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
-    assert response.status_code == 204
+    assert response.status_code == 403
+    db_session.expire_all()
+    assert db_session.get(MediaFile, media_file.id) is not None
 
 
 def test_viewer_cannot_edit_transcript_segment(
@@ -722,7 +738,9 @@ def test_viewer_cannot_bulk_act_on_shared_file(
         assert response.status_code == 200, f"action={action}"
         result = response.json()[0]
         assert result["success"] is False, f"action={action}"
-        assert result["error"] == "HTTP_ERROR", f"action={action}"
+        # Delete has its own permission rule and a per-file FORBIDDEN code (#1103).
+        expected_error = "FORBIDDEN" if action == "delete" else "HTTP_ERROR"
+        assert result["error"] == expected_error, f"action={action}"
 
         if action == "delete":
             db_session.expire_all()

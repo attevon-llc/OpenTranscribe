@@ -218,8 +218,8 @@ onnxconverter-common==1.16.0
 # To take a new fork commit, update this SHA deliberately, in its own commit, so the
 # change appears in a PR diff — and update Dockerfile.blackwell, which installs the same
 # fork separately.
-# Currently a3f38afb8 == gpu-optimizations @ 2026-08-18.
-pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@a3f38afb80d289b812e4c863e2215c595ae279d8
+# Currently e3924b4fc == gpu-optimizations @ 2026-09-27 (CPU-only empty_cache fix, #1007).
+pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@e3924b4fc8167dd26a3b62b8a3e2e04fb87ca3c8
 # Required by pyannote/embedding model checkpoint (pickle dependency)
 omegaconf==2.3.1
 

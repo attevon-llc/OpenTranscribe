@@ -143,6 +143,12 @@ export interface ChatMessageMetadata {
    */
   retrieval_failed?: boolean;
   /**
+   * Set on a failed turn: the `code` of its `error` frame (issue #1049). The
+   * message bubble renders the translated `chat.errors.<code>` string from this,
+   * never the raw `error` text, so a reloaded thread shows the same message.
+   */
+  error_code?: ChatErrorCode;
+  /**
    * The turn's context included recordings in a language RAG is not tuned for.
    * Transcription is multilingual; retrieval, reranking and prompting are
    * English-only, so a non-English recording is effectively invisible to the
@@ -226,18 +232,6 @@ export interface ChatMessage {
   model?: string | null;
   status?: MessageStatus;
   error?: string | null;
-  /**
-   * Client-only (issue #788): the machine-readable code behind `error`, so
-   * the UI can branch (e.g. show a "try again in..." hint for `rate_limited`)
-   * without string-matching the human-readable message. Never sent to or
-   * read back from the server.
-   */
-  errorCode?: ChatErrorCode | null;
-  /**
-   * Client-only (issue #788): seconds until a `rate_limited` error may be
-   * retried, carried from the SSE error frame. Never persisted.
-   */
-  retryAfter?: number | null;
   created_at?: string | null;
   /** Client-only: set while a message is being streamed or has not been reconciled. */
   pending?: boolean;
@@ -494,6 +488,7 @@ export type ChatErrorCode =
   | 'quota_exceeded'
   | 'rate_limited'
   | 'provider_error'
+  | 'provider_unavailable'
   | 'timeout'
   | 'cancelled'
   | 'connection_interrupted'
@@ -568,12 +563,7 @@ export type ChatStreamEvent =
       type: 'error';
       code: ChatErrorCode;
       message: string;
-      /**
-       * Issue #788: seconds until the caller may retry, parsed from a
-       * `Retry-After` response header (`chatStream.ts`'s `errorFromResponse`).
-       * Only ever set alongside `code: 'rate_limited'`; `undefined` when the
-       * header was absent or unparseable.
-       */
+      /** Seconds from a 429's `Retry-After` header; absent when missing or unparseable. */
       retryAfter?: number;
     };
 

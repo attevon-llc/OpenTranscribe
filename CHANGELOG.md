@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Celery queue-wait metrics (#1172).** Every task message is stamped with its publish time
+  (header `x-ot-published-at`). Workers with `WORKER_METRICS_PORT` set now serve
+  `celery_task_queue_wait_seconds{queue, task}` (publish, or ETA if later, to task start; buckets
+  0.1 s to 2 h) and `celery_task_queue_wait_missing_total{queue}` (messages from an older
+  producer); the backend's `/metrics` and `/metrics/queues` serve
+  `celery_queue_oldest_message_age_seconds{queue}`, the age of the oldest message still waiting.
+  Labels are bounded to the configured queues and registered tasks plus `other`. Caveats
+  (producer/worker clock skew; redelivered messages include the failed attempt) are in
+  Operations → Monitoring.
 - **Password security levels in the admin UI (#1127).** Settings -> Authentication -> Local has a four-card picker (Basic / Standard / Hardened / Custom) that previews the exact rules before saving, and controls for the individual values under Custom (length, composition, expiry, history, minimum age), the breached-password check (level default / on / off, with installed-list status), the optional online lookup, and MFA for administrators. New `basic` level: 8 characters, no composition rules, no expiry or history; opt-in only. `standard` and `hardened` are the new names of `nist` and `stig`, which keep working as aliases. Defaults are unchanged: existing installs stay on `hardened`, new installs get `standard` from `.env.example`. Saves are validated server-side and audit-logged.
 - **Breached-password list is now an on-demand download built from Have I Been Pwned (#1107).** No password list is shipped in the repository. `./opentranscribe.sh download-models password-blocklist` builds the top 100,000 most-breached passwords as SHA-1 hashes only from the Pwned Passwords range API (no licensing or attribution requirement) into the model cache; the offline package includes it. If none is installed the check is skipped with one startup warning. `PASSWORD_BLOCKLIST_PATH` accepts hash files and legacy plaintext files.
 - **Deployment-locked settings via capability keys (#1109).** New capabilities, all `True` by

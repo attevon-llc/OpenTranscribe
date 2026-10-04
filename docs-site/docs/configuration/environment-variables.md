@@ -662,10 +662,17 @@ Each Celery worker can serve per-task Prometheus metrics at `http://<worker>:<po
 | `celery_task_runtime_seconds` | `task` | Histogram of run time, start to end, whatever the outcome (buckets 0.5 s to 2 h) |
 | `pipeline_stage_duration_seconds` | `stage` | Histogram of one pipeline stage's wall time (buckets 50 ms to 2 h); see Monitoring → Per-stage pipeline timing |
 | `pipeline_stage_total` | `stage`, `outcome` | Pipeline stage runs; `outcome` is `success` or `failure` |
+| `celery_task_queue_wait_seconds` | `queue`, `task` | Histogram of how long the message waited on the broker before this worker started it, from its publish time (or ETA, if later). Buckets 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200 s |
+| `celery_task_queue_wait_missing_total` | `queue` | Started messages without a publish stamp (published by an older version), so no wait was observed |
 
 - `task` is the registered task name (for example `transcription.gpu_transcribe`). A name the
   worker has not registered is counted as `other`, so the label set is bounded by the task list.
-  No file, user or task ids are ever used as labels.
+  No file, user or task ids are ever used as labels. `queue` is a configured queue name or
+  `other`.
+- Queue wait compares the producer's clock with the worker's, and a message redelivered after a
+  lost worker keeps its original publish time, so its wait includes the failed attempt. See
+  Monitoring → Queue wait, which also covers `celery_queue_oldest_message_age_seconds` (served
+  by the backend, not the workers) for work still waiting.
 - A task whose worker died and that was put back on its queue is not counted: it has not ended.
   A task that failed because its worker process died is counted as `failure`.
 - Unset, empty or invalid means off: nothing is recorded and no port is opened. `.env` is shared by

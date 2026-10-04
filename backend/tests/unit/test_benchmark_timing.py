@@ -475,8 +475,10 @@ def test_capture_queue_depth_writes_json_depths_and_in_flight_count(
     llens = [0] * (len(CeleryQueues.ALL) * 10)
     gpu_offset = CeleryQueues.ALL.index(CeleryQueues.GPU) * 10
     llens[gpu_offset + 7] = 5  # 5 tasks queued at priority 7 -- invisible to a bare LLEN
-    # Trailing: the empty `unacked` hash (HGETALL) and its empty delivery index (ZRANGE).
-    pipe.execute.return_value = [*llens, {}, []]
+    # Then one LINDEX per sub-list (None: no waiting message to age, issue #1172), and
+    # trailing: the empty `unacked` hash (HGETALL) and its empty delivery index (ZRANGE).
+    heads = [None] * len(llens)
+    pipe.execute.return_value = [*llens, *heads, {}, []]
 
     with patch("app.core.redis.get_redis", return_value=client):
         benchmark_timing.capture_queue_depth("task-1")

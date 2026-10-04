@@ -171,6 +171,10 @@ class _Pipe:
         self.calls.append("llen")
         return self
 
+    def lindex(self, key, index):
+        self.calls.append("lindex")
+        return self
+
     def hgetall(self, key):
         self.calls.append("hgetall")
         return self
@@ -182,6 +186,9 @@ class _Pipe:
     def execute(self):
         out: list = []
         for call in self.calls:
+            if call == "lindex":
+                out.append(None)  # every queue is empty
+                continue
             out.append(
                 0 if call == "llen" else self._unacked if call == "hgetall" else self._scores
             )

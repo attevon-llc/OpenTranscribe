@@ -98,6 +98,7 @@ celery_queue_depth: Gauge
 celery_queue_reserved: Gauge
 celery_queue_orphaned: Gauge
 celery_queue_oldest_unacked_age_seconds: Gauge
+celery_queue_oldest_message_age_seconds: Gauge
 transcription_runs_without_lease: Gauge
 transcription_files_infra_requeued: Gauge
 user_signups_total: Counter
@@ -125,6 +126,7 @@ def _register() -> None:
     global celery_queue_reserved
     global celery_queue_orphaned
     global celery_queue_oldest_unacked_age_seconds
+    global celery_queue_oldest_message_age_seconds
     global transcription_runs_without_lease
     global transcription_files_infra_requeued
     global user_signups_total
@@ -206,6 +208,13 @@ def _register() -> None:
         "celery_queue_oldest_unacked_age_seconds",
         "Age of the oldest unacknowledged message per queue (live or orphaned). Compare "
         "with the longest expected task duration.",
+        ["queue"],
+    )
+    celery_queue_oldest_message_age_seconds = Gauge(
+        "celery_queue_oldest_message_age_seconds",
+        "Seconds the oldest message still WAITING on each Celery queue has been there (from "
+        "its publish stamp; 0 when the queue is empty or the message is unstamped). A "
+        "redelivered message includes its failed attempt; producer clock skew shifts it.",
         ["queue"],
     )
     transcription_runs_without_lease = Gauge(

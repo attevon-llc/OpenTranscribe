@@ -19,7 +19,7 @@ The backend instruments every HTTP request and database query and exposes them i
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). Backup and media-mirror gauges are read from the database at most once a minute, not on every scrape. |
-| `GET /metrics/queues` | Only the per-queue Celery gauges (`celery_queue_depth`, `celery_queue_reserved`, `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`), in the same Prometheus text format — one Redis round trip (plus one read of run leases when a transcription stage is in flight), no database access. Point autoscalers that poll every few seconds here instead of at `/metrics`, whose full page renders every HTTP histogram series. Internal-only, like `/metrics`. |
+| `GET /metrics/queues` | Only the per-queue Celery gauges (`celery_queue_depth`, `celery_queue_reserved`, `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`, `celery_queue_oldest_message_age_seconds`), in the same Prometheus text format — one Redis round trip (plus one read of run leases when a transcription stage is in flight), no database access. Point autoscalers that poll every few seconds here instead of at `/metrics`, whose full page renders every HTTP histogram series. Internal-only, like `/metrics`. |
 | `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The Redis, OpenSearch and object-storage checks are each bounded at 2 s (one attempt), and the migration head is computed once per process, so a probe stays cheap and cannot hang on one slow dependency. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
 
 Key metric names (stable; dashboards are built against these):
@@ -36,6 +36,7 @@ Key metric names (stable; dashboards are built against these):
 | `celery_queue_reserved` | Gauge | `queue` |
 | `celery_queue_orphaned` | Gauge | `queue` |
 | `celery_queue_oldest_unacked_age_seconds` | Gauge | `queue` |
+| `celery_queue_oldest_message_age_seconds` | Gauge | `queue` |
 | `transcription_runs_without_lease` | Gauge | — |
 | `transcription_files_infra_requeued` | Gauge | — |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
@@ -100,6 +101,44 @@ The bundled Prometheus does not scrape the workers; add a job per worker service
 
 - failure ratio per task: `sum by (task) (rate(celery_task_total{outcome="failure"}[15m])) / sum by (task) (rate(celery_task_total[15m]))`
 - p95 run time per task: `histogram_quantile(0.95, sum by (task, le) (rate(celery_task_runtime_seconds_bucket[1h])))`
+
+### Queue wait: how long work waits before a worker starts it
+
+Queue depth says how many messages are waiting, not for how long. Every task message is stamped
+with its publish time (header `x-ot-published-at`, wall clock), and two metrics read it:
+
+| Metric | Type | Labels | Served by |
+|--------|------|--------|-----------|
+| `celery_task_queue_wait_seconds` | Histogram | `queue`, `task` | each worker on `WORKER_METRICS_PORT` — work that has **started** |
+| `celery_task_queue_wait_missing_total` | Counter | `queue` | each worker on `WORKER_METRICS_PORT` |
+| `celery_queue_oldest_message_age_seconds` | Gauge | `queue` | the backend, `GET /metrics` and `GET /metrics/queues` (port 8080) — work **still waiting** |
+
+- **`celery_task_queue_wait_seconds`** is observed when a worker starts a task: `now - published_at`,
+  clamped at 0. Buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600,
+  7200 seconds. A task published with a countdown or ETA is measured from when it became due, not
+  from when it was published.
+- **`celery_task_queue_wait_missing_total`** counts started messages that carried no stamp — published
+  by an older version during a rolling upgrade. They are not observed in the histogram.
+- **`celery_queue_oldest_message_age_seconds`** is sampled at scrape time: the oldest message at the
+  head of each queue's broker lists (one `LINDEX` per priority sub-list, in the same Redis round trip
+  as `celery_queue_depth`). 0 when the queue is empty or its oldest message is unstamped. A broker
+  error never fails the scrape.
+- **Labels are bounded.** `queue` is one of the configured queue names or `other`; `task` is the
+  registered task name or `other` (as for `celery_task_total`).
+
+Caveats:
+
+- **Clock skew.** The publish time comes from the producer's clock (API or another worker) and is
+  compared with the worker's or backend's clock. Keep hosts NTP-synchronised; skew shifts every
+  observation, and a producer clock running ahead is clamped to 0.
+- **Redelivery.** A message put back on the queue after its worker was lost (or its visibility
+  timeout expired) is the same message with its original stamp, so its wait includes the failed
+  attempt. A **retry** is a new message and gets a fresh stamp, so each retry's wait is its own.
+
+Useful queries:
+
+- p95 wait per queue: `histogram_quantile(0.95, sum by (queue, le) (rate(celery_task_queue_wait_seconds_bucket[15m])))`
+- starvation alert: `max by (queue) (celery_queue_oldest_message_age_seconds) > 1800`
 
 ### Per-stage pipeline timing
 

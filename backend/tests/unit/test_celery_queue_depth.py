@@ -25,6 +25,7 @@ import re
 import time
 from pathlib import Path
 
+import pytest
 from kombu.transport.redis import Channel
 
 from app.core.celery_metrics import _RESERVED_ATTRIBUTION_LIMIT
@@ -38,15 +39,24 @@ UNACKED_KEY = Channel.unacked_key
 class _FakePipeline:
     """Records every command issued, in order, and answers them at ``execute()``."""
 
-    def __init__(self, llen_map: dict[str, int], unacked_values: list):
+    def __init__(
+        self, llen_map: dict[str, int], unacked_values: list, heads: dict[str, object] | None = None
+    ):
         self.commands: list[tuple[str, str]] = []
         self._llen_map = llen_map
+        self._heads = heads or {}
+        self.lindex_indexes: list[int] = []
         # kombu's unacked hash is tag -> entry, and its index scores each tag by delivery
         # time; every entry here was "delivered" just now (a live holder).
         self._unacked = {f"tag-{i}": value for i, value in enumerate(unacked_values)}
 
     def llen(self, key):
         self.commands.append(("llen", key))
+        return self
+
+    def lindex(self, key, index):
+        self.commands.append(("lindex", key))
+        self.lindex_indexes.append(index)
         return self
 
     def hgetall(self, key):
@@ -57,13 +67,15 @@ class _FakePipeline:
         self.commands.append(("zrange", key))
         return self
 
-    def execute(self) -> list[int | list | dict]:
+    def execute(self) -> list[object]:
         # A real redis-py pipeline's execute() is genuinely heterogeneous: each
         # command answers with its own type (LLEN -> int, HGETALL -> dict, ZRANGE -> list).
-        results: list[int | list | dict] = []
+        results: list[object] = []
         for cmd, key in self.commands:
             if cmd == "llen":
                 results.append(self._llen_map.get(key, 0))
+            elif cmd == "lindex":
+                results.append(self._heads.get(key))
             elif cmd == "hgetall":
                 results.append(dict(self._unacked))
             else:
@@ -74,9 +86,15 @@ class _FakePipeline:
 class _FakeClient:
     """Stands in for the Redis broker client passed to ``queue_snapshot``."""
 
-    def __init__(self, llen_map: dict[str, int] | None = None, unacked_values: list | None = None):
+    def __init__(
+        self,
+        llen_map: dict[str, int] | None = None,
+        unacked_values: list | None = None,
+        heads: dict[str, object] | None = None,
+    ):
         self._llen_map = llen_map or {}
         self._unacked_values = unacked_values if unacked_values is not None else []
+        self._heads = heads or {}
         self.pipelines: list[_FakePipeline] = []
 
     def llen(self, key):
@@ -84,7 +102,7 @@ class _FakeClient:
         return self._llen_map.get(key, 0)
 
     def pipeline(self, transaction=False):
-        pipe = _FakePipeline(self._llen_map, self._unacked_values)
+        pipe = _FakePipeline(self._llen_map, self._unacked_values, self._heads)
         self.pipelines.append(pipe)
         return pipe
 
@@ -139,8 +157,8 @@ def test_the_snapshot_is_one_round_trip():
 
     assert len(fake.pipelines) == 1
     pipe = fake.pipelines[0]
-    # Ten LLENs per queue, plus the unacked hash and its delivery-time index.
-    assert len(pipe.commands) == len(CeleryQueues.ALL) * 10 + 2
+    # Ten LLENs and ten LINDEXes per queue, plus the unacked hash and its delivery-time index.
+    assert len(pipe.commands) == len(CeleryQueues.ALL) * 20 + 2
 
 
 def test_a_corrupt_unacked_entry_does_not_break_the_snapshot():
@@ -156,7 +174,13 @@ def test_a_broker_error_reports_all_zero():
     snapshot = queue_snapshot(_BrokenClient())
 
     assert snapshot == {
-        name: {"pending": 0, "reserved": 0, "orphaned": 0, "oldest_unacked_age": 0}
+        name: {
+            "pending": 0,
+            "reserved": 0,
+            "orphaned": 0,
+            "oldest_unacked_age": 0,
+            "oldest_pending_age": 0,
+        }
         for name in CeleryQueues.ALL
     }
 
@@ -172,6 +196,120 @@ def test_reserved_attribution_is_skipped_above_the_cap():
     snapshot = queue_snapshot(fake)
 
     assert snapshot["gpu"]["reserved"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Oldest waiting message per queue (issue #1172)
+# ---------------------------------------------------------------------------
+
+
+def _message(published_at=None, eta=None, **headers) -> str:
+    """A kombu Redis-transport list element: the message envelope as JSON."""
+    if published_at is not None:
+        headers["x-ot-published-at"] = published_at
+    if eta is not None:
+        headers["eta"] = eta
+    return json.dumps(
+        {
+            "body": "W1tdLCB7fSwge31d",
+            "content-encoding": "utf-8",
+            "content-type": "application/json",
+            "headers": {"task": "noop", "id": "x", **headers},
+            "properties": {"body_encoding": "base64", "delivery_info": {"routing_key": "cpu"}},
+        }
+    )
+
+
+def test_the_oldest_waiting_message_is_read_from_the_consuming_end_of_every_sub_list():
+    now = time.time()
+    fake = _FakeClient(
+        heads={
+            "cpu": _message(published_at=now - 30),
+            f"cpu{SEP}9": _message(published_at=now - 600),
+            f"gpu{SEP}3": _message(published_at=now - 5),
+        }
+    )
+
+    snapshot = queue_snapshot(fake)
+
+    assert snapshot["cpu"]["oldest_pending_age"] == pytest.approx(600, abs=2)
+    assert snapshot["gpu"]["oldest_pending_age"] == pytest.approx(5, abs=2)
+    assert snapshot["nlp"]["oldest_pending_age"] == 0
+    # kombu LPUSHes and BRPOPs: the RIGHT end (-1) is the oldest. The live proof is
+    # tests/integration/test_celery_queue_depth_live.py.
+    assert set(fake.pipelines[0].lindex_indexes) == {-1}
+    peeked = {key for cmd, key in fake.pipelines[0].commands if cmd == "lindex"}
+    assert peeked == {
+        name if priority == 0 else f"{name}{SEP}{priority}"
+        for name in CeleryQueues.ALL
+        for priority in range(10)
+    }
+
+
+def test_an_unstamped_corrupt_or_future_head_reads_zero_without_breaking_the_snapshot():
+    now = time.time()
+    fake = _FakeClient(
+        llen_map={"cpu": 1, "gpu": 1, "nlp": 1, "utility": 1},
+        heads={
+            "cpu": _message(),  # an older producer: no stamp
+            "gpu": b"not-json",
+            "nlp": _message(published_at=now + 300),  # producer clock ahead
+            "utility": json.dumps(["unexpected", "shape"]),
+        },
+        unacked_values=[json.dumps([{}, "gpu", "gpu"])],
+    )
+
+    snapshot = queue_snapshot(fake)
+
+    for name in ("cpu", "gpu", "nlp", "utility"):
+        assert snapshot[name]["oldest_pending_age"] == 0
+        assert snapshot[name]["pending"] == 1
+    assert snapshot["gpu"]["reserved"] == 1
+
+
+def test_a_message_waiting_for_its_eta_is_aged_from_when_it_became_due():
+    from datetime import UTC
+    from datetime import datetime
+
+    now = time.time()
+    due = datetime.fromtimestamp(now - 20, tz=UTC).isoformat()
+    not_yet = datetime.fromtimestamp(now + 60, tz=UTC).isoformat()
+    fake = _FakeClient(
+        heads={
+            "cpu": _message(published_at=now - 300, eta=due),
+            "gpu": _message(published_at=now - 300, eta=not_yet),
+        }
+    )
+
+    snapshot = queue_snapshot(fake)
+
+    assert snapshot["cpu"]["oldest_pending_age"] == pytest.approx(20, abs=2)
+    assert snapshot["gpu"]["oldest_pending_age"] == 0
+
+
+def test_the_oldest_waiting_age_survives_the_attribution_cap():
+    now = time.time()
+    unacked = [json.dumps([{}, "gpu", "gpu"])] * (_RESERVED_ATTRIBUTION_LIMIT + 1)
+    fake = _FakeClient(unacked_values=unacked, heads={"gpu": _message(published_at=now - 45)})
+
+    snapshot = queue_snapshot(fake)
+
+    assert snapshot["gpu"]["oldest_pending_age"] == pytest.approx(45, abs=2)
+
+
+def test_update_queue_depths_publishes_the_oldest_waiting_gauge(monkeypatch):
+    from app.core.celery_metrics import update_queue_depths
+    from app.core.metrics import celery_queue_oldest_message_age_seconds
+
+    now = time.time()
+    fake = _FakeClient(heads={f"embedding{SEP}4": _message(published_at=now - 90)})
+    monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+
+    update_queue_depths()
+
+    gauge = celery_queue_oldest_message_age_seconds
+    assert gauge.labels(queue="embedding")._value.get() == pytest.approx(90, abs=2)
+    assert gauge.labels(queue="cpu")._value.get() == 0
 
 
 # ---------------------------------------------------------------------------

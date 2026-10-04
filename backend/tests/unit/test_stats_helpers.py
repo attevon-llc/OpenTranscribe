@@ -774,7 +774,7 @@ class TestGetProcessingEta:
 
 
 class _FakeQueueDepthsPipeline:
-    """Minimal double for a redis-py Pipeline: records llen/hvals in order."""
+    """Minimal double for a redis-py Pipeline: records each command in order."""
 
     def __init__(self, llen_map: dict[str, int], unacked_values: list):
         self.commands: list[tuple[str, str]] = []
@@ -785,6 +785,10 @@ class _FakeQueueDepthsPipeline:
         self.commands.append(("llen", key))
         return self
 
+    def lindex(self, key, index):
+        self.commands.append(("lindex", key))
+        return self
+
     def hgetall(self, key):
         self.commands.append(("hgetall", key))
         return self
@@ -793,15 +797,18 @@ class _FakeQueueDepthsPipeline:
         self.commands.append(("zrange", key))
         return self
 
-    def execute(self) -> list[int | list | dict]:
+    def execute(self) -> list[int | list | dict | None]:
         # A real redis-py pipeline's execute() is genuinely heterogeneous: each command
-        # answers with its own type (LLEN -> int, HGETALL -> dict, ZRANGE -> list of
+        # answers with its own type (LLEN -> int, LINDEX -> None on an empty list,
+        # HGETALL -> dict, ZRANGE -> list of
         # (tag, delivery time) pairs). Every entry here was delivered just now.
         unacked = {f"tag-{i}": value for i, value in enumerate(self._unacked_values)}
-        results: list[int | list | dict] = []
+        results: list[int | list | dict | None] = []
         for cmd, key in self.commands:
             if cmd == "llen":
                 results.append(self._llen_map.get(key, 0))
+            elif cmd == "lindex":
+                results.append(None)
             elif cmd == "hgetall":
                 results.append(unacked)
             else:

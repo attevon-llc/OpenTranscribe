@@ -70,6 +70,10 @@ class _FakePipeline:
         self.commands.append(("llen", key))
         return self
 
+    def lindex(self, key, index):
+        self.commands.append(("lindex", key))
+        return self
+
     def hgetall(self, key):
         self.commands.append(("hgetall", key))
         return self
@@ -85,6 +89,8 @@ class _FakePipeline:
         for cmd, key in self.commands:
             if cmd == "llen":
                 results.append(self._llen_map.get(key, 0))
+            elif cmd == "lindex":
+                results.append(None)  # LINDEX on an empty list
             elif cmd == "hgetall":
                 results.append(unacked)
             else:
@@ -142,6 +148,7 @@ def test_queue_endpoint_is_one_redis_round_trip_and_no_db(client, monkeypatch, s
         "celery_queue_reserved",
         "celery_queue_orphaned",
         "celery_queue_oldest_unacked_age_seconds",
+        "celery_queue_oldest_message_age_seconds",
     }
     assert samples[("celery_queue_depth", "gpu")] == 7
     assert samples[("celery_queue_reserved", "gpu")] == 1
@@ -154,4 +161,5 @@ def test_full_metrics_still_carries_the_queue_gauges(client):
     body = client.get("/metrics").text
     assert "celery_queue_depth" in body
     assert "celery_queue_reserved" in body
+    assert "celery_queue_oldest_message_age_seconds" in body
     assert "backup_last_status" in body

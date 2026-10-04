@@ -8,6 +8,12 @@ What is recorded, from Celery signals inside the worker:
   ``reject_on_worker_lost`` puts back on the queue fires none of these: it has not ended.
 * ``celery_task_runtime_seconds{task}`` -- ``task_prerun`` to ``task_postrun``, whatever the
   outcome.
+* ``celery_task_queue_wait_seconds{queue, task}`` -- at ``task_prerun``, how long the message
+  waited on the broker: ``now - x-ot-published-at`` (issue #1172; what one stamp measures,
+  including the redelivery and clock-skew caveats, is in ``app/core/queue_wait.py``).
+  ``queue`` is the delivery's routing key when it is a declared queue, otherwise ``other``.
+* ``celery_task_queue_wait_missing_total{queue}`` -- started messages that carried no stamp
+  (published by a producer older than #1172), so no wait could be observed.
 
 ``task`` is the registered task name. A name the app has not registered is counted under
 ``other`` -- not dropped, and not allowed to mint a series per name -- so the label set is
@@ -60,6 +66,8 @@ from collections.abc import MutableMapping
 from collections.abc import Sequence
 from typing import Any
 
+from app.core import queue_wait
+
 logger = logging.getLogger(__name__)
 
 WORKER_METRICS_PORT_ENV = "WORKER_METRICS_PORT"
@@ -74,6 +82,27 @@ OTHER_TASK = "other"
 #: transcription and diarization of long recordings need the 30 min - 2 h tail, or p95 sits
 #: in +Inf and says nothing.
 RUNTIME_BUCKETS = (
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
+    300.0,
+    600.0,
+    1200.0,
+    1800.0,
+    3600.0,
+    7200.0,
+)
+
+#: 0.1 s to 2 h. A healthy queue starts work in well under a second; a saturated GPU queue
+#: can hold long recordings for hours, which the 30 min - 2 h tail keeps out of +Inf.
+QUEUE_WAIT_BUCKETS = (
+    0.1,
+    0.25,
     0.5,
     1.0,
     2.5,
@@ -123,9 +152,17 @@ def is_worker_command(argv: Sequence[str]) -> bool:
 
 
 class WorkerTaskMetrics:
-    """The two collectors, on a registry of their own (never the API's default registry)."""
+    """The task collectors, on a registry of their own (never the API's default registry).
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    ``clock`` times a run inside this process (monotonic); ``wall_clock`` is compared with the
+    producer's publish stamp, so it has to be the same kind of clock (epoch seconds).
+    """
+
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
+    ) -> None:
         from prometheus_client import CollectorRegistry
         from prometheus_client import Counter
         from prometheus_client import Histogram
@@ -146,7 +183,24 @@ class WorkerTaskMetrics:
             buckets=RUNTIME_BUCKETS,
             registry=self.registry,
         )
+        self.queue_wait_seconds = Histogram(
+            "celery_task_queue_wait_seconds",
+            "Seconds a Celery message waited on the broker before this worker started it "
+            "(publish, or ETA if later, to task_prerun). Redelivered messages include the "
+            "failed attempt; producer/worker clock skew shifts it.",
+            ["queue", "task"],
+            buckets=QUEUE_WAIT_BUCKETS,
+            registry=self.registry,
+        )
+        self.queue_wait_missing = Counter(
+            "celery_task_queue_wait_missing",
+            "Started Celery messages without a publish stamp (older producer), so no queue "
+            "wait was observed.",
+            ["queue"],
+            registry=self.registry,
+        )
         self._clock = clock
+        self._wall_clock = wall_clock
         self._started: dict[str, float] = {}
         self._lock = threading.Lock()
 
@@ -160,6 +214,26 @@ class WorkerTaskMetrics:
             if len(self._started) >= MAX_TRACKED_RUNS:
                 self._started.clear()
             self._started[task_id] = self._clock()
+
+    def task_dequeued(self, task: Any) -> None:
+        """Observe how long the message ``task`` is about to run from waited on the broker."""
+        request = getattr(task, "request", None)
+        if request is None or getattr(request, "is_eager", False):
+            return
+        if getattr(request, "called_directly", False):
+            return
+        delivery_info = getattr(request, "delivery_info", None) or {}
+        queue = queue_wait.queue_label(delivery_info.get("routing_key"))
+        published_at = queue_wait.parse_published_at(
+            _request_header(request, queue_wait.PUBLISHED_AT_HEADER)
+        )
+        if published_at is None:
+            self.queue_wait_missing.labels(queue).inc()
+            return
+        waited = queue_wait.waited_seconds(
+            published_at, self._wall_clock(), getattr(request, "eta", None)
+        )
+        self.queue_wait_seconds.labels(queue, task_label(task)).observe(waited)
 
     def task_finished(self, task: Any, task_id: str) -> None:
         with self._lock:
@@ -180,6 +254,16 @@ def task_label(task: Any) -> str:
     except Exception:  # noqa: BLE001 - a label lookup must never fail a task
         return OTHER_TASK
     return str(name) if registered else OTHER_TASK
+
+
+def _request_header(request: Any, name: str) -> Any:
+    """A custom message header as the worker sees it on ``task.request``."""
+    value = getattr(request, name, None)
+    if value is None:
+        headers = getattr(request, "headers", None)
+        if isinstance(headers, dict):
+            value = headers.get(name)
+    return value
 
 
 _metrics: WorkerTaskMetrics | None = None
@@ -324,7 +408,9 @@ def on_task_revoked(sender: Any = None, **_: Any) -> None:
     _record("revoked", sender)
 
 
-def on_task_prerun(sender: Any = None, task_id: str | None = None, **_: Any) -> None:
+def on_task_prerun(
+    sender: Any = None, task_id: str | None = None, task: Any = None, **_: Any
+) -> None:
     metrics = _metrics
     if metrics is None or task_id is None:
         return
@@ -332,6 +418,10 @@ def on_task_prerun(sender: Any = None, task_id: str | None = None, **_: Any) -> 
         metrics.task_started(task_id)
     except Exception as exc:  # noqa: BLE001 - see module docstring
         logger.debug("Could not record the start of %s: %s", task_id, exc)
+    try:
+        metrics.task_dequeued(task if task is not None else sender)
+    except Exception as exc:  # noqa: BLE001 - see module docstring
+        logger.debug("Could not record the queue wait of %s: %s", task_id, exc)
 
 
 def on_task_postrun(

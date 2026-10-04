@@ -765,11 +765,16 @@ def configure_celery_logging(**kwargs):
 # for the duration of the task (reset in close_session_after_task below). Tasks
 # that spawn sub-tasks propagate automatically — publish happens inside the
 # task context, so before_task_publish re-reads the now-set ContextVar.
+#
+# The same handler stamps the publish time the queue-wait metrics read (issue #1172,
+# app/core/queue_wait.py). One receiver for both: they are two headers on the same message.
 @before_task_publish.connect
 def inject_request_id_header(headers=None, **kwargs):
-    """Stamp the current request_id onto outgoing task headers (no-op if empty)."""
+    """Stamp the request_id (if any) and the publish time onto outgoing task headers."""
+    from app.core.queue_wait import stamp_published_at
     from app.middleware.audit import get_request_id
 
+    stamp_published_at(headers)
     request_id = get_request_id()
     if request_id and headers is not None:
         headers["request_id"] = request_id

@@ -42,18 +42,31 @@ is counted in ``orphaned`` instead, and the reaper moves it back onto the queue 
 into ``pending`` — within about one sweep. Every other ``acks_late`` task has no
 lease to check and stays in ``reserved``, as before.
 
+``oldest_pending_age`` (issue #1172): how long the oldest message still WAITING on the
+queue has been there, from the publish stamp in its headers (``app/core/queue_wait.py``).
+kombu's Redis transport ``LPUSH``es on publish and ``BRPOP``s on consume, and puts a
+restored (redelivered) message back with ``RPUSH`` — so the RIGHT end, ``LINDEX key -1``,
+is always the next message out and the oldest one in each priority sub-list (proven
+against the real transport in ``tests/integration/test_celery_queue_depth_live.py``). One
+O(1) ``LINDEX`` per sub-list rides in the same pipeline as the ``LLEN``s; the queue's age is
+the oldest of its ten heads. An empty list, a message with no stamp (an older producer) or
+an unreadable one reads 0. A redelivered message keeps its original stamp, so its age
+includes the attempt that failed.
+
 The whole module degrades gracefully: any broker error leaves the gauges
 untouched (matches repo patterns; tests run with ``SKIP_REDIS=True``).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
 
 from app.core.constants import CeleryQueues
 from app.core.metrics import celery_queue_depth
+from app.core.metrics import celery_queue_oldest_message_age_seconds
 from app.core.metrics import celery_queue_oldest_unacked_age_seconds
 from app.core.metrics import celery_queue_orphaned
 from app.core.metrics import celery_queue_reserved
@@ -74,7 +87,13 @@ _RESERVED_ATTRIBUTION_LIMIT = 10_000
 
 
 def _empty_counts() -> dict[str, int]:
-    return {"pending": 0, "reserved": 0, "orphaned": 0, "oldest_unacked_age": 0}
+    return {
+        "pending": 0,
+        "reserved": 0,
+        "orphaned": 0,
+        "oldest_unacked_age": 0,
+        "oldest_pending_age": 0,
+    }
 
 
 def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
@@ -96,6 +115,8 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
         seconds of the queue's oldest ``unacked`` entry, orphaned or not. All three are
         zero (not an error) if attribution was skipped because the unacked hash exceeded
         :data:`_RESERVED_ATTRIBUTION_LIMIT`, and everything is zero if anything raised.
+        ``oldest_pending_age`` is the age in seconds of the oldest message still waiting
+        (see the module docstring); it does not depend on attribution.
         The run leases are read in a second, separate round trip, and only when an
         ``unacked`` entry is a transcription stage.
     """
@@ -110,22 +131,32 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
         sep = Channel.sep
         redis_client = client if client is not None else get_redis()
 
+        keys = [
+            name if priority == 0 else f"{name}{sep}{priority}"
+            for name in CeleryQueues.ALL
+            for priority in _PRIORITY_STEPS
+        ]
         pipe = redis_client.pipeline(transaction=False)
-        for name in CeleryQueues.ALL:
-            for priority in _PRIORITY_STEPS:
-                key = name if priority == 0 else f"{name}{sep}{priority}"
-                pipe.llen(key)
+        for key in keys:
+            pipe.llen(key)
+        for key in keys:
+            pipe.lindex(key, -1)  # the consuming end: the oldest message (module docstring)
         pipe.hgetall(Channel.unacked_key)
         pipe.zrange(Channel.unacked_index_key, 0, -1, withscores=True)
-        *llens, unacked, scored = pipe.execute()
+        *replies, unacked, scored = pipe.execute()
+        llens, heads = replies[: len(keys)], replies[len(keys) :]
 
+        now = time.time()
         i = 0
         for name in CeleryQueues.ALL:
             pending = 0
+            oldest = 0
             for _ in _PRIORITY_STEPS:
                 pending += llens[i]
+                oldest = max(oldest, _waiting_age(heads[i], now))
                 i += 1
             result[name]["pending"] = pending
+            result[name]["oldest_pending_age"] = oldest
 
         unacked = unacked or {}
         if len(unacked) > _RESERVED_ATTRIBUTION_LIMIT:
@@ -146,7 +177,6 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
                 continue
             deliveries.append(delivery)
 
-        now = time.time()
         held, orphaned = classify(deliveries, now=now)
         for bucket, deliveries_in in (("reserved", held), ("orphaned", orphaned)):
             for delivery in deliveries_in:
@@ -161,6 +191,31 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
     except Exception as exc:  # noqa: BLE001 — scrape must never fail on broker issues
         logger.debug("Queue snapshot skipped: %s", exc)
         return {name: _empty_counts() for name in CeleryQueues.ALL}
+
+
+def _waiting_age(raw: Any, now: float) -> int:
+    """Whole seconds a waiting message has been runnable, from its publish stamp; 0 if unknown.
+
+    ``raw`` is one kombu Redis-transport list element: the JSON message envelope, whose
+    ``headers`` carry the stamp (and the ``eta`` of a countdown, which ages from when due).
+    """
+    if not raw:
+        return 0
+    from app.core.queue_wait import PUBLISHED_AT_HEADER
+    from app.core.queue_wait import parse_published_at
+    from app.core.queue_wait import waited_seconds
+
+    try:
+        message = json.loads(raw)
+    except (ValueError, TypeError):
+        return 0
+    headers = message.get("headers") if isinstance(message, dict) else None
+    if not isinstance(headers, dict):
+        return 0
+    published_at = parse_published_at(headers.get(PUBLISHED_AT_HEADER))
+    if published_at is None:
+        return 0
+    return int(waited_seconds(published_at, now, headers.get("eta")))
 
 
 def _text(raw: bytes | str) -> str:
@@ -178,6 +233,8 @@ def update_queue_depths() -> None:
     ``celery_queue_orphaned`` and ``celery_queue_oldest_unacked_age_seconds`` are for
     alerting, never for scaling: an orphan is work no worker holds, and the reaper puts
     it back on the queue (where it counts as depth) within about one sweep.
+    ``celery_queue_oldest_message_age_seconds`` is the oldest message still waiting: the
+    starvation signal depth cannot give.
     """
     snapshot = queue_snapshot()
     for name, counts in snapshot.items():
@@ -185,6 +242,7 @@ def update_queue_depths() -> None:
         celery_queue_reserved.labels(queue=name).set(counts["reserved"])
         celery_queue_orphaned.labels(queue=name).set(counts["orphaned"])
         celery_queue_oldest_unacked_age_seconds.labels(queue=name).set(counts["oldest_unacked_age"])
+        celery_queue_oldest_message_age_seconds.labels(queue=name).set(counts["oldest_pending_age"])
 
 
 def _count_in_flight(file_uuids: list[str]) -> int:

@@ -567,6 +567,7 @@ TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=15   # Default: 15 — lease refresh
 TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=90        # Default: 90 — detection latency for a dead worker
 BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS=60       # Default: 60 — how often the reaper runs
 BROKER_ORPHAN_STALE_SECONDS=120               # Default: 120 — grace for a delivery not yet started
+TRANSCRIPTION_RECLAIM_GRACE_SECONDS=120       # Default: 120 (never below the TTL) — a run this young is never reclaimed
 BROKER_ORPHAN_UNTRACKED_STALE_SECONDS=600     # Default: 600 — grace for a non-transcription delivery
 BROKER_ORPHAN_MAX_REQUEUES=5                  # Default: 5 — worker losses per non-transcription message
 TRANSCRIPTION_MAX_INFRA_REQUEUES=5            # Default: 5 — worker losses per file before it fails

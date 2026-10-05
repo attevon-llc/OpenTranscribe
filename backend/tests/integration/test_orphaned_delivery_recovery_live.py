@@ -316,6 +316,8 @@ def test_a_cold_shutdown_drops_a_running_stage_and_the_reaper_still_requeues_the
     from app.services.task_recovery_service import TaskRecoveryService
 
     monkeypatch.setattr(task_recovery_config, "BROKER_ORPHAN_STALE", 0)
+    # The run row is seconds old; the reclaim grace (issue #1178) is compressed like the stale age.
+    monkeypatch.setattr(task_recovery_config, "TRANSCRIPTION_RECLAIM_GRACE", 0)
     monkeypatch.setattr(
         "app.services.transcription_retry.session_scope", lambda: _bridged_scope(db_session)
     )

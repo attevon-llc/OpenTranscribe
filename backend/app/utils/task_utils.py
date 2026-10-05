@@ -32,6 +32,13 @@ TASK_STATUS_FAILED = "failed"
 #: tell "did the work" apart from "correctly decided not to" — see issue #622.
 TASK_STATUS_SKIPPED = "skipped"
 
+_ACTIVE_TASK_STATUSES = (TASK_STATUS_PENDING, TASK_STATUS_IN_PROGRESS)
+#: Task types whose row is fenced by run id: a replacement run always gets a NEW Task row, so a
+#: terminal row of this type never legitimately becomes active again (issue #1178). Other
+#: types (search indexing, speaker clustering) mark their row failed and then ``self.retry()``
+#: under the same id, and the retry must be able to reopen it.
+_RUN_FENCED_TASK_TYPES = frozenset({"transcription"})
+
 
 def create_task_record(
     db: Session, celery_task_id: str, user_id: int, media_file_id: int | None, task_type: str
@@ -50,6 +57,9 @@ def create_task_record(
         task_type=task_type,
         status=TASK_STATUS_PENDING,
         progress=0.0,
+        # The column has no insert default; a NULL here put a brand-new transcription row into
+        # the lost-run query before its queued marker existed (issue #1178).
+        updated_at=datetime.now(UTC),
     )
     db.add(task)
 
@@ -88,7 +98,15 @@ def update_task_status(
     error_message: str | None = None,
     completed: bool = False,
 ) -> Task | None:
-    """Update task status in the database."""
+    """Update task status in the database.
+
+    A write that makes a transcription run's row ACTIVE (``pending`` / ``in_progress``) lands
+    only while the row is still active (issue #1178): recovery may have reclaimed the run and
+    dispatched a replacement while a stage of the original was still executing, and that
+    stage's next progress write must not move the reclaimed row back to ``in_progress``. The
+    check is one conditional ``UPDATE``, so it holds against a reclaim committed by another
+    process between this session's read and its write. A dropped write returns ``None``.
+    """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         logger.warning(f"Task {task_id} not found")
@@ -97,17 +115,23 @@ def update_task_status(
     # Log state transition for debugging
     logger.debug(f"Task {task_id} state change: {task.status} -> {status}")
 
-    # Update task fields
-    task.status = status  # type: ignore[assignment]
-    if progress is not None:
-        task.progress = progress  # type: ignore[assignment]
-    if error_message:
-        task.error_message = error_message  # type: ignore[assignment]
-    if completed:
-        task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+    now = datetime.now(UTC)
+    if status in _ACTIVE_TASK_STATUSES and task.task_type in _RUN_FENCED_TASK_TYPES:
+        if not _write_if_still_active(db, task, status, progress, error_message, completed, now):
+            db.commit()  # whatever else the caller staged commits exactly as it always did
+            return None
+    else:
+        # Update task fields
+        task.status = status  # type: ignore[assignment]
+        if progress is not None:
+            task.progress = progress  # type: ignore[assignment]
+        if error_message:
+            task.error_message = error_message  # type: ignore[assignment]
+        if completed:
+            task.completed_at = now  # type: ignore[assignment]
 
-    # Always update the timestamp for task state changes
-    task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+        # Always update the timestamp for task state changes
+        task.updated_at = now  # type: ignore[assignment]
 
     # Update media file task tracking
     media_file_id = task.media_file_id
@@ -138,6 +162,46 @@ def update_task_status(
         update_media_file_from_task_status(db, int(task_media_file_id))
 
     return task  # type: ignore[no-any-return]
+
+
+def _write_if_still_active(
+    db: Session,
+    task: Task,
+    status: str,
+    progress: float | None,
+    error_message: str | None,
+    completed: bool,
+    now: datetime,
+) -> bool:
+    """Apply an active-status write to ``task`` only if its row is still active in the DB.
+
+    Returns False (and changes nothing) when the row has meanwhile reached a terminal state.
+    """
+    # A column left as itself (``SET progress = progress``) is what "not given" means here.
+    matched = (
+        db.query(Task)
+        .filter(Task.id == task.id, Task.status.in_(_ACTIVE_TASK_STATUSES))
+        .update(
+            {
+                "status": status,
+                "updated_at": now,
+                "progress": Task.progress if progress is None else progress,
+                "error_message": error_message or Task.error_message,
+                "completed_at": now if completed else Task.completed_at,
+            },
+            synchronize_session=False,
+        )
+    )
+    # The in-memory object may predate a reclaim; re-read it either way.
+    db.expire(task)
+    if not matched:
+        logger.debug(
+            "Dropped a %r write to task %s: the run is no longer active (reclaimed or finished)",
+            status,
+            task.id,
+        )
+        return False
+    return True
 
 
 def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> MediaFile | None:

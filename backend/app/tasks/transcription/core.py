@@ -12,6 +12,7 @@ Where the rest of the pipeline now lives: :mod:`context`,
 :mod:`legacy_task`, :mod:`diarize_task`, :mod:`cpu_task`.
 """
 
+import contextlib
 import logging
 import os
 import tempfile
@@ -35,6 +36,7 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.asr.errors import ASRRateLimitedError
+from app.transcription import host_memory_admission
 from app.transcription.diarizer_native import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
@@ -441,13 +443,20 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     # inside this block -- outside it `stand_down_if_requested` has no run to ask about and
     # silently never fires. The context manager's reset is what stops celery's REUSED pool
     # thread from carrying this run's id into the next task.
-    with cancellation_scope(task_id, file_uuid), run_heartbeat(task_id):
+    with (
+        cancellation_scope(task_id, file_uuid),
+        run_heartbeat(task_id),
+        contextlib.ExitStack() as admission,
+    ):
         try:
             # issue #823: the cheapest place to catch a cancel that landed while this
             # message sat in the broker queue -- one Redis read, before any download,
             # model warm-up or GPU allocation. The engine's own entry checkpoints cover
             # the stage bodies; this covers everything the task does before reaching one.
             stand_down_if_requested("transcribe_gpu_task.entry")
+            # issue #1073: one host-memory slot for the whole body, taken inside the try so
+            # a timed-out wait reaches the abort handler and is requeued, not failed.
+            admission.enter_context(host_memory_admission.task_slot("gpu_transcribe"))
 
             from app.services.minio_service import download_temp_audio
 

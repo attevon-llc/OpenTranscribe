@@ -239,8 +239,7 @@ def test_vram_bound_host(monkeypatch, host):
 
 
 def test_ram_bound_host(monkeypatch, host):
-    """A 48 GB card in a 16 GiB pod: VRAM alone says 10, host memory must cap it so a
-    4-hour file fits in every slot."""
+    """A 48 GB card in a 16 GiB pod: VRAM alone says 10, host memory must cap it."""
     host(mem_total_mb=_gib(64), cgroup_v2=str(16 * 1024**3))
     monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=49140))
     expected = (16 * 1024 - config_mod.DEFAULT_HOST_BASELINE_MB) // (
@@ -268,3 +267,18 @@ def test_unreadable_host_memory_leaves_the_vram_answer(monkeypatch, host):
     # No files written at all: nothing to read, so no host cap.
     monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=24576))
     assert TranscriptionConfig._auto_concurrent() == 4
+
+
+def test_auto_on_a_32_gib_host_may_reach_twelve(monkeypatch, host):
+    """Load-test evidence (issue #1073): 32 GB hosts stayed GPU-bound at 12 concurrent tasks.
+    The per-task default must not cap them at 7."""
+    host(mem_total_mb=_gib(128), cgroup_v2=str(32 * 1024**3))
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=262144))
+    assert TranscriptionConfig._auto_concurrent() == 12
+
+
+def test_auto_on_a_16_gib_host_stays_at_or_below_six(monkeypatch, host):
+    """Load-test evidence (issue #1073): 16 GB hosts were OOM-killed at 8+ concurrent tasks."""
+    host(mem_total_mb=_gib(128), cgroup_v2=str(16 * 1024**3))
+    monkeypatch.setitem(sys.modules, "torch", _fake_torch(available=True, total_memory_mb=262144))
+    assert 1 <= TranscriptionConfig._auto_concurrent() <= 6

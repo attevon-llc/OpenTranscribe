@@ -122,6 +122,13 @@ indexing → WebSocket notification.
   the older checks.
   **Every** pipeline stage (preprocess, GPU/CPU transcribe, diarize, finalize) holds the run's
   lease (`run_heartbeat`) for its whole body — a stage without one is invisible to recovery.
+  ⚠️ A run younger than `TRANSCRIPTION_RECLAIM_GRACE_SECONDS` is never reclaimed
+  (`transcription_retry.recover_lost_run` is the one choke point): dispatch commits the row
+  before it writes the queued marker, and that window once got a run reclaimed 0.1 s after
+  creation (issue #1178). And `update_task_status` drops a `pending`/`in_progress` write to a
+  transcription row that is no longer active, so a superseded stage's late progress write can
+  never resurrect a reclaimed row. Other task types are exempt: they `self.retry()` under the
+  same id and must be able to reopen their own failed row.
 - **ONE retry policy: `services/transcription_retry.py`.** Every way a run ends early goes
   through it — a stage that raised (`_handle_transcription_failure`, preprocess's
   `_mark_pipeline_error`), a worker that died (`core/broker_orphans.py` reaper, and the health

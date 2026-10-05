@@ -423,6 +423,28 @@ def fail_interrupted_run(task_id: str) -> RunOutcome | None:
         )
 
 
+def _reclaim_cutoff() -> datetime:
+    """Runs created after this instant are too young to be reclaimed as lost (issue #1178)."""
+    from datetime import timedelta
+
+    return datetime.now(UTC) - timedelta(seconds=task_recovery_config.TRANSCRIPTION_RECLAIM_GRACE)
+
+
+def _within_reclaim_grace(task: Task) -> bool:
+    """Whether ``task`` was created too recently to have shown that it is alive.
+
+    Dispatch commits the Task row before it writes the run's queued marker, and a stage writes
+    its first lease only once a worker picks it up: in between, a healthy run reads exactly
+    like a dead one. A row without ``created_at`` is judged by the other signals alone.
+    """
+    created_at = task.created_at
+    if created_at is None:
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return created_at > _reclaim_cutoff()
+
+
 def recover_lost_run(db, task: Task) -> RunOutcome | None:
     """A run whose worker died and whose broker message is gone: re-dispatch or fail it.
 
@@ -432,12 +454,19 @@ def recover_lost_run(db, task: Task) -> RunOutcome | None:
     the error budget, and dispatches without backoff: nothing about the file was wrong.
 
     Returns None when there is nothing to recover: the task has no file, the run is being
-    cancelled, or another recovery pass already ended the run (the row is re-read under a
+    cancelled, another recovery pass already ended the run (the row is re-read under a
     lock, so the reaper and the health check can never both dispatch a replacement for the
-    same run).
+    same run), or the run is still inside its reclaim grace window (issue #1178).
     """
     current = db.query(Task).filter(Task.id == task.id).with_for_update().first()
     if current is None or current.status not in ("pending", "in_progress"):
+        return None
+    if _within_reclaim_grace(current):
+        logger.debug(
+            "Run %s is younger than the reclaim grace (%ds); not reclaiming it",
+            current.id,
+            task_recovery_config.TRANSCRIPTION_RECLAIM_GRACE,
+        )
         return None
     if task.media_file_id is None:
         return None
@@ -485,8 +514,10 @@ def recover_lost_runs(exclude: set[str]) -> int:
     worker is gone and so is its message -- dropped by a cold shutdown's cancel, or by a
     broker that lost its data. ``exclude`` holds the runs that still have a message in the
     broker, which the first half handles by putting that exact stage back. Only rows quiet for
-    ``BROKER_ORPHAN_STALE_SECONDS`` are considered, so a run between its dispatch commit and
-    its queued marker is never mistaken for a lost one. Returns how many runs it acted on.
+    ``BROKER_ORPHAN_STALE_SECONDS`` and older than ``TRANSCRIPTION_RECLAIM_GRACE_SECONDS`` are
+    considered, so a run between its dispatch commit and its queued marker (whose
+    ``updated_at`` may still be NULL) is never mistaken for a lost one (issue #1178). Returns
+    how many runs it acted on.
     """
     from datetime import timedelta
 
@@ -505,6 +536,7 @@ def recover_lost_runs(exclude: set[str]) -> int:
                 Task.task_type == TRANSCRIPTION_TASK_TYPE,
                 Task.status.in_(["pending", "in_progress"]),
                 or_(Task.updated_at.is_(None), Task.updated_at < cutoff),
+                Task.created_at < _reclaim_cutoff(),
             )
             .all()
         )

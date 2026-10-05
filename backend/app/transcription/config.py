@@ -29,9 +29,14 @@ _PROC_MEMINFO = "/proc/meminfo"
 # (with the diar-native sidecar the diarization memory lives in the sidecar's process).
 #: Host RAM a GPU worker holds before any task runs. Override with GPU_HOST_BASELINE_MB.
 DEFAULT_HOST_BASELINE_MB = 2560
-#: Host RAM one concurrent task needs at the 4-hour media cap. Override with
-#: GPU_PER_TASK_HOST_MB.
-DEFAULT_PER_TASK_HOST_MB = 4096
+#: Host RAM one concurrent task needs, on average, in a realistic mix of file lengths.
+#: Override with GPU_PER_TASK_HOST_MB. Derived from a multi-GPU load test (issue #1073): 16 GB
+#: hosts were OOM-killed at 8 concurrent tasks and ran at 6, 32 GB hosts ran 12. With the
+#: baseline above, 2048 MB predicts exactly that (8 tasks: 18.9 GB, over 16 GB; 6 tasks:
+#: 14.8 GB; 12 tasks: 27.1 GB, under 32 GB). The single-file worst case is larger (4-hour
+#: file with in-process diarization: ~7.6 GB, see above); a workload dominated by multi-hour
+#: files should set 4096 or more.
+DEFAULT_PER_TASK_HOST_MB = 2048
 
 # Module-level guard so the CPU-mode misconfiguration warning fires at most
 # once per worker process — without this, every transcription task would
@@ -425,8 +430,9 @@ class TranscriptionConfig:
         Host-memory-based (issue #1073 step 1): on common single-GPU shapes (4 vCPU and
         16 GiB next to a 24 GB GPU) RAM binds first, because each task decodes its whole file
         into memory. ``(host_budget - GPU_HOST_BASELINE_MB) // GPU_PER_TASK_HOST_MB``, with
-        the budget read from the cgroup limit when there is one, so every slot fits a file at
-        the 4-hour media cap.
+        the budget read from the cgroup limit when there is one. An explicitly configured
+        concurrency gets the same host cap at worker startup
+        (``app/transcription/host_memory_admission.py``).
         """
         vram_based = TranscriptionConfig._vram_based_concurrency()
         host_based = TranscriptionConfig._host_based_concurrency()
@@ -455,6 +461,11 @@ class TranscriptionConfig:
     @staticmethod
     def _host_memory_budget_mb() -> int | None:
         """Usable host memory in MB: the cgroup limit when set, never above MemTotal."""
+        return TranscriptionConfig._host_memory_budget()[0]
+
+    @staticmethod
+    def _host_memory_budget() -> tuple[int | None, str]:
+        """``(budget_mb, source)``; source is ``"cgroup"``, ``"meminfo"`` or ``"unknown"``."""
         mem_total_mb: int | None = None
         try:
             with open(_PROC_MEMINFO) as fh:
@@ -476,8 +487,11 @@ class TranscriptionConfig:
                 limit_mb = int(raw) // (1024**2)
                 break
 
-        candidates = [v for v in (mem_total_mb, limit_mb) if v]
-        return min(candidates) if candidates else None
+        if limit_mb and (not mem_total_mb or limit_mb < mem_total_mb):
+            return limit_mb, "cgroup"
+        if mem_total_mb:
+            return mem_total_mb, "meminfo"
+        return None, "unknown"
 
     @staticmethod
     def _host_based_concurrency() -> int | None:

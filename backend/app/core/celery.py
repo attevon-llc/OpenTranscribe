@@ -1055,6 +1055,19 @@ def reconcile_gpu_concurrent_requests() -> None:
         )
 
 
+def configure_gpu_host_admission() -> None:
+    """Cap a GPU threads worker's concurrent tasks by host memory (issue #1073).
+
+    Prefork is left alone: there each child is its own process running one task at a time,
+    so a per-process gate has nothing to count.
+    """
+    if os.environ.get("PRELOAD_GPU_MODELS", "").lower() != "true" or not _pool_is_threads():
+        return
+    from app.transcription import host_memory_admission
+
+    host_memory_admission.configure(_pool_concurrency())
+
+
 # Wall-clock bound on the CPU-lightweight Whisper warm-up (issue #631). Matched to
 # celery-cpu-worker's `start_period: 120s` in docker-compose.yml, which is both the
 # allowance the deployment declares for this load AND the window in which a frozen
@@ -1093,6 +1106,7 @@ def preload_models(**kwargs):
             # Before the config is built: it reads GPU_CONCURRENT_REQUESTS, which sets
             # CTranslate2's num_workers at load time (issue #1072).
             reconcile_gpu_concurrent_requests()
+            configure_gpu_host_admission()
             config = TranscriptionConfig.from_environment()
             if config.device == "cuda":
                 import torch

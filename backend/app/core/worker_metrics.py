@@ -165,6 +165,7 @@ class WorkerTaskMetrics:
     ) -> None:
         from prometheus_client import CollectorRegistry
         from prometheus_client import Counter
+        from prometheus_client import Gauge
         from prometheus_client import Histogram
 
         self.registry = CollectorRegistry(auto_describe=True)
@@ -198,6 +199,28 @@ class WorkerTaskMetrics:
             "wait was observed.",
             ["queue"],
             registry=self.registry,
+        )
+        # GPU workers only (issue #1073): set once at startup by host_memory_admission.
+        # ``livemax`` so a multiprocess-mode worker reports one value, not one per pid.
+        self.gpu_concurrency_configured = Gauge(
+            "gpu_worker_concurrency_configured",
+            "GPU tasks this worker was configured to run at once (its thread concurrency).",
+            registry=self.registry,
+            multiprocess_mode="livemax",
+        )
+        self.gpu_concurrency_host_cap = Gauge(
+            "gpu_worker_concurrency_host_memory_cap",
+            "GPU tasks that fit this host's memory: (budget - GPU_HOST_BASELINE_MB) // "
+            "GPU_PER_TASK_HOST_MB, budget from the cgroup limit or MemTotal. 0 when the host "
+            "memory could not be read (no cap applied).",
+            registry=self.registry,
+            multiprocess_mode="livemax",
+        )
+        self.gpu_concurrency_effective = Gauge(
+            "gpu_worker_concurrency_effective",
+            "GPU tasks this worker admits at once: min(configured, host-memory cap).",
+            registry=self.registry,
+            multiprocess_mode="livemax",
         )
         self._clock = clock
         self._wall_clock = wall_clock
@@ -434,6 +457,20 @@ def on_task_postrun(
         metrics.task_finished(task if task is not None else sender, task_id)
     except Exception as exc:  # noqa: BLE001 - see module docstring
         logger.debug("Could not record the run time of %s: %s", task_id, exc)
+
+
+def set_gpu_concurrency(*, configured: int, host_cap: int | None, effective: int) -> None:
+    """Export a GPU worker's concurrency decision (issue #1073). A no-op with metrics off."""
+    metrics = _metrics
+    if metrics is None:
+        return
+    try:
+        metrics.gpu_concurrency_configured.set(configured)
+        if host_cap is not None:
+            metrics.gpu_concurrency_host_cap.set(host_cap)
+        metrics.gpu_concurrency_effective.set(effective)
+    except Exception as exc:  # noqa: BLE001 - see module docstring
+        logger.debug("Could not record the GPU concurrency decision: %s", exc)
 
 
 def connect_signals() -> None:

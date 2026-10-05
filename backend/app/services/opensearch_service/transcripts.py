@@ -108,7 +108,8 @@ def index_transcript(
             doc["embedding"] = embedding
 
         # Index the document using UUID as document ID
-        response = _client.opensearch_client.index(
+        response = _client.call_idempotent_write(
+            _client.opensearch_client.index,
             index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
             body=doc,
             id=str(file_uuid),  # Use file_uuid as document ID

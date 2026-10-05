@@ -1246,6 +1246,19 @@ laptop or single home server; none of these need setting for a normal install.
 | `SEARCH_SEMANTIC_SUPPRESS_RATIO` | 0.20 | suppression ratio for weak semantic hits |
 | `OPENSEARCH_CHUNKS_INDEX_SHARDS` | 1 | applied **only at index creation** |
 | `OPENSEARCH_CHUNKS_INDEX_REPLICAS` | 0 | see the warning below |
+| `OPENSEARCH_INDEX_TIMEOUT_S` | 60 | read timeout for indexing writes (bulk/index) only; search queries are unaffected |
+| `OPENSEARCH_INDEX_TIMEOUT_RETRIES` | 2 | extra in-call attempts after an indexing write times out (writes use fixed ids, so repeats are safe) |
+| `SEARCH_INDEX_RETRY_HORIZON_S` | 21600 | how long a failed indexing run keeps retrying before it is marked failed (6 h) |
+| `SEARCH_INDEX_RETRY_BASE_DELAY_S` | 30 | first retry delay; doubles each attempt, with jitter |
+| `SEARCH_INDEX_RETRY_MAX_DELAY_S` | 600 | cap on a single retry delay |
+| `SEARCH_INDEX_SWEEP_BATCH_SIZE` | 25 | files the periodic sweep re-dispatches per run (every ~10 minutes) |
+| `SEARCH_INDEX_SWEEP_COOLDOWN_S` | 1800 | minimum time before the sweep dispatches the same file again |
+| `SEARCH_INDEX_SWEEP_LOOKBACK_HOURS` | 72 | how far back the sweep looks for completed files with no indexing record |
+
+Failed indexing is retried automatically and shows as pending in the file's task
+list while retries remain. Prometheus exposes `search_indexing_failures_total`,
+`search_indexing_retries_total` and `search_indexing_files_awaiting_reindex`; alert
+if the last stays above zero. The sweep does nothing when `OPENSEARCH_ENABLED=false`.
 
 :::warning[Changing chunk size requires a full reindex]
 Chunk boundaries are baked into the index at write time. Changing

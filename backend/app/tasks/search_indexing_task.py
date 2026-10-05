@@ -102,10 +102,16 @@ def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[
     }
 
 
+class FileGoneError(ValueError):
+    """The file was deleted before it could be indexed: nothing to retry."""
+
+
 @celery_app.task(
     bind=True,
     name="index_transcript_search",
     priority=EmbeddingPriority.PIPELINE_CRITICAL,
+    # The real budget is horizon-based (see index_retry.max_retry_attempts) and is passed to
+    # self.retry() per attempt; this is only the fallback for a direct .retry() call.
     max_retries=3,
     default_retry_delay=30,
 )
@@ -191,7 +197,7 @@ def index_transcript_search_task(  # noqa: C901
 
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
-                raise ValueError(f"Media file {file_id} not found")
+                raise FileGoneError(f"Media file {file_id} not found")
 
             # start_time alone is NOT a total order: overlapping speech and
             # interpolated backchannels routinely share an onset (measured on the
@@ -344,10 +350,31 @@ def index_transcript_search_task(  # noqa: C901
         logger.error(f"Search indexing failed for file {file_uuid}: {exc}")
         benchmark_timing.mark(pipeline_task_id, "search_index_chunks_end")
 
-        # Mark task as failed
+        from app.services.search import index_retry
+
+        max_attempts = index_retry.max_retry_attempts()
+        attempt = int(self.request.retries)
+        will_retry = not isinstance(exc, FileGoneError) and attempt < max_attempts
+        countdown = index_retry.retry_delay_seconds(attempt) if will_retry else 0
+
+        # While another attempt is scheduled the row stays "pending" with the reason, so the
+        # file shows indexing as outstanding rather than as a terminal failure. It is "failed"
+        # only once the retry horizon is spent (the periodic sweep then re-dispatches it) or the
+        # error cannot be retried.
         try:
             with session_scope() as db:
-                update_task_status(db, task_id, "failed", error_message=str(exc))
+                if will_retry:
+                    update_task_status(
+                        db,
+                        task_id,
+                        "pending",
+                        error_message=(
+                            f"Search indexing will retry in {countdown}s "
+                            f"(attempt {attempt + 1} failed): {exc}"
+                        ),
+                    )
+                else:
+                    update_task_status(db, task_id, "failed", error_message=str(exc))
         except Exception:
             logger.error(f"Failed to update task status for {task_id}")
 
@@ -357,16 +384,24 @@ def index_transcript_search_task(  # noqa: C901
         benchmark_timing.record_retry(
             pipeline_task_id,
             stage="search_index",
-            attempt=int(self.request.retries) + 1,
+            attempt=attempt + 1,
             start=total_start,
             end=time.time(),
             error=str(exc),
         )
 
-        # Retry with exponential backoff for transient errors
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=exc, countdown=30 * (2**self.request.retries)) from exc
+        if will_retry:
+            index_retry.record_failure("retrying")
+            index_retry.record_retry()
+            # Jump the queue: a retried run goes out ahead of first attempts.
+            raise self.retry(
+                exc=exc,
+                countdown=countdown,
+                max_retries=max_attempts,
+                priority=EmbeddingPriority.PIPELINE_RETRY,
+            ) from exc
 
+        index_retry.record_failure("terminal" if isinstance(exc, FileGoneError) else "exhausted")
         return {"status": "failed", "file_id": file_id, "error": str(exc)}
 
 

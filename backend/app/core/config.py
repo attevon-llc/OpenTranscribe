@@ -697,6 +697,24 @@ class Settings(BaseSettings):
         return max(v, floor)
 
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
+
+    # Indexing writes (bulk / index) are slower than queries under load; the client's 10 s
+    # default timed out repeatedly and left files out of search (issue #1182). This applies to
+    # indexing write calls only, never to search/query calls.
+    OPENSEARCH_INDEX_TIMEOUT_S: float = 60.0
+    # Extra in-call attempts after a read timeout. Safe because every indexing write uses an
+    # explicit document _id, so a repeat overwrites rather than duplicates.
+    OPENSEARCH_INDEX_TIMEOUT_RETRIES: int = 2
+    # index_transcript_search_task keeps retrying for this long (exponential backoff with
+    # jitter, per-attempt delay capped) before the row is marked failed; the periodic sweep
+    # then re-dispatches it.
+    SEARCH_INDEX_RETRY_HORIZON_S: int = 6 * 3600
+    SEARCH_INDEX_RETRY_BASE_DELAY_S: int = 30
+    SEARCH_INDEX_RETRY_MAX_DELAY_S: int = 600
+    # Sweep that re-dispatches completed files whose search indexing failed or never ran.
+    SEARCH_INDEX_SWEEP_BATCH_SIZE: int = 25
+    SEARCH_INDEX_SWEEP_COOLDOWN_S: int = 1800
+    SEARCH_INDEX_SWEEP_LOOKBACK_HOURS: int = 72
     SEARCH_CHUNK_TARGET_WORDS: int = 200
     SEARCH_CHUNK_OVERLAP_WORDS: int = 40
     SEARCH_RRF_RANK_CONSTANT: int = 30

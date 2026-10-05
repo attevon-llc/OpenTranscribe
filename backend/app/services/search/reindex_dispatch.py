@@ -50,6 +50,7 @@ def dispatch_transcript_reindex(
     file_id: int,
     file_uuid: str,
     user_id: int,
+    priority: int | None = None,
 ) -> bool:
     """Queue a debounced full re-index of one file's transcript content.
 
@@ -63,6 +64,9 @@ def dispatch_transcript_reindex(
         file_uuid: Media file UUID string.
         user_id: Owner user id (needed by the indexing task for the
             access-list rebuild and completion notification).
+        priority: Optional Celery priority for the queued task (lower runs first). Left
+            unset, the task's own default applies; the recovery sweep passes the retry
+            priority so a file that already waited out a failure is not queued behind new work.
 
     Returns:
         True if a re-index was newly queued for this file, False if one was
@@ -80,9 +84,12 @@ def dispatch_transcript_reindex(
             )
             return False
 
+        options: dict[str, int] = {"countdown": TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS}
+        if priority is not None:
+            options["priority"] = priority
         index_transcript_search_task.apply_async(
             kwargs={"file_id": file_id, "file_uuid": file_uuid, "user_id": user_id},
-            countdown=TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS,
+            **options,
         )
         logger.info(
             f"Queued debounced re-index for file {file_uuid} "

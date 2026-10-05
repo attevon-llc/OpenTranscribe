@@ -110,6 +110,9 @@ media_mirror_runs_total: Counter
 media_mirror_last_success_timestamp_seconds: Gauge
 media_mirror_last_status: Gauge
 media_mirror_last_run_objects: Gauge
+search_indexing_failures_total: Counter
+search_indexing_retries_total: Counter
+search_indexing_files_awaiting_reindex: Gauge
 
 
 def _register() -> None:
@@ -138,6 +141,9 @@ def _register() -> None:
     global media_mirror_last_success_timestamp_seconds
     global media_mirror_last_status
     global media_mirror_last_run_objects
+    global search_indexing_failures_total
+    global search_indexing_retries_total
+    global search_indexing_files_awaiting_reindex
 
     if _COLLECTORS_REGISTERED:
         return
@@ -280,6 +286,27 @@ def _register() -> None:
         "Object counts from the most recent media mirror run by outcome "
         "(copied/skipped/failed/excluded).",
         ["outcome"],
+    )
+
+    # Search indexing (issue #1182). The two counters are incremented inside the indexing
+    # task (served on the worker's WORKER_METRICS_PORT when enabled); the gauge is derived
+    # from the database at scrape time (app.core.backup_metrics.update_search_indexing_metrics)
+    # so it is correct on the API process, which is the one that is always scraped.
+    search_indexing_failures_total = Counter(
+        "search_indexing_failures_total",
+        "Search indexing attempts that raised, by reason: retrying (another attempt is "
+        "scheduled), exhausted (retry horizon spent; the sweep takes over), terminal "
+        "(not retryable, e.g. the file was deleted).",
+        ["reason"],
+    )
+    search_indexing_retries_total = Counter(
+        "search_indexing_retries_total",
+        "Search indexing retries scheduled after a failed attempt.",
+    )
+    search_indexing_files_awaiting_reindex = Gauge(
+        "search_indexing_files_awaiting_reindex",
+        "Completed files with a transcript that are not yet searchable: indexing failed, "
+        "is waiting on a retry, or never ran. Alert if it stays above zero.",
     )
 
     _COLLECTORS_REGISTERED = True

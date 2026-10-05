@@ -186,8 +186,29 @@ def update_media_mirror_metrics(db: Session | None = None) -> None:
         logger.debug("Media mirror metric sampling skipped: %s", exc)
 
 
+def update_search_indexing_metrics(db: Session | None = None) -> None:
+    """Refresh ``search_indexing_files_awaiting_reindex`` from the database (#1182)."""
+    try:
+        from app.core.metrics import search_indexing_files_awaiting_reindex
+        from app.services.search.index_retry import count_files_awaiting_index
+
+        if db is not None:
+            count = count_files_awaiting_index(db)
+        else:
+            from app.db.base import SessionLocal
+
+            own = SessionLocal()
+            try:
+                count = count_files_awaiting_index(own)
+            finally:
+                own.close()
+        search_indexing_files_awaiting_reindex.set(count)
+    except Exception as exc:  # noqa: BLE001 — scrape must never fail on DB issues
+        logger.debug("Search indexing metric sampling skipped: %s", exc)
+
+
 def refresh_job_metrics() -> None:
-    """Run both job-state projections if the last run is older than the TTL.
+    """Run the job-state projections if the last run is older than the TTL.
 
     The timestamp is claimed under the lock BEFORE the DB reads, so concurrent
     scrapes that arrive together trigger one refresh, not one each.
@@ -201,3 +222,4 @@ def refresh_job_metrics() -> None:
         _last_refresh_at = now
     update_backup_metrics()
     update_media_mirror_metrics()
+    update_search_indexing_metrics()

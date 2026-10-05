@@ -109,7 +109,7 @@ def workers():
     """Start real ``celery worker`` subprocesses; stop whatever is left at teardown."""
     started: list[subprocess.Popen] = []
 
-    def _start(**extra_env: str) -> subprocess.Popen:
+    def _start(node: str | None = None, **extra_env: str) -> subprocess.Popen:
         env = {
             **os.environ,
             "ORPHAN_TEST_BROKER_URL": _redis_url(),
@@ -136,7 +136,7 @@ def workers():
                 "--without-gossip",
                 "--without-mingle",
                 "-n",
-                f"orphan-{uuid.uuid4().hex[:8]}@%h",
+                node or f"orphan-{uuid.uuid4().hex[:8]}@%h",
                 "--loglevel",
                 "INFO",
             ],
@@ -293,6 +293,74 @@ def test_a_sigkilled_workers_stage_is_requeued_at_the_front_within_seconds(
         "worker B to finish both stages",
     )
     assert [d.decode() for d in done] == [interrupted.id, newer.id]
+
+
+def test_a_worker_restarted_in_place_does_not_shield_its_predecessors_stage(
+    broker, worker_app, workers, db_session, normal_user, monkeypatch
+):
+    """Issue #1179: the dead worker comes back under the SAME node name (a container restarted
+    in place keeps its hostname), and the reaper asks the REAL inspect broadcast who holds what.
+
+    Every other test here passes ``held_ids=set()``; this one does not, because the question is
+    exactly whether a live node with the dead one's name makes its predecessor's delivery look
+    held. It does not: live workers report Celery message ids, and the restarted process never
+    received this one.
+    """
+    from app.core.broker_orphans import reclaim_orphaned_deliveries
+    from app.core.task_config import task_recovery_config
+
+    monkeypatch.setattr(task_recovery_config, "BROKER_ORPHAN_STALE", _STALE)
+    monkeypatch.setattr(
+        "app.services.transcription_retry.session_scope", lambda: _bridged_scope(db_session)
+    )
+    # The reaper's inspect broadcast goes to the test broker's workers.
+    monkeypatch.setattr("app.core.celery.celery_app", worker_app.app)
+    node = f"gpu-inplace-{uuid.uuid4().hex[:6]}@restarted-host"
+    media_file, run = _run_row(db_session, normal_user)
+
+    first = workers(node=node)
+    _send(broker, worker_app, media_file, run, block=True)
+    _wait_for(
+        lambda: run.id.encode() in broker.lrange(worker_app.STARTED_KEY, 0, -1),
+        60,
+        "the first process to start the stage",
+    )
+    os.killpg(first.pid, signal.SIGKILL)
+    first.wait(timeout=10)
+    assert broker.hlen(Channel.unacked_key) == 1
+
+    workers(node=node)  # restarted in place: same node name, new process
+    _wait_for(
+        lambda: worker_app.app.control.ping(destination=[node], timeout=1.0),
+        60,
+        "the restarted process to answer under the same node name",
+    )
+    from app.core.task_liveness import RunState
+    from app.core.task_liveness import probe_runs
+
+    _wait_for(
+        lambda: probe_runs([run.id])[run.id].state == RunState.DEAD,
+        _LEASE_TTL + 10,
+        "the dead process's lease to lapse",
+    )
+    broker.delete(worker_app.BLOCK_KEY.format(task_id=run.id))
+    with Connection(
+        _redis_url(), transport_options=dict(worker_app.app.conf.broker_transport_options)
+    ) as conn:
+        # Real inspect broadcast (no held_ids); the clock is moved past the stale age instead
+        # of sleeping through it.
+        summary = reclaim_orphaned_deliveries(connection=conn, now=time.time() + _STALE + 1)
+
+    assert summary.get("error") is None, summary
+    assert summary["orphaned"] == 1, summary
+    assert summary["requeued"] == 1, summary
+    # ...and the restarted process, the only consumer, runs the predecessor's stage.
+    done = _wait_for(
+        lambda: broker.lrange(worker_app.DONE_KEY, 0, -1),
+        60,
+        "the restarted process to run the requeued stage",
+    )
+    assert [d.decode() for d in done] == [run.id]
 
 
 def test_a_cold_shutdown_drops_a_running_stage_and_the_reaper_still_requeues_the_file(

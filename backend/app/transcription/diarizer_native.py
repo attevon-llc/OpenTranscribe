@@ -669,6 +669,11 @@ class NativeSpeakerDiarizer:
         self.base_url = (base_url or _DEFAULT_URL).rstrip("/")
         self.is_loaded = False
         self._fallback: SpeakerDiarizer | None = None
+        # This object is shared by every task on the worker, so the fallback is too: it is
+        # loaded on first use, counted while in use, and released by release_fallback() once
+        # the sidecar serves again, never left resident beside it.
+        self._fallback_lock = threading.Lock()
+        self._fallback_users = 0
         # Which engine actually served the MOST RECENT diarize() call (issue #706) — set at
         # every return point in diarize(), including the internal fallback branch, so a caller
         # that only holds this object (typed as the duck-typed common interface) can still
@@ -711,14 +716,34 @@ class NativeSpeakerDiarizer:
 
     def _fallback_engine(self) -> SpeakerDiarizer:
         """In-process PyAnnote engine, loaded on first use after a sidecar loss."""
-        fallback = self._fallback
-        if fallback is None:
-            from app.transcription.diarizer import SpeakerDiarizer
+        with self._fallback_lock:
+            fallback = self._fallback
+            if fallback is None:
+                from app.transcription.diarizer import SpeakerDiarizer
 
-            fallback = SpeakerDiarizer(self.config)
-            fallback.load_model()
-            self._fallback = fallback
-        return fallback
+                fallback = SpeakerDiarizer(self.config)
+                fallback.load_model()
+                self._fallback = fallback
+            return fallback
+
+    def release_fallback(self) -> bool:
+        """Unload the in-process PyAnnote fallback if it is loaded and no job is using it.
+
+        The fallback exists for a sidecar outage. Kept after one, it holds the PyAnnote
+        pipeline in VRAM for the rest of the worker's life, beside the sidecar's own models,
+        and every later job's ``embed_window`` keeps routing to it. On a card packed with
+        concurrent jobs that VRAM is what the next Whisper decode needed. Returns True when
+        something was released.
+        """
+        with self._fallback_lock:
+            if self._fallback is None or self._fallback_users:
+                return False
+            fallback, self._fallback = self._fallback, None
+        fallback.unload_model()
+        from app.transcription.cuda_health import free_cached_vram
+
+        free_cached_vram()
+        return True
 
     # -- main entry points -------------------------------------------------
 
@@ -860,7 +885,13 @@ class NativeSpeakerDiarizer:
                 f"the PyAnnote fallback: {exc}",
                 reason="unreachable",
             ) from exc
-        fallback_result = self._fallback_engine().diarize(audio)
+        with self._fallback_lock:
+            self._fallback_users += 1
+        try:
+            fallback_result = self._fallback_engine().diarize(audio)
+        finally:
+            with self._fallback_lock:
+                self._fallback_users -= 1
         self.last_provider = "pyannote"
         self.last_model = getattr(self._fallback, "_model_name", None)
         return fallback_result
@@ -1036,10 +1067,11 @@ class NativeSpeakerDiarizer:
         frame real speech from the disputed word, and restores agreement with the
         in-process path to 0.989.
         """
-        if self._fallback is not None:
+        fallback = self._fallback  # read once: release_fallback() may clear it concurrently
+        if fallback is not None:
             # This job already fell back mid-diarization; keep the re-check on the same
             # engine that produced the segments.
-            return self._fallback.embed_window(audio, start, end)
+            return fallback.embed_window(audio, start, end)
         from app.services.native_embedding_client import embed_waveform
 
         sr = 16000

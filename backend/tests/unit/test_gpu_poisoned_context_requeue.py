@@ -18,6 +18,15 @@ from celery.exceptions import Reject
 POISONED = RuntimeError("parallel_for failed: cudaErrorInvalidDevice: invalid device ordinal")
 
 
+@pytest.fixture(autouse=True)
+def _fresh_cuda_health():
+    from app.transcription import cuda_health
+
+    cuda_health.reset_for_tests()
+    yield
+    cuda_health.reset_for_tests()
+
+
 @pytest.fixture
 def core():
     from app.tasks.transcription import core as core_mod
@@ -154,3 +163,26 @@ def test_the_diarize_task_routes_a_failure_through_the_same_helper():
     assert raised.value.requeue is True
     helper.assert_called_once()
     failed.assert_not_called()
+
+
+def test_a_recurring_fatal_looking_error_exits_even_when_the_probe_passes(core, context):
+    """The torch probe cannot see CTranslate2's CUDA state: after an OOM, Whisper can keep
+    failing with ``invalid device ordinal`` on every task while the probe passes. The worker
+    must still leave service once the error recurs, instead of failing every job it takes."""
+    with (
+        patch.object(core, "_handle_transcription_failure") as failed,
+        patch.object(core, "_cleanup_wav_quietly"),
+        patch.object(context, "_poisoned_requeue_allowed", return_value=True),
+        patch.object(context.cuda_health, "cuda_context_healthy", return_value=True),
+        patch.object(context.cuda_health, "mark_context_poisoned") as mark,
+    ):
+        for n in range(context.cuda_health.RECURRING_ERROR_LIMIT - 1):
+            with pytest.raises(RuntimeError):
+                core._finish_failed_or_aborted(MagicMock(), f"t{n}", f"f{n}", "", POISONED)
+        mark.assert_not_called()
+        with pytest.raises(Reject) as raised:
+            core._finish_failed_or_aborted(MagicMock(), "t-last", "f-last", "", POISONED)
+
+    assert raised.value.requeue is True
+    mark.assert_called_once()
+    assert failed.call_count == context.cuda_health.RECURRING_ERROR_LIMIT - 1

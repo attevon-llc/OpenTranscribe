@@ -147,3 +147,21 @@ class TestContextProbe:
     def test_a_sticky_error_is_unhealthy(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "torch", _ProbeTorch(fail_times=99))
         assert not cuda_health.cuda_context_healthy()
+
+
+class TestRecurringContextErrors:
+    def test_one_off_errors_spread_out_do_not_count_as_recurring(self):
+        window = cuda_health.RECURRING_ERROR_WINDOW_S
+        results = [
+            cuda_health.recurring_context_error(now=i * (window + 1))
+            for i in range(cuda_health.RECURRING_ERROR_LIMIT + 2)
+        ]
+        assert results == [False] * (cuda_health.RECURRING_ERROR_LIMIT + 2)
+
+    def test_errors_recurring_inside_the_window_do(self):
+        results = [
+            cuda_health.recurring_context_error(now=float(i))
+            for i in range(cuda_health.RECURRING_ERROR_LIMIT)
+        ]
+        assert results[-1] is True
+        assert not any(results[:-1])

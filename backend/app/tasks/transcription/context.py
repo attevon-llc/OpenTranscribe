@@ -209,13 +209,19 @@ def requeue_if_context_poisoned(
     """Handle a GPU failure caused by a broken CUDA context (issue #1081).
 
     Returns normally when ``exc`` is anything else, or when its message looks fatal but a
-    probe shows the context still works, so the caller's failure path runs.
+    probe shows the context still works and the error is not recurring
+    (``cuda_health.recurring_context_error``), so the caller's failure path runs.
     Otherwise this worker is taken out of service (it exits and is restarted, see
     ``cuda_health.mark_context_poisoned``) and the task is requeued for a healthy worker:
     the file is not at fault. Past ``GPU_POISONED_MAX_REQUEUES`` for the same task it
     returns, so the file fails normally instead of cycling workers forever.
     """
-    if not cuda_health.is_context_poisoned_error(exc) or cuda_health.cuda_context_healthy():
+    if not cuda_health.is_context_poisoned_error(exc):
+        return
+    # Every occurrence is counted, probe or not: the torch probe cannot see CTranslate2's
+    # state, so one that keeps recurring is poisoned whatever the probe says.
+    recurring = cuda_health.recurring_context_error()
+    if cuda_health.cuda_context_healthy() and not recurring:
         return
     cuda_health.mark_context_poisoned(str(exc))
     if not _poisoned_requeue_allowed(task_id):

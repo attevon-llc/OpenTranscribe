@@ -734,8 +734,6 @@ def test_speech_extent_never_lowers_a_container_duration(db_session, media_file)
         _segment(20.0, 30.0, "last to end"),
         _segment(10.0, 20.0, "middle"),
     ]
-    media_file.duration = None
-    db_session.commit()
 
     update_media_file_transcription_status(db_session, media_file.id, out_of_order)
 

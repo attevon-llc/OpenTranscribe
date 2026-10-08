@@ -89,7 +89,16 @@
     gap: 4px;
     cursor: help;
     width: fit-content;
+    max-width: 100%;
     white-space: nowrap;
+  }
+
+  /* A long label ("Click for error details") must clip inside a fixed-width list column
+     rather than paint over the neighbouring cell; the full text stays in the tooltip. */
+  .status-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .status-indicator.status-clickable {

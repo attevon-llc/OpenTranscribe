@@ -581,6 +581,8 @@
 
   .list-cell-status {
     justify-content: flex-end;
+    min-width: 0;
+    overflow: hidden;
     font-size: 0.7rem;
   }
 

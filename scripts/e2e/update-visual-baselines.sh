@@ -639,6 +639,23 @@ while time.time() < deadline:
     busy = [f for f in files if str(f.get("status", "")).lower() in {"processing", "pending"}]
     done = [f for f in files if str(f.get("status", "")).lower() == "completed"]
     if files and not busy:
+        if not done:
+            # "Nothing is still running" is not "the corpus is ready". `error` is neither
+            # `processing` nor `pending`, so a corpus in which every file FAILED used to pass
+            # here as "0 completed file(s)" and the capture photographed an empty library --
+            # failures that read as UI regressions on the branch under test (#973).
+            counts: dict[str, int] = {}
+            for f in files:
+                status = str(f.get("status", "")).lower() or "unknown"
+                counts[status] = counts.get(status, 0) + 1
+            print(
+                f"seeded media finished but none completed ({counts}); the visual suite needs "
+                "transcribed files, so refusing to capture against an empty corpus. A worktree "
+                "without SEED_MEDIA_DIR seeds silent fixtures that the pipeline correctly "
+                "marks as errors.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         print(f"{len(done)} completed file(s), none processing")
         sys.exit(0)
     print(f"  {len(busy)} still processing, {len(done)} completed…", flush=True)

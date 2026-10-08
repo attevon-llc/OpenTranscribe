@@ -30,7 +30,25 @@ WAIT_TIMEOUT="${SEED_WAIT_TIMEOUT:-120}"
 #      pipeline will (correctly) mark them "no audio content detected", which
 #      is still a useful end-to-end smoke but looks like an error in the UI,
 #      so we say so loudly.
-SEED_MEDIA_DIR="${SEED_MEDIA_DIR:-benchmark/test_audio}"
+# `benchmark/` is gitignored, so the real corpus exists ONLY in the main checkout. A relative
+# default silently resolved to nothing when this ran from a git worktree
+# (`.claude/worktrees/<name>`), and the script then seeded synthetic silence that the pipeline
+# correctly marks as errors (#973). `git rev-parse --git-common-dir` names the main checkout's
+# .git from any worktree, so look there. It returns a RELATIVE ".git" in the main checkout
+# itself, which resolves to the current directory -- the same answer.
+_default_seed_media_dir() {
+  local common root
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || common=""
+  if [ -n "$common" ]; then
+    root="$(cd "$(dirname "$common")" 2>/dev/null && pwd)" || root=""
+    if [ -n "$root" ] && [ -d "$root/benchmark/test_audio" ]; then
+      echo "$root/benchmark/test_audio"
+      return 0
+    fi
+  fi
+  echo "benchmark/test_audio"
+}
+SEED_MEDIA_DIR="${SEED_MEDIA_DIR:-$(_default_seed_media_dir)}"
 SEED_MAX_FILES="${SEED_MAX_FILES:-3}"
 SEED_MAX_MB="${SEED_MAX_MB:-200}"
 

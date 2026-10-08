@@ -32,12 +32,21 @@ vi.mock('$stores/locale', () => ({
 
 const mockUploadsStore = vi.hoisted(() => ({
   addFile: vi.fn(
-    (_file: File, _speakerParams: unknown, _collectionIds?: string[], _tagNames?: string[]) =>
-      'upload-id-1'
+    (
+      _file: File,
+      _transcriptionParams: Record<string, unknown>,
+      _collectionIds?: string[],
+      _tagNames?: string[]
+    ) => 'upload-id-1'
   ),
-  addFiles: vi.fn((_files: File[], _collectionIds?: string[], _tagNames?: string[]) => [
-    'upload-id-1',
-  ]),
+  addFiles: vi.fn(
+    (
+      _files: File[],
+      _collectionIds?: string[],
+      _tagNames?: string[],
+      _transcriptionParams?: Record<string, unknown>
+    ) => ['upload-id-1']
+  ),
   addRecording: vi.fn(
     (_blob: Blob, _filename: string, _collectionIds?: string[], _tagNames?: string[]) =>
       'upload-id-1'
@@ -328,6 +337,98 @@ describe('remembering previous values', () => {
 
     const [, , , tagNames] = mockUploadsStore.addFile.mock.calls[0];
     expect(tagNames).toEqual(['meeting-notes']);
+  });
+});
+
+/**
+ * Issue #1121: the wizard showed a model picker and an AI-summary toggle, and the review step
+ * echoed both back ("Summary: No") -- but neither value was handed to the upload queue, so the
+ * server never heard the choice. These pin the hand-off at the component boundary; the request
+ * payloads themselves are pinned in uploadService.test.ts.
+ */
+describe('the wizard hands its transcription choices to the queue (#1121)', () => {
+  function remember(overrides: Record<string, unknown>) {
+    localStorage.setItem(
+      PREVIOUS_VALUES_KEY,
+      JSON.stringify({
+        collectionIds: [],
+        collectionNames: [],
+        tagNames: [],
+        minSpeakers: null,
+        maxSpeakers: null,
+        numSpeakers: null,
+        skipSummary: false,
+        selectedWhisperModel: null,
+        skippedSteps: [],
+        timestamp: 1,
+        ...overrides,
+      })
+    );
+  }
+
+  it('passes the chosen model, the summary opt-out and the speaker counts to addFile', async () => {
+    remember({ selectedWhisperModel: 'base', skipSummary: true, minSpeakers: 2 });
+
+    const { container } = render(FileUploader);
+    await reachReviewStep(container as HTMLElement, file({ size: 1024 }));
+    await fireEvent.click(container.querySelector('.nav-submit') as HTMLElement);
+
+    const [, transcriptionParams] = mockUploadsStore.addFile.mock.calls[0];
+    expect(transcriptionParams).toMatchObject({
+      whisperModel: 'base',
+      skipSummary: true,
+      minSpeakers: 2,
+    });
+  });
+
+  it('sends no model when the user kept the deployment default', async () => {
+    remember({ selectedWhisperModel: null });
+
+    const { container } = render(FileUploader);
+    await reachReviewStep(container as HTMLElement, file({ size: 1024 }));
+    await fireEvent.click(container.querySelector('.nav-submit') as HTMLElement);
+
+    const [, transcriptionParams] = mockUploadsStore.addFile.mock.calls[0];
+    expect(transcriptionParams.whisperModel).toBeNull();
+    expect(transcriptionParams.skipSummary).toBe(false);
+  });
+
+  it('applies the same choices to every file of a multi-file selection', async () => {
+    remember({ selectedWhisperModel: 'base', skipSummary: true });
+
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
+    await selectFiles(container as HTMLElement, [
+      file({ name: 'a.mp3', size: 1024 }),
+      file({ name: 'b.mp3', size: 1024 }),
+    ]);
+
+    await waitFor(() => expect(mockUploadsStore.addFiles).toHaveBeenCalledTimes(1));
+    const [, , , transcriptionParams] = mockUploadsStore.addFiles.mock.calls[0];
+    expect(transcriptionParams).toMatchObject({ whisperModel: 'base', skipSummary: true });
+  });
+
+  it('drops a remembered model when the deployment owns the model choice', async () => {
+    remember({ selectedWhisperModel: 'base' });
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'transcription.model_choice': false },
+      audience: {},
+      maxUploadBytes: undefined,
+      apiMediatedUploadEnabled: true,
+    });
+
+    try {
+      const { container } = render(FileUploader);
+      await reachReviewStep(container as HTMLElement, file({ size: 1024 }));
+      await fireEvent.click(container.querySelector('.nav-submit') as HTMLElement);
+
+      const [, transcriptionParams] = mockUploadsStore.addFile.mock.calls[0];
+      expect(transcriptionParams.whisperModel).toBeNull();
+    } finally {
+      resetCapabilities();
+    }
   });
 });
 

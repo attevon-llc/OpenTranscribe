@@ -7,6 +7,7 @@
   // Global stores
   import { recordingStore, recordingManager, hasActiveRecording, isRecording, recordingStartTime } from '$stores/recording';
   import { uploadsStore } from '$stores/uploads';
+  import type { UploadTranscriptionParams } from '$lib/services/uploadService';
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
@@ -305,8 +306,11 @@
     }
   }
 
-  function getEffectiveSpeakerSettings() {
-    return { minSpeakers, maxSpeakers, numSpeakers };
+  // Everything the wizard collected about HOW to transcribe, as one object. Read it when the
+  // user confirms, not later: audio extraction finishes in the background after the wizard
+  // has reset its own state, so a lazy read there would see the defaults.
+  function getTranscriptionParams(): UploadTranscriptionParams {
+    return { minSpeakers, maxSpeakers, numSpeakers, whisperModel: selectedWhisperModel, skipSummary };
   }
 
   function getOrganizeParams() {
@@ -531,7 +535,7 @@
 
     if (validFiles.length > 0) {
       const { collectionIds, tagNames } = getOrganizeParams();
-      uploadsStore.addFiles(validFiles, collectionIds, tagNames);
+      uploadsStore.addFiles(validFiles, collectionIds, tagNames, getTranscriptionParams());
       dispatch('uploadComplete', { multiple: true, count: validFiles.length });
       toastStore.success($t('uploader.addedToQueueOnly', { count: validFiles.length }));
       savePreviousValues();
@@ -566,8 +570,11 @@
   function handleBulkExtractionConfirm() {
     showBulkAudioExtractionModal = false;
     const { collectionIds, tagNames } = getOrganizeParams();
-    if (bulkRegularFiles.length > 0) uploadsStore.addFiles(bulkRegularFiles, collectionIds, tagNames);
-    if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract);
+    const transcriptionParams = getTranscriptionParams();
+    if (bulkRegularFiles.length > 0) {
+      uploadsStore.addFiles(bulkRegularFiles, collectionIds, tagNames, transcriptionParams);
+    }
+    if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract, transcriptionParams);
     dispatch('uploadComplete', { multiple: true, count: bulkVideosToExtract.length + bulkRegularFiles.length });
     bulkVideosToExtract = [];
     bulkRegularFiles = [];
@@ -577,7 +584,9 @@
     showBulkAudioExtractionModal = false;
     const { collectionIds, tagNames } = getOrganizeParams();
     const allFiles = [...bulkVideosToExtract, ...bulkRegularFiles];
-    if (allFiles.length > 0) uploadsStore.addFiles(allFiles, collectionIds, tagNames);
+    if (allFiles.length > 0) {
+      uploadsStore.addFiles(allFiles, collectionIds, tagNames, getTranscriptionParams());
+    }
     dispatch('uploadComplete', { multiple: true, count: allFiles.length });
     toastStore.success($t('uploader.addedToQueueOnly', { count: allFiles.length }));
     bulkVideosToExtract = [];
@@ -590,12 +599,18 @@
     bulkRegularFiles = [];
   }
 
-  function startBulkExtraction(videoFiles: File[]) {
+  function startBulkExtraction(videoFiles: File[], transcriptionParams: UploadTranscriptionParams) {
     toastStore.info($t('uploader.extractingAudioFrom', { count: videoFiles.length }));
     videoFiles.forEach(async (videoFile) => {
       try {
         const ea = await (await loadAudioExtractionService()).extractAudio(videoFile);
-        uploadsStore.addExtractedAudio(ea.blob, ea.filename, ea.metadata, ea.metadata.compressionRatio);
+        uploadsStore.addExtractedAudio(
+          ea.blob,
+          ea.filename,
+          ea.metadata,
+          ea.metadata.compressionRatio,
+          transcriptionParams
+        );
       } catch {
         toastStore.error($t('uploader.failedToExtractAudio', { filename: videoFile.name }));
       }
@@ -649,7 +664,9 @@
       dispatch('uploadComplete', { isFile: true });
       toastStore.info($t('uploader.extractingAudioFrom', { count: 1 }));
 
-      // Extraction runs in background — result is queued when done
+      // Extraction runs in background — result is queued when done. Captured now: the wizard
+      // resets its state before extraction finishes.
+      const transcriptionParams = getTranscriptionParams();
       (async () => {
         try {
           const extractionService = await loadAudioExtractionService();
@@ -658,7 +675,8 @@
             extractedAudio.blob,
             extractedAudio.filename,
             extractedAudio.metadata,
-            extractedAudio.metadata.compressionRatio
+            extractedAudio.metadata.compressionRatio,
+            transcriptionParams
           );
           toastStore.success($t('uploader.audioExtractedSuccess', { ratio: extractedAudio.metadata.compressionRatio }));
         } catch {
@@ -670,9 +688,9 @@
 
     // Normal file upload
     try {
-      const speakerParams = getEffectiveSpeakerSettings();
+      const transcriptionParams = getTranscriptionParams();
       const { collectionIds, tagNames } = getOrganizeParams();
-      const uploadId = uploadsStore.addFile(file, speakerParams, collectionIds, tagNames);
+      const uploadId = uploadsStore.addFile(file, transcriptionParams, collectionIds, tagNames);
       savePreviousValues();
       resetAllState();
       dispatch('uploadComplete', { uploadId, isFile: true });

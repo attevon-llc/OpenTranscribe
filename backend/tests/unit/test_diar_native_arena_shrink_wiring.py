@@ -102,3 +102,17 @@ def test_the_neighbouring_lazy_sessions_entry_still_has_its_default():
     assert len(lazy) == 1 and ":-1}" in lazy[0], (
         f"SPEAKRS_LAZY_SESSIONS should still default to 1, got {lazy!r}"
     )
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["SPEAKRS_CUDA_MEM_LIMIT_MB", "SPEAKRS_CUDA_CONV_SEARCH", "SPEAKRS_CUDA_CONV_MAX_WORKSPACE"],
+)
+def test_cuda_memory_knobs_are_bare_passthroughs(key):
+    """diar-native 0.3.3's CUDA memory bounds: reachable from .env, absent unless set."""
+    env = _sidecar_environment()
+    entries = [e for e in env if e.split("=")[0].strip() == key]
+    assert entries == [key], (
+        f"{key} must be passed to the sidecar as a BARE entry (got {entries!r}): absent "
+        f"keeps diar-native's 0.3.2 behaviour, set in .env bounds its GPU memory"
+    )

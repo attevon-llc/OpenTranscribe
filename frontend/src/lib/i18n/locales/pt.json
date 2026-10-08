@@ -1668,6 +1668,7 @@
   "errors.media.processingError": "Falha ao processar este arquivo.",
   "errors.media.networkError": "Não foi possível obter o arquivo. Isso geralmente é temporário.",
   "errors.media.permissionError": "O acesso a este conteúdo foi negado. Ele pode estar protegido ou exigir login.",
+  "errors.media.interrupted": "O processamento foi interrompido por um problema temporário do servidor e não pôde ser concluído após várias tentativas automáticas.",
   "errors.media.unclassified": "Ocorreu um erro desconhecido durante o processamento.",
   "fileDetail.processingInProgress": "Processamento em Andamento",
   "fileDetail.processingFile": "Processando arquivo...",

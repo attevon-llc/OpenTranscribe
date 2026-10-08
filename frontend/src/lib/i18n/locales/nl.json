@@ -1669,6 +1669,7 @@
   "errors.media.processingError": "De verwerking van dit bestand is mislukt.",
   "errors.media.networkError": "Het bestand kon niet worden opgehaald. Dit is meestal tijdelijk.",
   "errors.media.permissionError": "Toegang tot deze inhoud is geweigerd. Deze is mogelijk beveiligd of vereist aanmelden.",
+  "errors.media.interrupted": "De verwerking is onderbroken door een tijdelijk serverprobleem en kon na meerdere automatische pogingen niet worden voltooid.",
   "errors.media.unclassified": "Er is een onbekende fout opgetreden tijdens de verwerking.",
   "fileDetail.processingInProgress": "Verwerking bezig",
   "fileDetail.processingFile": "Bestand verwerken...",

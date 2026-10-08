@@ -1669,6 +1669,7 @@
   "errors.media.processingError": "L'elaborazione di questo file non è riuscita.",
   "errors.media.networkError": "Impossibile recuperare il file. Di solito si tratta di un problema temporaneo.",
   "errors.media.permissionError": "L'accesso a questo contenuto è stato rifiutato. Potrebbe essere protetto o richiedere l'accesso.",
+  "errors.media.interrupted": "L'elaborazione è stata interrotta da un problema temporaneo del server e non è stato possibile completarla dopo diversi tentativi automatici.",
   "errors.media.unclassified": "Si è verificato un errore sconosciuto durante l'elaborazione.",
   "fileDetail.processingInProgress": "Elaborazione in corso",
   "fileDetail.processingFile": "Elaborazione del file in corso...",

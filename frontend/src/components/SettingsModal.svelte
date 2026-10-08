@@ -350,10 +350,11 @@
           { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
           { id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' },
           { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
-          // issue #576: abuse/DMCA takedown review queue. `admin.takedown` is a
-          // weak, frontend-only capability key (J-B4) — the endpoints are NOT
-          // capability-gated, since `require_capability` 404s and a compliance
-          // endpoint that vanishes is worse than one that refuses.
+          // issue #576: abuse/DMCA takedown review queue. `admin.takedown` is
+          // declared in the backend capability maps but gates the NAV ENTRY only —
+          // the endpoints are NOT capability-gated, since `require_capability`
+          // 404s and a compliance endpoint that vanishes is worse than one that
+          // refuses.
           { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' }
         ]
       }

@@ -542,6 +542,7 @@
   "errors.media.processingError": "Le traitement de ce fichier a échoué.",
   "errors.media.networkError": "Le fichier n'a pas pu être récupéré. Il s'agit généralement d'un problème temporaire.",
   "errors.media.permissionError": "L'accès à ce contenu a été refusé. Il est peut-être protégé ou nécessite une connexion.",
+  "errors.media.interrupted": "Le traitement a été interrompu par un problème temporaire du serveur et n'a pas pu se terminer après plusieurs nouvelles tentatives automatiques.",
   "errors.media.unclassified": "Une erreur inconnue s'est produite pendant le traitement.",
   "fileDetail.profileLinkedMessage": "\"{{displayName}}\" est actuellement lié au profil \"{{profileName}}\". Que souhaitez-vous faire ?",
   "fileDetail.reprocessTooltip": "Retraiter ce fichier avec l'IA de transcription",

@@ -542,6 +542,7 @@
   "errors.media.processingError": "Die Verarbeitung dieser Datei ist fehlgeschlagen.",
   "errors.media.networkError": "Die Datei konnte nicht abgerufen werden. Dies ist normalerweise vorübergehend.",
   "errors.media.permissionError": "Der Zugriff auf diesen Inhalt wurde verweigert. Er ist möglicherweise geschützt oder erfordert eine Anmeldung.",
+  "errors.media.interrupted": "Die Verarbeitung wurde durch ein vorübergehendes Serverproblem unterbrochen und konnte auch nach mehreren automatischen Wiederholungen nicht abgeschlossen werden.",
   "errors.media.unclassified": "Bei der Verarbeitung ist ein unbekannter Fehler aufgetreten.",
   "fileDetail.profileLinkedMessage": "\"{{displayName}}\" ist derzeit mit dem Profil \"{{profileName}}\" verknüpft",
   "fileDetail.reprocessTooltip": "Diese Datei mit der Transkriptions-KI neu verarbeiten",

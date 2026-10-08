@@ -1668,6 +1668,7 @@
   "errors.media.processingError": "このファイルの処理に失敗しました。",
   "errors.media.networkError": "ファイルを取得できませんでした。通常は一時的な問題です。",
   "errors.media.permissionError": "このコンテンツへのアクセスが拒否されました。保護されているか、サインインが必要な可能性があります。",
+  "errors.media.interrupted": "サーバーの一時的な問題により処理が中断され、自動的に複数回再試行しても完了できませんでした。",
   "errors.media.unclassified": "処理中に不明なエラーが発生しました。",
   "fileDetail.processingInProgress": "処理中",
   "fileDetail.processingFile": "ファイルを処理中...",

@@ -1669,6 +1669,7 @@
   "errors.media.processingError": "이 파일 처리에 실패했습니다.",
   "errors.media.networkError": "파일을 가져올 수 없습니다. 일반적으로 일시적인 문제입니다.",
   "errors.media.permissionError": "이 콘텐츠에 대한 액세스가 거부되었습니다. 보호되어 있거나 로그인이 필요할 수 있습니다.",
+  "errors.media.interrupted": "일시적인 서버 문제로 처리가 중단되었으며, 여러 번 자동으로 다시 시도했지만 완료하지 못했습니다.",
   "errors.media.unclassified": "처리 중 알 수 없는 오류가 발생했습니다.",
   "fileDetail.processingInProgress": "처리 진행 중",
   "fileDetail.processingFile": "파일을 처리하는 중...",

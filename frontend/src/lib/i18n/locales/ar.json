@@ -1669,6 +1669,7 @@
   "errors.media.processingError": "فشلت معالجة هذا الملف.",
   "errors.media.networkError": "تعذّر استرداد الملف. عادةً ما تكون هذه مشكلة مؤقتة.",
   "errors.media.permissionError": "تم رفض الوصول إلى هذا المحتوى. قد يكون محميًا أو يتطلب تسجيل الدخول.",
+  "errors.media.interrupted": "تمت مقاطعة المعالجة بسبب مشكلة مؤقتة في الخادم ولم تكتمل بعد عدة محاولات تلقائية.",
   "errors.media.unclassified": "حدث خطأ غير معروف أثناء المعالجة.",
   "fileDetail.processingInProgress": "المعالجة جارية",
   "fileDetail.processingFile": "جارٍ معالجة الملف...",

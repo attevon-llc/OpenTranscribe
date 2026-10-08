@@ -77,8 +77,10 @@ def resolve_text_field_preset(preset: str, *, has_speaker_filter: bool = False) 
 #: see its own comment (#526). ``language`` was wrongly here by omission until
 #: #834: it is document data off the OpenSearch ``_source``, and its default ""
 #: reads as an UNKNOWN language to the reranker's three-bucket rule, not as a
-#: neutral reset.
-CACHE_EXCLUDED_FIELDS = frozenset({"expanded"})
+#: neutral reset. ``is_llm_summary`` (#464) is the second excluded field: only
+#: ``scope_digest_hits`` ever sets it, on a map-tier hit read fresh from Postgres,
+#: and map-tier hits are never in the ranked legs this cache holds.
+CACHE_EXCLUDED_FIELDS = frozenset({"expanded", "is_llm_summary"})
 
 
 @dataclass

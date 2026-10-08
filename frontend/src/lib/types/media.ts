@@ -68,6 +68,7 @@ export type MediaErrorReason =
   | 'processing_error'
   | 'network_error'
   | 'permission_error'
+  | 'interrupted'
   | 'unclassified';
 
 export interface MediaFile {

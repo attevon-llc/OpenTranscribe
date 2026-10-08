@@ -15,6 +15,7 @@ from datetime import UTC
 from datetime import datetime
 
 import pytest
+from fixtures.summary_plane import sync_summary_plane
 
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -22,6 +23,7 @@ from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Tag
+from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
 from app.models.sharing import CollectionShare
 from app.services.search.hybrid_search_service import HybridSearchService
@@ -29,6 +31,10 @@ from app.services.search.hybrid_search_service import SearchHit
 from app.services.search.hybrid_search_service import SearchResponse
 
 SEARCH_PATH = "/api/search"
+
+# The summary leg reads the OpenSearch summary plane (#963), so every test here runs against
+# a throwaway index that the helpers below keep in step with Postgres.
+pytestmark = pytest.mark.usefixtures("summary_plane")
 
 _DEFAULT_KEYS = {
     "query",
@@ -175,6 +181,7 @@ def _make_file(
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
+    sync_summary_plane(row)
     return row
 
 
@@ -194,6 +201,7 @@ def _tag_file(db_session, user, media_file, name: str) -> None:
         db_session.commit()
     db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag.id))
     db_session.commit()
+    sync_summary_plane(media_file)
 
 
 def _collect_file(db_session, user, media_file, name: str) -> Collection:
@@ -203,6 +211,7 @@ def _collect_file(db_session, user, media_file, name: str) -> Collection:
     db_session.commit()
     db_session.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
     db_session.commit()
+    sync_summary_plane(media_file)
     return collection
 
 
@@ -215,7 +224,32 @@ def _add_speaker(db_session, user, media_file, *, name: str, display_name=None) 
     )
     db_session.add(speaker)
     db_session.commit()
+    # A summary document's speaker roster is derived from the file's transcript (the file
+    # facts the indexer generates), not from the Speaker rows alone -- so the speaker has
+    # to have said something for the plane to know they are in the room.
+    db_session.add(
+        TranscriptSegment(
+            uuid=uuid_pkg.uuid4(),
+            media_file_id=media_file.id,
+            speaker_id=speaker.id,
+            start_time=0.0,
+            end_time=5.0,
+            text=f"{display_name or name} speaking for the roster",
+        )
+    )
+    db_session.commit()
+    sync_summary_plane(media_file)
     return speaker
+
+
+def _matches_without_score(matches: list[dict]) -> list[dict]:
+    """The identifying part of each summary match; asserts the #963 ``score`` is sane.
+
+    ``score`` is the plane's RRF/BM25 relevance for the leaf. It varies with corpus
+    statistics, so a test pins that it is present and positive and compares the rest exactly.
+    """
+    assert all(m["score"] > 0 for m in matches), matches
+    return [{k: v for k, v in m.items() if k != "score"} for m in matches]
 
 
 def _summary_search(client, headers, q: str, **params):
@@ -254,6 +288,7 @@ def _share_with(db_session, owner, recipient, media_file, *, permission="viewer"
         )
     )
     db_session.commit()
+    sync_summary_plane(media_file)
 
 
 # --------------------------------------------------------------------------- #
@@ -350,7 +385,9 @@ class TestSummariesResultType:
         assert body["summary_total"] == 1
         assert len(body["summary_results"]) == 1
         hit = body["summary_results"][0]
-        assert hit["matches"] == [{"key_path": "bluf", "snippet": "a distinctive roadmap phrase"}]
+        assert _matches_without_score(hit["matches"]) == [
+            {"key_path": "bluf", "snippet": "a distinctive roadmap phrase"}
+        ]
 
     def test_all_returns_both_legs(
         self, client, user_token_headers, normal_user, db_session, stub_transcript_search
@@ -451,7 +488,7 @@ class TestSummaryMaskingFailsClosed:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["summary_total"] == 1
-        assert body["summary_results"][0]["matches"] == [
+        assert _matches_without_score(body["summary_results"][0]["matches"]) == [
             {"key_path": "bluf", "snippet": "roadmap review"}
         ]
 
@@ -665,7 +702,7 @@ class TestSummaryLegHonoursTheDateRange:
         assert uuids == [str(recorded_in_march.uuid)]
         assert total == 1
 
-    def test_an_unparseable_date_is_a_400_not_a_silently_dropped_bound(
+    def test_an_unparseable_date_never_yields_an_unfiltered_page(
         self,
         client,
         user_token_headers,
@@ -676,15 +713,24 @@ class TestSummaryLegHonoursTheDateRange:
         """A bound that cannot be parsed must never be dropped: the caller would
         get an unfiltered page while believing they had filtered, which is the
         whole defect class this lane closes.
-        """
-        _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
 
-        response = client.get(
-            SEARCH_PATH,
-            params={"q": "roadmap", "result_type": "summaries", "date_from": "last-tuesday"},
-            headers=user_token_headers,
+        Since #963 the bound reaches OpenSearch as a raw string and the retired 400 arm is
+        gone, so an unparseable bound now yields an EMPTY page (the plane search fails and
+        the leg degrades to no hits). That is weaker than a 400 -- the caller is not told
+        why -- but it preserves the property this test exists for. The control proves the
+        empty page is the bound's doing and not an empty plane.
+        """
+        file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+
+        control_total, control_uuids = _summary_search(client, user_token_headers, "roadmap")
+        assert control_uuids == [str(file.uuid)]
+        assert control_total == 1
+
+        total, uuids = _summary_search(
+            client, user_token_headers, "roadmap", date_from="last-tuesday"
         )
-        assert response.status_code == 400, response.text
+        assert uuids == []
+        assert total == 0
 
 
 class TestSummaryLegHonoursTagsAndCollections:
@@ -989,12 +1035,40 @@ class TestSummaryLegRanksByRelevance:
         Postgres return them differently per page — duplicating some hits and
         dropping others across a paginated result set.
         """
-        older = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        newer = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        # Same explicit title on both: the searched text includes the title, and the default
+        # (a random-uuid filename) tokenizes to different lengths, which would make these two
+        # "equally relevant" files differ in score. ``upload_time`` is explicit too: its
+        # server default is Postgres ``now()``, which is fixed for the whole test
+        # transaction, so two files created back to back would share one timestamp and the
+        # recency tie-break would have nothing to order by.
+        older = _make_file(
+            db_session,
+            normal_user,
+            title="Weekly sync",
+            summary={"bluf": "roadmap review"},
+            upload_time=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+        newer = _make_file(
+            db_session,
+            normal_user,
+            title="Weekly sync",
+            summary={"bluf": "roadmap review"},
+            upload_time=datetime(2026, 3, 2, tzinfo=UTC),
+        )
 
-        total, uuids = _summary_search(client, user_token_headers, "roadmap")
-        assert total == 2
-        assert uuids == [str(newer.uuid), str(older.uuid)]
+        response = client.get(
+            SEARCH_PATH,
+            params={"q": "roadmap", "result_type": "summaries"},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        uuids = [hit["file_uuid"] for hit in body["summary_results"]]
+        scores = [(h["file_uuid"][:8], h["matches"][0]["score"]) for h in body["summary_results"]]
+        assert body["summary_total"] == 2, scores
+        assert uuids == [str(newer.uuid), str(older.uuid)], (
+            f"newer={str(newer.uuid)[:8]} older={str(older.uuid)[:8]} got={scores}"
+        )
 
 
 # --------------------------------------------------------------------------- #

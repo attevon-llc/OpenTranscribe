@@ -310,6 +310,9 @@ pytest_plugins = [
     "fixtures.dir_collector_memo",
     "fixtures.search_corpus_stack",
     "fixtures.auth_state_isolation",
+    # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
+    # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
+    "fixtures.summary_plane",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

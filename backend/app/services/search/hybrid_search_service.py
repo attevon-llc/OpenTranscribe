@@ -1625,8 +1625,13 @@ class HybridSearchService:
         file_uuid: str | None = None,
         file_uuids: list[str] | None = None,
         plane_clause: dict[str, Any] | None = None,
+        speaker_field: str = "speaker",
     ) -> list[dict[str, Any]]:
         """Build OpenSearch filter clauses.
+
+        ``speaker_field`` names the keyword field the ``speakers`` filter matches. A
+        transcript chunk has one speaker (``speaker``); a summary leaf has none of its own
+        and carries the file's roster (``speakers``), so the summary leg passes that.
 
         The ``accessible_user_ids`` term scopes to the caller; ``organization_id``
         adds the default-deny tenant gate (org term when set, else exclude any
@@ -1660,7 +1665,7 @@ class HybridSearchService:
             # An empty resolved scope must match nothing, NOT everything.
             filters.append({"terms": {"file_uuid": list(file_uuids)}})
         if speakers:
-            filters.append({"terms": {"speaker": speakers}})
+            filters.append({"terms": {speaker_field: speakers}})
         if tags:
             filters.append({"terms": {"tags": tags}})
         if file_type:
@@ -1755,6 +1760,7 @@ class HybridSearchService:
             organization_id=organization_id,
             file_uuid=file_uuid,
             plane_clause=summary_plane_clause(),
+            speaker_field="speakers",
         )
         if quarantined_file_uuids:
             filters.append({"bool": {"must_not": {"terms": {"file_uuid": quarantined_file_uuids}}}})
@@ -1763,7 +1769,11 @@ class HybridSearchService:
         text_query_clause = self._build_text_query(clean_query, _SUMMARY_SEARCH_FIELDS)
 
         pipeline_id = _ensure_infrastructure()
-        model_id = self._get_neural_model_id() if clean_query else None
+        # Same gate as the transcript leg (``_generate_query_embedding``): a deployment with
+        # neural search disabled must get a plain BM25 query, not a hybrid one built from
+        # whichever model id the cluster happens to still hold.
+        use_neural = bool(clean_query) and self._check_neural_search_available()
+        model_id = self._get_neural_model_id() if use_neural else None
 
         collapse_config: dict[str, Any] = {
             "field": "file_uuid",
@@ -1828,7 +1838,7 @@ class HybridSearchService:
             return [], 0
 
         top_hits = response.get("hits", {}).get("hits", [])
-        results: list[dict[str, Any]] = []
+        ranked: list[tuple[float, str, str, dict[str, Any]]] = []
         for hit in top_hits:
             source = hit.get("_source", {})
             inner = hit.get("inner_hits", {}).get("leaves", {}).get("hits", {}).get("hits", [])
@@ -1840,14 +1850,29 @@ class HybridSearchService:
                 }
                 for leaf in inner
             ]
-            results.append(
-                {
-                    "file_uuid": source.get("file_uuid"),
-                    "file_id": source.get("file_id"),
-                    "title": source.get("title") or "",
-                    "matches": matches,
-                }
+            ranked.append(
+                (
+                    float(hit.get("_score") or 0.0),
+                    str(source.get("upload_time") or ""),
+                    str(source.get("file_uuid") or ""),
+                    {
+                        "file_uuid": source.get("file_uuid"),
+                        "file_id": source.get("file_id"),
+                        "title": source.get("title") or "",
+                        "matches": matches,
+                    },
+                )
             )
+
+        # Ties are the common case on short summaries, and OpenSearch breaks them by internal
+        # doc order -- stable for one index state but neither newest-first nor a total order
+        # the caller can rely on. ``sort`` criteria beyond ``_score`` are not allowed under the
+        # RRF pipeline, so break ties here: best score, then newest upload, then file_uuid.
+        # Three STABLE sorts, least significant key first.
+        ranked.sort(key=lambda r: r[2])
+        ranked.sort(key=lambda r: r[1], reverse=True)
+        ranked.sort(key=lambda r: r[0], reverse=True)
+        results: list[dict[str, Any]] = [r[3] for r in ranked]
 
         total = len(results)
         start = max(0, (page - 1) * page_size)

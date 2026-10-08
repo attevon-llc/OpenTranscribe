@@ -6,6 +6,8 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
+  import { listProfiles } from '$lib/api/speakerClusters';
+  import { apiCache, CacheTTL } from '$lib/apiCache';
   import { toastStore } from '$stores/toast';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import { portal } from '$lib/actions/portal';
@@ -67,6 +69,91 @@
           confidence: wireSpeaker.confidence ?? 0
         }
       : null;
+
+  // --- Name THIS speaker, inline (#1086) ---------------------------------------
+  // The common case is "this SPEAKER_02 is Laura": a rename of the speaker the segment
+  // already has, for the whole file. It used to need the expanded Edit Speakers section,
+  // while the only text field reachable from here was "Add speaker" -- which creates a
+  // SECOND speaker. Submitting goes through the same `speakerUpdate` contract the
+  // suggestion row and the editor use, so the parent's validation, linked-profile
+  // confirmation and rename propagation all apply; this component never writes a name.
+  let inlineName = '';
+  let profileNames: string[] = [];
+  // The field, its Save button, hint and match list live in the imperatively built menu.
+  // Typing updates those in place (`refreshInlineNameUi`) rather than rebuilding the menu:
+  // replacing the <input> on each keystroke would drop focus and abort an IME composition
+  // (Japanese, Korean and Chinese input), which is most of what typing a name is for them.
+  let inlineSaveButton: HTMLButtonElement | null = null;
+  let inlineHint: HTMLElement | null = null;
+  let inlineMatches: HTMLElement | null = null;
+
+  function inlineNameCheck(raw: string): 'ok' | 'empty' | 'placeholder' | 'unchanged' {
+    const name = raw.trim();
+    if (name === '') return 'empty';
+    // `SPEAKER_NN` is a diarization slot, not an identity -- same rule as "Add speaker".
+    if (isPlaceholderSpeakerName(name)) return 'placeholder';
+    if (name === confirmedName) return 'unchanged';
+    return 'ok';
+  }
+
+  function submitInlineName(raw: string = inlineName) {
+    if (!wireSpeaker?.uuid || inlineNameCheck(raw) !== 'ok') return;
+    dispatch('speakerUpdate', { speakerId: wireSpeaker.uuid, newName: raw.trim() });
+    closeDropdown();
+  }
+
+  function loadProfileNames() {
+    // Same cache key and shape `prefetchSpeakersData` fills, so a warm cache costs nothing.
+    // Autocomplete is a convenience: a failed fetch leaves the field fully usable.
+    apiCache
+      .getOrFetch('speakers:profiles', () => listProfiles(), CacheTTL.SPEAKERS)
+      .then((profiles) => {
+        profileNames = [...new Set((profiles ?? []).map((p) => p.name).filter(Boolean))];
+        if (isOpen) refreshInlineNameUi();
+      })
+      .catch(() => {
+        profileNames = [];
+      });
+  }
+
+  function refreshInlineNameUi() {
+    const check = inlineNameCheck(inlineName);
+    if (inlineSaveButton) inlineSaveButton.disabled = check !== 'ok';
+    if (inlineHint) {
+      inlineHint.textContent = check === 'placeholder' ? $t('speaker.placeholderNameRejected') : '';
+      inlineHint.hidden = check !== 'placeholder';
+    }
+    if (!inlineMatches) return;
+
+    const typed = inlineName.trim().toLowerCase();
+    const matches =
+      typed === ''
+        ? []
+        : profileNames
+            .filter((name) => name.toLowerCase().includes(typed))
+            // The API's order is unspecified; a stable one keeps the list from shuffling.
+            .sort((a, b) => a.localeCompare(b))
+            .slice(0, 5);
+    inlineMatches.replaceChildren();
+    inlineMatches.hidden = matches.length === 0;
+    if (matches.length === 0) return;
+
+    const label = document.createElement('div');
+    label.className = 'dropdown-header inline-name-matches-label';
+    label.textContent = $t('speaker.nameThisSpeakerMatches');
+    inlineMatches.appendChild(label);
+    for (const name of matches) {
+      const pick = document.createElement('button');
+      pick.className = 'dropdown-item inline-name-match';
+      pick.dataset.action = 'pick-profile';
+      pick.textContent = name; // textContent is XSS-safe
+      pick.addEventListener('click', (e) => {
+        e.stopPropagation();
+        submitInlineName(name);
+      });
+      inlineMatches.appendChild(pick);
+    }
+  }
 
   // The next free diarization SLOT for this file (e.g. SPEAKER_03). It is never a
   // name on its own — see `$lib/utils/speakerNames` for the shared contract.
@@ -197,6 +284,7 @@
   function closeDropdown() {
     if (isOpen) {
       isOpen = false;
+      inlineName = '';
       unlockScroll();
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('resize', closeDropdown);
@@ -219,6 +307,8 @@
     isOpen = !isOpen;
 
     if (isOpen) {
+      inlineName = '';
+      loadProfileNames();
       lockScroll();
       document.addEventListener('click', handleGlobalClick, true);
       window.addEventListener('resize', closeDropdown);
@@ -253,7 +343,8 @@
     const headerHeight = 28;
     const dividerHeight = 9;
     const suggestionHeight = pendingSuggestion ? headerHeight + itemHeight + dividerHeight : 0;
-    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0) + suggestionHeight;
+    const inlineNameHeight = wireSpeaker?.uuid ? 52 : 0;
+    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0) + suggestionHeight + inlineNameHeight;
 
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom - 8;
@@ -369,8 +460,17 @@
 
     if (!isOpen) {
       portalContainer.innerHTML = '';
+      inlineSaveButton = inlineHint = inlineMatches = null;
       return;
     }
+
+    // The menu is rebuilt from scratch on every external change (a refetched speaker list, a
+    // rename landing). If the user is mid-name, put the cursor back where it was afterwards.
+    const active = document.activeElement;
+    const refocusInlineName =
+      active instanceof HTMLInputElement &&
+      active.classList.contains('inline-name-input') &&
+      portalContainer.contains(active);
 
     const pos = getMenuPosition();
     const currentSpeakerUuid = segment.speaker?.uuid;
@@ -389,6 +489,76 @@
     header.className = 'dropdown-header';
     header.textContent = $t('speaker.assignSpeaker');
     menu.appendChild(header);
+
+    // Name THIS speaker (#1086): a field first, because it is the common action.
+    let inlineInput: HTMLInputElement | null = null;
+    if (wireSpeaker?.uuid) {
+      const row = document.createElement('div');
+      row.className = 'inline-name-row';
+
+      inlineInput = document.createElement('input');
+      inlineInput.type = 'text';
+      inlineInput.className = 'inline-name-input';
+      inlineInput.maxLength = 255;
+      inlineInput.autocomplete = 'off';
+      // A name typed in Arabic must align right even inside an LTR page, and vice versa.
+      inlineInput.dir = 'auto';
+      inlineInput.placeholder = $t('speaker.nameThisSpeakerPlaceholder', {
+        label: translateSpeakerLabel(speakerNumberLabel || $t('common.unknown'))
+      });
+      inlineInput.setAttribute('aria-label', $t('speaker.nameThisSpeakerLabel'));
+      inlineInput.value = inlineName;
+      const input = inlineInput;
+      input.addEventListener('input', () => {
+        inlineName = input.value;
+        refreshInlineNameUi();
+      });
+      input.addEventListener('keydown', (e) => {
+        // Typing must not reach the page's own shortcuts (play/pause, seek, ...).
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitInlineName();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeDropdown();
+        }
+      });
+      row.appendChild(input);
+
+      const save = document.createElement('button');
+      save.className = 'inline-name-save';
+      save.dataset.action = 'save-inline-name';
+      save.setAttribute('aria-label', $t('speaker.nameThisSpeakerSave'));
+      save.title = $t('speaker.nameThisSpeakerSave');
+      save.appendChild(createCheckmarkSvg());
+      save.addEventListener('click', (e) => {
+        e.stopPropagation();
+        submitInlineName();
+      });
+      row.appendChild(save);
+      inlineSaveButton = save;
+      menu.appendChild(row);
+
+      const hint = document.createElement('div');
+      hint.className = 'inline-name-hint';
+      hint.hidden = true;
+      menu.appendChild(hint);
+      inlineHint = hint;
+
+      const matchList = document.createElement('div');
+      matchList.className = 'inline-name-matches';
+      matchList.hidden = true;
+      menu.appendChild(matchList);
+      inlineMatches = matchList;
+
+      const nameDivider = document.createElement('div');
+      nameDivider.className = 'dropdown-divider';
+      menu.appendChild(nameDivider);
+      refreshInlineNameUi();
+    } else {
+      inlineSaveButton = inlineHint = inlineMatches = null;
+    }
 
     // Unconfirmed LLM / voice-match suggestion — offered HERE, with its confidence
     // score, and never in the name slot (#741). One affirmative click accepts it.
@@ -440,7 +610,7 @@
       createOption.appendChild(createPlusSvg());
 
       const createSpan = document.createElement('span');
-      createSpan.textContent = $t('speaker.addSpeaker');
+      createSpan.textContent = $t('speaker.newSpeakerForSegment');
       createOption.appendChild(createSpan);
 
       createBtn.appendChild(createOption);
@@ -510,6 +680,11 @@
     // Clear and append
     portalContainer.innerHTML = '';
     portalContainer.appendChild(menu);
+
+    if (refocusInlineName && inlineInput) {
+      inlineInput.focus();
+      inlineInput.setSelectionRange(inlineInput.value.length, inlineInput.value.length);
+    }
   }
 </script>
 
@@ -635,6 +810,74 @@
 
     .speaker-dropdown-portal .suggestion-btn:hover {
       background: var(--surface-hover, #334155);
+    }
+
+    .speaker-dropdown-portal .inline-name-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px 6px 8px;
+    }
+
+    .speaker-dropdown-portal .inline-name-input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      font-size: 13px;
+      color: var(--text-color, #f1f5f9);
+      background: var(--background-color, #0f172a);
+      border: 1px solid var(--border-color, #334155);
+      border-radius: 6px;
+    }
+
+    .speaker-dropdown-portal .inline-name-input:focus {
+      outline: 2px solid var(--primary-color, #3b82f6);
+      outline-offset: -1px;
+    }
+
+    .speaker-dropdown-portal .inline-name-save {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      /* The global button rules add padding; on a 28px square that leaves the icon no
+         content box at all (computed width 0) and it vanishes. */
+      padding: 0;
+      box-sizing: border-box;
+      color: #fff;
+      background: var(--primary-color, #3b82f6);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .speaker-dropdown-portal .inline-name-save:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .speaker-dropdown-portal .inline-name-save svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    .speaker-dropdown-portal .inline-name-hint {
+      padding: 0 12px 6px 12px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: var(--warning-color, #f59e0b);
+    }
+
+    .speaker-dropdown-portal .inline-name-matches[hidden],
+    .speaker-dropdown-portal .inline-name-hint[hidden] {
+      display: none;
+    }
+
+    .speaker-dropdown-portal .inline-name-match {
+      justify-content: flex-start;
     }
 
     .speaker-dropdown-portal .suggestion-confidence {

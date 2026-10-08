@@ -129,8 +129,12 @@ View comprehensive speaker statistics:
 ### Edit Speaker Labels
 
 1. Click speaker name in transcript
-2. Edit name
+2. Type the real name in the field at the top of the menu and press Enter (or the check button)
 3. Changes apply to all segments
+
+As you type, matching [speaker profiles](#speaker-profiles) are listed under the field; pick one to use that name. A name like `SPEAKER_01` is rejected, because those are reserved for the automatic labels.
+
+The menu's **New speaker for this segment…** option is a different action: it creates an additional speaker and assigns only the segment you clicked to it. Use it when a segment was attributed to the wrong person, not to name the speaker you already have.
 
 ![Speaker editor showing identified speakers with voice match confidence](/img/screenshots/speakers/speaker-editor-panel.png)
 

@@ -78,9 +78,24 @@ class VramAdmissionTimeoutError(TranscriptionAbortedError):
 
 
 class VramBudget:
-    """A counting reservation over a fixed VRAM capacity, FIFO-fair and thread-safe."""
+    """A counting reservation over a fixed VRAM capacity, FIFO-fair and thread-safe.
 
-    def __init__(self, capacity_mb: int):
+    ``resource``/``unit`` name what is counted in the log lines and ``timeout_error`` is what a
+    wait past its deadline raises, so the same gate can count other things (the host-memory
+    task slots of ``host_memory_admission``).
+    """
+
+    def __init__(
+        self,
+        capacity_mb: int,
+        *,
+        resource: str = "VRAM",
+        unit: str = "MB",
+        timeout_error: type[TranscriptionAbortedError] | None = None,
+    ):
+        self._resource = resource
+        self._unit = unit
+        self._timeout_error = timeout_error or VramAdmissionTimeoutError
         self._capacity = max(0, int(capacity_mb))
         self._reserved = 0
         self._cond = threading.Condition()
@@ -116,10 +131,10 @@ class VramBudget:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         self.timeouts_total += 1
-                        raise VramAdmissionTimeoutError(
-                            f"VRAM admission for stage {stage!r} timed out after "
-                            f"{timeout_s:.0f}s: wanted {want} MB, {self._reserved}/"
-                            f"{self._capacity} MB reserved"
+                        raise self._timeout_error(
+                            f"{self._resource} admission for stage {stage!r} timed out after "
+                            f"{timeout_s:.0f}s: wanted {want} {self._unit}, {self._reserved}/"
+                            f"{self._capacity} {self._unit} reserved"
                         )
                     self._cond.wait(remaining)
             finally:
@@ -132,12 +147,15 @@ class VramBudget:
         waited = time.monotonic() - started
         log = logger.info if waited >= 1.0 else logger.debug
         log(
-            "VRAM admit [%s]: %d MB granted after %.1fs wait (reserved %d/%d MB)",
+            "%s admit [%s]: %d %s granted after %.1fs wait (reserved %d/%d %s)",
+            self._resource,
             stage,
             want,
+            self._unit,
             waited,
             reserved_now,
             self._capacity,
+            self._unit,
         )
         try:
             yield want

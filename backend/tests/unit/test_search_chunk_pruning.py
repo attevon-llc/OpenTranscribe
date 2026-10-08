@@ -160,7 +160,9 @@ class _FakeIndex:
 
     # -- client API --------------------------------------------------------
 
-    def bulk(self, body: list[Any], refresh: bool = False) -> dict[str, Any]:  # noqa: ARG002
+    def bulk(
+        self, body: list[Any], refresh: bool = False, request_timeout: float | None = None
+    ) -> dict[str, Any]:  # noqa: ARG002
         for action, doc in zip(body[::2], body[1::2], strict=True):
             # ``doc_type`` is what #383 Phase 3 will stamp on chunk documents to tell
             # them apart from per-file digests. Nothing reads it today, so it is inert

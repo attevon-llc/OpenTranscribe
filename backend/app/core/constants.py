@@ -220,6 +220,9 @@ class EmbeddingPriority:
     Single-worker queue — priority controls backlog ordering.
     """
 
+    # A retried (or sweep re-dispatched) index run: ahead of first attempts so a file that
+    # already waited out a failure is not queued behind a backlog of new work.
+    PIPELINE_RETRY = 1
     PIPELINE_CRITICAL = 2  # Post-import indexing — makes new content searchable
 
 

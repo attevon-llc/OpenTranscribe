@@ -97,6 +97,15 @@ class TaskRecoveryConfig:
         default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_TTL_SECONDS", 90)
     )
 
+    # How old a transcription run must be (from Task.created_at) before recovery may reclaim
+    # it as lost (issue #1178). Dispatch commits the Task row before it writes the queued
+    # marker, and a stage writes its first lease only once a worker picks it up, so a run
+    # younger than this has simply not had the chance to show it is alive. Never shorter than
+    # TRANSCRIPTION_HEARTBEAT_TTL_SECONDS.
+    TRANSCRIPTION_RECLAIM_GRACE: int = field(
+        default_factory=lambda: _int_env("TRANSCRIPTION_RECLAIM_GRACE_SECONDS", 120)
+    )
+
     # Infrastructure requeues per file (a dead worker's stage put back on its queue, or a dead
     # run re-dispatched). Counted separately from MediaFile.retry_count so worker loss does
     # not spend the file's error-retry budget; past this cap the file fails as interrupted
@@ -174,6 +183,16 @@ class TaskRecoveryConfig:
                 self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 3,
             )
             self.TRANSCRIPTION_HEARTBEAT_TTL = self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 3
+        if self.TRANSCRIPTION_RECLAIM_GRACE < self.TRANSCRIPTION_HEARTBEAT_TTL:
+            # Shorter than one lease TTL, a run could be reclaimed before its first beat lands.
+            logger.warning(
+                "TRANSCRIPTION_RECLAIM_GRACE_SECONDS (%d) must be at least the heartbeat TTL "
+                "(%d); using %d",
+                self.TRANSCRIPTION_RECLAIM_GRACE,
+                self.TRANSCRIPTION_HEARTBEAT_TTL,
+                self.TRANSCRIPTION_HEARTBEAT_TTL,
+            )
+            self.TRANSCRIPTION_RECLAIM_GRACE = self.TRANSCRIPTION_HEARTBEAT_TTL
         if self.BROKER_ORPHAN_STALE < self.TRANSCRIPTION_HEARTBEAT_INTERVAL * 2:
             # A delivery younger than two beats may simply not have sent its first one yet.
             logger.warning(

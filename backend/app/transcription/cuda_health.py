@@ -26,6 +26,7 @@ import logging
 import os
 import signal
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,17 @@ _POISONED_MARKERS = (
 )
 
 _POISONED = threading.Event()
+
+# A context-poisoning error the probe calls healthy is usually a one-off (see
+# cuda_context_healthy). The probe only exercises torch, though, and CTranslate2 keeps its own
+# CUDA state: observed on a 24 GB card at 3 concurrent jobs, an OOM left Whisper failing with
+# ``cudaErrorInvalidDevice`` on every later task while the torch probe kept passing, so the
+# worker never restarted and failed each job it took. The same error recurring this often in
+# one process is treated as poisoned whatever the probe says.
+RECURRING_ERROR_LIMIT = 3
+RECURRING_ERROR_WINDOW_S = 600.0
+_recent_errors: list[float] = []
+_recent_lock = threading.Lock()
 
 
 def _chain(exc: BaseException) -> list[BaseException]:
@@ -128,6 +140,16 @@ def cuda_context_healthy(device_index: int = 0) -> bool:
     return False
 
 
+def recurring_context_error(now: float | None = None) -> bool:
+    """Record one context-poisoning-looking error; True once it has recurred
+    ``RECURRING_ERROR_LIMIT`` times within ``RECURRING_ERROR_WINDOW_S`` in this process."""
+    now = time.monotonic() if now is None else now
+    with _recent_lock:
+        _recent_errors[:] = [t for t in _recent_errors if now - t < RECURRING_ERROR_WINDOW_S]
+        _recent_errors.append(now)
+        return len(_recent_errors) >= RECURRING_ERROR_LIMIT
+
+
 def context_poisoned() -> bool:
     return _POISONED.is_set()
 
@@ -153,3 +175,5 @@ def mark_context_poisoned(reason: str) -> None:
 
 def reset_for_tests() -> None:
     _POISONED.clear()
+    with _recent_lock:
+        _recent_errors.clear()

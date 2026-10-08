@@ -475,7 +475,24 @@ GPU_DEFAULT_BATCH_SIZE=12  # Batch size for default GPU worker (auto-detected if
 
 # VRAM Profiling (temporary diagnostic tool)
 ENABLE_VRAM_PROFILING=false  # Captures per-step GPU memory usage and timing data
+
+# Host-memory admission (GPU threads workers): concurrent GPU tasks are capped at
+# min(--concurrency, (memory budget - GPU_HOST_BASELINE_MB) // GPU_PER_TASK_HOST_MB)
+GPU_HOST_MEMORY_ADMISSION=true  # Default: true. false = log the decision but do not enforce it
+GPU_HOST_BASELINE_MB=2560       # Default: 2560 — RAM the worker holds before any task runs
+GPU_PER_TASK_HOST_MB=2048       # Default: 2048 — RAM per concurrent task (4096+ for multi-hour files)
 ```
+
+Each GPU task holds whole decoded audio in host memory, so on small hosts RAM, not VRAM, limits
+how many can run at once: in a load test, 16 GB hosts were OOM-killed at 8 concurrent tasks and
+ran at 6, while 32 GB hosts ran 12. At startup a GPU worker reads its memory budget (the
+container's cgroup limit, else `MemTotal`), logs `GPU task admission by host memory: ...` with
+the result, and admits at most that many tasks at once; the rest wait (up to
+`GPU_VRAM_ADMISSION_TIMEOUT_S`, then they are requeued). With the defaults a 16 GiB budget admits
+6 and a 32 GiB budget 14. If the cap is below `--concurrency`, set `--concurrency` (and
+`GPU_CONCURRENT_REQUESTS`) to it, so the extra messages go to other workers instead of waiting.
+With `WORKER_METRICS_PORT` set, the decision is exported as `gpu_worker_concurrency_configured`,
+`gpu_worker_concurrency_host_memory_cap` and `gpu_worker_concurrency_effective`.
 
 ## Multi-GPU Scaling
 
@@ -567,6 +584,7 @@ TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS=15   # Default: 15 — lease refresh
 TRANSCRIPTION_HEARTBEAT_TTL_SECONDS=90        # Default: 90 — detection latency for a dead worker
 BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS=60       # Default: 60 — how often the reaper runs
 BROKER_ORPHAN_STALE_SECONDS=120               # Default: 120 — grace for a delivery not yet started
+TRANSCRIPTION_RECLAIM_GRACE_SECONDS=120       # Default: 120 (never below the TTL) — a run this young is never reclaimed
 BROKER_ORPHAN_UNTRACKED_STALE_SECONDS=600     # Default: 600 — grace for a non-transcription delivery
 BROKER_ORPHAN_MAX_REQUEUES=5                  # Default: 5 — worker losses per non-transcription message
 TRANSCRIPTION_MAX_INFRA_REQUEUES=5            # Default: 5 — worker losses per file before it fails
@@ -1228,6 +1246,19 @@ laptop or single home server; none of these need setting for a normal install.
 | `SEARCH_SEMANTIC_SUPPRESS_RATIO` | 0.20 | suppression ratio for weak semantic hits |
 | `OPENSEARCH_CHUNKS_INDEX_SHARDS` | 1 | applied **only at index creation** |
 | `OPENSEARCH_CHUNKS_INDEX_REPLICAS` | 0 | see the warning below |
+| `OPENSEARCH_INDEX_TIMEOUT_S` | 60 | read timeout for indexing writes (bulk/index) only; search queries are unaffected |
+| `OPENSEARCH_INDEX_TIMEOUT_RETRIES` | 2 | extra in-call attempts after an indexing write times out (writes use fixed ids, so repeats are safe) |
+| `SEARCH_INDEX_RETRY_HORIZON_S` | 21600 | how long a failed indexing run keeps retrying before it is marked failed (6 h) |
+| `SEARCH_INDEX_RETRY_BASE_DELAY_S` | 30 | first retry delay; doubles each attempt, with jitter |
+| `SEARCH_INDEX_RETRY_MAX_DELAY_S` | 600 | cap on a single retry delay |
+| `SEARCH_INDEX_SWEEP_BATCH_SIZE` | 25 | files the periodic sweep re-dispatches per run (every ~10 minutes) |
+| `SEARCH_INDEX_SWEEP_COOLDOWN_S` | 1800 | minimum time before the sweep dispatches the same file again |
+| `SEARCH_INDEX_SWEEP_LOOKBACK_HOURS` | 72 | how far back the sweep looks for completed files with no indexing record |
+
+Failed indexing is retried automatically and shows as pending in the file's task
+list while retries remain. Prometheus exposes `search_indexing_failures_total`,
+`search_indexing_retries_total` and `search_indexing_files_awaiting_reindex`; alert
+if the last stays above zero. The sweep does nothing when `OPENSEARCH_ENABLED=false`.
 
 :::warning[Changing chunk size requires a full reindex]
 Chunk boundaries are baked into the index at write time. Changing

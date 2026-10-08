@@ -159,6 +159,13 @@ class ModelManager:
                 logger.warning("diar-native sidecar is unreachable; falling back to PyAnnote")
         elif ready and not native_cached:
             logger.info("diar-native sidecar is ready again; leaving the PyAnnote fallback")
+        elif ready and native_cached:
+            release = getattr(diarizer, "release_fallback", None)
+            if release is not None and release():
+                logger.info(
+                    "diar-native sidecar is serving again; released the in-process PyAnnote "
+                    "fallback a sidecar outage had loaded"
+                )
         return native_cached == ready
 
     def ensure_models_loaded(self, config: TranscriptionConfig) -> None:
@@ -169,6 +176,18 @@ class ModelManager:
         """
         logger.info("Preloading models for concurrent GPU worker...")
         self.get_transcriber(config)
+        if config.diarizer_backend.lower() == "native":
+            from app.transcription.diarizer_native import sidecar_ready
+
+            if not sidecar_ready():
+                # Preloading would load the in-process PyAnnote fallback and keep it in VRAM
+                # beside the sidecar once that comes up. The first job builds whichever
+                # engine can serve then (get_diarizer), so nothing is lost by waiting.
+                logger.warning(
+                    "diar-native sidecar not ready at preload; NOT preloading the in-process "
+                    "PyAnnote fallback (a job loads it only if the sidecar still cannot serve)"
+                )
+                return
         self.get_diarizer(config)
         logger.info("Both models preloaded and ready")
 

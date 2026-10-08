@@ -65,6 +65,14 @@ indexing → WebSocket notification.
     so it cannot fix chunks holding a merely-wrong value. Dispatch carries **no**
     `speaker_id`: a profile-wide rename sweeps many speakers and has no single id to re-read.
     Covered by `tests/api/test_rename_propagation_dispatch.py::TestSpeakerProfileUpdateEndpoint`.
+- `search_indexing_task.py` + `search_index_sweep_task.py` — a completed transcript must never
+  silently miss the search index (#1182). The indexing task retries over
+  `SEARCH_INDEX_RETRY_HORIZON_S` (exponential, capped, jittered; `services/search/index_retry.py`)
+  at `EmbeddingPriority.PIPELINE_RETRY`, and keeps its `search_indexing` row `pending` (not
+  `failed`) while retries remain. The beat sweep re-dispatches files whose latest row is `failed`
+  or missing. Indexing writes go through `opensearch_service.client.call_idempotent_write` (own
+  timeout + timeout retry; only for writes with an explicit `_id`) — never raise the client-wide
+  timeout, which would also slow searches.
 - `ingest_artifacts_task.py` — `artifacts.generate_file_facts` (**nlp** queue, #383 Phase 2).
   Builds the deterministic ingest artifacts (statistics, extractive digest with per-sentence
   provenance, keyphrases) and upserts `file_facts`. It rides the nlp pool because that is the
@@ -122,6 +130,13 @@ indexing → WebSocket notification.
   the older checks.
   **Every** pipeline stage (preprocess, GPU/CPU transcribe, diarize, finalize) holds the run's
   lease (`run_heartbeat`) for its whole body — a stage without one is invisible to recovery.
+  ⚠️ A run younger than `TRANSCRIPTION_RECLAIM_GRACE_SECONDS` is never reclaimed
+  (`transcription_retry.recover_lost_run` is the one choke point): dispatch commits the row
+  before it writes the queued marker, and that window once got a run reclaimed 0.1 s after
+  creation (issue #1178). And `update_task_status` drops a `pending`/`in_progress` write to a
+  transcription row that is no longer active, so a superseded stage's late progress write can
+  never resurrect a reclaimed row. Other task types are exempt: they `self.retry()` under the
+  same id and must be able to reopen their own failed row.
 - **ONE retry policy: `services/transcription_retry.py`.** Every way a run ends early goes
   through it — a stage that raised (`_handle_transcription_failure`, preprocess's
   `_mark_pipeline_error`), a worker that died (`core/broker_orphans.py` reaper, and the health

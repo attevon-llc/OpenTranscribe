@@ -54,7 +54,9 @@ def test_the_retry_budget_outlasts_a_multi_second_transient(monkeypatch):
     calls = {"n": 0}
 
     class _Client:
-        def bulk(self, body: list[Any], refresh: bool = False) -> dict[str, Any]:
+        def bulk(
+            self, body: list[Any], refresh: bool = False, request_timeout: float | None = None
+        ) -> dict[str, Any]:
             calls["n"] += 1
             # Open for the first two retry attempts — i.e. past the OLD budget.
             if calls["n"] <= 2:
@@ -94,7 +96,9 @@ def test_the_backoff_is_jittered_so_concurrent_workers_do_not_resynchronise(monk
     docs = [{"file_uuid": "u", "chunk_index": 0}]
 
     class _AlwaysOpen:
-        def bulk(self, body: list[Any], refresh: bool = False) -> dict[str, Any]:
+        def bulk(
+            self, body: list[Any], refresh: bool = False, request_timeout: float | None = None
+        ) -> dict[str, Any]:
             return {
                 "errors": True,
                 "items": [{"index": {"error": {"type": "circuit_breaking_exception"}}}],

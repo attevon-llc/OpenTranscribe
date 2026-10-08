@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service.client import call_idempotent_write
 
 from .chunking_service import chunk_transcript_by_speaker_turns
 from .embedding_provenance import active_embedding_model
@@ -2067,7 +2068,7 @@ class TranscriptIndexingService:
             bulk_body.append(action)
             bulk_body.append(document)
 
-        response = opensearch_client.bulk(body=bulk_body, refresh=False)
+        response = call_idempotent_write(opensearch_client.bulk, body=bulk_body, refresh=False)
         if response.get("errors"):
             failed = [
                 item["index"]
@@ -2182,7 +2183,7 @@ class TranscriptIndexingService:
                 bulk_body.append(index_action)
                 bulk_body.append(chunk)
 
-            response = opensearch_client.bulk(body=bulk_body, refresh=False)
+            response = call_idempotent_write(opensearch_client.bulk, body=bulk_body, refresh=False)
 
             if response.get("errors"):
                 failed_docs = self._extract_failed_docs(response, batch)
@@ -2311,7 +2312,9 @@ class TranscriptIndexingService:
                 bulk_body.append(chunk)
 
             try:
-                response = opensearch_client.bulk(body=bulk_body, refresh=False)
+                response = call_idempotent_write(
+                    opensearch_client.bulk, body=bulk_body, refresh=False
+                )
             except Exception as e:
                 logger.error(f"Retry attempt {attempt} bulk call failed: {e}")
                 continue

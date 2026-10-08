@@ -246,6 +246,7 @@ celery_app = Celery(
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.search_index_sweep_task",
         "app.tasks.search_reembed_task",
         "app.tasks.rename_propagation_task",
         "app.tasks.redaction_task",
@@ -480,6 +481,8 @@ celery_app.conf.update(
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
         "index_file_summary": {"queue": CeleryQueues.CPU},
+        # Bounded DB read plus a handful of dispatches; never needs a CPU/GPU slot.
+        "search_index_sweep": {"queue": CeleryQueues.UTILITY},
         "search.reembed_degraded": {"queue": CeleryQueues.CPU},
         "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
@@ -600,6 +603,14 @@ celery_app.conf.update(
             "task": "search_index_maintenance",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
+        },
+        "search-index-sweep": {
+            "task": "search_index_sweep",
+            # Durable backstop for issue #1182: re-dispatches completed files whose search
+            # indexing failed for good or never ran. Bounded batch + per-file cooldown; a
+            # no-op when OPENSEARCH_ENABLED=false.
+            "schedule": crontab(minute="1,11,21,31,41,51"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
         "neural-search-bootstrap": {
             "task": "neural_search_bootstrap",
@@ -1056,6 +1067,19 @@ def reconcile_gpu_concurrent_requests() -> None:
         )
 
 
+def configure_gpu_host_admission() -> None:
+    """Cap a GPU threads worker's concurrent tasks by host memory (issue #1073).
+
+    Prefork is left alone: there each child is its own process running one task at a time,
+    so a per-process gate has nothing to count.
+    """
+    if os.environ.get("PRELOAD_GPU_MODELS", "").lower() != "true" or not _pool_is_threads():
+        return
+    from app.transcription import host_memory_admission
+
+    host_memory_admission.configure(_pool_concurrency())
+
+
 # Wall-clock bound on the CPU-lightweight Whisper warm-up (issue #631). Matched to
 # celery-cpu-worker's `start_period: 120s` in docker-compose.yml, which is both the
 # allowance the deployment declares for this load AND the window in which a frozen
@@ -1094,6 +1118,7 @@ def preload_models(**kwargs):
             # Before the config is built: it reads GPU_CONCURRENT_REQUESTS, which sets
             # CTranslate2's num_workers at load time (issue #1072).
             reconcile_gpu_concurrent_requests()
+            configure_gpu_host_admission()
             config = TranscriptionConfig.from_environment()
             if config.device == "cuda":
                 import torch

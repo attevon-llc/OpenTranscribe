@@ -14,12 +14,14 @@ these answers to decide whether to create, alias, or *delete* an index.
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
 from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+from opensearchpy.exceptions import ConnectionTimeout as OpenSearchConnectionTimeout
 from opensearchpy.exceptions import ImproperlyConfigured
 from opensearchpy.exceptions import NotFoundError
 from opensearchpy.exceptions import SerializationError
@@ -140,6 +142,37 @@ def get_opensearch_client() -> "OpenSearch | None":
     except (ImproperlyConfigured, OpenSearchConnectionError, ValueError, OSError) as e:
         logger.warning(f"Lazy OpenSearch client initialization failed: {e}")
         return None
+
+
+def call_idempotent_write(write: Callable[..., Any], /, **kwargs: Any) -> Any:
+    """Call an indexing write with the indexing timeout, retrying read timeouts (#1182).
+
+    ``write`` is a bound client method such as ``client.bulk`` or ``client.index``. The
+    per-call ``request_timeout`` is ``OPENSEARCH_INDEX_TIMEOUT_S`` (bulk writes need far more
+    than the client's 10 s default under load) and is applied to this call only, so search and
+    other query timeouts are untouched.
+
+    Only ``ConnectionTimeout`` is retried, up to ``OPENSEARCH_INDEX_TIMEOUT_RETRIES`` more
+    times. That is safe ONLY for writes that carry an explicit document ``_id``: the first
+    request may have been applied even though the response never arrived, and re-sending it
+    then overwrites rather than duplicates. Do not use this for auto-id writes. A client-wide
+    ``retry_on_timeout`` is deliberately not used, since it would also re-run searches.
+    """
+    kwargs.setdefault("request_timeout", settings.OPENSEARCH_INDEX_TIMEOUT_S)
+    retries = max(0, int(settings.OPENSEARCH_INDEX_TIMEOUT_RETRIES))
+    for attempt in range(retries + 1):
+        try:
+            return write(**kwargs)
+        except OpenSearchConnectionTimeout:
+            if attempt >= retries:
+                raise
+            logger.warning(
+                "OpenSearch write timed out after %ss (attempt %d/%d); retrying",
+                kwargs["request_timeout"],
+                attempt + 1,
+                retries + 1,
+            )
+            time.sleep(min(2.0 * (attempt + 1), 10.0))
 
 
 def _is_alias(name: str) -> bool:

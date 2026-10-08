@@ -108,6 +108,15 @@ services:
       #
       # Pinned by test_diar_native_arena_shrink_wiring.py.
       - SPEAKRS_ARENA_SHRINK
+      # diar-native 0.3.3 CUDA memory bounds, bare for the same reason as above (absent =
+      # 0.3.2 behaviour). Exhaustive cuDNN search with max workspace can let the arenas grow
+      # to most of the card on some GPUs; set these when diar-server shares the GPU:
+      #   SPEAKRS_CUDA_MEM_LIMIT_MB         per-session arena cap in MiB (unset/0 = none)
+      #   SPEAKRS_CUDA_CONV_SEARCH          exhaustive (default) | heuristic
+      #   SPEAKRS_CUDA_CONV_MAX_WORKSPACE   1 (default) | 0
+      - SPEAKRS_CUDA_MEM_LIMIT_MB
+      - SPEAKRS_CUDA_CONV_SEARCH
+      - SPEAKRS_CUDA_CONV_MAX_WORKSPACE
       # diar-server 0.3.x emits structured per-request logs (request id, stage timings,
       # device). Before 0.3.0 it installed no tracing subscriber at all and logged
       # nothing — these two are new as of this fix, not a pre-existing knob.

@@ -337,6 +337,7 @@ def retrieve_context(
     # W2.2: the parallel speaker-focus leg. Additive only — see the
     # `speaker_focus_names` docstring above for why this never narrows the
     # main leg and never touches the explicit `speakers` scope.
+    focus_file_uuids: frozenset[str] = frozenset()
     if speaker_focus_names:
         focus_started = time.monotonic()
         emit(
@@ -362,6 +363,7 @@ def retrieve_context(
             added = [h for h in focus_hits if (h.file_uuid, h.chunk_index) not in seen]
             if added:
                 hits = hits + added
+                focus_file_uuids = frozenset(h.file_uuid for h in added)
                 result.retrieved += len(added)
                 result.speaker_focus_added = len(added)
                 logger.info(
@@ -446,6 +448,7 @@ def retrieve_context(
         max_per_file=settings.max_chunks_per_file,
         cap=settings.final_chunks,
         min_file_score=min_file_score,
+        exempt_file_uuids=focus_file_uuids,
     )
     result.chunks = selected
     result.timings_ms["total"] = int((time.monotonic() - started) * 1000)

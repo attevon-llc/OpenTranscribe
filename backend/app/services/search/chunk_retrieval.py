@@ -604,7 +604,12 @@ def retrieve_digests(
 
 
 def diversity_sample(
-    hits: list[ChunkHit], *, max_per_file: int, cap: int, min_file_score: float | None = None
+    hits: list[ChunkHit],
+    *,
+    max_per_file: int,
+    cap: int,
+    min_file_score: float | None = None,
+    exempt_file_uuids: frozenset[str] = frozenset(),
 ) -> list[ChunkHit]:
     """Round-robin across files so one long recording can't crowd out the rest.
 
@@ -643,6 +648,10 @@ def diversity_sample(
             not) ONLY when the pool was actually widened past the admin's
             configured floor, so the small-scope case this function's
             defaults were tuned against is untouched.
+        exempt_file_uuids: Files that bypass ``min_file_score``. Issue #990: a
+            file the speaker-focus leg deliberately targeted must not be vetoed
+            by a cross-encoder score computed for a vague question, or the leg
+            cannot change the outcome. Empty (the default) exempts nothing.
 
     Returns:
         Re-ordered subset of ``hits``, at most ``cap`` long.
@@ -660,7 +669,9 @@ def diversity_sample(
     file_order = [
         file_uuid
         for file_uuid, chunks in by_file.items()
-        if min_file_score is None or chunks[0].score > min_file_score
+        if min_file_score is None
+        or file_uuid in exempt_file_uuids
+        or chunks[0].score > min_file_score
     ]
 
     selected: list[ChunkHit] = []

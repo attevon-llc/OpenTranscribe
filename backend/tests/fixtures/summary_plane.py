@@ -20,14 +20,45 @@ import uuid as uuid_pkg
 import pytest
 
 
-@pytest.fixture
-def summary_plane(monkeypatch, db_session):
-    """A throwaway v6 index standing in for ``transcript_chunks``, for one test.
+@pytest.fixture(scope="session")
+def _summary_plane_index():
+    """One throwaway v6 index per pytest process (so per xdist worker), never the shared one.
 
-    Never touches the shared index: a randomly named index is created and deleted around the
-    test. Neural search is OFF so the leg is pure BM25 -- deterministic, and independent of
-    the cluster's ML Commons state. The service's own session is pointed at the test session
-    so rows the test committed are the rows the indexer reads.
+    It is created once, not per test: with a full parallel run, N workers each creating and
+    deleting an index per test serialise on the cluster state and time out. Isolation between
+    tests comes from emptying it in :func:`summary_plane`, not from a fresh index.
+    """
+    from app.services.opensearch_service import get_opensearch_client
+    from app.services.search import indexing_service as svc
+
+    client = get_opensearch_client()
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+
+    name = f"test_summary_api_{uuid_pkg.uuid4().hex[:12]}"
+    # A single-node cluster creates indices one at a time (~1 s each), and every xdist worker
+    # asks for one at the same moment, so the last in the queue waits for all the others. The
+    # client's default 10 s read timeout is shorter than that wait; the call is not slow, it is
+    # queued.
+    client.indices.create(
+        index=name,
+        body=svc._get_index_body_with_dimension(384),
+        params={"request_timeout": 180},
+    )
+    try:
+        yield name
+    finally:
+        client.indices.delete(index=name, ignore=[404])
+
+
+@pytest.fixture
+def summary_plane(monkeypatch, db_session, _summary_plane_index):
+    """Point the summary leg at the worker's throwaway index, empty, for one test.
+
+    Neural search is OFF so the leg is pure BM25 -- deterministic, and independent of the
+    cluster's ML Commons state. The service's own session is pointed at the test session so
+    rows the test committed are the rows the indexer reads. The index is emptied afterwards:
+    several tests act as an admin, who sees every owner's documents, so a document left by one
+    test would be counted by the next.
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
@@ -42,17 +73,19 @@ def summary_plane(monkeypatch, db_session):
         yield db_session
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _test_session)
-
-    name = f"test_summary_api_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
+    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", _summary_plane_index)
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
     svc.reset_neural_pipeline_state()
     hybrid.reset_neural_search_state()
     try:
         yield client
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        client.delete_by_query(
+            index=_summary_plane_index,
+            body={"query": {"match_all": {}}},
+            refresh=True,
+            conflicts="proceed",
+        )
         svc.reset_neural_pipeline_state()
         hybrid.reset_neural_search_state()
 

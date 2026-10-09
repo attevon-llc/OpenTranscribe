@@ -469,7 +469,11 @@ class TestSplitPathReachesCompletedExactlyOnce:
         # through ERROR on the way (the KeyError-driven regression this fix closes).
         assert task.status == "completed"
         assert task.completed_at is not None
-        mock_completion.assert_called_once_with(normal_user.id, media_file.id)
+        # #753: the notification now carries the task's measured run time. This fixture's Task
+        # has no recorded start, so there is no duration to report.
+        mock_completion.assert_called_once_with(
+            normal_user.id, media_file.id, duration_seconds=None
+        )
 
 
 def _make_raw_transcript_result() -> RawTranscriptResult:

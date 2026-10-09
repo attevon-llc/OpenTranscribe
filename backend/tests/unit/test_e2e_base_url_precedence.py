@@ -59,7 +59,12 @@ def test_probe(base_url):
 
 def _make_probe_pytester(pytester: pytest.Pytester) -> None:
     """Wire up a pytester sandbox with the REAL pytest.ini plus the fixture stand-in."""
-    pytester.makefile(".ini", pytest=_E2E_PYTEST_INI.read_text())
+    # `--browser chromium` is pytest-playwright's flag, and CI installs only requirements-ci.txt
+    # (no playwright), so the sandbox pytest would die with "unrecognized arguments: --browser".
+    # Nothing in this probe launches a browser; every other line of the real ini is kept.
+    ini_text = _E2E_PYTEST_INI.read_text().replace("--browser chromium ", "")
+    assert "--browser" not in ini_text, "pytest.ini's browser flag changed shape; update this strip"
+    pytester.makefile(".ini", pytest=ini_text)
     pytester.makeconftest(_BASE_URL_FIXTURE_CONFTEST)
     pytester.makepyfile(test_probe=_PROBE_TEST)
 

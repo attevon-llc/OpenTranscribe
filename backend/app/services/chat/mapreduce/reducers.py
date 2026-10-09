@@ -23,40 +23,16 @@ from app.services.chat.mapreduce.overview import _clock
 
 logger = logging.getLogger(__name__)
 
-#: #532 follow-up (plan section 2.4). Required, not decoration: the prompt-side
-#: form of #464 constraint 4 / addendum G7 — an LLM's own interpretation must
-#: never be presented as something someone said. Also lets the model tell
-#: which half of a hybrid entry it may quote as speech (never the summary
-#: line). Module constants so both reducers render the identical label text.
-_HYBRID_SUMMARY_LABEL = "Summary (machine-generated): "
-_HYBRID_CLOSING_LABEL = "Closing discussion (verbatim): "
-
 
 def _summary_display_lines(summary: FileSummary, sanitize) -> list[str]:
-    """The rendered body line(s) for one file's map entry (plan section 2.4).
-
-    Three shapes, and the first two must stay BYTE-IDENTICAL to what this
-    repo already ships:
-
-    * hybrid (``summary.is_hybrid``) — two labelled lines, machine-generated
-      abstractive text first, then the verbatim closing section;
-    * summary-only (arm (d), ``llm_summary`` set, ``digest`` empty) — ONE
-      unlabelled line, exactly the pre-#532 shape (that text used to live in
-      ``digest`` before the #532 split; the split moved which field holds it,
-      not what got rendered);
-    * digest-only (today's control, ``digest`` set, ``llm_summary`` empty) —
-      ONE unlabelled line, unchanged from HEAD.
+    """The rendered body line for one file's map entry: its LLM summary if it has
+    one (#464), else its digest text, else nothing.
 
     ``sanitize`` is the caller's sanitizer (``_sanitize_body_text`` for
     :class:`CodeComposer`, ``_sanitize_attribute`` for
     :class:`BatchReducer._plain` — see each call site for which is body-safe
     vs attribute-safe) so this helper stays reducer-agnostic.
     """
-    if summary.is_hybrid:
-        return [
-            f"  {_HYBRID_SUMMARY_LABEL}{sanitize(summary.llm_summary)}",
-            f"  {_HYBRID_CLOSING_LABEL}{sanitize(summary.digest)}",
-        ]
     if summary.llm_summary:
         return [f"  {sanitize(summary.llm_summary)}"]
     if summary.digest:

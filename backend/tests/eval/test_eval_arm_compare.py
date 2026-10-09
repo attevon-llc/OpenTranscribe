@@ -37,7 +37,10 @@ def _meta(role: str, *, cache_hit: bool = False) -> dict[str, Any]:
         "truncated": False,
         "files_listed": 20,
         "entries_hybrid": 20 if role == ac.ROLE_HYBRID else 0,
-        "entries_summary_only": 20 if role == ac.ROLE_ARM_D else 0,
+        # Hybrid-branch-only in the code that ran: a correctly applied arm D reports 0 here.
+        "entries_summary_only": 0,
+        "entries_digest": 20 if role in (ac.ROLE_CONTROL, ac.ROLE_REPEAT) else 0,
+        "summary_chars": 0 if role in (ac.ROLE_CONTROL, ac.ROLE_REPEAT) else 9_000,
     }
     return {"budget_chars": 175_000, "cache_hit": cache_hit, "overview": overview}
 
@@ -288,6 +291,53 @@ def test_hybrid_arm_without_hybrid_entries_is_void_unless_composition_is_waived(
     assert strict["decision"]["verdict"] == ac.VERDICT_VOID
     waived = ac.build_report(arms, check_composition=False)
     assert waived["decision"]["verdict"] == ac.VERDICT_WIN
+
+
+def _void_codes(arm_d: list[dict[str, Any]]) -> list[str]:
+    base = _base_counts()
+    report = _report(
+        control=_arm("control", base),
+        hybrid=_arm("hybrid", _plus(base, [3] * N_TURNS)),
+        arm_d=arm_d,
+    )
+    return sorted({v["code"] for v in report["applied_check_violations"].get("arm-d", [])})
+
+
+def test_a_correctly_applied_arm_d_is_not_void() -> None:
+    """MUST-STAY-CLEAN: arm D reports `entries_summary_only == 0` (that counter is
+    hybrid-branch-only) and must not be voided for it."""
+    arm_d = _arm("arm-d", _base_counts())
+    assert arm_d[0]["msg_metadata"]["overview"]["entries_summary_only"] == 0
+    assert _void_codes(arm_d) == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("summary_chars", 0, "arm_d_no_summary_text"),
+        ("entries_digest", 3, "arm_d_digest_fallback"),
+        ("entries_hybrid", 1, "hybrid_entries_in_arm_d"),
+    ],
+)
+def test_arm_d_that_was_not_applied_is_void(field: str, value: int, code: str) -> None:
+    """MUST-FIRE: each way arm D can fail to be the shipped summary tier."""
+    arm_d = _arm("arm-d", _base_counts())
+    arm_d[5]["msg_metadata"]["overview"][field] = value
+    report = _report(
+        control=_arm("control", _base_counts()),
+        hybrid=_arm("hybrid", _plus(_base_counts(), [3] * N_TURNS)),
+        arm_d=arm_d,
+    )
+    assert report["applied_check_violations"]["arm-d"] == [{"query_id": "multi-005", "code": code}]
+    assert report["decision"]["verdict"] == ac.VERDICT_VOID
+
+
+def test_arm_d_with_no_summary_counters_at_all_is_void() -> None:
+    """A record that never reported the counters proves nothing was applied."""
+    arm_d = _arm("arm-d", _base_counts())
+    for record in arm_d:
+        del record["msg_metadata"]["overview"]["summary_chars"]
+    assert _void_codes(arm_d) == ["arm_d_no_summary_text"]
 
 
 def test_small_context_window_is_void() -> None:

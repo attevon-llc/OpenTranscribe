@@ -1,6 +1,7 @@
 # #532 follow-up: hybrid "summary + closing section" map tier — design and measurement plan
 
-**Status:** PLAN ONLY. Nothing here is implemented.
+**Outcome (2026-10-09): the hybrid LOST and was deleted (section 6.2).** It cited 0.29 of the files in scope against 0.74 for the control (n = 140, USED delta -0.4485, CI -0.5167 to -0.3804). `chat.rag.map_tier_hybrid` and every branch it gated are gone; the U4 counters that still apply and U6-U9 stay. Results: `backend/tests/eval/baselines/probe-532h-*` and `probe-532h-compare-tool/`; run log and detail: `docs/design/532_gpu_run_runbook.md` section 9. The text below is kept as the record of what was designed and pre-registered; it no longer describes the code.
+**Status (historical):** PLAN ONLY. Nothing here is implemented.
 **Written:** 2026-09-23, against `feat/v0.6.0-hybrid-summary-synthesis` @ `5d799a20`.
 **Issue:** #532 (the synthesis gap: retrieval offers ~97% of scope, the answer cites ~73%).
 **Preceding measurement:** arm (d), `chat.rag.map_tier_summaries`, run 2026-09-21 at `c9ec0380`

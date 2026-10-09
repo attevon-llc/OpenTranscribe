@@ -56,7 +56,7 @@ N_RESAMPLES = 20_000
 SEED = 0
 #: Plan 4.3 / CW-1: a budget at or below this means a small-window model was measured.
 BUDGET_CHARS_FLOOR = 100_000
-#: Median share of listed files carrying a summary entry, for arms D and H.
+#: Median share of listed files rendered as a hybrid entry, for arm H.
 MIN_MEDIAN_ENTRY_SHARE = 0.95
 #: Float slack for comparing a mean of ratios to a threshold written as a decimal.
 _EPS = 1e-9
@@ -148,6 +148,30 @@ def select_turns(records: list[dict[str, Any]], category: str) -> list[dict[str,
     return sorted(chosen, key=lambda r: str(r.get("label")))
 
 
+def _composition_codes(role: str, overview: dict[str, Any]) -> list[str]:
+    """Void codes for one turn's ``msg_metadata.overview`` counters, per arm role."""
+    hybrid = overview.get("entries_hybrid", 0)
+    if role in (ROLE_CONTROL, ROLE_REPEAT):
+        return (
+            ["control_has_summary_entries"]
+            if hybrid or overview.get("entries_summary_only", 0)
+            else []
+        )
+    if role == ROLE_ARM_D:
+        # Arm D is the shipped #464 branch, which never touches the hybrid-only counters
+        # (`entries_summary_only` stays 0 on a correctly applied D), so applied means: summary
+        # text reached the block, no file fell back to extractive sections, no hybrid entry.
+        checks = (
+            (not overview.get("summary_chars", 0), "arm_d_no_summary_text"),
+            (overview.get("entries_digest", 0), "arm_d_digest_fallback"),
+            (hybrid, "hybrid_entries_in_arm_d"),
+        )
+        return [code for failed, code in checks if failed]
+    if role == ROLE_HYBRID and not hybrid:
+        return ["no_hybrid_entry"]
+    return []
+
+
 def applied_checks(
     role: str, turns: list[dict[str, Any]], *, check_composition: bool = True
 ) -> list[dict[str, str]]:
@@ -176,19 +200,10 @@ def applied_checks(
             flag(label, "overview_truncated")
         if overview.get("reducer") != "code":
             flag(label, "overview_reducer")
-        hybrid = overview.get("entries_hybrid", 0)
-        summary_only = overview.get("entries_summary_only", 0)
-        listed = overview.get("files_listed") or 1
-        if role in (ROLE_CONTROL, ROLE_REPEAT) and (hybrid or summary_only):
-            flag(label, "control_has_summary_entries")
-        if role == ROLE_ARM_D:
-            shares.append(summary_only / listed)
-            if hybrid:
-                flag(label, "hybrid_entries_in_arm_d")
+        for code in _composition_codes(role, overview):
+            flag(label, code)
         if role == ROLE_HYBRID:
-            shares.append(hybrid / listed)
-            if not hybrid:
-                flag(label, "no_hybrid_entry")
+            shares.append(overview.get("entries_hybrid", 0) / (overview.get("files_listed") or 1))
     if shares and statistics.median(shares) < MIN_MEDIAN_ENTRY_SHARE:
         flag("*", "median_entry_share")
     return found

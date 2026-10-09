@@ -10,7 +10,7 @@ For every (series, shape) question in the U8 expanded question set and every fil
 question's series, this builds each CANDIDATE entry text a map-tier overview entry could show
 (see the table in the module docstring below) and scores it against that FILE's own tagged
 AMI reference items with :func:`tests.eval.harness.ami_recall.score_answer` — a pure lexical
-floor, never an LLM call. ``structured_summary_text``/``_summary_highlight_text`` are IMPORTED
+floor, never an LLM call. ``_summary_highlight_text`` is IMPORTED
 from the real app code (never re-implemented here), so the oracle scores exactly what would
 ship.
 
@@ -61,13 +61,61 @@ sys.path.insert(0, str(REPO_ROOT / 'backend' / 'tests'))
 CANDIDATE_CODES = ('C', 'S0', 'Smid', 'Slast', 'P', 'PI', 'H1', 'H2')
 
 
+#: Cap on decisions/action items in the structured summary candidate (plan section 2.2).
+MAX_ITEMS_PER_LEAF = 3
+
+
+def _fit_clause(label: str, items: list[str], remaining: int) -> str:
+    """The widest PREFIX of ``items`` that fits in ``remaining`` chars, or ``""`` (never partial)."""
+    for n in range(len(items), 0, -1):
+        clause = f' {label}: ' + '; '.join(items[:n]) + '.'
+        if len(clause) <= remaining:
+            return clause
+    return ''
+
+
+def structured_summary_text(summary_data: dict[str, Any], budget_chars: int) -> str:
+    """Lead paragraph + decisions + action items, cut at item boundaries (candidates PI / H2).
+
+    This is the composition the deleted ``chat.rag.map_tier_hybrid`` flag rendered. The hybrid
+    LOST its GPU measurement (#532, ``docs/design/532_gpu_run_runbook.md`` section 9) and the
+    app code was deleted, but the oracle (plan U9) is a kept instrument and still scores this
+    text, so the function lives here, where it is a measurement candidate and not a product path.
+    The lead and the item extractor are still the app's own (``_summary_highlight_text``,
+    ``recurrence.normalize_leaf``).
+    """
+    from app.services.chat.mapreduce.file_summaries import _summary_highlight_text
+    from app.services.chat.prompting import _cut_at_boundary
+    from app.services.chat.recurrence import LEAF_ACTION_ITEM, LEAF_KEY_DECISION, normalize_leaf
+
+    lead = _summary_highlight_text(summary_data)
+    if not lead or budget_chars <= 0:
+        return ''
+    if len(lead) > budget_chars:
+        return _cut_at_boundary(lead, budget_chars)
+
+    text = lead
+    remaining = budget_chars - len(text)
+    for label, raw_items, leaf in (
+        ('Decisions', summary_data.get('key_decisions'), LEAF_KEY_DECISION),
+        ('Action items', summary_data.get('action_items'), LEAF_ACTION_ITEM),
+    ):
+        items: list[str] = []
+        for raw in (raw_items or [])[:MAX_ITEMS_PER_LEAF]:
+            extracted = normalize_leaf(raw, leaf)
+            if extracted is not None:
+                items.append(extracted[0])
+        clause = _fit_clause(label, items, remaining) if items else ''
+        if clause:
+            text += clause
+            remaining -= len(clause)
+    return text
+
+
 def _load_app_functions():
-    """Import the real production composition functions — never re-implemented here."""
+    """Import the real production functions the candidates are built from."""
     from app.services.chat.citations import DIGEST_SNIPPET_CHARS
-    from app.services.chat.mapreduce.file_summaries import (
-        _summary_highlight_text,
-        structured_summary_text,
-    )
+    from app.services.chat.mapreduce.file_summaries import _summary_highlight_text
     from app.services.chat.mapreduce.overview import sections_budget
     from app.services.chat.prompting import _cut_at_boundary
 

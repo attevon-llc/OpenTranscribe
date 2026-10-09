@@ -323,12 +323,10 @@ def _resolve_summary_tier(
         the two (never consulted vs. consulted and genuinely empty), which
         ``mapreduce.coverage.check_scope_coverage`` reads back off ``meta`` via
         these same two counts. ``map_coverage`` is ``scope_digest_hits``'s full
-        ``.coverage`` dict when ``map_leg == "scope_map"`` (#532 follow-up: it
-        carries the ``entries_digest``/``hybrid_entries``/``summary_only_entries``/
-        ``summary_chars``/``closing_section_chars`` counters — see that
-        function's own docstring), and ``{}`` for every other leg.
+        ``.coverage`` dict when ``map_leg == "scope_map"`` (it carries the
+        ``summary_hits``/``entries_digest`` counters — see that function's own
+        docstring), and ``{}`` for every other leg.
     """
-    from app.services.chat.citations import DIGEST_SNIPPET_CHARS
     from app.services.chat.mapreduce import scope_digest_hits
     from app.services.chat.mapreduce import scope_speaker_digest_hits
     from app.services.chat.mapreduce import sections_budget
@@ -370,21 +368,12 @@ def _resolve_summary_tier(
         return [], [], "speaker_scope_map_empty", files_without_artifacts, files_no_content, {}
 
     if decision.wants_digest and file_uuids:
-        # #532 follow-up: only takes effect when BOTH flags are on — hybrid
-        # off (the default) or summaries off reproduces #464's shipped
-        # behaviour exactly (plan section 2.9).
-        hybrid = bool(settings.map_tier_hybrid and settings.map_tier_summaries)
-        entry_budget_chars = (
-            sections_budget(len(file_uuids)) * DIGEST_SNIPPET_CHARS if hybrid else 0
-        )
         with session_scope() as db:
             map_hits = scope_digest_hits(
                 db,
                 file_uuids,
                 sections_per_file=sections_budget(len(file_uuids)),
                 use_summaries=settings.map_tier_summaries,
-                hybrid=hybrid,
-                entry_budget_chars=entry_budget_chars,
             )
         # Counted whether or not the map produced anything, so an upgraded
         # library (files whose `file_facts` row has not been backfilled yet)
@@ -1434,65 +1423,22 @@ def _finalize_overview_citations(overview, summaries: list) -> None:
     overview.citation_payloads = tuple(build_overview_citations(overview.cited_entries, summaries))
 
 
-def _guard_hybrid_overview_citations(
-    citation_start: int | None, summaries: list, meta: dict[str, Any]
-) -> int | None:
-    """#532 follow-up, mandatory guard (plan section 2.7).
-
-    A hybrid file's closing section is verbatim transcript text rendered
-    inside the overview block. Without this guard, ``_finalize_overview_citations``
-    would ask ``build_overview_citations`` to label that text — via
-    ``FileSummary.is_llm_summary``, which a hybrid file also carries — ``kind:
-    "summary"``, misrepresenting a verbatim quote as the model's own
-    interpretation (the #464/#532-arm(a) collision in a new form). No per-part
-    citation kind exists yet for a hybrid entry (the plan's conditional Unit
-    U5), so citing it at all is suppressed rather than citing it wrong.
-
-    Returns ``citation_start`` unchanged, or ``None`` when the guard fires —
-    and sets ``meta["overview_citable_suppressed"] = "hybrid"`` only then.
-    """
-    if citation_start is None or not any(getattr(s, "is_hybrid", False) for s in summaries):
-        return citation_start
-    meta["overview_citable_suppressed"] = "hybrid"
-    return None
-
-
-def _hybrid_overview_diagnostics(
-    summaries: list,
-    ranked_digests: list,
-    map_coverage: dict[str, Any],
-    overview,
-    map_leg: str | None,
-) -> dict[str, Any]:
-    """#532 follow-up instrumentation (plan Unit U4), scope-map turns only.
+def _overview_diagnostics(summaries: list, map_coverage: dict[str, Any], overview, map_leg):
+    """#532 instrumentation (plan Unit U4), scope-map turns only.
 
     ``{}`` when ``map_leg != "scope_map"`` — the branch lives here rather than
     at the call site so it does not count against ``_prepare_context``'s own
     complexity ceiling. Content-free counts only — never text, same rule
     ``Overview.as_metadata()`` already follows. ``summary_chars``/``digest_chars``
-    are summed from the POST-masking ``summaries`` (the coverage dict's own
-    char sums are pre-routing and would double-count a hybrid file's two hits
-    differently); ``closing_in_ranked_digests`` needs the ranked leg, which is
-    not available inside ``scope_digest_hits`` itself.
+    are summed from the POST-masking ``summaries``.
     """
     if map_leg != "scope_map":
         return {}
-    ranked_positions = {(h.file_uuid, getattr(h, "digest_section", None)) for h in ranked_digests}
-    closing_in_ranked_digests = sum(
-        1
-        for s in summaries
-        if s.is_hybrid
-        and s.digest_section_index is not None
-        and (s.file_uuid, s.digest_section_index) in ranked_positions
-    )
     return {
         "entries_digest": int(map_coverage.get("entries_digest", 0)),
-        "entries_summary_only": int(map_coverage.get("summary_only_entries", 0)),
-        "entries_hybrid": int(map_coverage.get("hybrid_entries", 0)),
         "block_chars": len(overview.block),
         "summary_chars": sum(len(s.llm_summary) for s in summaries),
         "digest_chars": sum(len(s.digest) for s in summaries),
-        "closing_in_ranked_digests": closing_in_ranked_digests,
     }
 
 
@@ -1801,7 +1747,6 @@ def _prepare_context(
         from app.services.chat.mapreduce import build_overview
 
         citation_start = _overview_citation_start(settings, digest_masked, masked)
-        citation_start = _guard_hybrid_overview_citations(citation_start, summaries, meta)
         overview = build_overview(
             question,
             summaries,
@@ -1811,7 +1756,7 @@ def _prepare_context(
         )
         _finalize_overview_citations(overview, summaries)
         overview.diagnostics.update(
-            _hybrid_overview_diagnostics(summaries, result.digests, map_coverage, overview, map_leg)
+            _overview_diagnostics(summaries, map_coverage, overview, map_leg)
         )
         meta["overview"] = overview.as_metadata()
         # The frontend's pre-existing "Overview source" row: which REDUCER

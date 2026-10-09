@@ -10,10 +10,12 @@
   import "../styles/tables.css";
   import "../styles/animations.css";
   import "../styles/search.css";
+  import "../styles/support-access.css";
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
-  import { loadCapabilities } from "$stores/capabilities";
+  import { capabilities, loadCapabilities } from "$stores/capabilities";
+  import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
   import { locale, t } from "../stores/locale";
@@ -28,6 +30,7 @@
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
+  import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
@@ -98,6 +101,15 @@
   // alongside the onMount call on a fresh page load.
   $: if ($isAuthenticated) {
     llmStatusStore.initialize();
+  }
+
+  // A support-access session lives in this tab's sessionStorage (issue #1122). Re-validate it
+  // once the session and the tenancy mode are both known; it clears silently if the grant
+  // is no longer active or the deployment is not multi-tenant.
+  let supportRestoreTried = false;
+  $: if ($isAuthenticated && $capabilities.loaded && !supportRestoreTried) {
+    supportRestoreTried = true;
+    void supportSession.restore();
   }
 
   // Classification banner state
@@ -239,7 +251,7 @@
     />
   {/if}
 
-  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} class:has-support-banner={$supportSession.active} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
     <!-- First focusable element in the app. Visually hidden until :focus-visible so it
          doesn't disturb sighted layout, but never display:none/visibility:hidden — that
          would remove it from the focus order and defeat the point (issue #785). -->
@@ -247,6 +259,7 @@
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
+      {#if $supportSession.active}<SupportAccessBanner />{/if}
       <NotificationsPanel />
       <UploadManager />
       {#if SettingsModal}<svelte:component this={SettingsModal} />{/if}
@@ -273,9 +286,14 @@
       </main>
     {:else if $isAuthenticated && !isPublicPath}
       <!-- Authenticated user on a protected route — render the app -->
-      <AppContent>
-        <slot />
-      </AppContent>
+      <!-- A support session switches which tenant the same login reads. Keying on the grant
+           remounts the page on both edges, so nothing rendered under one scope survives into
+           the other (a same-route goto would not refetch). -->
+      {#key $supportSession.grantUuid}
+        <AppContent>
+          <slot />
+        </AppContent>
+      {/key}
     {:else if !$isAuthenticated && isPublicPath}
       <!-- Unauthenticated user on a public page (login/register/forgot-password) — render it -->
       <main id="main-content" tabindex="-1" class="content no-navbar">
@@ -344,6 +362,13 @@
   /* Offset for classification banner (approx 28px) */
   .app.has-banner {
     padding-top: 28px;
+  }
+
+  /* A support-access banner sits fixed under the navbar; its measured height (it wraps on narrow
+     screens) is published as --support-banner-height, and every page that sizes itself from
+     --content-top follows. */
+  .app.has-support-banner {
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px));
   }
 
   /* Push navbar down when banner is present */

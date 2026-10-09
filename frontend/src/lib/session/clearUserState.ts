@@ -14,6 +14,32 @@
  */
 
 /**
+ * Drop every cache that holds TENANT data, without ending the login (issue #1122).
+ *
+ * A support session switches which tenant the same login reads, so both edges of it
+ * (start and end) must forget what the other side loaded. This is the same set
+ * `clearUserState` clears minus auth, toasts, uploads, recording and capabilities. A
+ * new tenant-data cache belongs HERE, so the logout path and the session-edge path
+ * cannot drift apart.
+ */
+export async function purgeTenantDataCaches(): Promise<void> {
+  await Promise.allSettled([
+    // apiCache holds DATA, not just derived assets, and its keys are not user-scoped
+    // ('tags:all', 'collections:all', 'status:summary', files:page:N:hash,
+    // prefetch:file:<uuid>, ...). Until it was cleared here, User B logging in in the same
+    // tab saw User A's file list, speakers, collections, tags and groups for up to the
+    // 5 min TTL, because an SPA login does not reload the module holding the Map.
+    import('$lib/apiCache').then(({ apiCache }) => apiCache.clear()),
+    import('$lib/thumbnailCache').then(({ clearThumbnailCache }) => clearThumbnailCache()),
+    import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => clearMediaUrlCache()),
+    import('$stores/gallery').then(({ galleryStore }) => galleryStore.resetFilters()),
+    import('$stores/search').then(({ searchStore }) => searchStore.reset()),
+    import('$stores/transcriptStore').then(({ transcriptStore }) => transcriptStore.clear()),
+    import('$stores/chat').then(({ chatStore }) => chatStore.reset()),
+  ]);
+}
+
+/**
  * Clear all user-specific state across the app.
  *
  * Call this from `auth.ts` logout() and at the start of any login flow
@@ -46,22 +72,22 @@ export async function clearUserState(): Promise<void> {
     import('$stores/toast').then(({ toastStore }) => toastStore.clear()),
     import('$stores/websocket').then(({ websocketStore }) => websocketStore.clearAll()),
     import('$stores/uploads').then(({ uploadsStore }) => uploadsStore.reset()),
-    import('$stores/gallery').then(({ galleryStore }) => galleryStore.resetFilters()),
-    import('$stores/search').then(({ searchStore }) => searchStore.reset()),
+    // Gallery, search, transcript, chat (also aborts an in-flight stream: logging out
+    // mid-answer must not keep streaming one user's conversation into the next user's
+    // session), apiCache, thumbnails and presigned media URLs: see the function above.
+    purgeTenantDataCaches(),
     import('$stores/sharing').then(({ sharingStore }) => sharingStore.reset()),
     import('$stores/llmStatus').then(({ llmStatusStore }) => llmStatusStore.reset()),
     import('$stores/settingsModalStore').then(({ settingsModalStore }) =>
       settingsModalStore.reset()
     ),
-    import('$stores/transcriptStore').then(({ transcriptStore }) => transcriptStore.clear()),
+    // A support-access grant must not outlive the login that started it (issue #1122).
+    import('$stores/supportSession').then(({ supportSession }) => supportSession.end('logout')),
     import('$stores/groups').then(({ groupsStore }) => groupsStore.reset()),
     import('$stores/downloads').then(({ downloadStore }) => downloadStore.reset()),
     import('$stores/notificationsPanel').then(({ clearAllNotifications }) =>
       clearAllNotifications()
     ),
-    // Also aborts any in-flight stream: logging out mid-answer must not keep
-    // streaming one user's conversation into the next user's session.
-    import('$stores/chat').then(({ chatStore }) => chatStore.reset()),
 
     // ── Recording (stops tracks, closes audio context, clears blob) ──
     import('$stores/recording').then(({ recordingManager }) => {
@@ -74,15 +100,7 @@ export async function clearUserState(): Promise<void> {
     }),
 
     // ── Caches outside stores ──
-    // apiCache holds the previous user's DATA, not just derived assets, and its keys
-    // are not user-scoped ('tags:all', 'collections:all', 'status:summary',
-    // files:page:N:hash, prefetch:file:<uuid>, ...). Until this line existed,
-    // apiCache.clear() had zero call sites: User B logging in in the same tab saw
-    // User A's file list, speakers, collections, tags and groups for up to the 5 min
-    // TTL, because an SPA login does not reload the module holding the Map.
-    import('$lib/apiCache').then(({ apiCache }) => apiCache.clear()),
-    import('$lib/thumbnailCache').then(({ clearThumbnailCache }) => clearThumbnailCache()),
-    import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => clearMediaUrlCache()),
+    // (apiCache, thumbnails and media URLs are in purgeTenantDataCaches() above.)
     // Capabilities are TIER-SCOPED in the cloud edition and `loadCapabilities()`
     // has a single call site (routes/+layout.svelte onMount), which an SPA login
     // never re-runs. Without this reset User B inherited User A's enabled-surface
@@ -114,5 +132,12 @@ export async function clearUserState(): Promise<void> {
     } catch {
       // Private browsing / quota errors — ignore
     }
+  }
+  // Belt and braces for the support-session store's own teardown above (its import can
+  // fail): the tab-scoped grant pointer must never survive a logout.
+  try {
+    sessionStorage.removeItem('opentr:supportSession');
+  } catch {
+    // Storage blocked — nothing to clear
   }
 }

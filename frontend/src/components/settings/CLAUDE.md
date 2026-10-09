@@ -126,3 +126,7 @@ picker and the content router all read it, so a nav entry cannot disagree with t
 - `WatchSourcesSettings.svelte` is a **coordinator over `watchSources/`** (see that folder's
   CLAUDE.md) — it was 767 lines. It stays here rather than moving into the subfolder, matching
   `UserFileStatus.svelte` + `fileStatus/`; only the children moved.
+- `SupportAccessStaffPanel.svelte` (Administration) and `SupportAccessApprovalsPanel.svelte`
+  (Account) are the two settings faces of support-access grants (issue #1122); both render only
+  when `tenancyMode === 'multi'`, and `SettingsModal` yields Escape to nested `BaseModal`s so
+  closing a break-glass dialog never closes Settings. Detail: `../supportAccess/CLAUDE.md`.

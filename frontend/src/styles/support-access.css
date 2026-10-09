@@ -1,0 +1,18 @@
+/*
+ * Support-access destructive controls (issue #1122: Revoke, Deny, Break glass).
+ *
+ * The app-wide `.btn-danger` fill (#ef4444) is 3.76:1 against its white label, below the 4.5:1
+ * WCAG AA needs for this text size, so these controls opt in to a darker fill with `sa-danger`.
+ * #b91c1c is the same red as `--error-dark` in light; it is spelled out because `--error-dark`
+ * flips to a pale pink in dark mode (it is a TEXT shade), which would put white on pink.
+ */
+.btn.sa-danger {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+.btn.sa-danger:hover:not(:disabled) {
+  background-color: #991b1b;
+  border-color: #991b1b;
+}

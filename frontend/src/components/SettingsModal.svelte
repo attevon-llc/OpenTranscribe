@@ -28,6 +28,10 @@
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import BackupSettings from '$components/settings/BackupSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
+  import SupportAccessStaffPanel from '$components/settings/SupportAccessStaffPanel.svelte';
+  import SupportAccessApprovalsPanel from '$components/settings/SupportAccessApprovalsPanel.svelte';
+  import { SupportAccessApi } from '$lib/api/supportAccess';
+  import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
   import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
@@ -118,6 +122,7 @@
     'embedding-migration': 'admin',
     retention: 'admin',
     'search-indexing': 'admin',
+    'support-access': 'admin',
   };
 
   /**
@@ -176,6 +181,31 @@
       pendingApprovalCount = (await UserApprovalsApi.list()).length;
     } catch {
       pendingApprovalCount = 0;
+    }
+  }
+
+  /**
+   * Support-access requests awaiting this user's decision (issue #1122), across their personal
+   * workspace and, for an organization admin, their organization. Owned here, like the
+   * approval count, because the sidebar badge shows while another section is open.
+   */
+  let supportRequestCount = 0;
+  $: supportOrgTab = orgAdminCapOn(capState, 'organizations') && $userStore?.org_role === 'org:admin';
+
+  async function loadSupportRequestCount() {
+    if (!tenancyMulti) {
+      supportRequestCount = 0;
+      return;
+    }
+    const pending = { status: 'pending' as const, limit: 1, offset: 0 };
+    try {
+      const pages = await Promise.all([
+        SupportAccessApi.listRequests('workspace', pending),
+        ...(supportOrgTab ? [SupportAccessApi.listRequests('org', pending)] : [])
+      ]);
+      supportRequestCount = pages.reduce((sum, page) => sum + page.total, 0);
+    } catch {
+      supportRequestCount = 0;
     }
   }
 
@@ -239,6 +269,9 @@
   // cloud hides platform/self-host surfaces so the product "just works".
   // The backend independently 404s gated endpoints — this is cosmetic only.
   $: capState = $capabilities;
+  // Support-access UI exists only in multi-tenant mode and is FAIL-CLOSED (unknown = hidden),
+  // unlike `capOn`, which is fail-open. Do not route this through isCapabilityEnabled.
+  $: tenancyMulti = capState.tenancyMode === 'multi';
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
@@ -282,7 +315,8 @@
       title: $t('settings.sections.account'),
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' }
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
+        ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : [])
       ]
     },
     {
@@ -355,7 +389,8 @@
           // the endpoints are NOT capability-gated, since `require_capability`
           // 404s and a compliance endpoint that vanishes is worse than one that
           // refuses.
-          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' }
+          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' },
+          ...(tenancyMulti ? [{ id: 'support-access' as SettingsSection, label: $t('settings.supportAccess.navLabel'), icon: 'life-buoy' }] : [])
         ]
       }
     ] : []),
@@ -498,12 +533,14 @@
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.addEventListener('reindex-complete', handleReindexCompleteStats);
+    window.addEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
   });
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
+    window.removeEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
     if (previousOpenState) unlockScroll();
   });
 
@@ -524,6 +561,7 @@
         loadAdminUsers();
       }
       if (isAdmin) loadPendingApprovalCount();
+      void loadSupportRequestCount();
 
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
@@ -535,6 +573,10 @@
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Escape' && isOpen) {
+      // A nested BaseModal (support-access request, break-glass, approve, access log...) owns
+      // this Escape: its own handler closes it. Closing the whole settings dialog as well threw
+      // away an in-progress break-glass confirmation along with it.
+      if (document.querySelector('.modal-backdrop')) return;
       attemptClose();
     }
   }
@@ -1194,6 +1236,22 @@
           {#if activeSection === 'quarantine'}
             <div class="content-section">
               <QuarantinePanel />
+            </div>
+          {/if}
+
+          <!-- Support access requests (issue #1122): every user decides for their own workspace -->
+          {#if activeSection === 'support-access-requests' && tenancyMulti}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.supportAccessRequests.title')}</h3>
+              <SupportAccessApprovalsPanel orgTab={supportOrgTab} on:countchange={loadSupportRequestCount} />
+            </div>
+          {/if}
+
+          <!-- Support access (issue #1122): multi-tenant deployments only -->
+          {#if activeSection === 'support-access' && tenancyMulti}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.supportAccess.title')}</h3>
+              <SupportAccessStaffPanel />
             </div>
           {/if}
 

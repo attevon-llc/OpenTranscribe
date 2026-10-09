@@ -50,6 +50,7 @@
   import { authStore } from '$stores/auth';
   import { transcriptStore, type SpeakerInfo } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
+  import { supportSessionGate } from '$stores/supportSession';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
@@ -200,8 +201,11 @@
   // never treated as owner, so every gate below fails closed until load.
   let myPermission: string | null | undefined = undefined;
   $: permissionLoaded = myPermission !== undefined;
+  // `my_permission` reads "owner" for an admin under a support grant, so a READ-ONLY grant
+  // must be subtracted here (the server refuses the write regardless; this hides the controls).
   $: canEdit =
     permissionLoaded &&
+    !$supportSessionGate.readOnly &&
     (myPermission === null || myPermission === 'editor' || myPermission === 'owner');
 
   // Content redaction: owner/admin can reveal the original (non-admin-forced categories).

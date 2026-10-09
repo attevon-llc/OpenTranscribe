@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { supportSessionGate } from '$stores/supportSession';
   import type { Segment, Speaker } from '$lib/types/speaker';
   import { resolveGroupedSegments } from '$lib/transcript/resolveGroupedSegments';
   import { createEventDispatcher } from 'svelte';
@@ -226,7 +227,7 @@
       {groupedTranscriptSegments}
       {speakerList}
       {diarizationDisabled}
-      editable={true}
+      editable={!$supportSessionGate.readOnly}
       {editingSegmentId}
       bind:editingSegmentText
       {savingTranscript}

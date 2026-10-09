@@ -9,6 +9,7 @@ import {
   formatLanguageNames,
   retryWaitLabel,
   formatCompactDuration,
+  formatTimeOfDay,
 } from './formatting';
 
 /**
@@ -197,5 +198,25 @@ describe('formatCompactDuration (Xh Ym / Ym Zs / Zs — issue #753 duration chip
     // live ETA notification; this pins the shared arithmetic it now
     // delegates to, so the two can't silently diverge again.
     expect(formatCompactDuration(125)).toBe('2m 5s');
+  });
+});
+
+describe('formatTimeOfDay (issue #1122 banner expiry)', () => {
+  it('renders the local hour and minute of an ISO instant, zero-padded in en-GB', () => {
+    const iso = '2026-10-09T12:34:56Z';
+    const d = new Date(iso);
+    const expected = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(
+      2,
+      '0'
+    )}`;
+    expect(formatTimeOfDay(iso, 'en-GB')).toBe(expected);
+  });
+
+  it('omits seconds', () => {
+    expect(formatTimeOfDay('2026-10-09T12:34:56Z', 'en-GB')).not.toMatch(/\d:\d\d:\d\d/);
+  });
+
+  it('echoes an unparseable value back rather than throwing or rendering "Invalid Date"', () => {
+    expect(formatTimeOfDay('not-a-date', 'en-GB')).toBe('not-a-date');
   });
 });

@@ -21,6 +21,7 @@
    *    self-contained fetch, not a second page-owned pager) and classifies them against the
    *    `occurrences` prop via `matchClassification`.
    */
+  import { supportSessionGate } from '$stores/supportSession';
   import { createEventDispatcher, tick } from 'svelte';
   import type { Speaker } from '$lib/types/speaker';
   import type { GroupedTranscriptSegment } from '$lib/types/media';
@@ -286,7 +287,7 @@
 
     {#if mode === 'file'}
       <div class="header-actions">
-        {#if activeTranscriptSegments.length > 0}
+        {#if activeTranscriptSegments.length > 0 && !$supportSessionGate.active}
           <button
             class="copy-button-header"
             class:copied={copyStatus === 'copied'}

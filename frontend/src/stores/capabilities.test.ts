@@ -6,7 +6,12 @@ vi.mock('$lib/axios', () => ({
 }));
 
 import axiosInstance from '$lib/axios';
-import { capabilities, isCapabilityEnabled, loadCapabilities } from './capabilities';
+import {
+  capabilities,
+  isCapabilityEnabled,
+  loadCapabilities,
+  resetCapabilities,
+} from './capabilities';
 
 const mockedGet = vi.mocked(axiosInstance.get);
 
@@ -108,5 +113,50 @@ describe('capabilities store', () => {
     await loadCapabilities();
 
     expect(get(capabilities).maxUploadBytes).toBeNull();
+  });
+
+  describe('tenancyMode (issue #1122, fail closed)', () => {
+    it("is 'multi' only for the exact string 'multi'", async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: 'multi' },
+      });
+      await loadCapabilities();
+      expect(get(capabilities).tenancyMode).toBe('multi');
+    });
+
+    it("is 'single' when the server says single", async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: 'single' },
+      });
+      await loadCapabilities();
+      expect(get(capabilities).tenancyMode).toBe('single');
+    });
+
+    it.each([['MULTI'], ['Multi'], [true], [null], [undefined]])(
+      'is undefined for %s (never a guess)',
+      async (value) => {
+        mockedGet.mockResolvedValueOnce({
+          data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: value },
+        });
+        await loadCapabilities();
+        expect(get(capabilities).tenancyMode).toBeUndefined();
+      }
+    );
+
+    it('stays undefined when the fetch fails, even though visibility fails open', async () => {
+      mockedGet.mockRejectedValueOnce(new Error('network down'));
+      await loadCapabilities();
+      expect(get(capabilities).loaded).toBe(true);
+      expect(get(capabilities).tenancyMode).toBeUndefined();
+    });
+
+    it('is dropped by resetCapabilities', async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: 'multi' },
+      });
+      await loadCapabilities();
+      resetCapabilities();
+      expect(get(capabilities).tenancyMode).toBeUndefined();
+    });
   });
 });

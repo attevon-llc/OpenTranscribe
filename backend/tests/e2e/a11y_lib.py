@@ -219,10 +219,14 @@ def gated_violations(results: Any) -> list[dict[str, Any]]:
     return [v for v in results.response["violations"] if v.get("impact") in GATED_IMPACTS]
 
 
-def run_axe(page: Page) -> Any:
-    """Run axe-core against the current page, reporting only violations."""
+def run_axe(page: Page, context: str | None = None) -> Any:
+    """Run axe-core against the current page (or a CSS-selector ``context`` within it).
+
+    ``context`` exists for surfaces rendered over a page that carries its own allowlisted
+    debt: a modal panel is scanned alone so the gallery behind it cannot be blamed on it.
+    """
     axe = Axe()
-    return axe.run(page)
+    return axe.run(page, context=context) if context else axe.run(page)
 
 
 def form_login_with_retry(page: Page, base_url: str, attempts: int = 4) -> None:

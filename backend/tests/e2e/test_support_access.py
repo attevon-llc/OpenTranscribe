@@ -24,13 +24,13 @@ from collections.abc import Iterator
 
 import pytest
 import requests
-from a11y_lib import form_login_with_retry
 from a11y_lib import gated_violations
 from a11y_lib import run_axe
 from a11y_lib import set_theme
 from playwright.sync_api import Browser
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from timeouts import APP_SHELL_READY_MS
 
 pytestmark = [pytest.mark.e2e]
 
@@ -106,7 +106,7 @@ def subject_token(backend_url: str, support_subject: dict[str, str]) -> str:
     return str(resp.json()["access_token"])
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def subject_file(
     backend_url: str, subject_token: str, owned_media_factory: Callable[..., dict]
 ) -> dict:
@@ -147,6 +147,37 @@ def grants(backend_url: str, admin_token: str) -> Iterator[Callable[[str], str]]
                 json={},
                 timeout=30,
             )
+
+
+@pytest.fixture
+def staff_page(
+    browser: Browser, shared_auth_state: str, base_url: str, backend_url: str, admin_token: str
+) -> Iterator[Page]:
+    """The admin's pre-authenticated page, ready as soon as the app shell renders.
+
+    Deliberately not ``gallery_page``: that fixture also waits for the gallery to hold rows,
+    and an isolated ``--fresh`` multi-tenant stack (the only place these flows can run) has an
+    empty library until the subject's upload lands. Nothing here needs the admin's gallery.
+
+    A fresh stack also shows the super_admin the FirstRunWizard, whose backdrop swallows every
+    click; completing it (the pattern ``test_gallery_actions.py`` uses) is what a real
+    operator's first session ends with.
+    """
+    requests.post(
+        f"{backend_url}/api/admin/first-run-wizard/complete",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        timeout=10,
+    )
+    context = browser.new_context(
+        storage_state=shared_auth_state,
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(base_url)
+    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
+    yield page
+    context.close()
 
 
 def _approve(backend_url: str, subject_token: str, grant_uuid: str, minutes: int = 15) -> None:
@@ -193,19 +224,19 @@ def subject_ui(browser: Browser, base_url: str, support_subject: dict[str, str])
     yield from _subject_page(browser, base_url, support_subject)
 
 
-def test_single_mode_hides_support_access(gallery_page: Page, backend_url: str) -> None:
+def test_single_mode_hides_support_access(staff_page: Page, backend_url: str) -> None:
     """Control: outside multi mode the UI offers no support-access entry points at all."""
     if _multi_tenant(backend_url):
         pytest.skip("stack is multi-tenant; the rows are SUPPOSED to exist here")
-    _open_settings(gallery_page)
-    labels = gallery_page.locator(".settings-sidebar .nav-item-label").all_inner_texts()
+    _open_settings(staff_page)
+    labels = staff_page.locator(".settings-sidebar .nav-item-label").all_inner_texts()
     assert not [label for label in labels if "support" in label.lower()], labels
-    expect(gallery_page.locator("section[aria-label='Support access session']")).to_have_count(0)
+    expect(staff_page.locator("section[aria-label='Support access session']")).to_have_count(0)
 
 
 @pytest.mark.support_access
 def test_request_then_subject_denies(
-    gallery_page: Page,
+    staff_page: Page,
     subject_ui: Page,
     multi_tenant_stack: None,
     support_subject: dict[str, str],
@@ -221,14 +252,14 @@ def test_request_then_subject_denies(
     row.get_by_role("button", name=re.compile(r"^Deny")).click()
     subject_ui.locator(".modal-footer").get_by_role("button", name="Deny", exact=True).click()
 
-    _open_settings_section(gallery_page, STAFF_NAV)
-    mine = gallery_page.locator(".grant-table tbody tr", has_text=support_subject["full_name"])
+    _open_settings_section(staff_page, STAFF_NAV)
+    mine = staff_page.locator(".grant-table tbody tr", has_text=support_subject["full_name"])
     expect(mine.first).to_contain_text("Denied", timeout=45000)
 
 
 @pytest.mark.support_access
 def test_approved_session_scopes_the_ui_and_the_header(
-    gallery_page: Page,
+    staff_page: Page,
     subject_ui: Page,
     multi_tenant_stack: None,
     backend_url: str,
@@ -242,30 +273,30 @@ def test_approved_session_scopes_the_ui_and_the_header(
     _approve(backend_url, subject_token, grant_uuid)
 
     sent: list[tuple[str, str | None]] = []
-    gallery_page.on("request", lambda req: sent.append((req.url, req.headers.get(GRANT_HEADER))))
+    staff_page.on("request", lambda req: sent.append((req.url, req.headers.get(GRANT_HEADER))))
 
-    _open_settings_section(gallery_page, STAFF_NAV)
-    row = gallery_page.locator(".grant-table tbody tr", has_text=support_subject["full_name"])
+    _open_settings_section(staff_page, STAFF_NAV)
+    row = staff_page.locator(".grant-table tbody tr", has_text=support_subject["full_name"])
     row.first.get_by_role("button", name=re.compile(r"^Start session")).click()
 
-    banner = gallery_page.locator("section[aria-label='Support access session']")
+    banner = staff_page.locator("section[aria-label='Support access session']")
     expect(banner).to_be_visible(timeout=15000)
     expect(banner).to_contain_text(support_subject["full_name"])
 
-    gallery_page.goto(f"{base_url}/files/{subject_file['uuid']}")
-    gallery_page.wait_for_load_state("networkidle")
+    staff_page.goto(f"{base_url}/files/{subject_file['uuid']}")
+    staff_page.wait_for_load_state("networkidle")
     expect(banner).to_be_visible()
     # Control for the absences below: the owner, on the same file, DOES get the controls.
     subject_ui.goto(f"{base_url}/files/{subject_file['uuid']}")
     expect(subject_ui.get_by_role("button", name=re.compile(r"^Export"))).to_have_count(
         1, timeout=20000
     )
-    expect(gallery_page.get_by_role("button", name=re.compile(r"Export|Download"))).to_have_count(0)
-    expect(gallery_page.get_by_role("link", name=re.compile(r"Chat", re.I))).to_have_count(0)
+    expect(staff_page.get_by_role("button", name=re.compile(r"Export|Download"))).to_have_count(0)
+    expect(staff_page.get_by_role("link", name=re.compile(r"Chat", re.I))).to_have_count(0)
 
-    file_calls = [h for u, h in sent if f"/api/files/{subject_file['uuid']}" in u]
+    file_calls = [(u, h) for u, h in sent if f"/api/files/{subject_file['uuid']}" in u]
     assert file_calls, "the file detail request was never observed"
-    assert all(h == grant_uuid for h in file_calls), file_calls
+    assert all(h == grant_uuid for _, h in file_calls), file_calls
     for url, header in sent:
         if any(p in url for p in ("/api/auth/", "/api/support-access/", "/api/system/")):
             assert header is None, (url, header)
@@ -285,7 +316,7 @@ def test_approved_session_scopes_the_ui_and_the_header(
 
 @pytest.mark.support_access
 def test_subject_revoking_ends_the_live_session(
-    gallery_page: Page,
+    staff_page: Page,
     subject_ui: Page,
     multi_tenant_stack: None,
     backend_url: str,
@@ -297,14 +328,14 @@ def test_subject_revoking_ends_the_live_session(
     grant_uuid = grants(support_subject["uuid"])
     _approve(backend_url, subject_token, grant_uuid)
 
-    _open_settings_section(gallery_page, STAFF_NAV)
-    row = gallery_page.locator(".grant-table tbody tr", has_text=support_subject["full_name"])
+    _open_settings_section(staff_page, STAFF_NAV)
+    row = staff_page.locator(".grant-table tbody tr", has_text=support_subject["full_name"])
     row.first.get_by_role("button", name=re.compile(r"^Start session")).click()
-    banner = gallery_page.locator("section[aria-label='Support access session']")
+    banner = staff_page.locator("section[aria-label='Support access session']")
     expect(banner).to_be_visible(timeout=15000)
 
     revoked = requests.post(
-        f"{backend_url}/api/users/me/support-access/{grant_uuid}/revoke",
+        f"{backend_url}/api/support-access/grants/{grant_uuid}/revoke",
         headers={"Authorization": f"Bearer {subject_token}"},
         json={},
         timeout=30,
@@ -316,33 +347,36 @@ def test_subject_revoking_ends_the_live_session(
 
 @pytest.mark.support_access
 def test_break_glass_needs_ticket_and_typed_confirmation(
-    gallery_page: Page,
+    staff_page: Page,
     multi_tenant_stack: None,
     backend_url: str,
     admin_token: str,
     support_subject: dict[str, str],
 ) -> None:
-    _open_settings_section(gallery_page, STAFF_NAV)
-    gallery_page.get_by_role("button", name=re.compile(r"^Break glass")).click()
-    gallery_page.get_by_role("radio", name=re.compile(r"personal workspace", re.I)).check()
-    gallery_page.locator(".searchable-input").fill(support_subject["email"])
-    gallery_page.locator(".searchable-option").first.click()
-    gallery_page.fill("#bg-reason", "Production outage for this customer in the e2e run")
-    next_button = gallery_page.locator("button[form='break-glass-form']")
-    next_button.click()
-    # No ticket: the form must not advance to the confirmation step.
-    expect(gallery_page.locator("#bg-typed")).to_have_count(0)
+    _open_settings_section(staff_page, STAFF_NAV)
+    staff_page.get_by_role("button", name=re.compile(r"^Break glass")).click()
+    staff_page.get_by_role("radio", name=re.compile(r"personal workspace", re.I)).check()
+    staff_page.locator(".searchable-input").fill(support_subject["email"])
+    staff_page.locator(".searchable-option").first.click()
+    staff_page.fill("#bg-reason", "Production outage for this customer in the e2e run")
+    next_button = staff_page.locator("button[form='break-glass-form']")
+    # No ticket: the form cannot be submitted, so it never reaches the confirmation step.
+    expect(next_button).to_be_disabled()
+    expect(staff_page.locator("#bg-typed")).to_have_count(0)
 
-    gallery_page.fill("#bg-ticket", f"INC-{uuid.uuid4().hex[:6]}")
+    staff_page.fill("#bg-ticket", f"INC-{uuid.uuid4().hex[:6]}")
+    expect(next_button).to_be_enabled()
     next_button.click()
-    confirm = gallery_page.locator("button[form='break-glass-confirm']")
-    expect(gallery_page.locator("#bg-typed")).to_be_visible()
-    gallery_page.fill("#bg-typed", support_subject["full_name"].lower())
+    confirm = staff_page.locator("button[form='break-glass-confirm']")
+    expect(staff_page.locator("#bg-typed")).to_be_visible()
+    # The typed confirmation is the picker's label ("Full Name (email)"), case-sensitive.
+    target_label = f"{support_subject['full_name']} ({support_subject['email']})"
+    staff_page.fill("#bg-typed", target_label.lower())
     expect(confirm).to_be_disabled()
-    gallery_page.fill("#bg-typed", support_subject["full_name"])
+    staff_page.fill("#bg-typed", target_label)
     expect(confirm).to_be_enabled()
     confirm.click()
-    expect(gallery_page.locator(".modal-footer .btn-primary")).to_be_visible(timeout=15000)
+    expect(staff_page.locator(".modal-footer .btn-primary")).to_be_visible(timeout=15000)
 
     # Break-glass grants are active immediately, so the finalizer path must revoke them.
     admin = {"Authorization": f"Bearer {admin_token}"}
@@ -365,16 +399,15 @@ def test_break_glass_needs_ticket_and_typed_confirmation(
 @pytest.mark.support_access
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_support_access_panels_have_no_serious_axe_violations(
-    gallery_page: Page,
+    staff_page: Page,
     multi_tenant_stack: None,
     base_url: str,
     theme: str,
 ) -> None:
-    form_login_with_retry(gallery_page, base_url)
-    set_theme(gallery_page, theme)
+    set_theme(staff_page, theme)
     for section in (STAFF_NAV, REQUESTS_NAV):
-        _open_settings_section(gallery_page, section)
-        gallery_page.wait_for_load_state("networkidle")
-        found = gated_violations(run_axe(gallery_page))
+        _open_settings_section(staff_page, section)
+        staff_page.wait_for_load_state("networkidle")
+        found = gated_violations(run_axe(staff_page, context=".settings-content"))
         assert found == [], [(v["id"], v["impact"]) for v in found]
-        gallery_page.keyboard.press("Escape")
+        staff_page.keyboard.press("Escape")

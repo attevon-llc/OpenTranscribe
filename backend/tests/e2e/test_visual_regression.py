@@ -464,6 +464,16 @@ def _stabilize(page: Page) -> None:
         "document.querySelectorAll('video,audio').forEach(m=>{try{m.pause();"
         "m.currentTime=0;}catch(e){}})"
     )
+    # Web fonts load lazily, and `networkidle` can fire before the first text uses a face. A
+    # capture taken before Poppins lands photographs the fallback sans-serif, and that image
+    # then fails against every correct render (v0.6.0: all ten baselines were recaptured
+    # in the fallback face once). Wait for pending faces, then REFUSE to capture without
+    # the real one, so a missing font fails loudly instead of being baked into a baseline.
+    page.evaluate("document.fonts.ready.then(() => true)")
+    assert page.evaluate("document.fonts.check('600 14px Poppins')"), (
+        "Poppins is not loaded; a visual capture now would bake the fallback font into the "
+        "baseline (is frontend/static/fonts populated by the prebuild step?)"
+    )
     # Kept deliberately: a paint/layout settle before a screenshot. The comparison is a
     # pixel diff, not a locator, so there is nothing to auto-wait on (issue #431).
     page.wait_for_timeout(600)

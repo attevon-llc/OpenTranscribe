@@ -226,8 +226,8 @@ H-mfx, H-ami81, C2-mfx. `--out` holds prose; it is gitignored and is never commi
 | G5 | median latency < 120 s, from the AMI-81 legs |
 | G7 | OFFERED unchanged vs C̄ |
 
-U7 does not exist yet (8.3). Run the window anyway, because `results.json` keeps everything. Build
-U7 afterwards (no GPU needed) and commit its output to `backend/tests/eval/baselines/probe-532h-compare/`.
+U7 is built (8.3). After the window run it over the expanded-set arms and commit its output to
+`backend/tests/eval/baselines/probe-532h-compare/`.
 
 **After the window:**
 
@@ -365,9 +365,12 @@ to stay under 2 GiB and never stop, restart or signal that container; and that
 a summary is hybrid (`meta["overview_citable_suppressed"]="hybrid"`). So `overview_citable=true`
 with H is **silently identical to H**.
 
-**8.3 U7 is missing.** `scripts/compare_probe_arms.py` and `harness/arm_compare.py` do not exist.
-The 2026-09-24 comment does not mention it. Plan step 7 cannot run as written. Use section 5 plus
-`harness/significance.py` (`paired_bootstrap_ci`) until U7 is built.
+**8.3 U7 is built.** `scripts/compare_probe_arms.py` over `harness/arm_compare.py` takes
+`--arm control=DIR --arm arm-d=DIR --arm hybrid=DIR --arm repeat-control=DIR --out DIR` (control and
+hybrid required) and writes metrics-only `arm_compare.{json,md}`. Exit 0 WIN, 1 FAIL, 2 bad input,
+3 VOID. It covers M1, M2, OFFERED, the applied-checks of section 3 and the A/A void rule; M3-M6 and
+G1-G6 are not computed by it. USED is read from the persisted `citations`, never from
+`files_consulted_uuids`.
 
 **8.4 Stale vLLM-network gotcha.** The `probe_chat_rag.py` docstring, `rag-evaluation.md:2425-2437`
 and the `docker-compose.llm-test.yml` header ("Not wired into --fresh isolation") all still require

@@ -807,6 +807,37 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         assert uuids == [str(with_dana.uuid)]
         assert total == 1
 
+    def test_a_renamed_speaker_is_found_under_the_new_name_after_rename_propagation(
+        self,
+        client,
+        user_token_headers,
+        normal_user,
+        db_session,
+        transcript_search_must_not_be_called,
+    ):
+        """#1188: the summary plane carries its own copy of the speaker roster, so a rename
+        that only rewrote the chunk and digest planes left the speaker filter matching the OLD
+        name. Runs the real rename-propagation task and then searches."""
+        from app.tasks.rename_propagation_task import regenerate_rename_digests
+
+        file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        speaker = _add_speaker(
+            db_session, normal_user, file, name="SPEAKER_00", display_name="Alice"
+        )
+        _, before = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])
+        assert before == [str(file.uuid)]
+
+        speaker.display_name = "Bob"
+        db_session.commit()
+        db_session.expire_all()
+        regenerate_rename_digests.run(file_uuids=[str(file.uuid)], new_name="Bob", speaker_id=None)
+        db_session.expire_all()
+
+        _, as_bob = _summary_search(client, user_token_headers, "roadmap", speakers=["Bob"])
+        _, as_alice = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])
+        assert as_bob == [str(file.uuid)]
+        assert as_alice == []
+
     def test_the_file_type_filter_matches_the_mime_family_not_the_literal_word(
         self,
         client,

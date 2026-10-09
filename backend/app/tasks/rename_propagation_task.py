@@ -606,6 +606,15 @@ def regenerate_rename_digests(
                 base_metadata=base_metadata,
                 use_neural=use_neural,
             )
+            # The summary plane carries the same `speakers` roster, and the summary leg
+            # filters on it (#1188); a stale roster makes a speaker-filtered search match
+            # the old name. Rebuilt from Postgres, so it sees the committed rename.
+            indexing_service._index_summary_plane(
+                file_id=file_id,
+                file_uuid=file_uuid,
+                base_metadata=base_metadata,
+                use_neural=use_neural,
+            )
             regenerated_uuids.append(file_uuid)
             owners.setdefault(user_id, []).append(file_uuid)
         except Exception as exc:  # noqa: BLE001 — a digest miss must not fail a rename

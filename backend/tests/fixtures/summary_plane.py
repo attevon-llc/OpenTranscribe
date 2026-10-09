@@ -15,6 +15,7 @@ re-indexes after those same changes.
 from __future__ import annotations
 
 import contextlib
+import os
 import uuid as uuid_pkg
 
 import pytest
@@ -28,6 +29,16 @@ def _summary_plane_index():
     deleting an index per test serialise on the cluster state and time out. Isolation between
     tests comes from emptying it in :func:`summary_plane`, not from a fresh index.
     """
+    # CI forces SKIP_OPENSEARCH=True (there is no cluster there), and a client object still
+    # builds against localhost:9200, so asking it for an index raises ConnectionError at
+    # SETUP and 43 tests ERROR instead of being skipped. These tests need the real plane;
+    # they run in the local gate (run-integration-tests.sh), where the stack is up.
+    if os.environ.get("SKIP_OPENSEARCH", "").lower() == "true":
+        pytest.skip(
+            "summary-plane API tests need a reachable OpenSearch (SKIP_OPENSEARCH is set); "
+            "they run in the local gate against the dev stack"
+        )
+
     from app.services.opensearch_service import get_opensearch_client
     from app.services.search import indexing_service as svc
 

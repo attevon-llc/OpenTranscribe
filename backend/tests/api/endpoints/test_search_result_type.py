@@ -17,6 +17,7 @@ from datetime import datetime
 import pytest
 from fixtures.summary_plane import sync_summary_plane
 
+from app.core.config import settings
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
@@ -814,6 +815,7 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         normal_user,
         db_session,
         transcript_search_must_not_be_called,
+        summary_plane,
     ):
         """#1188: the summary plane carries its own copy of the speaker roster, so a rename
         that only rewrote the chunk and digest planes left the speaker filter matching the OLD
@@ -832,6 +834,9 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         db_session.expire_all()
         regenerate_rename_digests.run(file_uuids=[str(file.uuid)], new_name="Bob", speaker_id=None)
         db_session.expire_all()
+        # The task writes with refresh=false (production is eventually consistent); make the
+        # write searchable so the assertions below do not race the index's refresh interval.
+        summary_plane.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
 
         _, as_bob = _summary_search(client, user_token_headers, "roadmap", speakers=["Bob"])
         _, as_alice = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])

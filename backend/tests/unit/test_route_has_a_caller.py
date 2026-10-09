@@ -165,12 +165,7 @@ _SUPPORT_ACCESS_REASON = (
 
 _NOT_YET_VERIFIED: dict[str, str] = {
     # --- support-access grants (#1122): backend lands first, the SPA follows ---
-    "/api/support-access/grants": _SUPPORT_ACCESS_REASON,
-    "/api/support-access/grants/break-glass": _SUPPORT_ACCESS_REASON,
-    "/api/support-access/grants/{grant_uuid}": _SUPPORT_ACCESS_REASON,
     "/api/support-access/grants/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
-    "/api/support-access/grants/{grant_uuid}/revoke": _SUPPORT_ACCESS_REASON,
-    "/api/support-access/targets/organizations": _SUPPORT_ACCESS_REASON,
     "/api/org-admin/support-access": _SUPPORT_ACCESS_REASON,
     "/api/org-admin/support-access/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
     "/api/org-admin/support-access/{grant_uuid}/approve": _SUPPORT_ACCESS_REASON,

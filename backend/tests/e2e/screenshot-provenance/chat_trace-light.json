@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/chat_trace-light.png",
-  "captured_at": "2026-10-09T12:53:00Z",
-  "git_sha": "498a2ebaa73265f9d3bf1d28545a5c32a50fbf5c",
-  "git_branch": "chore/visual-baselines-v060",
+  "captured_at": "2026-10-09T13:57:09Z",
+  "git_sha": "76cbc732f7da3013b94376414a923e98d4f63961",
+  "git_branch": "feat/v0.6.0-frontend-ux",
   "git_dirty": true,
-  "git_dirty_paths": 12,
-  "reason": "v0.6.0 UI refresh (gallery toolbar, filters, navbar, status indicators, speaker pill, support-access banner)",
+  "git_dirty_paths": 1,
+  "reason": "v0.6.0 UI refresh recaptured with web fonts awaited (first capture baked the fallback face)",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -15,7 +15,7 @@
     "mode": "dev (local source bind-mounted)"
   },
   "change_from_previous": {
-    "status": "identical",
-    "differing_pixels": "0.0000%"
+    "status": "CHANGED",
+    "differing_pixels": "15.3044%"
   }
 }

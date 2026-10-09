@@ -4,7 +4,7 @@
   import { locale, t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { supportSession } from '$stores/supportSession';
-  import Badge from '$components/ui/Badge.svelte';
+  import StatusChip from './StatusChip.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { SupportAccessApi } from '$lib/api/supportAccess';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -82,7 +82,7 @@
   class="banner"
   class:break-glass={breakGlass}
   aria-label={$t('supportAccess.banner.region')}
-  bind:clientHeight={height}
+  bind:offsetHeight={height}
 >
   <div class="message">
     <span class="what">
@@ -92,10 +92,10 @@
         {$t('supportAccess.banner.personal', { name: s.targetLabel })}
       {/if}
     </span>
-    {#if breakGlass}<Badge variant="error">{$t('supportAccess.mode.break_glass')}</Badge>{/if}
-    <Badge variant={s.level === 'read' ? 'warning' : 'info'}>
+    {#if breakGlass}<StatusChip tone="error">{$t('supportAccess.mode.break_glass')}</StatusChip>{/if}
+    <StatusChip tone={s.level === 'read' ? 'warning' : 'info'}>
       {$t(SUPPORT_LEVEL_KEYS[s.level])}
-    </Badge>
+    </StatusChip>
     <span class="expires">
       {#each expiryParts as part, i (i)}
         {#if part === TIME}
@@ -114,7 +114,7 @@
     </button>
     <button
       type="button"
-      class="btn btn-danger"
+      class="btn btn-danger sa-danger"
       disabled={revoking}
       on:click={() => (confirmOpen = true)}
     >

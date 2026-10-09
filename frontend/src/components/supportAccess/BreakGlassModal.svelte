@@ -145,7 +145,7 @@
         duration: durationLabel(duration, $t),
       })}
     </p>
-    <form id="break-glass-confirm" on:submit|preventDefault={confirm}>
+    <form id="break-glass-confirm" class="confirm-form" on:submit|preventDefault={confirm}>
       <label for="bg-typed" class="label" id="bg-typed-label">
         {$t('supportAccess.breakGlass.confirmTypeName', { target: target.label })}
       </label>
@@ -170,7 +170,7 @@
       <button type="button" class="btn btn-secondary" on:click={close}>
         {$t('common.cancel')}
       </button>
-      <button type="submit" form="break-glass-form" class="btn btn-danger" disabled={!canReview}>
+      <button type="submit" form="break-glass-form" class="btn btn-danger sa-danger" disabled={!canReview}>
         {$t('supportAccess.breakGlass.review')}
       </button>
     {:else if step === 'confirm'}
@@ -180,7 +180,7 @@
       <button
         type="submit"
         form="break-glass-confirm"
-        class="btn btn-danger"
+        class="btn btn-danger sa-danger"
         aria-describedby="bg-typed-label"
         disabled={!nameMatches || submitting}
       >
@@ -220,6 +220,9 @@
     color: var(--text-color);
     font-size: 0.8125rem;
     line-height: 1.5;
+  }
+  .confirm-form {
+    margin-top: 1rem;
   }
   .max {
     margin: -0.5rem 0 1rem 0;

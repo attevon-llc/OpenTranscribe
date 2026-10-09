@@ -135,7 +135,7 @@
       <span class="bg-wrap" title={isSuperAdmin ? undefined : $t('supportAccess.breakGlass.superAdminOnly')}>
         <button
           type="button"
-          class="btn btn-danger"
+          class="btn btn-danger sa-danger"
           disabled={!isSuperAdmin}
           aria-describedby={isSuperAdmin ? undefined : 'bg-locked-reason'}
           on:click={() => (breakGlassOpen = true)}
@@ -156,6 +156,11 @@
     <Tabs {tabs} activeId={scope} on:change={changeScope} />
   {/if}
 
+  <div
+    role={isSuperAdmin ? 'tabpanel' : undefined}
+    id={isSuperAdmin ? `tabpanel-${scope}` : undefined}
+    aria-labelledby={isSuperAdmin ? `tab-${scope}` : undefined}
+  >
   {#if loading && !loaded}
     <div class="state"><Spinner /></div>
   {:else if loadFailed}
@@ -185,6 +190,7 @@
       <OpenFileByUuid />
     {/if}
   {/if}
+  </div>
 </div>
 
 <RequestAccessModal isOpen={requestOpen} onClose={() => (requestOpen = false)} on:created={onCreated} />

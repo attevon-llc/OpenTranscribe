@@ -10,6 +10,7 @@
   import "../styles/tables.css";
   import "../styles/animations.css";
   import "../styles/search.css";
+  import "../styles/support-access.css";
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
@@ -285,9 +286,14 @@
       </main>
     {:else if $isAuthenticated && !isPublicPath}
       <!-- Authenticated user on a protected route — render the app -->
-      <AppContent>
-        <slot />
-      </AppContent>
+      <!-- A support session switches which tenant the same login reads. Keying on the grant
+           remounts the page on both edges, so nothing rendered under one scope survives into
+           the other (a same-route goto would not refetch). -->
+      {#key $supportSession.grantUuid}
+        <AppContent>
+          <slot />
+        </AppContent>
+      {/key}
     {:else if !$isAuthenticated && isPublicPath}
       <!-- Unauthenticated user on a public page (login/register/forgot-password) — render it -->
       <main id="main-content" tabindex="-1" class="content no-navbar">

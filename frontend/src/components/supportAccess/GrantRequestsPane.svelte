@@ -272,6 +272,7 @@
     gap: 0.4rem;
     font-size: 0.8125rem;
     color: var(--text-secondary);
+    white-space: nowrap;
   }
   select {
     padding: 0.3rem 0.5rem;

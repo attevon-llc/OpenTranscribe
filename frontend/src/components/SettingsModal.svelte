@@ -573,6 +573,10 @@
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Escape' && isOpen) {
+      // A nested BaseModal (support-access request, break-glass, approve, access log...) owns
+      // this Escape: its own handler closes it. Closing the whole settings dialog as well threw
+      // away an in-progress break-glass confirmation along with it.
+      if (document.querySelector('.modal-backdrop')) return;
       attemptClose();
     }
   }

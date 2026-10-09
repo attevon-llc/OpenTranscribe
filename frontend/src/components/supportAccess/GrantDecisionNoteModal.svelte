@@ -48,7 +48,7 @@
     <button type="button" class="btn btn-secondary" on:click={onClose}>
       {$t('common.cancel')}
     </button>
-    <button type="submit" form="grant-note-form" class="btn btn-danger" disabled={busy}>
+    <button type="submit" form="grant-note-form" class="btn btn-danger sa-danger" disabled={busy}>
       {mode === 'deny' ? $t('supportAccess.action.deny') : $t('supportAccess.action.revoke')}
     </button>
   </svelte:fragment>

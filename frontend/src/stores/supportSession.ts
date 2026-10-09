@@ -144,9 +144,11 @@ async function start(uuid: string, redirect: boolean): Promise<boolean> {
     remainingSeconds: 0,
   };
   next.remainingSeconds = remainingOf(next);
-  state.set(next);
+  // The header goes live BEFORE the store flips: the layout remounts the page when `grantUuid`
+  // changes, and that page's first requests must already carry (or have dropped) the grant.
   setActiveSupportGrant(grant.uuid);
   writeStored(grant.uuid);
+  state.set(next);
   timer = setInterval(tick, 1000);
   if (redirect) await goto('/');
   return true;
@@ -160,19 +162,28 @@ async function activate(grantUuid: string): Promise<boolean> {
   return ok;
 }
 
+let ending = false;
+
 /** Stop acting under the grant. Idempotent: a second call is a no-op. */
 async function end(reason: EndReason): Promise<void> {
-  const current = get(state);
-  if (!current.active) {
+  if (!get(state).active) {
     // Nothing live, but a stale pointer must still go (logout, failed restore).
     writeStored(null);
     return;
   }
-  stopTimer();
-  setActiveSupportGrant(null);
-  writeStored(null);
-  state.set(INACTIVE);
-  await purgeTenantDataCaches();
+  if (ending) return;
+  ending = true;
+  try {
+    stopTimer();
+    setActiveSupportGrant(null);
+    writeStored(null);
+    // Purge BEFORE the store flips: flipping remounts the page, and a purge that landed after
+    // its first fetches would clear what the new scope had just loaded.
+    await purgeTenantDataCaches();
+    state.set(INACTIVE);
+  } finally {
+    ending = false;
+  }
   if (reason !== 'logout') {
     const message = get(t)(SUPPORT_SESSION_END_KEYS[reason]);
     if (reason === 'user') toastStore.info(message);

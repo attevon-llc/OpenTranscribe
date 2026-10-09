@@ -30,7 +30,7 @@
   import { SUPPORT_LEVEL_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import { locale, t } from '$stores/locale';
-  import Badge from '$components/ui/Badge.svelte';
+  import StatusChip from './StatusChip.svelte';
   import GrantStatusBadge from './GrantStatusBadge.svelte';
   import { durationLabel, grantTargetLabel, userLabel } from '$lib/supportAccess/format';
 
@@ -53,7 +53,9 @@
   function when(iso: string | null): string {
     if (!iso) return '';
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleString($locale);
+    return Number.isNaN(d.getTime())
+      ? iso
+      : d.toLocaleString($locale, { dateStyle: 'medium', timeStyle: 'short' });
   }
 
   const LABEL: Record<Exclude<RowAction, 'inUse'>, string> = {
@@ -66,8 +68,8 @@
   const BUTTON_CLASS: Record<Exclude<RowAction, 'inUse'>, string> = {
     start: 'btn btn-primary',
     approve: 'btn btn-primary',
-    deny: 'btn btn-danger',
-    revoke: 'btn btn-danger',
+    deny: 'btn btn-danger sa-danger',
+    revoke: 'btn btn-danger sa-danger',
     viewLog: 'btn btn-secondary',
   };
 </script>
@@ -101,9 +103,9 @@
             {/if}
           </td>
           <td>{$t(SUPPORT_LEVEL_KEYS[grant.access_level])}</td>
-          <td>
+          <td class="mode">
             {#if grant.grant_mode === 'break_glass'}
-              <Badge variant="error">{$t('supportAccess.mode.break_glass')}</Badge>
+              <StatusChip tone="error">{$t('supportAccess.mode.break_glass')}</StatusChip>
               {#if grant.ticket_ref}
                 <span class="secondary">{$t('supportAccess.col.ticket')}: <bdi>{grant.ticket_ref}</bdi></span>
               {/if}
@@ -119,9 +121,10 @@
           <td class="when"><bdi>{when(grant.expires_at)}</bdi></td>
           <td><GrantStatusBadge status={grant.status} /></td>
           <td class="actions-col">
+            <div class="row-actions">
             {#each rowActions(grant.status, perspective, grant.uuid === activeGrantUuid) as action (action)}
               {#if action === 'inUse'}
-                <Badge variant="info">{$t('supportAccess.status.inUse')}</Badge>
+                <StatusChip tone="info">{$t('supportAccess.status.inUse')}</StatusChip>
               {:else}
                 <button
                   type="button"
@@ -134,6 +137,7 @@
                 </button>
               {/if}
             {/each}
+            </div>
           </td>
         </tr>
       {/each}
@@ -147,6 +151,8 @@
   }
   .grant-table {
     width: 100%;
+    /* Below this the columns crush into one-letter lines; scroll the wrapper instead. */
+    min-width: 40rem;
     border-collapse: collapse;
     font-size: 0.8125rem;
   }
@@ -157,7 +163,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-secondary);
+    color: var(--text-on-tint);
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }
@@ -169,6 +175,12 @@
   }
   tr.break-glass td:first-child {
     border-inline-start: 3px solid var(--error-color);
+  }
+  .who {
+    min-width: 8rem;
+  }
+  .mode {
+    white-space: nowrap;
   }
   .who .primary {
     display: block;
@@ -182,20 +194,25 @@
     word-break: break-word;
   }
   .reason {
+    min-width: 8rem;
     max-width: 18rem;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
   .when {
-    white-space: nowrap;
+    min-width: 6rem;
   }
   .actions-col {
-    text-align: end;
-    white-space: nowrap;
+    min-width: 9rem;
+  }
+  .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
   }
   .btn-row {
     padding: 0.3rem 0.7rem;
     font-size: 0.75rem;
-    margin-inline-start: 0.35rem;
   }
   .sr-only {
     position: absolute;

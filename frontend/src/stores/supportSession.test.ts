@@ -202,6 +202,48 @@ describe('supportSession.end', () => {
   });
 });
 
+describe('ordering around the store flip (the layout remounts the page on it)', () => {
+  it('start: the header is already live and the caches already purged when the store goes active', async () => {
+    grantWithServerTime(grant(), 0);
+    const seen: { active: boolean; header: boolean; purges: number }[] = [];
+    const unsubscribe = supportSession.subscribe((s) => {
+      seen.push({
+        active: s.active,
+        header: 'X-Support-Access-Grant' in getSupportAccessHeaders('/files/x'),
+        purges: h.purge.mock.calls.length,
+      });
+    });
+    await supportSession.activate(UUID);
+    unsubscribe();
+    const activeSnapshot = seen.find((x) => x.active);
+    expect(activeSnapshot).toEqual({ active: true, header: true, purges: 1 });
+  });
+
+  it('end: the header is already gone and the caches already purged when the store goes inactive', async () => {
+    grantWithServerTime(grant(), 0);
+    await supportSession.activate(UUID);
+    h.purge.mockClear();
+    const seen: { active: boolean; header: boolean; purges: number }[] = [];
+    const unsubscribe = supportSession.subscribe((s) => {
+      seen.push({
+        active: s.active,
+        header: 'X-Support-Access-Grant' in getSupportAccessHeaders('/files/x'),
+        purges: h.purge.mock.calls.length,
+      });
+    });
+    await supportSession.end('user');
+    unsubscribe();
+    expect(seen.at(-1)).toEqual({ active: false, header: false, purges: 1 });
+  });
+
+  it('two overlapping end() calls still raise one toast', async () => {
+    grantWithServerTime(grant(), 0);
+    await supportSession.activate(UUID);
+    await Promise.all([supportSession.end('revoked'), supportSession.end('revoked')]);
+    expect(h.toastError).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('supportSession.restore', () => {
   it('re-activates a still-active grant from tab storage without redirecting', async () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ grantUuid: UUID }));

@@ -6,7 +6,8 @@
  * community install whose capabilities fetch failed. These tests pin that.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
@@ -159,5 +160,24 @@ describe('support-access requests nav row (everyone decides for their own worksp
       offset: 0,
     });
     expect(supportApi.listRequests).not.toHaveBeenCalledWith('org', expect.anything());
+  });
+});
+
+describe('Escape with a nested dialog open', () => {
+  it('closes only the nested dialog and leaves the settings modal (and its draft) open', async () => {
+    setUser('admin');
+    setMode('multi');
+    const container = await open();
+    const nested = document.createElement('div');
+    nested.className = 'modal-backdrop';
+    document.body.appendChild(nested);
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    expect(container.querySelector('.settings-modal')).not.toBeNull();
+    expect(get(settingsModalStore).isOpen).toBe(true);
+
+    nested.remove();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    expect(get(settingsModalStore).isOpen).toBe(false);
   });
 });

@@ -37,9 +37,15 @@
   {#if orgTab}
     <Tabs {tabs} activeId={active} on:change={changeTab} />
   {/if}
-  {#key active}
-    <GrantRequestsPane perspective={active} on:countchange={() => dispatch('countchange')} />
-  {/key}
+  <div
+    role={orgTab ? 'tabpanel' : undefined}
+    id={orgTab ? `tabpanel-${active}` : undefined}
+    aria-labelledby={orgTab ? `tab-${active}` : undefined}
+  >
+    {#key active}
+      <GrantRequestsPane perspective={active} on:countchange={() => dispatch('countchange')} />
+    {/key}
+  </div>
 </div>
 
 <style>

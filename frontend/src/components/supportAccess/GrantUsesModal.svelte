@@ -134,7 +134,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-secondary);
+    color: var(--text-on-tint);
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }

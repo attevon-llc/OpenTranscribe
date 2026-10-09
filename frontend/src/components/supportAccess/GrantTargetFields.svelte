@@ -171,6 +171,13 @@
     margin-inline-end: 1.25rem;
     font-size: 0.875rem;
     color: var(--text-color);
+    white-space: nowrap;
+  }
+  /* The app-wide `input { width: 100% }` would otherwise stretch the radio and wrap its label. */
+  .radio input {
+    width: auto;
+    flex: none;
+    margin: 0;
   }
   select,
   textarea {

@@ -20,6 +20,7 @@ from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
 from .cancellation import finish_cancelled
+from .context import NO_SPEECH_DETECTED_MESSAGE
 from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
@@ -118,10 +119,7 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
                 logger.warning(
                     "Diarize task: no segments from transcription — skipping diarization"
                 )
-                error_msg = (
-                    "No audio content could be detected in this file. "
-                    "The file may be corrupted, contain only silence, or be in an unsupported format."
-                )
+                error_msg = NO_SPEECH_DETECTED_MESSAGE
                 return _handle_transcription_failure(ctx, task_id, error_msg, "no_valid_audio")
 
             engine_config = EngineConfig.from_snapshot(transcript.config_snapshot)

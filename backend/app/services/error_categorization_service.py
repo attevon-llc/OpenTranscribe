@@ -119,6 +119,15 @@ class FailureClassification:
     user_message: str
 
 
+#: Raised when ASR decoded the file fine and found nothing to transcribe. It must classify as
+#: NO_SPEECH: the old wording named "corrupted", which matched FILE_QUALITY first and told the
+#: user a perfectly good silent file was damaged (#1189).
+NO_SPEECH_DETECTED_MESSAGE = (
+    "No speech could be detected in this file. "
+    "It may contain only silence, music or background noise."
+)
+
+
 class ErrorCategorizationService:
     """Service for categorizing errors and providing user suggestions."""
 

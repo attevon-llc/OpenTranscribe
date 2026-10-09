@@ -18,6 +18,7 @@ from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
+from app.services.error_categorization_service import NO_SPEECH_DETECTED_MESSAGE
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.transcription import cuda_health
 from app.utils.task_utils import update_media_file_status
@@ -333,11 +334,7 @@ def _validate_transcription_result(
 ) -> dict | None:
     """Validate transcription result has valid content. Returns error dict if invalid, None if valid."""
     if not result or not result.get("segments") or len(result["segments"]) == 0:
-        error_msg = (
-            "No audio content could be detected in this file. "
-            "The file may be corrupted, contain only silence, or be in an unsupported format. "
-            "Please check the file and try uploading again."
-        )
+        error_msg = NO_SPEECH_DETECTED_MESSAGE
         logger.warning(f"No valid audio content found in file {ctx.file_id}: {ctx.file_name}")
         return _handle_transcription_failure(ctx, task_id, error_msg, "no_valid_audio")
 

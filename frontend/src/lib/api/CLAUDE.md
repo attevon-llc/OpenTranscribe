@@ -36,3 +36,6 @@ call these functions, not `axios` directly.
 ## Gotchas
 
 - Auth/token handling is centralized in `$lib/axios` + `$stores/auth` — don't duplicate it here.
+- `supportAccess.ts` mirrors `backend/app/schemas/support_access.py` (#1122): one `SupportAccessApi`
+  with `staff | org | workspace` perspectives. Its routes 404 outside multi-tenant mode, and
+  `/support-access/`, `/org-admin/` and `/users/me/support-access` never carry the grant header.

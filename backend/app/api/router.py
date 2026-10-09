@@ -35,6 +35,7 @@ from .endpoints import speaker_clusters
 from .endpoints import speaker_profiles
 from .endpoints import speakers
 from .endpoints import summarization
+from .endpoints import support_access
 from .endpoints import system
 from .endpoints import tags
 from .endpoints import tasks
@@ -56,7 +57,7 @@ api_router = APIRouter()
 
 # Function to include routers with proper route handling for consistent frontend-backend communication
 def include_router_with_consistency(
-    router, prefix, tags=None, capability=None, platform_admin_bypass=True
+    router, prefix, tags=None, capability=None, platform_admin_bypass=True, refuse_under_grant=None
 ):
     """Include a router with consistent route handling that works both with and without trailing slashes
 
@@ -73,26 +74,39 @@ def include_router_with_consistency(
             platform staff bypass applies). See app.core.capabilities.
         platform_admin_bypass: Let superusers through a disabled capability.
             Off for deployment-locked surfaces, which no account may reach.
+        refuse_under_grant: Answer 403 ``support_grant_action_not_permitted`` to a request
+            carrying a support-access grant header. ``None`` (default) means "yes for every
+            ``/admin`` prefix, no otherwise": a grant is for in-product diagnosis of one
+            tenant and never reaches deployment administration, chat/LLM, search or
+            account surfaces (#1122).
     """
     if tags is None:
         tags = [prefix.strip("/")]  # Default tag based on prefix
 
     # Ensure prefix starts with / but doesn't end with one
     normalized_prefix = "/" + prefix.strip("/")
+    if refuse_under_grant is None:
+        refuse_under_grant = normalized_prefix == "/admin" or normalized_prefix.startswith(
+            "/admin/"
+        )
 
-    dependencies = None
+    from fastapi import Depends
+
+    dependencies = []
     if capability is not None:
-        from fastapi import Depends
-
         from app.core.capabilities import require_capability
 
-        dependencies = [
+        dependencies.append(
             Depends(require_capability(capability, platform_admin_bypass=platform_admin_bypass))
-        ]
+        )
+    if refuse_under_grant:
+        from .deps_context import refuse_under_support_grant
+
+        dependencies.append(Depends(refuse_under_support_grant))
 
     # Include the router with the normalized prefix
     api_router.include_router(
-        router, prefix=normalized_prefix, tags=tags, dependencies=dependencies
+        router, prefix=normalized_prefix, tags=tags, dependencies=dependencies or None
     )
 
 
@@ -100,7 +114,9 @@ def include_router_with_consistency(
 include_router_with_consistency(auth.router, prefix="/auth", tags=["auth"])
 include_router_with_consistency(files_router, prefix="/files", tags=["files"])
 include_router_with_consistency(file_management_router, prefix="/files", tags=["file-management"])
-include_router_with_consistency(search.router, prefix="/search", tags=["search"])
+include_router_with_consistency(
+    search.router, prefix="/search", tags=["search"], refuse_under_grant=True
+)
 include_router_with_consistency(speakers.router, prefix="/speakers", tags=["speakers"])
 include_router_with_consistency(
     speaker_profiles.router, prefix="/speaker-profiles", tags=["speaker-profiles"]
@@ -110,7 +126,15 @@ include_router_with_consistency(
 )
 include_router_with_consistency(comments.router, prefix="/comments", tags=["comments"])
 include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
+# The grantee's own pending-request surface; registered before users.router so
+# /users/me/support-access is not read as a /users/{uuid}/... path.
+include_router_with_consistency(
+    support_access.me_router, prefix="/users/me/support-access", tags=["support-access"]
+)
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
+include_router_with_consistency(
+    support_access.router, prefix="/support-access", tags=["support-access"]
+)
 include_router_with_consistency(
     watch_sources.router,
     prefix="/watch-sources",
@@ -133,6 +157,12 @@ include_router_with_consistency(
     org_admin.router,
     prefix="/org-admin",
     tags=["org-admin"],
+    capability="organizations",
+)
+include_router_with_consistency(
+    support_access.org_router,
+    prefix="/org-admin/support-access",
+    tags=["support-access"],
     capability="organizations",
 )
 include_router_with_consistency(
@@ -232,8 +262,11 @@ include_router_with_consistency(
     prefix="/chat",
     tags=["chat"],
     capability="chat.rag",
+    refuse_under_grant=True,
 )
-include_router_with_consistency(chat.user_router, prefix="/user-settings", tags=["chat-settings"])
+include_router_with_consistency(
+    chat.user_router, prefix="/user-settings", tags=["chat-settings"], refuse_under_grant=True
+)
 include_router_with_consistency(chat.admin_router, prefix="/admin/chat-settings", tags=["admin"])
 include_router_with_consistency(
     redaction_settings.admin_router, prefix="/admin/redaction-policy", tags=["admin"]

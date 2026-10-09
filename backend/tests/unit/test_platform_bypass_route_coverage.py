@@ -20,15 +20,6 @@ from typing import Any
 
 #: Route-level reasons, keyed by exact "METHOD path".
 EXACT: dict[str, str] = {
-    "POST /api/files/complete": (
-        "upload completion: creates the caller's own file in their own scope; refused "
-        "outright under a support grant"
-    ),
-    "POST /api/files/multipart/parts": "upload signing for the caller's own pending upload",
-    "GET /api/files/bulk-export-stream": (
-        "authorized by an HMAC-signed job id minted at export prepare, not by the header; "
-        "exports are refused under a grant"
-    ),
     "POST /api/files/waveforms/generate": "admin-gated bulk waveform backfill (plan 3.3, class P)",
     "GET /api/files/waveforms/status": "admin-gated instance-wide waveform coverage counts",
     "GET /api/files/youtube/quota": "the caller's own ingestion quota; no tenant content",
@@ -48,9 +39,9 @@ EXACT: dict[str, str] = {
 
 #: Prefix-level reasons, keyed by a path prefix.
 PREFIXES: dict[str, str] = {
-    "/api/admin/": (
-        "platform operations gated to admins (plan 3.3, class P); admins hold them without a "
-        "grant, so a grant is never needed and the header is ignored by design"
+    "/api/support-access/": (
+        "the grant lifecycle itself: it authorizes on the caller's platform role and never "
+        "reads the grant header (a grant cannot be used to manage grants)"
     ),
     "/api/auth/": "session lifecycle: never resolves the grant header (plan 4 rule 10)",
     "/api/system/": "system status and capabilities; never resolves the grant header (rule 10)",
@@ -63,11 +54,6 @@ PREFIXES: dict[str, str] = {
     "/api/embeddings/": "admin embedding-model migration control plane",
     "/api/speaker-attributes/": "admin speaker-attribute migration control plane",
     "/api/speakers/combined-migration/": "admin speaker-embedding migration control plane",
-    "/api/search/models": "admin neural-search model lifecycle; no tenant content",
-    "/api/search/reindex": "admin reindex control plane; no tenant content returned",
-    "/api/search/repair-indices": "admin index repair; no tenant content returned",
-    "/api/search/degraded-embeddings": "admin embedding-health listing; ids and counts only",
-    "/api/search/reembed-degraded": "admin re-embed dispatch; no tenant content returned",
     "/api/tasks/system/": "admin recovery jobs (plan 3.3, class P)",
     "/api/tasks/recover-stuck-tasks": "admin recovery job (plan 3.3, class P)",
     "/api/tasks/fix-inconsistent-files": "admin recovery job (plan 3.3, class P)",

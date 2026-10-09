@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
@@ -90,7 +91,11 @@ def _resolve_subtitle_redaction(
     return cfg, reveal
 
 
-@router.get("/{file_uuid}/subtitles", response_class=Response)
+@router.get(
+    "/{file_uuid}/subtitles",
+    response_class=Response,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def get_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
@@ -283,7 +288,7 @@ class BulkExportPrepareRequest(BaseModel):
     include_speakers: bool = True
 
 
-@router.post("/bulk-export/prepare")
+@router.post("/bulk-export/prepare", dependencies=[Depends(refuse_under_support_grant)])
 def prepare_bulk_export(
     request: BulkExportPrepareRequest = Body(...),
     db: Session = Depends(get_db),
@@ -355,7 +360,7 @@ def prepare_bulk_export(
     return {"status": "processing", "job_id": job_id}
 
 
-@router.get("/bulk-export-stream")
+@router.get("/bulk-export-stream", dependencies=[Depends(refuse_under_support_grant)])
 def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
     current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream

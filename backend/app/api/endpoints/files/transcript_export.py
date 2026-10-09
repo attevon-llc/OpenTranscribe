@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import Comment
@@ -90,7 +91,11 @@ def _resolve_export_redaction(
     return cfg, reveal
 
 
-@router.get("/{file_uuid}/export", response_class=Response)
+@router.get(
+    "/{file_uuid}/export",
+    response_class=Response,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def export_transcript(
     file_uuid: str,
     db: Session = Depends(get_db),

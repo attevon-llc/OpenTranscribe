@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 
 # Deployment configuration is the super_admin tier: this router
 # holds SMTP/S3/SMB credentials for automated import.
@@ -623,7 +624,9 @@ def list_watch_sources(
     )
 
 
-@router.post("", response_model=WatchSourceResponse)
+@router.post(
+    "", response_model=WatchSourceResponse, dependencies=[Depends(refuse_under_support_grant)]
+)
 def create_watch_source(
     data: WatchSourceCreate,
     db: Session = Depends(get_db),

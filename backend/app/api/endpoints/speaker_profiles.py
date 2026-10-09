@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.deps_context import scope_to_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import MAX_AVATAR_SIZE
@@ -176,7 +177,9 @@ def list_speaker_profiles(
             avatar_url = None
             if profile.avatar_path:
                 try:
-                    avatar_url = get_file_url(profile.avatar_path, expires=3600)
+                    avatar_url = get_file_url(
+                        profile.avatar_path, expires=ctx.bypass.presign_ttl(3600)
+                    )
                 except Exception:
                     logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
 
@@ -223,7 +226,9 @@ def list_speaker_profiles(
         raise ErrorHandler.internal_error() from e
 
 
-@router.post("/profiles", response_model=dict[str, Any])
+@router.post(
+    "/profiles", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 def create_speaker_profile(
     name: str,
     description: str | None = None,
@@ -1062,7 +1067,11 @@ def list_speaker_collections(
         raise ErrorHandler.internal_error() from e
 
 
-@router.post("/collections", response_model=dict[str, Any])
+@router.post(
+    "/collections",
+    response_model=dict[str, Any],
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def create_speaker_collection(
     name: str,
     description: str | None = None,

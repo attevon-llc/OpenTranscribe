@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _resolve_tag
 from app.api.endpoints.tags._common import logger
@@ -36,7 +37,7 @@ from app.services.tag_service import on_tags_changed
 from app.utils.error_handlers import ErrorHandler
 
 
-@router.post("", response_model=TagSchema)
+@router.post("", response_model=TagSchema, dependencies=[Depends(refuse_under_support_grant)])
 def create_tag(
     tag_data: TagBase,
     db: Session = Depends(get_db),

@@ -239,7 +239,7 @@ def get_file_collections(
         return []
 
 
-def set_file_urls(db_file: MediaFile) -> None:
+def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.none()) -> None:
     """
     Set download, preview, and thumbnail URLs for a media file.
 
@@ -249,6 +249,8 @@ def set_file_urls(db_file: MediaFile) -> None:
 
     Args:
         db_file: MediaFile object to update
+        bypass: The request's platform bypass; under a support-access grant the presigned
+            thumbnail URL is capped to a few minutes (issue #1122).
     """
     from app.core.config import settings
     from app.services.minio_service import get_file_url
@@ -274,7 +276,7 @@ def set_file_urls(db_file: MediaFile) -> None:
             try:
                 db_file.thumbnail_url = get_file_url(  # type: ignore[attr-defined]
                     str(db_file.thumbnail_path),
-                    expires=settings.THUMBNAIL_URL_EXPIRE_SECONDS,
+                    expires=bypass.presign_ttl(settings.THUMBNAIL_URL_EXPIRE_SECONDS),
                 )
             except Exception as e:
                 logger.warning(f"Failed to generate presigned thumbnail URL: {e}")
@@ -560,7 +562,9 @@ def _resolve_redaction_for_request(
     """Resolve (effective_cfg, reveal_categories) for a transcript read.
 
     The owner (and admins, audited) may set ``redact=false`` to reveal NON-forced
-    categories; admin-forced categories stay masked. Non-owners never reveal.
+    categories; admin-forced categories stay masked. Non-owners never reveal. In
+    multi-tenant mode only the owner reveals, and under a support-access grant the policy
+    that applies is the owner's, not the staff member's.
 
     Args:
         organization_id: The requester's active tenant scope. ``UNSCOPED`` (the
@@ -576,7 +580,14 @@ def _resolve_redaction_for_request(
         from app.services.redaction.config import resolve_effective_config
 
         resolved_org_id = None if isinstance(organization_id, _Unscoped) else organization_id
-        cfg = resolve_effective_config(db, current_user.id, organization_id=resolved_org_id)
+        if bypass.under_grant:
+            # Support sees exactly what the tenant's policy shows: the policy of the file's
+            # OWNER in the file's tenant, never the staff member's own (looser) preferences.
+            cfg = resolve_effective_config(
+                db, int(db_file.user_id), organization_id=db_file.organization_id
+            )
+        else:
+            cfg = resolve_effective_config(db, current_user.id, organization_id=resolved_org_id)
     except Exception as e:
         # FAIL CLOSED. Returning (None, set()) told every downstream reader that
         # redaction was off: `_apply_redaction` short-circuits on a None config
@@ -990,7 +1001,7 @@ def get_media_file_detail(
             )
 
         # Set URLs
-        set_file_urls(db_file)
+        set_file_urls(db_file, bypass)
 
         # Resolve read-time redaction config for the caller.
         redaction_cfg, reveal_categories = _resolve_redaction_for_request(

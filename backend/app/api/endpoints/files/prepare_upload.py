@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.locked_settings import effective_whisper_model
@@ -310,7 +311,9 @@ def _discard_prepared_record(db: Session, db_file: MediaFile) -> None:
     db.commit()
 
 
-@router.post("/prepare", response_model=dict[str, Any])
+@router.post(
+    "/prepare", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 async def prepare_upload(
     request: PrepareUploadRequest,
     http_request: Request,

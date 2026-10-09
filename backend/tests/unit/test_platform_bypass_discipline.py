@@ -116,6 +116,15 @@ def scan_tree() -> set[str]:
 #: ``key -> reason``. Classes: P = platform operation, Q = quarantine review, N = not the
 #: platform-admin flag at all (an unrelated field that happens to share the name).
 ALLOWLIST: dict[str, str] = {
+    "services/support_access_lifecycle.py::_refuse_if_not_independent": (
+        "P: decides who may approve a request for platform staff (a platform admin must not "
+        "approve another platform admin's request, decision D2); a role check on the approver, "
+        "never a content decision"
+    ),
+    "services/support_access_service.py::resolve_active_grant": (
+        "P: a grant is usable only while its grantee still holds the platform role, so a "
+        "demoted admin's grant dies with the role; it narrows access, it never widens it"
+    ),
     "api/endpoints/admin.py::quarantine_media_file": (
         "P: abuse/DMCA takedown is an admin-gated platform operation; it flips a quarantine "
         "flag on the named file and returns no tenant content (plan 3.3)"

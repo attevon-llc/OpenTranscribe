@@ -280,6 +280,38 @@ _ACTOR: dict[str, Disposition] = {
         "v387. prompts.share_prompt accepts owner OR admin, so this points at a row "
         "the owner-scoped sweep never matches.",
     ),
+    "support_access_grant.grantee_user_id": Disposition(
+        SET_NULL,
+        "SupportAccessGrant",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v432 (#1122). A grant is the evidence that support touched a tenant, so erasing the "
+        "staff account must not delete it. A grant whose grantee is gone is permanently "
+        "unusable; the row and its use log stay. Retention of these rows after erasure is "
+        "ids-only and pending legal confirmation (plan Appendix B, D5).",
+    ),
+    "support_access_grant.subject_user_id": Disposition(
+        SET_NULL,
+        "SupportAccessGrant",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v432 (#1122). The personal-scope target of a grant. Erasing the subject nulls the "
+        "link and leaves the audit row; the grant can no longer be used.",
+    ),
+    "support_access_grant.decided_by_user_id": Disposition(
+        SET_NULL,
+        "SupportAccessGrant",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v432 (#1122). Who approved or denied; the decision survives the approver leaving.",
+    ),
+    "support_access_grant.revoked_by_user_id": Disposition(
+        SET_NULL,
+        "SupportAccessGrant",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v432 (#1122). Who revoked; the revocation survives the revoker leaving.",
+    ),
     "erasure_ledger.actor_user_id": Disposition(
         SET_NULL,
         "ErasureLedgerEntry",

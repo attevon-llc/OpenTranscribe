@@ -125,6 +125,16 @@ class AuditEventType(StrEnum):
     PLATFORM_ADMIN_CONTENT_ACCESS = "platform_admin.content.access"
     PLATFORM_ADMIN_METADATA_ACCESS = "platform_admin.metadata.access"
 
+    # Support-access grants (issue #1122). ``user_id`` is the actor, ``organization_id`` the
+    # target tenant and ``target_user_id`` the subject user (personal workspace) or the
+    # grantee (decisions). Details carry ids, levels and the route, never content.
+    SUPPORT_ACCESS_REQUESTED = "support_access.requested"
+    SUPPORT_ACCESS_APPROVED = "support_access.approved"
+    SUPPORT_ACCESS_DENIED = "support_access.denied"
+    SUPPORT_ACCESS_REVOKED = "support_access.revoked"
+    SUPPORT_ACCESS_BREAK_GLASS = "support_access.break_glass"
+    SUPPORT_ACCESS_USED = "support_access.used"
+
 
 class AuditOutcome(StrEnum):
     """Audit event outcomes."""

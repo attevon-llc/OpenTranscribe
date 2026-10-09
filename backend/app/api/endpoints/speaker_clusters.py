@@ -243,7 +243,7 @@ def get_speaker_media_preview(
         try:
             media_presigned_url = get_file_url(
                 source.object_name,
-                expires=settings.MEDIA_URL_EXPIRE_SECONDS,
+                expires=ctx.bypass.presign_ttl(settings.MEDIA_URL_EXPIRE_SECONDS),
                 content_type=source.content_type,
             )
         except Exception as e:

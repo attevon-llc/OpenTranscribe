@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
@@ -159,7 +160,9 @@ def _fingerprint_object(task_id: str | None, storage_path: str, size: int) -> st
         return None
 
 
-@router.post("/complete", response_model=dict[str, Any])
+@router.post(
+    "/complete", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 def complete_upload(
     request: CompleteUploadRequest,
     http_request: Request,

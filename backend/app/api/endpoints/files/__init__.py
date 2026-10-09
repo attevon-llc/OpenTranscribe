@@ -33,6 +33,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
 from app.auth.rate_limit import get_directory_rate_limit
@@ -160,7 +161,7 @@ router.include_router(segments_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
 
-@router.post("", response_model=MediaFileSchema)
+@router.post("", response_model=MediaFileSchema, dependencies=[Depends(refuse_under_support_grant)])
 async def upload_media_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -398,7 +399,7 @@ def list_media_files(
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
-        set_file_urls(file)
+        set_file_urls(file, ctx.bypass)
 
         # Use the FormattingService method which handles formatting correctly
         # Pass speakers for speaker_summary in list view
@@ -680,6 +681,10 @@ def get_media_file_stream_url(
             detail=f"{media_type.title()} not found for this file",
         )
 
+    # A presigned URL is a bearer token that survives revocation of a support-access grant,
+    # so under one it is capped to a few minutes (issue #1122); otherwise unchanged.
+    expires_seconds = ctx.bypass.presign_ttl(expires_seconds)
+
     # Generate presigned URL (uses existing minio_service function)
     import os
 
@@ -907,7 +912,7 @@ def _ensure_prepare_enqueued(
         )
 
 
-@router.post("/{file_uuid}/prepare-download")
+@router.post("/{file_uuid}/prepare-download", dependencies=[Depends(refuse_under_support_grant)])
 def prepare_download(
     file_uuid: str,
     mode: str = Query(
@@ -966,7 +971,7 @@ def _download_event_frame(data: dict, mode: str, variant: str = "") -> tuple[str
     return f"event: progress\ndata: {json.dumps(payload)}\n\n", False
 
 
-@router.get("/{file_uuid}/download-stream")
+@router.get("/{file_uuid}/download-stream", dependencies=[Depends(refuse_under_support_grant)])
 def download_stream(
     file_uuid: str,
     mode: str = Query(
@@ -1154,12 +1159,14 @@ def get_thumbnail(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         from app.api.deps_context import resolve_org_context
-        from app.services.platform_bypass import build_bypass
+        from app.api.deps_context import resolve_request_bypass
 
         # Resolve the caller's tenant scope (None = personal) WITHOUT editing
-        # get_optional_current_user (owned by step 1.5).
-        org_id, _ = resolve_org_context(request, db, current_user)
-        bypass = build_bypass(db, current_user, org_id)
+        # get_optional_current_user (owned by step 1.5), then the bypass through the SAME
+        # resolver get_current_context uses, so a support-access grant header is honoured
+        # (or refused) by exactly the same rules here.
+        org_id, org_role = resolve_org_context(request, db, current_user)
+        org_id, _, bypass = resolve_request_bypass(request, db, current_user, org_id, org_role)
         platform_allowed = bypass.allows(
             org_id=db_file.organization_id,
             owner_id=db_file.user_id,

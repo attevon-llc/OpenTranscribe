@@ -25,6 +25,7 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -72,7 +73,11 @@ def _load_pending_file(db: Session, file_id: str, user: User) -> MediaFile:
     return db_file  # type: ignore[return-value]
 
 
-@router.post("/multipart/parts", response_model=dict[str, Any])
+@router.post(
+    "/multipart/parts",
+    response_model=dict[str, Any],
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 async def sign_upload_parts(
     request: PartUrlRequest,
     db: Session = Depends(get_db),

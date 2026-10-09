@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
@@ -627,7 +628,9 @@ def _populate_shared_by(
             )
 
 
-@router.post("", response_model=CollectionSchema)
+@router.post(
+    "", response_model=CollectionSchema, dependencies=[Depends(refuse_under_support_grant)]
+)
 def create_collection(
     collection: CollectionCreate,
     db: Session = Depends(get_db),
@@ -1125,7 +1128,7 @@ def get_collection_media(
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
-        set_file_urls(file)
+        set_file_urls(file, ctx.bypass)
         formatted_file = FormattingService.format_media_file(file, file.speakers)
         formatted_files.append(formatted_file)
 
@@ -1199,6 +1202,7 @@ def list_collection_shares(
     "/{collection_uuid}/shares",
     response_model=Share,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(refuse_under_support_grant)],
 )
 def create_collection_share(
     collection_uuid: str,
@@ -1394,7 +1398,11 @@ def create_collection_share(
     return _build_share_response(db, share)
 
 
-@router.put("/{collection_uuid}/shares/{share_uuid}", response_model=Share)
+@router.put(
+    "/{collection_uuid}/shares/{share_uuid}",
+    response_model=Share,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def update_collection_share(
     collection_uuid: str,
     share_uuid: str,
@@ -1478,6 +1486,7 @@ def update_collection_share(
 @router.delete(
     "/{collection_uuid}/shares/{share_uuid}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(refuse_under_support_grant)],
 )
 def delete_collection_share(
     collection_uuid: str,

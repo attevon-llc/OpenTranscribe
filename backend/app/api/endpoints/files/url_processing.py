@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings
 from app.core.constants import VALID_AUDIO_QUALITIES
@@ -621,7 +622,11 @@ def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None
         logger.warning(f"Failed to send file_created notification: {e}")
 
 
-@router.post("/process-url", response_model=URLProcessingResponse)
+@router.post(
+    "/process-url",
+    response_model=URLProcessingResponse,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def process_media_url(
     request_data: URLProcessingRequest,
     db: Session = Depends(get_db),

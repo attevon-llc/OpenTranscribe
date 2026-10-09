@@ -559,9 +559,10 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
         # Match %, gender and outlier chips are clustering/attribute-model OUTPUT: two
         # fresh stacks seeded with the same media still disagree on a cluster's gender or
         # score, which is 0.9% of this page and no layout change (measured 2026-10-09).
-        ".quality-badge",
-        ".gender-chip",
-        ".outlier-chip",
+        # Masked through their unconditional parent: the gender and outlier chips only
+        # render when the model produced one, and a mask that exists in one data state and
+        # not another yields two baselines for identical UI (see _CONDITIONAL_SELECTORS).
+        ".speakers-page .header-right",
         ".notifications-btn",
     ),
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live

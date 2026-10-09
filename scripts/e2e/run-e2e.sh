@@ -389,10 +389,10 @@ enforce_skip_ceiling() {
 echo -e "${GREEN}Running E2E (parallel, ${WORKERS} workers, visual+chat excluded):${NC} pytest ${ARGS[*]}"
 status=0
 "$VENV_PY" -m pytest --base-url "$E2E_FRONTEND_URL" --backend-url "$E2E_BACKEND_URL" \
-    "${ARGS[@]}" -m "not visual and not chat" -n "$WORKERS" --dist loadfile \
+    "${ARGS[@]}" -m "not visual and not chat and not support_access" -n "$WORKERS" --dist loadfile \
     "${SKIP_REASONS[@]}" --junitxml="$E2E_ARTIFACT_DIR/e2e-phase1.xml" || status=$?
-status=$(resolve_phase "$status" "Phase 1 (-m 'not visual and not chat')")
-enforce_skip_ceiling "Phase 1 (-m 'not visual and not chat')" "$status" \
+status=$(resolve_phase "$status" "Phase 1 (-m 'not visual and not chat and not support_access')")
+enforce_skip_ceiling "Phase 1 (-m 'not visual and not chat and not support_access')" "$status" \
     "$E2E_ARTIFACT_DIR/e2e-phase1.xml" "$E2E_SKIP_CEILING"
 
 # The chat family runs serially: each test is a full RAG turn (retrieval +

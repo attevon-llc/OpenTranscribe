@@ -175,9 +175,8 @@ def search_summaries(
     the two legs of one ``/api/search`` request can no longer disagree about
     which files were asked for (closes issue #831's whole defect class:
     there is one ``_build_filters``, not a second SQL implementation of it).
-    ``date_from``/``date_to`` are raw strings; OpenSearch parses them (no
-    400-on-bad-date arm — a documented behaviour change from the retired
-    Postgres leg, which used ``parse_date_bound``).
+    ``date_from``/``date_to`` are raw strings that the endpoint has already
+    validated as ISO 8601 (a bad bound is a 400 there); OpenSearch parses them.
 
     Returns:
         A page of file-level hits, each carrying every matching leaf's

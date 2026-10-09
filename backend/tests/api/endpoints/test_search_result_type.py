@@ -702,35 +702,30 @@ class TestSummaryLegHonoursTheDateRange:
         assert uuids == [str(recorded_in_march.uuid)]
         assert total == 1
 
-    def test_an_unparseable_date_never_yields_an_unfiltered_page(
-        self,
-        client,
-        user_token_headers,
-        normal_user,
-        db_session,
-        transcript_search_must_not_be_called,
+    @pytest.mark.parametrize("param", ["date_from", "date_to"])
+    @pytest.mark.parametrize("result_type", ["summaries", "transcripts"])
+    def test_an_unparseable_date_is_a_400_on_either_leg(
+        self, client, user_token_headers, normal_user, db_session, param, result_type
     ):
-        """A bound that cannot be parsed must never be dropped: the caller would
-        get an unfiltered page while believing they had filtered, which is the
-        whole defect class this lane closes.
+        """A bound that cannot be parsed is rejected, never dropped (the caller would get an
+        unfiltered page believing they had filtered) and never silently emptied (which reads
+        as "nothing matched"). The control proves a valid bound on the same request passes."""
+        _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
 
-        Since #963 the bound reaches OpenSearch as a raw string and the retired 400 arm is
-        gone, so an unparseable bound now yields an EMPTY page (the plane search fails and
-        the leg degrades to no hits). That is weaker than a 400 -- the caller is not told
-        why -- but it preserves the property this test exists for. The control proves the
-        empty page is the bound's doing and not an empty plane.
-        """
-        file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-
-        control_total, control_uuids = _summary_search(client, user_token_headers, "roadmap")
-        assert control_uuids == [str(file.uuid)]
-        assert control_total == 1
-
-        total, uuids = _summary_search(
-            client, user_token_headers, "roadmap", date_from="last-tuesday"
+        bad = client.get(
+            "/api/search",
+            params={"q": "roadmap", "result_type": result_type, param: "last-tuesday"},
+            headers=user_token_headers,
         )
-        assert uuids == []
-        assert total == 0
+        assert bad.status_code == 400
+        assert param in bad.json()["detail"]
+
+        good = client.get(
+            "/api/search",
+            params={"q": "roadmap", "result_type": result_type, param: "2026-03-01"},
+            headers=user_token_headers,
+        )
+        assert good.status_code == 200
 
 
 class TestSummaryLegHonoursTagsAndCollections:

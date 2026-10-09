@@ -3,6 +3,7 @@
 import copy
 import logging
 import math
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -112,6 +113,23 @@ def _search_response_to_schema(response) -> dict[str, Any]:
         "filters_applied": response.filters_applied,
         "search_mode": getattr(response, "search_mode", "hybrid"),
     }
+
+
+def _require_iso_date_bounds(**bounds: str | None) -> None:
+    """400 on an unparseable date bound, for both search legs.
+
+    OpenSearch would otherwise fail the query and the leg would degrade to an empty page,
+    which reads as "nothing matched" rather than "your filter was invalid".
+    """
+    for name, bound in bounds.items():
+        if bound is None:
+            continue
+        try:
+            datetime.fromisoformat(bound)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=f"{name} must be an ISO 8601 date or datetime"
+            ) from None
 
 
 @router.get("")
@@ -232,6 +250,8 @@ def search_transcripts(
     if search_mode not in ("hybrid", "keyword"):
         raise HTTPException(status_code=400, detail="search_mode must be: hybrid or keyword")
 
+    _require_iso_date_bounds(date_from=date_from, date_to=date_to)
+
     # Issue #760: `sources` wins outright over `result_type` when both are
     # supplied (never merged — two inputs that combine are one undebuggable
     # input). Omitting `sources` entirely preserves the legacy `result_type`
@@ -322,9 +342,8 @@ def search_transcripts(
         # (issue #831). Since #963 both legs route through the SAME filter
         # builder (`HybridSearchService._build_filters`), so there is no
         # longer a second SQL predicate implementation to keep in sync.
-        # `date_from`/`date_to` reach OpenSearch as raw strings — it parses
-        # them itself — so the 400-on-bad-date arm the retired Postgres leg
-        # needed (`parse_date_bound`) no longer applies here.
+        # `date_from`/`date_to` were validated as ISO 8601 above, then reach
+        # OpenSearch as raw strings.
         try:
             payload.update(
                 _summary_search_payload(

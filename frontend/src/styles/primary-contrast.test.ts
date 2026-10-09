@@ -224,3 +224,26 @@ describe('.chip (upload-shared.css) clears AA contrast in dark mode', () => {
     expect(contrast(oldText, compositedChipBg)).toBeLessThan(AA_NORMAL_TEXT);
   });
 });
+
+describe('error fill carrying white text (speakers inbox badge)', () => {
+  // `--error-color` is the status FILL/icon colour: #ef4444 (3.76:1 with white) in light and
+  // #f87171 (2.76:1) in dark. The /speakers inbox-count badge paints white text on it and
+  // failed axe colour-contrast in both themes. A fill that carries white text is a different
+  // role from the status colour, so it has its own token.
+  for (const [label, selector] of [
+    ['light', ':root'],
+    ['dark', "[data-theme='dark']"],
+  ] as const) {
+    it(`${label}: white on --error-solid clears ${AA_NORMAL_TEXT}:1`, () => {
+      expect(contrast(hexToRgb(token(selector, '--error-solid')), WHITE)).toBeGreaterThanOrEqual(
+        AA_NORMAL_TEXT
+      );
+    });
+
+    it(`control: ${label}: white on --error-color (the fill it replaces) fails AA`, () => {
+      expect(contrast(hexToRgb(token(selector, '--error-color')), WHITE)).toBeLessThan(
+        AA_NORMAL_TEXT
+      );
+    });
+  }
+});

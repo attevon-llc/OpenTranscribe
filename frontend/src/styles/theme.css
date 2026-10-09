@@ -86,6 +86,10 @@
   --border-color: #e5e7eb;
   --error-color: #ef4444;
   --error-color-rgb: 239, 68, 68;
+  /* A solid fill that carries WHITE text (count badges). Distinct from `--error-color`, the
+     status fill/icon colour, which is too light for white text (3.76:1 light, 2.76:1 dark).
+     #dc2626 is 4.83:1 with white; one value in both themes, like `--primary-color`. */
+  --error-solid: #dc2626;
   --success-color: #10b981;
   --success-color-rgb: 16, 185, 129;
   --warning-color: #f59e0b;
@@ -311,6 +315,7 @@
   --border-color: #334155;
   --error-color: #f87171;
   --error-color-rgb: 248, 113, 113;
+  --error-solid: #dc2626; /* See the note on :root */
   --success-color: #34d399;
   --success-color-rgb: 52, 211, 153;
   --warning-color: #fbbf24;

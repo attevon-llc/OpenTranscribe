@@ -298,6 +298,26 @@
         "title": "ApprovalDecisionResponse",
         "type": "object"
       },
+      "ApproveBody": {
+        "description": "An approver may shorten the requested duration, never extend it.",
+        "properties": {
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 15.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          }
+        },
+        "title": "ApproveBody",
+        "type": "object"
+      },
       "AuthConfigAuditResponse": {
         "description": "Schema for authentication configuration audit log response.",
         "properties": {
@@ -1608,6 +1628,67 @@
         "title": "Body_upload_profile_avatar_api_speaker_profiles_profiles__profile_uuid__avatar_post",
         "type": "object"
       },
+      "BreakGlassBody": {
+        "description": "``POST /support-access/grants/break-glass``. super_admin only; ticket is mandatory.",
+        "properties": {
+          "access_level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Access Level",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "default": 60,
+            "maximum": 240.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          },
+          "ticket_ref": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Ticket Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_level",
+          "reason",
+          "ticket_ref"
+        ],
+        "title": "BreakGlassBody",
+        "type": "object"
+      },
       "BulkActionRequest": {
         "description": "Request for bulk file operations.",
         "properties": {
@@ -1900,7 +1981,7 @@
             "type": "integer"
           },
           "context_expansion_enabled": {
-            "default": false,
+            "default": true,
             "title": "Context Expansion Enabled",
             "type": "boolean"
           },
@@ -4364,6 +4445,79 @@
         "title": "ConversationUpdate",
         "type": "object"
       },
+      "CreateGrantBody": {
+        "description": "``POST /support-access/grants``. Exactly one of the two targets must be set.",
+        "properties": {
+          "access_level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Access Level",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "maximum": 480.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          }
+        },
+        "required": [
+          "access_level",
+          "reason",
+          "duration_minutes"
+        ],
+        "title": "CreateGrantBody",
+        "type": "object"
+      },
+      "DecisionNoteBody": {
+        "description": "Deny / revoke. The note goes to the audit event only, never to the grant row.",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "DecisionNoteBody",
+        "type": "object"
+      },
       "DerivedCandidate": {
         "description": "One source's observation, kept even when it lost.\n\nSurfaced so a disagreement is something the user can see and settle, rather than a\ndecision taken silently by whichever branch of the resolver ran first.",
         "properties": {
@@ -6098,6 +6252,33 @@
         "title": "GarbageCleanupConfigUpdate",
         "type": "object"
       },
+      "GrantPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupportGrantOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "server_time"
+        ],
+        "title": "GrantPage",
+        "type": "object"
+      },
       "Group": {
         "description": "Group summary for list views.",
         "properties": {
@@ -6995,6 +7176,268 @@
         "title": "LinkedCollection",
         "type": "object"
       },
+      "LocalEndpointStatus": {
+        "description": "One row of the fixed local-endpoint discovery table (issue #644).\n\n``base_url`` is always a container-network address (a compose service name\nlike ``llm-test-vllm``), never a host-side ``127.0.0.1:<port>``: inside the\nbackend container ``127.0.0.1`` is the backend itself, and\n``redaction.llm_guard.is_local_provider`` would classify it \"local\" for\nmasking/quota purposes while the config actually points nowhere useful.",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/LLMProvider"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "start_command": {
+            "title": "Start Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "base_url",
+          "provider",
+          "reachable",
+          "start_command"
+        ],
+        "title": "LocalEndpointStatus",
+        "type": "object"
+      },
+      "LocalEndpointsResponse": {
+        "description": "Response for ``GET /llm-settings/local-endpoints``.",
+        "properties": {
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/LocalEndpointStatus"
+            },
+            "title": "Endpoints",
+            "type": "array"
+          },
+          "private_endpoints_allowed": {
+            "title": "Private Endpoints Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "endpoints",
+          "private_endpoints_allowed"
+        ],
+        "title": "LocalEndpointsResponse",
+        "type": "object"
+      },
+      "LockedAccount": {
+        "description": "One entry in the admin locked-accounts listing.\n\nEnrichment (``user_uuid``/``full_name``/``is_active``/``auth_type``) is a\nsingle batched query over the page's identifiers, never a per-row lookup.\nAn identifier resolving to no account is included with these fields\n``None`` (J-A3) -- it is the operationally useful half (a stuck integration\nretrying a dead credential looks exactly like this), and it is excluded\nfrom ``locked_count`` on the wire by virtue of not appearing on a page\nunless ``include_unlocked=true``. These are attacker-supplied strings in\nan admin UI: render as data, never as a link.",
+        "properties": {
+          "admin_unlocked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Unlocked At"
+          },
+          "auth_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Type"
+          },
+          "failed_attempts": {
+            "title": "Failed Attempts",
+            "type": "integer"
+          },
+          "first_failed_attempt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Failed Attempt"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "identifier": {
+            "title": "Identifier",
+            "type": "string"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean"
+          },
+          "last_failed_attempt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failed Attempt"
+          },
+          "locked_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Until"
+          },
+          "lockout_count": {
+            "title": "Lockout Count",
+            "type": "integer"
+          },
+          "user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Uuid"
+          }
+        },
+        "required": [
+          "identifier",
+          "is_locked",
+          "failed_attempts",
+          "lockout_count"
+        ],
+        "title": "LockedAccount",
+        "type": "object"
+      },
+      "LockedAccountsList": {
+        "description": "Paginated locked-accounts listing.\n\n``lockout_enabled`` is on the response, not implied by an empty list -- the\ndeleted ``get_all_locked_accounts`` returned ``[]`` when the feature was\noff, indistinguishable from \"nobody is locked\". ``store_backend`` reports\nwhich storage this PROCESS is reading (issue #810's known-real degraded\nstate) -- a listing built on the in-memory fallback is that replica's view,\nnot the deployment's. ``truncated`` covers a scan that hit its page budget\nwithout exhausting the keyspace, so \"0 locked accounts\" from a truncated\npage is never rendered as \"all clear\".",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/LockedAccount"
+            },
+            "title": "Accounts",
+            "type": "array"
+          },
+          "lockout_enabled": {
+            "title": "Lockout Enabled",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "store_backend": {
+            "title": "Store Backend",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accounts",
+          "lockout_enabled",
+          "store_backend"
+        ],
+        "title": "LockedAccountsList",
+        "type": "object"
+      },
+      "LockoutResetResponse": {
+        "description": "Result of resetting an account's progressive lockout counter.",
+        "properties": {
+          "identifier": {
+            "title": "Identifier",
+            "type": "string"
+          },
+          "previous_lockout_count": {
+            "title": "Previous Lockout Count",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "unlocked": {
+            "title": "Unlocked",
+            "type": "boolean"
+          },
+          "was_locked": {
+            "title": "Was Locked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "identifier",
+          "previous_lockout_count",
+          "was_locked",
+          "unlocked"
+        ],
+        "title": "LockoutResetResponse",
+        "type": "object"
+      },
       "LoginBannerResponse": {
         "description": "Response for login banner endpoint.",
         "properties": {
@@ -7730,6 +8173,11 @@
             ],
             "title": "Imohash"
           },
+          "is_quarantined": {
+            "default": false,
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
           "is_retryable": {
             "anyOf": [
               {
@@ -8363,6 +8811,11 @@
             ],
             "title": "Imohash"
           },
+          "is_quarantined": {
+            "default": false,
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
           "is_retryable": {
             "anyOf": [
               {
@@ -8397,6 +8850,11 @@
             ],
             "title": "Last Modified Date"
           },
+          "legal_hold": {
+            "default": false,
+            "title": "Legal Hold",
+            "type": "boolean"
+          },
           "media_format": {
             "anyOf": [
               {
@@ -8429,6 +8887,29 @@
               }
             ],
             "title": "Preview Url"
+          },
+          "quarantine_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantine Reason"
+          },
+          "quarantined_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantined At"
           },
           "recorded_date": {
             "anyOf": [
@@ -9972,6 +10453,65 @@
         "title": "OpenSearchSnapshotStatus",
         "type": "object"
       },
+      "OrgRef": {
+        "description": "An organization as shown in a grant. ``null`` once the organization is gone.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name"
+        ],
+        "title": "OrgRef",
+        "type": "object"
+      },
+      "OrgTargetOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name"
+        ],
+        "title": "OrgTargetOut",
+        "type": "object"
+      },
       "OrganizationContextSettings": {
         "description": "Response schema for user organization context settings.\n\nContains the organization context text and toggle preferences.",
         "examples": [
@@ -11025,7 +11565,7 @@
         "type": "object"
       },
       "QuarantinedFile": {
-        "description": "A file in the admin review list.\n\n``is_quarantined`` distinguishes a currently-quarantined row from a\nreleased-but-still-held one (issue #825) -- both can appear together when\nthe list endpoint is queried with ``include_legal_holds=true``.",
+        "description": "A file in the admin review list.\n\n``is_quarantined`` distinguishes a currently-quarantined row from a\nreleased-but-still-held one (issue #825) -- both can appear together when\nthe list endpoint is queried with ``include_legal_holds=true``.\n\nIssue #576 FINDING 3: the previous shape carried ``user_id`` /\n``organization_id`` / ``quarantined_by`` as raw integer DB ids. No endpoint in\nthe app maps an integer user id back to a person (``UUIDBaseSchema`` strips the\ninteger ``id`` from every user-shaped response), so a review queue built on\nthose fields could show a takedown reason beside the bare number ``7``. This is\na breaking wire change to a route with zero frontend callers before this\nchange -- the cheapest possible moment to fix it.",
         "properties": {
           "filename": {
             "anyOf": [
@@ -11048,16 +11588,24 @@
             "title": "Legal Hold",
             "type": "boolean"
           },
-          "organization_id": {
+          "organization_uuid": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Organization Id"
+            "title": "Organization Uuid"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_uuid": {
+            "title": "Owner Uuid",
+            "type": "string"
           },
           "quarantine_reason": {
             "anyOf": [
@@ -11081,20 +11629,27 @@
             ],
             "title": "Quarantined At"
           },
-          "quarantined_by": {
+          "quarantined_by_email": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Quarantined By"
+            "title": "Quarantined By Email"
           },
-          "user_id": {
-            "title": "User Id",
-            "type": "integer"
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "uuid": {
             "title": "Uuid",
@@ -11103,7 +11658,8 @@
         },
         "required": [
           "uuid",
-          "user_id"
+          "owner_uuid",
+          "owner_email"
         ],
         "title": "QuarantinedFile",
         "type": "object"
@@ -14254,6 +14810,257 @@
         "title": "SummaryTaskRequest",
         "type": "object"
       },
+      "SupportGrantOut": {
+        "properties": {
+          "access_level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Access Level",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "grant_mode": {
+            "enum": [
+              "approved",
+              "break_glass"
+            ],
+            "title": "Grant Mode",
+            "type": "string"
+          },
+          "grantee": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Expires At"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_duration_minutes": {
+            "title": "Requested Duration Minutes",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "active",
+              "denied",
+              "expired",
+              "revoked",
+              "lapsed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_kind": {
+            "enum": [
+              "organization",
+              "personal"
+            ],
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "ticket_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Ref"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "status",
+          "target_kind",
+          "grant_mode",
+          "access_level",
+          "reason",
+          "requested_duration_minutes",
+          "requested_at"
+        ],
+        "title": "SupportGrantOut",
+        "type": "object"
+      },
+      "SupportGrantUseOut": {
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "need": {
+            "anyOf": [
+              {
+                "enum": [
+                  "read",
+                  "write"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Need"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "resource_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Type"
+          },
+          "resource_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Uuid"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "method",
+          "route"
+        ],
+        "title": "SupportGrantUseOut",
+        "type": "object"
+      },
       "SupportedProvidersResponse": {
         "description": "Response containing all supported providers with their defaults",
         "properties": {
@@ -16116,6 +16923,33 @@
         "title": "UploadedPart",
         "type": "object"
       },
+      "UsePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupportGrantUseOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "server_time"
+        ],
+        "title": "UsePage",
+        "type": "object"
+      },
       "User": {
         "properties": {
           "account_expires_at": {
@@ -17228,6 +18062,36 @@
           }
         },
         "title": "UserMediaSourcesList",
+        "type": "object"
+      },
+      "UserRef": {
+        "description": "A user as shown in a grant. The whole object is ``null`` once the account is gone.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "email"
+        ],
+        "title": "UserRef",
         "type": "object"
       },
       "UserSearchResult": {
@@ -20783,7 +21647,7 @@
     },
     "/api/admin/files/{file_uuid}/release": {
       "post": {
-        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.",
+        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_files_under_legal_hold``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
         "operationId": "release_media_file_api_admin_files__file_uuid__release_post",
         "parameters": [
           {
@@ -21326,6 +22190,186 @@
           }
         ],
         "summary": "Get Imohash Recompute Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/locked-accounts": {
+      "get": {
+        "description": "List locked accounts (issue #570), cursor-paginated over the lockout store.\n\nA **read**, and deliberately not audited per request -- the write below\n(the reset) is. ``admin`` tier, matching the existing lock/unlock pair\n(J-A2): a reset whose target an admin cannot see would be worse than a\nlisting a super_admin-only tier would otherwise require.",
+        "operationId": "admin_list_locked_accounts_api_admin_locked_accounts_get",
+        "parameters": [
+          {
+            "description": "Opaque pagination cursor from a prior page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque pagination cursor from a prior page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Also include recent failed-login records that are not currently locked -- useful for diagnosing a near-threshold account.",
+            "in": "query",
+            "name": "include_unlocked",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also include recent failed-login records that are not currently locked -- useful for diagnosing a near-threshold account.",
+              "title": "Include Unlocked",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedAccountsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Admin List Locked Accounts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/locked-accounts/{identifier}/reset": {
+      "post": {
+        "description": "Reset an account's progressive lockout counter (issue #570).\n\nDistinct from ``POST /admin/users/{uuid}/unlock`` (T8): this clears the\nprogressive ``lockout_count`` and ``failed_attempts`` but, per J-A1, leaves\nan in-progress ``locked_until`` intact -- the single \"unlock now\" verb stays\nthe existing endpoint. 404 for an unknown identifier (nothing is written);\n409 when the compare-and-set budget is exhausted (also nothing written --\nnever a silent partial write).",
+        "operationId": "admin_reset_lockout_counter_api_admin_locked_accounts__identifier__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identifier",
+            "required": true,
+            "schema": {
+              "title": "Identifier",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockoutResetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Admin Reset Lockout Counter",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/media-duration-backfill": {
+      "post": {
+        "description": "Start the issue #969 media-duration provenance backfill. Super-admin only.\n\nRestores the container duration on rows the pre-#969 pipeline overwrote with\nthe transcript's speech extent. ``dry_run=true`` (the default) reports what\nwould change without writing anything or dispatching a reindex — see\n``app.tasks.recovery_tasks.media_duration_backfill`` for the full tiering,\nsafety guarantees, and why quarantined/legal-hold rows are never touched.",
+        "operationId": "start_media_duration_backfill_api_admin_media_duration_backfill_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Media Duration Backfill Api Admin Media Duration Backfill Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Start Media Duration Backfill",
         "tags": [
           "admin"
         ]
@@ -28415,6 +29459,28 @@
             }
           },
           {
+            "description": "Filter to specific owner UUID(s); repeatable",
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to specific owner UUID(s); repeatable",
+              "title": "Owner"
+            }
+          },
+          {
             "in": "query",
             "name": "search",
             "required": false,
@@ -29099,6 +30165,28 @@
               "title": "Ownership",
               "type": "string"
             }
+          },
+          {
+            "description": "Filter to specific owner UUID(s); repeatable (issue #966)",
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to specific owner UUID(s); repeatable (issue #966)",
+              "title": "Owner"
+            }
           }
         ],
         "responses": {
@@ -29182,6 +30270,37 @@
         "summary": "Sign Upload Parts",
         "tags": [
           "files",
+          "files"
+        ]
+      }
+    },
+    "/api/files/owners": {
+      "get": {
+        "description": "List the owners of files visible to the caller, for the gallery's\nownership filter (issue #966).\n\n**Closed enumeration, not a directory search.** This deliberately takes\nno free-text query parameter — the caller receives the (capped) list of\nowners of files they can already see and narrows it client-side, the same\nshape ``SearchableMultiSelect`` already uses for tags and collections. A\nfree-text parameter would turn an authorized list into an\naccount-probing oracle, which is exactly what this route must not be.\n\n**Scope is `get_accessible_owners`**, which joins ``User`` against the\nIDENTICAL predicate ``GET /files`` uses to decide what this caller can\nsee (``PermissionService.get_accessible_file_ids_subquery``, or the same\norg-tenant predicate for an admin) — never the tenant-wide scope\n``GET /users/search`` uses for the sharing picker. A user who shares\nnothing with anyone else, and with whom nothing is shared, sees only\nthemselves here.\n\n**Rate-limited** the same way as ``GET /users/search``\n(``RATE_LIMIT_DIRECTORY_PER_MINUTE``), as a volume/noise bound — the\nauthorization boundary is the join predicate above, not this limit.\n\n**Payload-minimized**: reuses ``UserSearchResult`` — the exact wire shape\nthe sharing picker already exposes (``uuid``, ``full_name``,\n``masked_email``) — so this route exposes no more per-owner information\nthan the app already shows elsewhere.",
+        "operationId": "list_file_owners_api_files_owners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserSearchResult"
+                  },
+                  "title": "Response List File Owners Api Files Owners Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List File Owners",
+        "tags": [
           "files"
         ]
       }
@@ -30797,7 +31916,7 @@
     },
     "/api/files/{file_uuid}/stream-url": {
       "get": {
-        "description": "Generate a short-lived presigned URL for secure media streaming.\n\nThis follows AWS/GCS best practices for secure content delivery:\n- Short expiration (5 minutes for video, 15 minutes for thumbnails)\n- Cryptographically signed by MinIO (AWS Signature V4)\n- User must be authenticated and authorized\n\nArgs:\n    file_uuid: UUID of the media file\n    media_type: Type of media to stream - \"video\", \"thumbnail\", or \"audio\"\n\nReturns:\n    url: Presigned URL for direct MinIO access\n    expires_in: Seconds until URL expires\n    content_type: MIME type of the content\n    playback: For media, what the URL serves: \"original\", \"converted\" (a\n        browser-playable copy of an audio original), or \"audio_only\" (the audio\n        track of a video no browser decodes). None for a thumbnail.\n    is_public: Whether the file is public",
+        "description": "Generate a short-lived presigned URL for secure media streaming.\n\nThis follows AWS/GCS best practices for secure content delivery:\n- Bounded expiration (``MEDIA_URL_EXPIRE_SECONDS``, 6 hours by default, for video and audio;\n  ``THUMBNAIL_URL_EXPIRE_SECONDS``, 15 minutes, for thumbnails), capped at 5 minutes under a\n  support-access grant\n- Cryptographically signed by MinIO (AWS Signature V4)\n- User must be authenticated and authorized\n\nArgs:\n    file_uuid: UUID of the media file\n    media_type: Type of media to stream - \"video\", \"thumbnail\", or \"audio\"\n\nReturns:\n    url: Presigned URL for direct MinIO access\n    expires_in: Seconds until URL expires\n    content_type: MIME type of the content\n    playback: For media, what the URL serves: \"original\", \"converted\" (a\n        browser-playable copy of an audio original), or \"audio_only\" (the audio\n        track of a video no browser decodes). None for a thumbnail.\n    is_public: Whether the file is public",
         "operationId": "get_media_file_stream_url_api_files__file_uuid__stream_url_get",
         "parameters": [
           {
@@ -32769,6 +33888,33 @@
         ]
       }
     },
+    "/api/llm-settings/local-endpoints": {
+      "get": {
+        "description": "Report which of this repo's own dev/test LLM overlay services are up right now.\n\nTakes **no** url/host/port parameter and no free parameter of any kind — the set of\nthings it can ever dial is the module-level `_LOCAL_ENDPOINT_TABLE` above, fixed at\nimport time (issue #644). Rate-limited like this file's other outbound-fetch handlers;\nsee `get_llm_outbound_rate_limit`.",
+        "operationId": "get_local_endpoints_api_llm_settings_local_endpoints_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalEndpointsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Local Endpoints",
+        "tags": [
+          "llm-settings"
+        ]
+      }
+    },
     "/api/llm-settings/ollama/models": {
       "get": {
         "description": "Get available models from an Ollama instance\n\nRate-limited (issue #676): fetches a caller-supplied ``base_url`` server-side —\nsee ``get_llm_outbound_rate_limit``.",
@@ -33596,6 +34742,289 @@
         "summary": "Erase Org Member",
         "tags": [
           "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/support-access": {
+      "get": {
+        "operationId": "list_org_grants_api_org_admin_support_access_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "active",
+                    "denied",
+                    "expired",
+                    "revoked",
+                    "lapsed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Grants",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/org-admin/support-access/{grant_uuid}/approve": {
+      "post": {
+        "operationId": "approve_org_grant_api_org_admin_support_access__grant_uuid__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Approve Org Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/org-admin/support-access/{grant_uuid}/deny": {
+      "post": {
+        "operationId": "deny_org_grant_api_org_admin_support_access__grant_uuid__deny_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionNoteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Deny Org Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/org-admin/support-access/{grant_uuid}/uses": {
+      "get": {
+        "operationId": "list_org_grant_uses_api_org_admin_support_access__grant_uuid__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Grant Uses",
+        "tags": [
+          "support-access"
         ]
       }
     },
@@ -34574,15 +36003,36 @@
             }
           },
           {
-            "description": "Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers.",
+            "description": "DEPRECATED — superseded by `sources` (issue #760). Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers. Ignored when `sources` is supplied.",
             "in": "query",
             "name": "result_type",
             "required": false,
             "schema": {
               "default": "transcripts",
-              "description": "Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers.",
+              "description": "DEPRECATED — superseded by `sources` (issue #760). Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers. Ignored when `sources` is supplied.",
               "title": "Result Type",
               "type": "string"
+            }
+          },
+          {
+            "description": "Issue #760 — which result source(s) to search: content, title, speaker, summary (repeat the param for more than one, e.g. `sources=content&sources=title`). Wins over `result_type` when both are supplied. Omitting it entirely preserves `result_type`'s (or its own default's) byte-identical legacy behavior. An explicitly empty or unknown value is a 400.",
+            "in": "query",
+            "name": "sources",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Issue #760 — which result source(s) to search: content, title, speaker, summary (repeat the param for more than one, e.g. `sources=content&sources=title`). Wins over `result_type` when both are supplied. Omitting it entirely preserves `result_type`'s (or its own default's) byte-identical legacy behavior. An explicitly empty or unknown value is a 400.",
+              "title": "Sources"
             }
           }
         ],
@@ -37355,7 +38805,7 @@
     },
     "/api/speakers/debug/cross-media-by-name": {
       "get": {
-        "description": "Debug endpoint to test cross-media logic for a specific speaker name.",
+        "description": "Debug endpoint to test cross-media logic for a specific speaker name.\n\nThe route is admin-gated, but in multi-tenant mode the queries stay inside the\ncaller's active tenant: it returns speaker names and file titles.",
         "operationId": "debug_cross_media_by_name_api_speakers_debug_cross_media_by_name_get",
         "parameters": [
           {
@@ -37836,6 +39286,452 @@
         "summary": "Verify Speaker Identification",
         "tags": [
           "speakers"
+        ]
+      }
+    },
+    "/api/support-access/grants": {
+      "get": {
+        "description": "The caller's grants, newest first. ``scope=all`` is super_admin only.",
+        "operationId": "list_my_grants_api_support_access_grants_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "mine",
+              "enum": [
+                "mine",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "active",
+                    "denied",
+                    "expired",
+                    "revoked",
+                    "lapsed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Grants",
+        "tags": [
+          "support-access"
+        ]
+      },
+      "post": {
+        "description": "Request access to a tenant. It stays ``pending`` until the tenant decides.",
+        "operationId": "create_grant_api_support_access_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGrantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/break-glass": {
+      "post": {
+        "description": "Open access immediately. super_admin only; the tenant is notified in real time.",
+        "operationId": "create_break_glass_grant_api_support_access_grants_break_glass_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakGlassBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Break Glass Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/{grant_uuid}": {
+      "get": {
+        "operationId": "get_grant_api_support_access_grants__grant_uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/{grant_uuid}/revoke": {
+      "post": {
+        "description": "End a grant now. The grantee, any super_admin, the tenant's org admin or the subject.\n\nIdempotent: revoking a grant that is already over returns it unchanged.",
+        "operationId": "revoke_grant_api_support_access_grants__grant_uuid__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionNoteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revoke Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/{grant_uuid}/uses": {
+      "get": {
+        "operationId": "get_grant_uses_api_support_access_grants__grant_uuid__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Grant Uses",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/targets/organizations": {
+      "get": {
+        "description": "Active organizations an admin may request access to (a platform operation).",
+        "operationId": "search_target_organizations_api_support_access_targets_organizations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 25,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgTargetOut"
+                  },
+                  "title": "Response Search Target Organizations Api Support Access Targets Organizations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Search Target Organizations",
+        "tags": [
+          "support-access"
         ]
       }
     },
@@ -41020,6 +42916,289 @@
         "summary": "Update Current User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/users/me/support-access": {
+      "get": {
+        "operationId": "list_my_workspace_grants_api_users_me_support_access_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "active",
+                    "denied",
+                    "expired",
+                    "revoked",
+                    "lapsed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Workspace Grants",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/users/me/support-access/{grant_uuid}/approve": {
+      "post": {
+        "operationId": "approve_my_workspace_grant_api_users_me_support_access__grant_uuid__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Approve My Workspace Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/users/me/support-access/{grant_uuid}/deny": {
+      "post": {
+        "operationId": "deny_my_workspace_grant_api_users_me_support_access__grant_uuid__deny_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionNoteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Deny My Workspace Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/users/me/support-access/{grant_uuid}/uses": {
+      "get": {
+        "operationId": "list_my_workspace_grant_uses_api_users_me_support_access__grant_uuid__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Workspace Grant Uses",
+        "tags": [
+          "support-access"
         ]
       }
     },

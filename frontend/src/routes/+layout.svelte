@@ -286,7 +286,7 @@
       <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
-    {:else if $isAuthenticated && !isPublicPath}
+    {:else if $isAuthenticated && !isPublicPath && !$supportSession.restoring}
       <!-- Authenticated user on a protected route — render the app -->
       <!-- A support session switches which tenant the same login reads. Keying on the grant
            remounts the page on both edges, so nothing rendered under one scope survives into

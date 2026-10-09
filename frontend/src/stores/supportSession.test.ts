@@ -286,6 +286,70 @@ describe('supportSession.restore', () => {
   });
 });
 
+describe('supportSession.restoring (reload hold)', () => {
+  // The flag is decided when the module loads, so each case imports a fresh copy.
+  async function freshStore() {
+    vi.resetModules();
+    const caps = await import('$stores/capabilities');
+    caps.capabilities.update((s) => ({ ...s, tenancyMode: 'multi' }));
+    const headers = await import('$lib/supportAccess/headers');
+    return { ...(await import('./supportSession')), headers };
+  }
+
+  it('is set at boot when a grant is stored, so the app is held back', async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ grantUuid: UUID }));
+    const fresh = await freshStore();
+    expect(get(fresh.supportSession).restoring).toBe(true);
+    expect(get(fresh.supportSession).active).toBe(false);
+  });
+
+  it('is not set when nothing is stored', async () => {
+    const fresh = await freshStore();
+    expect(get(fresh.supportSession).restoring).toBe(false);
+  });
+
+  it('stays held until the grant lookup settles, then releases with the header live', async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ grantUuid: UUID }));
+    const fresh = await freshStore();
+    let release: (g: unknown) => void = () => {};
+    h.getGrant.mockReturnValue(new Promise((resolve) => (release = resolve)));
+    h.listMyGrants.mockResolvedValue({
+      items: [],
+      total: 0,
+      server_time: new Date().toISOString(),
+    });
+
+    const pending = fresh.supportSession.restore();
+    await Promise.resolve();
+    expect(get(fresh.supportSession).restoring).toBe(true);
+    expect(fresh.headers.getSupportAccessHeaders('/files/x')).toEqual({});
+
+    release(grant());
+    await pending;
+    expect(get(fresh.supportSession)).toMatchObject({ restoring: false, active: true });
+    expect(fresh.headers.getSupportAccessHeaders('/files/x')).toEqual({
+      'X-Support-Access-Grant': UUID,
+    });
+    await fresh.supportSession.end('logout');
+  });
+
+  it('releases when the stored grant is no longer usable', async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ grantUuid: UUID }));
+    const fresh = await freshStore();
+    h.getGrant.mockRejectedValue(new Error('404'));
+    await fresh.supportSession.restore();
+    expect(get(fresh.supportSession).restoring).toBe(false);
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('releases on logout when no restore ever ran', async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ grantUuid: UUID }));
+    const fresh = await freshStore();
+    await fresh.supportSession.end('logout');
+    expect(get(fresh.supportSession).restoring).toBe(false);
+  });
+});
+
 describe('supportSessionGate', () => {
   it('is inactive and not read-only with no session', () => {
     expect(get(supportSessionGate)).toEqual({ active: false, readOnly: false });

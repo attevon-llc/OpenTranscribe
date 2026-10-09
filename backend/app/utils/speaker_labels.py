@@ -118,7 +118,13 @@ def canonical_speaker_label(
     """
     if display_name:
         return str(display_name)
-    if suggested_name and confidence is not None and confidence >= suggestion_threshold:
+    if (
+        suggested_name
+        and confidence is not None
+        and confidence >= suggestion_threshold
+        # Rows stored before predictions were validated can hold "Unknown (not Robert)".
+        and looks_like_a_person_name(suggested_name)
+    ):
         return str(suggested_name)
     if name:
         return str(name)

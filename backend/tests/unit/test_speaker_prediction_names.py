@@ -57,3 +57,17 @@ def _validate(name):
 def test_prediction_validation_drops_a_non_name_and_keeps_a_name():
     assert _validate("Unknown (not Robert)") is False
     assert _validate("Robert Whitfield") is True
+
+
+def test_a_stored_non_name_suggestion_never_becomes_the_canonical_label():
+    """Rows written before predictions were validated must not surface either."""
+    from app.utils.speaker_labels import canonical_speaker_label
+
+    assert (
+        canonical_speaker_label("SPEAKER_01", suggested_name="Unknown (not Robert)", confidence=0.9)
+        == "SPEAKER_01"
+    )
+    assert (
+        canonical_speaker_label("SPEAKER_01", suggested_name="Robert Whitfield", confidence=0.9)
+        == "Robert Whitfield"
+    )

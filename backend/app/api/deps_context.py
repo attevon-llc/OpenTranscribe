@@ -29,6 +29,8 @@ from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
 from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
 from app.db.base import get_db
 from app.models.user import User
+from app.services.platform_bypass import PlatformBypass
+from app.services.platform_bypass import build_bypass
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,9 @@ class RequestContext:
     user: User
     org_id: int | None = None  # our organization.id (NOT the provider's string id)
     org_role: str | None = None  # "org:admin" | "org:member" | None
+    # What the platform-admin role may reach on this request. Defaults to nothing, so a
+    # context built by hand fails closed (issue #1122).
+    bypass: PlatformBypass = PlatformBypass.none()
 
     @property
     def is_org_context(self) -> bool:
@@ -101,7 +106,7 @@ def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int 
     return org.id, membership.role
 
 
-def get_current_context(
+def get_base_context(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -114,13 +119,28 @@ def get_current_context(
     meant every one of them silently opted out of the account-lifecycle gate —
     a deactivated, expired, unapproved or ``must_change_password`` account could
     still create conversations, delete files and read an org's audit log.
+
+    The base context never reads a support-access grant header, so the lifecycle
+    routes (and ``require_org_admin``) cannot be broken by a stale one.
     """
     org_id, org_role = resolve_org_context(request, db, current_user)
-    return RequestContext(user=current_user, org_id=org_id, org_role=org_role)
+    return RequestContext(
+        user=current_user,
+        org_id=org_id,
+        org_role=org_role,
+        bypass=build_bypass(db, current_user, org_id),
+    )
+
+
+def get_current_context(
+    ctx: RequestContext = Depends(get_base_context),
+) -> RequestContext:
+    """The context content routes use: the base context plus any support-access grant."""
+    return ctx
 
 
 def require_org_admin(
-    ctx: RequestContext = Depends(get_current_context),
+    ctx: RequestContext = Depends(get_base_context),
 ) -> RequestContext:
     """FastAPI dependency: 403 unless the caller is an admin of an active org.
 

@@ -93,7 +93,7 @@ async def trigger_summarization(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -223,7 +223,7 @@ def get_file_summary(
     - Processing metadata (provider, model, timing)
     """
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     if not media_file.summary_data:
@@ -296,7 +296,7 @@ def export_summary(
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {export_format}")
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     if not media_file.summary_data:
@@ -482,7 +482,7 @@ async def identify_speakers(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -548,7 +548,7 @@ def delete_summary(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )

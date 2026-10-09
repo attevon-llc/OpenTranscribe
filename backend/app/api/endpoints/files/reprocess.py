@@ -13,6 +13,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.platform_bypass import PlatformBypass
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +429,7 @@ def process_file_reprocess(
     whisper_model: str | None = None,
     *,
     organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
@@ -442,6 +444,7 @@ def process_file_reprocess(
         stages: Optional list of pipeline stages to re-run. Empty/None = full reprocess.
         whisper_model: Optional Whisper model override for this transcription.
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        bypass: The request's platform bypass (``ctx.bypass``), decided on the file's tenant.
 
     Returns:
         Updated MediaFile object
@@ -452,23 +455,18 @@ def process_file_reprocess(
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import reset_file_for_retry
     from app.utils.task_utils import transcript_is_regenerable
-    from app.utils.uuid_helpers import get_file_by_uuid
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     try:
-        # Get the file (allow admin to reprocess any file)
         is_admin = current_user.is_admin
-        if is_admin:
-            media_file = get_file_by_uuid(db, file_uuid)
-        else:
-            media_file = get_file_by_uuid_with_permission(
-                db,
-                file_uuid,
-                current_user.id,
-                is_admin=current_user.is_admin,
-                organization_id=organization_id,
-                min_permission="editor",
-            )
+        media_file = get_file_by_uuid_with_permission(
+            db,
+            file_uuid,
+            current_user.id,
+            bypass=bypass,
+            organization_id=organization_id,
+            min_permission="editor",
+        )
 
         file_id = media_file.id  # Get internal ID for task operations
 

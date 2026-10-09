@@ -119,6 +119,12 @@ class AuditEventType(StrEnum):
     GROUP_MEMBER_REMOVE = "group.member.remove"
     GROUP_MEMBER_ROLE_CHANGE = "group.member.role_change"
 
+    # Platform-admin reach into tenant data (issue #1122). Content access is the forced
+    # TENANCY_MODE=single escape hatch crossing a tenant; metadata access is a platform
+    # route (retention preview, quarantine list) returning other tenants' filenames.
+    PLATFORM_ADMIN_CONTENT_ACCESS = "platform_admin.content.access"
+    PLATFORM_ADMIN_METADATA_ACCESS = "platform_admin.metadata.access"
+
 
 class AuditOutcome(StrEnum):
     """Audit event outcomes."""

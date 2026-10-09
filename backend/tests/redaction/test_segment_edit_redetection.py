@@ -159,6 +159,7 @@ def _seed_scanned_file(db_session, user):
 def _edit(db_session, media, segment, user, text=EDITED_TEXT):
     """Drive the REAL endpoint function, not the helper it calls."""
     from app.api.endpoints.files.crud import update_single_transcript_segment
+    from app.services.platform_bypass import build_bypass
 
     return update_single_transcript_segment(
         db_session,
@@ -166,6 +167,7 @@ def _edit(db_session, media, segment, user, text=EDITED_TEXT):
         str(segment.uuid),
         TranscriptSegmentUpdate(text=text),
         user,
+        bypass=build_bypass(db_session, user, None),
     )
 
 

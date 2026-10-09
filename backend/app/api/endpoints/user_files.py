@@ -99,7 +99,9 @@ def get_user_file_status(
         status_query: Query = db.query(MediaFile.status, func.count(MediaFile.id)).filter(
             own_in_tenant
         )
-        status_query = exclude_quarantined(status_query, include_quarantined=current_user.is_admin)
+        status_query = exclude_quarantined(
+            status_query, include_quarantined=ctx.bypass.user_is_admin
+        )
         status_rows = status_query.group_by(MediaFile.status).all()
 
         status_counts: dict[str, int] = {
@@ -147,7 +149,7 @@ def get_user_file_status(
         # for uniformity with the other two queries in this handler, and so it stays
         # correct if that filter is ever loosened.
         problem_query = exclude_quarantined(
-            problem_query, include_quarantined=current_user.is_admin
+            problem_query, include_quarantined=ctx.bypass.user_is_admin
         )
 
         problem_files = []
@@ -196,7 +198,7 @@ def get_user_file_status(
         # upload would otherwise still report its filename/status/duration here.
         # Applied BEFORE `.limit()` — SQLAlchemy refuses `.filter()` after a LIMIT.
         recent_query = exclude_quarantined(
-            recent_query, include_quarantined=current_user.is_admin
+            recent_query, include_quarantined=ctx.bypass.user_is_admin
         ).limit(10)
 
         recent_files = []
@@ -264,7 +266,7 @@ def get_file_detailed_status(
             db,
             file_uuid,
             current_user.id,
-            is_admin=current_user.is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
         )
         file_id = media_file.id
@@ -385,7 +387,7 @@ def retry_file_processing(
             db,
             file_uuid,
             current_user.id,
-            is_admin=current_user.is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )

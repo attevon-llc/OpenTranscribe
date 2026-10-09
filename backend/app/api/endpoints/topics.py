@@ -80,7 +80,7 @@ def batch_extract_topics(
                 db,
                 file_uuid,
                 current_user.id,
-                is_admin=current_user.is_admin,
+                bypass=ctx.bypass,
                 organization_id=ctx.org_id,
                 min_permission="editor",
             )
@@ -244,7 +244,7 @@ def auto_label_single_file(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -310,7 +310,7 @@ def get_topic_suggestions(
     """
     # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -388,7 +388,7 @@ def extract_topics(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -463,7 +463,7 @@ def apply_topic_suggestions(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -522,7 +522,7 @@ def dismiss_topic_suggestions(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )

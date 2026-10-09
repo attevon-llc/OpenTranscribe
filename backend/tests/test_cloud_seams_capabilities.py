@@ -16,7 +16,7 @@ from fastapi import Request
 from sqlalchemy.exc import OperationalError
 
 from app.api.deps_context import RequestContext
-from app.api.deps_context import get_current_context
+from app.api.deps_context import get_base_context
 from app.api.deps_context import scope_to_context
 from app.auth.external_sync import sync_external_user_to_db
 from app.auth.provider_registry import ExternalIdentity
@@ -330,7 +330,7 @@ class TestRequestContext:
 
     def test_personal_context_without_identity(self, db_session):
         user = self._user(db_session)
-        ctx = get_current_context(_fake_request(), db=db_session, current_user=user)
+        ctx = get_base_context(_fake_request(), db=db_session, current_user=user)
         assert ctx.org_id is None
         assert not ctx.is_org_context
 
@@ -344,7 +344,7 @@ class TestRequestContext:
         request = _fake_request(external_identity=ident)
 
         # Token claims the org but no membership row yet -> personal scope
-        ctx = get_current_context(request, db=db_session, current_user=user)
+        ctx = get_base_context(request, db=db_session, current_user=user)
         assert not ctx.is_org_context
 
         # Mirror confirms membership -> org scope + role
@@ -352,7 +352,7 @@ class TestRequestContext:
             OrganizationMembership(organization_id=org.id, user_id=user.id, role="org:admin")
         )
         db_session.commit()
-        ctx = get_current_context(request, db=db_session, current_user=user)
+        ctx = get_base_context(request, db=db_session, current_user=user)
         assert ctx.org_id == org.id
         assert ctx.is_org_admin
 

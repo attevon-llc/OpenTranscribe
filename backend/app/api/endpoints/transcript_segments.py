@@ -20,6 +20,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
+from app.services.platform_bypass import PlatformBypass
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import _resource_in_tenant_scope
 from app.utils.uuid_helpers import get_by_uuid
@@ -87,6 +88,8 @@ def _get_new_speaker_id(
     segment: TranscriptSegment,
     current_user: User,
     organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> int | None:
     """
     Resolve and validate the new speaker ID from the update request.
@@ -119,8 +122,14 @@ def _get_new_speaker_id(
             detail="Speaker does not belong to the same media file as this segment",
         )
 
-    # Verify the user owns this speaker (admins and shared editors bypass)
-    if not current_user.is_admin and speaker.user_id != current_user.id:
+    # Verify the user owns this speaker (the platform role and shared editors bypass)
+    if speaker.user_id != current_user.id and not bypass.allows(
+        org_id=speaker.organization_id,
+        owner_id=speaker.user_id,
+        need="write",
+        resource_type="speaker",
+        resource_uuid=str(speaker.uuid),
+    ):
         from app.services.permission_service import PermissionService
 
         perm = PermissionService.get_file_permission(
@@ -283,7 +292,7 @@ def update_segment_speaker(
     # `get_file_by_uuid_with_permission`).
     from app.services.takedown_service import is_hidden_for
 
-    if is_hidden_for(media_file, is_admin=current_user.is_admin):
+    if is_hidden_for(media_file, is_admin=ctx.bypass.user_is_admin):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )
@@ -308,7 +317,7 @@ def update_segment_speaker(
 
     # Resolve and validate the new speaker (tenant-gated via ctx.org_id)
     new_speaker_id = _get_new_speaker_id(
-        db, update, segment, current_user, organization_id=ctx.org_id
+        db, update, segment, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
     )
 
     # Update the segment's speaker

@@ -107,6 +107,7 @@ from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
+from app.services.platform_bypass import audit_metadata_access
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
@@ -1298,6 +1299,13 @@ def preview_retention_deletion(
     )
 
     files = _get_retention_eligible_files(db, retention_days, delete_error_files)
+    audit_metadata_access(
+        db,
+        current_user,
+        route="/api/admin/settings/retention-config/preview",
+        count=len(files),
+        organization_ids=(f.organization_id for f in files),
+    )
 
     # Build user lookup for owner names
     user_ids = list({f.user_id for f in files})
@@ -3020,6 +3028,13 @@ def list_quarantined_files(
         .offset(offset)
         .limit(limit)
         .all()
+    )
+    audit_metadata_access(
+        db,
+        current_user,
+        route="/api/admin/files/quarantined",
+        count=len(rows),
+        organization_ids=(f.organization_id for f, _owner, _by, _org in rows),
     )
     files = [
         QuarantinedFile(

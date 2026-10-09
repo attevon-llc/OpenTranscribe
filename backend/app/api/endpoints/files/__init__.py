@@ -303,8 +303,7 @@ def list_media_files(
     # Admin users can see all files regardless of ownership param (still org-gated).
     # Admins also see quarantined (taken-down) files so they can review them; for
     # every other caller the abuse/DMCA exclusion hides taken-down files.
-    is_admin = current_user.is_admin
-    if is_admin:
+    if ctx.bypass.sees_all_in_scope:
         base_query = db.query(MediaFile).options(*list_options).filter(org_pred)
         effective_user_id = None
     elif ownership == "mine":
@@ -342,7 +341,7 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_quarantined(base_query, include_quarantined=is_admin)
+    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
 
     # Prepare filters dictionary
     filters = {
@@ -405,7 +404,11 @@ def list_media_files(
         # Pass speakers for speaker_summary in list view
         formatted_file = FormattingService.format_media_file(file, file.speakers)
         formatted_file.can_delete = can_delete_file(
-            current_user, file, organization_id=org_scope, is_org_admin=ctx.is_org_admin
+            current_user,
+            file,
+            organization_id=org_scope,
+            is_org_admin=ctx.is_org_admin,
+            bypass=ctx.bypass,
         )
         formatted_files.append(formatted_file)
 
@@ -439,7 +442,7 @@ def get_metadata_filters_endpoint(
         ctx.user.id,
         ownership=ownership,
         organization_id=ctx.org_id,
-        is_admin=ctx.user.is_admin,
+        include_quarantined=ctx.bypass.user_is_admin,
         owner_user_ids=resolve_owner_user_ids(db, owner),
     )
 
@@ -480,9 +483,7 @@ def list_file_owners(
     ``masked_email``) — so this route exposes no more per-owner information
     than the app already shows elsewhere.
     """
-    owners = get_accessible_owners(
-        db, ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
-    )
+    owners = get_accessible_owners(db, ctx.user.id, organization_id=ctx.org_id, bypass=ctx.bypass)
     return [
         UserSearchResult(
             uuid=u.uuid, full_name=u.full_name, masked_email=mask_email_for_display(u.email)
@@ -542,6 +543,7 @@ def get_media_file(
         segment_offset,
         redact=redact,
         organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
 
@@ -564,7 +566,7 @@ def get_media_file_info(
         db,
         str(file_uuid),
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
     )
 
@@ -594,7 +596,12 @@ def update_media_file_endpoint(
 ):
     """Update a media file's metadata"""
     return update_media_file(
-        db, str(file_uuid), media_file_update, ctx.user, organization_id=ctx.org_id
+        db,
+        str(file_uuid),
+        media_file_update,
+        ctx.user,
+        organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
 
@@ -644,9 +651,8 @@ def get_media_file_stream_url(
         )
 
     # Verify user has permission (ownership check, tenant-gated via ctx.org_id)
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     # Determine storage path and expiration based on media type
@@ -924,7 +930,7 @@ def prepare_download(
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     variant = _download_redaction_variant(
@@ -990,7 +996,7 @@ def download_stream(
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     user_id = current_user.id
     # Resolved once, on the request thread, while the request's session is open: the
@@ -1147,15 +1153,25 @@ def get_thumbnail(
                 detail="Authentication required. Use presigned thumbnail_url from file listing.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        is_admin = current_user.is_admin
-        if not is_admin and db_file.user_id != current_user.id:
-            from app.api.deps_context import resolve_org_context
+        from app.api.deps_context import resolve_org_context
+        from app.services.platform_bypass import build_bypass
+
+        # Resolve the caller's tenant scope (None = personal) WITHOUT editing
+        # get_optional_current_user (owned by step 1.5).
+        org_id, _ = resolve_org_context(request, db, current_user)
+        bypass = build_bypass(db, current_user, org_id)
+        platform_allowed = bypass.allows(
+            org_id=db_file.organization_id,
+            owner_id=db_file.user_id,
+            need="read",
+            resource_type="media_file",
+            resource_uuid=str(db_file.uuid),
+        )
+        if not platform_allowed and db_file.user_id != current_user.id:
             from app.services.permission_service import PermissionService
 
-            # Resolve the caller's tenant scope (None = personal) WITHOUT editing
-            # get_optional_current_user (owned by step 1.5), then route the share
-            # resolution through the org-aware permission path (default-deny).
-            org_id, _ = resolve_org_context(request, db, current_user)
+            # Route the share resolution through the org-aware permission path
+            # (default-deny).
             perm = PermissionService.get_file_permission(
                 db, db_file.id, current_user.id, organization_id=org_id
             )
@@ -1164,17 +1180,13 @@ def get_thumbnail(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this file",
                 )
-        elif not is_admin:
+        elif not platform_allowed and getattr(db_file, "organization_id", None) != org_id:
             # Direct owner: still enforce the tenant gate so a personal-scope
             # request can't fetch an org-stamped file's thumbnail (and vice versa).
-            from app.api.deps_context import resolve_org_context
-
-            org_id, _ = resolve_org_context(request, db, current_user)
-            if getattr(db_file, "organization_id", None) != org_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this file",
-                )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this file",
+            )
 
     return get_thumbnail_streaming_response(db_file)
 
@@ -1193,7 +1205,13 @@ def update_transcript_segment(
 
     # Update the transcript segment (tenant-gated via ctx.org_id)
     result = update_single_transcript_segment(
-        db, file_uuid, segment_uuid, segment_update, current_user, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        segment_uuid,
+        segment_update,
+        current_user,
+        organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
     # Transcript has been updated - subtitles will be regenerated on-demand
@@ -1230,6 +1248,7 @@ def reprocess_media_file(
         stages=stages,
         whisper_model=whisper_model,
         organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
 
@@ -1264,12 +1283,11 @@ def clear_video_cache(
     # 403/404, and a broad `except Exception` around it re-wrapped that as a 500 — hiding
     # the authz result — then referenced the still-unassigned `file_id` in its own log
     # line and crashed a second time with NameError (issue #284 A0.6).
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -1308,9 +1326,8 @@ def get_file_analytics(
     """Get analytics for a media file (lightweight, no transcript/speaker data)."""
     from app.schemas.media import Analytics as AnalyticsSchema
 
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     # Enum comparison (issue #272) — str(status) never matched "completed",
     # so this endpoint could also never compute analytics on demand.
@@ -1331,12 +1348,11 @@ def refresh_analytics(
     # Authorization runs OUTSIDE the try — see clear_video_cache above for why
     # (issue #284 A0.6). The `raise HTTPException(500)` below was also swallowed by the
     # broad handler and re-wrapped, doubling the `from e` chain.
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )

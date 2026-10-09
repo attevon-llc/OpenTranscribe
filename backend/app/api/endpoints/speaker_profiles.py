@@ -27,6 +27,7 @@ from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
+from app.services.permission_service import org_scope_pred
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
@@ -52,10 +53,14 @@ def list_speaker_profiles(
 ):
     """List the caller's speaker profiles in the active tenant, including shared ones."""
     try:
-        # Admins see all profiles; regular users see own + shared
-        is_admin = current_user.is_admin
-        if is_admin:
+        # A caller who sees all in scope gets every profile of the tenant; regular users
+        # see own + shared
+        sees_all = ctx.bypass.sees_all_in_scope
+        if sees_all:
             query = db.query(SpeakerProfile)
+            tenant_pred = org_scope_pred(SpeakerProfile.organization_id, ctx.org_id)
+            if tenant_pred is not None:
+                query = query.filter(tenant_pred)
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
         else:
             accessible = PermissionService.get_accessible_profile_ids_with_source(
@@ -87,8 +92,8 @@ def list_speaker_profiles(
 
         profiles = query.all()
 
-        # For admin, compute owned_ids to mark is_shared correctly
-        if is_admin:
+        # For a see-all caller, compute owned_ids to mark is_shared correctly
+        if sees_all:
             owned_ids = {
                 row[0]
                 for row in db.query(SpeakerProfile.id)
@@ -366,7 +371,8 @@ def update_speaker_profile(
                 db,
                 int(profile_id),
                 name,
-                restrict_to_user_id=None if current_user.is_admin else current_user.id,
+                restrict_to_user_id=None if ctx.bypass.sees_all_in_scope else current_user.id,
+                organization_id=profile.organization_id,
             )
 
         if description is not None:
@@ -470,6 +476,7 @@ def assign_speaker_to_profile(
             organization_id=ctx.org_id,
             min_permission="editor",
             forbidden_detail="Not authorized to access this speaker",
+            bypass=ctx.bypass,
         )
         speaker_id = speaker.id
         # Read before the assignment writes over it — the task's re-score gate
@@ -693,6 +700,7 @@ def get_speaker_profile_suggestions(
             current_user,
             organization_id=ctx.org_id,
             forbidden_detail="Not authorized to access this speaker",
+            bypass=ctx.bypass,
         )
         speaker_id = speaker.id
 
@@ -768,7 +776,7 @@ def get_speaker_profile_occurrences(
         occurrences = matching_service.find_speaker_occurrences(
             int(profile_id),
             current_user.id,
-            include_quarantined=current_user.is_admin,
+            include_quarantined=ctx.bypass.user_is_admin,
             organization_id=ctx.org_id,
         )
 

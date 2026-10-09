@@ -333,7 +333,7 @@ def list_shared_collections(
 
     # Batch: media counts per collection (quarantined files hidden for non-admins)
     media_counts = _visible_media_counts(
-        db, filtered_ids, include_quarantined=bool(current_user.is_admin)
+        db, filtered_ids, include_quarantined=ctx.bypass.user_is_admin
     )
 
     # Batch: share records for shared_by info
@@ -476,7 +476,7 @@ def list_collections(
     org_pred = _tenant_pred(ctx)
 
     # Member counts hide quarantined files for non-admins (issue #262g).
-    include_quarantined = bool(current_user.is_admin)
+    include_quarantined = ctx.bypass.user_is_admin
 
     if ownership == "mine":
         accessible_perms = dict(PermissionService.get_accessible_collection_ids(db, user_id))
@@ -738,11 +738,10 @@ def get_collection(
     # detail included (matches the gallery, search, and per-file 404 gate).
     from app.services.takedown_service import is_hidden_for
 
-    is_admin = bool(getattr(current_user, "is_admin", False))
     media_files = [
         member.media_file
         for member in collection.collection_members
-        if not is_hidden_for(member.media_file, is_admin=is_admin)
+        if not is_hidden_for(member.media_file, is_admin=ctx.bypass.user_is_admin)
     ]
 
     # Build response with prompt info
@@ -1059,9 +1058,15 @@ def get_collection_media(
     # shared collections, and for an org's collections (v422: all org files are
     # visible to every member), show all files in the collection.
     own_files_only = (
-        not current_user.is_admin
-        and collection.organization_id is None
+        collection.organization_id is None
         and collection.user_id == current_user.id
+        and not ctx.bypass.allows(
+            org_id=collection.organization_id,
+            owner_id=collection.user_id,
+            need="read",
+            resource_type="collection",
+            resource_uuid=str(collection.uuid),
+        )
     )
     if own_files_only:
         base_query = base_query.filter(MediaFile.user_id == current_user.id)
@@ -1069,7 +1074,7 @@ def get_collection_media(
     # Abuse/DMCA: quarantined files are hidden from every read surface for
     # non-admins — the paginated collection-media list included (matches the
     # collection detail's is_hidden_for gate and the visible member counts).
-    base_query = exclude_quarantined(base_query, include_quarantined=bool(current_user.is_admin))
+    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
 
     # Prepare filters dictionary
     filters = {

@@ -28,6 +28,7 @@ from app.models.user import User
 from app.services import system_settings_service
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.platform_bypass import PlatformBypass
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
@@ -110,7 +111,7 @@ def get_file_status_detail(
     try:
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+            db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
         )
         file_id = db_file.id  # Get internal ID for task operations
 
@@ -208,12 +209,11 @@ def cancel_file_processing(
 ):
     """Cancel active processing for a file."""
     try:
-        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
             db,
             file_uuid,
             current_user.id,
-            is_admin=is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )
@@ -265,7 +265,7 @@ def retry_file_processing(
             db,
             file_uuid,
             current_user.id,
-            is_admin=is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )
@@ -364,12 +364,11 @@ def recover_file(
 ):
     """Attempt to recover a stuck file."""
     try:
-        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
             db,
             file_uuid,
             current_user.id,
-            is_admin=is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )
@@ -417,7 +416,14 @@ def force_delete_file(
         )
 
     try:
-        delete_media_file(db, file_uuid, current_user, force=True, organization_id=ctx.org_id)
+        delete_media_file(
+            db,
+            file_uuid,
+            current_user,
+            force=True,
+            organization_id=ctx.org_id,
+            bypass=ctx.bypass,
+        )
         return {"message": "File force deleted successfully", "file_uuid": file_uuid}
 
     except HTTPException:
@@ -444,8 +450,6 @@ def get_stuck_files(
     try:
         stuck_file_ids = check_for_stuck_files(db, threshold_hours)
 
-        # Get file details for user's files only (unless admin)
-        is_admin = current_user.is_admin
         stuck_files = []
 
         for file_id in stuck_file_ids:
@@ -454,7 +458,7 @@ def get_stuck_files(
                 from app.api.endpoints.files.crud import get_media_file_by_id
 
                 db_file = get_media_file_by_id(
-                    db, file_id, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+                    db, file_id, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
                 )
                 stuck_files.append(
                     {
@@ -500,6 +504,7 @@ def _handle_delete_action(
     current_user: User,
     force: bool,
     is_admin: bool,
+    bypass: PlatformBypass,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
 ) -> BulkActionResult:
@@ -524,6 +529,7 @@ def _handle_delete_action(
             force=force and is_admin,
             organization_id=organization_id,
             is_org_admin=is_org_admin,
+            bypass=bypass,
         )
     except HTTPException as e:
         if e.status_code != status.HTTP_403_FORBIDDEN:
@@ -947,7 +953,7 @@ def _handle_tag_action(
     *,
     add: bool,
     user_id: int,
-    is_admin: bool,
+    bypass: PlatformBypass,
 ) -> BulkActionResult:
     """Attach or detach the batch's tag on one file, as a per-file outcome.
 
@@ -955,7 +961,7 @@ def _handle_tag_action(
     outcome onto the bulk envelope.
     """
     applied = apply_tag_to_file(
-        db, file_id=file_id, tag=tag, add=add, user_id=user_id, is_admin=is_admin
+        db, file_id=file_id, tag=tag, add=add, user_id=user_id, bypass=bypass
     )
     return BulkActionResult(
         file_uuid=file_uuid,
@@ -972,6 +978,7 @@ def _process_single_file_action(
     action: str,
     current_user: User,
     is_admin: bool,
+    bypass: PlatformBypass,
     force: bool,
     reset_retry_count: bool,
     stages: list[str] | None = None,
@@ -988,14 +995,14 @@ def _process_single_file_action(
         # not the "editor" pre-check below: an editor share must NOT pass, and an
         # org admin with no share on a member's file must (issue #1103).
         return _handle_delete_action(
-            db, file_uuid, current_user, force, is_admin, organization_id, is_org_admin
+            db, file_uuid, current_user, force, is_admin, bypass, organization_id, is_org_admin
         )
 
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=bypass,
         organization_id=organization_id,
         min_permission="editor",
     )
@@ -1014,10 +1021,10 @@ def _process_single_file_action(
             db, file_uuid, file_id, current_user.id
         ),
         "add_tag": lambda: _handle_tag_action(
-            db, file_uuid, file_id, tag, add=True, user_id=current_user.id, is_admin=is_admin
+            db, file_uuid, file_id, tag, add=True, user_id=current_user.id, bypass=bypass
         ),
         "remove_tag": lambda: _handle_tag_action(
-            db, file_uuid, file_id, tag, add=False, user_id=current_user.id, is_admin=is_admin
+            db, file_uuid, file_id, tag, add=False, user_id=current_user.id, bypass=bypass
         ),
     }
 
@@ -1070,6 +1077,7 @@ def bulk_file_action(
                     action=request.action,
                     current_user=current_user,
                     is_admin=is_admin,
+                    bypass=ctx.bypass,
                     force=request.force,
                     reset_retry_count=request.reset_retry_count,
                     stages=request.stages if request.stages else None,

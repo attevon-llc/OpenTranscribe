@@ -31,8 +31,11 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.services.permission_service import org_scope_pred
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,7 @@ def apply_profile_name_to_speakers(
     new_name: str,
     *,
     restrict_to_user_id: int | None = None,
+    organization_id: OrgScope = UNSCOPED,
 ) -> list[tuple[str, str]]:
     """Rewrite every member speaker's display name, reporting the names it replaced.
 
@@ -68,6 +72,8 @@ def apply_profile_name_to_speakers(
             A profile can be shared, so its members may belong to other accounts;
             ``None`` (admin) sweeps all of them. This mirrors the authorization
             the ``update_profile`` action has applied since #284.
+        organization_id: The tenant the rename acts in. Members stamped with another
+            tenant are never rewritten, whoever asks. ``UNSCOPED`` = no tenant gate.
 
     Returns:
         ``(file_uuid, old_canonical_label)`` pairs ready for
@@ -78,6 +84,9 @@ def apply_profile_name_to_speakers(
     linked_query = db.query(Speaker).filter(Speaker.profile_id == profile_id)
     if restrict_to_user_id is not None:
         linked_query = linked_query.filter(Speaker.user_id == restrict_to_user_id)
+    tenant_pred = org_scope_pred(Speaker.organization_id, organization_id)
+    if tenant_pred is not None:
+        linked_query = linked_query.filter(tenant_pred)
     linked_speakers = linked_query.all()
 
     # One grouped lookup, not a lazy `speaker.media_file.uuid` per row: a

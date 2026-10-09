@@ -1,5 +1,7 @@
 """API endpoints for media file comments with sharing-aware permissions."""
 
+from typing import Literal
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -21,6 +23,7 @@ from app.schemas.media import CommentCreate
 from app.schemas.media import CommentCreateStandalone
 from app.schemas.media import CommentUpdate
 from app.services.permission_service import PermissionService
+from app.services.platform_bypass import PlatformBypass
 from app.utils.uuid_helpers import get_comment_by_uuid
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.uuid_helpers import require_resource_owner
@@ -33,6 +36,8 @@ def _check_file_access(
     file_uuid: str,
     current_user: User,
     organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFile:
     """Get a media file after verifying the user has at least viewer permission.
 
@@ -43,7 +48,7 @@ def _check_file_access(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=bypass,
         organization_id=organization_id,
     )
     return media_file
@@ -60,7 +65,9 @@ def get_comments_for_file_nested(
 
     Requires viewer+ permission on the file (via ownership or sharing).
     """
-    media_file = _check_file_access(db, file_uuid, current_user, organization_id=ctx.org_id)
+    media_file = _check_file_access(
+        db, file_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
+    )
     file_id = media_file.id
 
     # Get comments for this file with user relationship loaded
@@ -85,7 +92,9 @@ def create_comment_for_file_nested(
 
     Requires viewer+ permission on the file (commenting is collaborative).
     """
-    media_file = _check_file_access(db, file_uuid, current_user, organization_id=ctx.org_id)
+    media_file = _check_file_access(
+        db, file_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
+    )
     file_id = media_file.id
 
     # Create comment with file_id from URL
@@ -130,7 +139,9 @@ def get_comments_for_file(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Query parameter 'media_file_id' is required",
         )
-    media_file = _check_file_access(db, file_ref, current_user, organization_id=ctx.org_id)
+    media_file = _check_file_access(
+        db, file_ref, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
+    )
     media_file_pk = media_file.id
 
     # Get comments for this file (eager-load relationships to avoid N+1)
@@ -159,7 +170,11 @@ def create_comment_standalone(
     viewer+ permission on the file.
     """
     media_file = _check_file_access(
-        db, str(comment.media_file_id), current_user, organization_id=ctx.org_id
+        db,
+        str(comment.media_file_id),
+        current_user,
+        organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
     file_id = media_file.id
 
@@ -193,6 +208,7 @@ def _assert_comment_file_in_scope(
     ctx: RequestContext,
     *,
     forbidden_detail: str,
+    need: Literal["read", "write"] = "read",
 ) -> None:
     """Refuse a comment whose file is outside the caller's tenant scope.
 
@@ -203,8 +219,8 @@ def _assert_comment_file_in_scope(
     forever. This gate runs first so the read and write paths agree on what is
     reachable, and the ownership rules only ever narrow that further.
 
-    Admins bypass, matching ``get_comment`` and ``_check_file_access`` — one rule
-    for the whole module rather than a second, divergent one.
+    The platform role bypasses through ``ctx.bypass``, decided on the comment's
+    file and its tenant (single-tenant mode only), matching ``_check_file_access``.
 
     ``PermissionService.get_file_permission`` has no notion of quarantine at
     all (ownership/sharing only), unlike ``_check_file_access`` (used by the
@@ -218,7 +234,14 @@ def _assert_comment_file_in_scope(
     """
     from app.services.takedown_service import is_hidden_for
 
-    if current_user.is_admin:
+    media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
+    if media_file is not None and ctx.bypass.allows(
+        org_id=media_file.organization_id,
+        owner_id=media_file.user_id,
+        need=need,
+        resource_type="comment",
+        resource_uuid=str(comment.uuid),
+    ):
         return
     permission = PermissionService.get_file_permission(
         db, int(comment.media_file_id), current_user.id, organization_id=ctx.org_id
@@ -228,7 +251,6 @@ def _assert_comment_file_in_scope(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=forbidden_detail,
         )
-    media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
     if media_file is not None and is_hidden_for(media_file, is_admin=False):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
 
@@ -276,13 +298,19 @@ def update_comment(
         current_user,
         ctx,
         forbidden_detail="You do not have permission to edit this comment",
+        need="write",
     )
 
+    comment_file_org = (
+        db.query(MediaFile.organization_id).filter(MediaFile.id == comment.media_file_id).scalar()
+    )
     require_resource_owner(
         comment,
         current_user,
         forbidden_detail="You do not have permission to edit this comment",
-        allow_admin=True,
+        bypass=ctx.bypass,
+        org_id=comment_file_org,
+        resource_type="comment",
     )
 
     # Update fields
@@ -325,10 +353,22 @@ def delete_comment(
         current_user,
         ctx,
         forbidden_detail="You do not have permission to delete this comment",
+        need="write",
     )
 
-    # Allow deletion by admin
-    if current_user.is_admin:
+    # Allow deletion by the platform role (single-tenant mode), on the comment's file
+    file_row = (
+        db.query(MediaFile.organization_id, MediaFile.user_id)
+        .filter(MediaFile.id == comment.media_file_id)
+        .first()
+    )
+    if file_row is not None and ctx.bypass.allows(
+        org_id=file_row[0],
+        owner_id=file_row[1],
+        need="write",
+        resource_type="comment",
+        resource_uuid=str(comment.uuid),
+    ):
         db.delete(comment)
         db.commit()
         return None

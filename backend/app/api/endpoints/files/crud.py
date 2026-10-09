@@ -33,6 +33,7 @@ from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
+from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
 from app.utils.db_helpers import owned_in_tenant
@@ -48,19 +49,23 @@ def get_media_file_by_uuid(
     db: Session,
     file_uuid: str,
     user_id: int,
-    is_admin: bool = False,
     *,
+    bypass: PlatformBypass = PlatformBypass.none(),
     organization_id: OrgScope = UNSCOPED,
     min_permission: str = "viewer",
 ) -> MediaFile:
     """
     Get a media file by UUID and user ID.
 
+    Always delegates to ``get_file_by_uuid_with_permission``: there is no admin
+    short-cut around the tenant gate here (the old bare lookup let ``/stream-url``
+    and the detail/update/delete routes cross tenants).
+
     Args:
         db: Database session
         file_uuid: File UUID
         user_id: User ID
-        is_admin: Whether the current user is an admin (can access any file)
+        bypass: The request's platform bypass, decided on the loaded file's tenant.
         organization_id: Active org id, None for personal, or UNSCOPED (default,
             legacy = no gate). Threaded from ``ctx.org_id`` by request handlers so
             cross-tenant files 404/403 (default-deny).
@@ -69,7 +74,7 @@ def get_media_file_by_uuid(
             ``PermissionService.PERMISSION_LEVELS``). Defaults to "viewer",
             preserving prior behavior for read-only call sites. Mutating
             endpoints should pass ``min_permission="editor"``. Does not affect
-            the admin bypass or direct-ownership fast path.
+            direct ownership; a non-viewer level asks the bypass for WRITE access.
 
     Returns:
         MediaFile object
@@ -77,28 +82,22 @@ def get_media_file_by_uuid(
     Raises:
         HTTPException: If file not found or no permission
     """
-    # Use UUID helper with admin bypass for permission check
-    if is_admin:
-        from app.utils.uuid_helpers import get_file_by_uuid
-
-        return get_file_by_uuid(db, file_uuid)
-    else:
-        return get_file_by_uuid_with_permission(
-            db,
-            file_uuid,
-            user_id,
-            is_admin=is_admin,
-            organization_id=organization_id,
-            min_permission=min_permission,
-        )
+    return get_file_by_uuid_with_permission(
+        db,
+        file_uuid,
+        user_id,
+        bypass=bypass,
+        organization_id=organization_id,
+        min_permission=min_permission,
+    )
 
 
 def get_media_file_by_id(
     db: Session,
     file_id: int,
     user_id: int,
-    is_admin: bool = False,
     *,
+    bypass: PlatformBypass = PlatformBypass.none(),
     organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
@@ -108,7 +107,7 @@ def get_media_file_by_id(
         db: Database session
         file_id: File ID
         user_id: User ID
-        is_admin: Whether the current user is an admin (can access any file)
+        bypass: The request's platform bypass, decided on the loaded file's tenant.
         organization_id: Active tenant (org id, or None for org-less files); a
             non-admin's file outside it is not found. UNSCOPED = no tenant gate.
 
@@ -118,14 +117,20 @@ def get_media_file_by_id(
     Raises:
         HTTPException: If file not found
     """
-    # Admin users can access any file, regular users only their own
-    query = db.query(MediaFile).filter(MediaFile.id == file_id)
-    if not is_admin:
-        query = query.filter(
-            owned_in_tenant(MediaFile, user_id=user_id, organization_id=organization_id)
+    db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    if db_file is None or not bypass.allows(
+        org_id=db_file.organization_id,
+        owner_id=db_file.user_id,
+        need="read",
+        resource_type="media_file",
+        resource_uuid=str(db_file.uuid),
+    ):
+        db_file = (
+            db.query(MediaFile)
+            .filter(MediaFile.id == file_id)
+            .filter(owned_in_tenant(MediaFile, user_id=user_id, organization_id=organization_id))
+            .first()
         )
-
-    db_file = query.first()
 
     if not db_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
@@ -548,7 +553,7 @@ def _resolve_redaction_for_request(
     db_file: MediaFile,
     current_user: User,
     *,
-    is_admin: bool,
+    bypass: PlatformBypass,
     redact: bool,
     organization_id: OrgScope = UNSCOPED,
 ) -> tuple[Any, set]:
@@ -585,7 +590,7 @@ def _resolve_redaction_for_request(
             detail="Redaction policy is temporarily unavailable; transcript withheld.",
         ) from e
 
-    can_reveal = bool(db_file.user_id == current_user.id) or bool(is_admin)
+    can_reveal = bool(db_file.user_id == current_user.id) or bypass.admin_reveal_allowed
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
 
     audit_unredacted_reveal(db_file, current_user, reveal, surface="transcript")
@@ -894,6 +899,7 @@ def get_media_file_detail(
     redact: bool = True,
     *,
     organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
@@ -904,15 +910,15 @@ def get_media_file_detail(
         current_user: Current user
         segment_limit: Maximum number of transcript segments to return (None = all)
         segment_offset: Offset for transcript segment pagination (default 0)
+        bypass: The request's platform bypass (``ctx.bypass``).
 
     Returns:
         MediaFileDetail object with all computed and formatted data
     """
     try:
-        is_admin = current_user.is_admin
         try:
             db_file = get_media_file_by_uuid(
-                db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+                db, file_uuid, current_user.id, bypass=bypass, organization_id=organization_id
             )
         except HTTPException as denied:
             if denied.status_code != status.HTTP_403_FORBIDDEN:
@@ -968,7 +974,13 @@ def get_media_file_detail(
         # Compute caller's effective permission for frontend
         if db_file.user_id == current_user.id:
             my_permission = None  # Actual owner (frontend convention: null = owner)
-        elif is_admin:
+        elif bypass.allows(
+            org_id=db_file.organization_id,
+            owner_id=db_file.user_id,
+            need="read",
+            resource_type="media_file",
+            resource_uuid=str(db_file.uuid),
+        ):
             my_permission = "owner"  # Admin viewing someone else's file
         else:
             from app.services.permission_service import PermissionService
@@ -985,7 +997,7 @@ def get_media_file_detail(
             db,
             db_file,
             current_user,
-            is_admin=is_admin,
+            bypass=bypass,
             redact=redact,
             organization_id=organization_id,
         )
@@ -1039,6 +1051,7 @@ def update_media_file(
     current_user: User,
     *,
     organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFile:
     """
     Update a media file's metadata.
@@ -1049,16 +1062,16 @@ def update_media_file(
         media_file_update: Update data
         current_user: Current user
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        bypass: The request's platform bypass (``ctx.bypass``).
 
     Returns:
         Updated MediaFile object
     """
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=bypass,
         organization_id=organization_id,
         min_permission="editor",
     )
@@ -1131,6 +1144,7 @@ def delete_media_file(
     *,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> None:
     """
     Delete a media file and all associated data with safety checks.
@@ -1143,11 +1157,14 @@ def delete_media_file(
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
         is_org_admin: Caller is ``org:admin`` of ``organization_id``
             (``ctx.is_org_admin``); lets an org admin delete members' files.
+        bypass: The request's platform bypass (``ctx.bypass``).
     """
     from app.services.delete_permissions import get_deletable_file
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import is_file_safe_to_delete
 
+    # Capability flags offered back to the client in the 409 below: whether the platform
+    # role could cancel or force this delete (class P, not a content-access decision).
     is_admin = current_user.is_admin
     # Delete is its own right, not "editor" (issue #1103): owner, org admin of
     # the file's organization, or platform admin.
@@ -1157,6 +1174,7 @@ def delete_media_file(
         current_user,
         organization_id=organization_id,
         is_org_admin=is_org_admin,
+        bypass=bypass,
     )
     file_id = db_file.id  # Get internal ID for task operations
 
@@ -1222,6 +1240,7 @@ def update_single_transcript_segment(
     current_user: User,
     *,
     organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> TranscriptSegmentSchema:
     """
     Update a single transcript segment for a media file.
@@ -1232,17 +1251,17 @@ def update_single_transcript_segment(
         segment_uuid: Segment UUID
         segment_update: Segment update data
         current_user: Current user
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        bypass: The request's platform bypass (``ctx.bypass``).
 
     Returns:
         Updated TranscriptSegmentSchema object with all formatted fields
     """
-    # Verify user owns the file or is admin
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=bypass,
         organization_id=organization_id,
         min_permission="editor",
     )
@@ -1338,6 +1357,7 @@ def get_stream_url_info(
     current_user: User,
     *,
     organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> dict[str, Any]:
     """
     Get streaming URL information for a media file.
@@ -1347,13 +1367,13 @@ def get_stream_url_info(
         file_uuid: File UUID
         current_user: Current user
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        bypass: The request's platform bypass (``ctx.bypass``).
 
     Returns:
         Dictionary with URL and content type information
     """
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db, file_uuid, current_user.id, bypass=bypass, organization_id=organization_id
     )
 
     # Skip S3 operations in test environment

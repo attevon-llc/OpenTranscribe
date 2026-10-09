@@ -259,7 +259,7 @@ def export_conversation(
     from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
 
     filtered_citation_lists = drop_quarantined_citations_bulk(
-        db, [m.citations for m in raw_messages], is_admin=ctx.user.is_admin
+        db, [m.citations for m in raw_messages], is_admin=ctx.bypass.user_is_admin
     )
     raw_messages = [
         dataclasses.replace(m, citations=citations)

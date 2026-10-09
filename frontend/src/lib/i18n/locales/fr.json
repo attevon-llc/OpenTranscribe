@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "Impossible de réinitialiser le compteur de verrouillage",
   "settings.lockedAccounts.confirmUnlock": "Déverrouiller {{identifier}} maintenant ?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} déverrouillé",
-  "settings.lockedAccounts.unlockFailed": "Impossible de déverrouiller le compte"
+  "settings.lockedAccounts.unlockFailed": "Impossible de déverrouiller le compte",
+  "supportAccess.session.user": "La session d'accès support est terminée.",
+  "supportAccess.session.expired": "L'accès support a expiré.",
+  "supportAccess.session.revoked": "L'accès support a été révoqué.",
+  "supportAccess.session.invalid": "L'accès support n'est plus valide.",
+  "supportAccess.session.activateFailed": "Cette autorisation n'est pas active.",
+  "supportAccess.error.readOnly": "Cette autorisation de support est en lecture seule.",
+  "supportAccess.error.notPermitted": "Cette action n'est pas disponible pendant une session de support.",
+  "supportAccess.error.auditUnavailable": "L'accès support n'a pas pu être enregistré ; la requête a donc été refusée. Réessayez dans un instant.",
+  "supportAccess.deletedUser": "Utilisateur supprimé",
+  "supportAccess.deletedOrganization": "Organisation supprimée"
 }

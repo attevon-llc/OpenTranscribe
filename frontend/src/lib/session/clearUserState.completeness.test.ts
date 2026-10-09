@@ -78,6 +78,9 @@ const EXEMPT: Record<string, string> = {
     'node keys and reveal timings, never trace content.',
 
   // ── Covered transitively by a registered module ──
+  'lib/supportAccess/headers':
+    'activeGrantUuid is written only by stores/supportSession, which IS registered: ' +
+    "clearUserState calls supportSession.end('logout'), and end() sets it to null.",
   'lib/services/uploadService':
     'uploadService.reset() is called by uploadsStore.reset(), which IS registered.',
 

@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "Sperrzähler konnte nicht zurückgesetzt werden",
   "settings.lockedAccounts.confirmUnlock": "{{identifier}} jetzt entsperren?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} entsperrt",
-  "settings.lockedAccounts.unlockFailed": "Konto konnte nicht entsperrt werden"
+  "settings.lockedAccounts.unlockFailed": "Konto konnte nicht entsperrt werden",
+  "supportAccess.session.user": "Die Support-Zugriffssitzung wurde beendet.",
+  "supportAccess.session.expired": "Der Support-Zugriff ist abgelaufen.",
+  "supportAccess.session.revoked": "Der Support-Zugriff wurde widerrufen.",
+  "supportAccess.session.invalid": "Der Support-Zugriff ist nicht mehr gültig.",
+  "supportAccess.session.activateFailed": "Diese Freigabe ist nicht aktiv.",
+  "supportAccess.error.readOnly": "Diese Support-Freigabe ist schreibgeschützt.",
+  "supportAccess.error.notPermitted": "Diese Aktion ist während einer Support-Sitzung nicht verfügbar.",
+  "supportAccess.error.auditUnavailable": "Der Support-Zugriff konnte nicht protokolliert werden, daher wurde die Anfrage abgelehnt. Versuchen Sie es in Kürze erneut.",
+  "supportAccess.deletedUser": "Gelöschter Benutzer",
+  "supportAccess.deletedOrganization": "Gelöschte Organisation"
 }

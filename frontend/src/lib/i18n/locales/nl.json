@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "Kan de vergrendelingsteller niet resetten",
   "settings.lockedAccounts.confirmUnlock": "{{identifier}} nu deblokkeren?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} gedeblokkeerd",
-  "settings.lockedAccounts.unlockFailed": "Kan het account niet deblokkeren"
+  "settings.lockedAccounts.unlockFailed": "Kan het account niet deblokkeren",
+  "supportAccess.session.user": "De ondersteuningssessie is beëindigd.",
+  "supportAccess.session.expired": "De ondersteuningstoegang is verlopen.",
+  "supportAccess.session.revoked": "De ondersteuningstoegang is ingetrokken.",
+  "supportAccess.session.invalid": "De ondersteuningstoegang is niet meer geldig.",
+  "supportAccess.session.activateFailed": "Deze toestemming is niet actief.",
+  "supportAccess.error.readOnly": "Deze ondersteuningstoestemming is alleen-lezen.",
+  "supportAccess.error.notPermitted": "Deze actie is niet beschikbaar tijdens een ondersteuningssessie.",
+  "supportAccess.error.auditUnavailable": "De ondersteuningstoegang kon niet worden vastgelegd, dus het verzoek is geweigerd. Probeer het zo meteen opnieuw.",
+  "supportAccess.deletedUser": "Verwijderde gebruiker",
+  "supportAccess.deletedOrganization": "Verwijderde organisatie"
 }

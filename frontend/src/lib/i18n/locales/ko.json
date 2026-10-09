@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "잠금 카운터를 재설정할 수 없습니다",
   "settings.lockedAccounts.confirmUnlock": "{{identifier}}을(를) 지금 잠금 해제하시겠습니까?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}}의 잠금이 해제되었습니다",
-  "settings.lockedAccounts.unlockFailed": "계정을 잠금 해제할 수 없습니다"
+  "settings.lockedAccounts.unlockFailed": "계정을 잠금 해제할 수 없습니다",
+  "supportAccess.session.user": "지원 액세스 세션이 종료되었습니다.",
+  "supportAccess.session.expired": "지원 액세스가 만료되었습니다.",
+  "supportAccess.session.revoked": "지원 액세스가 취소되었습니다.",
+  "supportAccess.session.invalid": "지원 액세스가 더 이상 유효하지 않습니다.",
+  "supportAccess.session.activateFailed": "이 권한은 활성 상태가 아닙니다.",
+  "supportAccess.error.readOnly": "이 지원 권한은 읽기 전용입니다.",
+  "supportAccess.error.notPermitted": "이 작업은 지원 세션 중에는 사용할 수 없습니다.",
+  "supportAccess.error.auditUnavailable": "지원 액세스를 기록할 수 없어 요청이 거부되었습니다. 잠시 후 다시 시도하세요.",
+  "supportAccess.deletedUser": "삭제된 사용자",
+  "supportAccess.deletedOrganization": "삭제된 조직"
 }

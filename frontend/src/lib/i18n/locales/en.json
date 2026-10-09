@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "Could not reset the lockout counter",
   "settings.lockedAccounts.confirmUnlock": "Unlock {{identifier}} now?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} unlocked",
-  "settings.lockedAccounts.unlockFailed": "Could not unlock the account"
+  "settings.lockedAccounts.unlockFailed": "Could not unlock the account",
+  "supportAccess.session.user": "Support access session ended.",
+  "supportAccess.session.expired": "Support access expired.",
+  "supportAccess.session.revoked": "Support access was revoked.",
+  "supportAccess.session.invalid": "Support access is no longer valid.",
+  "supportAccess.session.activateFailed": "This grant is not active.",
+  "supportAccess.error.readOnly": "This support grant is read only.",
+  "supportAccess.error.notPermitted": "This action is not available during a support session.",
+  "supportAccess.error.auditUnavailable": "Support access could not be recorded, so the request was refused. Try again shortly.",
+  "supportAccess.deletedUser": "Deleted user",
+  "supportAccess.deletedOrganization": "Deleted organization"
 }

@@ -74,6 +74,28 @@ describe('clearUserState', () => {
     expect(localStorage.getItem('opentr:uploadPreviousValues')).toBeNull();
   });
 
+  it('ends an active support-access session on logout and forgets the tab-scoped pointer', async () => {
+    // A grant must not outlive the login that started it (issue #1122): the header
+    // would otherwise ride the NEXT user's requests in this tab.
+    const { supportSession } = await import('$stores/supportSession');
+    const { getSupportAccessHeaders, setActiveSupportGrant } = await import(
+      '$lib/supportAccess/headers'
+    );
+    const end = vi.spyOn(supportSession, 'end');
+    setActiveSupportGrant('11111111-2222-3333-4444-555555555555');
+    sessionStorage.setItem('opentr:supportSession', JSON.stringify({ grantUuid: 'x' }));
+    try {
+      await clearUserState();
+
+      expect(end).toHaveBeenCalledWith('logout');
+      expect(sessionStorage.getItem('opentr:supportSession')).toBeNull();
+    } finally {
+      end.mockRestore();
+      setActiveSupportGrant(null);
+    }
+    expect(getSupportAccessHeaders('/files/x')).toEqual({});
+  });
+
   it('preserves UI preferences — over-clearing is a bug too', async () => {
     // A logout that resets the user's theme and language is a regression, not
     // extra safety. These are explicitly documented as preserved.

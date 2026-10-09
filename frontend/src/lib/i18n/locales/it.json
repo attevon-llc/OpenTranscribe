@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "Impossibile reimpostare il contatore di blocco",
   "settings.lockedAccounts.confirmUnlock": "Sbloccare {{identifier}} ora?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} sbloccato",
-  "settings.lockedAccounts.unlockFailed": "Impossibile sbloccare l'account"
+  "settings.lockedAccounts.unlockFailed": "Impossibile sbloccare l'account",
+  "supportAccess.session.user": "La sessione di accesso di supporto è terminata.",
+  "supportAccess.session.expired": "L'accesso di supporto è scaduto.",
+  "supportAccess.session.revoked": "L'accesso di supporto è stato revocato.",
+  "supportAccess.session.invalid": "L'accesso di supporto non è più valido.",
+  "supportAccess.session.activateFailed": "Questa autorizzazione non è attiva.",
+  "supportAccess.error.readOnly": "Questa autorizzazione di supporto è di sola lettura.",
+  "supportAccess.error.notPermitted": "Questa azione non è disponibile durante una sessione di supporto.",
+  "supportAccess.error.auditUnavailable": "Non è stato possibile registrare l'accesso di supporto, quindi la richiesta è stata rifiutata. Riprova tra poco.",
+  "supportAccess.deletedUser": "Utente eliminato",
+  "supportAccess.deletedOrganization": "Organizzazione eliminata"
 }

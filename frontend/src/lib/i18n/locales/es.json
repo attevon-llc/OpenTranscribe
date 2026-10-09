@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "No se pudo reiniciar el contador de bloqueo",
   "settings.lockedAccounts.confirmUnlock": "¿Desbloquear {{identifier}} ahora?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} desbloqueado",
-  "settings.lockedAccounts.unlockFailed": "No se pudo desbloquear la cuenta"
+  "settings.lockedAccounts.unlockFailed": "No se pudo desbloquear la cuenta",
+  "supportAccess.session.user": "La sesión de acceso de soporte ha terminado.",
+  "supportAccess.session.expired": "El acceso de soporte ha caducado.",
+  "supportAccess.session.revoked": "Se ha revocado el acceso de soporte.",
+  "supportAccess.session.invalid": "El acceso de soporte ya no es válido.",
+  "supportAccess.session.activateFailed": "Esta concesión no está activa.",
+  "supportAccess.error.readOnly": "Esta concesión de soporte es de solo lectura.",
+  "supportAccess.error.notPermitted": "Esta acción no está disponible durante una sesión de soporte.",
+  "supportAccess.error.auditUnavailable": "No se pudo registrar el acceso de soporte, por lo que se rechazó la solicitud. Inténtelo de nuevo en breve.",
+  "supportAccess.deletedUser": "Usuario eliminado",
+  "supportAccess.deletedOrganization": "Organización eliminada"
 }

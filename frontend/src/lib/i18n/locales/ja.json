@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "ロックカウンターをリセットできませんでした",
   "settings.lockedAccounts.confirmUnlock": "{{identifier}}を今すぐロック解除しますか？",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}}のロックを解除しました",
-  "settings.lockedAccounts.unlockFailed": "アカウントのロックを解除できませんでした"
+  "settings.lockedAccounts.unlockFailed": "アカウントのロックを解除できませんでした",
+  "supportAccess.session.user": "サポートアクセスのセッションを終了しました。",
+  "supportAccess.session.expired": "サポートアクセスの有効期限が切れました。",
+  "supportAccess.session.revoked": "サポートアクセスが取り消されました。",
+  "supportAccess.session.invalid": "サポートアクセスは無効になりました。",
+  "supportAccess.session.activateFailed": "この許可は有効ではありません。",
+  "supportAccess.error.readOnly": "このサポート許可は読み取り専用です。",
+  "supportAccess.error.notPermitted": "この操作はサポートセッション中は利用できません。",
+  "supportAccess.error.auditUnavailable": "サポートアクセスを記録できなかったため、リクエストは拒否されました。しばらくしてからもう一度お試しください。",
+  "supportAccess.deletedUser": "削除されたユーザー",
+  "supportAccess.deletedOrganization": "削除された組織"
 }

@@ -13,7 +13,8 @@
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
-  import { loadCapabilities } from "$stores/capabilities";
+  import { capabilities, loadCapabilities } from "$stores/capabilities";
+  import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
   import { locale, t } from "../stores/locale";
@@ -98,6 +99,15 @@
   // alongside the onMount call on a fresh page load.
   $: if ($isAuthenticated) {
     llmStatusStore.initialize();
+  }
+
+  // A support-access session lives in this tab's sessionStorage (issue #1122). Re-validate it
+  // once the session and the tenancy mode are both known; it clears silently if the grant
+  // is no longer active or the deployment is not multi-tenant.
+  let supportRestoreTried = false;
+  $: if ($isAuthenticated && $capabilities.loaded && !supportRestoreTried) {
+    supportRestoreTried = true;
+    void supportSession.restore();
   }
 
   // Classification banner state

@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "Не удалось сбросить счётчик блокировок",
   "settings.lockedAccounts.confirmUnlock": "Разблокировать {{identifier}} сейчас?",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} разблокирован(а)",
-  "settings.lockedAccounts.unlockFailed": "Не удалось разблокировать учётную запись"
+  "settings.lockedAccounts.unlockFailed": "Не удалось разблокировать учётную запись",
+  "supportAccess.session.user": "Сеанс доступа поддержки завершён.",
+  "supportAccess.session.expired": "Срок доступа поддержки истёк.",
+  "supportAccess.session.revoked": "Доступ поддержки отозван.",
+  "supportAccess.session.invalid": "Доступ поддержки больше не действителен.",
+  "supportAccess.session.activateFailed": "Это разрешение не активно.",
+  "supportAccess.error.readOnly": "Это разрешение поддержки только для чтения.",
+  "supportAccess.error.notPermitted": "Это действие недоступно во время сеанса поддержки.",
+  "supportAccess.error.auditUnavailable": "Не удалось записать доступ поддержки, поэтому запрос отклонён. Повторите попытку чуть позже.",
+  "supportAccess.deletedUser": "Удалённый пользователь",
+  "supportAccess.deletedOrganization": "Удалённая организация"
 }

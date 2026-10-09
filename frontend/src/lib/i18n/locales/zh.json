@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "无法重置锁定计数器",
   "settings.lockedAccounts.confirmUnlock": "确定要立即解锁 {{identifier}} 吗？",
   "settings.lockedAccounts.unlockSuccess": "{{identifier}} 已解锁",
-  "settings.lockedAccounts.unlockFailed": "无法解锁该账户"
+  "settings.lockedAccounts.unlockFailed": "无法解锁该账户",
+  "supportAccess.session.user": "支持访问会话已结束。",
+  "supportAccess.session.expired": "支持访问已过期。",
+  "supportAccess.session.revoked": "支持访问已被撤销。",
+  "supportAccess.session.invalid": "支持访问已失效。",
+  "supportAccess.session.activateFailed": "此授权未生效。",
+  "supportAccess.error.readOnly": "此支持授权为只读。",
+  "supportAccess.error.notPermitted": "支持会话期间无法执行此操作。",
+  "supportAccess.error.auditUnavailable": "无法记录支持访问，因此请求被拒绝。请稍后重试。",
+  "supportAccess.deletedUser": "已删除的用户",
+  "supportAccess.deletedOrganization": "已删除的组织"
 }

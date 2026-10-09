@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { isCloudEdition } from '$lib/edition';
 import { parseRetryAfter } from '$lib/utils/retryAfter';
+import { isSessionEndingCode, supportGrantErrorCode } from '$lib/supportAccess/errors';
+import { SUPPORT_GRANT_HEADER, getSupportAccessHeaders } from '$lib/supportAccess/headers';
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
@@ -115,6 +117,12 @@ axiosInstance.interceptors.request.use(
       config.headers[name] = value;
     }
 
+    // Support-access grant (issue #1122): same-origin relative API URLs only, never the
+    // auth/system/lifecycle/chat/admin routes. See $lib/supportAccess/headers.
+    for (const [name, value] of Object.entries(getSupportAccessHeaders(config.url))) {
+      config.headers[name] = value;
+    }
+
     // Attach the session abort signal so logout can cancel this request.
     // Skip if the caller already provided their own signal (e.g. prefetch
     // utilities that manage their own cancellation lifecycle) or if the
@@ -137,6 +145,53 @@ axiosInstance.interceptors.request.use(
   }
 );
 
+/**
+ * React to a support-access error code (issue #1122) on a request that carried the grant.
+ *
+ * Session-ending codes (the grant itself is dead) end the session. The three "this action is
+ * refused but the grant is fine" codes only toast. Anything without a code, such as an
+ * ordinary out-of-tenant 403/404, passes through untouched. The caller still rejects.
+ */
+async function handleSupportGrantError(error: {
+  config?: { headers?: { get?: (name: string) => unknown } & Record<string, unknown> };
+}): Promise<void> {
+  const code = supportGrantErrorCode(error);
+  if (!code) return;
+  const headers = error.config?.headers;
+  const carried = typeof headers?.get === 'function' ? headers.get(SUPPORT_GRANT_HEADER) : null;
+  if (!carried) return;
+  try {
+    if (isSessionEndingCode(code)) {
+      const { supportSession } = await import('../stores/supportSession');
+      const reason =
+        code === 'support_grant_revoked'
+          ? 'revoked'
+          : code === 'support_grant_expired'
+            ? 'expired'
+            : 'invalid';
+      await supportSession.end(reason);
+      return;
+    }
+    const key = SUPPORT_ERROR_TOAST[code];
+    if (key) {
+      const [{ toastStore }, { t }, { get }] = await Promise.all([
+        import('../stores/toast'),
+        import('../stores/locale'),
+        import('svelte/store'),
+      ]);
+      toastStore.error(get(t)(key));
+    }
+  } catch {
+    // Reporting must never mask the original API error.
+  }
+}
+
+const SUPPORT_ERROR_TOAST: Partial<Record<string, string>> = {
+  support_grant_write_required: 'supportAccess.error.readOnly',
+  support_grant_action_not_permitted: 'supportAccess.error.notPermitted',
+  support_access_audit_unavailable: 'supportAccess.error.auditUnavailable',
+};
+
 // Token refresh state — shared across concurrent 401s so only one refresh fires
 let isRefreshing = false;
 let refreshQueue: Array<{
@@ -158,6 +213,8 @@ axiosInstance.interceptors.response.use(
     if (isRequestCancelled(error)) {
       return Promise.reject(error);
     }
+
+    await handleSupportGrantError(error);
 
     // Rate limited (issue #788): parse Retry-After ONCE, here, and attach it to
     // the error rather than popping UI ourselves. Axios lower-cases header

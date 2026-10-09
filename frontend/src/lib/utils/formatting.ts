@@ -91,6 +91,16 @@ export function formatClock(totalSeconds: number | null | undefined): string {
 }
 
 /**
+ * Local wall-clock time (hour and minute, no seconds) of an ISO-8601 instant, in the
+ * user's locale. An unparseable value is returned unchanged.
+ */
+export function formatTimeOfDay(iso: string, locale?: string): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+/**
  * Compact `Xh Ym`/`Ym Zs`/`Zs` duration, the "how long did this take" idiom
  * (issue #753's notification duration chip; e.g. `125` -> `"2m 5s"`,
  * `45` -> `"45s"`, `3660` -> `"1h 1m"`). Unlike {@link formatDuration}/

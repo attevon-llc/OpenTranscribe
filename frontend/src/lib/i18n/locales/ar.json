@@ -5431,5 +5431,15 @@
   "settings.lockedAccounts.resetFailed": "تعذرت إعادة تعيين عدّاد القفل",
   "settings.lockedAccounts.confirmUnlock": "هل تريد إلغاء قفل {{identifier}} الآن؟",
   "settings.lockedAccounts.unlockSuccess": "تم إلغاء قفل {{identifier}}",
-  "settings.lockedAccounts.unlockFailed": "تعذر إلغاء قفل الحساب"
+  "settings.lockedAccounts.unlockFailed": "تعذر إلغاء قفل الحساب",
+  "supportAccess.session.user": "انتهت جلسة الوصول للدعم.",
+  "supportAccess.session.expired": "انتهت صلاحية وصول الدعم.",
+  "supportAccess.session.revoked": "تم إلغاء وصول الدعم.",
+  "supportAccess.session.invalid": "وصول الدعم لم يعد صالحًا.",
+  "supportAccess.session.activateFailed": "هذا التفويض غير نشط.",
+  "supportAccess.error.readOnly": "تفويض الدعم هذا للقراءة فقط.",
+  "supportAccess.error.notPermitted": "هذا الإجراء غير متاح أثناء جلسة الدعم.",
+  "supportAccess.error.auditUnavailable": "تعذّر تسجيل وصول الدعم، لذا تم رفض الطلب. حاول مرة أخرى بعد قليل.",
+  "supportAccess.deletedUser": "مستخدم محذوف",
+  "supportAccess.deletedOrganization": "مؤسسة محذوفة"
 }

@@ -76,3 +76,21 @@ APP_SHELL_READY_MS = 30_000
 #: ``backend/tests/CLAUDE.md``'s timeout table, and this is the third distinct test to be
 #: bitten by it in three consecutive runs.
 DATA_AFTER_RELOAD_MS = 30_000
+
+
+#: How long the segment editor may stay open after Save is clicked.
+#:
+#: 45 s, raised from a bare ``10000``, and the measurement is the reason. The first transcript
+#: edit after the API process starts runs ``RedactionService.redetect_edited_segment`` inline
+#: (``crud.update_single_transcript_segment``), and the API process preloads no detector, so
+#: that one request loads ``unitary/toxic-bert`` itself. In the failing v0.6.0 run the backend
+#: log shows the ``PUT .../transcript/segments/<uuid>`` taking **11.7 s** with the
+#: "Toxicity model loaded" line inside it, against 0.6-2.2 s for every warm PUT in the same log
+#: — so a 10 s wait lost to a cold model load, not to a broken editor (it closes on the response,
+#: ``handleSaveSegment`` in ``files/[id]/+page.svelte``). Re-run against the warm backend the
+#: same test passed on every one of ~25 warm re-runs, 12 of them concurrently.
+#:
+#: ⚠️ Widening this does NOT weaken the assertion: the editor still has to close, and the test
+#: goes on to assert the new text, then the text after a reload. A save that genuinely fails
+#: leaves the editor open and still fails here — 45 s later.
+SEGMENT_SAVE_CLOSES_EDITOR_MS = 45_000

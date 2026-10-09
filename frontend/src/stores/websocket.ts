@@ -336,6 +336,12 @@ function createWebSocketStore() {
             } else if (data.type === 'echo') {
               // Echo messages are just for debugging/heartbeat
               return;
+            } else if (typeof data.type === 'string' && data.type.startsWith('support_access_')) {
+              // Support-access grants (#1122): no MediaFile identity, so no quarantine filter.
+              import('$lib/supportAccess/wsHandlers')
+                .then(({ handleSupportAccessMessage }) => handleSupportAccessMessage(data))
+                .catch(() => {});
+              return;
             } else if (data.type === 'download_progress') {
               // Handle download progress messages specially
               handleDownloadProgress(data);

@@ -218,6 +218,26 @@ describe('websocket message dispatch', () => {
     expect(notifications()).toEqual([]);
   });
 
+  it.each([
+    'support_access_requested',
+    'support_access_break_glass',
+    'support_access_decided',
+    'support_access_revoked',
+  ])('routes %s to the support-access handler and makes no generic notification', async (type) => {
+    // A renamed type on either side would otherwise fall into the generic branch and
+    // surface as an unrecognised toast while the open panels never reload (issue #1122).
+    const handler = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('$lib/supportAccess/wsHandlers', () => ({ handleSupportAccessMessage: handler }));
+    const socket = openSocket();
+
+    socket.deliver({ type, data: { grant_uuid: 'g1' } });
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
+
+    expect(handler).toHaveBeenCalledWith({ type, data: { grant_uuid: 'g1' } });
+    expect(notifications()).toEqual([]);
+    vi.doUnmock('$lib/supportAccess/wsHandlers');
+  });
+
   it('survives a malformed frame instead of tearing down the socket', () => {
     const socket = openSocket();
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});

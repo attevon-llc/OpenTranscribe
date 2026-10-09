@@ -199,3 +199,11 @@ export const SUPPORT_LEVEL_KEYS: Record<AccessLevel, string> = {
   read: 'supportAccess.level.read',
   write: 'supportAccess.level.write',
 };
+
+/** Why a support session ended (every reason except a silent logout). */
+export const SUPPORT_SESSION_END_KEYS = {
+  user: 'supportAccess.session.user',
+  expired: 'supportAccess.session.expired',
+  revoked: 'supportAccess.session.revoked',
+  invalid: 'supportAccess.session.invalid',
+} as const;

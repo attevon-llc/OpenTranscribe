@@ -21,6 +21,7 @@
 
   // Import upload store for background uploads
   import { uploadsStore } from '../stores/uploads';
+  import { supportSessionGate } from '$stores/supportSession';
   import { toastStore } from '../stores/toast';
 
   // Import gallery store for modern state management
@@ -356,6 +357,8 @@
         <span class="nav-label">{$t('nav.gallery')}</span>
       </a>
 
+      <!-- Search and chat are refused under a support grant, so the entries are hidden. -->
+      {#if !$supportSessionGate.active}
       <!-- Search link -->
       <a
         href="/search"
@@ -371,9 +374,10 @@
         </svg>
         <span class="nav-label">{$t('nav.transcriptSearch')}</span>
       </a>
+      {/if}
 
       <!-- Chat link -->
-      {#if chatEnabled}
+      {#if chatEnabled && !$supportSessionGate.active}
         <a
           href="/chat"
           title={$t('nav.aiChat')}
@@ -389,6 +393,8 @@
         </a>
       {/if}
 
+      <!-- Speaker management creates profiles (refused under a support grant) and lists the whole tenant, so it is hidden. -->
+      {#if !$supportSessionGate.active}
       <!-- Speakers link -->
       <a
         href="/speakers"
@@ -407,7 +413,7 @@
         </svg>
         <span class="nav-label">{$t('nav.speakers')}</span>
       </a>
-
+      {/if}
 
       <!-- Notifications button -->
       <button

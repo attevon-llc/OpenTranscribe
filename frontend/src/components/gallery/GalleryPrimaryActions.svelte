@@ -1,6 +1,7 @@
 <script lang="ts">
   import { galleryStore, galleryState } from '../../stores/gallery';
   import { t } from '../../stores/locale';
+  import { supportSessionGate } from '$stores/supportSession';
 
   // Normal-mode-only trio (issue #747): row 1 right of the two-row toolbar.
   // "Select items" is NOT here — it lives in `GallerySelectionActions`, beside
@@ -11,7 +12,8 @@
   function handleTagsClick() { galleryStore.triggerTags(); }
 </script>
 
-{#if !$galleryState.isSelecting}
+<!-- Upload and creating collections/tags are refused under any support grant. -->
+{#if !$galleryState.isSelecting && !$supportSessionGate.active}
   <div class="gallery-primary-actions">
     <button
       class="action-btn upload-btn"

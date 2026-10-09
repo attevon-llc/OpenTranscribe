@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
+  import { supportSessionGate } from '$stores/supportSession';
   import type { Tag } from '$lib/types/tag';
   import type { MediaFileDetail } from '$lib/types/media';
   import TagsEditor from './TagsEditor.svelte';
@@ -28,7 +29,7 @@
     class="tags-header"
     on:click={toggleTags}
     on:keydown={e => e.key === 'Enter' && toggleTags()}
-    title={$t('tags.toggleEditorHint')} aria-expanded={isTagsExpanded}>
+    title={$t('tags.toggleEditorHint')} aria-expanded={isTagsExpanded && !$supportSessionGate.readOnly}>
     <h4 class="section-heading">{$t('tags.title')}</h4>
     <div class="tags-preview">
       {#if file?.tags && file.tags.length > 0}
@@ -49,7 +50,7 @@
     </span>
   </button>
 
-  {#if isTagsExpanded}
+  {#if isTagsExpanded && !$supportSessionGate.readOnly}
     <div class="tags-content" transition:slide={{ duration: 200 }}>
       {#if file && file.uuid}
         <TagsEditor

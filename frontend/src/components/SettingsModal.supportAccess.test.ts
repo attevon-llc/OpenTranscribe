@@ -30,6 +30,8 @@ vi.mock('$lib/api/userSettings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/userSettings')>();
   return { ...actual, UserSettingsApi: mockUserSettingsApi };
 });
+const supportApi = vi.hoisted(() => ({ listRequests: vi.fn() }));
+vi.mock('$lib/api/supportAccess', () => ({ SupportAccessApi: supportApi }));
 vi.mock('$lib/api/userApprovals', () => ({
   UserApprovalsApi: { list: vi.fn().mockResolvedValue([]) },
   isAlreadyDecided: () => false,
@@ -61,6 +63,7 @@ beforeEach(() => {
   resetAppStores();
   settingsModalStore.reset();
   mockAxios.get.mockResolvedValue({ data: {} });
+  supportApi.listRequests.mockResolvedValue({ items: [], total: 0, server_time: 'x' });
   mockUserSettingsApi.getRecordingSettings.mockResolvedValue({
     max_recording_duration: 120,
     recording_quality: 'high',
@@ -106,5 +109,55 @@ describe('support-access nav row', () => {
     setUser('user');
     setMode('multi');
     expect(navLabels(await open())).not.toContain('settings.supportAccess.navLabel');
+  });
+});
+
+describe('support-access requests nav row (everyone decides for their own workspace)', () => {
+  it('is absent while the mode is unknown or single, for every role', async () => {
+    for (const mode of [undefined, 'single'] as const) {
+      setUser('super_admin');
+      setMode(mode);
+      const { unmount } = render(SettingsModal);
+      settingsModalStore.open('recording');
+      await waitFor(() => expect(document.querySelector('.settings-sidebar')).not.toBeNull());
+      expect(navLabels(document.body)).not.toContain('settings.supportAccessRequests.navLabel');
+      unmount();
+      settingsModalStore.reset();
+    }
+  });
+
+  it('is shown to a plain user in multi-tenant mode, who sees only this row, not the staff one', async () => {
+    setUser('user');
+    setMode('multi');
+    const labels = navLabels(await open());
+    expect(labels).toContain('settings.supportAccessRequests.navLabel');
+    expect(labels).not.toContain('settings.supportAccess.navLabel');
+  });
+
+  it('an admin sees both rows', async () => {
+    setUser('admin');
+    setMode('multi');
+    const labels = navLabels(await open());
+    expect(labels).toContain('settings.supportAccessRequests.navLabel');
+    expect(labels).toContain('settings.supportAccess.navLabel');
+  });
+
+  it('badges the row with the pending count and counts only the personal workspace without the org role', async () => {
+    supportApi.listRequests.mockResolvedValue({ items: [], total: 3, server_time: 'x' });
+    setUser('user');
+    setMode('multi');
+    const container = await open();
+    await waitFor(() => {
+      const row = Array.from(container.querySelectorAll('.settings-sidebar .nav-item')).find(
+        (el) => el.textContent?.includes('settings.supportAccessRequests.navLabel')
+      );
+      expect(row?.textContent).toContain('3');
+    });
+    expect(supportApi.listRequests).toHaveBeenCalledWith('workspace', {
+      status: 'pending',
+      limit: 1,
+      offset: 0,
+    });
+    expect(supportApi.listRequests).not.toHaveBeenCalledWith('org', expect.anything());
   });
 });

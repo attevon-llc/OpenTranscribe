@@ -4,6 +4,7 @@
   import { createEventDispatcher } from 'svelte';
   import CollectionsEditor from './CollectionsEditor.svelte';
   import { t } from '$stores/locale';
+  import { supportSessionGate } from '$stores/supportSession';
 
   export let collections: Collection[] = [];
   export let isExpanded: boolean = false;
@@ -29,7 +30,7 @@
     on:click={toggleExpanded}
     on:keydown={e => e.key === 'Enter' && toggleExpanded()}
     title={$t('collectionsSection.toggleTooltip')}
-    aria-expanded={isExpanded}
+    aria-expanded={isExpanded && !$supportSessionGate.readOnly}
   >
     <h4 class="section-heading">{$t('collectionsSection.title')}</h4>
     <div class="collections-preview">
@@ -51,7 +52,7 @@
     </span>
   </button>
 
-  {#if isExpanded}
+  {#if isExpanded && !$supportSessionGate.readOnly}
     <div class="collections-content" transition:slide={{ duration: 200 }}>
       {#if fileId}
         <CollectionsEditor

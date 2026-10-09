@@ -29,6 +29,9 @@
   import BackupSettings from '$components/settings/BackupSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
   import SupportAccessStaffPanel from '$components/settings/SupportAccessStaffPanel.svelte';
+  import SupportAccessApprovalsPanel from '$components/settings/SupportAccessApprovalsPanel.svelte';
+  import { SupportAccessApi } from '$lib/api/supportAccess';
+  import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
   import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
@@ -181,6 +184,31 @@
     }
   }
 
+  /**
+   * Support-access requests awaiting this user's decision (issue #1122), across their personal
+   * workspace and, for an organization admin, their organization. Owned here, like the
+   * approval count, because the sidebar badge shows while another section is open.
+   */
+  let supportRequestCount = 0;
+  $: supportOrgTab = orgAdminCapOn(capState, 'organizations') && $userStore?.org_role === 'org:admin';
+
+  async function loadSupportRequestCount() {
+    if (!tenancyMulti) {
+      supportRequestCount = 0;
+      return;
+    }
+    const pending = { status: 'pending' as const, limit: 1, offset: 0 };
+    try {
+      const pages = await Promise.all([
+        SupportAccessApi.listRequests('workspace', pending),
+        ...(supportOrgTab ? [SupportAccessApi.listRequests('org', pending)] : [])
+      ]);
+      supportRequestCount = pages.reduce((sum, page) => sum + page.total, 0);
+    } catch {
+      supportRequestCount = 0;
+    }
+  }
+
   // Admin Stats section
   let stats: any = {
     users: { total: 0, new: 0 },
@@ -287,7 +315,8 @@
       title: $t('settings.sections.account'),
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' }
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
+        ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : [])
       ]
     },
     {
@@ -504,12 +533,14 @@
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.addEventListener('reindex-complete', handleReindexCompleteStats);
+    window.addEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
   });
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
+    window.removeEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
     if (previousOpenState) unlockScroll();
   });
 
@@ -530,6 +561,7 @@
         loadAdminUsers();
       }
       if (isAdmin) loadPendingApprovalCount();
+      void loadSupportRequestCount();
 
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
@@ -1200,6 +1232,14 @@
           {#if activeSection === 'quarantine'}
             <div class="content-section">
               <QuarantinePanel />
+            </div>
+          {/if}
+
+          <!-- Support access requests (issue #1122): every user decides for their own workspace -->
+          {#if activeSection === 'support-access-requests' && tenancyMulti}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.supportAccessRequests.title')}</h3>
+              <SupportAccessApprovalsPanel orgTab={supportOrgTab} on:countchange={loadSupportRequestCount} />
             </div>
           {/if}
 

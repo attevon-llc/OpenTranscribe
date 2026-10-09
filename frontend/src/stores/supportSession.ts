@@ -17,6 +17,7 @@ import {
   type SupportGrant,
   type TargetKind,
 } from '$lib/api/supportAccess';
+import { SUPPORT_SESSION_END_KEYS } from '$lib/i18n/keyMaps';
 import { purgeTenantDataCaches } from '$lib/session/clearUserState';
 import { setActiveSupportGrant } from '$lib/supportAccess/headers';
 import { capabilities } from '$stores/capabilities';
@@ -173,7 +174,7 @@ async function end(reason: EndReason): Promise<void> {
   state.set(INACTIVE);
   await purgeTenantDataCaches();
   if (reason !== 'logout') {
-    const message = get(t)(`supportAccess.session.${reason}`);
+    const message = get(t)(SUPPORT_SESSION_END_KEYS[reason]);
     if (reason === 'user') toastStore.info(message);
     else toastStore.error(message);
     await goto('/');

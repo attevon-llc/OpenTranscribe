@@ -77,6 +77,7 @@
 
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
+  import { supportSessionGate } from '$stores/supportSession';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
   import TagManagerModal from '$components/tags/TagManagerModal.svelte';
   import UserFileStatus from '../components/UserFileStatus.svelte';
@@ -651,6 +652,10 @@
   }
 
   // Toggle upload modal
+  // Upload, URL import and recording are refused under a support grant. Every way of opening
+  // the modal (button, drop, recorded-file event) funnels through this one flag.
+  $: if ($supportSessionGate.active && showUploadModal) showUploadModal = false;
+
   function toggleUploadModal() {
     showUploadModal = !showUploadModal;
   }

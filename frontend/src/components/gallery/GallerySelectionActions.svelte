@@ -13,6 +13,7 @@
   const CHAT_MAX_FILES = 100;
   import { goto } from '$app/navigation';
   import { t } from '../../stores/locale';
+  import { supportSessionGate } from '$stores/supportSession';
   import type { MediaFile } from '$lib/types/media';
 
   export let files: MediaFile[] = [];
@@ -137,7 +138,9 @@
 
       <div class="action-separator"></div>
 
-      <!-- Process dropdown -->
+      <!-- Process dropdown. Every entry writes (or feeds an LLM), so a read-only
+           support session gets none of it. -->
+      {#if !$supportSessionGate.readOnly}
       <div class="dropdown-container">
         <button
           class="action-btn process-btn"
@@ -171,6 +174,7 @@
               </svg>
               {$t('gallery.bulk.reprocess')}
             </button>
+            {#if !$supportSessionGate.active}
             <button
               class="dropdown-item"
               on:click={handleChat}
@@ -188,6 +192,7 @@
                 ),
               })}
             </button>
+            {/if}
             <button
               class="dropdown-item"
               on:click={handleSummarize}
@@ -258,6 +263,8 @@
         {/if}
       </div>
 
+      {/if}
+
       <!-- Organize dropdown -->
       <div class="dropdown-container">
         <button
@@ -277,6 +284,7 @@
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div class="dropdown-menu" on:click|stopPropagation>
+            {#if !$supportSessionGate.active}
             <button
               class="dropdown-item"
               on:click={handleAddToCollection}
@@ -327,6 +335,7 @@
             >
               {$t('gallery.bulk.exportTxt')}
             </button>
+            {/if}
             {#if isAdmin}
               <div class="dropdown-divider"></div>
               <!-- Every status is quarantinable, deliberately (issue #576 §B.5) —
@@ -352,6 +361,7 @@
 
       <div class="action-separator"></div>
 
+      {#if !$supportSessionGate.readOnly}
       <button
         class="action-btn delete-btn"
         on:click={handleDeleteSelected}
@@ -368,6 +378,7 @@
         </svg>
         <span>{$t('nav.deleteSelected', { count: $selectedCount })}</span>
       </button>
+      {/if}
 
       <button
         class="action-btn cancel-btn"

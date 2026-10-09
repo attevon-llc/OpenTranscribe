@@ -12,6 +12,7 @@ import type { ChatErrorCode, SearchMode } from '$lib/types/chat';
 import type { DerivedSource } from '$lib/types/media';
 import type { ContextWindowStatus, ReasoningOffSwitch } from '$lib/api/llmSettings';
 import type { GrantableRole } from '$lib/api/groupMappings';
+import type { AccessLevel, GrantStatus } from '$lib/api/supportAccess';
 import type { WATCH_FILE_STATUSES } from '$lib/api/watchSourcesApi';
 
 type KeyMap = Readonly<Record<string, string>>;
@@ -183,3 +184,18 @@ export const ASR_TEST_STATUS_KEYS = {
   connected: 'settings.asrProvider.status.connected',
   failed: 'settings.asrProvider.status.failed',
 } as const;
+
+/** Support-access grant status (issue #1122): server-computed, one key per member. */
+export const SUPPORT_STATUS_KEYS: Record<GrantStatus, string> = {
+  pending: 'supportAccess.status.pending',
+  active: 'supportAccess.status.active',
+  denied: 'supportAccess.status.denied',
+  expired: 'supportAccess.status.expired',
+  revoked: 'supportAccess.status.revoked',
+  lapsed: 'supportAccess.status.lapsed',
+};
+
+export const SUPPORT_LEVEL_KEYS: Record<AccessLevel, string> = {
+  read: 'supportAccess.level.read',
+  write: 'supportAccess.level.write',
+};

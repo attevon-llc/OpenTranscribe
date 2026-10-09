@@ -43,6 +43,8 @@ export type SettingsSection =
   | 'backup'
   | 'media-sources'
   | 'watch-sources'
+  | 'support-access'
+  | 'support-access-requests'
   // Super Admin sections
   | 'authentication'
   | 'audit-logs';
@@ -89,6 +91,8 @@ const initialState: SettingsModalState = {
     backup: false,
     'media-sources': false,
     'watch-sources': false,
+    'support-access': false,
+    'support-access-requests': false,
     authentication: false,
     'audit-logs': false,
   },

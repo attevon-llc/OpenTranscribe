@@ -29,6 +29,7 @@
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
+  import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
@@ -249,7 +250,7 @@
     />
   {/if}
 
-  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} class:has-support-banner={$supportSession.active} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
     <!-- First focusable element in the app. Visually hidden until :focus-visible so it
          doesn't disturb sighted layout, but never display:none/visibility:hidden — that
          would remove it from the focus order and defeat the point (issue #785). -->
@@ -257,6 +258,7 @@
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
+      {#if $supportSession.active}<SupportAccessBanner />{/if}
       <NotificationsPanel />
       <UploadManager />
       {#if SettingsModal}<svelte:component this={SettingsModal} />{/if}
@@ -354,6 +356,13 @@
   /* Offset for classification banner (approx 28px) */
   .app.has-banner {
     padding-top: 28px;
+  }
+
+  /* A support-access banner sits fixed under the navbar; its measured height (it wraps on narrow
+     screens) is published as --support-banner-height, and every page that sizes itself from
+     --content-top follows. */
+  .app.has-support-banner {
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px));
   }
 
   /* Push navbar down when banner is present */

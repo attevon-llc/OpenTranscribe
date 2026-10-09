@@ -28,6 +28,7 @@
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import BackupSettings from '$components/settings/BackupSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
+  import SupportAccessStaffPanel from '$components/settings/SupportAccessStaffPanel.svelte';
   import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
@@ -118,6 +119,7 @@
     'embedding-migration': 'admin',
     retention: 'admin',
     'search-indexing': 'admin',
+    'support-access': 'admin',
   };
 
   /**
@@ -239,6 +241,9 @@
   // cloud hides platform/self-host surfaces so the product "just works".
   // The backend independently 404s gated endpoints — this is cosmetic only.
   $: capState = $capabilities;
+  // Support-access UI exists only in multi-tenant mode and is FAIL-CLOSED (unknown = hidden),
+  // unlike `capOn`, which is fail-open. Do not route this through isCapabilityEnabled.
+  $: tenancyMulti = capState.tenancyMode === 'multi';
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
@@ -355,7 +360,8 @@
           // the endpoints are NOT capability-gated, since `require_capability`
           // 404s and a compliance endpoint that vanishes is worse than one that
           // refuses.
-          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' }
+          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' },
+          ...(tenancyMulti ? [{ id: 'support-access' as SettingsSection, label: $t('settings.supportAccess.navLabel'), icon: 'life-buoy' }] : [])
         ]
       }
     ] : []),
@@ -1194,6 +1200,14 @@
           {#if activeSection === 'quarantine'}
             <div class="content-section">
               <QuarantinePanel />
+            </div>
+          {/if}
+
+          <!-- Support access (issue #1122): multi-tenant deployments only -->
+          {#if activeSection === 'support-access' && tenancyMulti}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.supportAccess.title')}</h3>
+              <SupportAccessStaffPanel />
             </div>
           {/if}
 

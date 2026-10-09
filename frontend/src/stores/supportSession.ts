@@ -39,6 +39,12 @@ export interface SupportSessionState {
   /** server clock minus client clock, so a skewed laptop still counts down correctly. */
   skewMs: number;
   remainingSeconds: number;
+  /**
+   * A stored grant is still being re-validated after a reload. The layout holds the app back
+   * until it settles: a page mounted earlier fires its first requests WITHOUT the grant
+   * header, i.e. as the staff member's own workspace, and a file the subject owns 404s.
+   */
+  restoring: boolean;
 }
 
 const INACTIVE: SupportSessionState = {
@@ -51,6 +57,7 @@ const INACTIVE: SupportSessionState = {
   expiresAtMs: 0,
   skewMs: 0,
   remainingSeconds: 0,
+  restoring: false,
 };
 
 const state = writable<SupportSessionState>(INACTIVE);
@@ -69,6 +76,11 @@ function readStored(): string | null {
   } catch {
     return null;
   }
+}
+
+// A stored pointer at boot means a restore is coming; flag it before anything can render.
+if (typeof sessionStorage !== 'undefined' && readStored() !== null) {
+  state.set({ ...INACTIVE, restoring: true });
 }
 
 function writeStored(uuid: string | null): void {
@@ -142,6 +154,7 @@ async function start(uuid: string, redirect: boolean): Promise<boolean> {
     expiresAtMs,
     skewMs,
     remainingSeconds: 0,
+    restoring: false,
   };
   next.remainingSeconds = remainingOf(next);
   // The header goes live BEFORE the store flips: the layout remounts the page when `grantUuid`
@@ -169,6 +182,7 @@ async function end(reason: EndReason): Promise<void> {
   if (!get(state).active) {
     // Nothing live, but a stale pointer must still go (logout, failed restore).
     writeStored(null);
+    if (get(state).restoring) state.set(INACTIVE);
     return;
   }
   if (ending) return;
@@ -197,9 +211,13 @@ async function end(reason: EndReason): Promise<void> {
  * expired or unreachable grant simply leaves the tab in its own workspace.
  */
 async function restore(): Promise<void> {
-  const uuid = readStored();
-  if (!uuid) return;
-  if (!(await start(uuid, false))) writeStored(null);
+  try {
+    const uuid = readStored();
+    if (uuid && !(await start(uuid, false))) writeStored(null);
+  } finally {
+    // `start` already cleared the flag on success; this covers every other way out.
+    if (get(state).restoring) state.set(INACTIVE);
+  }
 }
 
 export const supportSession = { subscribe: state.subscribe, activate, end, restore };

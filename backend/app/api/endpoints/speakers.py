@@ -31,6 +31,7 @@ from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
@@ -80,7 +81,7 @@ def create_speaker(
         db,
         media_file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -164,10 +165,12 @@ def _resolve_profile_filter_id(
     current_user: User,
     profile_uuid: str | None,
     organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> int | None:
     """Resolve a profile UUID query param to an internal id, or ``None``.
 
-    Non-admins are scoped to their own profiles — a profile UUID does not
+    Callers that cannot see every user's rows are scoped to their own profiles — a profile UUID does not
     belong to the sharing model the speaker/file axes use, so there is no
     "shared profile" case to admit here. An unresolvable UUID (not found, or
     belongs to someone else) returns ``None``, which the caller treats as "no
@@ -177,11 +180,11 @@ def _resolve_profile_filter_id(
     if not profile_uuid:
         return None
     query = db.query(SpeakerProfile.id).filter(SpeakerProfile.uuid == profile_uuid)
-    if not current_user.is_admin:
+    if not bypass.sees_all_in_scope:
         query = query.filter(SpeakerProfile.user_id == current_user.id)
-        tenant_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
-        if tenant_pred is not None:
-            query = query.filter(tenant_pred)
+    tenant_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
+    if tenant_pred is not None:
+        query = query.filter(tenant_pred)
     found = query.scalar()
     return int(found) if found is not None else None
 
@@ -196,6 +199,7 @@ def _get_unique_speakers_for_filter(
     profile_id: int | None = None,
     is_profile: bool | None = None,
     include_unnamed: bool = False,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> list[dict[str, Any]]:
     """
     Get unique speakers by display name for filter use with media file counts.
@@ -270,9 +274,12 @@ def _get_unique_speakers_for_filter(
     # The exact string this row is offered under, and sent back as ``?speaker=``.
     label_col = func.coalesce(func.nullif(Speaker.display_name, ""), Speaker.name)
 
-    # Build base filters — admins see all speakers, others see accessible files only
+    # Build base filters — a caller who sees all in scope gets the tenant's speakers, others
+    # see accessible files only
     base_filter = [] if include_unnamed else [has_human_name]
-    if not current_user.is_admin:
+    if bypass.sees_all_in_scope:
+        base_filter.append(Speaker.media_file_id.in_(file_ids_in_scope(organization_id)))
+    else:
         accessible_sq = PermissionService.get_accessible_file_ids_subquery(
             db, current_user.id, organization_id=organization_id
         )
@@ -354,6 +361,8 @@ def _resolve_file_uuid_to_id(
     current_user: User,
     db: Session,
     organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> int | None:
     """Convert file UUID to internal ID if provided (tenant-gated lookup)."""
     if not file_uuid:
@@ -364,7 +373,7 @@ def _resolve_file_uuid_to_id(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=bypass,
         organization_id=organization_id,
     )
     return media_file.id
@@ -806,7 +815,7 @@ def list_speakers(
         # Skip loading all speaker objects, profiles, and media files
         if for_filter:
             resolved_profile_id = _resolve_profile_filter_id(
-                db, current_user, profile_id, organization_id=ctx.org_id
+                db, current_user, profile_id, organization_id=ctx.org_id, bypass=ctx.bypass
             )
             if profile_id and resolved_profile_id is None:
                 # A profile UUID was given and did not resolve (not found, or
@@ -822,23 +831,27 @@ def list_speakers(
                 profile_id=resolved_profile_id,
                 is_profile=is_profile,
                 include_unnamed=include_unnamed,
+                bypass=ctx.bypass,
             )
 
         # Convert file_uuid to file_id if provided (tenant-gated via ctx.org_id)
-        file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db, organization_id=ctx.org_id)
+        file_id = _resolve_file_uuid_to_id(
+            file_uuid, current_user, db, organization_id=ctx.org_id, bypass=ctx.bypass
+        )
 
         query = db.query(Speaker).options(
             joinedload(Speaker.profile), joinedload(Speaker.media_file)
         )
-        # Admins see all speakers; when file_id is provided, permission was
+        # A caller who sees all in scope gets every speaker of the tenant; when file_id is
+        # provided, permission was
         # already checked by _resolve_file_uuid_to_id (which applies the
         # takedown gate via get_file_by_uuid_with_permission); otherwise scope
         # to owner AND drop speakers whose file is quarantined (A2's class —
         # the general listing has no per-file permission check to catch it,
         # so a caller's OWN quarantined file's speakers would otherwise leak
         # here even though the file itself 404s for them).
-        if current_user.is_admin:
-            pass  # Admins see all speakers
+        if ctx.bypass.sees_all_in_scope:
+            query = query.filter(Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)))
         elif file_id is not None:
             pass  # Viewing specific file — permission already checked
         else:
@@ -1140,15 +1153,26 @@ def debug_cross_media_by_name(
     speaker_name: str = Query(..., description="Speaker display name to search for"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """
     Debug endpoint to test cross-media logic for a specific speaker name.
+
+    The route is admin-gated, but in multi-tenant mode the queries stay inside the
+    caller's active tenant: it returns speaker names and file titles.
     """
     try:
+        in_scope = (
+            None
+            if ctx.bypass.sees_all_in_scope
+            else Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id))
+        )
         # Find all matching speakers
         query = db.query(Speaker).filter(Speaker.display_name == speaker_name)
         if not current_user.is_admin:
             query = query.filter(Speaker.user_id == current_user.id)
+        if in_scope is not None:
+            query = query.filter(in_scope)
         matching_speakers = query.all()
 
         results: dict[str, Any] = {
@@ -1179,6 +1203,8 @@ def debug_cross_media_by_name(
                 )
                 if not current_user.is_admin:
                     profile_q = profile_q.filter(Speaker.user_id == current_user.id)
+                if in_scope is not None:
+                    profile_q = profile_q.filter(in_scope)
                 profile_speakers = profile_q.all()
 
                 cross_media_result["method_used"] = "profile_based"
@@ -1207,6 +1233,8 @@ def debug_cross_media_by_name(
                 )
                 if not current_user.is_admin:
                     similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+                if in_scope is not None:
+                    similar_q = similar_q.filter(in_scope)
                 similar_speakers = similar_q.all()
 
                 cross_media_result["method_used"] = "display_name_based"
@@ -1283,12 +1311,18 @@ def get_speaker_cross_media_occurrences(
     """
     try:
         # Tenant, quarantine (hidden from its own owner too) and file-access gate.
-        speaker = require_speaker_access(db, speaker_uuid, current_user, organization_id=ctx.org_id)
+        speaker = require_speaker_access(
+            db, speaker_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
+        )
 
         if speaker.profile_id:
-            result = _get_profile_based_occurrences(speaker, current_user, db, ctx.org_id)
+            result = _get_profile_based_occurrences(
+                speaker, current_user, db, ctx.org_id, bypass=ctx.bypass
+            )
         else:
-            result = _get_display_name_based_occurrences(speaker, current_user, db, ctx.org_id)
+            result = _get_display_name_based_occurrences(
+                speaker, current_user, db, ctx.org_id, bypass=ctx.bypass
+            )
 
         # Sort by confidence (highest first), with same_speaker files prioritized
         result.sort(key=lambda x: (x["same_speaker"], x.get("confidence") or 0.0), reverse=True)
@@ -1327,7 +1361,12 @@ def verify_speaker_identification(
     try:
         # Tenant, quarantine (issue #908, finding C) and editor gate.
         speaker = require_speaker_access(
-            db, speaker_uuid, current_user, organization_id=ctx.org_id, min_permission="editor"
+            db,
+            speaker_uuid,
+            current_user,
+            organization_id=ctx.org_id,
+            min_permission="editor",
+            bypass=ctx.bypass,
         )
 
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, speaker, current_user, db, ctx)
@@ -1392,6 +1431,7 @@ def confirm_speaker_gender(
         organization_id=ctx.org_id,
         min_permission="editor",
         forbidden_detail="Requires editor permission",
+        bypass=ctx.bypass,
     )
 
     speaker.predicted_gender = gender  # type: ignore[assignment]
@@ -1462,6 +1502,7 @@ def merge_speakers(
         organization_id=ctx.org_id,
         min_permission="editor",
         forbidden_detail="Requires editor permission",
+        bypass=ctx.bypass,
     )
     target_speaker = require_speaker_access(
         db,
@@ -1470,6 +1511,7 @@ def merge_speakers(
         organization_id=ctx.org_id,
         min_permission="editor",
         forbidden_detail="Requires editor permission",
+        bypass=ctx.bypass,
     )
     if source_speaker.media_file.organization_id != target_speaker.media_file.organization_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
@@ -1564,7 +1606,9 @@ def get_speaker(
     Get details of a specific speaker with computed status
     """
     # Tenant, quarantine and file-level access (own or shared via collection).
-    speaker = require_speaker_access(db, speaker_uuid, current_user, organization_id=ctx.org_id)
+    speaker = require_speaker_access(
+        db, speaker_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
+    )
 
     # Add computed status fields
     SpeakerStatusService.add_computed_status(speaker)
@@ -1724,6 +1768,7 @@ def _handle_update_profile_action(
     current_user: User,
     db: Session,
     organization_id: int | None = None,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> list[tuple[str, str]] | None:
     """Handle 'update_profile' action - update profile name globally.
 
@@ -1774,7 +1819,8 @@ def _handle_update_profile_action(
         db,
         profile_id,
         new_name,
-        restrict_to_user_id=None if current_user.is_admin else current_user.id,
+        restrict_to_user_id=None if bypass.sees_all_in_scope else current_user.id,
+        organization_id=organization_id,
     )
 
 
@@ -1857,6 +1903,7 @@ def _handle_profile_action(
     old_profile_id: int | None,
     current_user: User,
     db: Session,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> tuple[int | None, list[tuple[str, str]]]:
     """Handle profile actions (update_profile or create_new_profile).
 
@@ -1873,7 +1920,12 @@ def _handle_profile_action(
 
     if profile_action == "update_profile" and old_profile_id:
         renames = _handle_update_profile_action(
-            old_profile_id, new_name, current_user, db, speaker.media_file.organization_id
+            old_profile_id,
+            new_name,
+            current_user,
+            db,
+            speaker.media_file.organization_id,
+            bypass=bypass,
         )
         if renames is not None:
             return old_profile_id, renames
@@ -2047,6 +2099,7 @@ def update_speaker(
         organization_id=ctx.org_id,
         min_permission="editor",
         forbidden_detail="Requires editor permission",
+        bypass=ctx.bypass,
     )
 
     speaker_id = speaker.id
@@ -2074,7 +2127,7 @@ def update_speaker(
     # Handle profile actions. Postgres writes only — they shape the immediate
     # response; the OpenSearch replay rides along with the background task below.
     renamed_profile_id, profile_chunk_renames = _handle_profile_action(
-        profile_action, speaker_update, speaker, old_profile_id, current_user, db
+        profile_action, speaker_update, speaker, old_profile_id, current_user, db, ctx.bypass
     )
 
     # Handle verification when display name is set
@@ -2181,6 +2234,7 @@ def delete_speaker(
         organization_id=ctx.org_id,
         min_permission="editor",
         forbidden_detail="Requires editor permission",
+        bypass=ctx.bypass,
     )
 
     # Capture UUID before DB delete
@@ -2611,7 +2665,12 @@ def _build_occurrence_dict(
 
 
 def _get_profile_based_occurrences(
-    speaker: Speaker, current_user: User, db: Session, organization_id: OrgScope = UNSCOPED
+    speaker: Speaker,
+    current_user: User,
+    db: Session,
+    organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> list[dict[str, Any]]:
     """Get cross-media occurrences for a speaker with a profile."""
     query = (
@@ -2621,12 +2680,13 @@ def _get_profile_based_occurrences(
             Speaker.profile_id == speaker.profile_id,
         )
     )
-    if not current_user.is_admin:
+    if not bypass.sees_all_in_scope:
         query = query.filter(Speaker.user_id == current_user.id)
+    if not bypass.user_is_admin:
         query = query.filter(MediaFile.is_quarantined.is_(False))
-        tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
-        if tenant_pred is not None:
-            query = query.filter(tenant_pred)
+    tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
+    if tenant_pred is not None:
+        query = query.filter(tenant_pred)
     profile_speakers = query.all()
 
     result: list[dict[str, Any]] = []
@@ -2643,7 +2703,12 @@ def _get_profile_based_occurrences(
 
 
 def _get_display_name_based_occurrences(
-    speaker: Speaker, current_user: User, db: Session, organization_id: OrgScope = UNSCOPED
+    speaker: Speaker,
+    current_user: User,
+    db: Session,
+    organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> list[dict[str, Any]]:
     """Get cross-media occurrences for a speaker without a profile, by display name."""
     result: list[dict[str, Any]] = []
@@ -2665,12 +2730,13 @@ def _get_display_name_based_occurrences(
             Speaker.id != speaker.id,
         )
     )
-    if not current_user.is_admin:
+    if not bypass.sees_all_in_scope:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+    if not bypass.user_is_admin:
         similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
-        tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
-        if tenant_pred is not None:
-            similar_q = similar_q.filter(tenant_pred)
+    tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
+    if tenant_pred is not None:
+        similar_q = similar_q.filter(tenant_pred)
     similar_speakers = similar_q.all()
 
     for similar_speaker in similar_speakers:

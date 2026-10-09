@@ -36,6 +36,15 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v8: platform-admin content access (issue #1122). In a multi-tenant deployment
+# (any active organization, or ``TENANCY_MODE=multi``) ``role in {admin, super_admin}``
+# grants NO implicit access to tenant content any more: it needs a support-access grant
+# (``/api/support-access``) carried in the ``X-Support-Access-Grant`` header. Staff
+# tooling in the managed edition that read or edited a tenant's files through the
+# platform role must request a grant first. ``RequestContext`` gained ``bypass``, and
+# ``get_current_context`` was split from ``get_base_context`` (lifecycle routes never
+# resolve the header). BREAKING for a cloud layer that relied on the admin bypass.
+#
 # v7: external-IdP session timeouts (issue #1106). Additive.
 #   Backend: ExternalIdentity gained ``auth_time: int | None`` (epoch seconds the
 #   person authenticated at the provider; NOT ``iat``). When set (or present as
@@ -105,7 +114,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 7
+CLOUD_SEAM_VERSION = 8
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

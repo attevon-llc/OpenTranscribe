@@ -79,6 +79,7 @@ def cancel_upload(
             current_user,
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
+            bypass=ctx.bypass,
         )
         return None
 

@@ -30,7 +30,7 @@ router = APIRouter()
 
 
 @router.get("/capabilities")
-def get_system_capabilities(request: Request) -> dict[str, Any]:
+def get_system_capabilities(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     """Edition + capability map driving server-side feature gating.
 
     The frontend calls this once at bootstrap and renders only the surfaces
@@ -43,9 +43,13 @@ def get_system_capabilities(request: Request) -> dict[str, Any]:
     from app.core.capabilities import edition
     from app.core.capabilities import get_capabilities
     from app.core.config import settings
+    from app.services.platform_access import tenancy_mode
 
     return {
         "edition": edition(),
+        # "single" | "multi". In multi, platform admins reach tenant content only through a
+        # support-access grant (issue #1122). Fails closed to "multi" when undeterminable.
+        "tenancy_mode": tenancy_mode(db).value,
         "capabilities": get_capabilities(request),
         # WHO each surface is for (user|team|org_admin|platform) — drives
         # which UI area renders it; roles below the audience see nothing.

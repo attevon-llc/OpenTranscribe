@@ -157,7 +157,28 @@ _USAGE_REASON = (
     "docstring if this was only ever meant to back the cloud dashboard."
 )
 
+_SUPPORT_ACCESS_REASON = (
+    "Issue #1122 backend phase 3: the support-access API ships before its UI (a separate "
+    "frontend change builds the request, approval and use-log screens against this contract). "
+    "Strict xfail so the entry is deleted the moment the SPA calls the route."
+)
+
 _NOT_YET_VERIFIED: dict[str, str] = {
+    # --- support-access grants (#1122): backend lands first, the SPA follows ---
+    "/api/support-access/grants": _SUPPORT_ACCESS_REASON,
+    "/api/support-access/grants/break-glass": _SUPPORT_ACCESS_REASON,
+    "/api/support-access/grants/{grant_uuid}": _SUPPORT_ACCESS_REASON,
+    "/api/support-access/grants/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
+    "/api/support-access/grants/{grant_uuid}/revoke": _SUPPORT_ACCESS_REASON,
+    "/api/support-access/targets/organizations": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access/{grant_uuid}/approve": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access/{grant_uuid}/deny": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access/{grant_uuid}/approve": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access/{grant_uuid}/deny": _SUPPORT_ACCESS_REASON,
     # --- admin maintenance / migration / repair triggers ---
     "/api/admin/data-integrity/counts": _MAINTENANCE_OPS_REASON,
     "/api/admin/engine-settings/metrics": _MAINTENANCE_OPS_REASON,

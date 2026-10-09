@@ -21,6 +21,7 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Tag
 from app.models.user import User
+from app.services.platform_bypass import PlatformBypass
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +392,7 @@ def get_accessible_owners(
     user_id: int,
     *,
     organization_id: OrgScope = UNSCOPED,
-    is_admin: bool = False,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> list[User]:
     """Distinct owners of the files THIS caller can already see (issue #966).
 
@@ -417,8 +418,9 @@ def get_accessible_owners(
         user_id: The caller's internal id.
         organization_id: Active org id, ``None`` for personal, or ``UNSCOPED``
             (legacy) — tenant-gates the query exactly like ``list_media_files``.
-        is_admin: When True, mirrors ``list_media_files``'s admin branch (every
-            org-scoped file, not just the caller's accessible subset).
+        bypass: When it ``sees_all_in_scope``, mirrors ``list_media_files``'s admin
+            branch (every file in the active org scope, not just the caller's
+            accessible subset). The tenant predicate still applies.
 
     Returns:
         Up to :data:`OWNER_FACET_LIMIT` distinct ``User`` rows (constraint 4 —
@@ -426,7 +428,7 @@ def get_accessible_owners(
         never be mistaken for the security boundary, which is the join
         predicate above).
     """
-    if is_admin:
+    if bypass.sees_all_in_scope:
         if not isinstance(organization_id, _Unscoped):
             org_pred = (
                 MediaFile.organization_id == organization_id
@@ -501,7 +503,7 @@ def get_metadata_filters(
     ownership: str = "all",
     *,
     organization_id: OrgScope = UNSCOPED,
-    is_admin: bool = False,
+    include_quarantined: bool = False,
     owner_user_ids: list[int] | None = None,
 ) -> dict:
     """
@@ -516,7 +518,7 @@ def get_metadata_filters(
         ownership: 'mine', 'shared', or 'all' (default: 'all')
         organization_id: Active org id, None for personal, or UNSCOPED (legacy) —
             tenant-gates every ownership branch (default-deny across scopes).
-        is_admin: When False (default), quarantined (DMCA/legal-hold) files are
+        include_quarantined: When False (default), quarantined (DMCA/legal-hold) files are
             excluded — matching every other read surface (A2). Facet VALUES
             (formats, codecs, languages, date/size ranges) drawn only from a
             quarantined file must not leak even though the file itself 404s.
@@ -553,7 +555,7 @@ def get_metadata_filters(
         )
         file_filter = MediaFile.id.in_(select(accessible_sq))
 
-    if not is_admin:
+    if not include_quarantined:
         # Mirrors `services/takedown_service.exclude_quarantined` — that helper
         # takes a Query, and `file_filter` here is a bare predicate combined
         # into two different queries below, so the same condition is applied

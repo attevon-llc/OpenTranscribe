@@ -159,7 +159,7 @@ def list_messages(
     from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
 
     citation_lists = drop_quarantined_citations_bulk(
-        db, [m["citations"] or [] for m in serialized], is_admin=ctx.user.is_admin
+        db, [m["citations"] or [] for m in serialized], is_admin=ctx.bypass.user_is_admin
     )
     for message, citations in zip(serialized, citation_lists, strict=True):
         message["citations"] = citations

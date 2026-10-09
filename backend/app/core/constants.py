@@ -1672,3 +1672,23 @@ FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
 # the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
 # rather than hardcoding the string twice.
 STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"
+
+# =============================================================================
+# Support-access grants (issue #1122)
+# =============================================================================
+# Code constants, not settings, on purpose: the control constrains platform admins, so an
+# admin must not be able to widen it from the UI (separation of duties).
+SUPPORT_ACCESS_MIN_TTL_MINUTES = 15
+SUPPORT_ACCESS_MAX_TTL_MINUTES = 480
+SUPPORT_ACCESS_BREAK_GLASS_MAX_TTL_MINUTES = 240
+SUPPORT_ACCESS_DEFAULT_TTL_MINUTES = 60
+#: An undecided request lapses after this long and can no longer be approved or denied.
+SUPPORT_ACCESS_PENDING_EXPIRY_HOURS = 72
+#: Cap on a presigned URL minted under a grant. A SigV4 URL is a bearer token, not bound to
+#: a user, so revoking the grant does not invalidate one already minted; this bounds the
+#: residual access after revocation.
+SUPPORT_ACCESS_PRESIGN_MAX_SECONDS = 300
+#: Grant creation is rate limited per user so request spam cannot flood approvers.
+SUPPORT_ACCESS_REQUEST_RATE_LIMIT = "10/hour"
+#: Header that carries a grant uuid. Never ambient: a request without it has no grant.
+SUPPORT_ACCESS_GRANT_HEADER = "X-Support-Access-Grant"

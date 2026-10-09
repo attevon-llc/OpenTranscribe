@@ -556,6 +556,12 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
         ".last-clustered-chip",
         ".member-count",
         ".speakers-page .badge",
+        # Match %, gender and outlier chips are clustering/attribute-model OUTPUT: two
+        # fresh stacks seeded with the same media still disagree on a cluster's gender or
+        # score, which is 0.9% of this page and no layout change (measured 2026-10-09).
+        ".quality-badge",
+        ".gender-chip",
+        ".outlier-chip",
         ".notifications-btn",
     ),
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live

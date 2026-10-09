@@ -360,3 +360,78 @@ describe('switching language re-renders (regression: UI trailed by one change)',
     expect(mockI18next.t('greeting')).toBe('de:greeting');
   });
 });
+
+/**
+ * The navbar rendered raw keys (`nav.allFiles`, `nav.gallery`, ...) on a fresh load.
+ *
+ * Since #1131 the layout runs `locale.initialize()` concurrently with `initAuth()`,
+ * and the render gate is `authReady`. When auth wins the race, components mount and
+ * subscribe to `t` while i18next is still uninitialised, so `t` hands them the
+ * raw-key closure. Initialisation itself changes neither store `t` derives from:
+ * `locale` already holds the resolved code, and i18next's own `languageChanged`
+ * during `init()` fires before our listener exists. Nothing re-notified, so every
+ * label rendered in that window kept its raw key until an unrelated invalidation.
+ *
+ * As with the switch test above, this asserts on SUBSCRIBER NOTIFICATIONS: a
+ * `get(t)('key')` after init calls the closure fresh and would pass on the bug.
+ */
+describe('initialisation re-renders subscribers that mounted before it (regression: raw nav keys)', () => {
+  beforeEach(() => {
+    mockI18next.isInitialized = false;
+    mockI18next.on.mockReset();
+    mockI18next.t.mockReset();
+    mockInitI18n.mockClear();
+  });
+
+  it('notifies t subscribers once i18next has finished initialising', async () => {
+    mockI18next.t.mockImplementation((key: string) => `translated:${key}`);
+    mockInitI18n.mockImplementationOnce(async () => {
+      mockI18next.isInitialized = true;
+      return mockI18next;
+    });
+
+    const { locale, t } = await loadLocaleStore();
+
+    const renders: string[] = [];
+    const unsubscribe = t.subscribe((translate) => renders.push(translate('nav.gallery')));
+    expect(renders.at(-1)).toBe('nav.gallery');
+
+    await locale.initialize();
+    unsubscribe();
+
+    expect(renders.at(-1)).toBe('translated:nav.gallery');
+  });
+
+  it('localeReady flips true once initialisation settles, and also when it fails', async () => {
+    mockInitI18n.mockImplementationOnce(async () => {
+      throw new Error('chunk load failed');
+    });
+
+    const { locale, localeReady } = await loadLocaleStore();
+    expect(get(localeReady)).toBe(false);
+
+    await expect(locale.initialize()).rejects.toThrow('chunk load failed');
+
+    // A locale failure must never hold the app shell behind the render gate.
+    expect(get(localeReady)).toBe(true);
+  });
+
+  it('localeReady stays false while initialisation is still in flight', async () => {
+    let finish!: () => void;
+    mockInitI18n.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(mockI18next);
+        })
+    );
+
+    const { locale, localeReady } = await loadLocaleStore();
+    const pending = locale.initialize();
+    await vi.waitFor(() => expect(mockInitI18n).toHaveBeenCalled());
+
+    expect(get(localeReady)).toBe(false);
+    finish();
+    await pending;
+    expect(get(localeReady)).toBe(true);
+  });
+});

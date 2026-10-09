@@ -1160,7 +1160,7 @@
   }
 
   .badge.alert {
-    background: var(--error-color, #ef4444);
+    background: var(--error-solid, #dc2626);
     color: white;
   }
 

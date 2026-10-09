@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
+  `multi`, `single`; default `auto`). New API under `/api/support-access`,
+  `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,
+  denying, revoking and auditing time-boxed platform access to a tenant, plus a break-glass route
+  for `super_admin`. New tables `support_access_grant` and `support_access_use` (migration
+  `v432`), and the `X-Support-Access-Grant` request header.
+
 - **Celery queue-wait metrics (#1172).** Every task message is stamped with its publish time
   (header `x-ot-published-at`). Workers with `WORKER_METRICS_PORT` set now serve
   `celery_task_queue_wait_seconds{queue, task}` (publish, or ETA if later, to task start; buckets
@@ -55,6 +62,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
+  deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
+  credential could read, edit, delete and re-run any tenant's files, collections, speakers and
+  tasks, and see PII that the owner's redaction policy masks. In multi-tenant mode (any active
+  organization, or `TENANCY_MODE=multi`) the role now carries no implicit content access: staff
+  reach a tenant only through a time-boxed support-access grant that the tenant approves, or a
+  `super_admin` break-glass opening with a ticket. Every request under a grant is recorded in a
+  fail-closed use log the tenant can read, and chat, search, content creation, downloads, exports
+  and `/admin` routes refuse a grant. Single-tenant installs are unchanged. **Behavior change for
+  self-hosted installs that created organizations:** by-UUID content verbs now need a grant. Set
+  `TENANCY_MODE=single` to restore the old instance-wide access (cross-tenant access is then
+  audited). See Operations -> Support Access & Break-Glass.
 - **An `editor` share could permanently delete another user's file (#1103).** Every delete
   path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
   editor permission, so anyone a collection was shared with as an editor could destroy the

@@ -52,7 +52,20 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 
 - **Path params are UUIDs, never DB integers** (`/{file_uuid}`, `/{speaker_uuid}`). Resolve via
   `app/utils/uuid_helpers.py` — `get_file_by_uuid_with_permission` also applies the takedown
-  and tenant gates, `require_resource_owner` replaces copy-pasted 403 checks.
+  and tenant gates, `require_resource_owner` replaces copy-pasted 403 checks. The platform-admin
+  bypass is **evaluated on the loaded row** (`ctx.bypass.allows(org_id=row.organization_id, ...)`),
+  never in front of the lookup; pass `bypass=ctx.bypass` through the chokepoints and never read
+  `current_user.is_admin` to widen content access (`tests/unit/test_platform_bypass_discipline.py`
+  fails on a new site without a reasoned allowlist entry).
+- **Two contexts.** `get_current_context` is the content context: it reads the
+  `X-Support-Access-Grant` header, validates the grant on every request, writes the request-level
+  use row (fail-closed 503) and may assume the granted tenant with `org_role=None`.
+  `get_base_context` never reads the header and is what `require_org_admin`, the grant lifecycle
+  routes and everything that must keep working with a stale header use. A route that depends on
+  `get_current_active_user` but neither context fails `test_platform_bypass_route_coverage.py`
+  unless it is listed there with a reason. `refuse_under_support_grant` is the 403 for surfaces a
+  grant never reaches (content creation, chat, search, every export/download, every `/admin` route
+  by prefix); attach it per route or via `include_router_with_consistency(refuse_under_grant=...)`.
 - Guard with `Depends(get_current_active_user)` / `get_current_admin_user`. `role` is the
   authorization truth; `is_superuser` is only its derived mirror.
 - Endpoints raise `fastapi.HTTPException` **directly** — deliberately NOT `core/exceptions.py`,

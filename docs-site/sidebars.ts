@@ -109,6 +109,7 @@ const sidebars: SidebarsConfig = {
         'operations/performance-tuning',
         'operations/prompt-engineering',
         'operations/security-hardening',
+        'operations/support-access',
         'operations/runbooks',
       ],
     },

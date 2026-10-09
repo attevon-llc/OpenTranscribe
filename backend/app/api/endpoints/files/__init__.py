@@ -624,7 +624,9 @@ def get_media_file_stream_url(
     Generate a short-lived presigned URL for secure media streaming.
 
     This follows AWS/GCS best practices for secure content delivery:
-    - Short expiration (5 minutes for video, 15 minutes for thumbnails)
+    - Bounded expiration (``MEDIA_URL_EXPIRE_SECONDS``, 6 hours by default, for video and audio;
+      ``THUMBNAIL_URL_EXPIRE_SECONDS``, 15 minutes, for thumbnails), capped at 5 minutes under a
+      support-access grant
     - Cryptographically signed by MinIO (AWS Signature V4)
     - User must be authenticated and authorized
 

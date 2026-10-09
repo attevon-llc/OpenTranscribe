@@ -1023,14 +1023,16 @@
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 12px;
-    white-space: nowrap;
-    max-width: 150px;
+    /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to
+       "UNKNOWN (NOT …" (#1149). `overflow-wrap: anywhere` also breaks an unbroken token. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+    max-width: 180px;
     /* Pairs with the flex parent: `max-width` alone caps growth but a flex item's
        automatic minimum size is its content, so the pill still refused to shrink
        and the arrow was pushed out of the row. */
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;

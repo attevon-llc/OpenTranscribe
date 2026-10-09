@@ -18,7 +18,7 @@
   import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
-  import { locale, t } from "../stores/locale";
+  import { locale, localeReady, t } from "$stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
@@ -238,7 +238,9 @@
 
 </script>
 
-{#if $authReady}
+<!-- Locale and auth start concurrently (runStartup), so wait for both: rendering on
+     auth alone painted the shell against an uninitialised i18next (raw nav keys). -->
+{#if $authReady && $localeReady}
   <!-- PUBLIC_PATHS is defined once, in the script block, and shared with the
        imperative guard above. Do not reintroduce a second copy here. -->
   {@const isPublicPath = PUBLIC_PATHS.includes($page.url.pathname)}

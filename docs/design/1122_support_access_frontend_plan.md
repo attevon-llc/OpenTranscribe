@@ -2,9 +2,11 @@
 
 Status: **PLAN ONLY.** Written 2026-10-09 against `origin/feat/v0.6.0-frontend-ux`. Companion to
 `docs/design/1122_platform_admin_tenancy_bypass_plan.md` (the backend design, "backend plan"
-below; its §5.5 routes, §4 rules and §8 step 6 are what this implements). Start **after** backend
-Phase 3 has merged **and** the amendments in §2 below have landed. Without them several screens
-can't be built honestly.
+below). Its **§6 API contract** is the source of truth for every type, route and error code
+here, and its §4 rules and §9 order govern sequencing. Start from the backend worktree's Phase 3
+commit (backend plan §9, worktree B). The amendments in §2 below are **incorporated** in the
+amended backend plan (2026-10-09). Where the backend review changed them, the deviation is noted
+in §2.
 
 Read first: root `CLAUDE.md`, `frontend/CLAUDE.md`, and the nested `CLAUDE.md` of
 `src/components`, `components/settings`, `components/ui`, `lib/api`, `stores`, `routes`.
@@ -25,19 +27,21 @@ Codebase facts this plan relies on (verified 2026-10-09):
 
 ## 1. API contract consumed
 
-Mirror the backend Pydantic schemas exactly (`lib/api/CLAUDE.md`). These types assume
-amendments A2-A5.
+Mirror the backend Pydantic schemas exactly (`lib/api/CLAUDE.md`). These types mirror backend
+plan §6.1. Change them only when that section changes.
 
 ```ts
 // src/lib/api/supportAccess.ts
 export type AccessLevel = 'read' | 'write';
 export type GrantMode = 'approved' | 'break_glass';
 export type GrantStatus = 'pending' | 'active' | 'denied' | 'expired' | 'revoked' | 'lapsed';
+export type TargetKind = 'organization' | 'personal';
 export interface UserRef { uuid: string; full_name: string | null; email: string }
 export interface OrgRef { uuid: string; name: string; slug: string | null }
 export interface SupportGrant {
   uuid: string;
   status: GrantStatus;                  // server-computed (A4); never derived client-side
+  target_kind: TargetKind;              // render "Deleted organization/user" when the ref is null
   grant_mode: GrantMode;
   access_level: AccessLevel;
   organization: OrgRef | null;          // exactly one of organization / subject_user
@@ -56,6 +60,12 @@ export interface SupportGrant {
   revoked_at: string | null;
 }
 export interface GrantPage { items: SupportGrant[]; total: number; server_time: string } // A5
+export interface SupportGrantUse {      // backend plan §5.6 use log (tenant-visible)
+  occurred_at: string; method: string; route: string;   // route TEMPLATE, e.g. /api/files/{file_uuid}
+  resource_type: string | null; resource_uuid: string | null; need: AccessLevel | null;
+}
+export interface UsePage { items: SupportGrantUse[]; total: number; server_time: string }
+export interface OrgTarget { uuid: string; name: string; slug: string | null }
 export interface CreateGrantBody {
   organization_uuid: string | null; subject_user_uuid: string | null; // exactly one
   access_level: AccessLevel; reason: string; duration_minutes: number; // 15..480
@@ -63,11 +73,19 @@ export interface CreateGrantBody {
 export interface BreakGlassBody extends CreateGrantBody { ticket_ref: string } // 15..240, default 60
 export interface ApproveBody { duration_minutes?: number }  // <= requested (A3)
 export interface DecisionNoteBody { note?: string }        // deny / revoke, <= 500 chars
-export type SupportGrantErrorCode =
+export type SupportGrantErrorCode =                  // backend plan §6.4; body {detail:{code,message}}
   | 'support_grant_expired' | 'support_grant_revoked' | 'support_grant_not_active'
-  | 'support_grant_invalid' | 'support_access_unavailable'
-  | 'support_grant_already_decided' | 'support_grant_lapsed' | 'support_grant_self_approval';
+  | 'support_grant_invalid' | 'support_access_unavailable'              // session-ending
+  | 'support_grant_write_required' | 'support_grant_action_not_permitted'
+  | 'support_access_audit_unavailable'                                   // NOT session-ending
+  | 'support_grant_already_decided' | 'support_grant_lapsed' | 'support_grant_self_approval'
+  | 'support_grant_invalid_target';
 ```
+
+`POST` create and break-glass return **201**. Approve, deny and revoke return **200**, and
+revoking an already terminal grant also returns 200 with the current grant. An out-of-tenant
+resource under a valid grant answers the route's ordinary 403/404 **without** a code. That
+must not end the session.
 
 | Client method (`SupportAccessApi.*`) | HTTP | Who |
 |---|---|---|
@@ -76,7 +94,10 @@ export type SupportGrantErrorCode =
 | `requestGrant(body)` | `POST /support-access/grants` → `SupportGrant` | admin |
 | `breakGlass(body)` | `POST /support-access/grants/break-glass` → `SupportGrant` | super_admin |
 | `revokeGrant(uuid, body)` | `POST /support-access/grants/{uuid}/revoke` | grantee, super_admin, org:admin |
-| `searchOrganizations(q, limit)` | `GET /support-access/targets/organizations` (A6) | admin |
+| `listGrantUses(uuid, {limit, offset})` | `GET /support-access/grants/{uuid}/uses` → `UsePage` | grantee / super_admin |
+| `listOrgGrantUses(uuid, …)` | `GET /org-admin/support-access/{uuid}/uses` → `UsePage` | org:admin |
+| `listMyWorkspaceGrantUses(uuid, …)` | `GET /users/me/support-access/{uuid}/uses` → `UsePage` | subject user |
+| `searchOrganizations(q, limit)` | `GET /support-access/targets/organizations` (A6) → `OrgTarget[]` | admin |
 | `AdminApi.searchUsers({query, limit})` (existing) | `GET /admin/users/search` | admin |
 | `listOrgRequests({status, limit, offset})` | `GET /org-admin/support-access` | org:admin |
 | `approveOrgRequest(uuid, body)` / `denyOrgRequest(uuid, body)` | `POST /org-admin/support-access/{uuid}/{approve,deny}` | org:admin |
@@ -85,15 +106,48 @@ export type SupportGrantErrorCode =
 | tenancy mode | `GET /system/capabilities` → `tenancy_mode` (A1) | everyone |
 
 **Header rule.** `X-Support-Access-Grant: <uuid>` is sent **only** while a support session is
-active in this tab, and **never** on the exempt prefixes `/auth/`, `/system/`, `/support-access/`,
-`/org-admin/support-access`, `/users/me/support-access` or `/chat` (chat is owner-only and has no
-tenant bypass, see backend plan §3.4). Raw `fetch` callers get it through the same helper
-(`thumbnailCache.ts`). `chatStream.ts` is exempt.
+active in this tab, and only on **same-origin relative API URLs** (`/api/...` or an
+axios-relative path).
+- **Never** on an absolute URL. Presigned MinIO URLs are absolute, and the header would leak the
+  grant uuid to object storage and trigger a CORS preflight that fails.
+- **Never** on the exempt prefixes `/auth/`, `/system/`, `/support-access/`, `/org-admin/`
+  (the whole prefix: the backend ignores the header on all of it, backend plan §4 rule 10),
+  `/users/me/support-access`, or `/chat`. Chat is owner-only and the server refuses grants there.
+- Raw `fetch` callers get it through the same helper. `thumbnailCache.ts` attaches it only when
+  its URL is the `/api/files/{uuid}/thumbnail` fallback. List thumbnails are presigned and need
+  no header.
+- `chatStream.ts` is exempt.
+- `EventSource` can't carry headers. That is why downloads and exports are refused under a
+  grant (backend plan §4 rule 9), and the UI hides them (§3.4).
 
 ## 2. Backend contract amendments
 
-Amend `1122_platform_admin_tenancy_bypass_plan.md` with these before the frontend starts. Each
-one is a gap or ambiguity in the backend plan that the UI would otherwise have to guess at.
+**Status (2026-10-09): all thirteen are incorporated in the amended backend plan.** The list
+below is kept as the rationale. Where the security review changed an amendment, backend plan §6
+wins:
+
+| Amendment | Where it landed in the backend plan, and what changed |
+|---|---|
+| A1 | §5.1. `tenancy_mode` is a top-level field of `GET /system/capabilities` |
+| A2 | §6.1. Unchanged. The target error is now `422 support_grant_invalid_target` |
+| A3 | §5.5 column + CHECK, §5.5 service. Unchanged |
+| A4 | §6.1. `SupportGrantOut` also carries `target_kind` |
+| A5 | §6.1/§6.2. Unchanged. Use logs got the same envelope (`UsePage`) |
+| A6 | §6.2. Unchanged |
+| A7 | §6.4. Three codes added: `support_grant_write_required` and `support_grant_action_not_permitted` (both **not** session-ending), and `support_access_audit_unavailable` (503, not session-ending) |
+| A8 | §4 rule 10. **Widened**: the backend ignores the header on all of `/org-admin/*`, not only `/org-admin/support-access*` |
+| A9 | §5.2, through a shared resolver |
+| A10 | §5.5. Unchanged |
+| A11 | §4 rule 3. Adopted as recommended |
+| A12 | §5.1. Unchanged |
+| A13 | §5.5 Routes. Unchanged |
+
+Rules the review added that this UI must respect (backend plan §4 rules 7-9):
+- A read grant is read-only by HTTP method.
+- No grant can upload, chat, search, create tenant rows, download or export.
+- Every grant-authorized request lands in a tenant-visible use log, which §3.3 surfaces.
+
+Original text (the request to the backend):
 
 - **A1. Expose the mode.** Add `tenancy_mode: "single" | "multi"` to `GET /system/capabilities`
   (resolved by `tenancy_mode(db)`). Nothing in the backend plan tells the client which mode it is
@@ -171,7 +225,7 @@ omitted).
   - Terminal statuses: none.
   - While a session for that grant is active, the row shows "In use" instead of Start session.
 - Active personal grant: `OpenFileByUuid` (input + "Open file") appears under the row, because
-  personal grants are by-UUID only (backend plan §9). It validates the uuid shape client-side
+  personal grants are by-UUID only (backend plan §10). It validates the uuid shape client-side
   (UX only) and then `goto('/files/<uuid>')`.
 - Polls `listMyGrants` every 30 s while mounted, so a pending request turns active without a
   reload. The `support_access_decided` WS event triggers an immediate reload. Clean up in
@@ -217,6 +271,11 @@ banner, so verify both together (§6.3). At narrow widths the text wraps and but
   a "History" `GrantList` with a status filter `<select>`, plus offset paging
   (Load more, `limit` 25). Active rows offer **Revoke**.
 - Break-glass rows are highlighted (left border `--error-color`) and show the ticket reference.
+- Every non-pending row (and every row in the staff panel) has **View access log**. It opens
+  `GrantUsesModal` (`BaseModal` + a `<table>` of `occurred_at`, method, route template,
+  resource, need) and pages with `limit` 25 through the perspective's `/uses` route. This is
+  the tenant's Access Transparency view (backend plan §5.6). Empty means "no recorded use", not
+  "load failed".
 - **Approve** opens `ApproveGrantModal`. It shows the requester, reason and requested duration,
   with a duration `<select>` limited to options ≤ requested, defaulting to requested.
 - **Deny** and **Revoke** open `GrantDecisionNoteModal` (optional note).
@@ -229,6 +288,27 @@ banner, so verify both together (§6.3). At narrow widths the text wraps and but
 - WS `support_access_break_glass` raises a persistent `toastStore.error`-style warning toast with
   a "Review" action that opens this section (`settingsModalStore.open('support-access-requests')`).
 
+### 3.4 Surfaces hidden during a session
+
+The backend refuses these under any grant (backend plan §4 rules 8-9), so while
+`$supportSession.active` the UI hides their entry points instead of letting them fail:
+- Upload, URL import and recording (navbar / gallery upload buttons, `UploadModal` trigger).
+- The search bar and search page link.
+- Chat (the nav entry and the file-detail "Ask about this file" action).
+- Media download, transcript/subtitle/summary export, and gallery bulk export.
+- Create-collection / create-tag / create-speaker-profile actions.
+
+For a **read** grant, also hide edit controls (transcript edit, speaker rename, comment post,
+tag/collection assign).
+
+Hiding is cosmetic. The server is the authority. If a hidden action is reached anyway (a stale
+page, a keyboard shortcut), `support_grant_action_not_permitted` or
+`support_grant_write_required` renders a toast (§4.3) and the session continues.
+
+Implement this as one derived store `supportSessionGate` in `stores/supportSession.ts`
+(`{active, readOnly}`) that the affected components read. Do not scatter
+`$supportSession.active && …` checks with different meanings.
+
 ## 4. State, header injection, expiry
 
 ### 4.1 `src/lib/supportAccess/headers.ts` (no imports from stores or api, so no cycles)
@@ -237,7 +317,7 @@ export const SUPPORT_GRANT_HEADER = 'X-Support-Access-Grant';
 let activeGrantUuid: string | null = null;              // set only by $stores/supportSession
 export function setActiveSupportGrant(uuid: string | null): void;
 export function isSupportAccessExempt(url: string): boolean; // §1 prefixes; works for '/api/...' and relative
-export function getSupportAccessHeaders(url: string): Record<string, string>; // {} when none/exempt
+export function getSupportAccessHeaders(url: string): Record<string, string>; // {} when none/exempt/absolute URL
 ```
 `src/lib/supportAccess/errors.ts` exports `supportGrantErrorCode(err): SupportGrantErrorCode | null`
 (reads `response.data.detail.code`) and `isSessionEndingCode(code)` (true for `expired`,
@@ -279,10 +359,19 @@ level; mode; expiresAtMs; skewMs; remainingSeconds }`.
   `isSessionEndingCode(supportGrantErrorCode(error))` is true, lazily import
   `$stores/supportSession` and call `end(code === 'support_grant_revoked' ? 'revoked' : code
   === 'support_grant_expired' ? 'expired' : 'invalid')`, then reject.
+- `support_grant_write_required` → toast `supportAccess.error.readOnly`.
+  `support_grant_action_not_permitted` → toast `supportAccess.error.notPermitted`.
+  `support_access_audit_unavailable` (503) → toast `supportAccess.error.auditUnavailable`.
+  None of these end the session, and none are retried automatically.
 - Other 403/404s pass through untouched.
 - A 401 keeps today's refresh path. If refresh fails, `authStore.reset()` → `clearUserState`
   ends the session.
-- `thumbnailCache.fetchAndCache` passes `{ headers: getSupportAccessHeaders(url) }`.
+- `thumbnailCache.fetchAndCache` passes `{ headers: getSupportAccessHeaders(url) }`. That
+  returns `{}` for the presigned (absolute) URLs it usually fetches, by design.
+- `mediaUrl.ts` needs no header logic. Its presigned URLs come from `/files/{uuid}/stream-url`
+  via axios, and under a grant the server clamps their TTL to ≤ 300 s (backend plan §5.4).
+  The existing expiry-buffer refresh handles the shorter TTL, and `clearMediaUrlCache()` on
+  both session edges (§4.2) drops them.
 - WS: `support_access_revoked` / `decided` with a status other than `active` for the active
   grant calls `end('revoked')`.
 
@@ -372,6 +461,13 @@ get **real translations** in the same commit as the key. Parity alone is not tra
 | `supportAccess.notify.breakGlass` | {{grantee}} started break-glass access to {{target}} until {{time}}. |
 | `supportAccess.notify.review` | Review |
 | `supportAccess.openFile.label` / `.placeholder` / `.invalid` | File ID / Paste a file ID from the ticket / Not a valid file ID. |
+| `supportAccess.deletedOrganization` | Deleted organization |
+| `supportAccess.action.viewLog` | View access log |
+| `supportAccess.uses.title` / `.empty` / `.loadFailed` | Access log / No recorded access. / Could not load the access log. |
+| `supportAccess.uses.col.time` / `.method` / `.route` / `.resource` / `.need` | Time / Method / Endpoint / Resource / Access |
+| `supportAccess.error.readOnly` | This support grant is read only. |
+| `supportAccess.error.notPermitted` | This action is not available during a support session. |
+| `supportAccess.error.auditUnavailable` | Support access could not be recorded, so the request was refused. Try again shortly. |
 
 ## 6. Theming, accessibility, tests
 
@@ -406,9 +502,11 @@ must report 0 findings.
 | Test file | Falsifiable assertions |
 |---|---|
 | `lib/api/supportAccess.test.ts` | each method hits the exact path/verb/body/params of §1; `revokeGrant` posts `{note}`; uuids are path-encoded |
-| `lib/supportAccess/headers.test.ts` | no header when inactive; header present for `/files/x`; **absent** for each exempt prefix (table-driven, one case per prefix including `/api/`-prefixed forms); cleared after `setActiveSupportGrant(null)` |
-| `lib/supportAccess/errors.test.ts` | each code is extracted; a plain 403 without a code returns `null`; `isSessionEndingCode` is false for `already_decided` |
-| `lib/axios.supportAccess.test.ts` | real interceptor via `axios-mock-adapter` or the existing `axios.test.ts` pattern: header sent on `/files` while active, not on `/auth/me`; a 403 with `support_grant_revoked` calls `end('revoked')`; a 403 **without** a code does not call `end` |
+| `lib/supportAccess/headers.test.ts` | no header when inactive; header present for `/files/x`; **absent** for each exempt prefix (table-driven, one case per prefix including `/api/`-prefixed forms and `/org-admin/members`); **absent** for an absolute `https://minio.example/bucket/x?X-Amz-Signature=…` URL; cleared after `setActiveSupportGrant(null)` |
+| `lib/supportAccess/errors.test.ts` | each code is extracted; a plain 403 without a code returns `null`; `isSessionEndingCode` is false for `already_decided`, `write_required`, `action_not_permitted` and `audit_unavailable` |
+| `lib/axios.supportAccess.test.ts` | real interceptor via `axios-mock-adapter` or the existing `axios.test.ts` pattern: header sent on `/files` while active, not on `/auth/me`; a 403 with `support_grant_revoked` calls `end('revoked')`; a 403 **without** a code does not call `end`; a 403 `support_grant_write_required` shows `supportAccess.error.readOnly` and does **not** call `end` |
+| `stores/supportSession.gate.test.ts` | `supportSessionGate` is `{active:false}` when inactive; `{active:true, readOnly:true}` for a read grant; upload/search/chat/download entry components (one render each) are absent while active |
+| `.../GrantUsesModal.test.ts` | requests the perspective's exact `/uses` URL with `limit=25`; renders the route template verbatim; empty vs load-failed render different keys |
 | `stores/supportSession.test.ts` | `activate` refuses when `tenancyMode !== 'multi'` (no `getGrant` call); refuses a `pending` grant; fake timers: countdown uses `server_time` skew (server +120 s → remaining is 120 s shorter); at 0 calls `end('expired')` and clears `sessionStorage`; `end` twice → one toast; `restore` with a revoked grant clears silently; `purgeTenantDataCaches` invoked on activate and end |
 | `stores/capabilities.test.ts` (extend) | `tenancy_mode:"multi"` → `'multi'`; missing, `"MULTI"`, or fetch failure → `undefined` |
 | `lib/session/clearUserState.completeness.test.ts` (extend) | `end('logout')` called; `opentr:supportSession` removed |
@@ -442,9 +540,11 @@ must report 0 findings.
   1. Request → deny (the subject uses a second browser context, with a note). Admin's row shows
      Denied.
   2. Request → approve 15 min → admin Start session. The banner shows the subject name + Read
-     only. `/files/<uuid>` renders the file header. The recorder sees the header on
-     `/api/files/<uuid>*` and **not** on `/api/auth/*` or `/api/support-access/*`. End session
-     removes the banner, and `/files/<uuid>` then shows the not-found state.
+     only. `/files/<uuid>` renders the file header, with no download/export/chat controls (§3.4).
+     The recorder sees the header on `/api/files/<uuid>*`, and **not** on `/api/auth/*`,
+     `/api/support-access/*` or any non-`/api` URL (presigned media). End session removes the
+     banner, and `/files/<uuid>` then shows the no-access state. The subject's **View access
+     log** for that grant lists the `GET /api/files/{file_uuid}` use.
   3. Subject revokes during a session. Within 5 s (WS, A10) the admin banner is gone with the
      revoked toast.
   4. Break-glass as `admin@example.com` (seeded super_admin): Review fails without a ticket, the
@@ -452,9 +552,9 @@ must report 0 findings.
      shows Break-glass + ticket.
   5. axe light/dark scan of both panels, both modals and the banner via `a11y_lib`.
 - **Not covered by e2e, stated in the PR:**
-  - Expiry is never waited on in e2e. Fake-timer vitest + backend test 19 cover it.
+  - Expiry is never waited on in e2e. Fake-timer vitest + backend test 23 cover it.
   - The org-grant flow can't run in community (no IdP-mirrored orgs). Vitest + backend tests
-    15-22 cover it.
+    19-30 cover it.
 
 ### 6.3 Browser verification checklist (`DISPLAY=:11`, `--fresh` MULTI stack, then the SINGLE dev stack)
 - [ ] SINGLE: no nav rows, no banner, DevTools shows no header.
@@ -485,6 +585,8 @@ must report 0 findings.
 | `.../GrantList.svelte` · `GrantStatusBadge.svelte` | new | 200 · 50 |
 | `.../RequestAccessModal.svelte` · `BreakGlassModal.svelte` | new | 240 · 270 |
 | `.../ApproveGrantModal.svelte` · `GrantDecisionNoteModal.svelte` · `OpenFileByUuid.svelte` | new | 150 · 110 · 80 |
+| `.../GrantUsesModal.svelte` (+ test) | new | 160 |
+| upload/search/chat/download/export entry components (navbar, gallery toolbar, file-detail actions) | edit | +2-4 each (read `supportSessionGate`) |
 | `src/components/supportAccess/CLAUDE.md` | new | 40 (header rule, exempt list, fail-closed gate, tab-scoped storage) |
 | `src/components/settings/SupportAccessStaffPanel.svelte` · `SupportAccessApprovalsPanel.svelte` | new | 260 · 280 |
 | `src/components/SettingsModal.svelte` | edit | +45 (2 rows, `SECTION_MIN_ROLE['support-access']='admin'`, render blocks, badge) |
@@ -496,27 +598,30 @@ must report 0 findings.
 | `src/lib/session/clearUserState.ts` | edit | +25 (`purgeTenantDataCaches` export + logout end) |
 | `src/lib/utils/formatting.ts` | edit | +15 (`formatTimeOfDay(iso, locale)` via `Intl.DateTimeFormat`) |
 | `src/routes/+layout.svelte` | edit | +15 (banner mount, offset var, `restore()`) |
-| `src/lib/i18n/locales/*.json` ×12 | edit | ≈95 keys each |
+| `src/lib/i18n/locales/*.json` ×12 | edit | ≈110 keys each |
 | `components/settings/CLAUDE.md`, `lib/api/CLAUDE.md`, `stores/CLAUDE.md` | edit | 1 bullet each |
 | `backend/tests/e2e/test_support_access.py`, `tests/e2e/pytest.ini`, `scripts/e2e/run-e2e.sh`, cleanup scripts | new/edit | 300 / +1 / +2 / +2 |
 
 `SettingsModal.svelte` is already 1,786 lines. Add only the rows and render blocks there. All
 logic lives in the two panels.
 
-**Sequencing.** One worktree, `feat/1122-support-access-frontend`, one PR into the active
-upstream, and one commit per phase. Each commit passes `scripts/safe-precommit.sh run --all-files`
+**Sequencing.** This is backend plan §9's worktree B. One worktree,
+`feat/1122-support-access-frontend`, branched from the backend worktree's Phase 3 commit and
+rebased onto the merged backend before its PR. One PR into the active upstream, and one commit
+per phase. Each commit passes `scripts/safe-precommit.sh run --all-files`
 (both tiers before push), `npm run check`, `npm run build`, `npm run test`, `npm run test:audit`
 and `npm run check:i18n`, and carries its own 12-locale strings.
 1. **F0, plumbing:** api client, headers, errors, `supportSession`, capabilities, axios,
    thumbnail, `clearUserState`, `formatting.ts`, plus their tests. No visible UI.
 2. **F1, staff UI:** `GrantList`, badge, both request modals, the staff panel, the banner, and
    the SettingsModal row.
-3. **F2, approver UI:** approvals panel, approve/note modals, WS events, sidebar badge.
+3. **F2, approver UI:** approvals panel, approve/note modals, `GrantUsesModal`, WS events,
+   sidebar badge, and the §3.4 hidden surfaces.
 4. **F3, e2e + docs:** e2e file + marker + cleanup prefixes, the folder `CLAUDE.md`s, and a
    docs-site screenshot refresh (`docs-screenshots` skill) of the "Support access & break-glass"
-   page the backend plan §5.6 adds.
+   page the backend plan §5.7 adds.
 
-Merge only after backend Phase 3 + A1-A13. The backend plan §8 says Phases 1-2 can't merge
+Merge only after backend Phase 3 (which carries A1-A13). The backend plan §9 says Phase 2 can't merge
 without Phase 3. This PR should land in the same release, so MULTI operators have a UI rather
 than curl.
 
@@ -554,7 +659,7 @@ than curl.
    Tenant caches are purged on both edges.
 7. Visibility is fail-closed: everything is hidden unless the backend says `tenancy_mode ===
    "multi"`.
-8. About 95 new flat i18n keys, really translated in all 12 locales, with no plurals. `ar` is
+8. About 110 new flat i18n keys, really translated in all 12 locales, with no plurals. `ar` is
    checked for RTL with `<bdi>` around times.
 9. Tests: about 15 vitest files with falsifiable assertions, an unmarked SINGLE-mode e2e
    control, and a `support_access` e2e marker run on a `--fresh` `TENANCY_MODE=multi` stack, with

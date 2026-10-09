@@ -1,0 +1,55 @@
+# #532 arm comparison, run/532-gpu @ c1183fb3, 2026-10-09 (metrics only; produced by an ad-hoc script, U7 tooling was not available)
+# paired bootstrap 95% CI, 20000 resamples, seed 0; n=140 expanded multi-file turns
+turns common to all arms: 140
+
+== VOID WINDOW (C1-C2) ==
+m1 -0.0292 [-0.0696, +0.0083] n=140
+m2 +0.0006 [-0.0232, +0.0244] n=140
+unc +0.0159 [-0.0172, +0.0513] n=140
+
+== SANITY (H-D) ==
+m1 -0.2625 [-0.3411, -0.1827] n=140
+m2 -0.0065 [-0.0512, +0.0369] n=140
+
+== vs Cbar ==
+H m1 -0.4485 [-0.5167, -0.3804] n=140
+H m2 -0.0182 [-0.0598, +0.0244] n=140
+H unc +0.4250 [+0.3658, +0.4821] n=140
+D m1 -0.1860 [-0.2545, -0.1173] n=140
+D m2 -0.0116 [-0.0554, +0.0324] n=140
+D unc +0.2174 [+0.1579, +0.2767] n=140
+
+== means ==
+C1 M1=0.7274 M2=0.3048 M3pooled=0.1035 M4strict=0.8282208588957055 (quotes=163) M4tol=0.8404907975460123 M5=0.3696 medlat=92.0
+C2 M1=0.7565 M2=0.3042 M3pooled=0.1099 M4strict=0.7939698492462312 (quotes=199) M4tol=0.8140703517587939 M5=0.3537 medlat=93.5
+D M1=0.5560 M2=0.2929 M3pooled=0.0947 M4strict=0.7623762376237624 (quotes=101) M4tol=0.8217821782178218 M5=0.5790 medlat=88.8
+H M1=0.2935 M2=0.2863 M3pooled=0.0939 M4strict=0.8333333333333334 (quotes=54) M4tol=0.8703703703703703 M5=0.7867 medlat=75.0
+Cbar M3pooled 0.1066987565182511 M4strict 0.8110953540709683
+
+# guards
+C1 mean coverage_ratio(metrics.json) 0.7274
+H mean coverage_ratio(metrics.json) 0.2935
+C1 OFFERED 0.9929
+C2 OFFERED 0.9929
+D OFFERED 0.9929
+H OFFERED 0.9929
+C1 ami81 single_specific 25 0.96
+C1 ami81 single_general 25 0.92
+C1 ami81 multi_file 25 0.7967
+H ami81 single_specific 25 0.92
+H ami81 single_general 25 0.4
+H ami81 multi_file 25 0.27
+C1 neg controls 6 files_consulted [0, 0, 0, 0, 0, 0]
+H neg controls 6 files_consulted [0, 0, 0, 0, 0, 0]
+C1 mfx G3 min resolution 1.0 G4 leaked 0
+C2 mfx G3 min resolution 1.0 G4 leaked 0
+D mfx G3 min resolution 1.0 G4 leaked 0
+H mfx G3 min resolution 1.0 G4 leaked 0
+C1 ami81 G3 min resolution 1.0 G4 leaked 0
+H ami81 G3 min resolution 1.0 G4 leaked 0
+C1 ami81 median latency (c=20) 70.47
+H ami81 median latency (c=20) 53.95
+
+# judge (gpt-oss-20b, NOT the calibrated qwen judge) label counts on AMI-81
+C1 {'single_specific': {'NONE': 12, 'FULL': 3, 'PARTIAL': 10}, 'single_general': {'PARTIAL': 19, 'NONE': 6}, 'multi_file': {'PARTIAL': 20, 'NONE': 4, 'FULL': 1}, 'negative_control': {'FULL': 6}} degraded 0
+H {'single_specific': {'PARTIAL': 14, 'NONE': 9, 'FULL': 2}, 'single_general': {'PARTIAL': 20, 'NONE': 5}, 'multi_file': {'PARTIAL': 22, 'NONE': 3}, 'negative_control': {'FULL': 6}} degraded 0

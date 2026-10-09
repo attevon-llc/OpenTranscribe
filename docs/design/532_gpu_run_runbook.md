@@ -397,3 +397,130 @@ this window does not decide it.
 **8.10 Lost state.** `v060synth`'s `.fresh/` files and the expanded set were stored in the deleted
 `v0.6.0-hybrid-summary` worktree. The volumes and the `c9ec0380` `results.json` files (main
 `.rag-403/`) survive. That is why this runbook writes to absolute `$R` paths.
+
+---
+
+## 9. Run log (2026-10-09, branch `run/532-gpu` @ `c1183fb3`)
+
+Executed by an agent session. GPU 2 used for vLLM only (`LLM_TEST_GPU_DEVICE_ID=2`); GPU 0 untouched.
+
+**Deviations from the runbook and why**
+
+- **Util 0.90, not 0.85/0.45** (owner: use the whole of GPU 2). Seen: 39.2 GiB used by vLLM at idle,
+  KV cache 292,576 tokens ("Maximum concurrency for 60,000 tokens per request: 12.25x"). A real
+  multi-file prompt is about 171k chars (~43k tokens), so roughly 6-7 full prompts fit in KV.
+- **`LLM_TEST_VLLM_MAX_SEQS=64`, `LLM_TEST_VLLM_BATCHED_TOKENS=32768`** (overlay defaults 16 / 20000) so
+  concurrency above 16 is not capped by the scheduler.
+- **Stale schema stamp on the reused `v060synth` volume (not in the runbook).** The volume's
+  `alembic_version` was `v394_add_media_duration_provenance`; on this branch that revision was
+  renumbered to `v431_add_media_duration_provenance` (chain v393 -> v397 -> v420..v431), so backend
+  startup died with "Can't locate revision". Fix: `UPDATE alembic_version SET version_num =
+  'v393_add_overlap_timing_columns'` in the `v060synth` postgres (an isolated measurement volume),
+  letting the startup runner replay v397..v431 (all idempotent; `duration_source` already existed).
+  After the restart `alembic_version` = v431. Add this to section 2.1 for any future reuse of a
+  September volume.
+- **Oracle needs `TEMP_DIR=/tmp/ot-temp`** set when run from the host venv (config creates `/app/temp`).
+- Section 8.1 coordination message could not be sent (no channel from this session); GPU 2 was idle
+  (18 MiB) at start, so the precondition held.
+- The Section 2.3 `cache_ttl_seconds=0` was set and read back.
+
+**Preconditions (all passed)**: P0 = 137 total / 137 fresh; AMI-81 labels equal `532-control-c9ec0380`
+(81/81); expanded set = 140; oracle `gate_p0_pass=True`, K0 not triggered (coverage ratio 3.375,
+recall ratio 6.78). Smoke: gemma `budget_chars`=171,764 (CW-1 ok); mock-echo under H shows the
+"Summary (machine-generated)" and "Closing discussion (verbatim)" markers 4x each for 4 listed files,
+under C1 0x.
+
+**Concurrency probe** (gemma-4-e4b on vLLM, util 0.90, max-num-seqs 64, 60k window; C1 flags; questions
+sampled evenly from the 140-turn expanded set; throughput = completed clean turns / wall hour):
+
+| Concurrency | Turns | Wall (s) | Clean turns | Turns/h | Notes |
+|---|---|---|---|---|---|
+| 1 | 3 | 242 | 3 | 45 | |
+| 2 | 6 | 262 | 6 | 82 | |
+| 4 | 12 | 253 | 12 | 171 | |
+| 8 | 24 | 271 | 24 | 319 | after raising `max_concurrent_streams` (see below) |
+| 12 | 36 | 307 | 36 | 422 | |
+| 16 | 48 | 327 | 48 | 528 | |
+| **20** | 60 | 339 | 60 | **637** | **chosen**: 0 errors, vLLM peak 20 running / 0 waiting, KV cache peak 14.6%, 0 preemption lines, max latency 162 s |
+
+A first pass at the stock `max_concurrent_streams` (6) returned HTTP 429 "Too many chats streaming at once"
+from concurrency 8 up (c=8: 6 of 24, c=16: 20 of 48, c=32: 38 of 48 turns), which made those wall-clock
+numbers meaningless (rejected turns are instant). Raw table: the first pass is not reported above.
+**20 is the ceiling for a single probe user**: `max_concurrent_streams` is `Field(..., le=20)` in
+`ChatAdminSettingsUpdate` (`schemas/chat.py:430`), so levels 32+ are unreachable without multiple
+accounts. vLLM never came close to saturation (peak KV 14.6%), so the real limit is the per-user cap,
+not the GPU. The setting was set to 20 for the window and restored to 6 afterwards (read back).
+
+**Wall-clock per run at concurrency 20** (a serial run would have been ~14 h): C1-mfx 720 s, C1-ami81 318 s,
+D-mfx 697 s, H-mfx 598 s, H-ami81 266 s, C2-mfx 729 s. Total about 55 min for all six legs. Zero
+preemption lines in the vLLM log across the whole window. Zero provider errors, zero cache hits,
+`budget_chars` > 100k and `overview.reducer == "code"` on every turn of every arm.
+
+**Corrections to this runbook found during the run**
+
+- **Applied-check for arm D was wrong.** The non-hybrid branch of `scope_digest_hits` increments only
+  `summary_hits`/`summary_chars`; `entries_summary_only` is hybrid-branch-only (`file_summaries.py`, the
+  `summary_only_entries += 1` sits inside `if hybrid`). So section 3's "D: median entries_summary_only /
+  files_listed >= 0.95" reads 0 on a correctly applied D (and `summary_hits` is not surfaced in
+  `msg_metadata.overview` at all). Correct D check: `summary_chars > 0` on every multi_file turn,
+  `entries_digest == 0` (no fallback to extractive sections) and `entries_hybrid == 0`. The section 5
+  snippet was updated accordingly in the run (not re-committed here). Arm D passed on those terms for all
+  140 turns.
+- `max_concurrent_streams` (admin chat setting, default 6, ceiling 20) is a hidden concurrency cap for
+  `probe_chat_rag.py --concurrency N`; set it before using N > 6 (section 3 / the section 5 snippet takes it).
+- vLLM overlay knobs `LLM_TEST_VLLM_MAX_SEQS` (default 16) and `LLM_TEST_VLLM_BATCHED_TOKENS` (20000) are
+  the throughput levers; KV cache at util 0.90 held 292,576 tokens, and real turns used under 15% of it.
+- Judge: `qwen3.8` (the kappa=0.857 calibration judge) is not on this host. The judge was
+  `openai/gpt-oss-20b` (already in `models/huggingface`) served by `vllm/vllm-openai:gptoss` on GPU 2
+  after the main stack was stopped. On the A6000 it needs `VLLM_ATTENTION_BACKEND=TRITON_ATTN_VLLM_V1`
+  (the default FlashAttention path asserts "Sinks are only supported in FlashAttention 3"). **Its labels
+  are not calibrated against the human labels**, so the judge numbers below are indicative only.
+- `scripts/overview_content_oracle.py` run from the host venv needs `TEMP_DIR` set.
+- Section 8.3 stands: `compare_probe_arms.py` / `arm_compare.py` did not exist and `origin/feat/532-arm-compare`
+  was not fetchable at the end of the run, so the verdict was computed with an ad-hoc script on
+  `harness/significance.py` and `harness/ami_recall.py`; its output is committed as
+  `backend/tests/eval/baselines/probe-532h-compare/compare.txt`.
+
+**Results** (n = 140 expanded multi-file turns, paired bootstrap 95% CI, 20,000 resamples, seed 0;
+deltas are vs C-bar = mean(C1, C2) unless stated):
+
+| Measure | C1 | C2 | D | H | Delta (CI) |
+|---|---|---|---|---|---|
+| M1 USED coverage | 0.7274 | 0.7565 | 0.5560 | 0.2935 | H-Cbar -0.4485 [-0.5167, -0.3804]; D-Cbar -0.1860 [-0.2545, -0.1173] |
+| OFFERED coverage | 0.9929 | 0.9929 | 0.9929 | 0.9929 | G7 holds (retrieval untouched) |
+| M2 content coverage | 0.3048 | 0.3042 | 0.2929 | 0.2863 | H-Cbar -0.0182 [-0.0598, +0.0244]; D-Cbar -0.0116 [-0.0554, +0.0324] |
+| M3 item recall (pooled) | 0.1035 | 0.1099 | 0.0947 | 0.0939 | H vs Cbar 0.1067: -0.0128 abs (inside the -2% tolerance) |
+| M4 quote fidelity strict (pooled) | 0.828 (163 q) | 0.794 (199 q) | 0.762 (101 q) | 0.833 (54 q) | Cbar 0.811; H not worse, but on 3x fewer quotes |
+| M5 uncited-sentence fraction | 0.370 | 0.354 | 0.579 | 0.787 | H-Cbar +0.4250 [+0.3658, +0.4821] |
+
+- **Void window check:** C1-C2 on M1 is -0.0292 [-0.0696, +0.0083], CI includes 0, so the window is valid.
+- **Sanity bar (H beats D on M1 and M2): FAILS.** H-D on M1 is -0.2625 [-0.3411, -0.1827] (H is much worse
+  than D) and on M2 is -0.0065 [-0.0512, +0.0369]. Per the plan this means the implementation or the
+  instrument is suspect. The instrument checks out (applied-checks pass for every arm, M1 of C1 matches
+  `metrics.json` coverage_ratio and the 76.7% control of `c9ec0380` within the C1/C2 spread, retrieval
+  OFFERED identical to 4 decimals across arms). The mechanism is the plan's F3 prediction in a stronger
+  form: with the hybrid overview the model answers from the machine-generated summary and cites far less
+  (M5 0.37 -> 0.79).
+- **Primary (M1 >= +0.05, CI lower > 0): FAILS by a wide margin** (-0.4485).
+- **Content (M2 CI lower > 0): FAILS** (CI includes 0, point estimate negative). Interpretation row:
+  M2 includes 0 and M1 upper < 0 is a **LOSS**, not a content-only win.
+- **Guards:** G3 min citation_resolution_rate 1.0 and G4 leaked 0 on all arms: pass. G2: 6/6 negative
+  controls consulted 0 files in C1 and H: pass. G7: pass. **G1 (single_specific, AMI-81): C1 0.96 vs H 0.92,
+  exactly the -0.04 edge; single_general collapses 0.92 -> 0.40 and AMI-81 multi_file 0.7967 -> 0.27**:
+  H also degrades the summarize route, not only the expanded multi-file shape. G5 median latency (c=20,
+  not comparable): C1 70 s, H 54 s.
+- **Judge (gpt-oss-20b, uncalibrated), AMI-81 labels non-NONE:** multi_file C1 21/25 vs H 22/25;
+  single_general C1 19/25 vs H 20/25; single_specific C1 13/25 vs H 16/25; negative controls 6/6 FULL both.
+  Acceptance suite on H: 9 passed, 2 failed (`test_offered_coverage_floor_on_multi_file` 21 >= 22 and
+  `test_shape_1_summaries` non-none 0.80 >= 0.88). The C1 control fails the **same two tests** (21 >= 22 and
+  0.76 >= 0.88), so they are an instrument/floor-versus-judge mismatch (floors were calibrated with the
+  other judge) and not attributable to H. Not "8 skipped".
+
+**Verdict per the pre-registered rule: LOSS.** Do not promote. Per plan 6.2 delete `map_tier_hybrid` (and
+its U2-U4 branches), keep U4 counters, U6, U7, U8 and U9, and post the table on #532. Whether
+`map_tier_summaries` itself goes (D is also a loss: M1 -0.186, M2 null) is plan Q7 and David's call.
+Not run: H+a (section 8.2, U5 unbuilt, and moot after a loss).
+
+**Teardown:** `./opentr.sh stop --fresh v060synth` (volumes kept); judge container `m532-judge-vllm` stopped
+and removed with `docker stop`/`docker rm` (graceful SIGTERM, no kill). Defaults restored and read back:
+all five flags false, `cache_ttl_seconds=300`, `max_concurrent_streams=6`. GPU 2 at 18 MiB afterwards.

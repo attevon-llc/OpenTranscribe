@@ -31,6 +31,7 @@ from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
+from app.utils.speaker_labels import looks_like_a_person_name
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     from sqlalchemy.orm import Session
@@ -1879,6 +1880,10 @@ class LLMService:
             logger.warning(
                 "Skipping speaker prediction with missing fields (has: %s)", sorted(pred.keys())
             )
+            return False
+
+        if not looks_like_a_person_name(pred.get("predicted_name")):
+            logger.info("Skipping speaker prediction whose predicted_name is not a name")
             return False
 
         confidence = pred.get("confidence", 0.0)

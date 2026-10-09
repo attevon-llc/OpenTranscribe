@@ -24,6 +24,7 @@ reverted to its own ad hoc chain would fail the comparison.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 #: The canonical "not diarized to a person" label. Chosen over the bare "Unknown" some
@@ -45,6 +46,30 @@ UNKNOWN_SPEAKER_LABELS: frozenset[str] = frozenset({UNKNOWN_SPEAKER_LABEL, "Unkn
 #: prior implementations used (``get_speaker_name``'s ``0.75`` literal and
 #: ``SpeakerStatusService.HIGH_CONFIDENCE_THRESHOLD``) — not a new number, just named once.
 DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD = 0.75
+
+
+#: Words that mean the model is NOT naming anyone: "Unknown (not Robert)", "N/A", "Unidentified".
+_NON_NAME_PATTERN = re.compile(
+    r"\b(unknown|unidentified|unnamed|unclear|unsure|uncertain|undetermined|anonymous|"
+    r"not|none|null|n/?a|cannot|can't|unable|no name)\b|^speaker[\s_-]*\d*$",
+    re.IGNORECASE,
+)
+_MAX_PERSON_NAME_CHARS = 80
+
+
+def looks_like_a_person_name(value: object) -> bool:
+    """Whether an LLM ``predicted_name`` is a name rather than a statement about not having one.
+
+    The model answers "who is this speaker?" with prose when it cannot tell ("Unknown (not
+    Robert)"). Stored as ``suggested_name`` at confidence >= 0.75 that string becomes the
+    canonical label everywhere the index and exports read it, so it is refused at the door.
+    """
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text or len(text) > _MAX_PERSON_NAME_CHARS:
+        return False
+    return _NON_NAME_PATTERN.search(text) is None
 
 
 def canonical_speaker_label(

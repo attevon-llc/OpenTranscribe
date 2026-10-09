@@ -830,6 +830,20 @@ def _log_password_blocklist_status() -> None:
         logger.warning(f"Password blocklist status check failed (non-fatal): {e}")
 
 
+def _log_tenancy_mode_at_startup() -> None:
+    """Log the resolved tenancy mode, warning when TENANCY_MODE=single hides active orgs."""
+    from app.db.session_utils import session_scope
+    from app.services.platform_access import tenancy_mode
+    from app.services.platform_access import warn_if_forced_single_with_orgs
+
+    try:
+        with session_scope() as db:
+            logger.info("Tenancy mode: %s", tenancy_mode(db).value)
+            warn_if_forced_single_with_orgs(db)
+    except Exception as e:
+        logger.warning(f"Tenancy mode startup check failed (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -866,6 +880,8 @@ async def lifespan(app: FastAPI):
             "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
             "expected to own them. Readiness will verify the schema is at head."
         )
+
+    _log_tenancy_mode_at_startup()
 
     # Export the native diarizer's ONNX/PLDA set before anything can ask for a
     # diarization. The weights are gated and non-redistributable, so every deployment

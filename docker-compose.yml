@@ -286,6 +286,8 @@ services:
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
       - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
+      # Tenancy mode (auto|single|multi); see docs/security/tenant-boundaries.md
+      - TENANCY_MODE=${TENANCY_MODE:-auto}
       # Internal Docker network settings (hardcoded for service-to-service communication)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -404,6 +406,8 @@ services:
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
       - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
+      # Tenancy mode, kept in step with backend (auto|single|multi)
+      - TENANCY_MODE=${TENANCY_MODE:-auto}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

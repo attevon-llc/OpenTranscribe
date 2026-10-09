@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/speakers-light.png",
-  "captured_at": "2026-10-09T14:22:48Z",
-  "git_sha": "71728f6f565d05d4c329c13d4f0ba2cc70523da3",
+  "captured_at": "2026-10-09T14:40:09Z",
+  "git_sha": "0f0038ddc6b6715e0eaa6de18a2de8a616f82b61",
   "git_branch": "feat/v0.6.0-frontend-ux",
   "git_dirty": true,
-  "git_dirty_paths": 21,
-  "reason": "speakers: mask clustering-model output; fonts awaited",
+  "git_dirty_paths": 1,
+  "reason": "speakers: capture chrome above the model-output cluster list; fonts awaited",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -16,6 +16,6 @@
   },
   "change_from_previous": {
     "status": "CHANGED",
-    "differing_pixels": "13.1363%"
+    "differing_pixels": "57.5000%"
   }
 }

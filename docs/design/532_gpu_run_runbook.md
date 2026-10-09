@@ -527,3 +527,19 @@ Not run: H+a (section 8.2, U5 unbuilt, and moot after a loss).
 **Teardown:** `./opentr.sh stop --fresh v060synth` (volumes kept); judge container `m532-judge-vllm` stopped
 and removed with `docker stop`/`docker rm` (graceful SIGTERM, no kill). Defaults restored and read back:
 all five flags false, `cache_ttl_seconds=300`, `max_concurrent_streams=6`. GPU 2 at 18 MiB afterwards.
+
+**Outcome (branch `fix/532-remove-hybrid`).** The hybrid was deleted, per plan 6.2. Removed:
+`chat.rag.map_tier_hybrid` (constant, registry spec, `ChatSettings` field, both admin schemas),
+`scope_digest_hits(hybrid=, entry_budget_chars=)`, `structured_summary_text`, the hybrid rendering in
+`reducers.py`, `FileSummary.is_hybrid` and the per-section index/time fields, the citation guard, and the
+`entries_hybrid` / `entries_summary_only` / `closing_*` counters (they could only be non-zero on the deleted
+branch). Kept: `map_tier_summaries` (Q7 is open), the U4 counters that still mean something
+(`entries_digest`, `block_chars`, `summary_chars`, `digest_chars`), U6-U9. `structured_summary_text` moved into
+`scripts/overview_content_oracle.py` because the U9 oracle still scores that candidate text. A deployed DB may
+hold a stale `chat.rag.map_tier_hybrid` row: `get_chat_settings` asks only for registered keys, so the row is
+never read and is harmless (pinned by `test_chat_map_tier_hybrid_removed.py`); no migration. Results are in
+`backend/tests/eval/baselines/probe-532h-*`. The correction above about arm D's applied-check is now in code
+(`arm_compare.applied_checks`: `summary_chars > 0`, `entries_digest == 0`, `entries_hybrid == 0`), and re-running
+`scripts/compare_probe_arms.py` over the same four runs gives verdict FAIL (not VOID), hybrid-vs-baseline USED
+delta -0.4485, committed as `backend/tests/eval/baselines/probe-532h-compare-tool/`. `arm_compare` still reads
+`entries_hybrid` / `entries_summary_only` with a default of 0, so the recorded hybrid runs stay comparable.

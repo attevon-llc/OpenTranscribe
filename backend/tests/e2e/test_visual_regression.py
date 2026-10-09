@@ -556,13 +556,6 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
         ".last-clustered-chip",
         ".member-count",
         ".speakers-page .badge",
-        # Match %, gender and outlier chips are clustering/attribute-model OUTPUT: two
-        # fresh stacks seeded with the same media still disagree on a cluster's gender or
-        # score, which is 0.9% of this page and no layout change (measured 2026-10-09).
-        # Masked through their unconditional parent: the gender and outlier chips only
-        # render when the model produced one, and a mask that exists in one data state and
-        # not another yields two baselines for identical UI (see _CONDITIONAL_SELECTORS).
-        ".speakers-page .header-right",
         ".notifications-btn",
     ),
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
@@ -965,6 +958,20 @@ def test_visual_regression(
             # this one: the background's card COUNT changes the layout of the region, and a
             # mask is a fixed rectangle over an element that may not even be present.
             png_bytes = page.locator(".settings-modal").screenshot(
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
+        elif surface == "speakers":
+            # The cluster list is clustering-model OUTPUT: two fresh stacks seeded with the
+            # same media disagree on how many clusters there are and on each one's match %
+            # and gender, so the full page differed by 17% (height 800 vs 954) with no UI
+            # change, and masking cannot fix a row COUNT. Capture the page chrome above the
+            # list (navbar, disclaimer banner, tabs, search + Re-cluster toolbar), which is
+            # what the UI work in v0.6.0 changed and is identical on every stack.
+            png_bytes = page.screenshot(
+                full_page=True,
+                clip={"x": 0, "y": 0, "width": 1280, "height": 340},
                 animations="disabled",
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",

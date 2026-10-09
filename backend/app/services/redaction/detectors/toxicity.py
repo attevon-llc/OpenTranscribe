@@ -23,6 +23,7 @@ detector emits no spans and so can leave nothing unmasked.
 from __future__ import annotations
 
 import logging
+import threading
 
 from app.core import constants as C  # noqa: N812
 from app.services.redaction.detectors import DetectorUnavailableError
@@ -31,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 _pipes: dict[str, object] = {}
 _load_failed: set[str] = set()
+# A warm-up thread runs concurrently with inbound requests by design (see warmup.py), so
+# without mutual exclusion two callers inside the ~12 s load window each build their own
+# pipeline: double the CPU and ~2x the ~500 MB RAM. Same shape as pii_presidio's lock.
+_load_lock = threading.Lock()
 
 
 def _model_for_language(language: str | None) -> str:
@@ -40,33 +45,42 @@ def _model_for_language(language: str | None) -> str:
 
 
 def _get_pipe(model_name: str):
-    """Get the toxicity pipeline (loaded on CPU; moved to the live device per scan)."""
+    """Get the toxicity pipeline (loaded on CPU; moved to the live device per scan).
+
+    Double-checked locking: the cache hit stays lock-free, while a **load** is
+    serialized so a caller arriving mid-load waits for it instead of starting a second.
+    """
     if model_name in _pipes:
         return _pipes[model_name]
     if model_name in _load_failed:
         return None
-    try:
-        from transformers import pipeline
+    with _load_lock:
+        if model_name in _pipes:
+            return _pipes[model_name]
+        if model_name in _load_failed:
+            return None
+        try:
+            from transformers import pipeline
 
-        # Always load on CPU; _place_on_device() moves it to GPU at scan time when there's
-        # free VRAM (and back to CPU when the GPU is busy) — no restart needed.
-        pipe = pipeline(
-            "text-classification",
-            model=model_name,
-            top_k=None,  # return all label scores
-            device=-1,
-            truncation=True,
-            max_length=512,
-        )
-        _pipes[model_name] = pipe
-        logger.info(
-            "Toxicity model loaded: %s (device=cpu, auto-moves to GPU when free)", model_name
-        )
-        return pipe
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Toxicity model %s failed to load: %s", model_name, exc)
-        _load_failed.add(model_name)
-        return None
+            # Always load on CPU; _place_on_device() moves it to GPU at scan time when
+            # there's free VRAM (and back to CPU when the GPU is busy) — no restart needed.
+            pipe = pipeline(
+                "text-classification",
+                model=model_name,
+                top_k=None,  # return all label scores
+                device=-1,
+                truncation=True,
+                max_length=512,
+            )
+            _pipes[model_name] = pipe
+            logger.info(
+                "Toxicity model loaded: %s (device=cpu, auto-moves to GPU when free)", model_name
+            )
+            return pipe
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Toxicity model %s failed to load: %s", model_name, exc)
+            _load_failed.add(model_name)
+            return None
 
 
 def _place_on_device(pipe, target: str) -> None:

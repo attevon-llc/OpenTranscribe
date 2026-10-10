@@ -855,21 +855,27 @@
       />
     </div>
 
-    <button
-      on:click={toggleInviteForm}
-      class={showInviteForm ? 'btn-cancel' : 'add-button'}
-      title={showInviteForm ? $t('userManagement.cancelInvite') : $t('userManagement.inviteUserTitle')}
-    >
-      {showInviteForm ? $t('common.cancel') : $t('userManagement.inviteUser')}
-    </button>
+    <div class="table-actions">
+      <button
+        type="button"
+        on:click={toggleInviteForm}
+        class="btn"
+        class:btn-primary={!showInviteForm}
+        class:btn-secondary={showInviteForm}
+        title={showInviteForm ? $t('userManagement.cancelInvite') : $t('userManagement.inviteUserTitle')}
+      >
+        {showInviteForm ? $t('common.cancel') : $t('userManagement.inviteUser')}
+      </button>
 
-    <button
-      on:click={toggleAddUserForm}
-      class={showAddUserForm ? 'btn-cancel' : 'add-button'}
-      title={showAddUserForm ? $t('userManagement.cancelAddUser') : $t('userManagement.createNewUser')}
-    >
-      {showAddUserForm ? $t('common.cancel') : $t('userManagement.addUser')}
-    </button>
+      <button
+        type="button"
+        on:click={toggleAddUserForm}
+        class="btn btn-secondary"
+        title={showAddUserForm ? $t('userManagement.cancelAddUser') : $t('userManagement.createNewUser')}
+      >
+        {showAddUserForm ? $t('common.cancel') : $t('userManagement.addUser')}
+      </button>
+    </div>
   </div>
 
   {#if showInviteForm}
@@ -1499,53 +1505,30 @@
 
   .table-controls {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
+    gap: 0.75rem 1rem;
     margin-bottom: 1rem;
   }
 
   .search-container {
-    flex: 1;
-    margin-right: 1rem;
+    flex: 1 1 14rem;
   }
 
   .search-container input {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 0.8125rem;
   }
 
-  .add-button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .add-button:hover:not(:disabled),
-  .add-button:focus:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-    text-decoration: none;
-  }
-
-  .add-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .add-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
+  .table-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
   }
 
   .add-user-form {
@@ -2211,11 +2194,8 @@
   @media (max-width: 768px) {
     .table-controls {
       flex-direction: column;
+      align-items: stretch;
       gap: 0.5rem;
-    }
-
-    .search-container {
-      margin-right: 0;
     }
 
     .search-container input {
@@ -2223,7 +2203,16 @@
       font-size: 1rem;
     }
 
-    .add-button,
+    .table-actions {
+      width: 100%;
+    }
+
+    .table-actions .btn {
+      flex: 1 1 0;
+      justify-content: center;
+      min-height: 44px;
+    }
+
     .btn-cancel {
       width: 100%;
       min-height: 44px;

@@ -3640,6 +3640,18 @@
             ],
             "title": "Client Put Start Ms"
           },
+          "disable_diarization": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Skip speaker diarization for this file. Overrides what /files/prepare recorded.",
+            "title": "Disable Diarization"
+          },
           "file_hash": {
             "anyOf": [
               {
@@ -11101,12 +11113,10 @@
                 "type": "null"
               }
             ],
-            "description": "Whisper model to use for this file. None = use admin-configured default. Only applies to local ASR provider.",
+            "description": "Whisper model to use for this file. None = use admin-configured default. Only applies to local ASR provider. Accepts the deployment's model or a lightweight CPU model (tiny, base); anything else is rejected with 422.",
             "examples": [
               "tiny",
-              "medium",
-              "large-v2",
-              "large-v3",
+              "base",
               "large-v3-turbo"
             ],
             "title": "Whisper Model"
@@ -12317,7 +12327,7 @@
                 "type": "null"
               }
             ],
-            "description": "Skip speaker diarization entirely",
+            "description": "Skip speaker diarization for this run. Only meaningful when the transcription stage runs (a full reprocess, or stages containing 'transcription'); any other stage selection is rejected with 422.",
             "title": "Disable Diarization"
           },
           "max_speakers": {
@@ -12382,12 +12392,10 @@
                 "type": "null"
               }
             ],
-            "description": "Whisper model to use for reprocessing. None = use admin-configured default. Only applies to local ASR provider.",
+            "description": "Whisper model to use for reprocessing. None = use admin-configured default. Only applies to local ASR provider. Accepts the deployment's model or a lightweight CPU model (tiny, base); anything else is rejected with 422.",
             "examples": [
               "tiny",
-              "medium",
-              "large-v2",
-              "large-v3",
+              "base",
               "large-v3-turbo"
             ],
             "title": "Whisper Model"
@@ -16790,6 +16798,19 @@
             "description": "Collection UUIDs to add the file to after creation",
             "title": "Collection Ids"
           },
+          "max_speakers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum speakers for diarization. None = the user's saved range.",
+            "title": "Max Speakers"
+          },
           "media_password": {
             "anyOf": [
               {
@@ -16813,6 +16834,32 @@
             ],
             "description": "Optional username for protected media sources. Used only for authenticated downloads of protected media URLs.",
             "title": "Media Username"
+          },
+          "min_speakers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimum speakers for diarization. None = the user's saved range.",
+            "title": "Min Speakers"
+          },
+          "num_speakers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fixed speaker count for diarization (overrides min/max when set).",
+            "title": "Num Speakers"
           },
           "skip_summary": {
             "default": false,
@@ -16858,6 +16905,18 @@
             ],
             "description": "Video quality override for this download (e.g., 'best', '1080p', '720p')",
             "title": "Video Quality"
+          },
+          "whisper_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whisper model for this import. None = the deployment's model. Accepts that model or a lightweight CPU model (tiny, base); anything else is rejected with 422.",
+            "title": "Whisper Model"
           }
         },
         "required": [
@@ -18392,7 +18451,6 @@
                 "type": "null"
               }
             ],
-            "default": 20,
             "title": "Max Speakers"
           },
           "min_speakers": {
@@ -18405,7 +18463,6 @@
                 "type": "null"
               }
             ],
-            "default": 1,
             "title": "Min Speakers"
           },
           "multipart_enabled": {

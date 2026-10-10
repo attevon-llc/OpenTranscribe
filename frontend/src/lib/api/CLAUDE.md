@@ -20,7 +20,9 @@ call these functions, not `axios` directly.
   public); `groupMappings.ts` covers `/admin/group-mappings/*` (super_admin — note `GrantableRole`
   is `user|admin` only, never `super_admin`); `userApprovals.ts` covers `/admin/user-approvals/*`
   (admin) and exports `isAlreadyDecided`, the 409 "somebody else decided this first" test that
-  callers must surface rather than swallow.
+  callers must surface rather than swallow. `pyannoteCredential.ts` covers
+  `/user-settings/diarization/pyannote` (#1204): the key is write-only, so a form must never
+  pre-fill it; view rules live in `$lib/settings/pyannoteCredential.ts`.
 
 ## Conventions / patterns
 

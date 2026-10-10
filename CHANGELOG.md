@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings: Watch Sources tabs, merged Privacy & Redaction, Speech Processing.** Watch Sources
+  is split into Sources, Email Notifications and Global Settings tabs (the last two for
+  `super_admin` only), and its Save button is the standard right-aligned action. *Content
+  Redaction* and *Redaction Policy* are now two tabs of one **Privacy & Redaction** entry; the
+  policy tab is shown locked to admins and absent for plain users, and the old `redaction-policy`
+  section id still deep-links to it. *Engine Configuration* is renamed **Speech Processing** and
+  moved into the Transcription group beside the ASR provider (same `super_admin` gate). The User
+  Management *Invite user* and *Add user* buttons use the standard primary/secondary styles with
+  a proper gap.
+
 - `celery_queue_reserved` excludes orphaned transcription stages; new gauges
   `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`,
   `transcription_runs_without_lease` and `transcription_files_infra_requeued` are for alerting.

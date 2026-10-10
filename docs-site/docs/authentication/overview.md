@@ -111,7 +111,7 @@ IdP was misconfigured would have no way back into the screen that undoes it.
 | `super_admin` | Authentication config, role changes, audit log, ASR provider, engine settings, backups, media mirror, watch sources, redaction policy |
 
 :::warning[Changed in v0.5.0]
-Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
+Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a
 plain `admin` administers any of those today, promote them before upgrading.
 :::

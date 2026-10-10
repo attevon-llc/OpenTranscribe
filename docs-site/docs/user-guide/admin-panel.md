@@ -19,10 +19,10 @@ The Admin Panel is role-gated. The dividing rule is:
 |------|--------|
 | **User** | Profile, recording, transcription, personal settings, own MFA, own active sessions |
 | **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
-| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, engine configuration, backups, media mirror, watch sources, and the redaction policy floor |
+| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, speech processing (formerly engine configuration), backups, media mirror, watch sources, and the redaction policy floor |
 
 :::warning[Changed in v0.5.0]
-Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
+Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a plain
 `admin` administers any of them today, promote that account (Settings → Users → Role) before
 upgrading, or hand the work to an existing super admin.
@@ -121,7 +121,9 @@ You cannot change your own role or delete your own account here; your row shows 
 **The last remaining super admin cannot be demoted or deleted.**
 :::
 
-## Engine Configuration
+## Speech Processing
+
+(Formerly **Engine Configuration**; it now sits in the **Transcription** group next to the ASR provider.)
 
 Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
 
@@ -139,7 +141,7 @@ Admin-tunable, runtime-safe transcription engine settings. All changes apply liv
 
 ## Redaction Policy
 
-The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
+The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Privacy & Redaction → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
 
 - **Force categories**: force **PII**, **toxicity**, and/or **profanity** redaction on for every user (cannot be disabled per-user)
 - **Mandate censored exports**: require masked output for all subtitle/transcript exports

@@ -6,7 +6,7 @@ sidebar_position: 6
 
 Even with state-of-the-art diarization, speaker labels can drift by a word or two right at the moment one person stops talking and another begins. OpenTranscribe ships two post-processing stages that clean up these turn-boundary mistakes, so the transcript reads the way the conversation actually happened.
 
-Both stages are controlled from **Settings → Engine Configuration** in the admin UI. Changes are saved to the database and take effect on the next transcription — no restart required.
+Both stages are controlled from **Settings → Speech Processing** in the admin UI. Changes are saved to the database and take effect on the next transcription — no restart required.
 
 ## The two problems it solves
 
@@ -70,7 +70,7 @@ For most users there is nothing to configure: leave it on.
 
 ### Toggle and advanced knobs
 
-In **Settings → Engine Configuration**, the **Boundary Smoothing** toggle turns the whole stage on or off.
+In **Settings → Speech Processing**, the **Boundary Smoothing** toggle turns the whole stage on or off.
 
 The fine-grained knobs (maximum island length, maximum island duration, minimum flank length, minimum silent gap) use safe defaults and are rarely worth changing. They are overridable in the database under the `engine.boundary_*` keys if you need to tune behaviour for an unusual corpus.
 
@@ -96,7 +96,7 @@ The cost is modest but real: it adds about **1.9 seconds per 10-minute file**, b
 
 ### Toggle and settings
 
-In **Settings → Engine Configuration**:
+In **Settings → Speech Processing**:
 
 | Setting | Default | What it does |
 |---|---|---|

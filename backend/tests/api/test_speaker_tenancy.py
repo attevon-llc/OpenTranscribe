@@ -641,7 +641,11 @@ def test_profile_embedding_averages_only_speakers_of_the_profiles_tenant(world, 
 
 @pytest.fixture()
 def cluster_world(world) -> tuple[World, SpeakerCluster]:
-    return world, _mk_cluster(world.db, world.alice, world.org_a.id, [world.a_speaker])
+    # A pair, not a lone speaker: the cluster list shows groups (#1192), and a one-speaker
+    # cluster would be absent for the active tenant too, passing the "hidden elsewhere" half
+    # of the listing tests for the wrong reason.
+    partner = _mk_speaker(world.db, world.a_file, name="SPEAKER_06")
+    return world, _mk_cluster(world.db, world.alice, world.org_a.id, [world.a_speaker, partner])
 
 
 #: (method, path, body, status in the cluster's tenant, status outside it). Outside

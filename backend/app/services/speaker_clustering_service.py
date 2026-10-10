@@ -1979,6 +1979,17 @@ class SpeakerClusteringService:
         tenant_pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
         if tenant_pred is not None:
             tenant_filters.append(tenant_pred)
+        # A cluster is a GROUP. Upload-time clustering keeps a one-speaker cluster per unmatched
+        # speaker so a later file can match it, but "Re-cluster All" rebuilds only groups of
+        # two or more; listing the singletons made the tab fill up after an upload and empty
+        # after a recluster. They stay in the table for matching and are still reviewed in the
+        # inbox, which lists every unverified speaker whatever its cluster. A named or promoted
+        # cluster is always shown.
+        tenant_filters.append(
+            (SpeakerCluster.member_count >= 2)
+            | SpeakerCluster.label.isnot(None)
+            | SpeakerCluster.promoted_to_profile_id.isnot(None)
+        )
         query = (
             self.db.query(SpeakerCluster)
             .options(

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
@@ -23,6 +23,8 @@
   }
 
   type EngineSettingKey = keyof EngineSettingsResponse;
+
+  const dispatch = createEventDispatcher<{ change: { hasChanges: boolean } }>();
 
   let loading = false;
   let saving = false;
@@ -118,7 +120,7 @@
       toastStore.success($t('settings.engineSettings.resetToDefault', { key }));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, `Failed to reset ${key}`), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.resetFailed', { key })), 5000);
     } finally {
       resetInProgress = null;
     }
@@ -144,6 +146,8 @@
     Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
     Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value
   );
+
+  $: dispatch('change', { hasChanges: isDirty });
 </script>
 
 <div class="engine-settings">
@@ -151,6 +155,7 @@
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else if settings}
     <div class="settings-form">
+      <h3 class="section-title">{$t('settings.engineSettings.diarizerHeading')}</h3>
 
       <!-- Diarizer Backend -->
       <div class="form-row">
@@ -181,8 +186,8 @@
             class="form-select"
             disabled={saving || resetInProgress !== null}
           >
-            <option value="native">native (default)</option>
-            <option value="pyannote">pyannote (failover)</option>
+            <option value="native">{$t('settings.engineSettings.backendNative')}</option>
+            <option value="pyannote">{$t('settings.engineSettings.backendPyannote')}</option>
           </select>
         </div>
       </div>
@@ -223,6 +228,8 @@
           </label>
         </div>
       </div>
+
+      <h3 class="section-title boundary-heading">{$t('settings.engineSettings.boundaryHeading')}</h3>
 
       <!-- Boundary Smoothing -->
       <div class="form-row">
@@ -395,6 +402,17 @@
   .engine-settings {
     max-width: 800px;
     margin: 0 auto;
+  }
+
+  .section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+  }
+
+  .boundary-heading {
+    margin-top: 0.5rem;
   }
 
   .loading {

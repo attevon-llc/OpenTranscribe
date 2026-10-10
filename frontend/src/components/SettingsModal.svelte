@@ -1150,7 +1150,7 @@
             <div class="content-section">
               <h3 class="section-title">{$t('settings.asrProvider.sectionTitle')}</h3>
               <p class="section-description">{$t('settings.asrProvider.description')}</p>
-              <ASRSettings {isAdmin} />
+              <ASRSettings {isAdmin} {isSuperAdmin} />
             </div>
           {/if}
 

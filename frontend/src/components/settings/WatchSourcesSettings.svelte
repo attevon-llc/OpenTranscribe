@@ -9,6 +9,7 @@
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
+  import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import WatchSourceModal from './WatchSourceModal.svelte';
   import EmailConfigModal from './EmailConfigModal.svelte';
@@ -21,6 +22,7 @@
   import { toastStore } from '$stores/toast';
   import { user } from '$stores/auth';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { watchSourcesTabs, resolveWatchSourcesTab, type WatchSourcesTabId } from '$lib/settings/watchSourcesTabs';
   import {
     getCapabilities,
     getWatchSources,
@@ -45,6 +47,18 @@
   // Which config carries password resets and invitations is a deployment-wide
   // credential decision, so it sits one tier above managing the configs.
   $: isSuperAdmin = $user?.role === 'super_admin';
+
+  const TAB_LABEL_KEYS: Record<WatchSourcesTabId, string> = {
+    sources: 'settings.watchSources.sourcesHeading',
+    email: 'settings.emailNotifications.heading',
+    global: 'settings.watchSources.globalHeading',
+  };
+  let activeTab: string = 'sources';
+  $: tabIds = watchSourcesTabs(isSuperAdmin);
+  $: if (!tabIds.includes(activeTab as WatchSourcesTabId)) {
+    activeTab = resolveWatchSourcesTab(activeTab as WatchSourcesTabId, tabIds);
+  }
+  $: tabItems = tabIds.map<TabItem>((id) => ({ id, label: $t(TAB_LABEL_KEYS[id]) }));
 
   let loading = true;
   let saving = false;
@@ -238,84 +252,92 @@
 {#if loading}
   <div class="ws-loading"><Spinner /></div>
 {:else}
-  {#if isAdmin}
-    <div class="scope-toggle">
-      <button
-        class="btn"
-        class:btn-primary={scope === 'own'}
-        class:btn-secondary={scope !== 'own'}
-        on:click={() => {
-          scope = 'own';
-          loadSources();
-        }}
-      >
-        {$t('settings.watchSources.myScope')}
-      </button>
-      <button
-        class="btn"
-        class:btn-primary={scope === 'all'}
-        class:btn-secondary={scope !== 'all'}
-        on:click={() => {
-          scope = 'all';
-          loadSources();
-        }}
-      >
-        {$t('settings.watchSources.allScope')}
-      </button>
+  {#if tabItems.length > 1}
+    <div class="tab-strip">
+      <Tabs tabs={tabItems} bind:activeId={activeTab} ariaLabel={$t('settings.watchSources.title')} />
     </div>
   {/if}
 
-  <div class="section-head">
-    <h4>{$t('settings.watchSources.sourcesHeading')}</h4>
-    <button class="btn btn-primary" on:click={openCreate}>
-      + {$t('settings.watchSources.addSource')}
-    </button>
-  </div>
-
-  {#if sources.length === 0}
-    <EmptyState
-      title={$t('settings.watchSources.emptyTitle')}
-      description={$t('settings.watchSources.emptyDescription')}
-    >
-      <svelte:fragment slot="icon">
-        <svg
-          width="40"
-          height="40"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+  {#if activeTab === 'sources'}
+    {#if isAdmin}
+      <div class="scope-toggle">
+        <button
+          class="btn"
+          class:btn-primary={scope === 'own'}
+          class:btn-secondary={scope !== 'own'}
+          on:click={() => {
+            scope = 'own';
+            loadSources();
+          }}
         >
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </svelte:fragment>
-    </EmptyState>
-  {:else}
-    <div class="source-list">
-      {#each sources as s (s.uuid)}
-        <WatchSourceCard
-          source={s}
-          stats={statsMap[s.uuid]}
-          {capabilities}
-          {saving}
-          testing={testingUuid === s.uuid}
-          on:toggle={(e) => toggleEnabled(e.detail)}
-          on:test={(e) => handleTest(e.detail)}
-          on:scan={(e) => handleScan(e.detail)}
-          on:edit={(e) => openEdit(e.detail)}
-          on:delete={(e) => confirmDelete(e.detail)}
-          on:files={(e) => (filesSource = e.detail)}
-          on:notifications={(e) => (linksSource = e.detail)}
-        />
-      {/each}
+          {$t('settings.watchSources.myScope')}
+        </button>
+        <button
+          class="btn"
+          class:btn-primary={scope === 'all'}
+          class:btn-secondary={scope !== 'all'}
+          on:click={() => {
+            scope = 'all';
+            loadSources();
+          }}
+        >
+          {$t('settings.watchSources.allScope')}
+        </button>
+      </div>
+    {/if}
+
+    <div class="section-head">
+      <h4>{$t('settings.watchSources.sourcesHeading')}</h4>
+      <button class="btn btn-primary" on:click={openCreate}>
+        + {$t('settings.watchSources.addSource')}
+      </button>
     </div>
+
+    {#if sources.length === 0}
+      <EmptyState
+        title={$t('settings.watchSources.emptyTitle')}
+        description={$t('settings.watchSources.emptyDescription')}
+      >
+        <svelte:fragment slot="icon">
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </svelte:fragment>
+      </EmptyState>
+    {:else}
+      <div class="source-list">
+        {#each sources as s (s.uuid)}
+          <WatchSourceCard
+            source={s}
+            stats={statsMap[s.uuid]}
+            {capabilities}
+            {saving}
+            testing={testingUuid === s.uuid}
+            on:toggle={(e) => toggleEnabled(e.detail)}
+            on:test={(e) => handleTest(e.detail)}
+            on:scan={(e) => handleScan(e.detail)}
+            on:edit={(e) => openEdit(e.detail)}
+            on:delete={(e) => confirmDelete(e.detail)}
+            on:files={(e) => (filesSource = e.detail)}
+            on:notifications={(e) => (linksSource = e.detail)}
+          />
+        {/each}
+      </div>
+    {/if}
   {/if}
 
-  {#if isSuperAdmin}
+  {#if isSuperAdmin && activeTab === 'email'}
     <EmailConfigList
       configs={emailConfigs}
       showHelp={showEmailHelp}
@@ -325,10 +347,10 @@
       on:delete={(e) => (configToDelete = e.detail)}
       on:toggleHelp={() => (showEmailHelp = !showEmailHelp)}
     />
+  {/if}
 
-    {#if globalSettings}
-      <GlobalWatchSettingsForm bind:settings={globalSettings} {saving} on:save={saveGlobalSettings} />
-    {/if}
+  {#if isSuperAdmin && activeTab === 'global' && globalSettings}
+    <GlobalWatchSettingsForm bind:settings={globalSettings} {saving} on:save={saveGlobalSettings} />
   {/if}
 {/if}
 
@@ -410,6 +432,9 @@
     display: flex;
     justify-content: center;
     padding: 32px;
+  }
+  .tab-strip {
+    margin-bottom: 1.25rem;
   }
   .scope-toggle {
     display: flex;

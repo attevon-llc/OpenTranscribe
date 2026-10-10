@@ -43,7 +43,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 👥 **Smart Speaker Management**
 - **Automatic Speaker Diarization**: Identify different speakers using PyAnnote v4 with enhanced accuracy
 - **Speaker Overlap Detection**: Detect and handle multiple simultaneous speakers with advanced PyAnnote v4 capabilities
-- **Diarization Boundary Correction**: Word-boundary smoothing (default on, ~−32% word speaker error rate) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live from the admin Engine Configuration panel (no restart)
+- **Diarization Boundary Correction**: Word-boundary smoothing (default on, ~−32% word speaker error rate) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live from the admin Speech Processing panel (no restart)
 - **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
 - **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
 - **Intelligent Speaker Suggestions**: Consolidated speaker identification with confidence scoring and automatic profile matching
@@ -200,13 +200,13 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🛡️ **Content Moderation & Privacy**
 - **Read-Time Redaction**: Mask PII, profanity, and toxicity at every display/export surface with `[CATEGORY]` placeholders — the full original transcript is always kept in the database, masking is a read-time transform (no destructive edits)
-- **Per-User, On by Default**: Each user controls categories, masking style, custom words, and allowlist (Settings → Content Redaction) with no recompute on change
-- **Admin Enforcement Floor**: Admins can force PII/toxicity/profanity masking and mandate censored exports for all users (Settings → Redaction Policy)
+- **Per-User, On by Default**: Each user controls categories, masking style, custom words, and allowlist (Settings → Privacy & Redaction → Content Redaction) with no recompute on change
+- **Admin Enforcement Floor**: Admins can force PII/toxicity/profanity masking and mandate censored exports for all users (Settings → Privacy & Redaction → Redaction Policy)
 - **Detect-Once, Cache-Forever**: Detection runs once per transcript in a dedicated `celery-redaction` CPU service; spans cache on the transcript so enable/disable and category changes are instant
 - **Multiple Detectors**: Presidio + spaCy/GLiNER (PII), toxic-bert / multilingual XLM-R (toxicity), wordlist (profanity), plus an optional LLM detector
 
-### ⚙️ **Engine Configuration (Admin)**
-- **Runtime-Tunable Engine Settings**: Admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Engine Configuration with no container restart
+### ⚙️ **Speech Processing (Admin)**
+- **Runtime-Tunable Engine Settings**: Admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Speech Processing with no container restart
 
 ### ⚡ **Performance & Scaling**
 - **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems, including an optional ASR/diarization **GPU split** (`--with-gpu-split`) that runs transcription and diarization on separate GPUs

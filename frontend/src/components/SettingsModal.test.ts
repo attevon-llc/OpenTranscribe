@@ -54,6 +54,19 @@ vi.mock('$lib/api/userApprovals', () => ({
   isAlreadyDecided: () => false,
 }));
 
+// The redaction panels' own loading is out of scope here; a request that never settles
+// keeps them in their loading state so only the tab shell is under test.
+vi.mock('$lib/api/redactionSettings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/api/redactionSettings')>();
+  const pending = () => new Promise(() => {});
+  return {
+    ...actual,
+    getRedactionSettings: pending,
+    getRedactionDefaults: pending,
+    getRedactionPolicy: pending,
+  };
+});
+
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
@@ -190,6 +203,89 @@ describe('privilege-gated sidebar sections', () => {
 
       expect(navItem(container, 'settings.download.title')).not.toBeNull();
     });
+  });
+});
+
+describe('merged Privacy & Redaction section and relocated engine row', () => {
+  function sectionOf(container: HTMLElement, label: string): string | null {
+    const item = navItem(container, label);
+    return (
+      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+      null
+    );
+  }
+
+  it('lists ONE redaction row, not separate Content Redaction and Redaction Policy rows', async () => {
+    setUser('super_admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.privacyRedaction.title')).not.toBeNull();
+    expect(navItem(container, 'settings.contentRedaction.title')).toBeNull();
+    expect(navItem(container, 'settings.redactionPolicy.title')).toBeNull();
+  });
+
+  it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
+    setUser('user');
+    settingsModalStore.open('content-redaction');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.privacyRedaction.title')).not.toBeNull();
+    expect(container.querySelector('[data-testid="privacy-redaction-panel"]')).not.toBeNull();
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+  });
+
+  it('shows an admin the policy tab disabled with the super-admin reason', async () => {
+    setUser('admin');
+    settingsModalStore.open('content-redaction');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    const policyTab = container.querySelector('#tab-policy') as HTMLButtonElement | null;
+    expect(policyTab).not.toBeNull();
+    expect(policyTab?.disabled).toBe(true);
+    expect(policyTab?.getAttribute('title')).toBe('settings.nav.requiresSuperAdmin');
+    expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('opens the policy tab for a super admin via the legacy redaction-policy id', async () => {
+    setUser('super_admin');
+    settingsModalStore.open('redaction-policy');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(container.querySelector('#tab-policy')?.getAttribute('aria-selected')).toBe('true');
+    // the alias highlights the merged row rather than leaving the sidebar blank
+    expect(
+      navItem(container, 'settings.privacyRedaction.title')?.classList.contains('active')
+    ).toBe(true);
+  });
+
+  it('lands a plain admin deep-linking to redaction-policy on the personal tab, not a blank pane', async () => {
+    setUser('admin');
+    settingsModalStore.open('redaction-policy');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('puts the engine row beside the ASR rows, hidden from users and locked for admins', async () => {
+    setUser('user');
+    const asUser = openModal();
+    await waitForOpen(asUser.container);
+    expect(navItem(asUser.container, 'settings.engineSettings.title')).toBeNull();
+    asUser.unmount();
+
+    setUser('admin');
+    const asAdmin = openModal();
+    await waitForOpen(asAdmin.container);
+    const row = navItem(asAdmin.container, 'settings.engineSettings.title');
+    expect(row?.classList.contains('locked')).toBe(true);
+    expect(sectionOf(asAdmin.container, 'settings.engineSettings.title')).toBe(
+      'settings.sections.transcription'
+    );
   });
 });
 

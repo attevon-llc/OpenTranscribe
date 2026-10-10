@@ -25,7 +25,7 @@
   }>();
 </script>
 
-<div class="section-head admin-section">
+<div class="section-head">
   <div class="email-heading">
     <h4>{$t('settings.emailNotifications.heading')}</h4>
     <span class="experimental-badge" title={$t('settings.emailNotifications.experimentalNote')}>
@@ -135,11 +135,6 @@
   }
   .section-head h4 {
     margin: 0;
-  }
-  .admin-section {
-    margin-top: 28px;
-    border-top: 1px solid var(--border-color);
-    padding-top: 16px;
   }
   .email-list {
     display: flex;

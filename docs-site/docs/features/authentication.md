@@ -133,7 +133,7 @@ Role), it is audited, and the last one cannot be demoted or deleted.
 break-glass account for exactly the IdP that is failing.
 
 :::warning[Changed in v0.5.0]
-ASR provider, Engine configuration, Backups, Media Mirror, Watch sources and Redaction policy
+ASR provider, Speech processing, Backups, Media Mirror, Watch sources and Redaction policy
 moved from `admin` to `super_admin`. Promote anyone who administers them.
 :::
 

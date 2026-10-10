@@ -344,7 +344,7 @@ directly.
 
 #### Six deployment-configuration panels now require `super_admin`, not `admin`
 
-**ASR provider**, **Engine configuration**, **Backups**, **Media Mirror**, **Watch sources**,
+**ASR provider**, **Speech processing**, **Backups**, **Media Mirror**, **Watch sources**,
 and the **Redaction policy** floor now require the `super_admin` role instead of `admin`. They
 configure how the deployment runs, and several store infrastructure credentials (S3 keys, SMB
 passwords, SMTP passwords) that a team-level admin has no reason to read or replace.

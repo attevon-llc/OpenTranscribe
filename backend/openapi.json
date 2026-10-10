@@ -42667,8 +42667,33 @@
     },
     "/api/user-settings/transcription": {
       "delete": {
-        "description": "Reset user's transcription settings to defaults.\n\nDeletes all user-specific transcription settings from the database,\ncausing the system to fall back to default values.\n\nReturns:\n    Message confirming reset and the default settings that will now apply",
+        "description": "Reset user's transcription settings to defaults.\n\nDeletes user-specific transcription settings from the database, causing the\nsystem to fall back to default values. With ``group`` only that group's\nfields are reset; without it, all of them are.\n\nReturns:\n    Message confirming reset and the default settings that will now apply",
         "operationId": "reset_transcription_settings_api_user_settings_transcription_delete",
+        "parameters": [
+          {
+            "description": "Reset only this field group. Omit to reset every transcription setting.",
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "language",
+                    "accuracy",
+                    "speakers"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Reset only this field group. Omit to reset every transcription setting.",
+              "title": "Group"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -42679,6 +42704,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

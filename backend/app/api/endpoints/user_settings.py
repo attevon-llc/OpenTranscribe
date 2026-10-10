@@ -20,6 +20,7 @@ from fastapi import APIRouter
 from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
 from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import DEFAULT_VIDEO_QUALITY
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.core.constants import TRANSCRIPTION_SETTING_GROUPS
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_RECORDING_DURATIONS
@@ -845,41 +847,33 @@ def update_transcription_settings(
 
 @router.delete("/transcription")
 def reset_transcription_settings(
+    group: Literal["language", "accuracy", "speakers"] | None = Query(
+        None,
+        description="Reset only this field group. Omit to reset every transcription setting.",
+    ),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Reset user's transcription settings to defaults.
 
-    Deletes all user-specific transcription settings from the database,
-    causing the system to fall back to default values.
+    Deletes user-specific transcription settings from the database, causing the
+    system to fall back to default values. With ``group`` only that group's
+    fields are reset; without it, all of them are.
 
     Returns:
         Message confirming reset and the default settings that will now apply
     """
+    fields = (
+        TRANSCRIPTION_SETTING_GROUPS[group]
+        if group is not None
+        else tuple(f for grp in TRANSCRIPTION_SETTING_GROUPS.values() for f in grp)
+    )
     deleted_count = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "transcription_min_speakers",
-                    "transcription_max_speakers",
-                    "transcription_speaker_prompt_behavior",
-                    "transcription_garbage_cleanup_enabled",
-                    "transcription_garbage_cleanup_threshold",
-                    "transcription_source_language",
-                    "transcription_translate_to_english",
-                    "transcription_llm_output_language",
-                    "transcription_vad_threshold",
-                    "transcription_vad_min_silence_ms",
-                    "transcription_vad_min_speech_ms",
-                    "transcription_vad_speech_pad_ms",
-                    "transcription_hallucination_silence_threshold",
-                    "transcription_repetition_penalty",
-                    "transcription_diarization_source",
-                ]
-            ),
+            models.UserSetting.setting_key.in_([f"transcription_{f}" for f in fields]),
         )
         .delete(synchronize_session=False)
     )

@@ -210,7 +210,7 @@ Key code: `app/utils/hardware_detection.py`, `config.py`. Benchmarks:
 ## Boundary correction (issue #193)
 
 Two post-processing stages fix speaker mislabeling at turn boundaries. **All settings are
-DB-backed and live in the admin UI → Settings → Engine Configuration** (no restart); env
+DB-backed and live in the super-admin UI → Settings → Speaker Identification → Speaker Engine** (no restart); env
 (`ENGINE_BOUNDARY_*`) is fallback-only — there are no required `.env` vars.
 
 - **Boundary smoothing** (default ON, pure-CPU): collapses 1–3 word "wrong-speaker islands"

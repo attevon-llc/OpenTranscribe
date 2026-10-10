@@ -165,7 +165,7 @@ def get_unverified_inbox(
         user_id=current_user.id,
         page=page,
         per_page=per_page,
-        include_quarantined=current_user.is_admin,
+        include_quarantined=ctx.bypass.user_is_admin,
         organization_id=ctx.org_id,
     )
 
@@ -227,7 +227,7 @@ def get_speaker_media_preview(
     # 404 not 403: "it exists but you may not see it" is itself a disclosure.
     from app.services.takedown_service import is_hidden_for
 
-    if is_hidden_for(media_file, is_admin=current_user.is_admin):
+    if is_hidden_for(media_file, is_admin=ctx.bypass.user_is_admin):
         raise HTTPException(status_code=404, detail="Speaker not found")
 
     # Presigned URL for source media (shared media-streaming TTL)
@@ -243,7 +243,7 @@ def get_speaker_media_preview(
         try:
             media_presigned_url = get_file_url(
                 source.object_name,
-                expires=settings.MEDIA_URL_EXPIRE_SECONDS,
+                expires=ctx.bypass.presign_ttl(settings.MEDIA_URL_EXPIRE_SECONDS),
                 content_type=source.content_type,
             )
         except Exception as e:

@@ -202,7 +202,7 @@ After upgrading to v0.4.0, verify the following additional items:
 
 ### Cloud ASR (if configured)
 - [ ] `DEPLOYMENT_MODE=lite` starts without GPU workers
-- [ ] Cloud ASR provider connection test passes (Admin UI → Settings → ASR)
+- [ ] Cloud ASR provider connection test passes (Admin UI → Settings → Transcription → Provider & Model)
 
 ### New Features
 - [ ] File retention policy configurable (Admin UI → Settings → File Retention)

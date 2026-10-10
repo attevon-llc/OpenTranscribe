@@ -146,11 +146,19 @@ export async function updateTranscriptionSettings(
   return response.data;
 }
 
+/** The field groups the backend can reset independently (`?group=`). */
+export type TranscriptionSettingsGroup = 'language' | 'accuracy' | 'speakers';
+
 /**
- * Reset transcription settings to system defaults
+ * Reset transcription settings to system defaults. With a group, only that
+ * group's fields are reset; without one, every field is.
  */
-export async function resetTranscriptionSettings(): Promise<TranscriptionSettingsResetResponse> {
-  const response = await axiosInstance.delete('/user-settings/transcription');
+export async function resetTranscriptionSettings(
+  group?: TranscriptionSettingsGroup
+): Promise<TranscriptionSettingsResetResponse> {
+  const response = group
+    ? await axiosInstance.delete('/user-settings/transcription', { params: { group } })
+    : await axiosInstance.delete('/user-settings/transcription');
   return response.data;
 }
 
@@ -162,28 +170,64 @@ export async function getTranscriptionSystemDefaults(): Promise<TranscriptionSys
   return response.data;
 }
 
-/**
- * Helper to get display label for speaker prompt behavior
- */
-export function getSpeakerBehaviorLabel(behavior: SpeakerPromptBehavior): string {
-  const labels: Record<SpeakerPromptBehavior, string> = {
-    always_prompt: 'Always show speaker settings',
-    use_defaults: 'Use system defaults',
-    use_custom: 'Use my saved settings',
-  };
-  return labels[behavior] || behavior;
+/** A per-file speaker range as the upload wizard and the reprocess dialog hold it. */
+export interface SpeakerRangeValues {
+  minSpeakers: number | null;
+  maxSpeakers: number | null;
 }
 
 /**
- * Helper to get description for speaker prompt behavior
+ * Starting values for a per-file speaker range, from the user's saved behaviour.
+ *
+ * `use_defaults` starts blank (the file takes the system range); the other two start from the
+ * saved range. Shared by the upload wizard and the reprocess dialog so a saved range is
+ * honoured on both, not just on upload.
  */
-export function getSpeakerBehaviorDescription(behavior: SpeakerPromptBehavior): string {
-  const descriptions: Record<SpeakerPromptBehavior, string> = {
-    always_prompt: 'Show advanced speaker settings during upload and reprocess',
-    use_defaults: 'Skip settings and use system MIN/MAX_SPEAKERS values',
-    use_custom: 'Automatically use your saved min/max speaker values',
+export function speakerPrefill(settings: TranscriptionSettings | null): SpeakerRangeValues {
+  if (!settings || settings.speaker_prompt_behavior === 'use_defaults') {
+    return { minSpeakers: null, maxSpeakers: null };
+  }
+  return {
+    minSpeakers: settings.min_speakers || null,
+    maxSpeakers: settings.max_speakers || null,
   };
-  return descriptions[behavior] || '';
+}
+
+/**
+ * The range to send for a file. A blank field means "use the system range" under
+ * `use_defaults`, so those values are sent explicitly (the server would otherwise fall back to
+ * the user's saved range, which is not what that choice promises). Anywhere else a blank field
+ * stays `null`, which the server reads as "my saved range". Nothing is injected when a fixed
+ * speaker count is set: it replaces the range.
+ */
+export function speakerSubmitRange(
+  settings: TranscriptionSettings | null,
+  systemDefaults: TranscriptionSystemDefaults | null,
+  range: SpeakerRangeValues,
+  numSpeakers: number | null
+): SpeakerRangeValues {
+  if (
+    settings?.speaker_prompt_behavior !== 'use_defaults' ||
+    !systemDefaults ||
+    numSpeakers !== null
+  ) {
+    return range;
+  }
+  return {
+    minSpeakers: range.minSpeakers ?? systemDefaults.min_speakers,
+    maxSpeakers: range.maxSpeakers ?? systemDefaults.max_speakers,
+  };
+}
+
+/**
+ * Models the server routes to the CPU worker, where speaker detection never runs. Mirrors
+ * `LIGHTWEIGHT_MODELS` in `backend/app/transcription/config.py`; used only to hide inputs
+ * that cannot apply, the server stays the authority.
+ */
+const LIGHTWEIGHT_MODELS = new Set(['tiny', 'tiny.en', 'base', 'base.en']);
+
+export function isLightweightModel(model: string | null | undefined): boolean {
+  return !!model && LIGHTWEIGHT_MODELS.has(model);
 }
 
 /**

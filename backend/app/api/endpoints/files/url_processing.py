@@ -12,19 +12,23 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
+from pydantic import model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_VIDEO_QUALITIES
+from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -33,9 +37,11 @@ from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
+from app.tasks.transcription.requested_options import apply_requested_options
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
 from app.utils.file_hash import org_stamp_is
+from app.utils.whisper_model_choice import require_servable_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +102,39 @@ class URLProcessingRequest(BaseModel):
         default=None,
         description="Audio bitrate override for this download (e.g., 'best', '320', '192', '128')",
     )
+    min_speakers: int | None = Field(
+        default=None,
+        ge=1,
+        description="Minimum speakers for diarization. None = the user's saved range.",
+    )
+    max_speakers: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum speakers for diarization. None = the user's saved range.",
+    )
+    num_speakers: int | None = Field(
+        default=None,
+        ge=1,
+        description="Fixed speaker count for diarization (overrides min/max when set).",
+    )
+    whisper_model: str | None = Field(
+        default=None,
+        description=(
+            "Whisper model for this import. None = the deployment's model. Accepts that "
+            "model or a lightweight CPU model (tiny, base); anything else is rejected with 422."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_min_max_speakers(self) -> "URLProcessingRequest":
+        """min_speakers must not exceed max_speakers."""
+        if (
+            self.min_speakers is not None
+            and self.max_speakers is not None
+            and self.min_speakers > self.max_speakers
+        ):
+            raise ValueError("min_speakers must be less than or equal to max_speakers")
+        return self
 
     @field_validator("video_quality")
     @classmethod
@@ -242,6 +281,7 @@ def _handle_playlist_processing(
     audio_only: bool | None = None,
     audio_quality: str | None = None,
     organization_id: int | None = None,
+    transcription_options: dict | None = None,
 ) -> PlaylistProcessingResponse:
     """Handle playlist URL processing by dispatching a background task.
 
@@ -256,6 +296,7 @@ def _handle_playlist_processing(
         organization_id: The originating request's tenant (``ctx.org_id``) —
             threaded through the task kwargs so placeholders are stamped with
             the org the user was acting in, never a membership guess (#262c).
+        transcription_options: Per-file speaker range / model for every video.
 
     Returns:
         PlaylistProcessingResponse with processing status.
@@ -275,6 +316,7 @@ def _handle_playlist_processing(
             audio_only=audio_only,
             audio_quality=audio_quality,
             organization_id=organization_id,
+            transcription_options=transcription_options,
         )
         logger.info(
             f"Dispatched YouTube playlist processing task {task_result.id} for user {user_id}"
@@ -621,9 +663,14 @@ def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None
         logger.warning(f"Failed to send file_created notification: {e}")
 
 
-@router.post("/process-url", response_model=URLProcessingResponse)
+@router.post(
+    "/process-url",
+    response_model=URLProcessingResponse,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def process_media_url(
     request_data: URLProcessingRequest,
+    http_request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -678,12 +725,30 @@ def process_media_url(
         from app.services.youtube_rate_limiter import youtube_rate_limiter
 
         if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
-            allowed, reason = youtube_rate_limiter.check_rate_limit(current_user.id)
+            allowed, reason, retry_after_seconds = youtube_rate_limiter.check_rate_limit(
+                current_user.id
+            )
             if not allowed:
-                raise HTTPException(status_code=429, detail=reason)
+                headers = (
+                    {"Retry-After": str(retry_after_seconds)}
+                    if retry_after_seconds is not None
+                    else None
+                )
+                raise HTTPException(status_code=429, detail=reason, headers=headers)
 
         # Validate and normalize URL
         normalized_url, media_service = _validate_media_url(request_data.url)
+
+        # Per-file transcription options. The model is checked now so an unservable one is
+        # a 422 here rather than a silent fallback after the download.
+        transcription_options = {
+            "min_speakers": request_data.min_speakers,
+            "max_speakers": request_data.max_speakers,
+            "num_speakers": request_data.num_speakers,
+            "whisper_model": require_servable_whisper_model(
+                effective_whisper_model(request_data.whisper_model, http_request)
+            ),
+        }
 
         # Record download attempt after rate check passes
         if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
@@ -700,6 +765,7 @@ def process_media_url(
                 audio_only=request_data.audio_only,
                 audio_quality=request_data.audio_quality,
                 organization_id=ctx.org_id,
+                transcription_options=transcription_options,
             )
 
         # Extract video info
@@ -724,6 +790,11 @@ def process_media_url(
             video_info,
             ctx.org_id,
         )
+
+        # Recorded on the row so they survive the download hop: the worker dispatches
+        # transcription when the download finishes and reads them back (and a retry replays).
+        apply_requested_options(media_file, transcription_options)
+        db.commit()
 
         # Per-file skip summary: mark as disabled before pipeline starts
         if request_data.skip_summary:

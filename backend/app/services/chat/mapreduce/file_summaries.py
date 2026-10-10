@@ -42,11 +42,17 @@ class FileSummary:
     duration: float | None = None
     speakers: tuple[str, ...] = ()
     keyphrases: tuple[str, ...] = ()
-    #: The digest text, **already masked** by the caller. This module never sees
-    #: raw index content and never masks: masking needs a session and a policy
-    #: subject, and a module that quietly did it would be a second place for the
-    #: fail-closed contract to drift out of step with `redactor.py`.
+    #: The EXTRACTIVE digest text, **already masked** by the caller. This module
+    #: never sees raw index content and never masks: masking needs a session and a
+    #: policy subject, and a module that quietly did it would be a second place for
+    #: the fail-closed contract to drift out of step with `redactor.py`. Never holds
+    #: abstractive text — see `llm_summary` below for that.
     digest: str = ""
+    #: #464. The ABSTRACTIVE text (the `_summary_highlight_text` paragraph) of a
+    #: file whose map hit was a fresh LLM summary, already masked exactly like
+    #: `digest`. `""` for a plain digest-tier file. The two are different KINDS of
+    #: text and are kept in separate fields rather than joined into one.
+    llm_summary: str = ""
     #: W2.3. When this summary was built for a speaker-scoped map
     #: (`scope_speaker_digest_hits`), the focus speaker's own
     #: `file_facts.facts["speakers"]` entry (`total_time`/`turn_count`/
@@ -59,6 +65,10 @@ class FileSummary:
     #: but nothing came back" is a coverage note the reducer can render,
     #: rather than being indistinguishable from "not in this file at all".
     speaker_in_roster: bool = False
+    #: #464. True when this file's map hit was a FRESH LLM summary
+    #: (`ChunkHit.is_llm_summary`). `citations.build_overview_citations` reads
+    #: this to pick `KIND_SUMMARY` vs `KIND_DIGEST`.
+    is_llm_summary: bool = False
 
 
 class DigestScopeHits(list):
@@ -131,10 +141,16 @@ def build_file_summaries(
         payload = facts_by_file.get(str(hits[0].file_id), {})
         facts = payload.get("facts") or {}
         keyphrases = payload.get("keyphrases") or {}
+        # Route each hit by KIND rather than joining every hit into one field.
         # Sections are joined in the order the digest leg returned them, which is
-        # relevance order, not transcript order. Said here because the reader of a
-        # summary would reasonably assume chronology.
-        text = " ".join(masked_text.get(id(hit), "").strip() for hit in hits).strip()
+        # relevance order, not transcript order — said here because the reader of
+        # a summary would reasonably assume chronology.
+        summary_hits = [hit for hit in hits if getattr(hit, "is_llm_summary", False)]
+        section_hits = [hit for hit in hits if not getattr(hit, "is_llm_summary", False)]
+        llm_summary_text = " ".join(
+            masked_text.get(id(hit), "").strip() for hit in summary_hits
+        ).strip()
+        digest_text = " ".join(masked_text.get(id(hit), "").strip() for hit in section_hits).strip()
         summaries.append(
             FileSummary(
                 file_uuid=file_uuid,
@@ -147,13 +163,15 @@ def build_file_summaries(
                 keyphrases=tuple(
                     str(entry.get("phrase", "")) for entry in (keyphrases.get("phrases") or [])[:5]
                 ),
-                digest=text,
+                digest=digest_text,
+                llm_summary=llm_summary_text,
                 speaker_stats=(
                     _speaker_facts_entry(facts, speaker_focus) if speaker_focus else None
                 ),
                 speaker_in_roster=(
                     speaker_focus is not None and _speaker_in_roster(facts, speaker_focus)
                 ),
+                is_llm_summary=bool(summary_hits),
             )
         )
     return summaries
@@ -293,7 +311,9 @@ def scope_digest_hits(
         caller reconciling ``len(hits)`` against ``len(file_uuids)``
         (``mapreduce.coverage.check_scope_coverage`` is that reconciliation).
         ``coverage["summary_hits"]`` (present only when ``use_summaries`` is True) counts
-        files represented by a fresh summary instead of their digest.
+        files represented by a fresh summary instead of their digest; ``coverage["entries_digest"]``
+        counts files that fell back to the plain digest sections while tiering was on (stale or
+        absent summary).
     """
     if not file_uuids:
         return DigestScopeHits([], {"files_without_artifacts": 0, "files_no_content": 0})
@@ -323,6 +343,7 @@ def scope_digest_hits(
     files_without_artifacts = 0
     files_no_content = 0
     summary_hits = 0
+    entries_digest = 0
     #: Which scope uuids the query actually matched. The query outer-joins
     #: ``file_facts`` onto ``media_file`` filtered by ``MediaFile.uuid.in_(...)``,
     #: so a scope uuid with no accessible ``media_file`` row produces NO row at
@@ -358,6 +379,7 @@ def scope_digest_hits(
                         start_time=0.0,
                         end_time=None,
                         digest_section=len(sections),
+                        is_llm_summary=True,
                     )
                 )
                 summary_hits += 1
@@ -381,6 +403,12 @@ def scope_digest_hits(
                 )
             )
             file_contributed = True
+        if file_contributed and use_summaries:
+            # A file that fell back to the plain digest sections while tiering
+            # was on — stale/absent summary. Meaningless noise when tiering is off (every
+            # file takes this path trivially), so counted only alongside the
+            # other use_summaries-only counters below.
+            entries_digest += 1
         if not file_contributed:
             # A real ``file_facts`` row with a digest, but the digest's own
             # ``sections`` list is empty (an extractive digest that selected
@@ -399,6 +427,7 @@ def scope_digest_hits(
     }
     if use_summaries:
         coverage["summary_hits"] = summary_hits
+        coverage["entries_digest"] = entries_digest
     return DigestScopeHits(hits, coverage)
 
 

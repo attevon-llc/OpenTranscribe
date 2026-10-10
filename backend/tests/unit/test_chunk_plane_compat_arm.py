@@ -42,6 +42,8 @@ _DECIDED = (
     "chunk_plane_query",
     "digest_plane_query",
     "file_plane_query",
+    "summary_plane_query",  # issue #963
+    "summary_plane_clause",  # issue #963
 )
 
 #: ``<module>::<function>`` -> why this reader must NOT carry the chunk-plane arm.

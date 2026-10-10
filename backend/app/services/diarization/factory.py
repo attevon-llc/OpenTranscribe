@@ -3,13 +3,62 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
+
+from app.services.error_categorization_service import DIARIZATION_NOT_CONFIGURED_MESSAGE
 
 from .base import DiarizationProvider
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.models.user_diarization_settings import UserDiarizationSettings
 
 logger = logging.getLogger(__name__)
 
 VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
 DEFAULT_DIARIZATION_SOURCE = "provider"
+
+#: The ``user_diarization_settings`` identity of a user's pyannote.ai credential: one row
+#: per user (issue #1204), written only by ``api/endpoints/diarization_settings.py``.
+PYANNOTE_PROVIDER = "pyannote"
+PYANNOTE_CREDENTIAL_NAME = "pyannote.ai"
+
+
+class DiarizationNotConfiguredError(RuntimeError):
+    """The user chose pyannote.ai speaker detection and has no usable API key (#1204).
+
+    ``str()`` is the fixed user-facing sentence registered in
+    ``ErrorCategorizationService``, so the transcription failure handler classifies it
+    exactly (reason ``diarization_not_configured``, never retried automatically) and stores
+    nothing but that sentence.
+    """
+
+    MESSAGE = DIARIZATION_NOT_CONFIGURED_MESSAGE
+
+    def __init__(self) -> None:
+        super().__init__(self.MESSAGE)
+
+
+def get_pyannote_credential(user_id: int, db: Session) -> UserDiarizationSettings | None:
+    """The user's own active pyannote.ai credential row, or ``None``."""
+    from app.models.user_diarization_settings import UserDiarizationSettings
+
+    return (
+        db.query(UserDiarizationSettings)
+        .filter(
+            UserDiarizationSettings.user_id == user_id,
+            UserDiarizationSettings.provider == PYANNOTE_PROVIDER,
+            UserDiarizationSettings.is_active.is_(True),
+        )
+        .first()
+    )
+
+
+def has_pyannote_credential(user_id: int, db: Session) -> bool:
+    """Whether the user has a stored pyannote.ai key (not checked against the vendor)."""
+    row = get_pyannote_credential(user_id, db)
+    return bool(row is not None and row.api_key)
 
 
 class DiarizationProviderFactory:
@@ -58,7 +107,7 @@ class DiarizationProviderFactory:
         raise ValueError(f"Unknown diarization source: {source}")
 
     @staticmethod
-    def create_for_user(user_id: int, db) -> DiarizationProvider | None:  # noqa: ANN001
+    def create_for_user(user_id: int, db: Session) -> DiarizationProvider | None:
         """Create diarization provider from user's persisted settings.
 
         Args:
@@ -70,6 +119,12 @@ class DiarizationProviderFactory:
             is ``"provider"``, ``"off"``, or ``"local"`` (the ``local`` source runs on our
             own GPU via ``rediarize_task`` -> ``ModelManager.get_diarizer()`` directly,
             never through this factory — issue #672).
+
+        Raises:
+            DiarizationNotConfiguredError: The source is ``"pyannote"`` and the user has no
+                stored key, or the stored key no longer decrypts (issue #1204). This used to
+                return ``None``, which the cloud pipeline turned into a transcript with no
+                speakers and a log line nobody saw.
         """
         from app.models import UserSetting
 
@@ -93,33 +148,23 @@ class DiarizationProviderFactory:
             return None
 
         if source == "pyannote":
-            # Read pyannote.ai diarization config from user_diarization_settings.
-            from app.models.user_diarization_settings import UserDiarizationSettings
-            from app.utils.encryption import decrypt_value
+            from app.utils.encryption import decrypt_api_key
 
-            config = (
-                db.query(UserDiarizationSettings)
-                .filter(
-                    UserDiarizationSettings.user_id == user_id,
-                    UserDiarizationSettings.provider == "pyannote",
-                    UserDiarizationSettings.is_active.is_(True),
-                )
-                .first()
-            )
-            if not config or not config.api_key:
+            config = get_pyannote_credential(user_id, db)
+            api_key = decrypt_api_key(str(config.api_key)) if config and config.api_key else None
+            if not api_key:
                 logger.warning(
-                    "User %d has diarization_source=pyannote but no active pyannote config",
+                    "User %d chose pyannote.ai diarization but has no usable stored key",
                     user_id,
                 )
-                return None
-
-            from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+                raise DiarizationNotConfiguredError()
 
             from .pyannote_provider import PyAnnoteCloudDiarizationProvider
+            from .pyannote_provider import current_pyannote_model
 
             provider: DiarizationProvider = PyAnnoteCloudDiarizationProvider(
-                api_key=decrypt_value(config.api_key) or "",
-                model_name=config.model_name or PYANNOTE_DEFAULT_DIARIZATION_MODEL,
+                api_key=api_key,
+                model_name=current_pyannote_model(config.model_name if config else None),
             )
             return provider
 

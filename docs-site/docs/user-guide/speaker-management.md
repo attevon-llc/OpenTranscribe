@@ -29,7 +29,7 @@ Speaker diarization can be skipped when not needed (e.g., single-speaker monolog
 
 - **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog
 - **Per-reprocess**: The reprocess dialog includes the same toggle
-- **User default**: Set your preference in Settings → Transcription → Speaker Diarization
+- **User default**: Set your preference in Settings → Speaker Identification → Speaker Detection
 
 Transcripts processed without diarization will not have speaker labels but are otherwise complete.
 
@@ -109,7 +109,7 @@ OpenTranscribe can automatically detect speaker gender attributes:
 
 - **Gender badges** displayed on speaker profiles and cluster cards
 - Used for **gender-informed cluster validation** -- prevents merging speakers of different detected genders
-- Configure in **Settings > Speaker Attributes**
+- Configure in **Settings → Speaker Identification → Voice Attributes**
 - Gender detection runs during the diarization pipeline
 
 ## Speaker Analytics
@@ -129,8 +129,12 @@ View comprehensive speaker statistics:
 ### Edit Speaker Labels
 
 1. Click speaker name in transcript
-2. Edit name
+2. Type the real name in the field at the top of the menu and press Enter (or the check button)
 3. Changes apply to all segments
+
+As you type, matching [speaker profiles](#speaker-profiles) are listed under the field; pick one to use that name. A name like `SPEAKER_01` is rejected, because those are reserved for the automatic labels.
+
+The menu's **New speaker for this segment…** option is a different action: it creates an additional speaker and assigns only the segment you clicked to it. Use it when a segment was attributed to the wrong person, not to name the speaker you already have.
 
 ![Speaker editor showing identified speakers with voice match confidence](/img/screenshots/speakers/speaker-editor-panel.png)
 

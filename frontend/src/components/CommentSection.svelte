@@ -1,4 +1,5 @@
 <script>
+  import { supportSessionGate } from '$stores/supportSession';
   import { onMount, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   // Use the shared axios instance so auth token is always sent
@@ -451,6 +452,7 @@
   </div>
 
   <!-- Fixed comment form at the top -->
+  {#if !$supportSessionGate.readOnly}
   <div class="comment-form-container">
     <form class="comment-form" on:submit={addComment}>
       <textarea
@@ -503,6 +505,7 @@
       </div>
     </form>
   </div>
+  {/if}
 
   <!-- Scrollable comments list container -->
   <div class="comments-list-container">
@@ -647,7 +650,9 @@
   }
 
   .no-comments {
-    color: var(--text-secondary);
+    /* Sits on the slate-100 secondary surface, where --text-secondary is 4.34:1 —
+     * under WCAG AA, and italic 12px is the least legible text on the page. */
+    color: var(--text-on-tint);
     font-size: 12px;
     font-style: italic;
   }

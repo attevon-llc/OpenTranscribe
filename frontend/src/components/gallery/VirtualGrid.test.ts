@@ -203,7 +203,7 @@ describe('interaction', () => {
     await tick();
     await tick();
 
-    const trigger = container.querySelector('.clickable-error') as HTMLElement;
+    const trigger = container.querySelector('.status-clickable') as HTMLElement;
     await fireEvent.click(trigger);
 
     expect(handler).toHaveBeenCalledTimes(1);

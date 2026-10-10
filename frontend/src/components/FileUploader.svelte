@@ -7,6 +7,7 @@
   // Global stores
   import { recordingStore, recordingManager, hasActiveRecording, isRecording, recordingStartTime } from '$stores/recording';
   import { uploadsStore } from '$stores/uploads';
+  import type { UploadTranscriptionParams } from '$lib/services/uploadService';
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
@@ -24,7 +25,10 @@
     getTranscriptionSystemDefaults,
     type TranscriptionSettings,
     type TranscriptionSystemDefaults,
-    DEFAULT_TRANSCRIPTION_SETTINGS
+    DEFAULT_TRANSCRIPTION_SETTINGS,
+    isLightweightModel,
+    speakerPrefill,
+    speakerSubmitRange
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { getMaxUploadBytes, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
@@ -45,7 +49,20 @@
   // ── Types ──
   interface FileWithSize extends File { size: number; }
   type StepId = 'media' | 'extraction' | 'tags' | 'collections' | 'speakers' | 'model' | 'review';
-  interface StepConfig { id: StepId; labelKey: string; optional: boolean; skipped: boolean; }
+  interface StepConfig {
+    id: StepId;
+    labelKey: string;
+    optional: boolean;
+    skipped: boolean;
+    /**
+     * Optional per-step content width (any valid CSS `max-width` value), applied
+     * to `.step-content` for the active step. All steps share one `.step-body`
+     * (see the modal's fixed width), so a step whose natural content is narrower
+     * than the others — e.g. a short list of chips — would otherwise stretch to
+     * fill the same width as a step with a wide filter/create row (#751 item 1).
+     */
+    contentWidth?: string;
+  }
   interface UploadPreviousValues {
     collectionIds: string[];
     collectionNames: string[];
@@ -81,16 +98,18 @@
   // ── Stepper State ──
   let steps: StepConfig[] = [
     { id: 'media',       labelKey: 'uploader.stepMedia',       optional: false, skipped: false },
-    { id: 'tags',        labelKey: 'uploader.stepTags',        optional: true,  skipped: false },
+    { id: 'tags',        labelKey: 'uploader.stepTags',        optional: true,  skipped: false, contentWidth: '420px' },
     { id: 'collections', labelKey: 'uploader.stepCollections', optional: true,  skipped: false },
-    { id: 'speakers',    labelKey: 'uploader.stepSpeakers',    optional: false, skipped: false },
+    // Model comes first: choosing the Fast model (or having speaker detection off) removes the
+    // Speakers step, so the user must not type a range before learning it would be discarded.
     { id: 'model',       labelKey: 'uploader.stepModel',       optional: false, skipped: false },
+    { id: 'speakers',    labelKey: 'uploader.stepSpeakers',    optional: false, skipped: false },
     { id: 'review',      labelKey: 'uploader.stepReview',      optional: false, skipped: false },
   ];
   let currentStepIndex = 0;
   let maxStepReached = 0;
 
-  $: activeSteps = steps.filter(s => !s.skipped);
+  $: activeSteps = steps.filter(s => !s.skipped && (s.id !== 'speakers' || speakerCountApplies));
   $: currentStep = activeSteps[currentStepIndex];
   $: isFirstStep = currentStepIndex === 0;
   $: isLastStep = currentStepIndex === activeSteps.length - 1;
@@ -121,6 +140,12 @@
   let adminDefaultModel = 'large-v3-turbo';
   let transcriptionSettings: TranscriptionSettings | null = null;
   let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
+
+  // The server discards the speaker range when speaker detection is off or the Fast (CPU) model
+  // runs, so the step that collects it is not offered rather than collecting a value to drop.
+  $: speakerDetectionOff = transcriptionSettings?.diarization_source === 'off';
+  $: fastModelChosen = isLightweightModel(selectedWhisperModel);
+  $: speakerCountApplies = !speakerDetectionOff && !fastModelChosen;
 
   // ── Organization State ──
   let selectedCollections: Array<{uuid: string; name: string}> = [];
@@ -159,7 +184,8 @@
     (activeTab === 'url' && mediaUrl.trim() !== '' && MEDIA_URL_REGEX.test(mediaUrl.trim())) ||
     (activeTab === 'record' && recordedBlob !== null);
 
-  $: hasValidationError = minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers;
+  $: hasValidationError =
+    speakerCountApplies && minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers;
 
   $: tagsSkipped = steps.find(s => s.id === 'tags')?.skipped ?? false;
   $: collectionsSkipped = steps.find(s => s.id === 'collections')?.skipped ?? false;
@@ -275,25 +301,29 @@
   // ── Transcription Preferences ──
   function applyTranscriptionPreferences() {
     if (!transcriptionSettings) return;
-    const behavior = transcriptionSettings.speaker_prompt_behavior;
-    switch (behavior) {
-      case 'always_prompt':
-        minSpeakers = transcriptionSettings.min_speakers || null;
-        maxSpeakers = transcriptionSettings.max_speakers || null;
-        break;
-      case 'use_defaults':
-        minSpeakers = null;
-        maxSpeakers = null;
-        break;
-      case 'use_custom':
-        minSpeakers = transcriptionSettings.min_speakers || null;
-        maxSpeakers = transcriptionSettings.max_speakers || null;
-        break;
-    }
+    ({ minSpeakers, maxSpeakers } = speakerPrefill(transcriptionSettings));
   }
 
-  function getEffectiveSpeakerSettings() {
-    return { minSpeakers, maxSpeakers, numSpeakers };
+  // Everything the wizard collected about HOW to transcribe, as one object. Read it when the
+  // user confirms, not later: audio extraction finishes in the background after the wizard
+  // has reset its own state, so a lazy read there would see the defaults.
+  function getTranscriptionParams(): UploadTranscriptionParams {
+    // Nothing to send for a range the server would discard (see speakerCountApplies).
+    const range = speakerCountApplies
+      ? speakerSubmitRange(
+          transcriptionSettings,
+          transcriptionSystemDefaults,
+          { minSpeakers, maxSpeakers },
+          numSpeakers
+        )
+      : { minSpeakers: null, maxSpeakers: null };
+    return {
+      minSpeakers: range.minSpeakers,
+      maxSpeakers: range.maxSpeakers,
+      numSpeakers: speakerCountApplies ? numSpeakers : null,
+      whisperModel: selectedWhisperModel,
+      skipSummary
+    };
   }
 
   function getOrganizeParams() {
@@ -518,7 +548,7 @@
 
     if (validFiles.length > 0) {
       const { collectionIds, tagNames } = getOrganizeParams();
-      uploadsStore.addFiles(validFiles, collectionIds, tagNames);
+      uploadsStore.addFiles(validFiles, collectionIds, tagNames, getTranscriptionParams());
       dispatch('uploadComplete', { multiple: true, count: validFiles.length });
       toastStore.success($t('uploader.addedToQueueOnly', { count: validFiles.length }));
       savePreviousValues();
@@ -553,8 +583,11 @@
   function handleBulkExtractionConfirm() {
     showBulkAudioExtractionModal = false;
     const { collectionIds, tagNames } = getOrganizeParams();
-    if (bulkRegularFiles.length > 0) uploadsStore.addFiles(bulkRegularFiles, collectionIds, tagNames);
-    if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract);
+    const transcriptionParams = getTranscriptionParams();
+    if (bulkRegularFiles.length > 0) {
+      uploadsStore.addFiles(bulkRegularFiles, collectionIds, tagNames, transcriptionParams);
+    }
+    if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract, transcriptionParams);
     dispatch('uploadComplete', { multiple: true, count: bulkVideosToExtract.length + bulkRegularFiles.length });
     bulkVideosToExtract = [];
     bulkRegularFiles = [];
@@ -564,7 +597,9 @@
     showBulkAudioExtractionModal = false;
     const { collectionIds, tagNames } = getOrganizeParams();
     const allFiles = [...bulkVideosToExtract, ...bulkRegularFiles];
-    if (allFiles.length > 0) uploadsStore.addFiles(allFiles, collectionIds, tagNames);
+    if (allFiles.length > 0) {
+      uploadsStore.addFiles(allFiles, collectionIds, tagNames, getTranscriptionParams());
+    }
     dispatch('uploadComplete', { multiple: true, count: allFiles.length });
     toastStore.success($t('uploader.addedToQueueOnly', { count: allFiles.length }));
     bulkVideosToExtract = [];
@@ -577,12 +612,18 @@
     bulkRegularFiles = [];
   }
 
-  function startBulkExtraction(videoFiles: File[]) {
+  function startBulkExtraction(videoFiles: File[], transcriptionParams: UploadTranscriptionParams) {
     toastStore.info($t('uploader.extractingAudioFrom', { count: videoFiles.length }));
     videoFiles.forEach(async (videoFile) => {
       try {
         const ea = await (await loadAudioExtractionService()).extractAudio(videoFile);
-        uploadsStore.addExtractedAudio(ea.blob, ea.filename, ea.metadata, ea.metadata.compressionRatio);
+        uploadsStore.addExtractedAudio(
+          ea.blob,
+          ea.filename,
+          ea.metadata,
+          ea.metadata.compressionRatio,
+          transcriptionParams
+        );
       } catch {
         toastStore.error($t('uploader.failedToExtractAudio', { filename: videoFile.name }));
       }
@@ -636,7 +677,9 @@
       dispatch('uploadComplete', { isFile: true });
       toastStore.info($t('uploader.extractingAudioFrom', { count: 1 }));
 
-      // Extraction runs in background — result is queued when done
+      // Extraction runs in background — result is queued when done. Captured now: the wizard
+      // resets its state before extraction finishes.
+      const transcriptionParams = getTranscriptionParams();
       (async () => {
         try {
           const extractionService = await loadAudioExtractionService();
@@ -645,7 +688,8 @@
             extractedAudio.blob,
             extractedAudio.filename,
             extractedAudio.metadata,
-            extractedAudio.metadata.compressionRatio
+            extractedAudio.metadata.compressionRatio,
+            transcriptionParams
           );
           toastStore.success($t('uploader.audioExtractedSuccess', { ratio: extractedAudio.metadata.compressionRatio }));
         } catch {
@@ -657,9 +701,9 @@
 
     // Normal file upload
     try {
-      const speakerParams = getEffectiveSpeakerSettings();
+      const transcriptionParams = getTranscriptionParams();
       const { collectionIds, tagNames } = getOrganizeParams();
-      const uploadId = uploadsStore.addFile(file, speakerParams, collectionIds, tagNames);
+      const uploadId = uploadsStore.addFile(file, transcriptionParams, collectionIds, tagNames);
       savePreviousValues();
       resetAllState();
       dispatch('uploadComplete', { uploadId, isFile: true });
@@ -688,6 +732,11 @@
       if (collectionIds) payload.collection_ids = collectionIds;
       if (tagNames) payload.tag_names = tagNames;
       if (skipSummary) payload.skip_summary = true;
+      const params = getTranscriptionParams();
+      if (params.minSpeakers != null) payload.min_speakers = params.minSpeakers;
+      if (params.maxSpeakers != null) payload.max_speakers = params.maxSpeakers;
+      if (params.numSpeakers != null) payload.num_speakers = params.numSpeakers;
+      if (params.whisperModel) payload.whisper_model = params.whisperModel;
 
       const response = await axiosInstance.post('/files/process-url', payload);
       const responseData = response.data;
@@ -722,7 +771,13 @@
     try {
       const filename = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
       const { collectionIds, tagNames } = getOrganizeParams();
-      const uploadId = uploadsStore.addRecording(blob, filename, collectionIds, tagNames);
+      const uploadId = uploadsStore.addRecording(
+        blob,
+        filename,
+        collectionIds,
+        tagNames,
+        getTranscriptionParams()
+      );
       savePreviousValues();
       recordingManager.clearRecording();
       resetAllState();
@@ -801,7 +856,11 @@
 
   <!-- Step Content -->
   <div class="step-body" role="tabpanel">
-      <div class="step-content">
+      <div
+        class="step-content"
+        class:step-content--narrow={!!currentStep?.contentWidth}
+        style={currentStep?.contentWidth ? `max-width: ${currentStep.contentWidth};` : ''}
+      >
         {#if currentStep?.id === 'media'}
           <!-- Tab Navigation -->
           <div class="tab-navigation">
@@ -951,6 +1010,7 @@
             {minSpeakers}
             {maxSpeakers}
             {numSpeakers}
+            speakerCountNote={speakerDetectionOff ? 'off' : fastModelChosen ? 'fast' : null}
             {skipSummary}
             {selectedWhisperModel}
             {adminDefaultModel}
@@ -1092,7 +1152,7 @@
     background: rgba(59, 130, 246, 0.08);
   }
 
-  :global(.dark) .step-item:not(:disabled):hover {
+  :global([data-theme='dark']) .step-item:not(:disabled):hover {
     background: rgba(59, 130, 246, 0.12);
   }
 
@@ -1146,9 +1206,14 @@
     transition: color 0.2s ease;
   }
 
-  .step-item.active .step-label { color: var(--primary-color, #3b82f6); font-weight: 600; }
-  .step-item.completed .step-label { color: var(--primary-color, #3b82f6); }
-  .step-item.visited .step-label { color: var(--primary-color, #3b82f6); opacity: 0.7; }
+  /* --primary-on-surface, not --primary-color: the accent is a FILL colour tuned for a
+   * white background, and at 10.4px on the dark surface it measures 2.83:1 — well under
+   * WCAG AA. The on-surface token inverts to a light blue in dark mode. Caught by #972's
+   * dark-theme axe scan; the light-only scan had always passed. The `.visited` rule is
+   * the worst of the three, since it then multiplies by opacity 0.7. */
+  .step-item.active .step-label { color: var(--primary-on-surface); font-weight: 600; }
+  .step-item.completed .step-label { color: var(--primary-on-surface); }
+  .step-item.visited .step-label { color: var(--primary-on-surface); opacity: 0.7; }
 
   /* Connector line between steps */
   .step-line {
@@ -1177,6 +1242,14 @@
 
   .step-content {
     padding: 0 0.25rem;
+  }
+
+  /* Narrower steps (e.g. Tags) fit their natural width instead of stretching to
+     the modal's full width — #751 item 1. margin-inline is logical so it stays
+     centred in RTL too. */
+  .step-content--narrow {
+    margin-inline: auto;
+    width: 100%;
   }
 
   /* ── Tab Navigation ── */
@@ -1347,11 +1420,11 @@
     transform: translateY(-1px);
   }
 
-  :global(.dark) .nav-review-defaults {
+  :global([data-theme='dark']) .nav-review-defaults {
     background: rgba(59, 130, 246, 0.12);
   }
 
-  :global(.dark) .nav-review-defaults:hover {
+  :global([data-theme='dark']) .nav-review-defaults:hover {
     background: rgba(59, 130, 246, 0.22);
   }
 

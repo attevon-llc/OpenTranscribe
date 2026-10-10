@@ -12,6 +12,14 @@
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import {
+    getTranscriptionSettings,
+    getTranscriptionSystemDefaults,
+    speakerPrefill,
+    speakerSubmitRange,
+    type TranscriptionSettings,
+    type TranscriptionSystemDefaults
+  } from '$lib/api/transcriptionSettings';
 
   export let showModal: boolean = false;
   export let file: any = null;
@@ -32,6 +40,10 @@
   let minSpeakers: number | null = null;
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
+  // The user's saved speaker behaviour, so a re-run starts from their range (and a blank field
+  // means what they chose) instead of from nothing.
+  let transcriptionSettings: TranscriptionSettings | null = null;
+  let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
 
   // ASR provider info
   let isCloudASR = false;
@@ -204,8 +216,14 @@
       };
 
       if (showSpeakerSettings) {
-        if (minSpeakers !== null) requestBody.min_speakers = minSpeakers;
-        if (maxSpeakers !== null) requestBody.max_speakers = maxSpeakers;
+        const range = speakerSubmitRange(
+          transcriptionSettings,
+          transcriptionSystemDefaults,
+          { minSpeakers, maxSpeakers },
+          numSpeakers
+        );
+        if (range.minSpeakers !== null) requestBody.min_speakers = range.minSpeakers;
+        if (range.maxSpeakers !== null) requestBody.max_speakers = range.maxSpeakers;
         if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
       }
 
@@ -275,10 +293,30 @@
     reprocessing = false;
   }
 
+  async function loadSpeakerPrefill() {
+    try {
+      const [settings, defaults] = await Promise.all([
+        getTranscriptionSettings(),
+        getTranscriptionSystemDefaults()
+      ]);
+      transcriptionSettings = settings;
+      transcriptionSystemDefaults = defaults;
+      // Only fill what the user has not already typed while this was loading.
+      const prefill = speakerPrefill(settings);
+      if (minSpeakers === null) minSpeakers = prefill.minSpeakers;
+      if (maxSpeakers === null) maxSpeakers = prefill.maxSpeakers;
+    } catch {
+      // Blank fields still resolve to the user's saved range on the server.
+      transcriptionSettings = null;
+      transcriptionSystemDefaults = null;
+    }
+  }
+
   // Reset state and fetch ASR status when modal opens
   $: if (showModal) {
     resetState();
     selectedReprocessModel = null;
+    void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {

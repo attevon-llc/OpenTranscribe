@@ -58,6 +58,7 @@ from app.services import cache_management_service as cms
 from app.services import file_cleanup_service as fcs
 from app.services import media_download_service as mds
 from app.services import video_processing_service as vps
+from app.services.platform_bypass import PlatformBypass
 from app.tasks import imohash_recompute as imo
 from app.tasks import thumbnail_migration as thumb
 
@@ -568,7 +569,7 @@ def test_clear_video_cache_endpoint_purges_after_ending_the_read(
         str(media_file.uuid),
         db_session,
         normal_user,
-        SimpleNamespace(org_id=None),
+        SimpleNamespace(org_id=None, bypass=PlatformBypass.none()),
     )
 
     assert result is None  # 204, unchanged response contract

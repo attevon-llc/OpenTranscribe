@@ -130,7 +130,7 @@ variable reference. Defaults below come from `.env.example`'s "GPU AND TRANSCRIP
 `docker-compose.diar-native.yml` — not invented here.
 
 ```bash
-# Engine selection. SystemSettings `engine.diarizer_backend` (Settings -> Engine) wins over
+# Engine selection. SystemSettings `engine.diarizer_backend` (Settings → Speaker Identification → Speaker Engine) wins over
 # this; both are re-read on every diarization call, so neither needs a worker restart.
 ENGINE_DIARIZER_BACKEND=native   # native (default) | pyannote
 
@@ -229,7 +229,7 @@ never touches the GPU, so what it costs is heap, not VRAM.
 | 2 GB | every English model, including the 768-dim ones |
 | 4 GB *(default)* | headroom for indexing bursts and the larger multilingual models |
 
-Enabling multilingual search therefore needs **no heap change**: Settings → Search →
+Enabling multilingual search therefore needs **no heap change**: Settings → Search & Indexing →
 pick the multilingual model → **Download & deploy** → Apply (re-embeds every
 transcript; measured ~3.2 documents/sec on the OpenSearch CPU node).
 
@@ -605,7 +605,7 @@ Every processing failure is sorted into one of two classes:
 - **Transient** — the infrastructure failed (out of memory, a lost connection, a timeout, a
   worker that died) or the cause is unknown. The file is put back in the queue within minutes,
   with exponential backoff and jitter, **ahead of files submitted after it**, until the admin's
-  *max retries* setting (Settings → Transcription) is used up. Only then does it fail, with a
+  *max retries* setting (Settings → Task Health Monitor) is used up. Only then does it fail, with a
   reason that says it was interrupted and retried.
 
 Celery's own shutdown settings: `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT` (default 30) and
@@ -928,7 +928,7 @@ Before [#1029](https://github.com/attevon-llc/OpenTranscribe/issues/1029), a pro
 
 ## File Retention
 
-OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/attevon-llc/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → Admin → File Retention.
+OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/attevon-llc/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → File Retention.
 
 ## URL Download Quality Settings
 
@@ -1077,7 +1077,7 @@ LOGIN_BANNER_TEXT=This is a restricted system...
 ## Cloud ASR Providers
 
 :::tip[Configure these in the UI]
-Each user sets their own ASR provider and API key in **Settings → Transcription**,
+Each user sets their own ASR provider and API key in **Settings → Transcription → Provider & Model**,
 stored encrypted in the database. The variables below are only the
 **deployment-wide fallback** for users who have set nothing, and for a zero-touch
 provisioned install. They were removed from `.env.example` for that reason.
@@ -1116,7 +1116,7 @@ default **16**), not a per-provider setting.
 
 :::tip[Configure these in the UI]
 Each user configures their own LLM provider, model and API key in
-**Settings → LLM Provider**, encrypted at rest. `LLMService` resolves per-user
+**Settings → LLM Provider Configuration**, encrypted at rest. `LLMService` resolves per-user
 settings first and only falls back to the variables below when a user has none —
 which is also the path background tasks take. Leave `LLM_PROVIDER` empty for
 transcription-only mode with no AI features at all.
@@ -1159,7 +1159,7 @@ deployment on EC2/ECS/EKS provisions no secret at all. Required IAM actions:
 ### Context window
 
 `max_tokens` is a **UI setting**, not an environment variable
-(**Settings → LLM Provider → Max Tokens**). It still defaults to **8192**, but a
+(**Settings → LLM Provider Configuration → Max Tokens**). It still defaults to **8192**, but a
 **Discover context window** probe (beside Test Connection) now measures the
 model's real maximum instead of making you trust that default: for **vLLM** it
 reads `max_model_len` off `GET /v1/models`, for **Ollama** it reads the model's
@@ -1287,7 +1287,7 @@ See `backend/app/services/search/CLAUDE.md` before changing any of them.
 ### Per-variable reference — cloud ASR
 
 Every variable below is the **deployment-wide fallback**. A user who configures a
-provider in **Settings → Transcription** overrides all of it, and their API key is
+provider in **Settings → Transcription → Provider & Model** overrides all of it, and their API key is
 stored encrypted rather than in a file.
 
 | Variable | Valid values / limits | Default | Description |
@@ -1357,7 +1357,7 @@ AWS_ASR_MODEL=standard
 | `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
 | `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
 | `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
-| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
+| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider Configuration → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
 
 #### Example — local Ollama on the same host
 

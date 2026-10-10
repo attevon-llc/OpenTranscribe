@@ -239,6 +239,36 @@ class SupportedProvidersResponse(BaseModel):
     providers: list[ProviderDefaults]
 
 
+class LocalEndpointStatus(BaseModel):
+    """One row of the fixed local-endpoint discovery table (issue #644).
+
+    ``base_url`` is always a container-network address (a compose service name
+    like ``llm-test-vllm``), never a host-side ``127.0.0.1:<port>``: inside the
+    backend container ``127.0.0.1`` is the backend itself, and
+    ``redaction.llm_guard.is_local_provider`` would classify it "local" for
+    masking/quota purposes while the config actually points nowhere useful.
+    """
+
+    id: str
+    label: str
+    base_url: str
+    provider: LLMProvider
+    reachable: bool
+    models: list[str] = []
+    start_command: str
+
+
+class LocalEndpointsResponse(BaseModel):
+    """Response for ``GET /llm-settings/local-endpoints``."""
+
+    endpoints: list[LocalEndpointStatus]
+    #: Mirrors this deployment's OWN ``LLM_ALLOW_PRIVATE_ENDPOINTS`` setting — it
+    #: says nothing about any specific target's actual reachability. The discovery
+    #: UI uses it to warn that a reachable local server will still be refused at
+    #: save/dial time until this is set (issue #644 / #284 A0.1).
+    private_endpoints_allowed: bool
+
+
 class UserLLMConfigurationsList(BaseModel):
     """Response containing all user's LLM configurations"""
 

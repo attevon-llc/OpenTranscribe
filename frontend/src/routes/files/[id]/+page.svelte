@@ -27,6 +27,9 @@
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
   import AnalyticsSection from '$components/AnalyticsSection.svelte';
   import TranscriptDisplay from '$components/TranscriptDisplay.svelte';
+  import TranscriptActionsBar from '$components/transcript/TranscriptActionsBar.svelte';
+  import SpeakerEditorPanel from '$components/transcript/SpeakerEditorPanel.svelte';
+  import { createDownloadStreamManager, type DownloadMode } from '$lib/fileDetail/downloadStream';
   import FileHeader from '$components/FileHeader.svelte';
   import TagsSection from '$components/TagsSection.svelte';
   import CommentSection from '$components/CommentSection.svelte';
@@ -37,7 +40,7 @@
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
-  import TranscriptModal from '$components/TranscriptModal.svelte';
+  import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
   import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
   import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
   import RedactionControls from '$components/fileDetail/RedactionControls.svelte';
@@ -45,7 +48,9 @@
   import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
-  import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
+  import { transcriptStore, type SpeakerInfo } from '$stores/transcriptStore';
+  import { downloadStore } from '$stores/downloads';
+  import { supportSessionGate } from '$stores/supportSession';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
@@ -126,7 +131,36 @@
   // The text the open segment editor STARTED with. Without it "is this dirty" would be
   // "is an editor open", and merely clicking the pencil would prompt on the way out.
   let editingSegmentOriginalText = '';
+  // Issue #748 §5.2: this used to be passed one-way into `TranscriptDisplay`, which
+  // toggled its OWN local copy — the page's copy was never set to `true`, so the
+  // `isEditingSpeakers = false` after a successful bulk save (below) was a dead
+  // statement and the panel never actually closed. `TranscriptActionsBar` and
+  // `SpeakerEditorPanel` now render directly in this page, so the page owns the
+  // flag outright with no prop-forwarding indirection to lose it in.
   let isEditingSpeakers = false;
+
+  // Issue #748 J5: the download SSE stream lives with the other `$lib/fileDetail/*`
+  // orchestration modules now that `TranscriptActionsBar` (which triggers it) renders
+  // directly on this page rather than inside `TranscriptDisplay`.
+  const downloadManager = createDownloadStreamManager();
+  $: downloadState = $downloadStore;
+  $: currentDownload = downloadState[file?.uuid];
+  $: isDownloading = !!currentDownload && ['preparing', 'processing', 'downloading'].includes(currentDownload.status);
+  $: isVideoFile = file?.content_type?.startsWith('video/') ?? false;
+  $: canEmbedSubtitles = isVideoFile && file?.status === 'completed';
+
+  async function handleDownloadFromBar(event: CustomEvent<{ mode: DownloadMode }>) {
+    if (isDownloading) {
+      toastStore.warning($t('transcript.downloadAlreadyProcessing', { filename: file?.filename }));
+      return;
+    }
+    try {
+      await downloadManager.downloadMedia(file, event.detail.mode);
+    } catch (error: unknown) {
+      toastStore.error(getErrorMessage(error, $t('transcript.fileNotAvailable')));
+    }
+  }
+
   interface SpeakerItem extends SpeakerInfo {
     profile?: { uuid: string; name: string } | null;
     profile_suggestions?: Array<Record<string, any>>;
@@ -167,8 +201,11 @@
   // never treated as owner, so every gate below fails closed until load.
   let myPermission: string | null | undefined = undefined;
   $: permissionLoaded = myPermission !== undefined;
+  // `my_permission` reads "owner" for an admin under a support grant, so a READ-ONLY grant
+  // must be subtracted here (the server refuses the write regardless; this hides the controls).
   $: canEdit =
     permissionLoaded &&
+    !$supportSessionGate.readOnly &&
     (myPermission === null || myPermission === 'editor' || myPermission === 'owner');
 
   // Content redaction: owner/admin can reveal the original (non-admin-forced categories).
@@ -177,6 +214,8 @@
   // When redaction is enabled but detection hasn't finished, the transcript is withheld.
   let redactionPending = false;
   let redactionStatus = ''; // pending | processing | done | failed
+  // Backend-decided: the viewer's policy would mask something (switch on AND a category).
+  let redactionEnabled = false;
   $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
@@ -349,6 +388,7 @@
         // Content-redaction state: pending (transcript withheld) + whether masking applied.
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
+        redactionEnabled = response.data.redaction_enabled === true;
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
           if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
@@ -428,6 +468,7 @@
         };
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
+        redactionEnabled = response.data.redaction_enabled === true;
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
           if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
@@ -462,7 +503,11 @@
       }
     } catch (err) {
       console.error('Trigger redaction error:', err);
-      toastStore.error($t('settings.contentRedaction.redactTriggerFailed'));
+      // The 409 "redaction is not enabled" carries the reason; show it, not a generic failure.
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toastStore.error(
+        typeof detail === 'string' ? detail : $t('settings.contentRedaction.redactTriggerFailed')
+      );
     }
   }
 
@@ -2075,6 +2120,7 @@
     // new one after this teardown has run.
     pageDestroyed = true;
     cancelPendingTimers();
+    downloadManager.cleanup();
 
     // Player cleanup is now handled by VideoPlayer component
     playerInitialized = false;
@@ -2220,15 +2266,11 @@
         sharedPermission={myPermission ?? null}
         on:titleUpdated={(e) => { if (file) file.title = e.detail.title; }}
       />
-
-      <MetadataDisplay
-        {file}
-        bind:showMetadata
-      />
     </div>
 
     <div class="main-content-grid">
-      <!-- Left column: Video player, tags, analytics, and comments -->
+      <!-- Left column: video player, actions, speaker editing, tags/collections/analytics,
+           file details (issue #748 — reordered around speaker editing). -->
       <section class="video-column">
         <div class="video-header">
           <h4>{file?.content_type?.startsWith('audio/') ? $t('fileDetail.audio') : $t('fileDetail.video')}</h4>
@@ -2277,21 +2319,53 @@
           </div>
         {/if}
 
-        <TagsSection
-          {file}
-          bind:isTagsExpanded
-          {aiTagSuggestions}
-          on:tagsUpdated={handleTagsUpdated}
-        />
+        {#if file && file.transcript_segments && file.transcript_segments.length > 0}
+          <TranscriptActionsBar
+            {file}
+            {diarizationDisabled}
+            {isEditingSpeakers}
+            {isDownloading}
+            {currentDownload}
+            {isVideoFile}
+            {canEmbedSubtitles}
+            on:exportTranscript={handleExportTranscript}
+            on:toggleSpeakerEditor={() => (isEditingSpeakers = !isEditingSpeakers)}
+            on:download={handleDownloadFromBar}
+          />
+        {/if}
 
-        <CollectionsSection
-          bind:collections
-          fileId={file?.uuid}
-          bind:isExpanded={isCollectionsExpanded}
-          {aiCollectionSuggestions}
-          on:collectionsUpdated={handleCollectionsUpdated}
-        />
+        <!-- Issue #748 §5.5: the speaker editor REPLACES Tags/Collections/File-details
+             while open (you don't edit tags while you're editing speakers) — Analytics
+             stays visible, since it is the speaker context being labelled against (J7). -->
+        {#if isEditingSpeakers && !diarizationDisabled}
+          <SpeakerEditorPanel
+            {file}
+            {speakerList}
+            {speakerNamesChanged}
+            {savingSpeakers}
+            on:speakerNameChanged={handleSpeakerNameChanged}
+            on:speakerUpdate={handleSpeakerUpdate}
+            on:speakersMerged={handleSpeakersMerged}
+            on:saveSpeakerNames={handleSaveSpeakerNames}
+            on:segmentClick={handleSegmentClick}
+            on:loadUpTo={handleLoadUpTo}
+          />
+        {:else}
+          <TagsSection
+            {file}
+            bind:isTagsExpanded
+            {aiTagSuggestions}
+            on:tagsUpdated={handleTagsUpdated}
+          />
 
+          <CollectionsSection
+            bind:collections
+            fileId={file?.uuid}
+            bind:isExpanded={isCollectionsExpanded}
+            {aiCollectionSuggestions}
+            on:collectionsUpdated={handleCollectionsUpdated}
+          />
+        {/if}
 
         <AnalyticsSection
           {file}
@@ -2301,15 +2375,16 @@
           {diarizationDisabled}
         />
 
-        <CommentSection
-          fileId={file?.uuid ? String(file.uuid) : ''}
-          {currentTime}
-          on:seekTo={handleSeekTo}
-          on:commentsChanged={(e) => (commentCount = e.detail.count)}
-        />
+        {#if !isEditingSpeakers}
+          <MetadataDisplay
+            {file}
+            bind:showMetadata
+          />
+        {/if}
       </section>
 
-      <!-- Right column: Transcript -->
+      <!-- Right column: Transcript, then comments (issue #748 — comments moved here from
+           the left column, below everything else in the transcript column). -->
       {#if redactionPending}
         <section class="transcript-column">
           <RedactionPendingPanel />
@@ -2320,13 +2395,9 @@
           bind:file
           {currentTime}
           {savingTranscript}
-          {savingSpeakers}
-          {speakerNamesChanged}
           {editingSegmentId}
           bind:editingSegmentText
-          {isEditingSpeakers}
           {speakerList}
-          {reprocessing}
           {diarizationDisabled}
           {totalSegments}
           {hasMoreSegments}
@@ -2335,28 +2406,30 @@
           on:editSegment={handleEditSegment}
           on:saveSegment={handleSaveSegment}
           on:cancelEditSegment={handleCancelEditSegment}
-          on:exportTranscript={handleExportTranscript}
-          on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}
-          on:speakerNameChanged={handleSpeakerNameChanged}
-          on:speakersMerged={handleSpeakersMerged}
           on:speakerCreated={handleSpeakerCreated}
           on:speakerDeleted={handleSpeakerDeleted}
           on:analyticsRefreshNeeded={handleAnalyticsRefreshNeeded}
-          on:reprocess={handleReprocess}
-          on:seekToPlayhead={handleSeekTo}
           on:loadMore={loadMoreSegments}
-          on:loadUpTo={handleLoadUpTo}
         />
           <!-- Content-redaction controls: kept BELOW the transcript so the video and -->
           <!-- transcript columns stay top-aligned. -->
           <RedactionControls
             {showRedactionToggle}
             {canViewOriginal}
+            {redactionEnabled}
+            {redactionStatus}
             {showOriginal}
             {redactionToggleBusy}
             on:rescan={triggerRedaction}
             on:toggleOriginal={toggleShowOriginal}
+          />
+
+          <CommentSection
+            fileId={file?.uuid ? String(file.uuid) : ''}
+            {currentTime}
+            on:seekTo={handleSeekTo}
+            on:commentsChanged={(e) => (commentCount = e.detail.count)}
           />
         </section>
       {:else}
@@ -2372,6 +2445,13 @@
               <p>{$t('fileDetail.noTranscript')}</p>
             {/if}
           </div>
+
+          <CommentSection
+            fileId={file?.uuid ? String(file.uuid) : ''}
+            {currentTime}
+            on:seekTo={handleSeekTo}
+            on:commentsChanged={(e) => (commentCount = e.detail.count)}
+          />
         </section>
       {/if}
     </div>
@@ -2487,13 +2567,15 @@
   />
 {/if}
 
-<!-- Transcript Modal -->
+<!-- Transcript view modal (issue #755 — consolidated with the search-result surface) -->
 {#if file?.uuid}
-  <TranscriptModal
+  <TranscriptViewModal
+    mode="file"
     bind:isOpen={showTranscriptModal}
-    fileId={file.uuid}
+    {file}
+    {speakerList}
     fileName={file?.filename || 'Unknown File'}
-    {totalSpeakerSegments}
+    totalSegments={totalSpeakerSegments}
     {hasMoreSegments}
     {loadingMoreSegments}
     {diarizationDisabled}

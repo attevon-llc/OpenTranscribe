@@ -81,7 +81,7 @@ If a video fails to download, OpenTranscribe provides helpful error messages wit
 
 ### URL Download Quality Settings
 
-You can configure download quality preferences in **Settings > Downloads**:
+You can configure download quality preferences in **Settings → URL Import Quality**:
 
 - **Video Quality**: Choose resolution (e.g., 1080p, 720p, 480p, or best available)
 - **Audio Only**: Download only the audio track (faster, saves storage)
@@ -101,7 +101,7 @@ When uploading files, you can assign them to **collections** and **tags** direct
 This saves time compared to organizing files after upload. Tags and collections can also be managed later from the file detail page.
 
 :::tip[Auto-Labeling]
-If auto-labeling is enabled (Settings > Auto-Label), OpenTranscribe can automatically suggest tags and collections based on AI topic analysis after transcription completes. See [AI Summarization](./ai-summarization.md#auto-labeling) for details.
+If auto-labeling is enabled (Settings → AI & Chat → Auto-Labeling), OpenTranscribe can automatically suggest tags and collections based on AI topic analysis after transcription completes. See [AI Summarization](./ai-summarization.md#auto-labeling) for details.
 :::
 
 ## Selective Reprocessing

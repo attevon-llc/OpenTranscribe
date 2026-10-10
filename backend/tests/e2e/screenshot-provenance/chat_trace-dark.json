@@ -1,0 +1,21 @@
+{
+  "baseline": "__screenshots__/chat_trace-dark.png",
+  "captured_at": "2026-10-09T13:57:09Z",
+  "git_sha": "76cbc732f7da3013b94376414a923e98d4f63961",
+  "git_branch": "feat/v0.6.0-frontend-ux",
+  "git_dirty": true,
+  "git_dirty_paths": 1,
+  "reason": "v0.6.0 UI refresh recaptured with web fonts awaited (first capture baked the fallback face)",
+  "captured_by": "scripts/e2e/update-visual-baselines.sh",
+  "stack": {
+    "compose_project": "otfresh-visual",
+    "port_offset": 100,
+    "gpu_device": null,
+    "seeded": true,
+    "mode": "dev (local source bind-mounted)"
+  },
+  "change_from_previous": {
+    "status": "CHANGED",
+    "differing_pixels": "13.7014%"
+  }
+}

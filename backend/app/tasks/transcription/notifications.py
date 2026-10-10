@@ -50,7 +50,12 @@ def get_file_metadata(file_id: int) -> dict:
 
 
 def send_notification_via_redis(
-    user_id: int, file_id: int, status: FileStatus, message: str, progress: int = 0
+    user_id: int,
+    file_id: int,
+    status: FileStatus,
+    message: str,
+    progress: int = 0,
+    duration_seconds: float | None = None,
 ) -> bool:
     """
     Send notification via Redis pub/sub from synchronous context (like Celery worker).
@@ -61,6 +66,13 @@ def send_notification_via_redis(
         status: File status
         message: Status message
         progress: Progress percentage
+        duration_seconds: How long the task actually ran (issue #753's duration
+            chip) — the caller's job to compute (see
+            ``task_utils.update_task_status``), never derived from
+            ``MediaFile.duration`` (the recording's length, not processing
+            time). Omitted from the payload entirely when unknown, rather
+            than sent as 0 or null, so the frontend can tell "no data" apart
+            from "took no time".
 
     Returns:
         True if notification was sent successfully, False otherwise
@@ -91,6 +103,8 @@ def send_notification_via_redis(
             "content_type": file_metadata["content_type"],
             "file_size": file_metadata["file_size"],
         }
+        if duration_seconds is not None:
+            data["duration_seconds"] = duration_seconds
 
         result = send_ws_event_for_file(user_id, "transcription_status", data, file_id=file_id)
 
@@ -111,6 +125,7 @@ def send_notification_with_retry(
     message: str,
     progress: int = 0,
     max_retries: int = 3,
+    duration_seconds: float | None = None,
 ) -> bool:
     """
     Send notification with retry logic.
@@ -122,13 +137,16 @@ def send_notification_with_retry(
         message: Status message
         progress: Progress percentage
         max_retries: Maximum number of retry attempts
+        duration_seconds: See ``send_notification_via_redis``.
 
     Returns:
         True if notification was eventually sent, False if all retries failed
     """
     for retry in range(max_retries):
         try:
-            success = send_notification_via_redis(user_id, file_id, status, message, progress)
+            success = send_notification_via_redis(
+                user_id, file_id, status, message, progress, duration_seconds=duration_seconds
+            )
             if success:
                 logger.info(
                     f"Successfully sent notification for file {file_id} on attempt {retry + 1}"
@@ -223,7 +241,9 @@ def send_transcript_ready_notification(user_id: int, file_id: int) -> None:
         logger.debug(f"transcript_ready notification failed for file {file_id}: {e}")
 
 
-def send_completion_notification(user_id: int, file_id: int) -> None:
+def send_completion_notification(
+    user_id: int, file_id: int, duration_seconds: float | None = None
+) -> None:
     """Send transcription completed notification.
 
     Marks ``completion_notified`` in the benchmark hash immediately before
@@ -231,6 +251,12 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
     captured accurately. We resolve the active task_id from the MediaFile
     row rather than threading it through every caller — that's the single
     source of truth for the task currently driving this file.
+
+    ``duration_seconds`` (issue #753) must come from the caller —
+    ``task_utils.update_task_status``'s return value — because by the time
+    this function runs, ``update_task_status`` has already cleared
+    ``MediaFile.task_started_at``, which is the only record of when the
+    just-finished task began.
     """
     # Best-effort benchmark marker (no-op when ENABLE_BENCHMARK_TIMING=false).
     try:
@@ -250,6 +276,7 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
         FileStatus.COMPLETED,
         "Transcription completed successfully",
         progress=100,
+        duration_seconds=duration_seconds,
     )
 
     # Also send a file_updated notification to refresh the gallery item

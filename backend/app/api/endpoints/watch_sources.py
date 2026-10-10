@@ -11,6 +11,7 @@ import logging
 import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -21,6 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 
 # Deployment configuration is the super_admin tier: this router
 # holds SMTP/S3/SMB credentials for automated import.
@@ -60,7 +62,9 @@ from app.schemas.watch_source import WatchSourceStats
 from app.schemas.watch_source import WatchSourceUpdate
 from app.services.auth_mail_config_service import IN_USE_MESSAGE
 from app.services.auth_mail_config_service import is_designated
+from app.services.platform_access import TenancyMode
 from app.utils.encryption import encrypt_api_key
+from app.utils.tenant_sharing import user_in_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -198,19 +202,33 @@ def _source_in_tenant(source: WatchSource, ctx: RequestContext) -> bool:
     return source.organization_id == ctx.org_id
 
 
-def _get_source_or_404(db: Session, source_uuid: str, ctx: RequestContext) -> WatchSource:
+def _get_source_or_404(
+    db: Session,
+    source_uuid: str,
+    ctx: RequestContext,
+    *,
+    need: Literal["read", "write"] = "write",
+) -> WatchSource:
     current_user = ctx.user
     source: WatchSource | None = (
         db.query(WatchSource).filter(WatchSource.uuid == source_uuid).first()
     )
     if not source:
         raise HTTPException(status_code=404, detail="Watch source not found")
-    # Another tenant's source is indistinguishable from a missing one; the
-    # instance-admin bypass is deliberate (admins operate every tenant's sources).
-    if not current_user.is_admin and not _source_in_tenant(source, ctx):
+    # The platform role operates every tenant's sources in single-tenant mode only; it
+    # is decided on the loaded row, so multi-tenant mode refuses it like any outsider.
+    if ctx.bypass.allows(
+        org_id=source.organization_id,
+        owner_id=source.user_id,
+        need=need,
+        resource_type="watch_source",
+        resource_uuid=str(source.uuid),
+    ):
+        return source
+    # Another tenant's source is indistinguishable from a missing one.
+    if not _source_in_tenant(source, ctx):
         raise HTTPException(status_code=404, detail="Watch source not found")
-    # Owner or admin may access.
-    if source.user_id != current_user.id and not current_user.is_admin:
+    if source.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized for this watch source")
     return source
 
@@ -582,15 +600,15 @@ def list_watch_sources(
     FS-watched local source rather than one GET per row (see ``_fs_events_status``).
     """
     query = db.query(WatchSource)
-    if scope == "all" and current_user.is_admin:
-        query = query.order_by(WatchSource.created_at.desc())
+    # Own sources in the ACTIVE tenant only (NULL-safe: personal = org-less).
+    org_filter = (
+        WatchSource.organization_id.is_(None)
+        if ctx.org_id is None
+        else WatchSource.organization_id == ctx.org_id
+    )
+    if scope == "all" and ctx.bypass.sees_all_in_scope:
+        query = query.filter(org_filter).order_by(WatchSource.created_at.desc())
     else:
-        # Own sources in the ACTIVE tenant only (NULL-safe: personal = org-less).
-        org_filter = (
-            WatchSource.organization_id.is_(None)
-            if ctx.org_id is None
-            else WatchSource.organization_id == ctx.org_id
-        )
         query = query.filter(WatchSource.user_id == current_user.id, org_filter).order_by(
             WatchSource.created_at.desc()
         )
@@ -606,7 +624,9 @@ def list_watch_sources(
     )
 
 
-@router.post("", response_model=WatchSourceResponse)
+@router.post(
+    "", response_model=WatchSourceResponse, dependencies=[Depends(refuse_under_support_grant)]
+)
 def create_watch_source(
     data: WatchSourceCreate,
     db: Session = Depends(get_db),
@@ -638,6 +658,12 @@ def create_watch_source(
         target = db.query(User).filter(User.uuid == data.assign_to_user_uuid).first()
         if not target:
             raise HTTPException(status_code=404, detail="assign_to_user not found")
+        if ctx.bypass.mode is not TenancyMode.SINGLE and not user_in_tenant(
+            db, int(target.id), ctx.org_id
+        ):
+            raise HTTPException(
+                status_code=400, detail="assign_to_user is not a member of this workspace"
+            )
         owner_id = target.id
 
     source = WatchSource(
@@ -671,7 +697,7 @@ def get_watch_source(
     answers 404 when the row is missing and 403 when it belongs to someone else).
     Credentials are represented only as ``has_s3_secret_key`` / ``has_smb_password``.
     """
-    source = _get_source_or_404(db, source_uuid, ctx)
+    source = _get_source_or_404(db, source_uuid, ctx, need="read")
     return _source_to_response(source, current_user)
 
 
@@ -823,7 +849,7 @@ def list_source_files(
     anything skipped, errored or still in flight, and stays populated for an imported
     row. Newest first.
     """
-    source = _get_source_or_404(db, source_uuid, ctx)
+    source = _get_source_or_404(db, source_uuid, ctx, need="read")
     # ``selectinload`` because the serialization below reads ``r.media_file`` on every
     # row: lazily that is one query per row, and ``page_size`` goes up to 200.
     query = (
@@ -888,7 +914,7 @@ def source_file_stats(
     """
     from sqlalchemy import func
 
-    source = _get_source_or_404(db, source_uuid, ctx)
+    source = _get_source_or_404(db, source_uuid, ctx, need="read")
     counts: dict[str, int] = {
         status: count
         for status, count in db.query(WatchSourceFile.status, func.count(WatchSourceFile.id))
@@ -1094,7 +1120,7 @@ def list_email_links(
     file: ``send_notification`` classifies a whole scan by whether it recorded any
     error, so ``notify_on_error`` means "a scan in which at least one file failed".
     """
-    source = _get_source_or_404(db, source_uuid, ctx)
+    source = _get_source_or_404(db, source_uuid, ctx, need="read")
     links = (
         db.query(WatchSourceEmail)
         .options(selectinload(WatchSourceEmail.email_config))
@@ -1145,7 +1171,7 @@ def list_available_email_configs(
     to ``EmailConfigResponse``: that carries the deployment's mail hostnames and
     usernames, and every authenticated user can read this.
     """
-    source = _get_source_or_404(db, source_uuid, ctx)
+    source = _get_source_or_404(db, source_uuid, ctx, need="read")
     linked_ids = {
         link.email_config_id
         for link in db.query(WatchSourceEmail)

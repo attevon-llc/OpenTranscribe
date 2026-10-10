@@ -76,12 +76,18 @@ def test_the_callback_stores_it_on_the_session_it_just_created(db_session, sessi
     Without this the storage helper can keep working perfectly while nothing calls it —
     the "setting written, never read" shape this branch exists to eliminate.
     """
+    from app.api.endpoints.auth.oidc import _complete_oidc_login
     from app.api.endpoints.auth.oidc import oidc_callback
 
-    source = inspect.getsource(oidc_callback)
+    # The callback hands the post-token work to `_complete_oidc_login` (run in the
+    # threadpool), so that is where the storer is called. Pinning the delegation too keeps
+    # this from passing against a helper nothing calls.
+    assert "_complete_oidc_login" in inspect.getsource(oidc_callback)
+
+    source = inspect.getsource(_complete_oidc_login)
     assert "_store_session_id_token(db, session_row, tokens.id_token)" in source
     assert "create_refresh_token" in source
-    # The storer must be reached from the callback, not from a cookie helper.
+    # The storer must be reached from the login flow, not from a cookie helper.
     assert "set_cookie" not in source
 
 

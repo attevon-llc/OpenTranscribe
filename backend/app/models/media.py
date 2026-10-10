@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import backref
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -63,6 +64,12 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # When processing completed
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)  # Duration in seconds
+    # Where ``duration`` came from (v431, issue #969) — mirrors ``recorded_date_source``.
+    # NULL means "written before #969 was fixed; provenance unknown" — the pre-fix
+    # pipeline unconditionally overwrote this column with the transcript's speech
+    # extent, so an un-backfilled NULL row's duration is presumptively wrong. See
+    # ``app.core.enums.DurationSource``.
+    duration_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # BigInteger, not Integer: the column is bigint in Postgres and the app
     # advertises 15 GB uploads (MAX_UPLOAD_BYTES), well past Integer's 2.1 GB
     # ceiling. The model said Integer while the database said bigint — reads
@@ -281,6 +288,12 @@ class MediaFile(Base):
     requested_whisper_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Model user asked for at upload
+    # The rest of the file's per-file request, so a retry or recovery re-dispatches what the
+    # user chose rather than falling back to defaults. NULL = "not asked" (saved setting wins).
+    requested_min_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_max_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_num_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_disable_diarization: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     diarization_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # e.g., "pyannote/speaker-diarization-3.1"
@@ -376,6 +389,16 @@ class MediaFile(Base):
         CheckConstraint(
             "NOT recorded_date_locked OR recorded_date_source = 'manual'",
             name="ck_media_file_recorded_date_locked_is_manual",
+        ),
+        # v431 (#969). No provenance-required companion CHECK like
+        # ``ck_media_file_recorded_date_provenance``: every pre-existing row already
+        # has a duration and a NULL source, and the migration deliberately does not
+        # backfill (see v431's docstring) — that pairing would refuse to insert on
+        # a live production schema.
+        CheckConstraint(
+            "duration_source IS NULL OR duration_source IN "
+            "('container', 'transcript_extent', 'none')",
+            name="ck_media_file_duration_source",
         ),
         Index(
             "ix_media_file_recorded_date",
@@ -843,6 +866,20 @@ class Task(Base):
     user: Mapped["User"] = relationship("User")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", back_populates="tasks")
 
+    # ⚠️ Do NOT add a non-mapped attribute here to carry a computed value out of a
+    # helper. A `duration_seconds` transient briefly lived on this class for issue
+    # #753's notification chip and was wrong twice over: as a bare `float | None` it
+    # raised `MappedAnnotationError` at class-definition time (SQLAlchemy 2.0
+    # Annotated Declarative scans every annotated class attribute and rejects anything
+    # that is neither `Mapped[...]` nor `ClassVar[...]`), so `import app.models.media`
+    # failed and the whole app refused to start; and as a `ClassVar[...]` it satisfied
+    # SQLAlchemy but made every write a mypy error, because assigning to a ClassVar
+    # through an instance is a type error even though Python permits it.
+    #
+    # The value is now simply RETURNED — `task_utils.update_task_status_with_duration`
+    # hands back `(task, duration_seconds)`. Smuggling a computed value out on an ORM
+    # object was fighting both tools because it was the wrong shape.
+
 
 class Analytics(Base):
     __tablename__ = "analytics"
@@ -1101,7 +1138,12 @@ class SpeakerCluster(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", backref="speaker_clusters")
+    # passive_deletes: speaker_cluster.user_id is NOT NULL + ON DELETE CASCADE, so the
+    # database removes the clusters with the account. A bare backref made the ORM NULL the
+    # FK first, and every account owning a cluster failed to delete.
+    user: Mapped["User"] = relationship(
+        "User", backref=backref("speaker_clusters", passive_deletes="all")
+    )
     promoted_to_profile: Mapped["SpeakerProfile | None"] = relationship(
         "SpeakerProfile", foreign_keys=[promoted_to_profile_id]
     )

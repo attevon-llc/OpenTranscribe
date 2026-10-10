@@ -57,6 +57,10 @@ GENDER_OUTLIER_EVICT_THRESHOLD = 0.70
 SIM_CHUNK = 500
 
 
+class CentroidRecomputeError(RuntimeError):
+    """A strict centroid recompute could not replace the stored centroid."""
+
+
 class SpeakerClusteringService:
     """Service for clustering speakers across media files.
 
@@ -1979,6 +1983,17 @@ class SpeakerClusteringService:
         tenant_pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
         if tenant_pred is not None:
             tenant_filters.append(tenant_pred)
+        # A cluster is a GROUP. Upload-time clustering keeps a one-speaker cluster per unmatched
+        # speaker so a later file can match it, but "Re-cluster All" rebuilds only groups of
+        # two or more; listing the singletons made the tab fill up after an upload and empty
+        # after a recluster. They stay in the table for matching and are still reviewed in the
+        # inbox, which lists every unverified speaker whatever its cluster. A named or promoted
+        # cluster is always shown.
+        tenant_filters.append(
+            (SpeakerCluster.member_count >= 2)
+            | SpeakerCluster.label.isnot(None)
+            | SpeakerCluster.promoted_to_profile_id.isnot(None)
+        )
         query = (
             self.db.query(SpeakerCluster)
             .options(
@@ -2478,8 +2493,19 @@ class SpeakerClusteringService:
         cluster: SpeakerCluster,
         user_id: int,
         refresh: str | bool = "wait_for",
+        strict: bool = False,
     ) -> None:
-        """Recalculate and store the cluster centroid embedding."""
+        """Recalculate and store the cluster centroid embedding.
+
+        Args:
+            cluster: The cluster whose centroid is rebuilt from its current members.
+            user_id: Owner, written onto the centroid document.
+            refresh: OpenSearch refresh policy for the centroid write.
+            strict: Raise :class:`CentroidRecomputeError` instead of leaving the stored
+                centroid untouched when it cannot be rebuilt (no member voiceprint, a
+                zero vector, or a failed write). Erasure needs this: a swallowed failure
+                leaves the OLD centroid, which still averages in a deleted voiceprint.
+        """
         members = (
             self.db.query(SpeakerClusterMember)
             .options(joinedload(SpeakerClusterMember.speaker))
@@ -2507,6 +2533,8 @@ class SpeakerClusteringService:
                     best_speaker_id = int(speaker.id)
 
         if not embeddings:
+            if strict:
+                raise CentroidRecomputeError(f"cluster {cluster.uuid} has no member voiceprint")
             return
 
         # Weighted mean centroid: verified/profile-linked speakers get 2x weight
@@ -2524,6 +2552,8 @@ class SpeakerClusteringService:
                 "Zero-vector centroid for cluster %s — skipping OpenSearch storage",
                 cluster.uuid,
             )
+            if strict:
+                raise CentroidRecomputeError(f"cluster {cluster.uuid} centroid is a zero vector")
             return
 
         # Quality score: average centroid similarity (consistent with
@@ -2546,7 +2576,7 @@ class SpeakerClusteringService:
         try:
             from app.services.opensearch_service import store_cluster_embedding
 
-            store_cluster_embedding(
+            stored = store_cluster_embedding(
                 cluster_uuid=str(cluster.uuid),
                 user_id=user_id,
                 embedding=centroid.tolist(),
@@ -2558,6 +2588,13 @@ class SpeakerClusteringService:
             )
         except Exception as e:
             logger.warning("Could not update cluster centroid in OpenSearch: %s", e)
+            if strict:
+                raise CentroidRecomputeError(str(e)) from e
+        else:
+            if strict and not stored:
+                raise CentroidRecomputeError(
+                    f"OpenSearch refused the centroid write for cluster {cluster.uuid}"
+                )
 
     def _get_speaker_embedding(self, speaker: Speaker) -> list[float] | None:
         """Get embedding for a speaker from the active index."""

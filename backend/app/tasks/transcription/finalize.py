@@ -17,7 +17,7 @@ from .context import TranscriptionContext
 from .embeddings import _should_use_native_embeddings
 from .notifications import send_progress_notification
 from .notifications import send_transcript_ready_notification
-from .speaker_processor import apply_sidecar_gender
+from .speaker_processor import apply_sidecar_gender_for_user
 from .speaker_processor import create_speaker_mapping
 from .speaker_processor import extract_unique_speakers
 from .speaker_processor import mark_overlapping_segments
@@ -112,6 +112,20 @@ def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list
     return cleaned_segments, garbage_count
 
 
+def apply_garbage_cleanup(db, user_id: int, segments: list) -> tuple[list, int]:
+    """Run garbage-word cleanup with the owner's effective setting.
+
+    The setting is user pref > system default > constant
+    (``system_settings_service.get_effective_garbage_cleanup_config``). Disabled returns the segments untouched.
+    """
+    from app.services import system_settings_service
+
+    config = system_settings_service.get_effective_garbage_cleanup_config(db, user_id)
+    if not config["garbage_cleanup_enabled"]:
+        return segments, 0
+    return clean_garbage_words(segments, config["max_word_length"])
+
+
 def _process_transcription_result(
     ctx: TranscriptionContext,
     result: dict,
@@ -163,7 +177,9 @@ def _process_transcription_result(
         # The engine classified gender from the audio it had decoded for diarization, so the
         # answers are already here — writing them now saves the enrichment task from redoing
         # the same work on CPU.
-        applied = apply_sidecar_gender(db, ctx.file_id, result.get("speaker_gender"))
+        applied = apply_sidecar_gender_for_user(
+            db, ctx.file_id, ctx.user_id, result.get("speaker_gender")
+        )
         if applied:
             logger.info("Applied sidecar gender for %d speakers on file %d", applied, ctx.file_id)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
@@ -192,19 +208,11 @@ def _process_transcription_result(
     # Clean garbage words
     step_start = time.perf_counter()
     with session_scope() as db:
-        from app.services import system_settings_service
-
-        garbage_config = system_settings_service.get_garbage_cleanup_config(db)
-
-    if garbage_config["garbage_cleanup_enabled"]:
-        processed_segments, garbage_count = clean_garbage_words(
-            processed_segments, garbage_config["max_word_length"]
+        processed_segments, garbage_count = apply_garbage_cleanup(
+            db, ctx.user_id, processed_segments
         )
-        if garbage_count > 0:
-            logger.info(
-                f"Cleaned {garbage_count} garbage word(s) from file {ctx.file_id} "
-                f"(threshold: {garbage_config['max_word_length']} chars)"
-            )
+    if garbage_count > 0:
+        logger.info(f"Cleaned {garbage_count} garbage word(s) from file {ctx.file_id}")
     logger.info(f"TIMING: garbage cleanup completed in {time.perf_counter() - step_start:.3f}s")
 
     with session_scope() as db:
@@ -325,7 +333,9 @@ def _process_and_save_critical(
         # The engine classified gender from the audio it had decoded for diarization, so the
         # answers are already here — writing them now saves the enrichment task from redoing
         # the same work on CPU.
-        applied = apply_sidecar_gender(db, ctx.file_id, result.get("speaker_gender"))
+        applied = apply_sidecar_gender_for_user(
+            db, ctx.file_id, ctx.user_id, result.get("speaker_gender")
+        )
         if applied:
             logger.info("Applied sidecar gender for %d speakers on file %d", applied, ctx.file_id)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
@@ -341,13 +351,7 @@ def _process_and_save_critical(
 
     # Garbage cleanup
     with session_scope() as db:
-        from app.services import system_settings_service
-
-        garbage_config = system_settings_service.get_garbage_cleanup_config(db)
-    if garbage_config["garbage_cleanup_enabled"]:
-        processed_segments, _ = clean_garbage_words(
-            processed_segments, garbage_config["max_word_length"]
-        )
+        processed_segments, _ = apply_garbage_cleanup(db, ctx.user_id, processed_segments)
 
     # Save to database
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
@@ -432,4 +436,9 @@ def _process_and_save_critical(
         "diarization_disabled": result.get("diarization_disabled", False),
         "downstream_tasks": preprocess_context.get("downstream_tasks"),
         "audio_temp_path": preprocess_context.get("audio_temp_path"),
+        # The per-file speaker range, so cloud ASR + local diarization hands the same hints
+        # to the re-diarize it queues (issue #1198).
+        "min_speakers": preprocess_context.get("min_speakers"),
+        "max_speakers": preprocess_context.get("max_speakers"),
+        "num_speakers": preprocess_context.get("num_speakers"),
     }

@@ -30,6 +30,9 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.chat.citations import KIND_DIGEST
+from app.services.chat.citations import KIND_SUMMARY
+from app.services.chat.citations import build_overview_citations
 from app.services.chat.mapreduce import build_file_summaries
 from app.services.chat.mapreduce import build_overview
 from app.services.chat.mapreduce import scope_digest_hits
@@ -201,6 +204,13 @@ def test_mixed_tiering_fresh_absent_and_stale_resolve_correctly():
 
     assert hits.coverage["summary_hits"] == 1
     assert hits.coverage["files_without_artifacts"] == 0
+
+    # #464: only the FRESH-summary hit is flagged `is_llm_summary` — the
+    # digest-fallback hits (absent and stale) must not be, or a citation
+    # built from them would be mislabelled as an LLM summary.
+    assert fresh[0].is_llm_summary is True
+    assert absent[0].is_llm_summary is False
+    assert stale[0].is_llm_summary is False
 
 
 def test_brief_summary_is_preferred_over_bluf_when_both_exist():
@@ -514,6 +524,77 @@ def test_summary_hit_is_masked_for_a_remote_or_unconfigured_provider():
     inline.assert_called_once()
     assert masked[0].content == "[MASKED]"
     assert masked[0].content != hit.content
+
+
+# --------------------------------------------------------------------------- #
+# #464: the citation-kind emitter — the actual deliverable of this issue.
+# `scope_digest_hits` -> `build_file_summaries` -> `build_overview_citations`
+# end to end, proving a fresh-summary file cites `kind: "summary"` and a
+# digest-fallback file (in the SAME scope, same call) still cites `kind:
+# "digest"` — the #532-arm(a) mislabelling this issue closes.
+# --------------------------------------------------------------------------- #
+
+
+def test_overview_citation_kind_is_summary_for_a_fresh_llm_summary_file():
+    rows = [_fresh_row(1, "uuid-fresh", "Fresh Recording", fingerprint="fp-1", sections=3)]
+    hits = scope_digest_hits(_scope_db(rows), ["uuid-fresh"], use_summaries=True)
+    summaries = build_file_summaries(None, hits, masked_text={id(h): h.content for h in hits})
+
+    citations = build_overview_citations(((1, "uuid-fresh"),), summaries)
+
+    assert len(citations) == 1
+    assert citations[0]["kind"] == KIND_SUMMARY
+    assert citations[0]["kind"] != KIND_DIGEST
+
+
+def test_overview_citation_kind_stays_digest_when_the_map_used_the_digest_fallback():
+    """MUST-STAY-CLEAN control for the test above: a file whose summary is
+    absent/stale still emits `kind: "digest"`, not `"summary"` — proving the
+    new kind is driven by provenance, not by the `map_tier_summaries` flag
+    being on for the whole turn."""
+    rows = [_absent_summary_row(1, "uuid-absent", "Absent Recording", fingerprint="fp-2")]
+    hits = scope_digest_hits(_scope_db(rows), ["uuid-absent"], use_summaries=True)
+    summaries = build_file_summaries(None, hits, masked_text={id(h): h.content for h in hits})
+
+    citations = build_overview_citations(((1, "uuid-absent"),), summaries)
+
+    assert len(citations) == 1
+    assert citations[0]["kind"] == KIND_DIGEST
+    assert citations[0]["kind"] != KIND_SUMMARY
+
+
+def test_overview_citation_kinds_are_mixed_correctly_in_one_scope():
+    """The common case per the issue's own constraint 6 (mixed scope): some
+    files summary-sourced, some digest-fallback, in ONE overview/citation
+    call — each entry must carry its OWN correct kind, not the scope's."""
+    rows = [
+        _fresh_row(1, "uuid-fresh", "Fresh", fingerprint="fp-1", sections=3),
+        _absent_summary_row(2, "uuid-absent", "Absent", fingerprint="fp-2"),
+    ]
+    hits = scope_digest_hits(_scope_db(rows), ["uuid-fresh", "uuid-absent"], use_summaries=True)
+    summaries = build_file_summaries(None, hits, masked_text={id(h): h.content for h in hits})
+
+    citations = build_overview_citations(((1, "uuid-fresh"), (2, "uuid-absent")), summaries)
+    by_uuid = {c["file_uuid"]: c for c in citations}
+
+    assert by_uuid["uuid-fresh"]["kind"] == KIND_SUMMARY
+    assert by_uuid["uuid-absent"]["kind"] == KIND_DIGEST
+
+
+def test_overview_citation_kind_is_digest_when_the_tiering_flag_is_off():
+    """D6 / flag-off control: with `use_summaries` False (the coded default),
+    every citation must stay `kind: "digest"` even for a file with a fresh,
+    usable summary sitting in its row — the flag, not the row's content, is
+    what may ever produce `kind: "summary"`."""
+    full_row = _fresh_row(1, "uuid-1", "Recording 1", fingerprint="fp-1", sections=2)
+    legacy_row = full_row[:4]  # (file_id, uuid, title, digest) — what the flag-off query selects
+    hits = scope_digest_hits(_scope_db([legacy_row]), ["uuid-1"])  # use_summaries defaults False
+    summaries = build_file_summaries(None, hits, masked_text={id(h): h.content for h in hits})
+
+    citations = build_overview_citations(((1, "uuid-1"),), summaries)
+
+    assert len(citations) == 1
+    assert citations[0]["kind"] == KIND_DIGEST
 
 
 def test_summary_hit_is_unmasked_for_a_local_provider():

@@ -480,6 +480,7 @@ celery_app.conf.update(
         "reindex_transcripts": {"queue": CeleryQueues.CPU},
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
+        "index_file_summary": {"queue": CeleryQueues.CPU},
         # Bounded DB read plus a handful of dispatches; never needs a CPU/GPU slot.
         "search_index_sweep": {"queue": CeleryQueues.UTILITY},
         "search.reembed_degraded": {"queue": CeleryQueues.CPU},

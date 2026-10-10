@@ -1,5 +1,10 @@
 import { writable, derived } from 'svelte/store';
-import { uploadService, type UploadItem, type UploadEvent } from '../lib/services/uploadService';
+import {
+  uploadService,
+  type UploadItem,
+  type UploadEvent,
+  type UploadTranscriptionParams,
+} from '../lib/services/uploadService';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 
 // Upload store state
@@ -121,11 +126,7 @@ function createUploadStore() {
     // Upload actions (delegate to service)
     addFile(
       file: File,
-      speakerParams?: {
-        minSpeakers?: number | null;
-        maxSpeakers?: number | null;
-        numSpeakers?: number | null;
-      },
+      transcriptionParams?: UploadTranscriptionParams,
       collectionIds?: string[],
       tagNames?: string[]
     ) {
@@ -133,35 +134,67 @@ function createUploadStore() {
         'file',
         file,
         undefined,
-        speakerParams,
+        transcriptionParams,
         collectionIds,
         tagNames
       );
     },
 
-    addFiles(files: File[], collectionIds?: string[], tagNames?: string[]) {
-      return uploadService.addMultipleFiles(files, collectionIds, tagNames);
+    addFiles(
+      files: File[],
+      collectionIds?: string[],
+      tagNames?: string[],
+      transcriptionParams?: UploadTranscriptionParams
+    ) {
+      return uploadService.addMultipleFiles(files, collectionIds, tagNames, transcriptionParams);
     },
 
-    addUrl(url: string, collectionIds?: string[], tagNames?: string[]) {
-      return uploadService.addUpload('url', url, undefined, undefined, collectionIds, tagNames);
+    addUrl(
+      url: string,
+      collectionIds?: string[],
+      tagNames?: string[],
+      transcriptionParams?: UploadTranscriptionParams
+    ) {
+      return uploadService.addUpload(
+        'url',
+        url,
+        undefined,
+        transcriptionParams,
+        collectionIds,
+        tagNames
+      );
     },
 
-    addRecording(blob: Blob, name?: string, collectionIds?: string[], tagNames?: string[]) {
-      return uploadService.addUpload('recording', blob, name, undefined, collectionIds, tagNames);
+    addRecording(
+      blob: Blob,
+      name?: string,
+      collectionIds?: string[],
+      tagNames?: string[],
+      transcriptionParams?: UploadTranscriptionParams
+    ) {
+      return uploadService.addUpload(
+        'recording',
+        blob,
+        name,
+        transcriptionParams,
+        collectionIds,
+        tagNames
+      );
     },
 
     addExtractedAudio(
       audioBlob: Blob,
       filename: string,
       extractionMetadata: ExtractedAudioMetadata,
-      compressionRatio: number
+      compressionRatio: number,
+      transcriptionParams?: UploadTranscriptionParams
     ) {
       return uploadService.addExtractedAudio(
         audioBlob,
         filename,
         extractionMetadata,
-        compressionRatio
+        compressionRatio,
+        transcriptionParams
       );
     },
 

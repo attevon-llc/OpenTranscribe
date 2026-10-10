@@ -30,6 +30,7 @@ dispatch is no-oped by the autouse ``_skip_celery_dispatch`` fixture.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import uuid as uuid_pkg
@@ -38,6 +39,10 @@ from unittest.mock import patch
 import pytest
 from fastapi import status
 from sqlalchemy import text
+
+from app.models.media import MediaFile
+from app.models.media import Speaker
+from app.models.media import TranscriptSegment
 
 #: Mirrors conftest's stack detection: False on the dev host, True on a bare CI
 #: runner. Only the live ``counts`` cross-check needs it — the arithmetic is pinned
@@ -232,7 +237,7 @@ def test_counts_reports_indexed_missing_orphaned_and_segmentless_exactly(
 
 @pytest.mark.skipif(_OPENSEARCH_ABSENT, reason="counts queries the live speakers index")
 def test_counts_agrees_with_an_independent_speaker_count(
-    client, admin_token_headers, fake_redis, db_session
+    client, admin_token_headers, fake_redis, db_session, normal_user, monkeypatch
 ):
     """``total_pg_speakers`` counts speakers **that have segments** — cross-checked.
 
@@ -241,7 +246,56 @@ def test_counts_agrees_with_an_independent_speaker_count(
     count would include speakers with no transcript segments, and the panel would
     report a permanent backlog of "missing" embeddings that can never be built
     because there is no audio to extract them from.
+
+    The test seeds its own speakers rather than relying on whatever the database already
+    holds. It used to read ambient data, so it passed on a developer database with
+    transcripts and failed ("vacuous") on any fresh one. One speaker WITH a segment and one
+    WITHOUT are created, so the count is non-vacuous and the segmentless filter is exercised.
     """
+    media_file = MediaFile(
+        uuid=uuid_pkg.uuid4(),
+        user_id=normal_user.id,
+        filename="embedding_counts.wav",
+        storage_path=f"user_{normal_user.id}/embedding_counts.wav",
+        file_size=1,
+        content_type="audio/wav",
+    )
+    db_session.add(media_file)
+    db_session.flush()
+    with_segment = Speaker(
+        uuid=uuid_pkg.uuid4(),
+        name="SPEAKER_00",
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+    )
+    without_segment = Speaker(
+        uuid=uuid_pkg.uuid4(),
+        name="SPEAKER_01",
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+    )
+    db_session.add_all([with_segment, without_segment])
+    db_session.flush()
+    db_session.add(
+        TranscriptSegment(
+            uuid=uuid_pkg.uuid4(),
+            media_file_id=media_file.id,
+            speaker_id=with_segment.id,
+            start_time=0.0,
+            end_time=1.0,
+            text="seeded so the cross-check is not vacuous",
+        )
+    )
+    db_session.commit()
+
+    # The counts task opens its own session through ``session_scope``; point it at the test
+    # session so it sees the rows seeded above rather than whatever the database holds.
+    @contextlib.contextmanager
+    def _test_session():
+        yield db_session
+
+    monkeypatch.setattr("app.tasks.speaker_embedding_consistency.session_scope", _test_session)
+
     expected = db_session.execute(
         text(
             "SELECT COUNT(DISTINCT s.id) FROM speaker s "

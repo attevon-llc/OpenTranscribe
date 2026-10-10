@@ -440,7 +440,7 @@ POST /api/search/validate
    ```
 
 3. Test with simple text:
-   - Go to Settings → Search Configuration
+   - Go to Settings → Search & Indexing
    - Click "Test Embedding" with 1-2 word phrase
    - Check if it succeeds
 
@@ -478,12 +478,12 @@ POST /api/search/validate
 **Quick Fixes**:
 1. Reduce batch size:
    ```
-   Settings → Search Configuration → Batch Size = 8 (from default 32)
+   Settings → Search & Indexing → Batch Size = 8 (from default 32)
    ```
 
 2. Switch to smaller model:
    ```
-   Settings → Select Model → all-MiniLM-L6-v2
+   Settings → Search & Indexing → Select Model → all-MiniLM-L6-v2
    ```
 
 3. Increase Docker memory allocation:
@@ -568,7 +568,7 @@ echo "HUGGINGFACE_OFFLINE_MODE=true" >> .env
 ### Step 4: Disable Model Downloads
 
 In admin settings:
-1. Settings → Search Configuration
+1. Settings → Search & Indexing
 2. **Offline Mode**: Toggle ON
 3. System will only use locally cached models
 4. No internet access required

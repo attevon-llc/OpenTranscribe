@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
+from app.core.enums import DurationSource
 from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -164,6 +165,7 @@ def update_media_file_transcription_status(
         speech_extent = max((segment["end"] for segment in segments), default=None)
         if speech_extent is not None:
             media_file.duration = speech_extent
+            media_file.duration_source = DurationSource.TRANSCRIPT_EXTENT.value
     # The ONE place `media_file.language` is assigned by the pipeline, so it is the last
     # boundary before the column every redaction/chat/search reader keys on (issue #545).
     # `ASRResult` already normalizes the cloud providers' output; this also covers the local

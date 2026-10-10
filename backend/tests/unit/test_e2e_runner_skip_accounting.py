@@ -253,6 +253,8 @@ def _run_passthrough(pytest_exit: int, tmp_path: Path) -> int:
             EXIT_NOT_MEASURED={_declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")}
             VENV_PY={str(stub)!r}
             E2E_ARTIFACT_DIR={str(tmp_path)!r}
+            E2E_FRONTEND_URL=http://localhost:5173
+            E2E_BACKEND_URL=http://localhost:5174
             HAS_CUSTOM=true
             WORKERS=0
             SKIP_REASONS=(-rs)

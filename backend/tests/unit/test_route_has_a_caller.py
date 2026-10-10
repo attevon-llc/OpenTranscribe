@@ -157,13 +157,30 @@ _USAGE_REASON = (
     "docstring if this was only ever meant to back the cloud dashboard."
 )
 
+_SUPPORT_ACCESS_REASON = (
+    "Issue #1122 backend phase 3: the support-access API ships before its UI (a separate "
+    "frontend change builds the request, approval and use-log screens against this contract). "
+    "Strict xfail so the entry is deleted the moment the SPA calls the route."
+)
+
 _NOT_YET_VERIFIED: dict[str, str] = {
+    # --- support-access grants (#1122): backend lands first, the SPA follows ---
+    "/api/support-access/grants/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access/{grant_uuid}/approve": _SUPPORT_ACCESS_REASON,
+    "/api/org-admin/support-access/{grant_uuid}/deny": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access/{grant_uuid}/approve": _SUPPORT_ACCESS_REASON,
+    "/api/users/me/support-access/{grant_uuid}/deny": _SUPPORT_ACCESS_REASON,
     # --- admin maintenance / migration / repair triggers ---
     "/api/admin/data-integrity/counts": _MAINTENANCE_OPS_REASON,
     "/api/admin/engine-settings/metrics": _MAINTENANCE_OPS_REASON,
     "/api/admin/gpu-profiles": _MAINTENANCE_OPS_REASON,
     "/api/admin/imohash-recompute/start": _MAINTENANCE_OPS_REASON,
     "/api/admin/imohash-recompute/status": _MAINTENANCE_OPS_REASON,
+    "/api/admin/media-duration-backfill": _MAINTENANCE_OPS_REASON,
     "/api/admin/profile-embeddings/repair": _MAINTENANCE_OPS_REASON,
     "/api/admin/timing": _MAINTENANCE_OPS_REASON,
     "/api/admin/timing/{task_id}": _MAINTENANCE_OPS_REASON,
@@ -194,9 +211,10 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/org-admin/gdpr/erase-organization": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/gdpr/erase-user/{user_uuid}": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/audit-logs": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/files/{file_uuid}/quarantine": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/files/{file_uuid}/release": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/files/quarantined": _NO_ADMIN_PANEL_REASON,
+    # issue #576: /admin/files/{file_uuid}/quarantine, /release and /files/quarantined
+    # now have a caller (AdminApi.quarantineFile / releaseFile / listQuarantinedFiles),
+    # so these three xfail entries were removed — leaving them would make the test
+    # XPASS(strict) and fail every commit in the worktree.
     # --- investigation found the SPA calling a different route for this feature ---
     "/api/admin/settings/media-sources": _SUPERSEDED_OR_DUPLICATE_REASON,
     "/api/admin/settings/media-sources/{source_id}": _SUPERSEDED_OR_DUPLICATE_REASON,

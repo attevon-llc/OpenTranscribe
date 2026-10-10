@@ -17,6 +17,7 @@ from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
 from .user_settings import load_vocabulary_terms
+from .user_settings import resolve_speaker_range
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,25 @@ if _align:
         "Word-level timestamps are now provided natively by faster-whisper "
         "for all 100+ languages without a separate alignment model."
     )
+
+
+def _build_engine_config(overrides: dict):  # -> EngineConfig (imported lazily: heavy)
+    """Engine config for one job: DB settings > env, with the job's overrides applied.
+
+    Shared by the single-GPU fast path and the gpu-split transcribe stage so both honour the
+    admin Engine panel.
+    """
+    from app.transcription import EngineConfig
+    from app.transcription import TranscriptionConfig as _TranscriptionConfig
+
+    config = _TranscriptionConfig.from_environment(**overrides)
+    with session_scope() as db:
+        engine_config = EngineConfig.from_db_with_env_fallback(db)
+    for k, v in overrides.items():
+        if hasattr(engine_config, k):
+            setattr(engine_config, k, v)
+    engine_config._transcription_config = config
+    return engine_config
 
 
 def _resolve_language_settings(
@@ -102,14 +122,15 @@ def _run_transcription_pipeline(
     # Get user's transcription tuning settings from DB
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     # Build overrides dict — local model is admin-controlled via WHISPER_MODEL env var
     overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
@@ -193,7 +214,6 @@ def _run_engine_pipeline(
         _run_transcription_pipeline() with ``asr_provider`` and ``asr_model`` set.
     """
     from app.transcription import Engine
-    from app.transcription import EngineConfig
     from app.transcription.engine.job import PreprocessResult
 
     min_speakers = preprocess_context.get("min_speakers")
@@ -218,13 +238,14 @@ def _run_engine_pipeline(
 
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
@@ -254,13 +275,8 @@ def _run_engine_pipeline(
                 _TranscriptionConfig._pinned_model_name,
             )
 
-    config = _TranscriptionConfig.from_environment(**overrides)
-    with session_scope() as db:
-        engine_config = EngineConfig.from_db_with_env_fallback(db)
-    for k, v in overrides.items():
-        if hasattr(engine_config, k):
-            setattr(engine_config, k, v)
-    engine_config._transcription_config = config
+    engine_config = _build_engine_config(overrides)
+    config = engine_config.transcription_config
 
     engine = Engine(engine_config)
 
@@ -326,7 +342,6 @@ def _run_transcribe_only_stage(
         Serialized RawTranscriptResult dict for diarize_gpu_task.
     """
     from app.transcription import Engine
-    from app.transcription import EngineConfig
     from app.transcription import TranscriptionConfig as _TranscriptionConfig
     from app.transcription.engine.job import PreprocessResult
 
@@ -344,13 +359,14 @@ def _run_transcribe_only_stage(
 
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
@@ -373,7 +389,11 @@ def _run_transcribe_only_stage(
             _TranscriptionConfig._pinned_model_name,
         )
 
-    engine_config = EngineConfig.from_environment(**overrides)
+    # DB-backed engine settings (boundary re-check, margins, ...) with env fallback, exactly
+    # as the single-GPU fast path builds them. from_environment() reads env only, so the
+    # admin values never reached the split pipeline and its snapshot carried the env ones to
+    # the diarize worker (issue #1205).
+    engine_config = _build_engine_config(overrides)
     engine = Engine(engine_config)
 
     pre = PreprocessResult(

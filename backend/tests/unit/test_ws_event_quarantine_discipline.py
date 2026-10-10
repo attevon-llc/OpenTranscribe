@@ -54,6 +54,11 @@ _RAW_CHANNEL = "websocket_notifications"
 #: to guard") plus the DMCA owner-notice chokepoint itself. A new key here is a new
 #: place quarantine can leak — write the reason like you mean it.
 _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/support_access_lifecycle.py::_send": (
+        1,
+        "support-access lifecycle notification to named users (request, decision, revocation); "
+        "carries a grant uuid, never a MediaFile identity",
+    ),
     "api/endpoints/combined_speaker_migration.py::stop_combined_migration": (
         1,
         "admin migration control-plane event (stopped/running), no MediaFile identity",

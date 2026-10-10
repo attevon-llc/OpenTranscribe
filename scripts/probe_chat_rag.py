@@ -332,6 +332,63 @@ def ensure_llm_config(
     return config_uuid
 
 
+def ensure_chat_flags(session: Any, base_url: str, updates: dict[str, bool]) -> dict[str, bool]:
+    """PUT ``chat.*`` ``SystemSettings`` flags and refuse to run on a read-back mismatch.
+
+    Args:
+        session: An authenticated ``requests.Session``.
+        base_url: The app's API base URL.
+        updates: ``{field: value}`` pairs matching ``ChatAdminSettingsUpdate`` fields
+            (e.g. ``speaker_resolver_enabled``), never the ``SystemSettings`` key.
+
+    Returns:
+        The requested fields, read back from ``GET /admin/chat-settings`` after the
+        write — i.e. what the run actually used, not what it asked for.
+
+    Raises:
+        SystemExit: A read-back value disagrees with what was requested.
+
+    Chat ``SystemSettings`` flags have **no** read-back guard of their own — unlike
+    the LLM config (:func:`ensure_llm_config`), nothing in the chat pipeline refuses
+    to start on a stale value. Issue #523's own ``ami81-routerfix`` artifact is the
+    reason this exists: every one of 81 turns showed ``route.speaker_focus: false``,
+    including turns using a lexicon-covered verb, because
+    ``chat.speaker_resolver_enabled`` was never actually flipped on the stack that
+    produced it — an operator step this function now performs and verifies instead
+    of leaving to be done, or forgotten, by hand. A silently-unapplied flag produces
+    a clean, plausible, meaningless table, and because a null result *argues against*
+    the change, it is the most expensive kind of wrong answer (see the CW-1
+    precondition on :func:`ensure_llm_config` for the sibling trap on the LLM side).
+    """
+    if not updates:
+        return {}
+    put = session.put(f'{base_url}/admin/chat-settings', json=dict(updates), timeout=30)
+    put.raise_for_status()
+
+    check = session.get(f'{base_url}/admin/chat-settings', timeout=30)
+    check.raise_for_status()
+    resolved = check.json()
+
+    mismatches = {
+        field: (resolved.get(field), want)
+        for field, want in updates.items()
+        if resolved.get(field) != want
+    }
+    if mismatches:
+        detail = ', '.join(
+            f'{k}: requested {want!r}, read back {was!r}' for k, (was, want) in mismatches.items()
+        )
+        raise SystemExit(
+            f'chat flag read-back mismatch after PUT /admin/chat-settings: {detail}. '
+            'Refusing to run: this is exactly the applied-check failure mode issue #523 '
+            'documented — a run against a flag that never actually flipped produces a '
+            'clean, meaningless table that reads as a null result.'
+        )
+    read_back = {field: resolved[field] for field in updates}
+    logger.info('chat flags confirmed via read-back: %s', read_back)
+    return read_back
+
+
 def create_conversation(session: Any, base_url: str, file_uuids: list[str], title: str) -> str:
     """POST a new chat conversation scoped to ``file_uuids``. Returns its uuid."""
     body = {
@@ -630,6 +687,17 @@ def build_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Skip creating/activating an LLM config; use whatever is already active',
     )
+    parser.add_argument(
+        '--chat-flag',
+        action='append',
+        default=[],
+        metavar='FIELD=true|false',
+        help='Set and read-back-verify a chat.* SystemSettings flag before running '
+        '(e.g. --chat-flag speaker_resolver_enabled=true). Repeatable. See '
+        'ensure_chat_flags() — this closes the exact applied-check gap that made '
+        "issue #523's ami81-routerfix artifact invalid: a flag flipped by hand on "
+        'the target stack, with nothing to catch it not being flipped at all.',
+    )
 
     parser.add_argument(
         '--out', default='/tmp/ot-probe', help='Full-fidelity output dir (contains prose)'
@@ -643,6 +711,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--run-name', default=None, help="Defaults to --out's directory name")
     parser.add_argument('-v', '--verbose', action='store_true')
     return parser
+
+
+def _parse_chat_flags(raw: list[str]) -> dict[str, bool]:
+    """``["speaker_resolver_enabled=true"]`` -> ``{"speaker_resolver_enabled": True}``.
+
+    Raises:
+        SystemExit: A ``--chat-flag`` entry is malformed, or its value is not
+            ``true``/``false`` — this instrument only carries boolean chat flags
+            today, and a silently-mis-parsed value would defeat the whole point of
+            :func:`ensure_chat_flags`'s read-back check.
+    """
+    parsed: dict[str, bool] = {}
+    for entry in raw:
+        if '=' not in entry:
+            raise SystemExit(f'--chat-flag expects FIELD=true|false, got {entry!r}')
+        field, _, value = entry.partition('=')
+        field = field.strip()
+        normalized = value.strip().lower()
+        if normalized not in ('true', 'false'):
+            raise SystemExit(
+                f'--chat-flag {field}={value!r}: only true/false are supported '
+                '(every chat flag this probe drives today is boolean)'
+            )
+        parsed[field] = normalized == 'true'
+    return parsed
 
 
 def _resolve_questions(args: argparse.Namespace) -> list[Question]:
@@ -685,6 +778,10 @@ def main(argv: list[str] | None = None) -> int:
             temperature=args.llm_temperature,
         )
         logger.info('active LLM config: %s', config_uuid)
+
+    chat_flag_updates = _parse_chat_flags(args.chat_flag)
+    if chat_flag_updates:
+        ensure_chat_flags(session, base_url, chat_flag_updates)
 
     total = len(questions)
 

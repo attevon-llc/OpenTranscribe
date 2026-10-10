@@ -96,6 +96,27 @@ PRECEDENCE: tuple[RecordedDateSource, ...] = (
 )
 
 
+class DurationSource(enum.StrEnum):
+    """Where ``media_file.duration`` came from (issue #969).
+
+    The column used to be silently overwritten by the transcript's SPEECH EXTENT
+    (``max(segment.end)``) on every completed file — trailing silence, music or
+    applause was discarded and nobody could tell a corrected row from an
+    uncorrected one. This is the provenance that makes the two distinguishable,
+    mirroring :class:`RecordedDateSource`.
+    """
+
+    #: ffprobe or exiftool read it off the container. The authoritative value.
+    CONTAINER = "container"
+    #: No container duration was ever recoverable, so the transcript's speech
+    #: extent was used as a last resort. Shorter than the real recording by
+    #: however much trailing non-speech the file has — measured at ~11s on real
+    #: YouTube content.
+    TRANSCRIPT_EXTENT = "transcript_extent"
+    #: Every source was tried and none produced a usable duration.
+    NONE = "none"
+
+
 class ReasoningOffSwitch(enum.StrEnum):
     """What a probe concluded about a model's "do not reason" parameter (issue #64).
 

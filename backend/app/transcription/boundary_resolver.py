@@ -299,3 +299,35 @@ def acoustic_recheck(
     if reassigned:
         logger.info("acoustic_recheck: reassigned %d short word(s) by voiceprint", reassigned)
     return reassigned
+
+
+def recheck_segment_words(
+    segments: list[dict[str, Any]],
+    centroids: dict[str, Any],
+    embed_fn: Any,
+    *,
+    overlap_regions: list[dict[str, Any]] | None,
+    cosine_margin: float,
+    max_word_dur: float,
+) -> int:
+    """Run ``acoustic_recheck`` over every speaker-labelled word in ``segments``.
+
+    The one place that flattens segments into the word list, so the single-GPU stage and the
+    gpu-split diarize stage cannot drift apart. Words are relabelled in place.
+    """
+    words = [
+        w for s in segments for w in s.get("words", []) or [] if "speaker" in w and "start" in w
+    ]
+    return acoustic_recheck(
+        words,
+        centroids,
+        embed_fn,
+        overlap_regions=overlap_regions,
+        cosine_margin=cosine_margin,
+        max_word_dur=max_word_dur,
+    )
+
+
+def word_key(start: float, end: float) -> str:
+    """Stable JSON-safe key for a word's time span (used to ship relabels between stages)."""
+    return f"{float(start):.3f}-{float(end):.3f}"

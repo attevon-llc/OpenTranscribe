@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.locked_settings import effective_whisper_model
@@ -37,6 +38,7 @@ from app.utils.error_handlers import ErrorHandler
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
 from app.utils.media_types import normalize_media_content_type
+from app.utils.whisper_model_choice import require_servable_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +276,13 @@ def create_prepared_record(
     if requested_whisper_model:
         db_file.requested_whisper_model = requested_whisper_model  # type: ignore[assignment]
 
+    # The rest of the per-file request. /complete (or the legacy upload) reads these back
+    # for anything it does not repeat, and a retry replays them.
+    db_file.requested_min_speakers = request.min_speakers  # type: ignore[assignment]
+    db_file.requested_max_speakers = request.max_speakers  # type: ignore[assignment]
+    db_file.requested_num_speakers = request.num_speakers  # type: ignore[assignment]
+    db_file.requested_disable_diarization = True if request.disable_diarization else None  # type: ignore[assignment]
+
     db.flush()
 
     # If this is extracted audio, store the video metadata in metadata_important
@@ -310,7 +319,9 @@ def _discard_prepared_record(db: Session, db_file: MediaFile) -> None:
     db.commit()
 
 
-@router.post("/prepare", response_model=dict[str, Any])
+@router.post(
+    "/prepare", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 async def prepare_upload(
     request: PrepareUploadRequest,
     http_request: Request,
@@ -329,7 +340,9 @@ async def prepare_upload(
     current_user = ctx.user
     # The capability resolver may query the database; keep it off the event loop.
     requested_whisper_model = await run_in_threadpool(
-        effective_whisper_model, request.whisper_model, http_request
+        lambda: require_servable_whisper_model(
+            effective_whisper_model(request.whisper_model, http_request)
+        )
     )
     try:
         # If file hash is provided, check for duplicates

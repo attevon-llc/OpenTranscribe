@@ -100,11 +100,70 @@ picker and the content router all read it, so a nav entry cannot disagree with t
 - A panel nested inside another section has no section id of its own; report dirty state to the
   parent (see `CacheSettings` → `RetentionSettings`) instead of inventing a store key with no
   nav entry.
+- **Sidebar grouping is by WHO changes it and HOW OFTEN, not by subject** (issue #861), with
+  rows inside a group ordered by expected frequency of use. Keep groups at ~6 rows or fewer; if
+  a group outgrows that, split it rather than appending. A group that needs a privilege carries
+  `...(isAdmin ? [...] : [])` around the whole group; a privileged row inside an **ungated**
+  group carries the same spread on the row, so the group stays visible to everyone else.
+
+- **Tabbed sections decide their tabs from a pure helper, not inline.** Privacy & Redaction is ONE
+  sidebar row (`content-redaction`) over `PrivacyRedactionSettings`; `$lib/settings/privacyRedactionTabs`
+  returns the tabs per role (plain user: personal only, no tab strip; admin: policy tab present but
+  locked; super_admin: both). `redaction-policy` is NOT in `SECTION_MIN_ROLE` — it survives only as a
+  deep-link/search alias that opens the policy tab, and the tab-level lock is the same super_admin tier.
+  Watch Sources works the same way via `$lib/settings/watchSourcesTabs` (Sources for everyone; Email
+  Notifications and Global Settings for super_admin). Add a tab by extending the helper and its test.
+- **Transcription and Speaker Identification are two tabbed rows** under the group _Transcription &
+  Speakers_ (words vs who spoke; different models, stages and roles). `TranscriptionSection` has
+  `tx-language` / `tx-provider` / `tx-vocabulary` / `tx-accuracy`; `SpeakerIdentificationSection` has
+  `spk-detection` / `spk-attributes` / `spk-engine` / `spk-maintenance`. Which tabs exist comes from
+  `$lib/settings/transcriptionTabs` and `speakerIdentificationTabs` (capabilities and role), never inline.
+  Tab ids are global DOM ids (`tab-<id>`), hence the `tx-` / `spk-` namespaces.
+- **Old section ids are aliases, not rows** (`$lib/settings/sectionAliases`): `asr-provider` and
+  `custom-vocabulary` open Transcription at their tab, `engine-settings` and `speaker-attributes` open
+  Speaker Identification at theirs. They stay in the `SettingsSection` union so deep links, settings
+  search (`aliasSearchEntries` in the modal adds them when the tab is openable) and fixtures keep
+  working; the sidebar highlights the row via `sidebarRowFor`, and the mobile `<select>` binds the
+  effective id so an alias still has a matching option. Use `transcriptionTabFor` /
+  `speakerIdTabFor` for the tab an id opens. `engine-settings` is NOT in `SECTION_MIN_ROLE`: the lock is
+  the tab's.
+- **Lock rule for the speaker tabs.** _Speaker Engine_ and _Maintenance_ are super_admin: plain users do
+  not get the tab at all (they could never use it), admins see it **locked** (disabled, `title` tooltip
+  naming the tier), super_admins use it. Deployment capabilities (`engine.settings`,
+  `speaker_attributes.migration`, `asr.user_providers`, `vocab.user`, `transcription.prefs`) remove a tab
+  entirely. The same rule applies inside panels: ASR's local-model controls and the embedding migration
+  (`locked={!isSuperAdmin}`, no API calls while locked) render disabled for admins.
+- **Section shells own dirty state; children only dispatch `change` `{ hasChanges }`.** The shell calls
+  `settingsModalStore.setDirty('transcription' | 'speaker-identification', any)` and badges a dirty tab
+  with `●`. Panels mount on first visit and then stay mounted (`hidden`), so edits survive a tab switch.
+  Any child form in a shell must dispatch `change`, never call `setDirty` itself.
+- _Maintenance_ holds `SpeakerAttributeBulkPanel` plus a link card that dispatches `navigate` with
+  `embedding-migration`; **Speaker Embedding System** stays a System row (no second copy).
+- **E2E-guarded:** `.speaker-detection-settings` (its `.btn-primary` is the Save button, so
+  `PyannoteCredentialForm` uses its own button classes), the modal-level `.section-title` must remain the
+  first `.section-title` in `.settings-content`, and `#speaker-behavior`, `#min-speakers`, `#max-speakers`.
+- `PyannoteCredentialForm` (the user's pyannote.ai key) renders under the Speaker Detection source select
+  when `asr.user_providers` is on. The key is write-only: never pre-fill the input, never log it.
+  Its states come from `$lib/settings/pyannoteCredential`.
+- **Auto-Labeling** (`auto-labeling`) lives in the AI & Chat group; the panel and id are unchanged.
+
+## Transcription forms
+
+`TranscriptionLanguageSettings`, `TranscriptionAccuracySettings` and `SpeakerDetectionSettings` are three
+self-contained forms; each saves only its own fields and resets only its own group
+(`resetTranscriptionSettings(group)`), and reports dirty state by dispatching `change` `{ hasChanges }`
+(never `setDirty`); the two section shells mount them and own the dirty flag. Shared cards, tooltips, buttons and styles live
+in `transcription/` (styles are global CSS scoped under `.tx-form`). Deployment locks: `transcription.advanced`
+hides and omits the VAD/accuracy fields; `transcription.diarization_source` hides and omits the source.
 
 ## Gotchas
 
-- **E2E-guarded selectors** in the shell: `.settings-modal`, `.settings-sidebar`, `.nav-item`,
-  `.section-title`. Renaming them breaks Playwright tests — keep them stable.
+- **E2E-guarded selectors** in the shell: `.settings-modal`, `.settings-sidebar`,
+  `.sidebar-section` (the group wrapper —
+  `backend/tests/e2e/test_settings_modal.py`'s `NAV_GROUPS`), `.nav-item`, and
+  `.settings-content .section-title` (the **content panel's** `<h3>`). Renaming any of them
+  breaks Playwright tests — keep them stable. Note the sidebar **group title** is
+  `.section-heading`, which is _not_ guarded and is a different element from `.section-title`.
 - The modal closes itself on route change (`$page.url.pathname`) — don't re-add navigation logic.
 - Watch Sources is a **user** feature whose email-config and global-settings blocks are
   super*admin; gate those on `isSuperAdmin`, not `isAdmin`, or a plain admin gets two swallowed
@@ -117,3 +176,7 @@ picker and the content router all read it, so a nav entry cannot disagree with t
 - `WatchSourcesSettings.svelte` is a **coordinator over `watchSources/`** (see that folder's
   CLAUDE.md) — it was 767 lines. It stays here rather than moving into the subfolder, matching
   `UserFileStatus.svelte` + `fileStatus/`; only the children moved.
+- `SupportAccessStaffPanel.svelte` (Administration) and `SupportAccessApprovalsPanel.svelte`
+  (Account) are the two settings faces of support-access grants (issue #1122); both render only
+  when `tenancyMode === 'multi'`, and `SettingsModal` yields Escape to nested `BaseModal`s so
+  closing a break-glass dialog never closes Settings. Detail: `../supportAccess/CLAUDE.md`.

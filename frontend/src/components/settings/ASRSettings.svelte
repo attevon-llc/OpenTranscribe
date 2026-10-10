@@ -16,6 +16,8 @@
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin = false;
+  // The local-model endpoints are super_admin only; admins see them locked.
+  export let isSuperAdmin = false;
 
   let loading = false;
   let saving = false;
@@ -334,7 +336,9 @@
                 {localModelInfo.supports_translation ? '✓' : '✗'} {$t('settings.asrProvider.capTranslation')}
               </span>
               <span class="cap-badge cap-neutral">
-                {localModelInfo.language_support === 'english_optimized' ? 'English optimized' : 'Multilingual'}
+                {localModelInfo.language_support === 'english_optimized'
+                  ? $t('settings.asrProvider.capEnglishOptimized')
+                  : $t('settings.asrProvider.capMultilingual')}
               </span>
             {/if}
           </div>
@@ -345,11 +349,16 @@
           <p class="admin-description">
             {$t('settings.asrProvider.localModelDescription')}
           </p>
+          {#if !isSuperAdmin}
+            <p class="locked-hint" data-testid="local-model-locked-hint">
+              {$t('settings.asrProvider.localModelLockedHint')}
+            </p>
+          {/if}
           <div class="model-control-row">
             <div class="model-select-group">
               <label for="local-model-select">{$t('settings.asrProvider.activeModel')}</label>
               <div class="model-select-with-source">
-                <select id="local-model-select" bind:value={selectedLocalModel} disabled={modelChangeInProgress || restartInProgress} class="form-select">
+                <select id="local-model-select" bind:value={selectedLocalModel} disabled={!isSuperAdmin || modelChangeInProgress || restartInProgress} title={isSuperAdmin ? undefined : $t('settings.nav.requiresSuperAdmin')} class="form-select">
                   {#if availableLocalModels.length > 0}
                     {#each availableLocalModels as model}
                       <option value={model.short_name}>{model.short_name}</option>
@@ -366,7 +375,7 @@
             </div>
             <div class="model-actions">
               {#if localModelChanged}
-                <button class="btn btn-primary" on:click={handleSetLocalModel} disabled={modelChangeInProgress}>
+                <button class="btn btn-primary" on:click={handleSetLocalModel} disabled={!isSuperAdmin || modelChangeInProgress}>
                   {#if modelChangeInProgress}
                     <Spinner size="small" /> {$t('common.saving')}
                   {:else}
@@ -374,7 +383,7 @@
                   {/if}
                 </button>
               {/if}
-              <button class="btn btn-warning" on:click={handleRestartGpuWorker} disabled={restartInProgress || modelChangeInProgress}>
+              <button class="btn btn-warning" on:click={handleRestartGpuWorker} disabled={!isSuperAdmin || restartInProgress || modelChangeInProgress} title={isSuperAdmin ? undefined : $t('settings.nav.requiresSuperAdmin')}>
                 {#if restartInProgress}
                   <Spinner size="small" /> {$t('settings.asrProvider.restarting')}
                 {:else}
@@ -635,9 +644,10 @@
 />
 
 <style>
+  /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
+     beneath left-aligned tabs reads as misaligned. */
   .asr-settings {
     max-width: 800px;
-    margin: 0 auto;
   }
 
   .loading {
@@ -1103,6 +1113,12 @@
   :global([data-theme='dark']) .admin-badge-tag {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
+  }
+
+  .locked-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 0.75rem;
   }
 
   .admin-description {

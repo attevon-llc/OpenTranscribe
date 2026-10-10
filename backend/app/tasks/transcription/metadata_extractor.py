@@ -8,6 +8,8 @@ import subprocess
 import sys
 from typing import Any
 
+from app.core.enums import DurationSource
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -517,12 +519,13 @@ def _set_audio_metadata(media_file, important_metadata: dict[str, Any]) -> None:
 
 
 def _set_duration(media_file, important_metadata: dict[str, Any]) -> None:
-    """Parse and set duration from metadata."""
+    """Parse and set duration from metadata. The container's claim (issue #969)."""
     duration = important_metadata.get("Duration")
     if not duration:
         return
     try:
         media_file.duration = float(duration)
+        media_file.duration_source = DurationSource.CONTAINER.value
     except (ValueError, TypeError):
         logger.warning(f"Could not parse duration: {duration}")
 

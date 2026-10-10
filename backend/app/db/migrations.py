@@ -539,6 +539,29 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE indexname = 'uq_speaker_profile_user_tenant_name')"
     )
 
+    # v431: media_file.duration_source — where `duration` came from (issue #969).
+    # Single-marker revision (one ADD COLUMN plus one CHECK, no backfill), so the
+    # column IS the fingerprint — the same shape v392/v393 use.
+    has_duration_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'duration_source')"
+    )
+
+    # v432: support-access grants (issue #1122). Keyed on the CHECK the revision creates
+    # LAST, so a database interrupted part-way through the revision does not look finished
+    # and is re-run (every statement in it is idempotent).
+    has_support_access_grant = "support_access_grant" in tables and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_support_access_grant_target_kind')"
+    )
+
+    # v433: the per-file transcription request (issues #1203, #1202, #1198). Keyed on the
+    # last column the revision adds; the watch-source default drop has no marker of its own.
+    has_requested_options = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'requested_disable_diarization')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -581,8 +604,56 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v430: same as v422 plus the per-tenant speaker/vocabulary uniqueness. The newest
+    # v433: same as v432 plus the requested per-file transcription options. The newest
     # revision on this chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+        and has_support_access_grant
+        and has_requested_options
+    ):
+        return "v433_add_requested_transcription_options"
+    # v432: same as v431 plus the support-access tables.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+        and has_support_access_grant
+    ):
+        return "v432_support_access_grant"
+    # v431: same as v430 plus media_file.duration_source.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+    ):
+        return "v431_add_media_duration_provenance"
+    # v430: same as v422 plus the per-tenant speaker/vocabulary uniqueness.
     if (
         matches_v389
         and has_file_facts

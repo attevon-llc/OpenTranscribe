@@ -11,6 +11,7 @@ from fastapi import Query
 from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -23,11 +24,13 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
+from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.platform_bypass import PlatformBypass
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
@@ -88,6 +91,21 @@ class BulkActionRequest(BaseModel):
     num_speakers: int | None = None
     disable_diarization: bool | None = None
 
+    @model_validator(mode="after")
+    def validate_disable_diarization_scope(self) -> "BulkActionRequest":
+        """``disable_diarization`` only changes a reprocess that transcribes."""
+        if not self.disable_diarization:
+            return self
+        if self.action != "reprocess":
+            raise ValueError("disable_diarization only applies to action='reprocess'")
+        if self.stages and "transcription" not in self.stages:
+            raise ValueError(
+                "disable_diarization only applies when the 'transcription' stage is "
+                "reprocessed; re-diarizing or re-running downstream stages cannot skip "
+                "diarization"
+            )
+        return self
+
 
 class BulkActionResult(BaseModel):
     """Result of bulk file operations."""
@@ -110,7 +128,7 @@ def get_file_status_detail(
     try:
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+            db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
         )
         file_id = db_file.id  # Get internal ID for task operations
 
@@ -208,12 +226,11 @@ def cancel_file_processing(
 ):
     """Cancel active processing for a file."""
     try:
-        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
             db,
             file_uuid,
             current_user.id,
-            is_admin=is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )
@@ -265,7 +282,7 @@ def retry_file_processing(
             db,
             file_uuid,
             current_user.id,
-            is_admin=is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )
@@ -318,11 +335,10 @@ def retry_file_processing(
         import os
 
         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-            # Preserve diarization setting from original processing run
-            disable_diarization = bool(getattr(db_file, "diarization_disabled", False))
+            # Re-run with what the file was submitted with: model, speaker range, and
+            # diarization only if it was skipped (issue #1203).
             task_id = dispatch_transcription_pipeline(
-                file_uuid=file_uuid,
-                disable_diarization=disable_diarization,
+                file_uuid=file_uuid, reuse_requested_options=True
             )
             logger.info(f"Started retry task {task_id} for file {file_id}")
             return {
@@ -364,12 +380,11 @@ def recover_file(
 ):
     """Attempt to recover a stuck file."""
     try:
-        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
             db,
             file_uuid,
             current_user.id,
-            is_admin=is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )
@@ -417,7 +432,14 @@ def force_delete_file(
         )
 
     try:
-        delete_media_file(db, file_uuid, current_user, force=True, organization_id=ctx.org_id)
+        delete_media_file(
+            db,
+            file_uuid,
+            current_user,
+            force=True,
+            organization_id=ctx.org_id,
+            bypass=ctx.bypass,
+        )
         return {"message": "File force deleted successfully", "file_uuid": file_uuid}
 
     except HTTPException:
@@ -444,8 +466,6 @@ def get_stuck_files(
     try:
         stuck_file_ids = check_for_stuck_files(db, threshold_hours)
 
-        # Get file details for user's files only (unless admin)
-        is_admin = current_user.is_admin
         stuck_files = []
 
         for file_id in stuck_file_ids:
@@ -454,7 +474,7 @@ def get_stuck_files(
                 from app.api.endpoints.files.crud import get_media_file_by_id
 
                 db_file = get_media_file_by_id(
-                    db, file_id, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+                    db, file_id, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
                 )
                 stuck_files.append(
                     {
@@ -500,6 +520,7 @@ def _handle_delete_action(
     current_user: User,
     force: bool,
     is_admin: bool,
+    bypass: PlatformBypass,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
 ) -> BulkActionResult:
@@ -524,6 +545,7 @@ def _handle_delete_action(
             force=force and is_admin,
             organization_id=organization_id,
             is_org_admin=is_org_admin,
+            bypass=bypass,
         )
     except HTTPException as e:
         if e.status_code != status.HTTP_403_FORBIDDEN:
@@ -606,7 +628,7 @@ def _handle_retry_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
         message = f"Retry started (task: {task_id})"
     else:
         message = "Retry prepared (test mode)"
@@ -645,6 +667,7 @@ def _handle_reprocess_action(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    disable_diarization: bool = False,
 ) -> BulkActionResult:
     """Handle reprocess action for bulk operations.
 
@@ -732,6 +755,7 @@ def _handle_reprocess_action(
             num_speakers,
             file_id=file_id,
             user_id=int(db_file.user_id),
+            disable_diarization=disable_diarization,
         )
         message = f"Selective reprocessing started (stages: {', '.join(stages)})"
         return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
@@ -747,7 +771,14 @@ def _handle_reprocess_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(
+            file_uuid=file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+            # False must reach the pipeline as "not asked" (see start_reprocessing_task).
+            disable_diarization=True if disable_diarization else None,
+        )
         message = f"Reprocessing started (task: {task_id})"
     else:
         message = "Reprocessing prepared (test mode)"
@@ -947,7 +978,7 @@ def _handle_tag_action(
     *,
     add: bool,
     user_id: int,
-    is_admin: bool,
+    bypass: PlatformBypass,
 ) -> BulkActionResult:
     """Attach or detach the batch's tag on one file, as a per-file outcome.
 
@@ -955,7 +986,7 @@ def _handle_tag_action(
     outcome onto the bulk envelope.
     """
     applied = apply_tag_to_file(
-        db, file_id=file_id, tag=tag, add=add, user_id=user_id, is_admin=is_admin
+        db, file_id=file_id, tag=tag, add=add, user_id=user_id, bypass=bypass
     )
     return BulkActionResult(
         file_uuid=file_uuid,
@@ -966,18 +997,70 @@ def _handle_tag_action(
     )
 
 
+class RedactionNotEnabledError(HTTPException):
+    """The viewer's redaction policy masks nothing, so a scan could change nothing visible."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Redaction is not enabled. Turn it on and choose at least one "
+            "category in Settings > Content Redaction before running a scan.",
+        )
+
+
+def _require_redaction_enabled(
+    db: Session,
+    db_file: MediaFile,
+    current_user: User,
+    bypass: PlatformBypass,
+    organization_id: OrgScope,
+) -> None:
+    """Refuse a redaction scan when the governing policy would mask nothing.
+
+    Uses the same policy resolution as the transcript read, so the button the UI
+    shows and the action the server accepts can never disagree.
+    """
+    from app.api.endpoints.files.crud import _resolve_redaction_for_request
+
+    cfg, _ = _resolve_redaction_for_request(
+        db,
+        db_file,
+        current_user,
+        bypass=bypass,
+        redact=True,
+        organization_id=organization_id,
+    )
+    if not cfg.masks_anything:
+        raise RedactionNotEnabledError()
+
+
+def _redact_if_enabled(
+    db: Session,
+    db_file: MediaFile,
+    file_uuid: str,
+    file_id: int,
+    current_user: User,
+    bypass: PlatformBypass,
+    organization_id: OrgScope,
+) -> BulkActionResult:
+    _require_redaction_enabled(db, db_file, current_user, bypass, organization_id)
+    return _handle_redact_action(db, file_uuid, file_id)
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
     action: str,
     current_user: User,
     is_admin: bool,
+    bypass: PlatformBypass,
     force: bool,
     reset_retry_count: bool,
     stages: list[str] | None = None,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    disable_diarization: bool = False,
     organization_id: OrgScope = UNSCOPED,
     tag: Tag | None = None,
     is_org_admin: bool = False,
@@ -988,14 +1071,14 @@ def _process_single_file_action(
         # not the "editor" pre-check below: an editor share must NOT pass, and an
         # org admin with no share on a member's file must (issue #1103).
         return _handle_delete_action(
-            db, file_uuid, current_user, force, is_admin, organization_id, is_org_admin
+            db, file_uuid, current_user, force, is_admin, bypass, organization_id, is_org_admin
         )
 
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=bypass,
         organization_id=organization_id,
         min_permission="editor",
     )
@@ -1006,18 +1089,28 @@ def _process_single_file_action(
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
         "reprocess": lambda: _handle_reprocess_action(
-            db, file_uuid, file_id, is_admin, stages, min_speakers, max_speakers, num_speakers
+            db,
+            file_uuid,
+            file_id,
+            is_admin,
+            stages,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            disable_diarization,
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
-        "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
+        "redact": lambda: _redact_if_enabled(
+            db, db_file, file_uuid, file_id, current_user, bypass, organization_id
+        ),
         "identify_speakers": lambda: _handle_identify_speakers_action(
             db, file_uuid, file_id, current_user.id
         ),
         "add_tag": lambda: _handle_tag_action(
-            db, file_uuid, file_id, tag, add=True, user_id=current_user.id, is_admin=is_admin
+            db, file_uuid, file_id, tag, add=True, user_id=current_user.id, bypass=bypass
         ),
         "remove_tag": lambda: _handle_tag_action(
-            db, file_uuid, file_id, tag, add=False, user_id=current_user.id, is_admin=is_admin
+            db, file_uuid, file_id, tag, add=False, user_id=current_user.id, bypass=bypass
         ),
     }
 
@@ -1070,17 +1163,23 @@ def bulk_file_action(
                     action=request.action,
                     current_user=current_user,
                     is_admin=is_admin,
+                    bypass=ctx.bypass,
                     force=request.force,
                     reset_retry_count=request.reset_retry_count,
                     stages=request.stages if request.stages else None,
                     min_speakers=request.min_speakers,
                     max_speakers=request.max_speakers,
                     num_speakers=request.num_speakers,
+                    disable_diarization=bool(request.disable_diarization),
                     organization_id=ctx.org_id,
                     tag=tag,
                     is_org_admin=ctx.is_org_admin,
                 )
                 results.append(result)
+            except RedactionNotEnabledError:
+                # A policy-wide refusal, not a per-file failure: surface it as the 409
+                # it is so the caller sees why instead of a 200 with an inner error.
+                raise
             except HTTPException as e:
                 results.append(
                     BulkActionResult(

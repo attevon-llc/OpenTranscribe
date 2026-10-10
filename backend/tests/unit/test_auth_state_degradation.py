@@ -54,12 +54,16 @@ def test_the_stateful_globals_list_covers_every_cached_value():
     auditor exists to catch.
 
     Scoped to values that look like a CACHE (None / bool / int / float). Locks, modules,
-    classes and functions are machinery and are excluded by construction.
+    classes and functions are machinery and are excluded by construction, and so are
+    ALL_CAPS names: a constant (``_SCAN_BATCH_MAX_ROUNDS = 20``) is never reassigned, so it
+    cannot carry state from one test into the next. Every cache global here is lowercase.
     """
     missed: list[str] = []
     for module in _STATE_MODULES:
         for name, value in vars(module).items():
             if not name.startswith("_") or name.startswith("__"):
+                continue
+            if name.isupper():
                 continue
             if not isinstance(value, (bool, int, float, type(None))):
                 continue

@@ -15,7 +15,7 @@ original (unless an administrator has forced a category for compliance).
 
 Redaction is **opt-in (off by default)** — it adds a moderation scan after transcription
 and delays the transcript display until the scan completes, so each user enables it
-explicitly in **Settings → Content Redaction** (administrators can force it for everyone).
+explicitly in **Settings → Privacy & Redaction → Content Redaction** (administrators can force it for everyone).
 Detection only runs for users who have it enabled.
 
 ## How it works
@@ -42,7 +42,7 @@ enrichment). Detection is fast (see Performance), so this is typically seconds.
 
 Redaction combines **rule-based** detection (instant, deterministic) with **lightweight
 ML** (for things rules can't catch, like names). You can enable/disable each detector in
-**Settings → Content Redaction**.
+**Settings → Privacy & Redaction → Content Redaction**.
 
 | Detector | Method | Model / technique | Speed (CPU) | Notes |
 |---|---|---|---|---|
@@ -157,7 +157,7 @@ regex — that part is always exact. They differ only in **name/org/location** d
 
 - **Fast (default):** spaCy `en_core_web_sm` NER. Good recall on common English names,
   ~8 ms/segment. This is what GLiNER does *not* add for typical English content.
-- **GLiNER (admin opt-in, Settings → Redaction Policy):** a zero-shot model with notably
+- **GLiNER (admin opt-in, Settings → Privacy & Redaction → Redaction Policy):** a zero-shot model with notably
   better recall on **diverse / non-Western / uncommon names**, and it also detects
   **addresses** as spans. The cost is ~9× slower on CPU (use a GPU). Toggle it in the
   admin Redaction Policy; changing it affects new transcripts, and **Re-scan all files**
@@ -198,11 +198,11 @@ Detection runs in the transcript's language. Coverage today:
 
 If a transcript's language **isn't supported** by a detector, that detector is **skipped**
 for the file and you're **notified** — nothing is silently mis-scanned. The supported
-languages are shown in **Settings → Content Redaction**.
+languages are shown in **Settings → Privacy & Redaction → Content Redaction**.
 
 ## Settings
 
-### Per-user (Settings → Content Redaction)
+### Per-user (Settings → Privacy & Redaction → Content Redaction)
 
 Off by default (opt-in). Each user controls, for their **own** uploads:
 
@@ -215,7 +215,7 @@ Off by default (opt-in). Each user controls, for their **own** uploads:
 - Whether to mask before sending to AI/LLM features
 - Whether exports are censored by default
 
-### Admin governance (Settings → Redaction Policy)
+### Admin governance (Settings → Privacy & Redaction → Redaction Policy)
 
 Administrators can **force** redaction for everyone (compliance floor). Forced categories
 cannot be disabled by individual users — they may only add *more* redaction. Admins can:

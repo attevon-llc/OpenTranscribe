@@ -781,8 +781,9 @@ independently-decided masking pass.
   is never built by parsing model prose beyond the `[n]` marker.
 - **`EXPANDED_SNIPPET_CHARS`/the `expanded` context-expansion path.** Unrelated
   to this fix and untouched — it is chunk-only by construction
-  (`needs_expansion` excludes digests) and unreachable on shipped defaults
-  (`context_expansion` is behind a default-off flag).
+  (`needs_expansion` excludes digests). `chat.rag.context_expansion_enabled` is
+  default-ON as of issue #523's closure (2026-09-21), so this path is reachable
+  on shipped defaults — see `constants.py`'s `DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED`.
 
 ## The chunk-plane cap was raised, and the "REMOTE provider" framing that gated it was wrong (issue #913)
 

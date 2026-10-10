@@ -80,14 +80,19 @@ class ReprocessRequest(BaseModel):
     )
     disable_diarization: bool | None = Field(
         None,
-        description="Skip speaker diarization entirely",
+        description=(
+            "Skip speaker diarization for this run. Only meaningful when the transcription "
+            "stage runs (a full reprocess, or stages containing 'transcription'); any other "
+            "stage selection is rejected with 422."
+        ),
     )
     whisper_model: str | None = Field(
         None,
         description="Whisper model to use for reprocessing. "
         "None = use admin-configured default. "
-        "Only applies to local ASR provider.",
-        examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
+        "Only applies to local ASR provider. Accepts the deployment's model or a "
+        "lightweight CPU model (tiny, base); anything else is rejected with 422.",
+        examples=["tiny", "base", "large-v3-turbo"],
     )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
@@ -110,6 +115,17 @@ class ReprocessRequest(BaseModel):
                 f"Unknown Whisper model '{v}'. Valid models: {sorted(VALID_LOCAL_WHISPER_MODELS)}"
             )
         return v or None
+
+    @model_validator(mode="after")
+    def validate_disable_diarization_stage(self) -> "ReprocessRequest":
+        """``disable_diarization`` only changes a run that transcribes."""
+        if self.disable_diarization and self.stages and "transcription" not in self.stages:
+            raise ValueError(
+                "disable_diarization only applies when the 'transcription' stage is "
+                "reprocessed; re-diarizing or re-running downstream stages cannot skip "
+                "diarization"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_min_max_speakers(self) -> "ReprocessRequest":
@@ -191,8 +207,9 @@ class PrepareUploadRequest(BaseModel):
         None,
         description="Whisper model to use for this file. "
         "None = use admin-configured default. "
-        "Only applies to local ASR provider.",
-        examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
+        "Only applies to local ASR provider. Accepts the deployment's model or a "
+        "lightweight CPU model (tiny, base); anything else is rejected with 422.",
+        examples=["tiny", "base", "large-v3-turbo"],
     )
     use_presigned: bool | None = Field(
         False,
@@ -585,6 +602,13 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     thumbnail_path: str | None = None
     thumbnail_url: str | None = None
 
+    #: Authoritative takedown flag (issue #570/#576 wire contract). The gallery loads
+    #: this schema whole for every page, so this is the one field cheap enough to put
+    #: here; the reason/timestamp/hold detail live on `MediaFileDetail` only. A
+    #: non-admin can never SEE a quarantined row at all (`takedown_service.is_hidden_for`),
+    #: so this can only ever be `False` in a non-admin response — no admin-only
+    #: serialization branch is needed or added.
+    is_quarantined: bool = False
     # Whether the caller may permanently delete this file: its owner, an org admin
     # of its organization, or a platform admin (issue #1103). Set by the gallery
     # list endpoint; None where a response does not compute it.
@@ -696,6 +720,13 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
 
 
 class MediaFileDetail(MediaFile):
+    #: Detail-only takedown fields — kept off the list schema (§B.3): a `Text` reason
+    #: is not free on a ~70-column row loaded for every gallery page, and nothing in
+    #: the gallery renders it. `is_quarantined` itself is inherited from `MediaFile`.
+    quarantine_reason: str | None = None
+    quarantined_at: datetime | None = None
+    legal_hold: bool = False
+
     transcript_segments: list[TranscriptSegment] = []
     # Pre-grouped view of transcript_segments (overlap groups kept together).
     # Mirrors the frontend grouping so it can render groups without recomputing.
@@ -740,6 +771,10 @@ class MediaFileDetail(MediaFile):
     # "redaction in progress" state instead of un-redacted text.
     redaction_status: str | None = None  # pending | processing | done | failed | None
     redaction_pending: bool = False
+    # Whether the viewer's effective policy would mask anything (switch on AND a category
+    # enabled). The UI offers "Run redaction" only when true; the rescan action refuses
+    # (409) otherwise.
+    redaction_enabled: bool = False
 
     # Transcript pagination metadata
     total_segments: int | None = None  # Total number of transcript segments

@@ -10,23 +10,27 @@
   import "../styles/tables.css";
   import "../styles/animations.css";
   import "../styles/search.css";
+  import "../styles/support-access.css";
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
-  import { loadCapabilities } from "$stores/capabilities";
+  import { capabilities, loadCapabilities } from "$stores/capabilities";
+  import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
-  import { locale } from "../stores/locale";
+  import { locale, localeReady, t } from "$stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
   import { resetScrollLock } from '$lib/scrollLock';
   import { initMonitoring } from '$lib/monitoring';
+  import { initDownloadNotifications } from '$lib/services/downloadNotifications';
   import { runStartup } from '$lib/startup';
   import { settingsModalStore } from '$stores/settingsModalStore';
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
+  import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
@@ -99,6 +103,15 @@
     llmStatusStore.initialize();
   }
 
+  // A support-access session lives in this tab's sessionStorage (issue #1122). Re-validate it
+  // once the session and the tenancy mode are both known; it clears silently if the grant
+  // is no longer active or the deployment is not multi-tenant.
+  let supportRestoreTried = false;
+  $: if ($isAuthenticated && $capabilities.loaded && !supportRestoreTried) {
+    supportRestoreTried = true;
+    void supportSession.restore();
+  }
+
   // Classification banner state
   let bannerEnabled = false;
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
@@ -158,6 +171,10 @@
         getAuthMethods,
         initAuth,
       });
+
+      // Bridges downloadStore transitions into the persistent bell (#569). Needs the
+      // locale initialised first so its notification copy isn't built pre-translation.
+      initDownloadNotifications();
 
       if (authMethods?.login_banner_enabled) {
         bannerEnabled = true;
@@ -221,7 +238,9 @@
 
 </script>
 
-{#if $authReady}
+<!-- Locale and auth start concurrently (runStartup), so wait for both: rendering on
+     auth alone painted the shell against an uninitialised i18next (raw nav keys). -->
+{#if $authReady && $localeReady}
   <!-- PUBLIC_PATHS is defined once, in the script block, and shared with the
        imperative guard above. Do not reintroduce a second copy here. -->
   {@const isPublicPath = PUBLIC_PATHS.includes($page.url.pathname)}
@@ -234,10 +253,15 @@
     />
   {/if}
 
-  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} class:has-support-banner={$supportSession.active} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+    <!-- First focusable element in the app. Visually hidden until :focus-visible so it
+         doesn't disturb sighted layout, but never display:none/visibility:hidden — that
+         would remove it from the focus order and defeat the point (issue #785). -->
+    <a href="#main-content" class="skip-link">{$t('a11y.skipToContent')}</a>
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
+      {#if $supportSession.active}<SupportAccessBanner />{/if}
       <NotificationsPanel />
       <UploadManager />
       {#if SettingsModal}<svelte:component this={SettingsModal} />{/if}
@@ -259,17 +283,22 @@
            remedy, so render /login bare — chrome would only offer dead links.
            `password_change_required` keeps the session; `account_expired` has
            already torn it down. -->
-      <main class="content no-navbar">
+      <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
-    {:else if $isAuthenticated && !isPublicPath}
+    {:else if $isAuthenticated && !isPublicPath && !$supportSession.restoring}
       <!-- Authenticated user on a protected route — render the app -->
-      <AppContent>
-        <slot />
-      </AppContent>
+      <!-- A support session switches which tenant the same login reads. Keying on the grant
+           remounts the page on both edges, so nothing rendered under one scope survives into
+           the other (a same-route goto would not refetch). -->
+      {#key $supportSession.grantUuid}
+        <AppContent>
+          <slot />
+        </AppContent>
+      {/key}
     {:else if !$isAuthenticated && isPublicPath}
       <!-- Unauthenticated user on a public page (login/register/forgot-password) — render it -->
-      <main class="content no-navbar">
+      <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
     {:else}
@@ -306,9 +335,42 @@
     min-height: 100dvh;
   }
 
+  /* Clipped off-screen rather than display:none/visibility:hidden, which would remove it
+     from the focus order and defeat the point (issue #785). Revealed on :focus-visible. */
+  .skip-link {
+    position: absolute;
+    top: -9999px;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    background: var(--color-primary);
+    color: white;
+    z-index: var(--z-critical, 10000);
+  }
+
+  .skip-link:focus-visible {
+    top: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    height: auto;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
   /* Offset for classification banner (approx 28px) */
   .app.has-banner {
     padding-top: 28px;
+  }
+
+  /* A support-access banner sits fixed under the navbar; its measured height (it wraps on narrow
+     screens) is published as --support-banner-height, and every page that sizes itself from
+     --content-top follows. */
+  .app.has-support-banner {
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px));
   }
 
   /* Push navbar down when banner is present */

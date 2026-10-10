@@ -51,6 +51,8 @@ from .llm_settings import ConnectionTestResponse
 from .llm_settings import ContextWindowCapability
 from .llm_settings import LLMProvider
 from .llm_settings import LLMSettingsStatus
+from .llm_settings import LocalEndpointsResponse
+from .llm_settings import LocalEndpointStatus
 from .llm_settings import ProviderDefaults
 from .llm_settings import ReasoningCapability
 from .llm_settings import SetActiveConfigRequest
@@ -164,6 +166,8 @@ __all__ = [
     "ProviderDefaults",
     "SupportedProvidersResponse",
     "LLMSettingsStatus",
+    "LocalEndpointStatus",
+    "LocalEndpointsResponse",
     "ContextWindowCapability",
     "ReasoningCapability",
     "TranscriptionSettings",

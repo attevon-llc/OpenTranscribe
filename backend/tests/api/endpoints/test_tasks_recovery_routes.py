@@ -350,9 +350,11 @@ def test_recovering_a_stuck_transcription_requeues_the_pipeline(
     media_file = make_media_file(db_session, int(normal_user.id))
     task = _stuck_task(db_session, normal_user, media_file, task_type="transcription")
     dispatched: list[str] = []
+    reused: list[bool] = []
 
-    def _record(*, file_uuid: str) -> str:
+    def _record(*, file_uuid: str, reuse_requested_options: bool = False) -> str:
         dispatched.append(file_uuid)
+        reused.append(reuse_requested_options)
         return "stand-in-pipeline-id"
 
     with patch("app.tasks.transcription.dispatch_transcription_pipeline", _record):
@@ -361,6 +363,8 @@ def test_recovering_a_stuck_transcription_requeues_the_pipeline(
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["retry_scheduled"] is True
     assert dispatched == [str(media_file.uuid)]
+    # A re-run must replay the file's own request, not fall back to defaults (issue #1203).
+    assert reused == [True]
 
 
 def test_recovering_an_unknown_task_is_404(client, admin_token_headers):

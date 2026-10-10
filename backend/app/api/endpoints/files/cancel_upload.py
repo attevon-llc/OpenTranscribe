@@ -13,7 +13,6 @@ from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.minio_service import delete_file
 
 logger = logging.getLogger(__name__)
 
@@ -79,31 +78,42 @@ def cancel_upload(
             current_user,
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
+            bypass=ctx.bypass,
         )
         return None
 
     file_id = db_file.id
 
+    # PENDING does not mean "never processed". Retry, reprocess and stuck-file recovery
+    # all put a TRANSCRIBED file back to pending with its transcript, OpenSearch
+    # documents, voiceprints, thumbnail and playback rendition intact. This branch used
+    # to delete only ``storage_path`` and the row, which orphaned every one of those
+    # copies — including the verbatim transcript in the search index. The destroy is
+    # therefore the canonical one; the only step this branch adds is aborting a
+    # browser-side multipart upload, whose parts no other path knows to look for.
+    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
+    from app.services.file_cleanup_service import purge_media_file
+
     try:
-        # Delete the file from storage if it was partially uploaded
         if db_file.storage_path:
-            # A cancelled browser-side multipart upload leaves its parts in the
-            # bucket, and S3/MinIO bill for them until the upload is aborted —
-            # deleting the (nonexistent) final object would not touch them.
-            # The upload_id is client state, so the uploads are found by key.
+            # A cancelled multipart upload leaves its parts in the bucket, billed until
+            # aborted; the upload_id is client state, so they are found by key.
             from app.services.multipart_upload import abort_uploads_for_object
 
             abort_uploads_for_object(str(db_file.storage_path))
-            try:
-                delete_file(str(db_file.storage_path))
-                logger.info(f"Deleted partial upload: {db_file.storage_path}")
-            except Exception as e:
-                logger.exception(f"Error deleting file {db_file.storage_path}: {e}")
-                # Continue with cleanup even if file deletion fails
 
-        # Delete the database record
-        db.delete(db_file)
-        db.commit()
+        result = purge_media_file(db, db_file)
+        if result.get("refused_legal_hold"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": LEGAL_HOLD_ERROR_CODE,
+                    "message": result.get("error"),
+                    "file_id": str(file_uuid),
+                },
+            )
+        if not result["deleted"]:
+            raise RuntimeError(result.get("error") or "purge_media_file failed")
         logger.info(f"Cancelled upload for file ID {file_id}")
 
     except HTTPException:

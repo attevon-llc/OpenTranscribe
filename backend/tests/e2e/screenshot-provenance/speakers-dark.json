@@ -1,0 +1,21 @@
+{
+  "baseline": "__screenshots__/speakers-dark.png",
+  "captured_at": "2026-10-09T14:40:09Z",
+  "git_sha": "0f0038ddc6b6715e0eaa6de18a2de8a616f82b61",
+  "git_branch": "feat/v0.6.0-frontend-ux",
+  "git_dirty": true,
+  "git_dirty_paths": 1,
+  "reason": "speakers: capture chrome above the model-output cluster list; fonts awaited",
+  "captured_by": "scripts/e2e/update-visual-baselines.sh",
+  "stack": {
+    "compose_project": "otfresh-visual",
+    "port_offset": 100,
+    "gpu_device": null,
+    "seeded": true,
+    "mode": "dev (local source bind-mounted)"
+  },
+  "change_from_previous": {
+    "status": "CHANGED",
+    "differing_pixels": "57.5000%"
+  }
+}

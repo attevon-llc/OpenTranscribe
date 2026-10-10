@@ -54,9 +54,22 @@ vi.mock('$lib/api/userApprovals', () => ({
   isAlreadyDecided: () => false,
 }));
 
+// The redaction panels' own loading is out of scope here; a request that never settles
+// keeps them in their loading state so only the tab shell is under test.
+vi.mock('$lib/api/redactionSettings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/api/redactionSettings')>();
+  const pending = () => new Promise(() => {});
+  return {
+    ...actual,
+    getRedactionSettings: pending,
+    getRedactionDefaults: pending,
+    getRedactionPolicy: pending,
+  };
+});
+
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
-import { settingsModalStore } from '$stores/settingsModalStore';
+import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
 
@@ -158,7 +171,7 @@ describe('privilege-gated sidebar sections', () => {
 
     // Absent entirely — distinct from a privilege-gated item, which stays
     // present, disabled, and carrying a lock icon (checked in the test above).
-    expect(navItem(container, 'settings.asrProvider.title')).toBeNull();
+    expect(navItem(container, 'settings.aiPrompts.title')).toBeNull();
   });
 
   // Issue #1141: the URL Import Quality entry was gated on `exports`, so it showed
@@ -190,6 +203,239 @@ describe('privilege-gated sidebar sections', () => {
 
       expect(navItem(container, 'settings.download.title')).not.toBeNull();
     });
+  });
+});
+
+describe('merged Privacy & Redaction section', () => {
+  function sectionOf(container: HTMLElement, label: string): string | null {
+    const item = navItem(container, label);
+    return (
+      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+      null
+    );
+  }
+
+  it('lists ONE redaction row, not separate Content Redaction and Redaction Policy rows', async () => {
+    setUser('super_admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.privacyRedaction.title')).not.toBeNull();
+    expect(navItem(container, 'settings.contentRedaction.title')).toBeNull();
+    expect(navItem(container, 'settings.redactionPolicy.title')).toBeNull();
+  });
+
+  it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
+    setUser('user');
+    settingsModalStore.open('content-redaction');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.privacyRedaction.title')).not.toBeNull();
+    expect(container.querySelector('[data-testid="privacy-redaction-panel"]')).not.toBeNull();
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+  });
+
+  it('shows an admin the policy tab disabled with the super-admin reason', async () => {
+    setUser('admin');
+    settingsModalStore.open('content-redaction');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    const policyTab = container.querySelector('#tab-policy') as HTMLButtonElement | null;
+    expect(policyTab).not.toBeNull();
+    expect(policyTab?.disabled).toBe(true);
+    expect(policyTab?.getAttribute('title')).toBe('settings.nav.requiresSuperAdmin');
+    expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('opens the policy tab for a super admin via the legacy redaction-policy id', async () => {
+    setUser('super_admin');
+    settingsModalStore.open('redaction-policy');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(container.querySelector('#tab-policy')?.getAttribute('aria-selected')).toBe('true');
+    // the alias highlights the merged row rather than leaving the sidebar blank
+    expect(
+      navItem(container, 'settings.privacyRedaction.title')?.classList.contains('active')
+    ).toBe(true);
+  });
+
+  it('lands a plain admin deep-linking to redaction-policy on the personal tab, not a blank pane', async () => {
+    setUser('admin');
+    settingsModalStore.open('redaction-policy');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('Transcription and Speaker Identification sections', () => {
+  function sectionOf(container: HTMLElement, label: string): string | null {
+    const item = navItem(container, label);
+    return (
+      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+      null
+    );
+  }
+
+  const engineValue = (value: unknown) => ({ value, source: 'default' });
+  async function openAs(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+    mockAxios.get.mockImplementation(async (url: string) => ({
+      data:
+        url === '/admin/engine-settings'
+          ? {
+              diarizer_backend: engineValue('native'),
+              diarizer_require_sidecar: engineValue(false),
+              boundary_smoothing_enabled: engineValue(true),
+              boundary_acoustic_recheck_enabled: engineValue(false),
+              boundary_acoustic_cosine_margin: engineValue(0.05),
+              boundary_acoustic_max_word_dur: engineValue(1.0),
+            }
+          : url === '/embeddings/migration/status'
+            ? { current_mode: 'v4', migration_needed: false }
+            : {},
+    }));
+    setUser(role);
+    settingsModalStore.open(section);
+    const view = render(SettingsModal);
+    await waitForOpen(view.container);
+    return view;
+  }
+  const tab = (container: HTMLElement, id: string) =>
+    container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
+  it('has no engine-settings, asr-provider, vocabulary or attributes row, for any role', async () => {
+    for (const role of ['user', 'admin', 'super_admin'] as const) {
+      const { container, unmount } = await openAs(role, 'recording');
+      for (const key of [
+        'settings.engineSettings.title',
+        'settings.asrProvider.title',
+        'settings.customVocabulary.title',
+        'settings.speakerAttributes.navTitle',
+      ]) {
+        expect(navItem(container, key)).toBeNull();
+      }
+      unmount();
+    }
+  });
+
+  it('lists the two rows under one group, and Auto-Labeling under AI & Chat', async () => {
+    const { container } = await openAs('user', 'recording');
+    expect(sectionOf(container, 'settings.transcription.title')).toBe(
+      'settings.sections.transcription'
+    );
+    expect(sectionOf(container, 'settings.speakerIdentification.title')).toBe(
+      'settings.sections.transcription'
+    );
+    expect(sectionOf(container, 'autoLabel.title')).toBe('settings.sections.aiChat');
+  });
+
+  it('shows a plain user the speaker-identification row but not the engine or maintenance tabs', async () => {
+    const { container } = await openAs('user', 'speaker-identification');
+    expect(
+      container.querySelector('[data-testid="speaker-identification-section"]')
+    ).not.toBeNull();
+    expect(tab(container, 'spk-detection')).not.toBeNull();
+    expect(tab(container, 'spk-attributes')).not.toBeNull();
+    expect(tab(container, 'spk-engine')).toBeNull();
+    expect(tab(container, 'spk-maintenance')).toBeNull();
+  });
+
+  it('opens engine-settings as an admin on the section, with the engine tab locked and not selected', async () => {
+    const { container } = await openAs('admin', 'engine-settings');
+    expect(
+      navItem(container, 'settings.speakerIdentification.title')?.classList.contains('active')
+    ).toBe(true);
+    const engine = tab(container, 'spk-engine');
+    expect(engine?.disabled).toBe(true);
+    expect(engine?.getAttribute('aria-selected')).toBe('false');
+    expect(engine?.getAttribute('title')).toBe('settings.nav.requiresSuperAdmin');
+  });
+
+  it.each([
+    ['super_admin', 'engine-settings', 'spk-engine'],
+    ['user', 'speaker-attributes', 'spk-attributes'],
+    ['user', 'asr-provider', 'tx-provider'],
+    ['user', 'custom-vocabulary', 'tx-vocabulary'],
+    ['user', 'transcription', 'tx-language'],
+    ['user', 'speaker-identification', 'spk-detection'],
+  ] as const)('%s opening %s lands on tab %s', async (role, section, tabId) => {
+    const { container } = await openAs(role, section as SettingsSection);
+    expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps each old id working in the mobile picker with a matching option', async () => {
+    const { container } = await openAs('user', 'asr-provider');
+    const select = container.querySelector('.mobile-nav-select') as HTMLSelectElement;
+    expect(select.value).toBe('transcription');
+  });
+
+  it('drops the provider tab, not the whole row, when the ASR capability is off', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'asr.user_providers': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = await openAs('user', 'transcription');
+    expect(navItem(container, 'settings.transcription.title')).not.toBeNull();
+    expect(tab(container, 'tx-provider')).toBeNull();
+    expect(tab(container, 'tx-language')).not.toBeNull();
+  });
+
+  it('follows the Maintenance link card to the Speaker Embedding System section', async () => {
+    const { container } = await openAs('super_admin', 'speaker-identification');
+    await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+    const button = await waitFor(() => {
+      const el = container.querySelector('[data-testid="embedding-link-card"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(
+        navItem(container, 'settings.embeddingMigration.title')?.classList.contains('active')
+      ).toBe(true)
+    );
+  });
+
+  it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
+    const { container } = await openAs('admin', 'embedding-migration');
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="embedding-migration-locked"]')).not.toBeNull()
+    );
+    expect(mockAxios.get).not.toHaveBeenCalledWith('/embeddings/migration/status');
+  });
+
+  it('leaves the embedding migration unlocked and loaded for a super admin (#1208)', async () => {
+    const { container } = await openAs('super_admin', 'embedding-migration');
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/embeddings/migration/status'));
+    expect(container.querySelector('[data-testid="embedding-migration-locked"]')).toBeNull();
+  });
+
+  it('keeps the modal heading the first .section-title in the content area', async () => {
+    const { container } = await openAs('super_admin', 'speaker-attributes');
+    const first = container.querySelector('.settings-content .section-title');
+    expect(first?.textContent?.trim()).toBe('settings.speakerIdentification.title');
+  });
+
+  it('passes the unsaved flag of a child form up to the section row', async () => {
+    const { container } = await openAs('user', 'speaker-identification');
+    await waitFor(() =>
+      expect(container.querySelector('#diarization-source, #speaker-behavior')).not.toBeNull()
+    );
+    const select = container.querySelector('#speaker-behavior') as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: 'use_custom' } });
+    await waitFor(() =>
+      expect(
+        navItem(container, 'settings.speakerIdentification.title')?.classList.contains('dirty')
+      ).toBe(true)
+    );
   });
 });
 

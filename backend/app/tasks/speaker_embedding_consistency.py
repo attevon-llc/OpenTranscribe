@@ -31,6 +31,8 @@ from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
+from app.tasks.opensearch_integrity_task import _exceeds_delete_ratio
+from app.tasks.opensearch_integrity_task import _speaker_uuids_present
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -288,6 +290,45 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
     }
 
 
+def _select_voiceprints_to_remove(
+    os_all: set[str], pg_with_segments: set[str], all_pg: set[str]
+) -> tuple[set[str], set[str]]:
+    """Which indexed voiceprints the consistency sweep may delete: ``(stale, orphans)``.
+
+    ``stale`` are speakers that exist but have no segments; ``orphans`` are speakers
+    Postgres does not hold at all. The same two refusals the index orphan sweep has
+    (``opensearch_integrity_task``), plus its pre-delete re-check, because this runs
+    every 10 minutes and voiceprints are biometric data that is NOT rebuildable from
+    Postgres (re-extraction needs the audio and a GPU):
+
+    * an EMPTY Postgres side deletes nothing — every voiceprint would be an "orphan",
+      and an empty database looks exactly like a lost one;
+    * an orphan Postgres holds by the time it is re-asked (a speaker created after the
+      snapshot and already indexed) is kept;
+    * a selection exceeding the ratio guard deletes nothing.
+    """
+    stale = (os_all - pg_with_segments) & all_pg
+    orphans = os_all - all_pg
+    if orphans and not all_pg:
+        logger.error(
+            "Refusing voiceprint orphan cleanup: Postgres holds NO speakers, which would "
+            "make all %d indexed voiceprints orphans.",
+            len(orphans),
+        )
+        orphans = set()
+    elif orphans:
+        orphans -= _speaker_uuids_present(orphans)
+    if _exceeds_delete_ratio(len(os_all), len(stale) + len(orphans)):
+        logger.error(
+            "Refusing voiceprint cleanup: it would remove %d of %d indexed voiceprints. "
+            "Verify Postgres is intact before removing them.",
+            len(stale) + len(orphans),
+            len(os_all),
+        )
+        return set(), set()
+    return stale, orphans
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator task (CPU queue)
 # ---------------------------------------------------------------------------
@@ -375,8 +416,7 @@ def speaker_embedding_consistency_check_task(
         # have segments, or don't exist in PG at all). This is CPU-only work.
         # Check both v3 and v4 indices. remove_speaker_embedding() deletes from both.
         os_all = os_main | os_v4
-        stale_uuids = (os_all - pg_uuids) & all_pg_uuids  # In OS, in PG, but no segments
-        orphan_uuids = os_all - all_pg_uuids  # In OS but not in PG at all
+        stale_uuids, orphan_uuids = _select_voiceprints_to_remove(os_all, pg_uuids, all_pg_uuids)
         cleanup_uuids = stale_uuids | orphan_uuids
 
         cleaned = 0

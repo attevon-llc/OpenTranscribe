@@ -22,6 +22,7 @@ from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import UploadFile
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
@@ -32,8 +33,13 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
+from app.auth.rate_limit import get_directory_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
+from app.auth.utils import mask_email_for_display
 from app.core.capabilities import require_capability
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
@@ -48,11 +54,13 @@ from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
+from app.schemas.user import UserSearchResult
 from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
+from app.utils.whisper_model_choice import require_servable_whisper_model
 
 from . import cancel_upload
 from . import complete_upload
@@ -68,7 +76,9 @@ from .crud import set_file_urls
 from .crud import update_media_file
 from .crud import update_single_transcript_segment
 from .filtering import apply_all_filters
+from .filtering import get_accessible_owners
 from .filtering import get_metadata_filters
+from .filtering import resolve_owner_user_ids
 from .reprocess import process_file_reprocess
 from .segments import router as segments_router
 from .streaming import get_thumbnail_streaming_response
@@ -152,7 +162,7 @@ router.include_router(segments_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
 
-@router.post("", response_model=MediaFileSchema)
+@router.post("", response_model=MediaFileSchema, dependencies=[Depends(refuse_under_support_grant)])
 async def upload_media_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -214,6 +224,12 @@ def list_media_files(
         "mine",
         pattern="^(mine|shared|all)$",
         description="Filter: 'mine' (owned), 'shared' (via shared collections), 'all' (both)",
+    ),
+    # Specific-owner filter (issue #966), repeatable. Orthogonal to `ownership`:
+    # applied INSIDE whichever ownership-scoped file set that param already
+    # selected (see `resolve_owner_user_ids` / `apply_owner_filter`).
+    owner: list[UUID] | None = Query(
+        None, description="Filter to specific owner UUID(s); repeatable"
     ),
     # Existing filters
     search: str | None = None,
@@ -289,8 +305,7 @@ def list_media_files(
     # Admin users can see all files regardless of ownership param (still org-gated).
     # Admins also see quarantined (taken-down) files so they can review them; for
     # every other caller the abuse/DMCA exclusion hides taken-down files.
-    is_admin = current_user.is_admin
-    if is_admin:
+    if ctx.bypass.sees_all_in_scope:
         base_query = db.query(MediaFile).options(*list_options).filter(org_pred)
         effective_user_id = None
     elif ownership == "mine":
@@ -328,7 +343,7 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_quarantined(base_query, include_quarantined=is_admin)
+    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
 
     # Prepare filters dictionary
     filters = {
@@ -345,6 +360,7 @@ def list_media_files(
         "status": status,
         "transcript_search": transcript_search,
         "user_id": effective_user_id,
+        "owner_user_ids": resolve_owner_user_ids(db, owner),
         "organization_id": org_scope,
     }
 
@@ -384,13 +400,17 @@ def list_media_files(
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
-        set_file_urls(file)
+        set_file_urls(file, ctx.bypass)
 
         # Use the FormattingService method which handles formatting correctly
         # Pass speakers for speaker_summary in list view
         formatted_file = FormattingService.format_media_file(file, file.speakers)
         formatted_file.can_delete = can_delete_file(
-            current_user, file, organization_id=org_scope, is_org_admin=ctx.is_org_admin
+            current_user,
+            file,
+            organization_id=org_scope,
+            is_org_admin=ctx.is_org_admin,
+            bypass=ctx.bypass,
         )
         formatted_files.append(formatted_file)
 
@@ -411,6 +431,9 @@ def list_media_files(
 @router.get("/metadata-filters", response_model=dict)
 def get_metadata_filters_endpoint(
     ownership: str = Query("all", pattern="^(mine|shared|all)$"),
+    owner: list[UUID] | None = Query(
+        None, description="Filter to specific owner UUID(s); repeatable (issue #966)"
+    ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -421,8 +444,54 @@ def get_metadata_filters_endpoint(
         ctx.user.id,
         ownership=ownership,
         organization_id=ctx.org_id,
-        is_admin=ctx.user.is_admin,
+        include_quarantined=ctx.bypass.user_is_admin,
+        owner_user_ids=resolve_owner_user_ids(db, owner),
     )
+
+
+@router.get("/owners", response_model=list[UserSearchResult])
+@limiter.limit(get_directory_rate_limit(), key_func=user_or_ip_key)
+def list_file_owners(
+    request: Request,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
+):
+    """List the owners of files visible to the caller, for the gallery's
+    ownership filter (issue #966).
+
+    **Closed enumeration, not a directory search.** This deliberately takes
+    no free-text query parameter — the caller receives the (capped) list of
+    owners of files they can already see and narrows it client-side, the same
+    shape ``SearchableMultiSelect`` already uses for tags and collections. A
+    free-text parameter would turn an authorized list into an
+    account-probing oracle, which is exactly what this route must not be.
+
+    **Scope is `get_accessible_owners`**, which joins ``User`` against the
+    IDENTICAL predicate ``GET /files`` uses to decide what this caller can
+    see (``PermissionService.get_accessible_file_ids_subquery``, or the same
+    org-tenant predicate for an admin) — never the tenant-wide scope
+    ``GET /users/search`` uses for the sharing picker. A user who shares
+    nothing with anyone else, and with whom nothing is shared, sees only
+    themselves here.
+
+    **Rate-limited** the same way as ``GET /users/search``
+    (``RATE_LIMIT_DIRECTORY_PER_MINUTE``), as a volume/noise bound — the
+    authorization boundary is the join predicate above, not this limit.
+
+    **Payload-minimized**: reuses ``UserSearchResult`` — the exact wire shape
+    the sharing picker already exposes (``uuid``, ``full_name``,
+    ``masked_email``) — so this route exposes no more per-owner information
+    than the app already shows elsewhere.
+    """
+    owners = get_accessible_owners(db, ctx.user.id, organization_id=ctx.org_id, bypass=ctx.bypass)
+    return [
+        UserSearchResult(
+            uuid=u.uuid, full_name=u.full_name, masked_email=mask_email_for_display(u.email)
+        )
+        for u in owners
+    ]
 
 
 # =============================================================================
@@ -476,6 +545,7 @@ def get_media_file(
         segment_offset,
         redact=redact,
         organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
 
@@ -498,7 +568,7 @@ def get_media_file_info(
         db,
         str(file_uuid),
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
     )
 
@@ -528,7 +598,12 @@ def update_media_file_endpoint(
 ):
     """Update a media file's metadata"""
     return update_media_file(
-        db, str(file_uuid), media_file_update, ctx.user, organization_id=ctx.org_id
+        db,
+        str(file_uuid),
+        media_file_update,
+        ctx.user,
+        organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
 
@@ -550,7 +625,9 @@ def get_media_file_stream_url(
     Generate a short-lived presigned URL for secure media streaming.
 
     This follows AWS/GCS best practices for secure content delivery:
-    - Short expiration (5 minutes for video, 15 minutes for thumbnails)
+    - Bounded expiration (``MEDIA_URL_EXPIRE_SECONDS``, 6 hours by default, for video and audio;
+      ``THUMBNAIL_URL_EXPIRE_SECONDS``, 15 minutes, for thumbnails), capped at 5 minutes under a
+      support-access grant
     - Cryptographically signed by MinIO (AWS Signature V4)
     - User must be authenticated and authorized
 
@@ -578,9 +655,8 @@ def get_media_file_stream_url(
         )
 
     # Verify user has permission (ownership check, tenant-gated via ctx.org_id)
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     # Determine storage path and expiration based on media type
@@ -607,6 +683,10 @@ def get_media_file_stream_url(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{media_type.title()} not found for this file",
         )
+
+    # A presigned URL is a bearer token that survives revocation of a support-access grant,
+    # so under one it is capped to a few minutes (issue #1122); otherwise unchanged.
+    expires_seconds = ctx.bypass.presign_ttl(expires_seconds)
 
     # Generate presigned URL (uses existing minio_service function)
     import os
@@ -835,7 +915,7 @@ def _ensure_prepare_enqueued(
         )
 
 
-@router.post("/{file_uuid}/prepare-download")
+@router.post("/{file_uuid}/prepare-download", dependencies=[Depends(refuse_under_support_grant)])
 def prepare_download(
     file_uuid: str,
     mode: str = Query(
@@ -858,7 +938,7 @@ def prepare_download(
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     variant = _download_redaction_variant(
@@ -894,7 +974,7 @@ def _download_event_frame(data: dict, mode: str, variant: str = "") -> tuple[str
     return f"event: progress\ndata: {json.dumps(payload)}\n\n", False
 
 
-@router.get("/{file_uuid}/download-stream")
+@router.get("/{file_uuid}/download-stream", dependencies=[Depends(refuse_under_support_grant)])
 def download_stream(
     file_uuid: str,
     mode: str = Query(
@@ -924,7 +1004,7 @@ def download_stream(
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     user_id = current_user.id
     # Resolved once, on the request thread, while the request's session is open: the
@@ -1081,15 +1161,27 @@ def get_thumbnail(
                 detail="Authentication required. Use presigned thumbnail_url from file listing.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        is_admin = current_user.is_admin
-        if not is_admin and db_file.user_id != current_user.id:
-            from app.api.deps_context import resolve_org_context
+        from app.api.deps_context import resolve_org_context
+        from app.api.deps_context import resolve_request_bypass
+
+        # Resolve the caller's tenant scope (None = personal) WITHOUT editing
+        # get_optional_current_user (owned by step 1.5), then the bypass through the SAME
+        # resolver get_current_context uses, so a support-access grant header is honoured
+        # (or refused) by exactly the same rules here.
+        org_id, org_role = resolve_org_context(request, db, current_user)
+        org_id, _, bypass = resolve_request_bypass(request, db, current_user, org_id, org_role)
+        platform_allowed = bypass.allows(
+            org_id=db_file.organization_id,
+            owner_id=db_file.user_id,
+            need="read",
+            resource_type="media_file",
+            resource_uuid=str(db_file.uuid),
+        )
+        if not platform_allowed and db_file.user_id != current_user.id:
             from app.services.permission_service import PermissionService
 
-            # Resolve the caller's tenant scope (None = personal) WITHOUT editing
-            # get_optional_current_user (owned by step 1.5), then route the share
-            # resolution through the org-aware permission path (default-deny).
-            org_id, _ = resolve_org_context(request, db, current_user)
+            # Route the share resolution through the org-aware permission path
+            # (default-deny).
             perm = PermissionService.get_file_permission(
                 db, db_file.id, current_user.id, organization_id=org_id
             )
@@ -1098,17 +1190,13 @@ def get_thumbnail(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this file",
                 )
-        elif not is_admin:
+        elif not platform_allowed and getattr(db_file, "organization_id", None) != org_id:
             # Direct owner: still enforce the tenant gate so a personal-scope
             # request can't fetch an org-stamped file's thumbnail (and vice versa).
-            from app.api.deps_context import resolve_org_context
-
-            org_id, _ = resolve_org_context(request, db, current_user)
-            if getattr(db_file, "organization_id", None) != org_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this file",
-                )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this file",
+            )
 
     return get_thumbnail_streaming_response(db_file)
 
@@ -1127,7 +1215,13 @@ def update_transcript_segment(
 
     # Update the transcript segment (tenant-gated via ctx.org_id)
     result = update_single_transcript_segment(
-        db, file_uuid, segment_uuid, segment_update, current_user, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        segment_uuid,
+        segment_update,
+        current_user,
+        organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
     # Transcript has been updated - subtitles will be regenerated on-demand
@@ -1150,8 +1244,11 @@ def reprocess_media_file(
     max_speakers = reprocess_request.max_speakers if reprocess_request else None
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
     stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
-    whisper_model = effective_whisper_model(
-        reprocess_request.whisper_model if reprocess_request else None, http_request
+    disable_diarization = bool(reprocess_request and reprocess_request.disable_diarization)
+    whisper_model = require_servable_whisper_model(
+        effective_whisper_model(
+            reprocess_request.whisper_model if reprocess_request else None, http_request
+        )
     )
 
     return process_file_reprocess(
@@ -1163,7 +1260,9 @@ def reprocess_media_file(
         num_speakers,  # type: ignore[arg-type]
         stages=stages,
         whisper_model=whisper_model,
+        disable_diarization=disable_diarization,
         organization_id=ctx.org_id,
+        bypass=ctx.bypass,
     )
 
 
@@ -1198,12 +1297,11 @@ def clear_video_cache(
     # 403/404, and a broad `except Exception` around it re-wrapped that as a 500 — hiding
     # the authz result — then referenced the still-unassigned `file_id` in its own log
     # line and crashed a second time with NameError (issue #284 A0.6).
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -1242,9 +1340,8 @@ def get_file_analytics(
     """Get analytics for a media file (lightweight, no transcript/speaker data)."""
     from app.schemas.media import Analytics as AnalyticsSchema
 
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     # Enum comparison (issue #272) — str(status) never matched "completed",
     # so this endpoint could also never compute analytics on demand.
@@ -1265,12 +1362,11 @@ def refresh_analytics(
     # Authorization runs OUTSIDE the try — see clear_video_cache above for why
     # (issue #284 A0.6). The `raise HTTPException(500)` below was also swallowed by the
     # broad handler and re-wrapped, doubling the `from e` chain.
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
         db,
         file_uuid,
         current_user.id,
-        is_admin=is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )

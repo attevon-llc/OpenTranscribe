@@ -47,6 +47,8 @@ from .refresh_token import RefreshToken
 from .scim_token import SCIMToken
 from .sharing import CollectionShare
 from .sharing import TagShare
+from .support_access import SupportAccessGrant
+from .support_access import SupportAccessUse
 from .system_settings import SystemSettings
 from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
@@ -116,4 +118,6 @@ __all__ = [
     "ChatMessage",
     "ChatProject",
     "ErasureLedgerEntry",
+    "SupportAccessGrant",
+    "SupportAccessUse",
 ]

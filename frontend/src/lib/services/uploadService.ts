@@ -27,6 +27,19 @@ type UploadStatus =
   | 'failed'
   | 'cancelled';
 
+/**
+ * The per-file choices the upload wizard collects. Optional everywhere: a caller that has
+ * none (a recording, a watch import) sends none, and the server applies its defaults.
+ */
+export interface UploadTranscriptionParams {
+  minSpeakers?: number | null;
+  maxSpeakers?: number | null;
+  numSpeakers?: number | null;
+  /** `null` = the deployment's default model; sent only when the user picked one. */
+  whisperModel?: string | null;
+  skipSummary?: boolean;
+}
+
 export interface UploadItem {
   id: string;
   type: UploadType;
@@ -68,6 +81,9 @@ export interface UploadItem {
   minSpeakers?: number | null;
   maxSpeakers?: number | null;
   numSpeakers?: number | null;
+  // Per-file transcription choices made in the upload wizard
+  whisperModel?: string | null;
+  skipSummary?: boolean;
   // Organization parameters
   collectionIds?: string[];
   tagNames?: string[];
@@ -166,16 +182,34 @@ class UploadService {
     this.eventListeners.forEach((listener) => listener(event));
   }
 
+  /**
+   * The per-file choices as legacy-multipart headers. The presigned flow carries the same
+   * values in the `/files/complete` body; this is its twin for `POST /files`, shared so the
+   * main-file and extracted-audio fallbacks cannot drift apart again.
+   */
+  private transcriptionHeaders(upload: UploadItem): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
+      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
+    }
+    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
+      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
+    }
+    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
+      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
+    }
+    if (upload.skipSummary) {
+      headers['X-Skip-Summary'] = 'true';
+    }
+    return headers;
+  }
+
   // Queue management
   addUpload(
     type: UploadType,
     source: File | string | Blob,
     name?: string,
-    speakerParams?: {
-      minSpeakers?: number | null;
-      maxSpeakers?: number | null;
-      numSpeakers?: number | null;
-    },
+    transcriptionParams?: UploadTranscriptionParams,
     collectionIds?: string[],
     tagNames?: string[],
     uploadBatchId?: string
@@ -192,9 +226,11 @@ class UploadService {
       status: 'queued',
       progress: 0,
       retryCount: 0,
-      minSpeakers: speakerParams?.minSpeakers,
-      maxSpeakers: speakerParams?.maxSpeakers,
-      numSpeakers: speakerParams?.numSpeakers,
+      minSpeakers: transcriptionParams?.minSpeakers,
+      maxSpeakers: transcriptionParams?.maxSpeakers,
+      numSpeakers: transcriptionParams?.numSpeakers,
+      whisperModel: transcriptionParams?.whisperModel,
+      skipSummary: transcriptionParams?.skipSummary,
       collectionIds,
       tagNames,
       uploadBatchId,
@@ -212,7 +248,12 @@ class UploadService {
     return id;
   }
 
-  addMultipleFiles(files: File[], collectionIds?: string[], tagNames?: string[]): string[] {
+  addMultipleFiles(
+    files: File[],
+    collectionIds?: string[],
+    tagNames?: string[],
+    transcriptionParams?: UploadTranscriptionParams
+  ): string[] {
     const uploadIds: string[] = [];
 
     // Generate a shared batch UUID when uploading 2+ files together
@@ -224,7 +265,7 @@ class UploadService {
         'file',
         file,
         undefined,
-        undefined,
+        transcriptionParams,
         collectionIds,
         tagNames,
         batchId
@@ -239,7 +280,8 @@ class UploadService {
     audioBlob: Blob,
     filename: string,
     extractionMetadata: ExtractedAudioMetadata,
-    compressionRatio: number
+    compressionRatio: number,
+    transcriptionParams?: UploadTranscriptionParams
   ): string {
     const id = this.generateId();
 
@@ -254,6 +296,11 @@ class UploadService {
       retryCount: 0,
       extractionMetadata,
       compressionRatio,
+      minSpeakers: transcriptionParams?.minSpeakers,
+      maxSpeakers: transcriptionParams?.maxSpeakers,
+      numSpeakers: transcriptionParams?.numSpeakers,
+      whisperModel: transcriptionParams?.whisperModel,
+      skipSummary: transcriptionParams?.skipSummary,
     };
 
     this.uploads.set(id, upload);
@@ -597,6 +644,7 @@ class UploadService {
         min_speakers: upload.minSpeakers ?? null,
         max_speakers: upload.maxSpeakers ?? null,
         num_speakers: upload.numSpeakers ?? null,
+        skip_summary: upload.skipSummary || undefined,
       },
       // Assembling hundreds of parts is more than the 60 s default allows for.
       { timeout: CONTROL_REQUEST_TIMEOUT_MS }
@@ -719,6 +767,7 @@ class UploadService {
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
       upload_batch_id: upload.uploadBatchId || undefined,
+      whisper_model: upload.whisperModel || undefined,
       use_presigned: true,
     });
 
@@ -813,6 +862,7 @@ class UploadService {
             min_speakers: upload.minSpeakers ?? null,
             max_speakers: upload.maxSpeakers ?? null,
             num_speakers: upload.numSpeakers ?? null,
+            skip_summary: upload.skipSummary || undefined,
           });
 
           return { uuid: fileId, isDuplicate: false };
@@ -843,15 +893,7 @@ class UploadService {
       'X-File-Hash': fingerprint || '',
     };
 
-    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
-      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
-    }
-    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
-      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
-    }
-    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
-      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
-    }
+    Object.assign(headers, this.transcriptionHeaders(upload));
 
     try {
       await this.sendBody((watchdog) =>
@@ -914,6 +956,7 @@ class UploadService {
       extracted_from_video: extractionMetadata?.videoMetadata || null,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
+      whisper_model: upload.whisperModel || undefined,
       use_presigned: true,
     });
 
@@ -1000,6 +1043,7 @@ class UploadService {
             min_speakers: upload.minSpeakers ?? null,
             max_speakers: upload.maxSpeakers ?? null,
             num_speakers: upload.numSpeakers ?? null,
+            skip_summary: upload.skipSummary || undefined,
           });
 
           return { uuid: fileId, isDuplicate: false };
@@ -1029,6 +1073,7 @@ class UploadService {
             'Content-Type': 'multipart/form-data',
             'X-File-ID': fileId,
             'X-File-Hash': sourceFingerprint || '',
+            ...this.transcriptionHeaders(upload),
           },
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
@@ -1062,6 +1107,11 @@ class UploadService {
         url: url.trim(),
         collection_ids: upload.collectionIds || undefined,
         tag_names: upload.tagNames || undefined,
+        min_speakers: upload.minSpeakers ?? undefined,
+        max_speakers: upload.maxSpeakers ?? undefined,
+        num_speakers: upload.numSpeakers ?? undefined,
+        whisper_model: upload.whisperModel || undefined,
+        skip_summary: upload.skipSummary || undefined,
       },
       {
         timeout: CONTROL_REQUEST_TIMEOUT_MS,

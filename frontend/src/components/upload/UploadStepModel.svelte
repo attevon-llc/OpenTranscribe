@@ -4,9 +4,18 @@
 
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
+  /**
+   * Wire-compatible name: `false` (the default) means a summary IS generated.
+   * The UI presents this positively (`generateSummary`, derived below) so the
+   * toggle reads as an affirmative choice rather than a double negative — see
+   * #751 item 3. The prop itself is unchanged so the parent's localStorage
+   * restore/save and the `skip_summary` wire field need no migration.
+   */
   export let skipSummary = false;
   /** False when the deployment owns the model choice: render it read-only. */
   export let modelChoiceEnabled = true;
+
+  $: generateSummary = !skipSummary;
 
   const dispatch = createEventDispatcher<{
     change: { selectedWhisperModel: string | null; skipSummary: boolean };
@@ -14,6 +23,11 @@
 
   function emitChange() {
     dispatch('change', { selectedWhisperModel, skipSummary });
+  }
+
+  function toggleGenerateSummary(checked: boolean) {
+    skipSummary = !checked;
+    emitChange();
   }
 </script>
 
@@ -28,10 +42,10 @@
     </label>
     <select id="whisper-model-select" bind:value={selectedWhisperModel} on:change={emitChange} class="model-select">
       <option value={null}>
-        {$t('uploader.highQuality')} ({adminDefaultModel})
+        {$t('uploader.highQuality')} ({adminDefaultModel}){$t('uploader.highQualitySuffix')}
       </option>
       <option value="base">
-        {$t('uploader.fastProcessing')}
+        {$t('uploader.fastProcessing')}{$t('uploader.fastProcessingSuffix')}
       </option>
     </select>
     {#if selectedWhisperModel === 'base'}
@@ -47,11 +61,15 @@
     <h4 class="section-title">{$t('upload.aiSummary')}</h4>
     <label class="toggle-row">
       <span class="toggle-text">
-        <span class="toggle-label">{$t('upload.skipSummary')}</span>
-        <span class="hint">{$t('upload.skipSummaryHint')}</span>
+        <span class="toggle-label">{$t('upload.generateSummary')}</span>
+        <span class="hint">{$t('upload.generateSummaryHint')}</span>
       </span>
       <label class="toggle-switch">
-        <input type="checkbox" bind:checked={skipSummary} on:change={emitChange} />
+        <input
+          type="checkbox"
+          checked={generateSummary}
+          on:change={(e) => toggleGenerateSummary(e.currentTarget.checked)}
+        />
         <span class="toggle-slider"></span>
       </label>
     </label>

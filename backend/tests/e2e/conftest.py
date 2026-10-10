@@ -69,6 +69,7 @@ if _backend_dir not in sys.path:
 # only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
 from frontend_warm import find_entry_modules
+from stack_urls import mixed_stack_problem
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
@@ -108,6 +109,37 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 # Default URLs for dev environment
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Refuse a mixed-stack run before xdist ever spawns a worker (issue #965).
+
+    Doing the check HERE, not only in the ``e2e_stack_preflight`` fixture below, matters
+    under ``-n auto``/``--dist loadfile``: ``pytest.exit()`` raised from an autouse SESSION
+    fixture inside an xdist WORKER process is not a shape xdist's controller expects — it
+    surfaces as an opaque ``INTERNALERROR> AssertionError`` in ``dsession.py`` with the
+    actual diagnostic message lost entirely (verified live against two real stacks,
+    2026-09-20). That is exactly the "confusing failure" issue #965 exists to prevent.
+    ``pytest_configure`` runs on the CONTROLLER before any worker exists — xdist re-invokes
+    it once per worker too, guarded off here via ``workerinput`` (present only on a worker's
+    own config) — so ``pytest.exit()`` here behaves like any ordinary early configuration
+    error: a clean message and exit code 3, with no test ever scheduled.
+
+    ``trylast=True`` so this runs AFTER pytest-base-url's own ``pytest_configure``, which is
+    what merges ``--base-url``/the (now removed) ini default into ``config.option.base_url``
+    — reading ``getoption("base_url")`` before that merge would silently see the pre-merge
+    value.
+    """
+    if hasattr(config, "workerinput"):
+        return
+
+    resolved_base = config.getoption("base_url", default=None) or FRONTEND_URL
+    resolved_backend = config.getoption("backend_url", default=None) or BACKEND_URL
+    problem = mixed_stack_problem(str(resolved_base), str(resolved_backend))
+    if problem:
+        pytest.exit(f"E2E preflight: {problem}", returncode=3)
+
 
 # Test user credentials (these should exist in dev database)
 TEST_ADMIN_EMAIL = "admin@example.com"
@@ -388,7 +420,17 @@ def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
     failures that looked like test defects and were not. Failing here — once, with
     the remedy — beats letting the condition surface as a different arbitrary
     subset of timeouts on every run.
+
+    Logs the resolved URLs unconditionally (issue #965) — every run's result must be
+    attributable to the stack that produced it, and the mixed-stack guard immediately
+    below is worthless if the URLs it validated are never printed anywhere.
     """
+    print(f"E2E preflight: base_url={base_url} backend_url={backend_url}")
+
+    stack_problem = mixed_stack_problem(base_url, backend_url)
+    if stack_problem:
+        pytest.exit(f"E2E preflight: {stack_problem}", returncode=3)
+
     problem = _await_stable_backend(backend_url)
     if problem:
         pytest.exit(
@@ -536,15 +578,23 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     # `.gallery-action-buttons` renders unconditionally, independent of the `GET
     # /api/files` fetch — so a test could act (select-all, read header geometry)
-    # before the file list has actually landed. `.gallery-header-right`
-    # (GalleryHeader.svelte) is gated on `files.length > 0`, so waiting for it is the
-    # exact "the file list landed AND is non-empty" signal these gallery-content tests
-    # need. (`.count-chip` looked like a loading-agnostic proxy for this but is driven
-    # by a separate fetch that settles independently — verified it does not track the
-    # main file-grid fetch, so it is not a substitute here.) On a genuinely empty
-    # library this will time out; the tests using this fixture already assume ambient
-    # content, same as before this fixture existed.
-    page.wait_for_selector(".gallery-header-right", timeout=APP_SHELL_READY_MS)
+    # before the file list has actually landed. Issue #747 restructured the gallery
+    # toolbar into two rows and DELETED the `{#if files.length > 0}` gate that used to
+    # sit on `.gallery-header-right` (that gate hid the sort control and view toggle
+    # on a filtered-to-zero result, and made `gallery.noFilesMatch` unreachable — see
+    # gallery/CLAUDE.md). `.gallery-header-right` no longer exists at all, and even if
+    # it did it would no longer mean "the file list landed AND is non-empty".
+    #
+    # `[data-testid="gallery-files-loaded"]` (GalleryGrid.svelte) is the replacement
+    # readiness signal: it is rendered ONLY in the real-content branch — not skeleton,
+    # not empty, not error — so it is a strictly better oracle than the old gate ever
+    # was ("rows are rendered" instead of "a button group is mounted"). (`.count-chip`
+    # looked like a loading-agnostic proxy for this but is driven by a separate fetch
+    # that settles independently — verified it does not track the main file-grid
+    # fetch, so it is not a substitute here.) On a genuinely empty library this will
+    # time out; the tests using this fixture already assume ambient content, same as
+    # before this fixture existed.
+    page.wait_for_selector('[data-testid="gallery-files-loaded"]', timeout=APP_SHELL_READY_MS)
     yield page
     page.close()
     context.close()

@@ -1,9 +1,9 @@
 """Cloud ASR provider pipeline and cloud diarization merging."""
 
 import contextlib
+import dataclasses
 import logging
 
-from app.core.config import settings
 from app.db.session_utils import session_scope
 from app.utils.task_utils import update_task_status
 
@@ -12,6 +12,7 @@ from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
 from .user_settings import load_vocabulary_terms
+from .user_settings import resolve_speaker_range
 
 logger = logging.getLogger(__name__)
 
@@ -85,17 +86,25 @@ def _run_parallel_cloud_asr_and_diarization(
     from app.services.diarization.types import DiarizeConfig
     from app.utils.diarization_merge import merge_cloud_diarization
 
-    # Create diarization provider for this user
+    # Resolved BEFORE either leg starts. A pyannote selection with no usable key raises
+    # DiarizationNotConfiguredError here (issue #1204), so the file fails visibly without
+    # the user being billed for a cloud ASR run.
     with session_scope() as db:
         diarize_provider = DiarizationProviderFactory.create_for_user(ctx.user_id, db)
 
     if diarize_provider is None:
-        logger.warning(
-            "diarization_source=pyannote but no provider configured for user %d, "
-            "falling back to ASR-only",
+        # The stored source is no longer pyannote: the user changed it after this file was
+        # dispatched, or the deployment locked it (#1109). Honour what the settings say now,
+        # which is the ASR provider's own speaker detection.
+        logger.info(
+            "Diarization source for user %d is no longer pyannote; using %s's own diarization",
             ctx.user_id,
+            asr_provider.provider_name,
         )
-        return asr_provider.transcribe(audio_file_path, asr_config, progress_callback)
+        provider_config = dataclasses.replace(
+            asr_config, enable_diarization=asr_provider.supports_diarization()
+        )
+        return asr_provider.transcribe(audio_file_path, provider_config, progress_callback)
 
     diarize_config = DiarizeConfig(
         min_speakers=min_speakers,
@@ -232,12 +241,13 @@ def _run_cloud_asr_pipeline(
     # Read user's speaker settings from DB (task param > user DB > env var)
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     config = ASRConfig(
         language=user_lang_settings["source_language"],
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         enable_diarization=(diarization_source == "provider" and provider.supports_diarization()),
         translate_to_english=translate_enabled,
         vocabulary=vocab_terms if vocab_terms else None,
@@ -259,13 +269,9 @@ def _run_cloud_asr_pipeline(
             config,
             provider,
             cloud_progress_callback,
-            min_speakers=min_speakers
-            if min_speakers is not None
-            else user_settings["min_speakers"],
-            max_speakers=max_speakers
-            if max_speakers is not None
-            else user_settings["max_speakers"],
-            num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+            min_speakers=speaker_range.min_speakers,
+            max_speakers=speaker_range.max_speakers,
+            num_speakers=speaker_range.num_speakers,
         )
     else:
         asr_result = provider.transcribe(audio_file_path, config, cloud_progress_callback)

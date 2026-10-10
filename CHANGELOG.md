@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
+  `multi`, `single`; default `auto`). New API under `/api/support-access`,
+  `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,
+  denying, revoking and auditing time-boxed platform access to a tenant, plus a break-glass route
+  for `super_admin`. New tables `support_access_grant` and `support_access_use` (migration
+  `v432`), and the `X-Support-Access-Grant` request header.
+
+- **pyannote.ai API key form (#1204).** *Settings -> Speaker Identification -> Speaker Detection*
+  has a write-only key field (never shown again once saved, stored encrypted) with test
+  connection and remove, shown when users may bring their own provider keys. Choosing the
+  pyannote.ai cloud service without a saved key is refused with an explanation instead of
+  silently producing a transcript with no speakers.
+
 - **Celery queue-wait metrics (#1172).** Every task message is stamped with its publish time
   (header `x-ot-published-at`). Workers with `WORKER_METRICS_PORT` set now serve
   `celery_task_queue_wait_seconds{queue, task}` (publish, or ETA if later, to task start; buckets
@@ -44,6 +57,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings: Watch Sources tabs, merged Privacy & Redaction, Speech Processing.** Watch Sources
+  is split into Sources, Email Notifications and Global Settings tabs (the last two for
+  `super_admin` only), and its Save button is the standard right-aligned action. *Content
+  Redaction* and *Redaction Policy* are now two tabs of one **Privacy & Redaction** entry; the
+  policy tab is shown locked to admins and absent for plain users, and the old `redaction-policy`
+  section id still deep-links to it. *Engine Configuration* is renamed **Speech Processing** and
+  moved into the Transcription group beside the ASR provider (same `super_admin` gate). The User
+  Management *Invite user* and *Add user* buttons use the standard primary/secondary styles with
+  a proper gap.
+
+- **Settings: Transcription and Speaker Identification are two tabbed sections.** The
+  Transcription group is now **Transcription & Speakers** with two rows. **Transcription** (words)
+  has the tabs Language, Provider & Model, Vocabulary and Accuracy & Cleanup; **Speaker
+  Identification** (who spoke) has Speaker Detection, Voice Attributes, Speaker Engine and
+  Maintenance. Speaker detection, speaker count and the engine used to be split across
+  *Transcription Settings*, *Speech Processing* and *Speaker Attributes*; the speaker engine
+  is now a tab (locked for admins, `super_admin` to change, hidden from plain users) and the
+  attribute bulk jobs moved to Maintenance with a link to *Speaker Embedding System*. Each
+  tab saves and resets only its own fields (`DELETE /api/user-settings/transcription?group=`),
+  keeps unsaved edits when you switch tabs, and marks a tab with `●` while it is dirty. The old
+  section ids `asr-provider`, `custom-vocabulary`, `engine-settings` and `speaker-attributes`
+  still deep-link and still work in settings search; they open the right tab. **Auto-Labeling
+  (Tags & Collections)** moved to the AI & Chat group. Tab arrow keys now mirror in right-to-left
+  languages. The acoustic backchannel re-check controls state that they apply to local GPU
+  transcription, not cloud ASR.
+
 - `celery_queue_reserved` excludes orphaned transcription stages; new gauges
   `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`,
   `transcription_runs_without_lease` and `transcription_files_infra_requeued` are for alerting.
@@ -55,6 +94,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
+  deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
+  credential could read, edit, delete and re-run any tenant's files, collections, speakers and
+  tasks, and see PII that the owner's redaction policy masks. In multi-tenant mode (any active
+  organization, or `TENANCY_MODE=multi`) the role now carries no implicit content access: staff
+  reach a tenant only through a time-boxed support-access grant that the tenant approves, or a
+  `super_admin` break-glass opening with a ticket. Every request under a grant is recorded in a
+  fail-closed use log the tenant can read, and chat, search, content creation, downloads, exports
+  and `/admin` routes refuse a grant. Single-tenant installs are unchanged. **Behavior change for
+  self-hosted installs that created organizations:** by-UUID content verbs now need a grant. Set
+  `TENANCY_MODE=single` to restore the old instance-wide access (cross-tenant access is then
+  audited). See Operations -> Support Access & Break-Glass.
 - **An `editor` share could permanently delete another user's file (#1103).** Every delete
   path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
   editor permission, so anyone a collection was shared with as an editor could destroy the
@@ -109,6 +160,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A retry replays the file's own request (#1203).** Single and bulk retry, the SPA's retry
+  button and the recovery sweep re-ran a file with defaults: a file submitted with a Fast
+  (tiny/base) model came back on the GPU model, its speaker range was dropped, and a file using
+  `local` or `pyannote` diarization was switched to the provider's own. The per-file model,
+  range and "skip diarization" are now stored on the file (migration `v433`, new
+  `media_file.requested_*` columns) and replayed.
+- **The saved speaker range is honoured everywhere (#1198).** Watch sources no longer pass 1/20
+  on every import (new sources have no range of their own, and existing sources holding exactly
+  1/20 are set to "use my saved range" by migration `v433`); cloud ASR with `local` diarization
+  hands its range to the GPU re-diarize instead of falling back to the env default; the
+  reprocess dialog starts from the saved range; and "use system defaults" now really sends the
+  system range. One helper, `resolve_speaker_range`, decides: per file, then saved, then env.
+- **Upload: URL import, in-wizard recordings and the extracted-audio fallback keep the speaker
+  range and model (#1201).** `POST /files/process-url` accepts `min_speakers`, `max_speakers`,
+  `num_speakers` and `whisper_model` (playlists included). The Speakers step is no longer offered
+  when speaker detection is off or the Fast model is chosen, and now follows the Model step.
+- **The API no longer accepts per-file options it drops (#1202).** `disable_diarization` now
+  reaches the pipeline from `/files/{uuid}/reprocess`, the bulk reprocess action, `/files/prepare`
+  and `/files/complete`; bulk reprocess also forwards its speaker range. **Behaviour change for API
+  clients:** a `whisper_model` that is neither the deployment's model nor tiny/base is now a
+  `422` (it used to be accepted and silently replaced), and `disable_diarization` is a `422`
+  when the request cannot honour it (re-diarize-only or downstream-only stages, or a bulk action
+  other than `reprocess`).
+
+- **Speaker Embedding System no longer 403s for admins (#1208).** Every migration route needs
+  `super_admin` while the section is open to admins, so admins got "Admin access required"
+  after a burst of failing requests. The migration panel now renders locked for an admin
+  ("Only a super admin can run or monitor the speaker embedding migration") and makes no
+  migration calls; the consistency panel beside it is unchanged.
+- **Speaker cards pick up *Show predictions on speaker cards* immediately** after saving it in
+  Voice Attributes, instead of after the preference cache expired.
+- **Docs point at real Settings entries (#1209).** Every "Settings -> X" path in the docs site now
+  names a sidebar entry that exists, and a unit test keeps it that way.
 - **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
   worker-loss replay allowlist named the bulk waveform backfill task
   (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches

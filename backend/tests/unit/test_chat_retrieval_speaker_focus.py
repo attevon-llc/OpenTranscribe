@@ -9,6 +9,7 @@ different parameters threaded to two different `retrieve_chunks` calls.
 
 from __future__ import annotations
 
+import dataclasses
 from unittest.mock import patch
 
 import pytest
@@ -145,3 +146,56 @@ def test_speaker_focus_leg_is_skipped_on_an_exact_cache_hit():
     mocked.assert_not_called()
     assert result.cache_hit is True
     assert result.speaker_focus_added == 0
+
+
+def _rerank_scores(scores: dict[tuple[str, int], float]):
+    """A stand-in cross-encoder that scores each hit from a table, best first."""
+
+    def _rerank(_query, hits, max_pairs):
+        scored = [dataclasses.replace(h, score=scores[(h.file_uuid, h.chunk_index)]) for h in hits]
+        return sorted(scored, key=lambda h: -h.score)
+
+    return _rerank
+
+
+def _widened_scope_retrieval(*, focus: bool):
+    """Multi-file scope (so #975's file floor applies) where the cross-encoder scores
+    every file negative for a vague question, as measured on the AMI corpus (#990)."""
+    scope = [f"file-{i}" for i in range(40)]
+    main_hits = [_hit("file-0", 0), _hit("file-1", 0)]
+    focus_hits = [_hit("file-7", 3)]
+    scores = {("file-0", 0): -2.0, ("file-1", 0): -3.0, ("file-7", 3): -1.5}
+    with (
+        patch.object(
+            retrieval,
+            "retrieve_chunks",
+            side_effect=[main_hits, focus_hits] if focus else [main_hits],
+        ),
+        patch("app.services.chat.reranker.rerank", side_effect=_rerank_scores(scores)),
+        patch("app.services.chat.retrieval_cache.get_cached", return_value=None),
+        patch("app.services.chat.retrieval_cache.set_cached"),
+    ):
+        return retrieval.retrieve_context(
+            query="what did Marketing say",
+            user_id=1,
+            organization_id=None,
+            file_uuids=scope,
+            settings=ChatSettings(
+                rerank_enabled=True, candidate_pool=4, final_chunks=10, max_chunks_per_file=4
+            ),
+            speaker_focus_names=["Marketing"] if focus else None,
+        )
+
+
+def test_the_file_floor_vetoes_everything_when_no_speaker_was_resolved():
+    """Control for #990: with no focus leg, all-negative scores leave nothing."""
+    assert _widened_scope_retrieval(focus=False).chunks == []
+
+
+def test_a_speaker_focus_file_survives_the_file_score_floor():
+    """#990: the leg's candidates were targeted on purpose, so the whole-file veto
+    must not discard them; the main leg's untargeted weak files still go."""
+    result = _widened_scope_retrieval(focus=True)
+
+    assert result.speaker_focus_added == 1
+    assert [(c.file_uuid, c.chunk_index) for c in result.chunks] == [("file-7", 3)]

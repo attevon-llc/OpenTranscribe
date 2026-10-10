@@ -27,6 +27,7 @@ from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
+from app.utils.task_utils import update_task_status_with_duration
 from app.utils.websocket_notify import send_ws_event_for_file
 
 from .notifications import send_completion_notification
@@ -228,12 +229,20 @@ def _finalize(gpu_result: dict) -> dict:
             try:
                 from app.tasks.rediarize_task import rediarize_task
 
+                from .user_settings import resolve_speaker_range_for_user
+
+                speaker_range = resolve_speaker_range_for_user(
+                    user_id,
+                    gpu_result.get("min_speakers"),
+                    gpu_result.get("max_speakers"),
+                    gpu_result.get("num_speakers"),
+                )
                 rediarize_task.apply_async(
                     kwargs={
                         "file_uuid": str(file_uuid),
-                        "min_speakers": None,
-                        "max_speakers": None,
-                        "num_speakers": None,
+                        "min_speakers": speaker_range.min_speakers,
+                        "max_speakers": speaker_range.max_speakers,
+                        "num_speakers": speaker_range.num_speakers,
                         "downstream_tasks": downstream_tasks,
                         # This rediarize completes a fresh billable pipeline run —
                         # it is the metering terminus (we deliberately don't meter
@@ -309,8 +318,10 @@ def _finalize(gpu_result: dict) -> dict:
                 user_id, file_id, 0.90, "Transcription complete, diarizing on GPU..."
             )
             with session_scope() as db:
-                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            send_completion_notification(user_id, file_id)
+                _task, task_duration_seconds = update_task_status_with_duration(
+                    db, task_id, "completed", progress=1.0, completed=True
+                )
+            send_completion_notification(user_id, file_id, duration_seconds=task_duration_seconds)
         elif is_cloud_asr and not diarization_disabled:
             # Cloud ASR with provider diarization: embedding task runs async on GPU
             send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
@@ -324,11 +335,13 @@ def _finalize(gpu_result: dict) -> dict:
             # rediarize_task instead, to avoid double-counting the same run).
             send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
             with session_scope() as db:
-                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                _task, task_duration_seconds = update_task_status_with_duration(
+                    db, task_id, "completed", progress=1.0, completed=True
+                )
                 _fire_completion_metering(
                     db, file_id=file_id, run_id=task_id, provider=asr_provider, success=True
                 )
-            send_completion_notification(user_id, file_id)
+            send_completion_notification(user_id, file_id, duration_seconds=task_duration_seconds)
 
         completion_elapsed = time.perf_counter() - post_start
         logger.info(
@@ -710,19 +723,16 @@ def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None
 def _dispatch_speaker_attributes(
     file_uuid: str, user_id: int, downstream_tasks: list[str] | None
 ) -> None:
-    """Dispatch speaker attribute detection (fire-and-forget).
+    """Dispatch speaker attribute detection and LLM speaker ID (fire-and-forget).
 
-    Always runs when transcription completes — gender detection is part of the
-    standard pipeline. LLM speaker ID chains from gender (dispatched at the end
-    of detect_speaker_attributes_task).
+    LLM speaker ID chains from attribute detection (dispatched at the end of
+    detect_speaker_attributes_task); with detection off it is queued directly, so the two
+    features stay independent (issue #1148).
     """
     try:
-        from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
-        from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+        from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
 
-        if _is_speaker_attribute_detection_enabled(user_id):
-            detect_speaker_attributes_task.delay(str(file_uuid), user_id)
-            logger.info(f"Dispatched speaker attribute detection for {file_uuid}")
+        dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
     except Exception as e:
         logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 

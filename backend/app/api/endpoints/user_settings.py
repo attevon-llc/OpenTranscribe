@@ -20,6 +20,7 @@ from fastapi import APIRouter
 from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
 from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import DEFAULT_VIDEO_QUALITY
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.core.constants import TRANSCRIPTION_SETTING_GROUPS
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_RECORDING_DURATIONS
@@ -84,6 +86,8 @@ from app.schemas.topic import AutoLabelSettingsSchema
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
+from app.services import system_settings_service
+from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
@@ -601,6 +605,37 @@ def _upsert_user_setting(
         db.add(new_setting)
 
 
+PYANNOTE_KEY_REQUIRED_DETAIL = (
+    "pyannote.ai speaker detection needs a pyannote.ai API key. Save your key first, then "
+    "choose this option."
+)
+
+
+def _require_pyannote_key_for_new_selection(db: Session, user_id: int, source: str) -> None:
+    """Refuse switching TO the pyannote.ai source when no key is stored (issue #1204).
+
+    Only a change is refused: the settings form re-sends every field on save, and a
+    selection stored before #1204 must not make the user's other settings unsaveable. That
+    case is reported per file by the transcription pipeline instead.
+    """
+    from app.services.diarization.factory import PYANNOTE_PROVIDER
+    from app.services.diarization.factory import has_pyannote_credential
+
+    if source != PYANNOTE_PROVIDER:
+        return
+    stored = (
+        db.query(models.UserSetting.setting_value)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == "transcription_diarization_source",
+        )
+        .scalar()
+    )
+    if stored == PYANNOTE_PROVIDER or has_pyannote_credential(user_id, db):
+        return
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PYANNOTE_KEY_REQUIRED_DETAIL)
+
+
 @router.get("/transcription", response_model=TranscriptionSettings)
 def get_transcription_settings(
     request: Request,
@@ -669,9 +704,10 @@ def get_transcription_settings(
         "transcription_speaker_prompt_behavior",
         str(DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"]),
     )
-    garbage_threshold_value = settings_map.get(
-        "transcription_garbage_cleanup_threshold",
-        str(DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"]),
+    # Unset means "inherit the deployment default" (admin garbage-cleanup setting), which
+    # is also what the pipeline applies, so the form shows the value that will actually run.
+    garbage_effective = system_settings_service.get_effective_garbage_cleanup_config(
+        db, current_user.id
     )
     source_language_value = settings_map.get(
         "transcription_source_language",
@@ -690,11 +726,8 @@ def get_transcription_settings(
             Literal["always_prompt", "use_defaults", "use_custom"],
             speaker_behavior_value,
         ),
-        garbage_cleanup_enabled=settings_map.get(
-            "transcription_garbage_cleanup_enabled", "true"
-        ).lower()
-        == "true",
-        garbage_cleanup_threshold=int(garbage_threshold_value),
+        garbage_cleanup_enabled=garbage_effective["garbage_cleanup_enabled"],
+        garbage_cleanup_threshold=garbage_effective["max_word_length"],
         source_language=source_language_value,
         translate_to_english=settings_map.get("transcription_translate_to_english", "false").lower()
         == "true",
@@ -831,6 +864,7 @@ def update_transcription_settings(
                     f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
                 ),
             )
+        _require_pyannote_key_for_new_selection(db, current_user.id, diarization_src)
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():
@@ -845,41 +879,33 @@ def update_transcription_settings(
 
 @router.delete("/transcription")
 def reset_transcription_settings(
+    group: Literal["language", "accuracy", "speakers"] | None = Query(
+        None,
+        description="Reset only this field group. Omit to reset every transcription setting.",
+    ),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Reset user's transcription settings to defaults.
 
-    Deletes all user-specific transcription settings from the database,
-    causing the system to fall back to default values.
+    Deletes user-specific transcription settings from the database, causing the
+    system to fall back to default values. With ``group`` only that group's
+    fields are reset; without it, all of them are.
 
     Returns:
         Message confirming reset and the default settings that will now apply
     """
+    fields = (
+        TRANSCRIPTION_SETTING_GROUPS[group]
+        if group is not None
+        else tuple(f for grp in TRANSCRIPTION_SETTING_GROUPS.values() for f in grp)
+    )
     deleted_count = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "transcription_min_speakers",
-                    "transcription_max_speakers",
-                    "transcription_speaker_prompt_behavior",
-                    "transcription_garbage_cleanup_enabled",
-                    "transcription_garbage_cleanup_threshold",
-                    "transcription_source_language",
-                    "transcription_translate_to_english",
-                    "transcription_llm_output_language",
-                    "transcription_vad_threshold",
-                    "transcription_vad_min_silence_ms",
-                    "transcription_vad_min_speech_ms",
-                    "transcription_vad_speech_pad_ms",
-                    "transcription_hallucination_silence_threshold",
-                    "transcription_repetition_penalty",
-                    "transcription_diarization_source",
-                ]
-            ),
+            models.UserSetting.setting_key.in_([f"transcription_{f}" for f in fields]),
         )
         .delete(synchronize_session=False)
     )
@@ -887,12 +913,13 @@ def reset_transcription_settings(
     db.commit()
 
     # Return defaults including system-level speaker settings
+    garbage_default = system_settings_service.get_garbage_cleanup_config(db)
     default_settings = {
         "min_speakers": app_settings.MIN_SPEAKERS,
         "max_speakers": app_settings.MAX_SPEAKERS,
         "speaker_prompt_behavior": DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"],
-        "garbage_cleanup_enabled": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_enabled"],
-        "garbage_cleanup_threshold": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"],
+        "garbage_cleanup_enabled": garbage_default["garbage_cleanup_enabled"],
+        "garbage_cleanup_threshold": garbage_default["max_word_length"],
         "source_language": DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
         "translate_to_english": DEFAULT_TRANSCRIPTION_SETTINGS["translate_to_english"],
         "llm_output_language": DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
@@ -912,6 +939,7 @@ def reset_transcription_settings(
 
 @router.get("/transcription/system-defaults", response_model=TranscriptionSystemDefaults)
 def get_transcription_system_defaults(
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> TranscriptionSystemDefaults:
     """
@@ -930,11 +958,12 @@ def get_transcription_system_defaults(
         TranscriptionSystemDefaults containing system min/max speakers,
         garbage cleanup defaults, valid behavior options, and language options
     """
+    garbage_default = system_settings_service.get_garbage_cleanup_config(db)
     return TranscriptionSystemDefaults(
         min_speakers=app_settings.MIN_SPEAKERS,
         max_speakers=app_settings.MAX_SPEAKERS,
-        garbage_cleanup_enabled=DEFAULT_GARBAGE_CLEANUP_ENABLED,
-        garbage_cleanup_threshold=DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
+        garbage_cleanup_enabled=garbage_default["garbage_cleanup_enabled"],
+        garbage_cleanup_threshold=garbage_default["max_word_length"],
         valid_speaker_prompt_behaviors=list(VALID_SPEAKER_PROMPT_BEHAVIORS),
         available_source_languages=WHISPER_LANGUAGES,
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
@@ -1232,20 +1261,18 @@ def get_speaker_attribute_settings(
     )
 
     settings_map: dict[str, str] = {str(s.setting_key): str(s.setting_value) for s in user_settings}
+    # The same resolver the pipeline uses (user > system default > default), so the form
+    # shows what will actually happen.
+    flags = resolve_speaker_attribute_flags(db, current_user.id)
 
     return SpeakerAttributeSettings(
-        detection_enabled=settings_map.get("speaker_attribute_detection_enabled", "true").lower()
-        == "true",
-        gender_detection_enabled=settings_map.get(
-            "speaker_attribute_gender_detection_enabled", "true"
-        ).lower()
-        == "true",
+        detection_enabled=flags.detection_enabled,
+        gender_detection_enabled=flags.gender_detection_enabled,
         age_detection_enabled=settings_map.get(
             "speaker_attribute_age_detection_enabled", "true"
         ).lower()
         == "true",
-        show_attributes_on_cards=settings_map.get("speaker_attribute_show_on_cards", "true").lower()
-        == "true",
+        show_attributes_on_cards=flags.show_on_cards,
     )
 
 

@@ -32,15 +32,12 @@ four edits, down from the original seven: one ``ChatFlagSpec`` here, one
 ``DEFAULT_CHAT_*`` constant in ``core/constants.py``, one ``ChatSettings``
 field, and one field on each of the two schemas in ``schemas/chat.py``.
 
-**None of the registered flags are experimental** (currently 27 — re-derive with
-``len(CHAT_FLAG_REGISTRY)`` rather than trusting a transcribed count, since this repo's
-history is that such numbers rot). ``experimental=True`` is
-plumbing for admin-tunable knobs that require a working LLM provider to have
-any effect (a future planner/enrichment toggle is the motivating case) — the
-admin UI groups those under a separate "Experimental (measurement-gated)"
-subsection and disables them with an explanatory hint when no provider is
-configured. No such flag exists yet; the field is here so the first one that
-does needs one registry entry, not a new mechanism.
+``experimental=True`` is plumbing for admin-tunable knobs that require a working LLM
+provider to have any effect — the admin UI groups those under a separate "Experimental
+(measurement-gated)" subsection and disables them with an explanatory hint when no
+provider is configured. Re-derive the registered/experimental counts with
+``len(CHAT_FLAG_REGISTRY)``/``len(EXPERIMENTAL_FIELDS)`` rather than trusting a
+transcribed count, since this repo's history is that such numbers rot.
 """
 
 from __future__ import annotations

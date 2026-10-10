@@ -62,7 +62,7 @@ function noopComponent() {
   return () => {};
 }
 vi.mock('$components/search/SearchResultCard.svelte', () => ({ default: noopComponent() }));
-vi.mock('$components/search/SearchTranscriptModal.svelte', () => ({ default: noopComponent() }));
+vi.mock('$components/transcript/TranscriptViewModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/search/SearchPagination.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/search/SummaryResultCard.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/SummaryModal.svelte', () => ({ default: noopComponent() }));

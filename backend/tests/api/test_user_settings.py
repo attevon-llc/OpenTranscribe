@@ -211,6 +211,66 @@ def test_transcription_update_round_trip(client, user_token_headers):
     assert data["source_language"] == "es"
 
 
+def test_transcription_setting_groups_cover_every_updatable_field():
+    """A new transcription field must be assigned a reset group."""
+    from app.core.constants import TRANSCRIPTION_SETTING_GROUPS
+    from app.schemas.transcription_settings import TranscriptionSettingsUpdate
+
+    grouped = [f for fields in TRANSCRIPTION_SETTING_GROUPS.values() for f in fields]
+    assert len(grouped) == len(set(grouped)), "a field is in two reset groups"
+    assert set(grouped) == set(TranscriptionSettingsUpdate.model_fields)
+
+
+def test_transcription_reset_group_speakers_leaves_other_groups(client, user_token_headers):
+    put = client.put(
+        f"{_BASE}/transcription",
+        json={"source_language": "de", "min_speakers": 3},
+        headers=user_token_headers,
+    )
+    assert put.status_code == status.HTTP_200_OK
+    assert put.json()["min_speakers"] == 3
+
+    resp = client.delete(f"{_BASE}/transcription?group=speakers", headers=user_token_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    data = client.get(f"{_BASE}/transcription", headers=user_token_headers).json()
+    assert data["min_speakers"] != 3
+    assert data["source_language"] == "de"
+
+
+def test_transcription_reset_group_language_leaves_speakers(client, user_token_headers):
+    client.put(
+        f"{_BASE}/transcription",
+        json={"source_language": "de", "min_speakers": 3},
+        headers=user_token_headers,
+    )
+    resp = client.delete(f"{_BASE}/transcription?group=language", headers=user_token_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    data = client.get(f"{_BASE}/transcription", headers=user_token_headers).json()
+    assert data["source_language"] != "de"
+    assert data["min_speakers"] == 3
+
+
+def test_transcription_reset_unknown_group_is_422(client, user_token_headers):
+    resp = client.delete(f"{_BASE}/transcription?group=bogus", headers=user_token_headers)
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_transcription_reset_without_group_resets_everything(client, user_token_headers):
+    client.put(
+        f"{_BASE}/transcription",
+        json={"source_language": "de", "min_speakers": 3},
+        headers=user_token_headers,
+    )
+    resp = client.delete(f"{_BASE}/transcription", headers=user_token_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    data = client.get(f"{_BASE}/transcription", headers=user_token_headers).json()
+    assert data["source_language"] != "de"
+    assert data["min_speakers"] != 3
+
+
 def test_transcription_min_gt_max_is_400(client, user_token_headers):
     resp = client.put(
         f"{_BASE}/transcription",

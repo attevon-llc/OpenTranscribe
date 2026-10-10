@@ -15,13 +15,16 @@ from datetime import UTC
 from datetime import datetime
 
 import pytest
+from fixtures.summary_plane import sync_summary_plane
 
+from app.core.config import settings
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Tag
+from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
 from app.models.sharing import CollectionShare
 from app.services.search.hybrid_search_service import HybridSearchService
@@ -29,6 +32,10 @@ from app.services.search.hybrid_search_service import SearchHit
 from app.services.search.hybrid_search_service import SearchResponse
 
 SEARCH_PATH = "/api/search"
+
+# The summary leg reads the OpenSearch summary plane (#963), so every test here runs against
+# a throwaway index that the helpers below keep in step with Postgres.
+pytestmark = pytest.mark.usefixtures("summary_plane")
 
 _DEFAULT_KEYS = {
     "query",
@@ -175,6 +182,7 @@ def _make_file(
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
+    sync_summary_plane(row)
     return row
 
 
@@ -194,6 +202,7 @@ def _tag_file(db_session, user, media_file, name: str) -> None:
         db_session.commit()
     db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag.id))
     db_session.commit()
+    sync_summary_plane(media_file)
 
 
 def _collect_file(db_session, user, media_file, name: str) -> Collection:
@@ -203,6 +212,7 @@ def _collect_file(db_session, user, media_file, name: str) -> Collection:
     db_session.commit()
     db_session.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
     db_session.commit()
+    sync_summary_plane(media_file)
     return collection
 
 
@@ -215,7 +225,32 @@ def _add_speaker(db_session, user, media_file, *, name: str, display_name=None) 
     )
     db_session.add(speaker)
     db_session.commit()
+    # A summary document's speaker roster is derived from the file's transcript (the file
+    # facts the indexer generates), not from the Speaker rows alone -- so the speaker has
+    # to have said something for the plane to know they are in the room.
+    db_session.add(
+        TranscriptSegment(
+            uuid=uuid_pkg.uuid4(),
+            media_file_id=media_file.id,
+            speaker_id=speaker.id,
+            start_time=0.0,
+            end_time=5.0,
+            text=f"{display_name or name} speaking for the roster",
+        )
+    )
+    db_session.commit()
+    sync_summary_plane(media_file)
     return speaker
+
+
+def _matches_without_score(matches: list[dict]) -> list[dict]:
+    """The identifying part of each summary match; asserts the #963 ``score`` is sane.
+
+    ``score`` is the plane's RRF/BM25 relevance for the leaf. It varies with corpus
+    statistics, so a test pins that it is present and positive and compares the rest exactly.
+    """
+    assert all(m["score"] > 0 for m in matches), matches
+    return [{k: v for k, v in m.items() if k != "score"} for m in matches]
 
 
 def _summary_search(client, headers, q: str, **params):
@@ -254,6 +289,7 @@ def _share_with(db_session, owner, recipient, media_file, *, permission="viewer"
         )
     )
     db_session.commit()
+    sync_summary_plane(media_file)
 
 
 # --------------------------------------------------------------------------- #
@@ -350,7 +386,9 @@ class TestSummariesResultType:
         assert body["summary_total"] == 1
         assert len(body["summary_results"]) == 1
         hit = body["summary_results"][0]
-        assert hit["matches"] == [{"key_path": "bluf", "snippet": "a distinctive roadmap phrase"}]
+        assert _matches_without_score(hit["matches"]) == [
+            {"key_path": "bluf", "snippet": "a distinctive roadmap phrase"}
+        ]
 
     def test_all_returns_both_legs(
         self, client, user_token_headers, normal_user, db_session, stub_transcript_search
@@ -451,7 +489,7 @@ class TestSummaryMaskingFailsClosed:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["summary_total"] == 1
-        assert body["summary_results"][0]["matches"] == [
+        assert _matches_without_score(body["summary_results"][0]["matches"]) == [
             {"key_path": "bluf", "snippet": "roadmap review"}
         ]
 
@@ -665,26 +703,30 @@ class TestSummaryLegHonoursTheDateRange:
         assert uuids == [str(recorded_in_march.uuid)]
         assert total == 1
 
-    def test_an_unparseable_date_is_a_400_not_a_silently_dropped_bound(
-        self,
-        client,
-        user_token_headers,
-        normal_user,
-        db_session,
-        transcript_search_must_not_be_called,
+    @pytest.mark.parametrize("param", ["date_from", "date_to"])
+    @pytest.mark.parametrize("result_type", ["summaries", "transcripts"])
+    def test_an_unparseable_date_is_a_400_on_either_leg(
+        self, client, user_token_headers, normal_user, db_session, param, result_type
     ):
-        """A bound that cannot be parsed must never be dropped: the caller would
-        get an unfiltered page while believing they had filtered, which is the
-        whole defect class this lane closes.
-        """
+        """A bound that cannot be parsed is rejected, never dropped (the caller would get an
+        unfiltered page believing they had filtered) and never silently emptied (which reads
+        as "nothing matched"). The control proves a valid bound on the same request passes."""
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
 
-        response = client.get(
-            SEARCH_PATH,
-            params={"q": "roadmap", "result_type": "summaries", "date_from": "last-tuesday"},
+        bad = client.get(
+            "/api/search",
+            params={"q": "roadmap", "result_type": result_type, param: "last-tuesday"},
             headers=user_token_headers,
         )
-        assert response.status_code == 400, response.text
+        assert bad.status_code == 400
+        assert param in bad.json()["detail"]
+
+        good = client.get(
+            "/api/search",
+            params={"q": "roadmap", "result_type": result_type, param: "2026-03-01"},
+            headers=user_token_headers,
+        )
+        assert good.status_code == 200
 
 
 class TestSummaryLegHonoursTagsAndCollections:
@@ -765,6 +807,41 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         total, uuids = _summary_search(client, user_token_headers, "roadmap", speakers=["Dana"])
         assert uuids == [str(with_dana.uuid)]
         assert total == 1
+
+    def test_a_renamed_speaker_is_found_under_the_new_name_after_rename_propagation(
+        self,
+        client,
+        user_token_headers,
+        normal_user,
+        db_session,
+        transcript_search_must_not_be_called,
+        summary_plane,
+    ):
+        """#1188: the summary plane carries its own copy of the speaker roster, so a rename
+        that only rewrote the chunk and digest planes left the speaker filter matching the OLD
+        name. Runs the real rename-propagation task and then searches."""
+        from app.tasks.rename_propagation_task import regenerate_rename_digests
+
+        file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        speaker = _add_speaker(
+            db_session, normal_user, file, name="SPEAKER_00", display_name="Alice"
+        )
+        _, before = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])
+        assert before == [str(file.uuid)]
+
+        speaker.display_name = "Bob"
+        db_session.commit()
+        db_session.expire_all()
+        regenerate_rename_digests.run(file_uuids=[str(file.uuid)], new_name="Bob", speaker_id=None)
+        db_session.expire_all()
+        # The task writes with refresh=false (production is eventually consistent); make the
+        # write searchable so the assertions below do not race the index's refresh interval.
+        summary_plane.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+
+        _, as_bob = _summary_search(client, user_token_headers, "roadmap", speakers=["Bob"])
+        _, as_alice = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])
+        assert as_bob == [str(file.uuid)]
+        assert as_alice == []
 
     def test_the_file_type_filter_matches_the_mime_family_not_the_literal_word(
         self,
@@ -989,12 +1066,40 @@ class TestSummaryLegRanksByRelevance:
         Postgres return them differently per page — duplicating some hits and
         dropping others across a paginated result set.
         """
-        older = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
-        newer = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        # Same explicit title on both: the searched text includes the title, and the default
+        # (a random-uuid filename) tokenizes to different lengths, which would make these two
+        # "equally relevant" files differ in score. ``upload_time`` is explicit too: its
+        # server default is Postgres ``now()``, which is fixed for the whole test
+        # transaction, so two files created back to back would share one timestamp and the
+        # recency tie-break would have nothing to order by.
+        older = _make_file(
+            db_session,
+            normal_user,
+            title="Weekly sync",
+            summary={"bluf": "roadmap review"},
+            upload_time=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+        newer = _make_file(
+            db_session,
+            normal_user,
+            title="Weekly sync",
+            summary={"bluf": "roadmap review"},
+            upload_time=datetime(2026, 3, 2, tzinfo=UTC),
+        )
 
-        total, uuids = _summary_search(client, user_token_headers, "roadmap")
-        assert total == 2
-        assert uuids == [str(newer.uuid), str(older.uuid)]
+        response = client.get(
+            SEARCH_PATH,
+            params={"q": "roadmap", "result_type": "summaries"},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        uuids = [hit["file_uuid"] for hit in body["summary_results"]]
+        scores = [(h["file_uuid"][:8], h["matches"][0]["score"]) for h in body["summary_results"]]
+        assert body["summary_total"] == 2, scores
+        assert uuids == [str(newer.uuid), str(older.uuid)], (
+            f"newer={str(newer.uuid)[:8]} older={str(older.uuid)[:8]} got={scores}"
+        )
 
 
 # --------------------------------------------------------------------------- #

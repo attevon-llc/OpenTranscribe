@@ -49,7 +49,7 @@ Choose the right Whisper model for your use case:
 
 **Configuration**:
 
-Set the model in Settings → Transcription → Model Selection, or via environment variable:
+Set the model in Settings → Transcription → Provider & Model (super admin), or via environment variable:
 
 ```bash
 WHISPER_MODEL=large-v3-turbo  # Default (6x faster)
@@ -87,7 +87,7 @@ OpenTranscribe supports transcription in over 100 languages, including:
    - All 100+ languages now support native word-level timestamps via faster-whisper cross-attention DTW (as of WhisperX 3.8.1)
    - No separate alignment model (WAV2VEC2) required — timestamps are generated during transcription
 
-**Language Settings Location**: Settings → Transcription → Language Settings
+**Language Settings Location**: Settings → Transcription → Language
 
 ## Word-Level Timestamps
 
@@ -164,7 +164,7 @@ CrisperWhisper (`nyrahealth/faster_CrisperWhisper`) is a local model tuned for v
 transcription — it preserves disfluencies and word-level timing precision rather than
 smoothing them out, which is useful for captioning or forced-alignment-quality output. It is
 English-only and does not support translation. Select it via Settings → Transcription →
-Model Selection (Advanced) or `WHISPER_MODEL=nyrahealth/faster_CrisperWhisper`.
+Provider & Model (super admin) or `WHISPER_MODEL=nyrahealth/faster_CrisperWhisper`.
 
 **Default Recommendation**: Use `large-v3-turbo` for production (6x faster with excellent accuracy)
 
@@ -365,7 +365,7 @@ Automatically detects and removes erroneous transcription artifacts:
 - Extremely short nonsense segments
 - Repeated characters/patterns
 
-**Configuration** (Settings → Transcription):
+**Configuration** (Settings → Transcription → Accuracy & Cleanup):
 - **Enable/Disable**: Toggle garbage cleanup on/off
 - **Threshold**: Set maximum word length for detection
 
@@ -381,7 +381,7 @@ Improve transcription accuracy for domain-specific terminology by adding custom 
 
 **Supported Domains**: medical, legal, corporate, government, technical, general
 
-**Managing Vocabulary** (Settings > Custom Vocabulary):
+**Managing Vocabulary** (Settings → Transcription → Vocabulary):
 
 - **Add terms** one at a time with a domain and optional category
 - **Bulk import** up to 1,000 terms at once via JSON

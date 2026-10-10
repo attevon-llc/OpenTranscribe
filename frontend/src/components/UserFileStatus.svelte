@@ -7,7 +7,7 @@
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import SkeletonLoader from './ui/SkeletonLoader.svelte';
@@ -269,7 +269,25 @@
     } catch (err: unknown) {
       console.error('Error retrying file:', err);
       const errorMsg = getErrorMessage(err, $t('fileStatus.retryFailed'));
-      showMessage(errorMsg, 'error');
+      // Issue #788: the retry-spam guard (`POST /my-files/{uuid}/retry`) is
+      // itself rate-limited. Rather than a plain error toast, offer the
+      // "Retry" action right there -- disabled until the window elapses
+      // (Toast.svelte drives that off `retryAfterSeconds`), so the user does
+      // not have to leave the toast to try the same button again. Absent or
+      // unparseable Retry-After (no `retryAfterSeconds` on the error) falls
+      // back to today's plain error toast.
+      const retryAfterSeconds =
+        getErrorStatus(err) === 429
+          ? (err as { retryAfterSeconds?: number })?.retryAfterSeconds
+          : undefined;
+      if (typeof retryAfterSeconds === 'number') {
+        toastStore.warning(errorMsg, undefined, {
+          retryAfterSeconds,
+          action: { label: $t('fileStatus.retry'), onClick: () => retryFile(fileId) },
+        });
+      } else {
+        showMessage(errorMsg, 'error');
+      }
     } finally {
       retryingFiles.delete(fileId);
       retryingFiles = retryingFiles; // Trigger reactivity
@@ -648,7 +666,9 @@
   }
 
   .status-label {
-    color: var(--text-light);
+    /* These labels sit on per-status tinted cards; on the error tint --text-light
+     * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
+    color: var(--text-on-tint);
     font-size: 0.8rem;
     font-weight: 500;
   }

@@ -54,6 +54,21 @@
 # untested by issue #608 because the flag did not exist yet. Confirm it actually fits
 # before relying on it, or use a smaller model via LLM_TEST_MODEL.
 services:
+  # LLMService._resolve_pinned_target's SSRF guard refuses a private-network base_url
+  # unless LLM_ALLOW_PRIVATE_ENDPOINTS=true (default false — correct for a real
+  # deployment, since these services' addresses ARE private by construction here).
+  # docker-compose.mock-llm.yml already sets this for the identical reason; this
+  # overlay omitted it (issue #644 J-C2), so a config saved exactly as this file's own
+  # header instructs (`Settings -> AI: Provider "Custom (OpenAI-compatible)"`, base URL
+  # `http://llm-test-vllm:8000/v1`) was refused at every chat/summarization call. Both
+  # services that can initiate an LLM call need it: backend serves the synchronous chat
+  # endpoint, celery-nlp-worker runs summarization/topic-extraction/speaker-identification.
+  backend:
+    environment:
+      LLM_ALLOW_PRIVATE_ENDPOINTS: "true"
+  celery-nlp-worker:
+    environment:
+      LLM_ALLOW_PRIVATE_ENDPOINTS: "true"
   llm-test-vllm:
     # gemma4-cu130: the exact image already proven on this host's GPU 2 for Gemma 4
     # (run_openwebui's vllm-gemma4-e4b service). Override LLM_TEST_VLLM_TAG if you

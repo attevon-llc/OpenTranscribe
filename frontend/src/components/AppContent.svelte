@@ -5,7 +5,9 @@
   $: isFullBleedPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '' || $page.url.pathname === '/search';
 </script>
 
-<main class="content {isFullBleedPage ? 'gallery-page' : ''}">
+<!-- id="main-content" is the skip link's target (+layout.svelte); tabindex="-1" lets it
+     receive focus programmatically even though it is not natively focusable. -->
+<main id="main-content" tabindex="-1" class="content {isFullBleedPage ? 'gallery-page' : ''}">
   <slot />
 </main>
 

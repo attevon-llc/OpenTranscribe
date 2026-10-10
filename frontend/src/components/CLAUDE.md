@@ -11,12 +11,15 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
 - `TranscriptDisplay.svelte`, `VideoPlayer.svelte`, `Navbar.svelte`, `SettingsModal.svelte`,
   `FileUploader.svelte`, `UserFileStatus.svelte`, `CollectionsPanel.svelte` — coordinators
   that own data + state and delegate rendering to thin children.
-- `RetrievalQualityNotice.svelte` — the honest "results may be imperfect" note (#461), shared by
-  chat and search. **The `surface` prop is not cosmetic**: the cross-encoder reranker runs only on
-  the chat retrieval path, so the chat copy names it and the search copy must not — `/search` is
-  ranked by OpenSearch RRF fusion. Dismissal is per-surface in `localStorage`
-  (`opentr:retrievalQualityNotice:<surface>`) and, being a UI preference, is deliberately NOT
-  cleared by `clearUserState`.
+- `RetrievalQualityNotice.svelte` — the honest "results may be imperfect" note, shared by chat,
+  search, and (issue #756) the speakers page. **The `surface` prop is not cosmetic**: the
+  cross-encoder reranker runs only on the chat retrieval path, so the chat copy names it and the
+  search copy must not — `/search` is ranked by OpenSearch RRF fusion; the speakers surface names
+  neither (clustering is voice-embedding similarity) and links to #524, not #461. Copy and issue
+  URL are looked up from a `Record<surface, …>` map, not a ternary — a ternary silently falls
+  through to one branch's copy for any surface it wasn't written to handle. Dismissal is
+  per-surface in `localStorage` (`opentr:retrievalQualityNotice:<surface>`) and, being a UI
+  preference, is deliberately NOT cleared by `clearUserState`.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`.
   Each subfolder holds the presentational children split out of one oversized coordinator.

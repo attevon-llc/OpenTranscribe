@@ -38,3 +38,6 @@ caches of API responses.
 
 - `websocket.ts` dispatches custom events some pages listen for (e.g. clustering progress);
   keep event names stable when refactoring.
+- `supportSession.ts` is the tab-scoped (sessionStorage) support-access session: it owns the grant
+  header, the skew-corrected countdown and the purge/flip ordering on start and end. Do not mirror
+  it in another store; read `supportSessionGate` for hide/readonly decisions (#1122).

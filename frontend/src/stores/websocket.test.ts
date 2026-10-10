@@ -218,6 +218,26 @@ describe('websocket message dispatch', () => {
     expect(notifications()).toEqual([]);
   });
 
+  it.each([
+    'support_access_requested',
+    'support_access_break_glass',
+    'support_access_decided',
+    'support_access_revoked',
+  ])('routes %s to the support-access handler and makes no generic notification', async (type) => {
+    // A renamed type on either side would otherwise fall into the generic branch and
+    // surface as an unrecognised toast while the open panels never reload (issue #1122).
+    const handler = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('$lib/supportAccess/wsHandlers', () => ({ handleSupportAccessMessage: handler }));
+    const socket = openSocket();
+
+    socket.deliver({ type, data: { grant_uuid: 'g1' } });
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
+
+    expect(handler).toHaveBeenCalledWith({ type, data: { grant_uuid: 'g1' } });
+    expect(notifications()).toEqual([]);
+    vi.doUnmock('$lib/supportAccess/wsHandlers');
+  });
+
   it('survives a malformed frame instead of tearing down the socket', () => {
     const socket = openSocket();
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -375,6 +395,21 @@ describe('websocket message dispatch', () => {
 
     for (let i = 0; i < 120; i += 1) {
       socket.deliver({ type: 'file_takedown', data: { file_id: `f${i}`, filename: 'a.mp4' } });
+    }
+
+    expect(notifications()).toHaveLength(100);
+  });
+
+  it('caps the list at 100 for addNotification too (issue #569 — the WS-delivered paths capped, this client-originated one did not)', () => {
+    for (let i = 0; i < 120; i += 1) {
+      websocketStore.addNotification({
+        type: 'audio_extraction_status',
+        title: 'Audio Extraction',
+        message: `clip-${i}.mp3`,
+        progressId: `extract-${i}`, // distinct progressId per call — each is a genuine append, not an in-place update
+        status: 'completed',
+        dismissible: true,
+      });
     }
 
     expect(notifications()).toHaveLength(100);

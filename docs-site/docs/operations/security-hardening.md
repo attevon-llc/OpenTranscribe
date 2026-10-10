@@ -518,7 +518,7 @@ Establish a rotation schedule for all credentials:
 | `ENCRYPTION_KEY` | Annually | Update in `.env`, existing data auto-re-encrypted on access |
 | Database password | 90 days | Update in PostgreSQL and `.env`, restart all services |
 | MinIO credentials | 90 days | Update in MinIO and `.env`, restart all services |
-| LLM API keys | Per provider policy | Update in **Settings > AI > LLM Provider** |
+| LLM API keys | Per provider policy | Update in **Settings → LLM Provider Configuration** |
 
 ### Avoiding Secrets in Logs
 

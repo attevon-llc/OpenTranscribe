@@ -624,6 +624,23 @@ DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
 DEFAULT_GARBAGE_CLEANUP_ENABLED = True
 DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 
+# Field groups for the scoped reset (DELETE /user-settings/transcription?group=...).
+# The union must equal the fields the PUT handler persists; a unit test enforces it.
+TRANSCRIPTION_SETTING_GROUPS: dict[str, tuple[str, ...]] = {
+    "language": ("source_language", "translate_to_english", "llm_output_language"),
+    "accuracy": (
+        "garbage_cleanup_enabled",
+        "garbage_cleanup_threshold",
+        "vad_threshold",
+        "vad_min_silence_ms",
+        "vad_min_speech_ms",
+        "vad_speech_pad_ms",
+        "hallucination_silence_threshold",
+        "repetition_penalty",
+    ),
+    "speakers": ("diarization_source", "speaker_prompt_behavior", "min_speakers", "max_speakers"),
+}
+
 # Watch Sources global tuning (DB-backed via SystemSettings, admin-UI managed,
 # no restart). Coded defaults here are the single source of truth — there are
 # NO watch tuning .env vars (only the physical WATCH_FOLDER_PATH mount).
@@ -1463,9 +1480,18 @@ DEFAULT_CHAT_TRACE_ENABLED = True  # chat.trace_enabled
 # widened time range is what the cached-span rebuild reads), and the growth
 # is bounded so it comes out of the SAME excerpt budget without silently
 # evicting other files' evidence (`MAX_EXPANSION_SEGMENTS`/
-# `MAX_EXPANDED_WORDS`). Default OFF: a new, unmeasured retrieval shape, same
-# posture as every other W2.x flag above.
-DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_enabled
+# `MAX_EXPANDED_WORDS`). Default ON as of 2026-09-21: measured (2026-08-20/21,
+# re-verified post-#526 on a TS3005/ES2002a A/B) that expansion delivers a
+# real, reproducible answer-quality gain ("same chunks, richer content") with
+# coverage a wash, not a regression, and #526 (the citation/quote-fidelity
+# blocker — an expanded chunk's citation pointed at a shorter, unexpanded
+# indexed span) is CLOSED on both the backend (`ChunkHit.expanded` +
+# `EXPANDED_SNIPPET_CHARS`) and the reader (`ChatSources.svelte`'s expander,
+# #913). citation_resolution_rate/citation_validity_rate stayed a perfect 1.0
+# in both arms of the re-verification. See issue #523's closing comment for
+# the full numbers, including a harness measurement artifact (filed
+# separately) that made raw quote_fidelity look worse than it is.
+DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = True  # chat.rag.context_expansion_enabled
 
 # --- #532 synthesis-gap EXPERIMENT flags. -----------------------------------
 # The measured defect: retrieval OFFERS 99% of a multi-file scope, the answer
@@ -1652,3 +1678,23 @@ FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
 # the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
 # rather than hardcoding the string twice.
 STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"
+
+# =============================================================================
+# Support-access grants (issue #1122)
+# =============================================================================
+# Code constants, not settings, on purpose: the control constrains platform admins, so an
+# admin must not be able to widen it from the UI (separation of duties).
+SUPPORT_ACCESS_MIN_TTL_MINUTES = 15
+SUPPORT_ACCESS_MAX_TTL_MINUTES = 480
+SUPPORT_ACCESS_BREAK_GLASS_MAX_TTL_MINUTES = 240
+SUPPORT_ACCESS_DEFAULT_TTL_MINUTES = 60
+#: An undecided request lapses after this long and can no longer be approved or denied.
+SUPPORT_ACCESS_PENDING_EXPIRY_HOURS = 72
+#: Cap on a presigned URL minted under a grant. A SigV4 URL is a bearer token, not bound to
+#: a user, so revoking the grant does not invalidate one already minted; this bounds the
+#: residual access after revocation.
+SUPPORT_ACCESS_PRESIGN_MAX_SECONDS = 300
+#: Grant creation is rate limited per user so request spam cannot flood approvers.
+SUPPORT_ACCESS_REQUEST_RATE_LIMIT = "10/hour"
+#: Header that carries a grant uuid. Never ambient: a request without it has no grant.
+SUPPORT_ACCESS_GRANT_HEADER = "X-Support-Access-Grant"

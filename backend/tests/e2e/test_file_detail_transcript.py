@@ -43,6 +43,7 @@ import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
+from timeouts import SEGMENT_SAVE_CLOSES_EDITOR_MS
 
 pytestmark = pytest.mark.transcription
 
@@ -331,7 +332,9 @@ class TestSegmentEditing:
             textarea.first.fill(unique_text)
 
             page.locator(".segment-edit-actions .save-button").first.click()
-            expect(page.locator(".segment-textarea")).to_have_count(0, timeout=10000)
+            expect(page.locator(".segment-textarea")).to_have_count(
+                0, timeout=SEGMENT_SAVE_CLOSES_EDITOR_MS
+            )
 
             saved = (first_segment.locator(".segment-text").first.text_content() or "").strip()
             assert saved == unique_text, "Save must reflect the edited text immediately"

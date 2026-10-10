@@ -59,6 +59,10 @@ class AuditEventType(StrEnum):
     # Account events
     AUTH_ACCOUNT_LOCKOUT = "auth.account.lockout"
     AUTH_ACCOUNT_UNLOCK = "auth.account.unlock"
+    #: Admin clearing the progressive lockout counter (issue #570) — distinct from
+    #: AUTH_ACCOUNT_UNLOCK, which also reactivates a disabled account. See
+    #: `api/endpoints/admin.py::admin_reset_lockout_counter`.
+    AUTH_LOCKOUT_COUNTER_RESET = "auth.lockout.counter_reset"  # noqa: S105 # nosec B105
     AUTH_ACCOUNT_DISABLED = "auth.account.disabled"
     AUTH_ACCOUNT_EXPIRED = "auth.account.expired"
     # Distinct from AUTH_ACCOUNT_EXPIRED: the AC-2 inactivity sweep declined to
@@ -89,6 +93,9 @@ class AuditEventType(StrEnum):
     ADMIN_FILE_QUARANTINE = "admin.file.quarantine"
     ADMIN_FILE_RELEASE = "admin.file.release"
 
+    # A forced OpenSearch orphan purge that overrode the sweep's ratio guard
+    ADMIN_DATA_INTEGRITY_PURGE = "admin.data_integrity.purge"
+
     # A permanent delete refused by services/delete_permissions.py (issue #1103)
     FILE_DELETE_DENIED = "file.delete.denied"
 
@@ -105,6 +112,11 @@ class AuditEventType(StrEnum):
     # Banner acknowledgment
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 
+    # A user saved or removed a third-party service credential of their own (issue #1204,
+    # the pyannote.ai key). ``details`` names the provider and purpose only, NEVER the key.
+    USER_CREDENTIAL_SET = "user.credential.set"
+    USER_CREDENTIAL_DELETE = "user.credential.delete"
+
     # Resource sharing (collections, tags) — see details.resource_type. Distinct from
     # PROMPT_SHARE/UNSHARE above, which predate this and are prompt-specific.
     RESOURCE_SHARE = "resource.share"
@@ -114,6 +126,22 @@ class AuditEventType(StrEnum):
     GROUP_MEMBER_ADD = "group.member.add"
     GROUP_MEMBER_REMOVE = "group.member.remove"
     GROUP_MEMBER_ROLE_CHANGE = "group.member.role_change"
+
+    # Platform-admin reach into tenant data (issue #1122). Content access is the forced
+    # TENANCY_MODE=single escape hatch crossing a tenant; metadata access is a platform
+    # route (retention preview, quarantine list) returning other tenants' filenames.
+    PLATFORM_ADMIN_CONTENT_ACCESS = "platform_admin.content.access"
+    PLATFORM_ADMIN_METADATA_ACCESS = "platform_admin.metadata.access"
+
+    # Support-access grants (issue #1122). ``user_id`` is the actor, ``organization_id`` the
+    # target tenant and ``target_user_id`` the subject user (personal workspace) or the
+    # grantee (decisions). Details carry ids, levels and the route, never content.
+    SUPPORT_ACCESS_REQUESTED = "support_access.requested"
+    SUPPORT_ACCESS_APPROVED = "support_access.approved"
+    SUPPORT_ACCESS_DENIED = "support_access.denied"
+    SUPPORT_ACCESS_REVOKED = "support_access.revoked"
+    SUPPORT_ACCESS_BREAK_GLASS = "support_access.break_glass"
+    SUPPORT_ACCESS_USED = "support_access.used"
 
 
 class AuditOutcome(StrEnum):
@@ -511,13 +539,24 @@ class AuditLogger:
         lockout_duration_minutes: int,
         failed_attempts: int,
     ) -> None:
-        """Log an account lockout event."""
+        """Log an account lockout event.
+
+        This is a SYSTEM-initiated event (the progressive lockout threshold was
+        crossed by a login attempt, not by an administrator), so there is no
+        actor: ``user_id``/``username`` stay unset and the locked account is the
+        TARGET (issue #443's contract — the subject always goes in
+        ``target_user_id``/``target_username``, never in the actor fields, even
+        when there is no human actor to distinguish it from). This was
+        previously the exact pre-#443 shape: the locked account named in
+        ``username`` with no target at all, invisible to "everything done TO
+        this identifier" queries.
+        """
         self.log(
             event_type=AuditEventType.AUTH_ACCOUNT_LOCKOUT,
             outcome=AuditOutcome.SUCCESS,
-            username=username,
             source_ip=source_ip,
             user_agent=user_agent,
+            target_username=username,
             details={
                 "lockout_duration_minutes": lockout_duration_minutes,
                 "failed_attempts": failed_attempts,

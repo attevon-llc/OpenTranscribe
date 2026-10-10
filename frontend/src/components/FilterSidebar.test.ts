@@ -49,8 +49,13 @@ vi.mock('../lib/axios', () => ({ default: mockAxios }));
 // state across tests) — just call straight through to the fetcher.
 vi.mock('$lib/apiCache', () => ({
   apiCache: { getOrFetch: (_key: string, fetchFn: () => unknown) => fetchFn() },
-  cacheKey: { tags: () => 'tags', speakers: () => 'speakers', metadataFilters: () => 'meta' },
-  CacheTTL: { TAGS: 0, SPEAKERS: 0, METADATA: 0 },
+  cacheKey: {
+    tags: () => 'tags',
+    speakers: () => 'speakers',
+    metadataFilters: () => 'meta',
+    owners: () => 'owners',
+  },
+  CacheTTL: { TAGS: 0, SPEAKERS: 0, METADATA: 0, OWNERS: 0 },
 }));
 
 // Heavy third-party widgets not under test here — stub to keep the DOM small
@@ -114,6 +119,10 @@ const METADATA = {
   languages: [],
 };
 
+function owner(uuid: string, full_name: string | null, masked_email = 'ow***@example.com') {
+  return { uuid, full_name, masked_email };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   sliderMounts.length = 0;
@@ -121,6 +130,7 @@ beforeEach(() => {
   mockAxios.get.mockImplementation((url: string) => {
     if (url === '/speakers') return Promise.resolve({ data: [] });
     if (url === '/files/metadata-filters') return Promise.resolve({ data: METADATA });
+    if (url === '/files/owners') return Promise.resolve({ data: [] });
     return Promise.resolve({ data: {} });
   });
 });
@@ -345,6 +355,105 @@ describe('FilterSidebar — duration slider bounds (#744)', () => {
   });
 });
 
+/**
+ * Issue #750 item 8 — duration quick chips. They must share the slider's
+ * exact null-at-bounds conversion (so a chip click and a slider drag never
+ * disagree about what's filtered — trap 1 in the plan), and a chip that
+ * provably cannot match anything in this library must not render at all
+ * (the same class of defect #744 fixed for the sliders themselves).
+ */
+describe('FilterSidebar — duration quick chips (#750)', () => {
+  it('only renders chips that can match something in this library', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      // A 100-second library: only the "1-10 min" chip (60-600s) overlaps.
+      if (url === '/files/metadata-filters') {
+        return Promise.resolve({
+          data: { duration: { min: 0, max: 100 }, file_size: { min: 0, max: 100 }, languages: [] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() =>
+      expect(container.querySelectorAll('.duration-chip-list button').length).toBeGreaterThan(0)
+    );
+
+    const chips = Array.from(
+      container.querySelectorAll('.duration-chip-list button')
+    ) as HTMLElement[];
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toContain('filter.duration1to10');
+  });
+
+  it('clicking a chip dispatches the same null-at-bounds range the slider would', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      // Wide bounds so every chip renders and none of them sit at a bound.
+      if (url === '/files/metadata-filters') {
+        return Promise.resolve({
+          data: { duration: { min: 0, max: 4000 }, file_size: { min: 0, max: 100 }, languages: [] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const events: Array<{ durationRange: { min: number | null; max: number | null } }> = [];
+    const { container } = render(FilterSidebarTestHost, {
+      props: {
+        onFilter: (detail: unknown) =>
+          events.push(detail as { durationRange: { min: number | null; max: number | null } }),
+      },
+    });
+    await waitFor(() =>
+      expect(container.querySelectorAll('.duration-chip-list button').length).toBe(4)
+    );
+
+    const chips = Array.from(
+      container.querySelectorAll('.duration-chip-list button')
+    ) as HTMLElement[];
+    // "11-30 min" -> [660, 1800] seconds, neither end at the 0-4000 bounds.
+    await fireEvent.click(chips[1]);
+
+    const last = events[events.length - 1];
+    expect(last.durationRange).toEqual({ min: 660, max: 1800 });
+  });
+
+  it('a chip touching the library max collapses that end to null, like the slider', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      // Library maxes out at 1800s — the "11-30 min" chip's upper end (1800)
+      // sits exactly on the bound, so the effective max must be null.
+      if (url === '/files/metadata-filters') {
+        return Promise.resolve({
+          data: { duration: { min: 0, max: 1800 }, file_size: { min: 0, max: 100 }, languages: [] },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const events: Array<{ durationRange: { min: number | null; max: number | null } }> = [];
+    const { container } = render(FilterSidebarTestHost, {
+      props: {
+        onFilter: (detail: unknown) =>
+          events.push(detail as { durationRange: { min: number | null; max: number | null } }),
+      },
+    });
+    await waitFor(() =>
+      expect(container.querySelectorAll('.duration-chip-list button').length).toBe(2)
+    );
+
+    const chips = Array.from(
+      container.querySelectorAll('.duration-chip-list button')
+    ) as HTMLElement[];
+    await fireEvent.click(chips[1]); // "11-30 min"
+
+    const last = events[events.length - 1];
+    expect(last.durationRange).toEqual({ min: 660, max: null });
+  });
+});
+
 describe('FilterSidebar — facet selection', () => {
   it('selecting two tag facets includes both in the dispatched filter event', async () => {
     const events: unknown[] = [];
@@ -369,6 +478,132 @@ describe('FilterSidebar — facet selection', () => {
       (el) => el.textContent?.trim()
     );
     expect(labels.some((l) => l?.startsWith('empty-tag'))).toBe(true);
+  });
+});
+
+/**
+ * Issue #966 — the gallery's ownership facet gained a searchable multi-select
+ * of specific owners. `GET /files/owners` is a CLOSED enumeration (no `q`
+ * parameter), so these tests pin the component's half of that contract: it
+ * requests the list with no query, renders exactly what the server returned,
+ * and never invents its own free-text filter request against that endpoint.
+ */
+describe('FilterSidebar — owner filter (issue #966)', () => {
+  function ownerSection(container: HTMLElement): HTMLElement {
+    const heading = Array.from(container.querySelectorAll('h3')).find(
+      (h) => h.textContent?.trim() === 'filter.owners'
+    );
+    if (!heading) throw new Error('owners filter-section heading not found');
+    const section = heading.closest('.filter-section');
+    if (!section) throw new Error('owners filter-section not found');
+    return section as HTMLElement;
+  }
+
+  it('fetches the owner list with no free-text query parameter', async () => {
+    mockAxios.get.mockImplementation((url: string, config?: { params?: unknown }) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      if (url === '/files/metadata-filters') return Promise.resolve({ data: METADATA });
+      if (url === '/files/owners') {
+        // Constraint 2 of #966's security review: no q/search param, ever.
+        expect(config?.params).toBeUndefined();
+        return Promise.resolve({ data: [owner('u1', 'Alice')] });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(FilterSidebarTestHost);
+    const section = ownerSection(container);
+    await waitFor(() => expect(section.querySelector('.multiselect-toggle')).toBeTruthy());
+    await fireEvent.click(section.querySelector('.multiselect-toggle') as HTMLElement);
+    await waitFor(() => expect(section.textContent).toContain('Alice'));
+  });
+
+  it('selecting an owner includes their uuid in the dispatched filter event', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      if (url === '/files/metadata-filters') return Promise.resolve({ data: METADATA });
+      if (url === '/files/owners') {
+        return Promise.resolve({ data: [owner('u1', 'Alice'), owner('u2', null, 'bo***@x.com')] });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const events: unknown[] = [];
+    const { container } = render(FilterSidebarTestHost, {
+      props: { onFilter: (detail: unknown) => events.push(detail) },
+    });
+
+    const section = ownerSection(container);
+    await waitFor(() => expect(section.querySelector('.multiselect-toggle')).toBeTruthy());
+    await fireEvent.click(section.querySelector('.multiselect-toggle') as HTMLElement);
+
+    await waitFor(() => expect(section.querySelectorAll('.option-item').length).toBe(2));
+    const options = Array.from(section.querySelectorAll('.option-item')) as HTMLElement[];
+    // A masked-email-only owner (no full_name) must still render as a legible
+    // option — falls back to `masked_email`, never a raw address.
+    expect(options.map((o) => o.textContent?.trim())).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Alice'),
+        expect.stringContaining('bo***@x.com'),
+      ])
+    );
+
+    const aliceCheckbox = options
+      .find((o) => o.textContent?.includes('Alice'))
+      ?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await fireEvent.click(aliceCheckbox);
+
+    const last = events[events.length - 1] as { owners: string[] };
+    expect(last.owners).toEqual(['u1']);
+  });
+
+  it('a failed owner fetch shows a retry instead of an empty, indistinguishable list', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      if (url === '/files/metadata-filters') return Promise.resolve({ data: METADATA });
+      if (url === '/files/owners') return Promise.reject(new Error('boom'));
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() =>
+      expect(ownerSection(container).querySelector('[data-testid="owners-retry"]')).not.toBeNull()
+    );
+    expect(container.textContent).not.toContain('filter.noOwners');
+  });
+
+  it('resetting filters clears the selected owners', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      if (url === '/files/metadata-filters') return Promise.resolve({ data: METADATA });
+      if (url === '/files/owners') return Promise.resolve({ data: [owner('u1', 'Alice')] });
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(FilterSidebarTestHost);
+
+    const section = ownerSection(container);
+    const toggle = () => section.querySelector('.multiselect-toggle') as HTMLElement;
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await fireEvent.click(toggle());
+    await waitFor(() => expect(section.querySelectorAll('.option-item').length).toBe(1));
+    let checkbox = section.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await fireEvent.click(checkbox);
+    await waitFor(() => expect(checkbox.checked).toBe(true));
+
+    const resetBtn = container.querySelector('.reset-button') as HTMLElement;
+    await fireEvent.click(resetBtn);
+
+    // Clicking the reset button (outside the multiselect) closes its
+    // dropdown via its own click-outside handler, so re-open it and read the
+    // checkbox fresh — it reactively reflects the parent's now-empty
+    // `selectedOwners`, the same source-of-truth pattern the tag reset test
+    // above pins via `.tag-button.selected`.
+    await fireEvent.click(toggle());
+    await waitFor(() => {
+      checkbox = section.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+    });
   });
 });
 

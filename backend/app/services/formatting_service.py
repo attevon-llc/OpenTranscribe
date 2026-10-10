@@ -188,6 +188,18 @@ class FormattingService:
         """
         validated = MediaFileSchema.model_validate(media_file)
 
+        # J-B5 (issue #576): a file quarantined mid-pipeline still has a PIPELINE
+        # writer overwrite `status` to a terminal value afterwards (issue #824's
+        # documented residual gap — the data-destruction consequence is closed, the
+        # display one is not). `is_quarantined` is the AUTHORITATIVE flag; honour it
+        # here so `display_status`/`status_badge_class` read correctly on any surface
+        # that renders only these pre-formatted fields, which is this repo's norm.
+        is_quarantined = bool(getattr(media_file, "is_quarantined", False))
+        effective_status = FileStatus.QUARANTINED if is_quarantined else media_file.status
+        effective_status_value = (
+            "quarantined" if is_quarantined else media_file.status.value  # type: ignore[union-attr]
+        )
+
         updates: dict[str, Any] = {
             "formatted_duration": FormattingService.format_duration(
                 float(media_file.duration) if media_file.duration is not None else None
@@ -202,11 +214,9 @@ class FormattingService:
                 int(media_file.file_size) if media_file.file_size is not None else None
             ),
             "display_status": FormattingService.format_status(
-                media_file.status  # type: ignore[arg-type]
+                effective_status  # type: ignore[arg-type]
             ),
-            "status_badge_class": FormattingService.get_status_badge_class(
-                media_file.status.value  # type: ignore[arg-type]
-            ),
+            "status_badge_class": FormattingService.get_status_badge_class(effective_status_value),
         }
 
         # Add error categorization for failed files

@@ -77,7 +77,7 @@ The system includes automatic repair for speaker embedding inconsistencies:
 - Detects mismatches between database speaker records and OpenSearch embeddings
 - Runs periodic consistency checks with a distributed lock (2-hour TTL)
 - Repairs orphaned, missing, or stale embeddings automatically
-- Can be triggered manually via the Admin UI (Settings → Embeddings)
+- Can be triggered manually via the Admin UI (Settings → Speaker Embedding System)
 
 ### Timeline
 
@@ -289,7 +289,7 @@ Important: No data is lost during migration:
 :::danger There is no supported one-click rollback today — issue #659
 
 Earlier versions of this page described two ways to revert to v3: an Admin UI control at
-*Settings → Embeddings → "Use PyAnnote v3"*, and a `PYANNOTE_VERSION=v3` environment variable.
+*Settings → Speaker Embedding System → "Use PyAnnote v3"*, and a `PYANNOTE_VERSION=v3` environment variable.
 **Neither exists.** No such control is in the embedding-migration settings component, and
 `PYANNOTE_VERSION` is read by nothing — it appears in no `.env.example`, no compose file, and
 no application config. Setting it does nothing at all.

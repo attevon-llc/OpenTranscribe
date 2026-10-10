@@ -665,9 +665,40 @@ this file is for.
 
 Root `CLAUDE.md` points here for the mechanics. `.fresh/` is gitignored and fully regenerated.
 
+**Starting `--fresh` from a git worktree (issue #961a):** `.env` is gitignored, so a worktree
+does not get one. `opentr.sh`'s prologue auto-links (never copies, never reads) the MAIN
+checkout's `.env` into the worktree via a *relative* symlink when it can find one —
+`git rev-parse --git-common-dir` resolves to the main checkout's `.git` regardless of which
+worktree invoked it, and comparing it against `--git-dir` is git's own documented worktree
+test. When no main `.env` exists either, `require_env_file_or_die()` refuses a real (non
+`--dry-run`) `start` with a diagnosis naming the main checkout, instead of proceeding with every
+interpolated var empty and letting Postgres crash-loop on an unrelated-looking
+"superuser password is not specified".
+
+**`up --wait` returning 0 is not sufficient proof the stack is up (issue #962).** It has a known
+race (moby/compose) where a container stuck in a restart loop can be observed "Running" at poll
+time. `verify_stack_health()` re-inspects every container this invocation's compose project
+controls (`docker compose $COMPOSE_FILES ps -a -q`) after `up` returns, and fails the whole
+`start` if any is `restarting`/`exited`/`dead`/`unhealthy`. A container still `health: starting`
+is never a failure — Docker's own healthcheck state machine already won't flip that to
+`unhealthy` before the service's OWN `start_period` (Keycloak's 120s, the backend's 600s, ...),
+so nothing here re-implements a competing global timeout.
+
 - `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
   `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`, plus the aux
-  services below when their flag is passed).
+  services below when their flag is passed). It also carries two `environment:` additions
+  (issues #961b / #968), both generated — never hand-edit this file:
+  - `frontend` always gets `CHOKIDAR_USEPOLLING=true` / `CHOKIDAR_INTERVAL` (default 300,
+    tunable via that env var before `start`). Two Vite dev servers side by side (this stack +
+    the main one) exhaust `fs.inotify.max_user_instances` (128 on a typical host) and the
+    second one dies with `EMFILE` watching `vite.config.ts`. Raising the sysctl needs root; a
+    `--fresh` stack is by definition the second watcher, so it's the one that polls instead.
+  - `backend` gets an offset-aware `CORS_ORIGINS` (a JSON array — pydantic-settings JSON-decodes
+    a `list[str]` env var BEFORE its `mode="before"` validator runs, so a comma-separated value
+    raises `SettingsError` at startup) whenever `--port-offset` is non-zero. Without it, the
+    WebSocket origin check (`_origin_is_allowed`, `backend/app/api/websockets.py`, #903's
+    anti-hijacking fix — kept exact-match, never weakened) rejects every handshake from this
+    stack's offset Vite origin with 403, and `/api/ws` silently never connects.
 - `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
   `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
 - `.fresh/<name>.aux` — the aux overlay files the deployment was started with, one per line.

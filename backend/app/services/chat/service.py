@@ -280,7 +280,7 @@ def _resolve_summary_tier(
     user_id: int,
     organization_id: int | None = None,
     mask_kwargs: dict[str, Any],
-) -> tuple[list[Any], list[MaskedChunk], str | None, int, int]:
+) -> tuple[list[Any], list[MaskedChunk], str | None, int, int, dict[str, int]]:
     """Decide which leg feeds the map-reduce overview's summaries (W2.1).
 
     Split out of ``_prepare_context`` so its branching doesn't count against
@@ -314,7 +314,7 @@ def _resolve_summary_tier(
 
     Returns:
         ``(summary_hits, summary_masked, map_leg, files_without_artifacts,
-        files_no_content)``. ``map_leg`` is ``"scope_map"`` |
+        files_no_content, map_coverage)``. ``map_leg`` is ``"scope_map"`` |
         ``"speaker_scope_map"`` | ``"speaker_scope_map_empty"`` |
         ``"ranked_digests"`` | ``None`` (nothing to summarise this turn).
         ``files_without_artifacts`` and ``files_no_content`` are 0 whenever the
@@ -322,7 +322,10 @@ def _resolve_summary_tier(
         ``mapreduce.scope_digest_hits``'s own docstring for what distinguishes
         the two (never consulted vs. consulted and genuinely empty), which
         ``mapreduce.coverage.check_scope_coverage`` reads back off ``meta`` via
-        these same two counts.
+        these same two counts. ``map_coverage`` is ``scope_digest_hits``'s full
+        ``.coverage`` dict when ``map_leg == "scope_map"`` (it carries the
+        ``summary_hits``/``entries_digest`` counters — see that function's own
+        docstring), and ``{}`` for every other leg.
     """
     from app.services.chat.mapreduce import scope_digest_hits
     from app.services.chat.mapreduce import scope_speaker_digest_hits
@@ -356,12 +359,13 @@ def _resolve_summary_tier(
                 "speaker_scope_map",
                 files_without_artifacts,
                 files_no_content,
+                {},
             )
         # Never a silent zero: the caller still composes an overview from this
         # (empty) map when the turn was speaker-scoped — see
         # `mapreduce._empty_speaker_focus_overview` — rather than silently
         # answering with nothing and no explanation.
-        return [], [], "speaker_scope_map_empty", files_without_artifacts, files_no_content
+        return [], [], "speaker_scope_map_empty", files_without_artifacts, files_no_content, {}
 
     if decision.wants_digest and file_uuids:
         with session_scope() as db:
@@ -382,7 +386,14 @@ def _resolve_summary_tier(
             summary_masked = mask_digests(
                 session_scope, map_hits, user_id, organization_id=organization_id, **mask_kwargs
             )
-            return map_hits, summary_masked, "scope_map", files_without_artifacts, files_no_content
+            return (
+                map_hits,
+                summary_masked,
+                "scope_map",
+                files_without_artifacts,
+                files_no_content,
+                dict(map_hits.coverage),
+            )
         if ranked_digests:
             # The map covered nothing (every file in scope lacks a digest, or
             # the read failed) but the ranked leg still found something —
@@ -393,8 +404,9 @@ def _resolve_summary_tier(
                 "ranked_digests",
                 files_without_artifacts,
                 files_no_content,
+                {},
             )
-        return [], [], None, files_without_artifacts, files_no_content
+        return [], [], None, files_without_artifacts, files_no_content, {}
 
     if ranked_digests:
         # Unbounded scope: keep today's ranked-leg-only behaviour. Also
@@ -402,8 +414,8 @@ def _resolve_summary_tier(
         # digest tier at all but which somehow still carries ranked digest
         # hits — the same fallback the pre-decoupling code applied
         # unconditionally to any non-empty `result.digests`.
-        return ranked_digests, ranked_digests_masked, "ranked_digests", 0, 0
-    return [], [], None, 0, 0
+        return ranked_digests, ranked_digests_masked, "ranked_digests", 0, 0, {}
+    return [], [], None, 0, 0, {}
 
 
 def _resolve_speaker_focus(
@@ -1333,8 +1345,8 @@ def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     ``expand_short_chunks`` (#523) widens a chunk under
     ``context_expansion.SHORT_CHUNK_WORD_THRESHOLD`` words to its surrounding
     exchange BEFORE masking, inside ``mask_chunks`` itself, so the
-    strictest-wins policy applies to every widened word. Flag-gated, default OFF
-    (``chat.context_expansion_enabled``).
+    strictest-wins policy applies to every widened word. Flag-gated, default ON
+    as of the #523 A/B (2026-09-21) (``chat.context_expansion_enabled``).
 
     ⚠️ THIS IS THE CHUNK PLANE ONLY. The digest plane takes
     :func:`_build_digest_mask_kwargs`, which omits ``expand_short_chunks`` — see its
@@ -1357,8 +1369,9 @@ def _emit_expansion(recorder, masked: list, *, enabled: bool) -> None:
     returns — hence a helper called from there rather than an emit beside the
     other narrowing stages.
 
-    ``chat.context_expansion_enabled`` is default-OFF, and a stage that did not
-    run still reports ``SKIPPED`` rather than vanishing: an absent row reads as
+    ``chat.context_expansion_enabled`` is admin-editable (default ON as of
+    2026-09-21), and a stage that did not run still reports ``SKIPPED`` rather
+    than vanishing: an absent row reads as
     "not part of this pipeline", which is precisely the ambiguity the panel
     exists to remove. ``chunk.expanded`` counts chunks whose own time range was
     widened; the rest were already long enough to keep as they were.
@@ -1408,6 +1421,25 @@ def _finalize_overview_citations(overview, summaries: list) -> None:
     from app.services.chat.citations import build_overview_citations
 
     overview.citation_payloads = tuple(build_overview_citations(overview.cited_entries, summaries))
+
+
+def _overview_diagnostics(summaries: list, map_coverage: dict[str, Any], overview, map_leg):
+    """#532 instrumentation (plan Unit U4), scope-map turns only.
+
+    ``{}`` when ``map_leg != "scope_map"`` — the branch lives here rather than
+    at the call site so it does not count against ``_prepare_context``'s own
+    complexity ceiling. Content-free counts only — never text, same rule
+    ``Overview.as_metadata()`` already follows. ``summary_chars``/``digest_chars``
+    are summed from the POST-masking ``summaries``.
+    """
+    if map_leg != "scope_map":
+        return {}
+    return {
+        "entries_digest": int(map_coverage.get("entries_digest", 0)),
+        "block_chars": len(overview.block),
+        "summary_chars": sum(len(s.llm_summary) for s in summaries),
+        "digest_chars": sum(len(s.digest) for s in summaries),
+    }
 
 
 def _prepare_context(
@@ -1651,18 +1683,23 @@ def _prepare_context(
     # `file_facts` for every file) or the ranked digest leg above (unbounded
     # scope, or the map covered nothing). See `_resolve_summary_tier`'s own
     # docstring for the decoupling this replaces.
-    summary_hits, summary_masked, map_leg, files_without_artifacts, files_no_content = (
-        _resolve_summary_tier(
-            decision=decision,
-            file_uuids=file_uuids,
-            settings=settings,
-            session_scope=session_scope,
-            ranked_digests=result.digests,
-            ranked_digests_masked=digest_masked,
-            user_id=user_id,
-            organization_id=organization_id,
-            mask_kwargs=_digest_mask_kwargs,
-        )
+    (
+        summary_hits,
+        summary_masked,
+        map_leg,
+        files_without_artifacts,
+        files_no_content,
+        map_coverage,
+    ) = _resolve_summary_tier(
+        decision=decision,
+        file_uuids=file_uuids,
+        settings=settings,
+        session_scope=session_scope,
+        ranked_digests=result.digests,
+        ranked_digests_masked=digest_masked,
+        user_id=user_id,
+        organization_id=organization_id,
+        mask_kwargs=_digest_mask_kwargs,
     )
     if files_without_artifacts:
         meta["map_files_without_artifacts"] = files_without_artifacts
@@ -1709,14 +1746,18 @@ def _prepare_context(
     if summaries or (map_leg == "speaker_scope_map_empty" and speaker_focus_for_summary):
         from app.services.chat.mapreduce import build_overview
 
+        citation_start = _overview_citation_start(settings, digest_masked, masked)
         overview = build_overview(
             question,
             summaries,
             files_in_scope=len(file_uuids) if file_uuids else 0,
             speaker_focus=speaker_focus_for_summary,
-            citation_start=_overview_citation_start(settings, digest_masked, masked),
+            citation_start=citation_start,
         )
         _finalize_overview_citations(overview, summaries)
+        overview.diagnostics.update(
+            _overview_diagnostics(summaries, map_coverage, overview, map_leg)
+        )
         meta["overview"] = overview.as_metadata()
         # The frontend's pre-existing "Overview source" row: which REDUCER
         # composed the block ("code" | "llm-batch"), already carried inside

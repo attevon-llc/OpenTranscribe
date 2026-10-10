@@ -8,9 +8,10 @@ import path from 'path';
  *
  * #673 moved every transcript download server-side so the admin `export_locked` floor is
  * consulted — and missed the clipboard, because a copy button does not look like an export.
- * `TranscriptModal` went on building the whole consolidated transcript from
- * `processedTranscriptSegments` and writing it to the clipboard with no server call at all,
- * unredacted whenever the reader had "Show original" on.
+ * `TranscriptModal` (deleted, issue #755 — consolidated into
+ * `components/transcript/TranscriptViewModal.svelte`) went on building the whole
+ * consolidated transcript from `processedTranscriptSegments` and writing it to the clipboard
+ * with no server call at all, unredacted whenever the reader had "Show original" on.
  *
  * So every surface that writes to the clipboard is enumerated here with a reason naming
  * what it copies and why that is not a policy bypass. A new one fails this test until
@@ -107,8 +108,11 @@ describe('clipboard surfaces are enumerated (issue #821)', () => {
     expect(stale).toEqual([]);
   });
 
-  it('the transcript modal no longer touches the clipboard or serializes a transcript', () => {
-    const modal = readFileSync(path.join(SRC, 'components/TranscriptModal.svelte'), 'utf-8');
+  it('the transcript view modal does not touch the clipboard or serialize a transcript', () => {
+    const modal = readFileSync(
+      path.join(SRC, 'components/transcript/TranscriptViewModal.svelte'),
+      'utf-8'
+    );
 
     expect(CLIPBOARD_USE.test(modal)).toBe(false);
     expect(modal).not.toContain('consolidatedTranscript');

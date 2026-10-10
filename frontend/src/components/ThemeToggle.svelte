@@ -7,7 +7,17 @@
 </script>
 
 <label class="theme-toggle" title={$t('theme.toggle')}>
-  <input type="checkbox" checked={isDarkMode} on:change={toggleTheme} />
+  <!-- The wrapping <label> is an implicit label, but it contains only SVG icons and no text,
+       so it supplies no accessible name and axe's `label` rule fires. A screen reader
+       announced this as a bare "checkbox". `title` on the label is not a substitute — it is
+       not an accessible name for the INPUT. Caught by #972's fixture page, which renders the
+       app chrome on a surface where nothing else was competing for the finding. -->
+  <input
+    type="checkbox"
+    aria-label={$t('theme.toggle')}
+    checked={isDarkMode}
+    on:change={toggleTheme}
+  />
   <div class="toggle-track">
     <!-- Sun icon (visible in light mode) -->
     <div class="icon sun-icon">

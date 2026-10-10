@@ -52,9 +52,14 @@ describe('page-resetting filter setters', () => {
       expected: { searchMode: 'semantic' },
     },
     {
-      name: 'setResultType',
-      apply: () => searchStore.setResultType('summaries'),
-      expected: { resultType: 'summaries' },
+      name: 'setSources',
+      apply: () => searchStore.setSources(['summary']),
+      expected: { selectedSources: ['summary'] },
+    },
+    {
+      name: 'toggleSource (removing one already selected)',
+      apply: () => searchStore.toggleSource('summary'),
+      expected: { selectedSources: ['content', 'title', 'speaker'] },
     },
     {
       name: 'setSpeakers',
@@ -95,11 +100,6 @@ describe('page-resetting filter setters', () => {
       name: 'setStatuses',
       apply: () => searchStore.setStatuses(['completed']),
       expected: { selectedStatuses: ['completed'] },
-    },
-    {
-      name: 'setTitleFilter',
-      apply: () => searchStore.setTitleFilter('foo'),
-      expected: { titleFilter: 'foo' },
     },
     {
       name: 'setFilters',
@@ -155,6 +155,32 @@ describe('non-page-resetting setters', () => {
   });
 });
 
+describe('toggleSource (issue #760)', () => {
+  it('adds a deselected source without disturbing the others already selected', () => {
+    searchStore.setSources(['content']);
+
+    searchStore.toggleSource('title');
+
+    expect(get(searchStore).selectedSources).toEqual(['content', 'title']);
+  });
+
+  it('removes an already-selected source, leaving the rest untouched', () => {
+    searchStore.setSources(['content', 'title', 'speaker']);
+
+    searchStore.toggleSource('title');
+
+    expect(get(searchStore).selectedSources).toEqual(['content', 'speaker']);
+  });
+
+  it('can reach the empty selection (J-760-8: a deliberate, reachable UI state)', () => {
+    searchStore.setSources(['content']);
+
+    searchStore.toggleSource('content');
+
+    expect(get(searchStore).selectedSources).toEqual([]);
+  });
+});
+
 describe('setPage', () => {
   it('sets the page when given a positive value', () => {
     searchStore.setPage(5);
@@ -175,14 +201,14 @@ describe('setPage', () => {
 describe('setFilters', () => {
   it('merges the given fields, leaving unrelated fields untouched', () => {
     searchStore.setSpeakers(['alice']);
-    searchStore.setTitleFilter('kickoff');
+    searchStore.setTags(['kickoff']);
 
     searchStore.setFilters({ query: 'bulk-update' });
 
     const state = get(searchStore);
     expect(state.query).toBe('bulk-update');
     expect(state.selectedSpeakers).toEqual(['alice']);
-    expect(state.titleFilter).toBe('kickoff');
+    expect(state.selectedTags).toEqual(['kickoff']);
   });
 });
 
@@ -276,6 +302,33 @@ describe('setResults', () => {
     const state = get(searchStore);
     expect(state.summaryResults).toEqual(summaryResponse.summary_results);
     expect(state.summaryTotal).toBe(1);
+  });
+
+  it('populates sourceCounts and summaryUnavailable when the response carries them', () => {
+    searchStore.setResults({
+      ...response,
+      sources: ['content', 'summary'],
+      source_counts: { content: 4, title: null, speaker: 5, summary: 2 },
+      summary_unavailable: 'masking_unavailable',
+    });
+
+    const state = get(searchStore);
+    expect(state.sourceCounts).toEqual({ content: 4, title: null, speaker: 5, summary: 2 });
+    expect(state.summaryUnavailable).toBe('masking_unavailable');
+  });
+
+  it('resets sourceCounts/summaryUnavailable to empty/null when a later response omits them', () => {
+    searchStore.setResults({
+      ...response,
+      source_counts: { content: 4 },
+      summary_unavailable: 'masking_unavailable',
+    });
+
+    searchStore.setResults(response);
+
+    const state = get(searchStore);
+    expect(state.sourceCounts).toEqual({});
+    expect(state.summaryUnavailable).toBeNull();
   });
 
   it('resets a stale summaryResults page when a later response omits summaries', () => {

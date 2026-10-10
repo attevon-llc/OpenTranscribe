@@ -169,6 +169,76 @@ describe('SortDropdown', () => {
     });
   });
 
+  it('renders the trigger direction arrow unrotated for desc and rotated for asc', () => {
+    // Issue #747 §4.3: the glyph changed from a bare chevron to a real arrow
+    // (shaft + head), and this rotation contract had NO coverage at all before
+    // this test — any change to it was invisible to the suite.
+    const { container: descContainer } = render(SortDropdown, {
+      props: {
+        sortOptions: gallerySortOptions,
+        sortBy: 'upload_time',
+        sortOrder: 'desc',
+        ariaLabelKey: 'gallery.sort.label',
+      },
+    });
+    const descArrow = descContainer.querySelector('.direction-arrow');
+    expect(descArrow).not.toBeNull();
+    expect(descArrow?.classList.contains('asc')).toBe(false);
+    // A real arrow has a shaft (line) as well as a head (polyline) — a bare
+    // chevron has only the polyline.
+    expect(descArrow?.querySelector('line')).not.toBeNull();
+    expect(descArrow?.querySelector('polyline')).not.toBeNull();
+
+    const { container: ascContainer } = render(SortDropdown, {
+      props: {
+        sortOptions: gallerySortOptions,
+        sortBy: 'upload_time',
+        sortOrder: 'asc',
+        ariaLabelKey: 'gallery.sort.label',
+      },
+    });
+    expect(ascContainer.querySelector('.direction-arrow')?.classList.contains('asc')).toBe(true);
+  });
+
+  it('never rotates the trigger arrow for a noDirection (relevance) option', () => {
+    const { container } = render(SortDropdown, {
+      props: {
+        sortOptions: searchSortOptions,
+        sortBy: 'relevance',
+        sortOrder: 'asc',
+        ariaLabelKey: 'search.sort.label',
+      },
+    });
+
+    expect(container.querySelector('.direction-arrow')?.classList.contains('asc')).toBe(false);
+  });
+
+  it('marks only the active dropdown item with a rotated option-arrow', async () => {
+    render(SortDropdown, {
+      props: {
+        sortOptions: gallerySortOptions,
+        sortBy: 'filename',
+        sortOrder: 'asc',
+        ariaLabelKey: 'gallery.sort.label',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'gallery.sort.label' }));
+
+    const activeItem = screen
+      .getByText('gallery.sort.filename', { selector: '.option-label' })
+      .closest('.dropdown-item');
+    const optionArrow = activeItem?.querySelector('.option-arrow');
+    expect(optionArrow).not.toBeNull();
+    expect(optionArrow?.classList.contains('asc')).toBe(true);
+
+    // A non-active option renders no arrow at all.
+    const inactiveItem = screen
+      .getByText('gallery.sort.duration', { selector: '.option-label' })
+      .closest('.dropdown-item');
+    expect(inactiveItem?.querySelector('.option-arrow')).toBeNull();
+  });
+
   it('applies the align-right class to the menu when align="right"', async () => {
     const { container } = render(SortDropdown, {
       props: {

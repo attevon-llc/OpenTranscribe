@@ -1,0 +1,224 @@
+{
+  "licence_note": "Metrics only. No question text, reference answers, app answer prose, or citation snippets are recorded here — see the module docstring of tests.eval.harness.probe_metrics (issue #72).",
+  "notes": [],
+  "rows": [
+    {
+      "category": "negative_control",
+      "chunks_used": 40,
+      "coverage_ratio": 0.5,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 2,
+      "query_id": "neg-000-absent-topic",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 37,
+      "coverage_ratio": 0.5,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 2,
+      "query_id": "neg-001-absent-speaker",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 35,
+      "coverage_ratio": 0.5,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 2,
+      "query_id": "neg-002-absent-topic",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 39,
+      "coverage_ratio": 0.5,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 2,
+      "query_id": "neg-003-absent-speaker",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "multi_file_corpus_scale",
+      "chunks_used": 6,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-000-TS3005-decisions",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific_corpus_scale",
+      "chunks_used": 24,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-001-TS3008d-needle-specific",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific_corpus_scale",
+      "chunks_used": 12,
+      "coverage_ratio": 0.024390243902439025,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "scale-002-IS1006c-needle-specific",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific_corpus_scale",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "scale-003-IS1006c-needle-specific",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": [
+        "no_context"
+      ]
+    },
+    {
+      "category": "single_general_corpus_scale",
+      "chunks_used": 28,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-004-TS3008d-needle-general",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general_corpus_scale",
+      "chunks_used": 28,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-005-IS1006c-needle-general",
+      "retrieved": 36,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general_corpus_scale",
+      "chunks_used": 28,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-006-ES2006a-needle-general",
+      "retrieved": 36,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "corpus_scale_broad",
+      "chunks_used": 12,
+      "coverage_ratio": 0.024390243902439025,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "scale-007-broad",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "corpus_scale_broad",
+      "chunks_used": 6,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-008-broad",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control_corpus_scale",
+      "chunks_used": 0,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "scale-009-absent-topic",
+      "retrieved": 492,
+      "scope_size": 41,
+      "warning_codes": [
+        "no_context"
+      ]
+    }
+  ],
+  "run_name": "ot-probe-corpus-scale-final2",
+  "schema_version": 1,
+  "summary": {
+    "corpus_scale_broad": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.036585,
+      "min_coverage_ratio": 0.024390243902439025,
+      "queries": 2
+    },
+    "multi_file_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.04878,
+      "min_coverage_ratio": 0.04878048780487805,
+      "queries": 1
+    },
+    "negative_control": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.5,
+      "min_coverage_ratio": 0.5,
+      "queries": 4
+    },
+    "negative_control_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.0,
+      "min_coverage_ratio": 0.0,
+      "queries": 1
+    },
+    "single_general_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.04878,
+      "min_coverage_ratio": 0.04878048780487805,
+      "queries": 3
+    },
+    "single_specific_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.02439,
+      "min_coverage_ratio": 0.0,
+      "queries": 3
+    }
+  },
+  "target": {
+    "host": "localhost",
+    "llm_model": "mock-gpt",
+    "llm_provider": "custom",
+    "port": 6174
+  }
+}

@@ -3,6 +3,7 @@
 import copy
 import logging
 import math
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -29,7 +30,9 @@ from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
 from app.db.base import get_db
 from app.models.user import User
+from app.schemas.search import RESULT_TYPE_TO_SOURCES
 from app.schemas.search import SEARCH_RESULT_TYPES
+from app.schemas.search import SEARCH_SOURCES
 from app.schemas.search import SetEmbeddingModelSchema
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
@@ -37,8 +40,6 @@ from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
 from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
-from app.services.search.summary_filters import SummarySearchFilters
-from app.services.search.summary_filters import parse_date_bound
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,23 @@ def _search_response_to_schema(response) -> dict[str, Any]:
     }
 
 
+def _require_iso_date_bounds(**bounds: str | None) -> None:
+    """400 on an unparseable date bound, for both search legs.
+
+    OpenSearch would otherwise fail the query and the leg would degrade to an empty page,
+    which reads as "nothing matched" rather than "your filter was invalid".
+    """
+    for name, bound in bounds.items():
+        if bound is None:
+            continue
+        try:
+            datetime.fromisoformat(bound)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=f"{name} must be an ISO 8601 date or datetime"
+            ) from None
+
+
 @router.get("")
 @limiter.limit(get_search_rate_limit(), key_func=user_or_ip_key)
 def search_transcripts(
@@ -157,8 +175,21 @@ def search_transcripts(
     result_type: str = Query(
         "transcripts",
         description=(
-            "Which result group(s) to return: transcripts, summaries, or all. "
-            "Defaults to transcripts for byte-identical behavior against existing callers."
+            "DEPRECATED — superseded by `sources` (issue #760). Which result "
+            "group(s) to return: transcripts, summaries, or all. Defaults to "
+            "transcripts for byte-identical behavior against existing callers. "
+            "Ignored when `sources` is supplied."
+        ),
+    ),
+    sources: list[str] | None = Query(
+        None,
+        description=(
+            "Issue #760 — which result source(s) to search: content, title, "
+            "speaker, summary (repeat the param for more than one, e.g. "
+            "`sources=content&sources=title`). Wins over `result_type` when "
+            "both are supplied. Omitting it entirely preserves `result_type`'s "
+            "(or its own default's) byte-identical legacy behavior. An "
+            "explicitly empty or unknown value is a 400."
         ),
     ),
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
@@ -219,13 +250,37 @@ def search_transcripts(
     if search_mode not in ("hybrid", "keyword"):
         raise HTTPException(status_code=400, detail="search_mode must be: hybrid or keyword")
 
-    if result_type not in SEARCH_RESULT_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"result_type must be one of: {', '.join(SEARCH_RESULT_TYPES)}",
-        )
-    want_transcripts = result_type in ("transcripts", "all")
-    want_summaries = result_type in ("summaries", "all")
+    _require_iso_date_bounds(date_from=date_from, date_to=date_to)
+
+    # Issue #760: `sources` wins outright over `result_type` when both are
+    # supplied (never merged — two inputs that combine are one undebuggable
+    # input). Omitting `sources` entirely preserves the legacy `result_type`
+    # behavior byte-for-byte, including its default.
+    explicit_sources = sources is not None
+    if explicit_sources:
+        if not sources or any(s not in SEARCH_SOURCES for s in sources):
+            raise HTTPException(
+                status_code=400,
+                detail=f"sources must be one or more of: {', '.join(SEARCH_SOURCES)}",
+            )
+        source_set: frozenset[str] = frozenset(sources)
+    else:
+        if result_type not in SEARCH_RESULT_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"result_type must be one of: {', '.join(SEARCH_RESULT_TYPES)}",
+            )
+        source_set = RESULT_TYPE_TO_SOURCES[result_type]
+
+    # OR-union (issue #760, J-760-10): a file matches if it matches ANY
+    # selected source. The transcript leg and the summary leg are two
+    # independent OpenSearch queries (§PC5 — content/title/speaker are FIELD
+    # selectors on the transcript leg's one query, `summary` is a whole
+    # separate leg); their result sets are returned side by side, never
+    # AND-intersected against each other.
+    want_transcripts = bool(source_set & {"content", "title", "speaker"})
+    want_summaries = "summary" in source_set
+    transcript_sources = source_set - {"summary"}
 
     if want_transcripts:
         from app.services.search.hybrid_search_service import HybridSearchService
@@ -253,12 +308,13 @@ def search_transcripts(
             title_filter=title_filter,
             organization_id=ctx.org_id,
             file_uuid=file_uuid,
+            sources=transcript_sources if explicit_sources else None,
         )
 
         # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
         # drop any taken-down files from the result page against the DB (page-sized,
         # one IN query). Admins keep visibility for review.
-        if not ctx.user.is_admin:
+        if not ctx.bypass.user_is_admin:
             search_response = _drop_quarantined_search_hits(db, search_response)
 
         payload = _search_response_to_schema(search_response)
@@ -283,32 +339,48 @@ def search_transcripts(
         # The SPA sends every filter on every tab, so the summary leg has to
         # honour the same ones the transcript leg above just did — otherwise one
         # request's two legs disagree about which files the caller asked for
-        # (issue #831). `date_from`/`date_to` reach the transcript leg as raw
-        # strings because OpenSearch parses them itself; Postgres does not, so
-        # they are parsed here and a bad value is a 400 rather than a silently
-        # dropped bound.
+        # (issue #831). Since #963 both legs route through the SAME filter
+        # builder (`HybridSearchService._build_filters`), so there is no
+        # longer a second SQL predicate implementation to keep in sync.
+        # `date_from`/`date_to` were validated as ISO 8601 above, then reach
+        # OpenSearch as raw strings.
         try:
-            summary_filters = SummarySearchFilters(
-                speakers=speakers,
-                tags=tags,
-                date_from=parse_date_bound(date_from, upper=False),
-                date_to=parse_date_bound(date_to, upper=True),
-                file_type=file_type,
-                collection_id=collection_id,
-                min_duration=min_duration,
-                max_duration=max_duration,
-                min_file_size=min_file_size,
-                max_file_size=max_file_size,
-                language=language,
-                title_filter=title_filter,
-                file_uuid=file_uuid,
+            payload.update(
+                _summary_search_payload(
+                    db,
+                    ctx,
+                    q,
+                    page,
+                    page_size,
+                    speakers=speakers,
+                    tags=tags,
+                    date_from=date_from,
+                    date_to=date_to,
+                    file_type=file_type,
+                    collection_id=collection_id,
+                    min_duration=min_duration,
+                    max_duration=max_duration,
+                    min_file_size=min_file_size,
+                    max_file_size=max_file_size,
+                    language=language,
+                    title_filter=title_filter,
+                    file_uuid=file_uuid,
+                )
             )
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail="date_from and date_to must be ISO 8601 dates or datetimes",
-            ) from e
-        payload.update(_summary_search_payload(db, ctx, q, page, page_size, summary_filters))
+        except HTTPException as e:
+            # Issue #760, §6: a masking outage must not blank the whole page
+            # when more than one source was requested — only the summary leg
+            # degrades. `_summary_search_payload` still raises a literal 503
+            # for `SummaryMaskingUnavailableError`/`QuarantineExclusionUnavailableError`;
+            # re-raise unchanged for a summary-ONLY request (nothing else to
+            # show), degrade otherwise. Never "fail open" — this withholds
+            # the summary results, it never serves them unmasked.
+            if e.status_code == 503 and want_transcripts:
+                payload["summary_results"] = []
+                payload["summary_total"] = 0
+                payload["summary_unavailable"] = "masking_unavailable"
+            else:
+                raise
 
     if want_summaries:
         # `total_pages` is the only paging signal the response carries, so it has
@@ -345,7 +417,98 @@ def search_transcripts(
         else:
             payload["total_pages"] = summary_pages
 
+    # Issue #760: the resolved source set and the per-source pill counts are
+    # attached ONLY when the caller explicitly asked via `sources` — a legacy
+    # `result_type` request stays byte-identical (no new keys, no extra cost).
+    if explicit_sources:
+        payload["sources"] = sorted(source_set)
+        payload["source_counts"] = _source_counts(
+            db,
+            ctx,
+            q,
+            speakers=speakers,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            file_type=file_type,
+            collection_id=collection_id,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_file_size=min_file_size,
+            max_file_size=max_file_size,
+            language=language,
+            title_filter=title_filter,
+            file_uuid=file_uuid,
+        )
+
     return payload
+
+
+def _source_counts(
+    db: Session,
+    ctx: RequestContext,
+    q: str,
+    **filter_kwargs: Any,
+) -> dict[str, int | None]:
+    """Corpus-wide per-source match counts for the toggle pills (issue #760).
+
+    Always computes all four, independent of which sources are selected — a
+    disabled pill still shows what it would return. A failed count is
+    ``None``, never ``0``: "0 matches" and "the count failed" must never be
+    indistinguishable (the same #817 rule `search_match_count` follows).
+
+    The summary count runs through the raw, UNMASKED `search_summary_plane`
+    call (page_size=1, hits discarded) rather than through
+    `_summary_search_payload`/`search_summaries` — counting must never pay
+    (or depend on) a Presidio pass, or a masking outage would also blank the
+    Summary pill's count, which is exactly the failure §6 exists to avoid.
+    """
+    from app.services.search.hybrid_search_service import HybridSearchService
+    from app.services.search.hybrid_search_service import SearchCountUnavailableError
+    from app.services.search.hybrid_search_service import _quarantined_file_uuids
+
+    service = HybridSearchService()
+    counts: dict[str, int | None] = {
+        "content": None,
+        "title": None,
+        "speaker": None,
+        "summary": None,
+    }
+
+    for source, fields in (
+        ("content", ["content", "content.exact"]),
+        ("title", ["title"]),
+        ("speaker", ["speaker"]),
+    ):
+        try:
+            counts[source] = service.count_matches(
+                q,
+                user_id=ctx.user.id,
+                organization_id=ctx.org_id,
+                is_admin=ctx.bypass.user_is_admin,
+                fields=fields,
+                count_files=True,
+                **filter_kwargs,
+            )
+        except SearchCountUnavailableError:
+            logger.warning("source_counts: %s count unavailable", source)
+
+    try:
+        quarantined = [] if ctx.bypass.user_is_admin else _quarantined_file_uuids()
+        _hits, total = service.search_summary_plane(
+            q,
+            ctx.user.id,
+            organization_id=ctx.org_id,
+            page=1,
+            page_size=1,
+            quarantined_file_uuids=quarantined,
+            **filter_kwargs,
+        )
+        counts["summary"] = total
+    except Exception:  # noqa: BLE001 — best-effort count, never a hard failure
+        logger.warning("source_counts: summary count unavailable", exc_info=True)
+
+    return counts
 
 
 @router.get("/count")
@@ -390,7 +553,7 @@ def search_match_count(
             db,
             file_uuid,
             ctx.user.id,
-            is_admin=ctx.user.is_admin,
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
         )
 
@@ -401,7 +564,7 @@ def search_match_count(
             user_id=ctx.user.id,
             file_uuid=file_uuid,
             organization_id=ctx.org_id,
-            is_admin=ctx.user.is_admin,
+            is_admin=ctx.bypass.user_is_admin,
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match get_available_filters' raise below; this module
@@ -466,9 +629,30 @@ def _summary_search_payload(
     q: str,
     page: int,
     page_size: int,
-    filters: SummarySearchFilters,
+    *,
+    speakers: list[str] | None = None,
+    tags: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    file_type: list[str] | None = None,
+    collection_id: int | None = None,
+    min_duration: float | None = None,
+    max_duration: float | None = None,
+    min_file_size: int | None = None,
+    max_file_size: int | None = None,
+    language: str | None = None,
+    title_filter: str | None = None,
+    file_uuid: str | None = None,
 ) -> dict[str, Any]:
-    r"""Build the ``summary_results``/``summary_total`` pair for issue #462.
+    r"""Build the ``summary_results``/``summary_total`` pair for issue #462, #963.
+
+    Since #963 this queries the OpenSearch summary plane
+    (``services/search/summary_search.search_summaries`` ->
+    ``HybridSearchService.search_summary_plane``), not Postgres full-text
+    search — see that module's docstring for the design. The filter kwargs
+    below are forwarded verbatim into the SAME filter builder the transcript
+    leg uses (`HybridSearchService._build_filters`), closing #831's whole
+    defect class (one builder, not two).
 
     ⚠️ Deliberately UNCACHED — do not "finish the job" by adding a response
     cache here the way the transcript leg has one (issue #822's plan named this
@@ -513,9 +697,11 @@ def _summary_search_payload(
     still needs a summary-regeneration invalidation signal that does not yet
     exist.
 
-    Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
-    the same authority every owner-scoped listing uses — applied inside
-    ``search_summaries`` itself; this function does not re-derive visibility.
+    Access control (since #963) is the OpenSearch-side ``accessible_user_ids``
+    denormalized copy — the SAME authority and the SAME query
+    (``HybridSearchService._build_filters``) the transcript leg uses — applied
+    inside ``search_summaries`` -> ``search_summary_plane`` itself; this
+    function does not re-derive visibility.
 
     Masking uses the REQUESTING user's policy (the read-surface rule from #85,
     the same subject the summary-detail endpoint already resolves) and fails
@@ -526,20 +712,23 @@ def _summary_search_payload(
     ``redaction/summary_redaction.py`` for why batching leaks repeated names,
     and for why only the returned leaves are examined (issue #822).
 
-    Quarantine is applied INSIDE ``search_summaries`` via
-    ``exclude_quarantined`` — a pre-filter, so ``summary_total`` and the page
-    offsets are consistent with what is returned. This function used to
-    post-filter the hit list here; that left the count disclosing a
-    taken-down file whose hit fell outside the requested page (#818).
+    Quarantine is resolved from Postgres (fail-closed:
+    ``hybrid_search_service._quarantined_file_uuids``) and applied INSIDE
+    ``search_summary_plane`` as a ``must_not`` PRE-filter, so
+    ``summary_total`` and the page offsets are consistent with what is
+    returned. This function used to post-filter the hit list here; that left
+    the count disclosing a taken-down file whose hit fell outside the
+    requested page (#818).
 
-    ``filters`` (the request's date/tag/collection/… filters) goes the same way
-    and for the same reason — into ``search_summaries``' own query, never a pass
-    over the returned hits. Applying them here instead would leave
-    ``summary_total`` counting files the page had just removed, which is the
-    #818 shape exactly. See ``services/search/summary_filters.py``.
+    The date/tag/collection/… filter kwargs go the same way and for the same
+    reason — into ``search_summary_plane``'s own query, never a pass over the
+    returned hits. Applying them here instead would leave ``summary_total``
+    counting files the page had just removed, which is the #818 shape
+    exactly.
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
+    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
     from app.services.search.summary_search import search_summaries
 
     cfg = resolve_effective_config(db, ctx.user.id, organization_id=ctx.org_id)
@@ -552,11 +741,30 @@ def _summary_search_payload(
             page=page,
             page_size=page_size,
             redaction_cfg=cfg,
-            include_quarantined=ctx.user.is_admin,
-            filters=filters,
+            include_quarantined=ctx.bypass.user_is_admin,
+            speakers=speakers,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            file_type=file_type,
+            collection_id=collection_id,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_file_size=min_file_size,
+            max_file_size=max_file_size,
+            language=language,
+            title_filter=title_filter,
+            file_uuid=file_uuid,
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+    except QuarantineExclusionUnavailableError as e:
+        # Literal 503, matching this module's other quarantine-unavailable
+        # arms — silently searching without the exclusion is a takedown
+        # bypass, not a degraded result.
+        raise HTTPException(
+            status_code=503, detail="The summary search exclusion list is unavailable."
+        ) from e
 
     return {
         "summary_results": [
@@ -564,7 +772,10 @@ def _summary_search_payload(
                 "file_uuid": hit.file_uuid,
                 "file_id": hit.file_id,
                 "title": hit.title,
-                "matches": [{"key_path": m.key_path, "snippet": m.snippet} for m in hit.matches],
+                "matches": [
+                    {"key_path": m.key_path, "snippet": m.snippet, "score": m.score}
+                    for m in hit.matches
+                ],
             }
             for hit in result.results
         ],
@@ -614,7 +825,7 @@ def search_suggestions(
             user_id=ctx.user.id,
             limit=limit,
             organization_id=ctx.org_id,
-            is_admin=ctx.user.is_admin,
+            is_admin=ctx.bypass.user_is_admin,
         )
     except QuarantineExclusionUnavailableError as e:
         raise HTTPException(
@@ -653,7 +864,7 @@ def get_available_filters(
     search_service = HybridSearchService()
     try:
         return search_service.get_available_filters(
-            user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
+            user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.bypass.user_is_admin
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match _summary_search_payload's masking-outage raise

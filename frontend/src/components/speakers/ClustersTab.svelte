@@ -35,6 +35,7 @@
   export let unassignBlacklist = true;
   export let clusterPage = 1;
   export let clusterPages = 0;
+  export let reviewCount = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -107,12 +108,23 @@
   {#if loadingClusters}
     <ListRowSkeleton count={6} />
   {:else if clusters.length === 0}
-    <EmptyState title={$t('speakers.clusters.emptyTitle')} description={$t('speakers.clusters.emptyDesc')} padding="60px 20px">
+    <EmptyState
+      title={$t('speakers.clusters.emptyTitle')}
+      description={reviewCount > 0
+        ? $t('speakers.clusters.emptyReviewDesc', { count: reviewCount })
+        : $t('speakers.clusters.emptyDesc')}
+      padding="60px 20px"
+    >
       <svelte:fragment slot="icon">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="12" cy="12" r="10" /><path d="M8 12h8" /><path d="M12 8v8" />
         </svg>
       </svelte:fragment>
+      {#if reviewCount > 0}
+        <button type="button" class="btn-secondary" on:click={() => dispatch('openReview')}>
+          {$t('speakers.clusters.openReview')}
+        </button>
+      {/if}
     </EmptyState>
   {:else}
     {#if mergeMode}
@@ -350,7 +362,8 @@
 
   .last-clustered-chip {
     font-size: 11px;
-    color: var(--text-secondary);
+    /* 11px on the hover tint — --text-secondary measures 4.34:1 here, under AA. */
+    color: var(--text-on-tint);
     background: var(--hover-color);
     padding: 1px 7px;
     border-radius: 10px;

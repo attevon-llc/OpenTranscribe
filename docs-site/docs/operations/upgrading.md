@@ -328,7 +328,7 @@ When upgrading across the speaker embedding architecture change:
 
 The migration runs through the Admin UI:
 
-1. Navigate to **Admin Settings > Speaker Embeddings**
+1. Navigate to **Settings → Speaker Embedding System** (super admin)
 2. Start the embedding migration -- this re-extracts embeddings for all speakers
 3. Monitor progress in the migration panel
 4. Once complete, the alias swaps atomically to the new index
@@ -344,13 +344,13 @@ directly.
 
 #### Six deployment-configuration panels now require `super_admin`, not `admin`
 
-**ASR provider**, **Engine configuration**, **Backups**, **Media Mirror**, **Watch sources**,
+**ASR provider**, **Speech processing**, **Backups**, **Media Mirror**, **Watch sources**,
 and the **Redaction policy** floor now require the `super_admin` role instead of `admin`. They
 configure how the deployment runs, and several store infrastructure credentials (S3 keys, SMB
 passwords, SMTP passwords) that a team-level admin has no reason to read or replace.
 
 :::danger[ACTION REQUIRED if a plain `admin` manages any of those six panels]
-Promote that account to `super_admin` (Settings → Users → Role → Super Admin) **before
+Promote that account to `super_admin` (Settings → User Management → Role → Super Admin) **before
 upgrading**, or hand the work to an existing super admin. Nothing else changes tier: user
 accounts, tasks, search, and speaker maintenance stay at `admin`. Creating additional super
 admins from the UI is new in this release — the role selector previously offered only `user`

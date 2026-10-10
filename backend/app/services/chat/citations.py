@@ -129,11 +129,18 @@ def _snippet(text: str, limit: int = SNIPPET_CHARS) -> str:
 
 
 #: What a citation points at. ``chunk`` is somebody's words at a timestamp;
-#: ``digest`` is derived text summarising a span of the same recording.
-#: The frontend must render the two differently — a digest quoted as speech
-#: would attribute to a person words nobody said (addendum **G7**).
+#: ``digest`` is derived (EXTRACTIVE) text summarising a span of the same
+#: recording — TextRank over sentences someone actually said. ``summary``
+#: (#464) is derived TOO, but ABSTRACTIVE — an LLM's own interpretation of
+#: the recording (``MediaFile.summary_data``), never a sentence anyone said.
+#: The frontend must render all three differently — a digest OR a summary
+#: quoted as speech would attribute to a person words nobody said (addendum
+#: **G7**), and a summary rendered as a digest misattributes interpretation
+#: as an extracted quote (the #464/#532-arm(a) collision this constant
+#: closes — see ``build_overview_citations``).
 KIND_CHUNK = "chunk"
 KIND_DIGEST = "digest"
+KIND_SUMMARY = "summary"
 
 
 def build_citation(index: int, chunk: MaskedChunk) -> dict:
@@ -212,12 +219,33 @@ def build_overview_citations(
 ) -> list[dict]:
     """Citation payloads for the overview's listed recordings (#532 arm (a)).
 
-    EXPERIMENT support — delete with the arm. ``kind`` is ``digest`` (the
-    entries ARE masked digest text with per-file provenance), so the UI's
-    existing summary labelling applies. ``chunk_index``/``digest_section`` are
-    ``None``: an overview entry cites the recording's digest as a whole, not
-    one indexed section — the snippet carries exactly the text the model saw,
-    which is the #384 property that matters.
+    EXPERIMENT support — delete with the arm. ``kind`` is ``digest`` for an
+    entry composed from extractive digest sections, or ``summary`` (#464) for
+    one composed from a fresh LLM summary (``FileSummary.is_llm_summary`` —
+    set by ``mapreduce.file_summaries``/``speaker_map`` from
+    ``ChunkHit.is_llm_summary``, which is only ever True for a map-tier hit
+    ``scope_digest_hits``/``scope_speaker_digest_hits`` built under the
+    ``chat.rag.map_tier_summaries``/``map_tier_speaker_summaries`` flags).
+    Picking the wrong kind here is the exact #464/#532-arm(a) collision this
+    function used to leave open: an LLM's own interpretation, rendered with
+    the extractive-digest badge, reads to the UI as a derived quote rather
+    than as labelled interpretation. ``chunk_index``/``digest_section`` are
+    ``None``: an overview entry cites the recording's digest or summary as a
+    whole, not one indexed section — the snippet carries exactly the text the
+    model saw, which is the #384 property that matters.
+
+    Redaction and staleness are **already resolved by the time this runs** —
+    not re-checked here. ``summaries`` is masked by the caller (``mask_digests``,
+    called before ``build_file_summaries`` in ``service.py``) via the same
+    provenance-fallback path a digest hit takes (``scope_digest_hits``'s own
+    docstring: an out-of-range ``digest_section`` cannot match a real section,
+    so masking falls through to its fail-closed inline path for a summary hit
+    exactly as it does for an unresolvable digest). And a summary only ever
+    reaches this function's input as a fresh one — ``_summary_is_fresh``
+    (``file_summaries.py``) gates the map step itself on a
+    ``source_fingerprint`` match, so a summary predating a re-transcribe,
+    re-diarize, or speaker rename never produces an ``is_llm_summary`` hit in
+    the first place; it silently falls back to the digest tier instead.
 
     Args:
         cited_entries: ``Overview.cited_entries`` — ``(citation_id, file_uuid)``
@@ -236,10 +264,11 @@ def build_overview_citations(
         if summary is None:
             continue
         digest_text = summary.digest or ""
+        kind = KIND_SUMMARY if getattr(summary, "is_llm_summary", False) else KIND_DIGEST
         payloads.append(
             {
                 "id": citation_id,
-                "kind": KIND_DIGEST,
+                "kind": kind,
                 "file_uuid": file_uuid,
                 "title": summary.title,
                 "chunk_index": None,

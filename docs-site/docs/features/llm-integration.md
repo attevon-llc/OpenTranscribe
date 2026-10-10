@@ -32,7 +32,7 @@ Generate summaries in 12 different languages:
 - Portuguese, Chinese, Japanese, Korean
 - Italian, Russian, Arabic, Hindi
 
-Configure in Settings → Transcription → LLM Output Language.
+Configure in Settings → Transcription → Language (*Language for AI features*).
 
 ### Organization Context (New in v0.4.0)
 
@@ -40,7 +40,7 @@ Inject organization-specific context into AI prompts for more relevant summaries
 
 - Define organization context text (e.g., team names, project acronyms, domain terminology)
 - Context is automatically included in summarization and speaker identification prompts
-- Configurable per-user in Settings → AI → Organization Context
+- Configurable per-user in Settings → Organization Context
 - Toggle whether context applies to default prompts, custom prompts, or both
 
 The organization context is injected as a system-level preamble before the transcript content in all LLM calls. This allows the model to correctly resolve ambiguous references -- for example, knowing that "the Board" refers to a specific governance body, or that "Q3" means a particular fiscal quarter for your organization. The context text is stored per-user, so different teams can define their own terminology without conflicting.
@@ -66,7 +66,7 @@ AI-powered automatic tagging and collection assignment ([#140](https://github.co
 - Configurable confidence threshold for auto-application
 - Enable/disable separately for tags and collections
 - Retroactive auto-labeling available for existing files
-- Configure in Settings → AI → Auto-Label
+- Configure in Settings → Auto-Labeling (Tags & Collections)
 
 #### How the Auto-Label Pipeline Works
 
@@ -81,7 +81,7 @@ AI-powered automatic tagging and collection assignment ([#140](https://github.co
 Users can disable automatic AI summarization:
 
 - **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for a specific file
-- **User default**: Set your default in Settings → AI → Auto-Summarize to prevent automatic summarization on all uploads
+- **User default**: Set your default in Settings → LLM Provider Configuration → AI Summary Settings to prevent automatic summarization on all uploads
 - Disabling auto-summarize does not prevent manual summarization — users can still click "Generate Summary" on any transcript at any time
 
 ### Prompt Sharing
@@ -90,7 +90,7 @@ Custom AI prompts can be shared between users:
 
 - Users can share their custom summarization prompts with other users or groups via the sharing system
 - Shared prompts appear in the recipient's prompt selection dropdown alongside their own prompts
-- Sharing is managed from Settings → AI Prompts → Share
+- Sharing is managed from Settings → AI Summarization Prompts → Share
 - Useful for standardizing summarization output across a team without each member creating identical prompts
 
 ### Speaker Identification
@@ -257,7 +257,7 @@ OLLAMA_MODEL=llama3.2:latest
 ## No LLM Mode
 
 OpenTranscribe works without any LLM configuration. Leave `LLM_PROVIDER` empty (and configure no
-provider in **Settings → AI**) and these still work in full:
+provider in **Settings → LLM Provider Configuration**) and these still work in full:
 
 - **Transcription** and **speaker diarization**
 - **Cross-recording speaker matching** (voiceprints are local models, not an LLM)

@@ -19,12 +19,12 @@ The Admin Panel is role-gated. The dividing rule is:
 |------|--------|
 | **User** | Profile, recording, transcription, personal settings, own MFA, own active sessions |
 | **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
-| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, engine configuration, backups, media mirror, watch sources, and the redaction policy floor |
+| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, speech processing (formerly engine configuration), backups, media mirror, watch sources, and the redaction policy floor |
 
 :::warning[Changed in v0.5.0]
-Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
+Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a plain
-`admin` administers any of them today, promote that account (Settings → Users → Role) before
+`admin` administers any of them today, promote that account (Settings → User Management → Role) before
 upgrading, or hand the work to an existing super admin.
 :::
 
@@ -121,7 +121,9 @@ You cannot change your own role or delete your own account here; your row shows 
 **The last remaining super admin cannot be demoted or deleted.**
 :::
 
-## Engine Configuration
+## Speaker Engine
+
+(Formerly **Engine Configuration**, then **Speech Processing**. It is now the **Speaker Engine** tab of **Settings → Speaker Identification**: the tab is visible to admins but locked, and only a super admin can change it. Nothing on it affects the transcribed words.)
 
 Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
 
@@ -139,7 +141,7 @@ Admin-tunable, runtime-safe transcription engine settings. All changes apply liv
 
 ## Redaction Policy
 
-The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
+The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Privacy & Redaction → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
 
 - **Force categories**: force **PII**, **toxicity**, and/or **profanity** redaction on for every user (cannot be disabled per-user)
 - **Mandate censored exports**: require masked output for all subtitle/transcript exports
@@ -261,11 +263,11 @@ security policy lives in the Authentication section above.
 - **External IdP users**: PKI and OIDC users bypass local MFA **only when they authenticated
   with their native method**. If such an account falls back to a local password, local MFA
   applies
-- **Admin reset**: Settings → Users → Reset MFA clears a user's enrolment so they can re-enrol
+- **Admin reset**: Settings → User Management → Reset MFA clears a user's enrolment so they can re-enrol
 
 ### Active sessions
 
-Every user sees their own sessions (device, IP, last activity) in **Settings → Profile** and can
+Every user sees their own sessions (device, IP, last activity) in **Settings → Profile & Security** and can
 revoke any of them. Admins can list and revoke another account's sessions from the Users
 section; changing a credential or a privilege revokes sessions automatically.
 
@@ -286,7 +288,9 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Banner** | `auth.banner.acknowledged` |
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` |
+| **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
+| **User credentials** | `user.credential.set`, `user.credential.delete` (a user saved or removed their own pyannote.ai key; the key itself is never recorded) |
 
 A few of these are worth knowing about specifically:
 
@@ -414,6 +418,25 @@ Click **Run Check** to scan all indices for orphaned documents -- records in Ope
 4. Reports results in a summary table
 
 Results show per-index totals: documents scanned, orphans found, and orphans cleaned.
+
+#### Reconciling a large orphan set
+
+A sweep refuses to delete more than **10%** of an index in one run (`refused: ratio_guard`
+in the result), because that is exactly what a database restored empty looks like from
+OpenSearch's side. When the orphans are real — documents left behind by a database
+restore or by rows removed directly in Postgres — reconcile them through the API:
+
+1. `GET /api/admin/data-integrity/counts` — a dry run. Each index reports `orphaned_docs`,
+   `refused`, and `orphan_keys`: the file (or speaker) identifiers whose documents would
+   be deleted (the first 200; `orphan_keys_truncated` says when there are more).
+2. Check those identifiers really are gone from the application.
+3. `POST /api/admin/data-integrity?force=true&confirm=true` — the forced run. It is
+   recorded in the audit log as `admin.data_integrity.purge`.
+
+A forced run still cannot delete the documents of a file or speaker that exists: every
+candidate is re-checked against PostgreSQL after the index is read and immediately
+before the delete, and a sweep whose PostgreSQL side is empty is refused even with
+`force`. Index documents are derived data — a mistaken purge is repaired by a reindex.
 
 ## Embedding Consistency
 

@@ -390,7 +390,9 @@ def process_youtube_url_task(
                 # the original media (Phase 2 PR #3).
                 try:
                     benchmark_timing.mark(task_id, "http_response_end")
-                    dispatch_transcription_pipeline(file_uuid=file_uuid, task_id=task_id)
+                    dispatch_transcription_pipeline(
+                        file_uuid=file_uuid, task_id=task_id, reuse_requested_options=True
+                    )
                     logger.info(
                         f"Dispatched pipeline chain for MediaFile {file_id} (task_id={task_id})"
                     )
@@ -667,6 +669,7 @@ def process_youtube_playlist_task(
     audio_only: bool | None = None,
     audio_quality: str | None = None,
     organization_id: int | None = None,
+    transcription_options: dict | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Background task to process YouTube playlist by extracting videos and dispatching individual tasks.
 
@@ -689,6 +692,9 @@ def process_youtube_playlist_task(
             threaded through the task kwargs (issue #262c). Placeholders are
             stamped with this — never a first-membership guess. None =
             personal scope (always the case in the community edition).
+        transcription_options: Per-file speaker range / model the user chose for the
+            import (``min_speakers``, ``max_speakers``, ``num_speakers``,
+            ``whisper_model``); recorded on every created file.
 
     Returns:
         Dict: Processing result containing status, message, and video counts.
@@ -711,6 +717,7 @@ def process_youtube_playlist_task(
             audio_only,
             audio_quality,
             organization_id=organization_id,
+            transcription_options=transcription_options,
         )
     except Exception as e:
         logger.error(f"Unexpected error in YouTube playlist processing task: {e}")
@@ -727,6 +734,7 @@ def _process_playlist_with_db(
     audio_only: bool | None = None,
     audio_quality: str | None = None,
     organization_id: int | None = None,
+    transcription_options: dict | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Process playlist within a database session.
 
@@ -739,6 +747,7 @@ def _process_playlist_with_db(
         audio_only: Optional override to download only audio.
         audio_quality: Optional audio bitrate override for playlist downloads.
         organization_id: Originating request's tenant for placeholder stamping.
+        transcription_options: See ``process_youtube_playlist_task``.
 
     Returns:
         YouTubePlaylistProcessingResult with processing outcome.
@@ -770,6 +779,7 @@ def _process_playlist_with_db(
                 video_quality,
                 audio_only,
                 audio_quality,
+                transcription_options=transcription_options,
             )
         except Exception as e:
             logger.error(f"Error processing YouTube playlist {url}: {e}")
@@ -788,6 +798,7 @@ def _handle_playlist_result(
     video_quality: str | None = None,
     audio_only: bool | None = None,
     audio_quality: str | None = None,
+    transcription_options: dict | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Handle successful playlist extraction result.
 
@@ -800,6 +811,7 @@ def _handle_playlist_result(
         video_quality: Optional video quality override for playlist downloads.
         audio_only: Optional override to download only audio.
         audio_quality: Optional audio bitrate override for playlist downloads.
+        transcription_options: See ``process_youtube_playlist_task``.
 
     Returns:
         YouTubePlaylistProcessingResult with success outcome.
@@ -815,6 +827,13 @@ def _handle_playlist_result(
         f"Playlist '{playlist_title}' extraction complete: {created_count} videos to process, "
         f"{skipped_count} skipped"
     )
+
+    if transcription_options:
+        from app.tasks.transcription.requested_options import apply_requested_options
+
+        for media_file in created_media_files:
+            apply_requested_options(media_file, transcription_options)
+        db.commit()
 
     # Apply collections and tags to each playlist video
     if collection_ids or tag_names:

@@ -5,6 +5,8 @@
     /** Optional count/badge shown after the label. */
     badge?: string | number | null;
     disabled?: boolean;
+    /** Native tooltip; used to say why a tab is disabled. */
+    title?: string;
   }
 </script>
 
@@ -36,7 +38,15 @@
     if (enabled.length === 0) return;
     const pos = enabled.findIndex(({ i }) => i === index);
     let nextPos = pos;
-    switch (event.key) {
+    // Left/Right follow the visual order, which a right-to-left layout reverses.
+    const rtl = (event.currentTarget as HTMLElement).closest('[dir]')?.getAttribute('dir') === 'rtl';
+    const key =
+      rtl && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+        ? event.key === 'ArrowLeft'
+          ? 'ArrowRight'
+          : 'ArrowLeft'
+        : event.key;
+    switch (key) {
       case 'ArrowRight':
       case 'ArrowDown':
         nextPos = (pos + 1) % enabled.length;
@@ -74,6 +84,7 @@
       aria-controls={`tabpanel-${tab.id}`}
       tabindex={tab.id === activeId ? 0 : -1}
       disabled={tab.disabled}
+      title={tab.title}
       on:click={() => select(tab.id)}
       on:keydown={(e) => onKeydown(e, i)}
     >

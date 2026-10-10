@@ -30,9 +30,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `matching`/`profiles`/`clusters` the kNN reads. Its `__init__` re-exports every name the
   old flat module exported), `opensearch_snapshot.py`, `similarity_service.py`.
   (`opensearch_summary_service.py` is **gone** — the `transcript_summaries` index it owned
-  is retired, #67. A summary lives in `media_file.summary_data` and nowhere else; the only
-  code that still names that index purges legacy documents, in `file_cleanup_service.py`
-  and `tasks/opensearch_integrity_task.py`.)
+  is retired, #67. A summary's SOURCE OF TRUTH is `media_file.summary_data` and nowhere
+  else; the only code that still names the retired index purges legacy documents, in
+  `file_cleanup_service.py` and `tasks/opensearch_integrity_task.py`. Since #963 a summary is
+  ALSO indexed as a derived, rebuildable `doc_type: "summary"` plane inside `transcript_chunks`
+  — never a second store of record; see `search/CLAUDE.md`'s "Index v6" section.)
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`.
@@ -490,13 +492,20 @@ token-counting check would duplicate logic `build_messages` already owns.
 
 ## User transcription settings
 
-Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows shaped by
+Per-user prefs (Settings → Transcription and Settings → Speaker Identification; one endpoint, saved per tab group) are `UserSetting` key/value rows shaped by
 `schemas/transcription_settings.py` and served from `api/endpoints/user_settings.py`
 (`GET/PUT /user-settings/transcription`): source language + translate-to-English, LLM output
 language, speaker behavior (`always_prompt` | `use_defaults` | `use_custom`), min/max speakers,
 garbage-segment cleanup + threshold, VAD tuning; recording/audio-extraction live on sibling
-routes. **Per-file overrides win** — `tasks/transcription/dispatch.py` takes `source_language`,
-`translate_to_english`, and speaker counts at upload/reprocess time.
+routes. **Per-file overrides win, for these only**: speaker counts (`resolve_speaker_range` in
+`tasks/transcription/user_settings.py` is the one precedence — per file, then the user's saved
+range, then env), the Whisper model (the deployment's model or tiny/base; anything else is a
+422), and "skip diarization". They are stored on the `media_file.requested_*` columns when a
+file is dispatched, and a retry/recovery replays them (`reuse_requested_options`,
+`tasks/transcription/requested_options.py`). **Language is NOT per file**:
+`dispatch_transcription_pipeline` still accepts `source_language`/`translate_to_english`, but no
+endpoint sets them, so language and translation always come from the user's prefs. Adding them
+to the upload/reprocess requests is a separate decision.
 
 ## Media URL ingestion (yt-dlp)
 

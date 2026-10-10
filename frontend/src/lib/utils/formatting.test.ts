@@ -7,6 +7,9 @@ import {
   formatSrtTimestamp,
   formatVttTimestamp,
   formatLanguageNames,
+  retryWaitLabel,
+  formatCompactDuration,
+  formatTimeOfDay,
 } from './formatting';
 
 /**
@@ -127,5 +130,93 @@ describe('formatLanguageNames', () => {
 
   it('returns an empty string for no languages', () => {
     expect(formatLanguageNames([], 'en')).toBe('');
+  });
+});
+
+describe('retryWaitLabel (issue #788 — rate-limit wait hint)', () => {
+  it('uses the seconds key and count under a minute', () => {
+    expect(retryWaitLabel(3)).toEqual({ key: 'common.retryAfterSeconds', count: 3 });
+  });
+
+  it('rounds fractional seconds to the nearest whole second', () => {
+    expect(retryWaitLabel(3.6)).toEqual({ key: 'common.retryAfterSeconds', count: 4 });
+  });
+
+  it('switches to the minutes key at 60 seconds', () => {
+    expect(retryWaitLabel(60)).toEqual({ key: 'common.retryAfterMinutes', count: 1 });
+  });
+
+  it('rounds to the nearest whole minute, floored at 1', () => {
+    expect(retryWaitLabel(90)).toEqual({ key: 'common.retryAfterMinutes', count: 2 });
+    expect(retryWaitLabel(65)).toEqual({ key: 'common.retryAfterMinutes', count: 1 });
+  });
+
+  it('clamps zero, negative, and non-finite input to "1 second" rather than nonsense', () => {
+    // A UI showing "in -3 seconds" or "in NaN seconds" is worse than a slightly
+    // wrong "in a moment" -- this is the same "never show NaN" rule the header
+    // parser itself is held to.
+    expect(retryWaitLabel(0)).toEqual({ key: 'common.retryAfterSeconds', count: 1 });
+    expect(retryWaitLabel(-5)).toEqual({ key: 'common.retryAfterSeconds', count: 1 });
+    expect(retryWaitLabel(Number.NaN)).toEqual({ key: 'common.retryAfterSeconds', count: 1 });
+    expect(retryWaitLabel(Number.POSITIVE_INFINITY)).toEqual({
+      key: 'common.retryAfterSeconds',
+      count: 1,
+    });
+  });
+});
+
+describe('formatCompactDuration (Xh Ym / Ym Zs / Zs — issue #753 duration chip)', () => {
+  it('renders sub-minute durations as seconds only', () => {
+    expect(formatCompactDuration(0)).toBe('0s');
+    expect(formatCompactDuration(45)).toBe('45s');
+    expect(formatCompactDuration(59)).toBe('59s');
+  });
+
+  it('renders sub-hour durations as minutes + seconds, omitting a zero seconds unit', () => {
+    expect(formatCompactDuration(60)).toBe('1m');
+    expect(formatCompactDuration(125)).toBe('2m 5s');
+    expect(formatCompactDuration(134)).toBe('2m 14s');
+  });
+
+  it('renders hour-scale durations as hours + minutes, omitting a zero minutes unit', () => {
+    expect(formatCompactDuration(3600)).toBe('1h');
+    expect(formatCompactDuration(3660)).toBe('1h 1m');
+    expect(formatCompactDuration(5400)).toBe('1h 30m');
+  });
+
+  it('rounds to the nearest whole second', () => {
+    expect(formatCompactDuration(44.6)).toBe('45s');
+  });
+
+  it('clamps invalid input to zero rather than throwing or showing negative/NaN', () => {
+    expect(formatCompactDuration(-5)).toBe('0s');
+    expect(formatCompactDuration(Number.NaN)).toBe('0s');
+  });
+
+  it('matches formatEtaSeconds’ arithmetic for the value websocket.test.ts pins (125 -> "2m 5s")', () => {
+    // websocket.test.ts asserts `formatEtaSeconds(125)` renders '2m 5s' via a
+    // live ETA notification; this pins the shared arithmetic it now
+    // delegates to, so the two can't silently diverge again.
+    expect(formatCompactDuration(125)).toBe('2m 5s');
+  });
+});
+
+describe('formatTimeOfDay (issue #1122 banner expiry)', () => {
+  it('renders the local hour and minute of an ISO instant, zero-padded in en-GB', () => {
+    const iso = '2026-10-09T12:34:56Z';
+    const d = new Date(iso);
+    const expected = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(
+      2,
+      '0'
+    )}`;
+    expect(formatTimeOfDay(iso, 'en-GB')).toBe(expected);
+  });
+
+  it('omits seconds', () => {
+    expect(formatTimeOfDay('2026-10-09T12:34:56Z', 'en-GB')).not.toMatch(/\d:\d\d:\d\d/);
+  });
+
+  it('echoes an unparseable value back rather than throwing or rendering "Invalid Date"', () => {
+    expect(formatTimeOfDay('not-a-date', 'en-GB')).toBe('not-a-date');
   });
 });

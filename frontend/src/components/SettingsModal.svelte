@@ -15,7 +15,8 @@
   import LLMSettings from '$components/settings/LLMSettings.svelte';
   import PromptSettings from '$components/settings/PromptSettings.svelte';
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
-  import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
+  import TranscriptionSection from '$components/settings/TranscriptionSection.svelte';
+  import SpeakerIdentificationSection from '$components/settings/SpeakerIdentificationSection.svelte';
   import OrganizationContextSettings from '$components/settings/OrganizationContextSettings.svelte';
   import DownloadSettings from '$components/settings/DownloadSettings.svelte';
   import MediaSourcesSettings from '$components/settings/MediaSourcesSettings.svelte';
@@ -27,17 +28,18 @@
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import BackupSettings from '$components/settings/BackupSettings.svelte';
-  import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
+  import SupportAccessStaffPanel from '$components/settings/SupportAccessStaffPanel.svelte';
+  import SupportAccessApprovalsPanel from '$components/settings/SupportAccessApprovalsPanel.svelte';
+  import { SupportAccessApi } from '$lib/api/supportAccess';
+  import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
   import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
+  import LockedAccountsPanel from '$components/settings/LockedAccountsPanel.svelte';
+  import QuarantinePanel from '$components/settings/QuarantinePanel.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
-  import ASRSettings from '$components/settings/ASRSettings.svelte';
-  import EngineSettings from '$components/settings/EngineSettings.svelte';
-  import ContentRedactionSettings from '$components/settings/ContentRedactionSettings.svelte';
+  import PrivacyRedactionSettings from '$components/settings/PrivacyRedactionSettings.svelte';
   import ChatSettingsPanel from '$components/settings/ChatSettingsPanel.svelte';
-  import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
-  import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
   import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import UserProfileSettings from '$components/settings/UserProfileSettings.svelte';
@@ -61,6 +63,13 @@
     type VisibleSection,
   } from '$lib/search/settingsSearchIndex';
   import type { FuzzyIndex } from '$lib/search/fuzzyMatcher';
+  import { privacyRedactionTabs, privacyRedactionVisible } from '$lib/settings/privacyRedactionTabs';
+  import { transcriptionTabs, transcriptionVisible } from '$lib/settings/transcriptionTabs';
+  import {
+    speakerIdentificationTabs,
+    speakerIdentificationVisible,
+  } from '$lib/settings/speakerIdentificationTabs';
+  import { sidebarRowFor, speakerIdTabFor, transcriptionTabFor } from '$lib/settings/sectionAliases';
 
   // Import i18n
   import { t, locale } from '$stores/locale';
@@ -99,22 +108,27 @@
    * may open what: the sidebar, the mobile picker and the content router all read
    * it, so a nav entry can no longer disagree with what the panel renders.
    *
-   * Sections absent from the map are open to any signed-in user.
+   * Sections absent from the map are open to any signed-in user. `redaction-policy`
+   * and `engine-settings` are deliberately absent: each is now a tab of another section
+   * (Privacy & Redaction, Speaker Identification; the ids survive only as deep-link
+   * aliases) and `privacyRedactionTabs` / `speakerIdentificationTabs` gate those tabs
+   * by the same super_admin tier. `asr-provider`, `custom-vocabulary` and
+   * `speaker-attributes` are open to all and likewise only alias a tab.
    */
   const SECTION_MIN_ROLE: Partial<Record<SettingsSection, 'admin' | 'super_admin'>> = {
     // super_admin — deployment configuration (P4.3 moved these off the admin tier)
     authentication: 'super_admin',
     'audit-logs': 'super_admin',
     backup: 'super_admin',
-    'engine-settings': 'super_admin',
-    'redaction-policy': 'super_admin',
     // admin
     'admin-users': 'admin',
     'admin-task-health': 'admin',
+    quarantine: 'admin',
     'data-integrity': 'admin',
     'embedding-migration': 'admin',
     retention: 'admin',
     'search-indexing': 'admin',
+    'support-access': 'admin',
   };
 
   /**
@@ -173,6 +187,31 @@
       pendingApprovalCount = (await UserApprovalsApi.list()).length;
     } catch {
       pendingApprovalCount = 0;
+    }
+  }
+
+  /**
+   * Support-access requests awaiting this user's decision (issue #1122), across their personal
+   * workspace and, for an organization admin, their organization. Owned here, like the
+   * approval count, because the sidebar badge shows while another section is open.
+   */
+  let supportRequestCount = 0;
+  $: supportOrgTab = orgAdminCapOn(capState, 'organizations') && $userStore?.org_role === 'org:admin';
+
+  async function loadSupportRequestCount() {
+    if (!tenancyMulti) {
+      supportRequestCount = 0;
+      return;
+    }
+    const pending = { status: 'pending' as const, limit: 1, offset: 0 };
+    try {
+      const pages = await Promise.all([
+        SupportAccessApi.listRequests('workspace', pending),
+        ...(supportOrgTab ? [SupportAccessApi.listRequests('org', pending)] : [])
+      ]);
+      supportRequestCount = pages.reduce((sum, page) => sum + page.total, 0);
+    } catch {
+      supportRequestCount = 0;
     }
   }
 
@@ -236,8 +275,32 @@
   // cloud hides platform/self-host surfaces so the product "just works".
   // The backend independently 404s gated endpoints — this is cosmetic only.
   $: capState = $capabilities;
+  // Support-access UI exists only in multi-tenant mode and is FAIL-CLOSED (unknown = hidden),
+  // unlike `capOn`, which is fail-open. Do not route this through isCapabilityEnabled.
+  $: tenancyMulti = capState.tenancyMode === 'multi';
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
+
+  $: transcriptionAccess = {
+    prefsCap: capOn(capState, 'transcription.prefs'),
+    asrCap: capOn(capState, 'asr.user_providers'),
+    vocabCap: capOn(capState, 'vocab.user'),
+  };
+
+  $: speakerIdAccess = {
+    isAdmin,
+    isSuperAdmin,
+    prefsCap: capOn(capState, 'transcription.prefs'),
+    engineCap: capOn(capState, 'engine.settings'),
+    migrationCap: capOn(capState, 'speaker_attributes.migration'),
+  };
+
+  $: privacyAccess = {
+    isAdmin,
+    isSuperAdmin,
+    userCap: capOn(capState, 'redaction.user'),
+    policyCap: capOn(capState, 'redaction.policy'),
+  };
 
   // The modal's default landing section is 'system-statistics' (self-host: a
   // reasonable dashboard for any signed-in user). The capabilities store is
@@ -253,7 +316,7 @@
   $: effectiveActiveSection =
     activeSection === 'system-statistics' && capState.loaded && !capOn(capState, 'system.hardware_stats')
       ? 'profile'
-      : activeSection;
+      : sidebarRowFor(activeSection); // aliases highlight the row that now holds them
 
   // Cloud-edition org-admin gating: the new billing/usage/team panels are only
   // surfaced when the backend marks their capability as enabled AND audience as
@@ -262,12 +325,62 @@
   const orgAdminCapOn = (state: typeof $capabilities, key: string) =>
     isCloudEdition && isCapabilityEnabled(state, key) && state.audience[key] === 'org_admin';
 
-  // Define sidebar sections (filtered by capability; empty sections drop out)
+  // Define sidebar sections (filtered by capability; empty sections drop out).
+  //
+  // Grouped by WHO changes it and HOW OFTEN, not by subject matter (issue #861):
+  // the user's own settings first, then shared/media concerns, then admin
+  // configuration, then deployment maintenance last. Within every group, rows are
+  // ordered by expected frequency of use — do NOT re-alphabetize them.
+  //
+  // Group gating vs row gating: a group carrying `...(isAdmin ? [...] : [])` is
+  // invisible below that tier. A row inside an UNGATED group that needs privilege
+  // is spread in the same way, which keeps the group (and its ungated siblings)
+  // visible. `SECTION_MIN_ROLE` above stays the single source of privilege truth —
+  // never add an ad-hoc guard on a render block.
   $: sidebarSections = [
     {
-      title: $t('settings.sections.system'),
+      title: $t('settings.sections.account'),
       items: [
-        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' }
+        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
+        // One row, two tabs: the per-user preference and (admin) the policy floor that overrides it.
+        ...(privacyRedactionVisible(privacyAccess) ? [{ id: 'content-redaction' as SettingsSection, label: $t('settings.privacyRedaction.title'), icon: 'eye-off' }] : []),
+        ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : [])
+      ]
+    },
+    {
+      title: $t('settings.sections.transcription'),
+      items: [
+        // Two jobs, two rows, each with tabs: words (language, provider and model, vocabulary,
+        // accuracy) and speakers (detection, attributes, engine, maintenance). The old rows
+        // asr-provider / custom-vocabulary / engine-settings / speaker-attributes survive as
+        // aliases that open their tab (see lib/settings/sectionAliases.ts).
+        ...(transcriptionVisible(transcriptionAccess) ? [{ id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' }] : []),
+        ...(speakerIdentificationVisible(speakerIdAccess) ? [{ id: 'speaker-identification' as SettingsSection, label: $t('settings.speakerIdentification.title'), icon: 'user' }] : [])
+      ]
+    },
+    {
+      title: $t('settings.sections.aiChat'),
+      items: [
+        // Admin platform tuning for chat lives in this panel's Advanced tab, not a second row.
+        { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
+        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
+        // Org context is prompt material: OrganizationContextSettings persists
+        // include_in_default_prompts / include_in_custom_prompts and nothing else reads it.
+        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
+        // Tags and collections, not speakers: it sat in the Transcription group only by history.
+        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
+      ]
+    },
+    {
+      title: $t('settings.sections.mediaOutput'),
+      items: [
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'url_ingest' },
+        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link', cap: 'media_sources' },
+        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
+        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio', cap: 'audio_extraction' }
       ]
     },
     // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
@@ -283,61 +396,43 @@
         ]
       }
     ] : []),
+    // Administration = who may do what, and how this deployment behaves.
+    // Listed for every admin; rows above the admin's tier render disabled — see sectionLocked().
     ...(isAdmin ? [
       {
         title: $t('settings.sections.administration'),
         items: [
-          // Listed for every admin, disabled for non-super_admins — see sectionLocked().
-          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
+          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount },
           { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
-          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount }
-        ]
-      },
-      {
-        title: $t('settings.sections.systemManagement'),
-        items: [
-          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield', cap: 'admin.data_integrity' },
-          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock', cap: 'admin.retention' },
-          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' },
-          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' }
+          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
+          // issue #576: abuse/DMCA takedown review queue. `admin.takedown` is
+          // declared in the backend capability maps but gates the NAV ENTRY only —
+          // the endpoints are NOT capability-gated, since `require_capability`
+          // 404s and a compliance endpoint that vanishes is worse than one that
+          // refuses.
+          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' },
+          ...(tenancyMulti ? [{ id: 'support-access' as SettingsSection, label: $t('settings.supportAccess.navLabel'), icon: 'life-buoy' }] : [])
         ]
       }
     ] : []),
     {
-      title: $t('settings.sections.account'),
+      // System = looking at or repairing the deployment's state (vs. Administration,
+      // which configures its behaviour). Last because it is the least-often opened.
+      // The GROUP is deliberately ungated: `system-statistics` is open to every
+      // signed-in user and is the modal's default landing section
+      // (settingsModalStore initialState / Navbar.svelte). Only the maintenance rows
+      // are admin-gated.
+      title: $t('settings.sections.system'),
       items: [
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
-        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' }
-      ]
-    },
-    {
-      title: $t('settings.sections.transcriptionAi'),
-      items: [
-        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
-        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic', cap: 'asr.user_providers' },
-        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' }] : []),
-        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield', cap: 'redaction.policy' }] : []),
-        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
-        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
-        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
-        // Admin platform tuning lives in this panel's Advanced tab, not a second row.
-        { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
-        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
-        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
-        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' }
-      ]
-    },
-    {
-      title: $t('settings.sections.mediaOutput'),
-      items: [
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio', cap: 'audio_extraction' },
-        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link', cap: 'media_sources' },
-        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
-        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'url_ingest' }
+        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
+        ...(isAdmin ? [
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' },
+          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
+          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield', cap: 'admin.data_integrity' },
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
+          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock', cap: 'admin.retention' },
+          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' }
+        ] : [])
       ]
     }
   ]
@@ -362,11 +457,36 @@
   // limited to these so it never surfaces a section the user can't navigate to.
   // Locked entries are excluded on purpose: they stay discoverable in the sidebar
   // (greyed out, with a tooltip), but a search hit promises a usable destination.
-  $: visibleSections = sidebarSections.flatMap((section) =>
-    section.items
-      .filter((item) => !item.locked)
-      .map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
-  );
+  $: visibleSections = [
+    ...sidebarSections.flatMap((section) =>
+      section.items
+        .filter((item) => !item.locked)
+        .map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
+    ),
+    // The policy tab has no sidebar row of its own, but its settings stay searchable
+    // for exactly the users who can open it; the hit lands on that tab.
+    ...(privacyRedactionTabs(privacyAccess).some((tab) => tab.id === 'policy' && !tab.locked)
+      ? [{ id: 'redaction-policy', label: $t('settings.redactionPolicy.title') } as VisibleSection]
+      : []),
+    // Same for the four ids that became tabs: no sidebar row, still searchable, and the
+    // hit lands on the tab, but only for users whose tab is present and unlocked.
+    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess),
+  ];
+
+  function aliasSearchEntries(
+    tx: typeof transcriptionAccess,
+    spk: typeof speakerIdAccess
+  ): VisibleSection[] {
+    const txOpen = (id: string) => transcriptionTabs(tx).some((tab) => tab.id === id && !tab.locked);
+    const spkOpen = (id: string) =>
+      speakerIdentificationTabs(spk).some((tab) => tab.id === id && !tab.locked);
+    const entries: VisibleSection[] = [];
+    if (txOpen('tx-provider')) entries.push({ id: 'asr-provider', label: $t('settings.asrProvider.title') } as VisibleSection);
+    if (txOpen('tx-vocabulary')) entries.push({ id: 'custom-vocabulary', label: $t('settings.customVocabulary.title') } as VisibleSection);
+    if (spkOpen('spk-attributes')) entries.push({ id: 'speaker-attributes', label: $t('settings.speakerAttributes.title') } as VisibleSection);
+    if (spkOpen('spk-engine')) entries.push({ id: 'engine-settings', label: $t('settings.engineSettings.title') } as VisibleSection);
+    return entries;
+  }
 
   // Rebuild the fuzzy index only while the modal is open. `$locale` is referenced
   // so the index refreshes when the UI language changes (labels are localized).
@@ -459,12 +579,14 @@
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.addEventListener('reindex-complete', handleReindexCompleteStats);
+    window.addEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
   });
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
+    window.removeEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
     if (previousOpenState) unlockScroll();
   });
 
@@ -485,6 +607,7 @@
         loadAdminUsers();
       }
       if (isAdmin) loadPendingApprovalCount();
+      void loadSupportRequestCount();
 
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
@@ -496,6 +619,10 @@
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Escape' && isOpen) {
+      // A nested BaseModal (support-access request, break-glass, approve, access log...) owns
+      // this Escape: its own handler closes it. Closing the whole settings dialog as well threw
+      // away an in-progress break-glass confirmation along with it.
+      if (document.querySelector('.modal-backdrop')) return;
       attemptClose();
     }
   }
@@ -852,7 +979,7 @@
               <label class="mobile-nav-label">{$t('settings.title')}</label>
               <select
                 class="mobile-nav-select"
-                value={activeSection}
+                value={effectiveActiveSection}
                 on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
               >
                 {#each sidebarSections as section}
@@ -973,12 +1100,33 @@
             </div>
           {/if}
 
-          <!-- Transcription Settings Section -->
-          {#if activeSection === 'transcription'}
+          <!-- Transcription: language, provider and model, vocabulary, accuracy (tabs).
+               asr-provider and custom-vocabulary are kept as ids and open their tab. -->
+          {#if sidebarRowFor(activeSection) === 'transcription'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.transcription.title')}</h3>
               <p class="section-description">{$t('settings.transcription.description')}</p>
-              <TranscriptionSettings />
+              <TranscriptionSection
+                {isAdmin}
+                {isSuperAdmin}
+                {...transcriptionAccess}
+                initialTab={transcriptionTabFor(activeSection) ?? 'tx-language'}
+              />
+            </div>
+          {/if}
+
+          <!-- Speaker Identification: detection, voice attributes, engine, maintenance (tabs).
+               speaker-attributes and engine-settings are kept as ids and open their tab. -->
+          {#if sidebarRowFor(activeSection) === 'speaker-identification'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.speakerIdentification.title')}</h3>
+              <p class="section-description">{$t('settings.speakerIdentification.description')}</p>
+              <SpeakerIdentificationSection
+                {...speakerIdAccess}
+                embeddingCap={capOn(capState, 'admin.embedding_migration')}
+                initialTab={speakerIdTabFor(activeSection) ?? 'spk-detection'}
+                on:navigate={(e) => switchSection(e.detail)}
+              />
             </div>
           {/if}
 
@@ -988,13 +1136,6 @@
               <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
               <p class="section-description">{$t('settings.orgContext.description')}</p>
               <OrganizationContextSettings />
-            </div>
-          {/if}
-
-          <!-- Speaker Attribute Settings Section -->
-          {#if activeSection === 'speaker-attributes'}
-            <div class="content-section">
-              <SpeakerAttributeSettings />
             </div>
           {/if}
 
@@ -1052,38 +1193,19 @@
             </div>
           {/if}
 
-          <!-- ASR Provider Section -->
-          {#if activeSection === 'asr-provider'}
+          <!-- Privacy & Redaction: per-user preference tab + admin policy tab.
+               'redaction-policy' is kept as a section id (settings search, deep links)
+               and opens the policy tab of this same panel. -->
+          {#if activeSection === 'content-redaction' || activeSection === 'redaction-policy'}
             <div class="content-section">
-              <h3 class="section-title">{$t('settings.asrProvider.sectionTitle')}</h3>
-              <p class="section-description">{$t('settings.asrProvider.description')}</p>
-              <ASRSettings {isAdmin} />
-            </div>
-          {/if}
-
-          <!-- Engine Configuration Section (admin only) -->
-          {#if activeSection === 'engine-settings'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.engineSettings.title')}</h3>
-              <p class="section-description">{$t('settings.engineSettings.description')}</p>
-              <EngineSettings />
-            </div>
-          {/if}
-
-          <!-- Custom Vocabulary Section -->
-          {#if activeSection === 'custom-vocabulary'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.customVocabulary.title')}</h3>
-              <p class="section-description">{$t('settings.customVocabulary.description')}</p>
-              <CustomVocabularySettings />
-            </div>
-          {/if}
-
-          <!-- Content Redaction Section (per-user, all users) -->
-          {#if activeSection === 'content-redaction'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.contentRedaction.title')}</h3>
-              <ContentRedactionSettings />
+              <h3 class="section-title">{$t('settings.privacyRedaction.title')}</h3>
+              <PrivacyRedactionSettings
+                {isAdmin}
+                {isSuperAdmin}
+                userCap={privacyAccess.userCap}
+                policyCap={privacyAccess.policyCap}
+                initialTab={activeSection === 'redaction-policy' ? 'policy' : 'personal'}
+              />
             </div>
           {/if}
 
@@ -1098,14 +1220,6 @@
                 {isAdmin}
                 initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
               />
-            </div>
-          {/if}
-
-          <!-- Redaction Policy Section (admin governance) -->
-          {#if activeSection === 'redaction-policy'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.redactionPolicy.title')}</h3>
-              <RedactionPolicySettings />
             </div>
           {/if}
 
@@ -1147,6 +1261,30 @@
                 onRefresh={refreshAdminUsers}
                 onUserRecovery={recoverUserFiles}
               />
+              <LockedAccountsPanel />
+            </div>
+          {/if}
+
+          <!-- Quarantine / Takedown Review Queue Section (issue #576) -->
+          {#if activeSection === 'quarantine'}
+            <div class="content-section">
+              <QuarantinePanel />
+            </div>
+          {/if}
+
+          <!-- Support access requests (issue #1122): every user decides for their own workspace -->
+          {#if activeSection === 'support-access-requests' && tenancyMulti}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.supportAccessRequests.title')}</h3>
+              <SupportAccessApprovalsPanel orgTab={supportOrgTab} on:countchange={loadSupportRequestCount} />
+            </div>
+          {/if}
+
+          <!-- Support access (issue #1122): multi-tenant deployments only -->
+          {#if activeSection === 'support-access' && tenancyMulti}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.supportAccess.title')}</h3>
+              <SupportAccessStaffPanel />
             </div>
           {/if}
 
@@ -1200,7 +1338,7 @@
           <!-- Embedding Migration Section -->
           {#if activeSection === 'embedding-migration'}
             <div class="content-section">
-              <EmbeddingMigrationSettings />
+              <EmbeddingMigrationSettings locked={!isSuperAdmin} />
               <EmbeddingConsistencySettings />
             </div>
           {/if}
@@ -1378,12 +1516,13 @@
   .sidebar-section {
     margin-bottom: 0.25rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--border-color);
   }
 
-  .sidebar-section:first-child {
-    border-top: none;
-    padding-top: 0;
+  /* The divider belongs BETWEEN groups. `:first-child` could never match here —
+     `.settings-search` is the sidebar's first child — so the top group used to
+     render a stray rule directly under the search box. */
+  .sidebar-section + .sidebar-section {
+    border-top: 1px solid var(--border-color);
   }
 
   .section-heading {

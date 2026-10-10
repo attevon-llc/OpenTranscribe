@@ -1,0 +1,477 @@
+{
+  "pg_container": "otfresh-v060synth-postgres",
+  "preconditions": {
+    "action_items_count_distribution": {
+      "0": 6,
+      "1": 24,
+      "2": 63,
+      "3": 41,
+      "4": 3
+    },
+    "digest_sections_distribution": {
+      "1": 2,
+      "2": 27,
+      "3": 19,
+      "4": 32,
+      "5": 41,
+      "6": 13,
+      "7": 3
+    },
+    "fresh_summaries": 137,
+    "gate_p0_pass": true,
+    "key_decisions_count_distribution": {
+      "0": 2,
+      "1": 16,
+      "2": 85,
+      "3": 34
+    },
+    "total_files": 137
+  },
+  "question_set": ".rag-403/probe-runs/multi-file-expanded-v060synth.json",
+  "rules": {
+    "k0": {
+      "chosen_hybrid": "H2",
+      "control_per_file_coverage": 0.23357664233576642,
+      "control_pooled_recall": 0.018451664661050943,
+      "coverage_ratio": 3.3750000000000004,
+      "hybrid_per_file_coverage": 0.7883211678832117,
+      "hybrid_pooled_recall": 0.12515042117930206,
+      "recall_ratio": 6.782608695652175,
+      "triggered": false
+    },
+    "r_items": {
+      "delta_items": 111,
+      "p_items_recalled": 160,
+      "pi_items_recalled": 271,
+      "ship": "PI"
+    },
+    "r_sec": {
+      "best_alternative": "Smid",
+      "best_alternative_items_recalled": 12,
+      "best_alternative_pooled_recall": 0.0048134777376654635,
+      "chosen_section": "Slast",
+      "overturned": false,
+      "slast_items_recalled": 18,
+      "slast_pooled_recall": 0.007220216606498195
+    }
+  },
+  "run_name": "probe-532-oracle",
+  "schema_version": 1,
+  "summary": {
+    "by_composition": {
+      "C": {
+        "files_covered": 32,
+        "files_total": 137,
+        "items_recalled": 46,
+        "items_total": 2493,
+        "mean_chars": 925.9570895522388,
+        "median_chars": 967.5,
+        "per_file_coverage": 0.23357664233576642,
+        "pooled_recall": 0.018451664661050943
+      },
+      "H1": {
+        "files_covered": 91,
+        "files_total": 137,
+        "items_recalled": 198,
+        "items_total": 2493,
+        "mean_chars": 1072.5,
+        "median_chars": 1049.0,
+        "per_file_coverage": 0.6642335766423357,
+        "pooled_recall": 0.07942238267148015
+      },
+      "H2": {
+        "files_covered": 108,
+        "files_total": 137,
+        "items_recalled": 312,
+        "items_total": 2493,
+        "mean_chars": 1364.8264925373135,
+        "median_chars": 1344.0,
+        "per_file_coverage": 0.7883211678832117,
+        "pooled_recall": 0.12515042117930206
+      },
+      "P": {
+        "files_covered": 81,
+        "files_total": 137,
+        "items_recalled": 160,
+        "items_total": 2493,
+        "mean_chars": 735.7182835820895,
+        "median_chars": 723.0,
+        "per_file_coverage": 0.5912408759124088,
+        "pooled_recall": 0.06417970316887285
+      },
+      "PI": {
+        "files_covered": 102,
+        "files_total": 137,
+        "items_recalled": 271,
+        "items_total": 2493,
+        "mean_chars": 1028.044776119403,
+        "median_chars": 1022.5,
+        "per_file_coverage": 0.7445255474452555,
+        "pooled_recall": 0.10870437224227839
+      },
+      "S0": {
+        "files_covered": 8,
+        "files_total": 137,
+        "items_recalled": 11,
+        "items_total": 2493,
+        "mean_chars": 333.95522388059703,
+        "median_chars": 329.0,
+        "per_file_coverage": 0.058394160583941604,
+        "pooled_recall": 0.004412354592860008
+      },
+      "Slast": {
+        "files_covered": 14,
+        "files_total": 137,
+        "items_recalled": 18,
+        "items_total": 2493,
+        "mean_chars": 335.78171641791045,
+        "median_chars": 329.0,
+        "per_file_coverage": 0.10218978102189781,
+        "pooled_recall": 0.007220216606498195
+      },
+      "Smid": {
+        "files_covered": 10,
+        "files_total": 137,
+        "items_recalled": 12,
+        "items_total": 2493,
+        "mean_chars": 332.52425373134326,
+        "median_chars": 326.0,
+        "per_file_coverage": 0.072992700729927,
+        "pooled_recall": 0.0048134777376654635
+      }
+    },
+    "by_shape": {
+      "action_items": {
+        "C": {
+          "files_covered": 4,
+          "files_total": 137,
+          "items_recalled": 4,
+          "items_total": 267,
+          "mean_chars": 923.328125,
+          "median_chars": 964.5,
+          "per_file_coverage": 0.029197080291970802,
+          "pooled_recall": 0.0149812734082397
+        },
+        "H1": {
+          "files_covered": 31,
+          "files_total": 137,
+          "items_recalled": 40,
+          "items_total": 267,
+          "mean_chars": 1071.6953125,
+          "median_chars": 1051.0,
+          "per_file_coverage": 0.22627737226277372,
+          "pooled_recall": 0.149812734082397
+        },
+        "H2": {
+          "files_covered": 48,
+          "files_total": 137,
+          "items_recalled": 82,
+          "items_total": 267,
+          "mean_chars": 1367.4296875,
+          "median_chars": 1344.5,
+          "per_file_coverage": 0.35036496350364965,
+          "pooled_recall": 0.30711610486891383
+        },
+        "P": {
+          "files_covered": 27,
+          "files_total": 137,
+          "items_recalled": 34,
+          "items_total": 267,
+          "mean_chars": 735.546875,
+          "median_chars": 723.5,
+          "per_file_coverage": 0.19708029197080293,
+          "pooled_recall": 0.12734082397003746
+        },
+        "PI": {
+          "files_covered": 46,
+          "files_total": 137,
+          "items_recalled": 76,
+          "items_total": 267,
+          "mean_chars": 1031.28125,
+          "median_chars": 1024.5,
+          "per_file_coverage": 0.3357664233576642,
+          "pooled_recall": 0.2846441947565543
+        },
+        "S0": {
+          "files_covered": 2,
+          "files_total": 137,
+          "items_recalled": 2,
+          "items_total": 267,
+          "mean_chars": 333.0546875,
+          "median_chars": 328.5,
+          "per_file_coverage": 0.014598540145985401,
+          "pooled_recall": 0.00749063670411985
+        },
+        "Slast": {
+          "files_covered": 2,
+          "files_total": 137,
+          "items_recalled": 2,
+          "items_total": 267,
+          "mean_chars": 335.1484375,
+          "median_chars": 329.0,
+          "per_file_coverage": 0.014598540145985401,
+          "pooled_recall": 0.00749063670411985
+        },
+        "Smid": {
+          "files_covered": 2,
+          "files_total": 137,
+          "items_recalled": 2,
+          "items_total": 267,
+          "mean_chars": 331.7734375,
+          "median_chars": 324.5,
+          "per_file_coverage": 0.014598540145985401,
+          "pooled_recall": 0.00749063670411985
+        }
+      },
+      "decisions": {
+        "C": {
+          "files_covered": 21,
+          "files_total": 137,
+          "items_recalled": 26,
+          "items_total": 662,
+          "mean_chars": 925.6148148148148,
+          "median_chars": 970,
+          "per_file_coverage": 0.15328467153284672,
+          "pooled_recall": 0.03927492447129909
+        },
+        "H1": {
+          "files_covered": 45,
+          "files_total": 137,
+          "items_recalled": 75,
+          "items_total": 662,
+          "mean_chars": 1073.562962962963,
+          "median_chars": 1049,
+          "per_file_coverage": 0.3284671532846715,
+          "pooled_recall": 0.11329305135951662
+        },
+        "H2": {
+          "files_covered": 63,
+          "files_total": 137,
+          "items_recalled": 115,
+          "items_total": 662,
+          "mean_chars": 1364.6962962962964,
+          "median_chars": 1344,
+          "per_file_coverage": 0.45985401459854014,
+          "pooled_recall": 0.17371601208459214
+        },
+        "P": {
+          "files_covered": 38,
+          "files_total": 137,
+          "items_recalled": 59,
+          "items_total": 662,
+          "mean_chars": 736.7259259259259,
+          "median_chars": 723,
+          "per_file_coverage": 0.2773722627737226,
+          "pooled_recall": 0.0891238670694864
+        },
+        "PI": {
+          "files_covered": 58,
+          "files_total": 137,
+          "items_recalled": 102,
+          "items_total": 662,
+          "mean_chars": 1027.8592592592593,
+          "median_chars": 1022,
+          "per_file_coverage": 0.4233576642335766,
+          "pooled_recall": 0.1540785498489426
+        },
+        "S0": {
+          "files_covered": 6,
+          "files_total": 137,
+          "items_recalled": 8,
+          "items_total": 662,
+          "mean_chars": 334.24444444444447,
+          "median_chars": 329,
+          "per_file_coverage": 0.043795620437956206,
+          "pooled_recall": 0.012084592145015106
+        },
+        "Slast": {
+          "files_covered": 10,
+          "files_total": 137,
+          "items_recalled": 12,
+          "items_total": 662,
+          "mean_chars": 335.837037037037,
+          "median_chars": 329,
+          "per_file_coverage": 0.072992700729927,
+          "pooled_recall": 0.01812688821752266
+        },
+        "Smid": {
+          "files_covered": 7,
+          "files_total": 137,
+          "items_recalled": 7,
+          "items_total": 662,
+          "mean_chars": 332.93333333333334,
+          "median_chars": 326,
+          "per_file_coverage": 0.051094890510948905,
+          "pooled_recall": 0.010574018126888218
+        }
+      },
+      "evolution": {
+        "C": {
+          "files_covered": 3,
+          "files_total": 137,
+          "items_recalled": 3,
+          "items_total": 1162,
+          "mean_chars": 926.4525547445255,
+          "median_chars": 970,
+          "per_file_coverage": 0.021897810218978103,
+          "pooled_recall": 0.0025817555938037868
+        },
+        "H1": {
+          "files_covered": 41,
+          "files_total": 137,
+          "items_recalled": 56,
+          "items_total": 1162,
+          "mean_chars": 1072.8759124087592,
+          "median_chars": 1049,
+          "per_file_coverage": 0.29927007299270075,
+          "pooled_recall": 0.04819277108433735
+        },
+        "H2": {
+          "files_covered": 50,
+          "files_total": 137,
+          "items_recalled": 78,
+          "items_total": 1162,
+          "mean_chars": 1364.4890510948906,
+          "median_chars": 1344,
+          "per_file_coverage": 0.36496350364963503,
+          "pooled_recall": 0.06712564543889846
+        },
+        "P": {
+          "files_covered": 33,
+          "files_total": 137,
+          "items_recalled": 45,
+          "items_total": 1162,
+          "mean_chars": 735.8686131386861,
+          "median_chars": 723,
+          "per_file_coverage": 0.24087591240875914,
+          "pooled_recall": 0.0387263339070568
+        },
+        "PI": {
+          "files_covered": 45,
+          "files_total": 137,
+          "items_recalled": 64,
+          "items_total": 1162,
+          "mean_chars": 1027.4817518248176,
+          "median_chars": 1022,
+          "per_file_coverage": 0.3284671532846715,
+          "pooled_recall": 0.055077452667814115
+        },
+        "S0": {
+          "files_covered": 0,
+          "files_total": 137,
+          "items_recalled": 0,
+          "items_total": 1162,
+          "mean_chars": 334.3065693430657,
+          "median_chars": 330,
+          "per_file_coverage": 0.0,
+          "pooled_recall": 0.0
+        },
+        "Slast": {
+          "files_covered": 1,
+          "files_total": 137,
+          "items_recalled": 1,
+          "items_total": 1162,
+          "mean_chars": 336.007299270073,
+          "median_chars": 329,
+          "per_file_coverage": 0.0072992700729927005,
+          "pooled_recall": 0.0008605851979345956
+        },
+        "Smid": {
+          "files_covered": 1,
+          "files_total": 137,
+          "items_recalled": 1,
+          "items_total": 1162,
+          "mean_chars": 332.64233576642334,
+          "median_chars": 326,
+          "per_file_coverage": 0.0072992700729927005,
+          "pooled_recall": 0.0008605851979345956
+        }
+      },
+      "problems": {
+        "C": {
+          "files_covered": 10,
+          "files_total": 137,
+          "items_recalled": 13,
+          "items_total": 402,
+          "mean_chars": 928.2720588235294,
+          "median_chars": 970.5,
+          "per_file_coverage": 0.072992700729927,
+          "pooled_recall": 0.03233830845771144
+        },
+        "H1": {
+          "files_covered": 23,
+          "files_total": 137,
+          "items_recalled": 27,
+          "items_total": 402,
+          "mean_chars": 1071.8235294117646,
+          "median_chars": 1048.5,
+          "per_file_coverage": 0.1678832116788321,
+          "pooled_recall": 0.06716417910447761
+        },
+        "H2": {
+          "files_covered": 29,
+          "files_total": 137,
+          "items_recalled": 37,
+          "items_total": 402,
+          "mean_chars": 1362.8455882352941,
+          "median_chars": 1342.0,
+          "per_file_coverage": 0.2116788321167883,
+          "pooled_recall": 0.09203980099502487
+        },
+        "P": {
+          "files_covered": 18,
+          "files_total": 137,
+          "items_recalled": 22,
+          "items_total": 402,
+          "mean_chars": 734.7279411764706,
+          "median_chars": 722.0,
+          "per_file_coverage": 0.13138686131386862,
+          "pooled_recall": 0.05472636815920398
+        },
+        "PI": {
+          "files_covered": 24,
+          "files_total": 137,
+          "items_recalled": 29,
+          "items_total": 402,
+          "mean_chars": 1025.75,
+          "median_chars": 1022.0,
+          "per_file_coverage": 0.17518248175182483,
+          "pooled_recall": 0.07213930348258707
+        },
+        "S0": {
+          "files_covered": 1,
+          "files_total": 137,
+          "items_recalled": 1,
+          "items_total": 402,
+          "mean_chars": 334.1617647058824,
+          "median_chars": 329.5,
+          "per_file_coverage": 0.0072992700729927005,
+          "pooled_recall": 0.0024875621890547263
+        },
+        "Slast": {
+          "files_covered": 3,
+          "files_total": 137,
+          "items_recalled": 3,
+          "items_total": 402,
+          "mean_chars": 336.09558823529414,
+          "median_chars": 329.0,
+          "per_file_coverage": 0.021897810218978103,
+          "pooled_recall": 0.007462686567164179
+        },
+        "Smid": {
+          "files_covered": 2,
+          "files_total": 137,
+          "items_recalled": 2,
+          "items_total": 402,
+          "mean_chars": 332.70588235294116,
+          "median_chars": 326.0,
+          "per_file_coverage": 0.014598540145985401,
+          "pooled_recall": 0.004975124378109453
+        }
+      }
+    },
+    "scored_file_question_pairs": 536,
+    "skipped_no_file_row": 0,
+    "skipped_no_reference": 0
+  }
+}

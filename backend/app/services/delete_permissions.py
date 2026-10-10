@@ -9,7 +9,8 @@ The rule, in one place:
 
 * the file's owner (uploader);
 * an ``org:admin`` of the file's organization, acting in that organization;
-* a platform admin (``User.is_admin``).
+* a platform admin, in single-tenant mode only (``PlatformBypass``; in multi-tenant mode
+  only through a support-access grant with write access).
 
 A personal (org-less) file therefore has exactly one non-admin deleter: its
 owner. An editor share keeps every edit right and loses only delete.
@@ -27,6 +28,7 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.platform_bypass import PlatformBypass
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ def can_delete_file(
     *,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> bool:
     """Whether ``user`` may permanently delete ``file``.
 
@@ -51,8 +54,15 @@ def can_delete_file(
         is_org_admin: Whether the caller is ``org:admin`` of ``organization_id``
             (``ctx.is_org_admin``). Only honoured when ``organization_id`` is an
             org id equal to the file's organization.
+        bypass: The request's platform bypass, decided against the file's tenant.
     """
-    if user.is_admin:
+    if bypass.allows(
+        org_id=file.organization_id,
+        owner_id=file.user_id,
+        need="write",
+        resource_type="media_file",
+        resource_uuid=str(file.uuid),
+    ):
         return True
     if file.user_id == user.id:
         return True
@@ -93,13 +103,16 @@ def get_deletable_file(
     *,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFile:
     """Resolve ``file_uuid`` for a permanent delete, or raise.
 
     404: the file does not exist, or is quarantined and the caller is not a
     platform admin (same as every read path). 403: outside the caller's active
     tenant, or visible to the caller but not deletable by them (the latter is
-    audited as ``file.delete.denied``).
+    audited as ``file.delete.denied``). The platform ``bypass`` is decided on the
+    loaded file, so in multi-tenant mode an admin outside the file's tenant is
+    refused like anyone else.
     """
     from app.services.takedown_service import is_hidden_for
     from app.utils.uuid_helpers import _resource_in_tenant_scope
@@ -107,7 +120,13 @@ def get_deletable_file(
 
     file = get_file_by_uuid(db, file_uuid)
 
-    if user.is_admin:
+    if bypass.allows(
+        org_id=file.organization_id,
+        owner_id=file.user_id,
+        need="write",
+        resource_type="media_file",
+        resource_uuid=str(file.uuid),
+    ):
         return file
 
     if is_hidden_for(file, is_admin=False):
@@ -119,7 +138,13 @@ def get_deletable_file(
             detail="You do not have permission to access this file",
         )
 
-    if can_delete_file(user, file, organization_id=organization_id, is_org_admin=is_org_admin):
+    if can_delete_file(
+        user,
+        file,
+        organization_id=organization_id,
+        is_org_admin=is_org_admin,
+        bypass=bypass,
+    ):
         return file
 
     from app.services.permission_service import PermissionService

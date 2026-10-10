@@ -16,6 +16,11 @@
   $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
   $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
   $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
+  // What a blank field means on the server: the system range under "use system defaults",
+  // otherwise the user's own saved range.
+  $: useSystemRange = transcriptionSettings?.speaker_prompt_behavior === 'use_defaults';
+  $: blankMin = useSystemRange ? transcriptionSystemDefaults?.min_speakers : transcriptionSettings?.min_speakers;
+  $: blankMax = useSystemRange ? transcriptionSystemDefaults?.max_speakers : transcriptionSettings?.max_speakers;
   $: hasValidationError = minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers;
 
   function emitChange() {
@@ -58,7 +63,7 @@
         id="min-speakers"
         type="number"
         min="1"
-        placeholder={transcriptionSystemDefaults ? `${$t('uploader.default')}: ${transcriptionSystemDefaults.min_speakers}` : $t('uploader.usesDefault')}
+        placeholder={blankMin != null ? `${$t('uploader.default')}: ${blankMin}` : $t('uploader.usesDefault')}
         bind:value={minSpeakers}
         on:change={emitChange}
         disabled={numSpeakers !== null}
@@ -73,7 +78,7 @@
         id="max-speakers"
         type="number"
         min="1"
-        placeholder={transcriptionSystemDefaults ? `${$t('uploader.default')}: ${transcriptionSystemDefaults.max_speakers}` : $t('uploader.usesDefault')}
+        placeholder={blankMax != null ? `${$t('uploader.default')}: ${blankMax}` : $t('uploader.usesDefault')}
         bind:value={maxSpeakers}
         on:change={emitChange}
         disabled={numSpeakers !== null}

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.tasks import rediarize_task
+from app.tasks.transcription.user_settings import SpeakerRange
 from app.utils import scratch_volume
 
 
@@ -53,7 +54,7 @@ def test_run_diarization_passes_wav_path_to_native_and_omits_for_pyannote(tmp_pa
             return_value=MagicMock(get_diarizer=MagicMock(return_value=native_diarizer)),
         ),
     ):
-        rediarize_task._run_diarization(audio_path, None, None, None, wav_path=audio_path)
+        rediarize_task._run_diarization(audio_path, SpeakerRange(1, 20, None), wav_path=audio_path)
 
     native_diarizer.diarize.assert_called_once()
     _, kwargs = native_diarizer.diarize.call_args
@@ -68,6 +69,6 @@ def test_run_diarization_passes_wav_path_to_native_and_omits_for_pyannote(tmp_pa
             return_value=MagicMock(get_diarizer=MagicMock(return_value=non_native_diarizer)),
         ),
     ):
-        rediarize_task._run_diarization(audio_path, None, None, None, wav_path=audio_path)
+        rediarize_task._run_diarization(audio_path, SpeakerRange(1, 20, None), wav_path=audio_path)
 
     non_native_diarizer.diarize.assert_called_once_with(fake_audio)

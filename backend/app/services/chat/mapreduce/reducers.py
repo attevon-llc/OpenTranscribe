@@ -24,6 +24,22 @@ from app.services.chat.mapreduce.overview import _clock
 logger = logging.getLogger(__name__)
 
 
+def _summary_display_lines(summary: FileSummary, sanitize) -> list[str]:
+    """The rendered body line for one file's map entry: its LLM summary if it has
+    one (#464), else its digest text, else nothing.
+
+    ``sanitize`` is the caller's sanitizer (``_sanitize_body_text`` for
+    :class:`CodeComposer`, ``_sanitize_attribute`` for
+    :class:`BatchReducer._plain` — see each call site for which is body-safe
+    vs attribute-safe) so this helper stays reducer-agnostic.
+    """
+    if summary.llm_summary:
+        return [f"  {sanitize(summary.llm_summary)}"]
+    if summary.digest:
+        return [f"  {sanitize(summary.digest)}"]
+    return []
+
+
 def _corpus_header(summaries: list[FileSummary], files_in_scope: int = 0) -> list[str]:
     """The facts that are true of the whole scope, and are exact.
 
@@ -202,14 +218,13 @@ class CodeComposer:
                     lines.append(f"- {title}{date} [{citation_id}]")
                 else:
                     lines.append(f"- {title}{date}")
-                if summary.digest:
-                    # BODY-safe, not the 120-char attribute sanitizer: a digest is
-                    # prose, not a short discrete value, and the attribute cap
-                    # silently shredded it mid-sentence for anything longer than
-                    # a title. `_sanitize_body_text` defuses the same breakout
-                    # attempts with no length cap — see its docstring and the
-                    # module docstring's "Assembly is concatenation-only" note.
-                    lines.append(f"  {_sanitize_body_text(summary.digest)}")
+                # BODY-safe, not the 120-char attribute sanitizer: this text is
+                # prose, not a short discrete value, and the attribute cap
+                # silently shredded it mid-sentence for anything longer than
+                # a title. `_sanitize_body_text` defuses the same breakout
+                # attempts with no length cap — see its docstring and the
+                # module docstring's "Assembly is concatenation-only" note.
+                lines.extend(_summary_display_lines(summary, _sanitize_body_text))
         hidden = len(summaries) - len(listed)
         if hidden > 0:
             lines.append(
@@ -326,8 +341,7 @@ class BatchReducer:
             title = _sanitize_attribute(summary.title) or "Untitled recording"
             date = f" ({summary.recorded_at})" if summary.recorded_at else ""
             out.append(f"- {title}{date}")
-            if summary.digest:
-                out.append(f"  {_sanitize_attribute(summary.digest)}")
+            out.extend(_summary_display_lines(summary, _sanitize_attribute))
         return "\n".join(out)
 
     def _condense(self, batch: list[FileSummary]) -> str | None:

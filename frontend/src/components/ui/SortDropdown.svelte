@@ -91,7 +91,12 @@
 
     <span class="sort-label">{$t(currentOption.label)}</span>
 
-    <!-- Direction arrow (fixed-order options always show desc, others show current direction) -->
+    <!-- Direction arrow (fixed-order options always show desc, others show current direction).
+         A real arrow (shaft + head), not a bare chevron/caret — issue #747 §4.3. The rotation
+         semantics (desc = unrotated, asc = rotate 180deg) are UNCHANGED: whether "desc" should
+         read as an up-arrow or a down-arrow is a separate judgment call (J10) that needs
+         verification against real user expectations on both /  and /search before flipping, and
+         is deliberately left alone here. -->
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="14"
@@ -105,7 +110,8 @@
       class="direction-arrow"
       class:asc={!currentOption.noDirection && sortOrder === 'asc'}
     >
-      <polyline points="18 15 12 9 6 15"></polyline>
+      <line x1="12" y1="19" x2="12" y2="5"></line>
+      <polyline points="5 12 12 5 19 12"></polyline>
     </svg>
   </button>
 
@@ -137,7 +143,8 @@
               class="option-arrow"
               class:asc={!option.noDirection && sortOrder === 'asc'}
             >
-              <polyline points="18 15 12 9 6 15"></polyline>
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
             </svg>
           {/if}
         </button>

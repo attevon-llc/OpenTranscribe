@@ -373,6 +373,7 @@ def test_the_warm_up_builds_when_the_deployment_does_redact(monkeypatch):
     builds: list[bool] = []
     monkeypatch.setattr("app.services.redaction.config.redaction_is_in_use", lambda _db: True)
     monkeypatch.setattr(warmup, "warm_pii_analyzer", lambda: builds.append(True))
+    monkeypatch.setattr(warmup, "warm_edit_path_detectors", lambda: True)
 
     warmup._warm_if_in_use()
 

@@ -349,7 +349,10 @@ class TaskRecoveryService:
                     from app.tasks.transcription import dispatch_transcription_pipeline
 
                     task_id = dispatch_transcription_pipeline(
-                        file_uuid=file_uuid, retry=True, countdown=countdown
+                        file_uuid=file_uuid,
+                        retry=True,
+                        countdown=countdown,
+                        reuse_requested_options=True,
                     )
 
             # Validate dispatch succeeded

@@ -150,6 +150,7 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "admin.task_health": True,  # stuck-task recovery / queue health panel
     "speaker_attributes.migration": True,  # bulk speaker-attribute re-detection (all files)
     "admin.flower": True,  # Flower task dashboard link + its reverse-proxy auth probe
+    "admin.takedown": True,  # abuse/DMCA quarantine review queue (#576)
 }
 
 # Every capability key MUST be classified, and the two maps must carry the
@@ -201,6 +202,7 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "admin.task_health": AUDIENCE_PLATFORM,
     "speaker_attributes.migration": AUDIENCE_PLATFORM,
     "admin.flower": AUDIENCE_PLATFORM,
+    "admin.takedown": AUDIENCE_PLATFORM,
 }
 
 # Resolver signature: (request | None) -> capability dict. The request is

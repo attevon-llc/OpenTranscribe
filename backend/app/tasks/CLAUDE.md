@@ -16,6 +16,12 @@ indexing → WebSocket notification.
   indexing, downstream dispatch). `dispatch.py` orchestrates the chain and routes
   `transcription.gpu_transcribe` / `cpu_transcribe` **at call time** — that's why they're
   deliberately absent from `task_routes`.
+- `transcription/requested_options.py` — the per-file request (Whisper model, speaker range,
+  "skip diarization") stored on `media_file.requested_*` by every fresh dispatch and replayed by
+  `dispatch_transcription_pipeline(..., reuse_requested_options=True)` — which retry, recovery and
+  the download hop of a URL import pass. A fresh request overwrites the stored one even with
+  `None`. Speaker-range precedence is decided once, in `user_settings.resolve_speaker_range`
+  (per file, then the user's saved range, then env); never re-derive it at a call site.
 - `transcription/hooks.py` — cloud-edition seam. Exceptions are swallowed; **hangs are not**
   (hooks run inside the completion path holding an open `session_scope`). Any outbound call
   in a hook needs a tight timeout.
@@ -142,8 +148,9 @@ indexing → WebSocket notification.
   `_mark_pipeline_error`), a worker that died (`core/broker_orphans.py` reaper, and the health
   check's `recover_stuck_task`). Don't add a parallel path. Two classes:
   **permanent** (`ErrorCategory.INVALID_MEDIA` — set by `classify_failure` from an input-shaped
-  user reason; also `PRIVATE_OR_REMOVED`, `FILE_TOO_LARGE`, `USER_CANCELLED`,
-  `RETRIES_EXHAUSTED`) fails fast, never retried; **transient** (everything in
+  user reason; `CONFIGURATION_REQUIRED` — the user's own settings make the run impossible, e.g.
+  pyannote.ai diarization with no key, #1204; also `PRIVATE_OR_REMOVED`, `FILE_TOO_LARGE`,
+  `USER_CANCELLED`, `RETRIES_EXHAUSTED`) fails fast, never retried; **transient** (everything in
   `RETRIABLE_CATEGORIES`, including UNKNOWN) is requeued with backoff + jitter until the admin
   retry limit, then ERROR with `RETRIES_EXHAUSTED`. Worker loss spends a SEPARATE per-file
   budget (`TRANSCRIPTION_MAX_INFRA_REQUEUES`, a Redis sorted set), never `retry_count`.

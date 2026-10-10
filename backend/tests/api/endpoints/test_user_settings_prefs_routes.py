@@ -219,11 +219,11 @@ def test_transcription_system_defaults_ignore_the_users_own_customisation(
 
     put = client.put(
         f"{_BASE}/transcription",
-        json={"min_speakers": 5, "max_speakers": 6, "garbage_cleanup_threshold": 11},
+        json={"min_speakers": 5, "max_speakers": 6, "garbage_cleanup_threshold": 77},
         headers=user_token_headers,
     )
     assert put.status_code == status.HTTP_200_OK
-    assert put.json()["garbage_cleanup_threshold"] == 11
+    assert put.json()["garbage_cleanup_threshold"] == 77
 
     after = client.get(f"{_BASE}/transcription/system-defaults", headers=user_token_headers)
     assert after.status_code == status.HTTP_200_OK
@@ -283,3 +283,48 @@ def test_speaker_attributes_system_defaults_ignore_the_users_own_customisation(
     after = client.get(f"{_BASE}/speaker-attributes/system-defaults", headers=user_token_headers)
     assert after.status_code == status.HTTP_200_OK
     assert after.json() == before.json()
+
+
+def test_transcription_settings_show_the_admin_garbage_default_until_the_user_saves(
+    client, user_token_headers, db_session
+):
+    """The form must show the value the pipeline will apply: an unset user inherits the
+    admin default (#1199), and system-defaults reports it too."""
+    from app.services import system_settings_service
+
+    system_settings_service.set_setting(db_session, "transcription.max_word_length", 120)
+    system_settings_service.set_setting(db_session, "transcription.garbage_cleanup_enabled", False)
+    db_session.commit()
+
+    got = client.get(f"{_BASE}/transcription", headers=user_token_headers).json()
+    assert got["garbage_cleanup_threshold"] == 120
+    assert got["garbage_cleanup_enabled"] is False
+    defaults = client.get(f"{_BASE}/transcription/system-defaults", headers=user_token_headers)
+    assert defaults.json()["garbage_cleanup_threshold"] == 120
+
+    client.put(
+        f"{_BASE}/transcription",
+        json={"garbage_cleanup_threshold": 90, "garbage_cleanup_enabled": True},
+        headers=user_token_headers,
+    )
+    mine = client.get(f"{_BASE}/transcription", headers=user_token_headers).json()
+    assert mine["garbage_cleanup_threshold"] == 90
+    assert mine["garbage_cleanup_enabled"] is True
+
+
+def test_garbage_threshold_accepts_the_admin_range_and_rejects_outside_it(
+    client, user_token_headers
+):
+    ok = client.put(
+        f"{_BASE}/transcription",
+        json={"garbage_cleanup_threshold": 200},
+        headers=user_token_headers,
+    )
+    assert ok.status_code == status.HTTP_200_OK
+    for bad in (19, 201):
+        resp = client.put(
+            f"{_BASE}/transcription",
+            json={"garbage_cleanup_threshold": bad},
+            headers=user_token_headers,
+        )
+        assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

@@ -100,17 +100,54 @@ def update_task_status(
 ) -> Task | None:
     """Update task status in the database.
 
+    Thin wrapper over :func:`update_task_status_with_duration` for the majority of
+    callers, which do not care how long the task took. If you need the elapsed time,
+    call that function directly — it is the only place the number can be computed.
+    """
+    task, _ = update_task_status_with_duration(
+        db, task_id, status, progress, error_message, completed
+    )
+    return task
+
+
+def update_task_status_with_duration(
+    db: Session,
+    task_id: str,
+    status: str,
+    progress: float | None = None,
+    error_message: str | None = None,
+    completed: bool = False,
+) -> tuple[Task | None, float | None]:
+    """Update task status, and report how long the task ran.
+
+    Returns ``(task, duration_seconds)``. The duration is issue #753's notification
+    chip, and it MUST be computed here rather than by a later reader of ``MediaFile``:
+    the terminal branch below clears ``media_file.task_started_at`` in this same call,
+    which is the only record of when this task began. Once cleared it is gone — there
+    is no other timestamp to reconstruct it from, and ``MediaFile.duration`` is the
+    length of the RECORDING, a different number that must never be substituted for
+    processing time.
+
+    ⚠️ It is **returned**, not stamped onto the ``Task``. An earlier revision set a
+    transient ``task.duration_seconds`` attribute, which forced a ``ClassVar``
+    declaration on the model to stop SQLAlchemy's Annotated Declarative scanner
+    raising ``MappedAnnotationError`` at class-definition time — and mypy then
+    correctly rejected assigning to that ``ClassVar`` through an instance. Smuggling a
+    computed value out on an ORM object was fighting both tools because it was the
+    wrong shape; returning it is simpler and needs no declaration at all.
+
     A write that makes a transcription run's row ACTIVE (``pending`` / ``in_progress``) lands
     only while the row is still active (issue #1178): recovery may have reclaimed the run and
     dispatched a replacement while a stage of the original was still executing, and that
     stage's next progress write must not move the reclaimed row back to ``in_progress``. The
     check is one conditional ``UPDATE``, so it holds against a reclaim committed by another
-    process between this session's read and its write. A dropped write returns ``None``.
+    process between this session's read and its write. A dropped write returns
+    ``(None, None)``.
     """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         logger.warning(f"Task {task_id} not found")
-        return None
+        return None, None
 
     # Log state transition for debugging
     logger.debug(f"Task {task_id} state change: {task.status} -> {status}")
@@ -119,7 +156,7 @@ def update_task_status(
     if status in _ACTIVE_TASK_STATUSES and task.task_type in _RUN_FENCED_TASK_TYPES:
         if not _write_if_still_active(db, task, status, progress, error_message, completed, now):
             db.commit()  # whatever else the caller staged commits exactly as it always did
-            return None
+            return None, None
     else:
         # Update task fields
         task.status = status  # type: ignore[assignment]
@@ -132,6 +169,8 @@ def update_task_status(
 
         # Always update the timestamp for task state changes
         task.updated_at = now  # type: ignore[assignment]
+
+    duration_seconds: float | None = None
 
     # Update media file task tracking
     media_file_id = task.media_file_id
@@ -147,6 +186,10 @@ def update_task_status(
             # the file as still busy to `is_file_safe_to_delete` and friends,
             # even though nothing is running any more (issue #622).
             if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED]:
+                if task.completed_at is not None and media_file.task_started_at is not None:
+                    duration_seconds = (
+                        task.completed_at - media_file.task_started_at
+                    ).total_seconds()
                 media_file.active_task_id = None
                 media_file.task_started_at = None
 
@@ -161,7 +204,7 @@ def update_task_status(
     ):
         update_media_file_from_task_status(db, int(task_media_file_id))
 
-    return task  # type: ignore[no-any-return]
+    return task, duration_seconds
 
 
 def _write_if_still_active(
@@ -553,7 +596,7 @@ def _start_transcription_task(file_uuid: str, file_id: int, task_description: st
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         from app.tasks.transcription import dispatch_transcription_pipeline
 
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
         logger.info(f"Started recovery task {task_id} for {task_description} file {file_id}")
 
 
@@ -921,6 +964,14 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             media_file.summary_status = "pending"
 
             db.commit()
+
+            # Prune the OpenSearch summary plane to match the cleared column
+            # (issue #963) — a transcription retry may never reach a fresh
+            # summary generation, so nothing else is guaranteed to.
+            from app.tasks.search_indexing_task import index_file_summary
+
+            index_file_summary.delay(int(file_id))
+
             logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
             return True
 

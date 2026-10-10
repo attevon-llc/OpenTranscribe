@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import Tabs from './Tabs.svelte';
 
@@ -28,5 +28,29 @@ describe('Tabs', () => {
     render(Tabs, { props: { tabs, activeId: 'a' } });
     await fireEvent.keyDown(screen.getByRole('tab', { name: /Alpha/ }), { key: 'ArrowRight' });
     expect(screen.getByRole('tab', { name: /Beta/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  describe('in a right-to-left layout', () => {
+    afterEach(() => {
+      document.documentElement.removeAttribute('dir');
+    });
+
+    it('mirrors ArrowLeft/ArrowRight so they follow the visual order', async () => {
+      document.documentElement.setAttribute('dir', 'rtl');
+      render(Tabs, { props: { tabs, activeId: 'a' } });
+      await fireEvent.keyDown(screen.getByRole('tab', { name: /Alpha/ }), { key: 'ArrowLeft' });
+      expect(screen.getByRole('tab', { name: /Beta/ })).toHaveAttribute('aria-selected', 'true');
+      await fireEvent.keyDown(screen.getByRole('tab', { name: /Beta/ }), { key: 'ArrowRight' });
+      expect(screen.getByRole('tab', { name: /Alpha/ })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('leaves ArrowDown/ArrowUp, Home and End unmirrored', async () => {
+      document.documentElement.setAttribute('dir', 'rtl');
+      render(Tabs, { props: { tabs, activeId: 'a' } });
+      await fireEvent.keyDown(screen.getByRole('tab', { name: /Alpha/ }), { key: 'ArrowDown' });
+      expect(screen.getByRole('tab', { name: /Beta/ })).toHaveAttribute('aria-selected', 'true');
+      await fireEvent.keyDown(screen.getByRole('tab', { name: /Beta/ }), { key: 'End' });
+      expect(screen.getByRole('tab', { name: /Gamma/ })).toHaveAttribute('aria-selected', 'true');
+    });
   });
 });

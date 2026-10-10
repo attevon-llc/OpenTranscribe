@@ -234,7 +234,7 @@ the usage endpoints. See [Usage Tracking](../features/usage-tracking.md).
 
 ## Requirements
 
-Chat needs a language model configured in **Settings → AI** (OpenAI, Anthropic,
+Chat needs a language model configured in **Settings → LLM Provider Configuration** (OpenAI, Anthropic,
 OpenRouter, Amazon Bedrock, or a self-hosted vLLM/Ollama endpoint). Until one is
 set, the chat page shows a setup prompt.
 

@@ -112,6 +112,20 @@ def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list
     return cleaned_segments, garbage_count
 
 
+def apply_garbage_cleanup(db, user_id: int, segments: list) -> tuple[list, int]:
+    """Run garbage-word cleanup with the owner's effective setting.
+
+    The setting is user pref > system default > constant
+    (``system_settings_service.get_effective_garbage_cleanup_config``). Disabled returns the segments untouched.
+    """
+    from app.services import system_settings_service
+
+    config = system_settings_service.get_effective_garbage_cleanup_config(db, user_id)
+    if not config["garbage_cleanup_enabled"]:
+        return segments, 0
+    return clean_garbage_words(segments, config["max_word_length"])
+
+
 def _process_transcription_result(
     ctx: TranscriptionContext,
     result: dict,
@@ -192,19 +206,11 @@ def _process_transcription_result(
     # Clean garbage words
     step_start = time.perf_counter()
     with session_scope() as db:
-        from app.services import system_settings_service
-
-        garbage_config = system_settings_service.get_garbage_cleanup_config(db)
-
-    if garbage_config["garbage_cleanup_enabled"]:
-        processed_segments, garbage_count = clean_garbage_words(
-            processed_segments, garbage_config["max_word_length"]
+        processed_segments, garbage_count = apply_garbage_cleanup(
+            db, ctx.user_id, processed_segments
         )
-        if garbage_count > 0:
-            logger.info(
-                f"Cleaned {garbage_count} garbage word(s) from file {ctx.file_id} "
-                f"(threshold: {garbage_config['max_word_length']} chars)"
-            )
+    if garbage_count > 0:
+        logger.info(f"Cleaned {garbage_count} garbage word(s) from file {ctx.file_id}")
     logger.info(f"TIMING: garbage cleanup completed in {time.perf_counter() - step_start:.3f}s")
 
     with session_scope() as db:
@@ -341,13 +347,7 @@ def _process_and_save_critical(
 
     # Garbage cleanup
     with session_scope() as db:
-        from app.services import system_settings_service
-
-        garbage_config = system_settings_service.get_garbage_cleanup_config(db)
-    if garbage_config["garbage_cleanup_enabled"]:
-        processed_segments, _ = clean_garbage_words(
-            processed_segments, garbage_config["max_word_length"]
-        )
+        processed_segments, _ = apply_garbage_cleanup(db, ctx.user_id, processed_segments)
 
     # Save to database
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")

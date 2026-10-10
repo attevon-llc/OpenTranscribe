@@ -84,6 +84,7 @@ from app.schemas.topic import AutoLabelSettingsSchema
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
+from app.services import system_settings_service
 from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
@@ -669,9 +670,10 @@ def get_transcription_settings(
         "transcription_speaker_prompt_behavior",
         str(DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"]),
     )
-    garbage_threshold_value = settings_map.get(
-        "transcription_garbage_cleanup_threshold",
-        str(DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"]),
+    # Unset means "inherit the deployment default" (admin garbage-cleanup setting), which
+    # is also what the pipeline applies, so the form shows the value that will actually run.
+    garbage_effective = system_settings_service.get_effective_garbage_cleanup_config(
+        db, current_user.id
     )
     source_language_value = settings_map.get(
         "transcription_source_language",
@@ -690,11 +692,8 @@ def get_transcription_settings(
             Literal["always_prompt", "use_defaults", "use_custom"],
             speaker_behavior_value,
         ),
-        garbage_cleanup_enabled=settings_map.get(
-            "transcription_garbage_cleanup_enabled", "true"
-        ).lower()
-        == "true",
-        garbage_cleanup_threshold=int(garbage_threshold_value),
+        garbage_cleanup_enabled=garbage_effective["garbage_cleanup_enabled"],
+        garbage_cleanup_threshold=garbage_effective["max_word_length"],
         source_language=source_language_value,
         translate_to_english=settings_map.get("transcription_translate_to_english", "false").lower()
         == "true",
@@ -887,12 +886,13 @@ def reset_transcription_settings(
     db.commit()
 
     # Return defaults including system-level speaker settings
+    garbage_default = system_settings_service.get_garbage_cleanup_config(db)
     default_settings = {
         "min_speakers": app_settings.MIN_SPEAKERS,
         "max_speakers": app_settings.MAX_SPEAKERS,
         "speaker_prompt_behavior": DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"],
-        "garbage_cleanup_enabled": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_enabled"],
-        "garbage_cleanup_threshold": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"],
+        "garbage_cleanup_enabled": garbage_default["garbage_cleanup_enabled"],
+        "garbage_cleanup_threshold": garbage_default["max_word_length"],
         "source_language": DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
         "translate_to_english": DEFAULT_TRANSCRIPTION_SETTINGS["translate_to_english"],
         "llm_output_language": DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
@@ -912,6 +912,7 @@ def reset_transcription_settings(
 
 @router.get("/transcription/system-defaults", response_model=TranscriptionSystemDefaults)
 def get_transcription_system_defaults(
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> TranscriptionSystemDefaults:
     """
@@ -930,11 +931,12 @@ def get_transcription_system_defaults(
         TranscriptionSystemDefaults containing system min/max speakers,
         garbage cleanup defaults, valid behavior options, and language options
     """
+    garbage_default = system_settings_service.get_garbage_cleanup_config(db)
     return TranscriptionSystemDefaults(
         min_speakers=app_settings.MIN_SPEAKERS,
         max_speakers=app_settings.MAX_SPEAKERS,
-        garbage_cleanup_enabled=DEFAULT_GARBAGE_CLEANUP_ENABLED,
-        garbage_cleanup_threshold=DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
+        garbage_cleanup_enabled=garbage_default["garbage_cleanup_enabled"],
+        garbage_cleanup_threshold=garbage_default["max_word_length"],
         valid_speaker_prompt_behaviors=list(VALID_SPEAKER_PROMPT_BEHAVIORS),
         available_source_languages=WHISPER_LANGUAGES,
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,

@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Partir de mi rango y dejarme cambiarlo por archivo",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "El paso Hablantes del asistente de subida se rellena con tu rango indicado abajo.",
   "settings.speakerIdentification.countMode.useDefaults": "Dejar el rango vacío al subir",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "El asistente de subida empieza sin rango, por lo que se aplica el rango predeterminado.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "El asistente de carga empieza sin rango, así que se aplica el rango predeterminado del sistema (que se muestra abajo).",
   "settings.speakerIdentification.countMode.useCustom": "Usar siempre mi rango",
   "settings.speakerIdentification.countMode.useCustomDesc": "Tu rango guardado abajo se usa en cada subida.",
   "settings.speakerIdentification.minSpeakers": "Mínimo de hablantes",

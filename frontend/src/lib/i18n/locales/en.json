@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Start from my range and let me change it per file",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "The upload wizard's Speakers step is pre-filled with your range below.",
   "settings.speakerIdentification.countMode.useDefaults": "Leave the range empty on upload",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "The upload wizard starts with no range, so the default range applies.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "The upload wizard starts with no range, so the system default range (shown below) applies.",
   "settings.speakerIdentification.countMode.useCustom": "Always use my range",
   "settings.speakerIdentification.countMode.useCustomDesc": "Your saved range below is used on every upload.",
   "settings.speakerIdentification.minSpeakers": "Minimum speakers",

@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "ابدأ بنطاقي واسمح لي بتغييره لكل ملف",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "تُملأ خطوة المتحدثين في معالج الرفع مسبقًا بنطاقك الموضح أدناه.",
   "settings.speakerIdentification.countMode.useDefaults": "اترك النطاق فارغًا عند الرفع",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "يبدأ معالج الرفع دون نطاق، لذا يُطبَّق النطاق الافتراضي.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "يبدأ معالج الرفع بدون نطاق، لذلك يُطبَّق النطاق الافتراضي للنظام (المعروض أدناه).",
   "settings.speakerIdentification.countMode.useCustom": "استخدم نطاقي دائمًا",
   "settings.speakerIdentification.countMode.useCustomDesc": "يُستخدم نطاقك المحفوظ أدناه في كل عملية رفع.",
   "settings.speakerIdentification.minSpeakers": "الحد الأدنى للمتحدثين",

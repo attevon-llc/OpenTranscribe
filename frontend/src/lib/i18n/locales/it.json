@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Parti dal mio intervallo e lascia che lo modifichi per ogni file",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "Il passaggio Parlanti della procedura guidata di caricamento è precompilato con il tuo intervallo qui sotto.",
   "settings.speakerIdentification.countMode.useDefaults": "Lascia vuoto l'intervallo al caricamento",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "La procedura guidata di caricamento parte senza intervallo, quindi si applica quello predefinito.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "La procedura guidata di caricamento parte senza intervallo, quindi si applica quello predefinito del sistema (mostrato sotto).",
   "settings.speakerIdentification.countMode.useCustom": "Usa sempre il mio intervallo",
   "settings.speakerIdentification.countMode.useCustomDesc": "L'intervallo salvato qui sotto viene usato a ogni caricamento.",
   "settings.speakerIdentification.minSpeakers": "Parlanti minimi",

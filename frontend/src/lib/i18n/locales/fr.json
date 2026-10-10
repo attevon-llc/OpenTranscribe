@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Partir de ma plage et me laisser la modifier par fichier",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "L'étape Locuteurs de l'assistant de téléversement est préremplie avec votre plage ci-dessous.",
   "settings.speakerIdentification.countMode.useDefaults": "Laisser la plage vide au téléversement",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "L'assistant de téléversement démarre sans plage, la plage par défaut s'applique donc.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "L'assistant d'envoi démarre sans plage, donc la plage par défaut du système (affichée ci-dessous) s'applique.",
   "settings.speakerIdentification.countMode.useCustom": "Toujours utiliser ma plage",
   "settings.speakerIdentification.countMode.useCustomDesc": "Votre plage enregistrée ci-dessous est utilisée à chaque téléversement.",
   "settings.speakerIdentification.minSpeakers": "Nombre minimal de locuteurs",

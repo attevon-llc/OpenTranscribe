@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "以我的范围为起点，并允许按文件修改",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "上传向导的“说话人”步骤会预先填入下方您设置的范围。",
   "settings.speakerIdentification.countMode.useDefaults": "上传时留空范围",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "上传向导不带范围启动，因此使用默认范围。",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "上传向导以空范围开始，因此会应用系统默认范围（如下所示）。",
   "settings.speakerIdentification.countMode.useCustom": "始终使用我的范围",
   "settings.speakerIdentification.countMode.useCustomDesc": "每次上传都使用下方保存的范围。",
   "settings.speakerIdentification.minSpeakers": "最少说话人数",

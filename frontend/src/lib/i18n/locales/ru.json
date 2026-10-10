@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Начинать с моего диапазона и позволять менять его для каждого файла",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "Шаг «Спикеры» мастера загрузки заполняется вашим диапазоном, указанным ниже.",
   "settings.speakerIdentification.countMode.useDefaults": "Оставлять диапазон пустым при загрузке",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "Мастер загрузки начинает без диапазона, поэтому применяется диапазон по умолчанию.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "Мастер загрузки начинается без диапазона, поэтому применяется диапазон по умолчанию, заданный в системе (показан ниже).",
   "settings.speakerIdentification.countMode.useCustom": "Всегда использовать мой диапазон",
   "settings.speakerIdentification.countMode.useCustomDesc": "Ваш сохранённый ниже диапазон используется при каждой загрузке.",
   "settings.speakerIdentification.minSpeakers": "Минимум спикеров",

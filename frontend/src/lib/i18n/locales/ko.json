@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "내 범위로 시작하고 파일마다 변경할 수 있게 하기",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "업로드 마법사의 화자 단계가 아래의 내 범위로 미리 채워집니다.",
   "settings.speakerIdentification.countMode.useDefaults": "업로드 시 범위를 비워 두기",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "업로드 마법사가 범위 없이 시작되므로 기본 범위가 적용됩니다.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "업로드 마법사가 범위 없이 시작되므로 시스템 기본 범위(아래에 표시)가 적용됩니다.",
   "settings.speakerIdentification.countMode.useCustom": "항상 내 범위 사용",
   "settings.speakerIdentification.countMode.useCustomDesc": "아래에 저장한 범위가 모든 업로드에 사용됩니다.",
   "settings.speakerIdentification.minSpeakers": "최소 화자 수",

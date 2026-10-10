@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Mit meinem Bereich starten und pro Datei änderbar lassen",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "Der Schritt „Sprecher“ im Upload-Assistenten wird mit Ihrem Bereich unten vorausgefüllt.",
   "settings.speakerIdentification.countMode.useDefaults": "Bereich beim Hochladen leer lassen",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "Der Upload-Assistent startet ohne Bereich, daher gilt der Standardbereich.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "Der Upload-Assistent startet ohne Bereich, daher gilt der Systemstandardbereich (unten angezeigt).",
   "settings.speakerIdentification.countMode.useCustom": "Immer meinen Bereich verwenden",
   "settings.speakerIdentification.countMode.useCustomDesc": "Ihr unten gespeicherter Bereich wird bei jedem Upload verwendet.",
   "settings.speakerIdentification.minSpeakers": "Mindestanzahl Sprecher",

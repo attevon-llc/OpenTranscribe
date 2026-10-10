@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Começar com meu intervalo e deixar que eu o altere por arquivo",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "A etapa Falantes do assistente de envio vem preenchida com o seu intervalo abaixo.",
   "settings.speakerIdentification.countMode.useDefaults": "Deixar o intervalo vazio ao enviar",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "O assistente de envio começa sem intervalo, então o intervalo padrão se aplica.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "O assistente de envio começa sem intervalo, então o intervalo padrão do sistema (mostrado abaixo) é aplicado.",
   "settings.speakerIdentification.countMode.useCustom": "Sempre usar meu intervalo",
   "settings.speakerIdentification.countMode.useCustomDesc": "O intervalo salvo abaixo é usado em todos os envios.",
   "settings.speakerIdentification.minSpeakers": "Mínimo de falantes",

@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "自分の範囲から始め、ファイルごとに変更できるようにする",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "アップロードウィザードの「話者」ステップには、下記の範囲があらかじめ入力されます。",
   "settings.speakerIdentification.countMode.useDefaults": "アップロード時は範囲を空にする",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "アップロードウィザードは範囲なしで始まるため、既定の範囲が適用されます。",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "アップロードウィザードは範囲なしで始まるため、システムの既定の範囲（下に表示）が適用されます。",
   "settings.speakerIdentification.countMode.useCustom": "常に自分の範囲を使用する",
   "settings.speakerIdentification.countMode.useCustomDesc": "下記に保存した範囲が、すべてのアップロードで使用されます。",
   "settings.speakerIdentification.minSpeakers": "最小話者数",

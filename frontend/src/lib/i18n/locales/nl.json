@@ -4521,7 +4521,7 @@
   "settings.speakerIdentification.countMode.alwaysPrompt": "Begin met mijn bereik en laat me het per bestand wijzigen",
   "settings.speakerIdentification.countMode.alwaysPromptDesc": "De stap Sprekers in de uploadwizard is vooraf ingevuld met jouw bereik hieronder.",
   "settings.speakerIdentification.countMode.useDefaults": "Bereik leeg laten bij uploaden",
-  "settings.speakerIdentification.countMode.useDefaultsDesc": "De uploadwizard start zonder bereik, dus het standaardbereik is van toepassing.",
+  "settings.speakerIdentification.countMode.useDefaultsDesc": "De uploadwizard start zonder bereik, dus het standaardbereik van het systeem (hieronder getoond) wordt gebruikt.",
   "settings.speakerIdentification.countMode.useCustom": "Altijd mijn bereik gebruiken",
   "settings.speakerIdentification.countMode.useCustomDesc": "Je hieronder opgeslagen bereik wordt bij elke upload gebruikt.",
   "settings.speakerIdentification.minSpeakers": "Minimum aantal sprekers",

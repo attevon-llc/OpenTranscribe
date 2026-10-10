@@ -115,6 +115,27 @@ def _is_gender_detection_enabled(user_id: int) -> bool:
         return resolve_speaker_attribute_flags(db, user_id).gender_detection_enabled
 
 
+def dispatch_speaker_attribute_pipeline(file_uuid: str, user_id: int) -> str:
+    """Queue what follows a finished transcript: attribute detection, then LLM name suggestions.
+
+    The two are independent features (issue #1148). Attribute detection chains to the LLM
+    identification itself once it has run, so the LLM step is queued directly only when
+    detection is off; otherwise turning detection off would silently stop AI name
+    suggestions as a side effect.
+
+    Returns:
+        ``"attributes"`` when the detection task was queued (it owns the LLM hand-off),
+        ``"llm_only"`` when detection is off and the LLM step was queued directly.
+    """
+    if _is_speaker_attribute_detection_enabled(user_id):
+        detect_speaker_attributes_task.delay(str(file_uuid), user_id)
+        logger.info(f"Dispatched speaker attribute detection for {file_uuid}")
+        return "attributes"
+    logger.info(f"Speaker attribute detection off for {file_uuid}; dispatching LLM speaker ID")
+    _dispatch_llm_speaker_identification(str(file_uuid))
+    return "llm_only"
+
+
 def _resolve_file_id_for_tracking(file_uuid: str) -> int | None:
     """Best-effort file_id lookup so the Task row can be created up front.
 

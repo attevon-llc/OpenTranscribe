@@ -458,13 +458,9 @@ def rediarize_task(  # noqa: C901
         # This mirrors the transcription pipeline flow: attributes are detected first,
         # then identify_speakers_llm_task is chained automatically by the attribute task.
         try:
-            from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
+            from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
 
-            if _is_speaker_attribute_detection_enabled(user_id):
-                from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
-
-                detect_speaker_attributes_task.delay(str(file_uuid), user_id)
-                logger.info(f"Dispatched speaker attribute detection for {file_uuid}")
+            dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
         except Exception as e:
             logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 

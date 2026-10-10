@@ -370,6 +370,8 @@ _PIPELINE_DISPATCH_MODULES = (
     "app/tasks/transcription/background.py",
     "app/tasks/transcription/downstream.py",
     "app/tasks/ingest_artifacts_task.py",
+    # The shared attribute/LLM-speaker-ID dispatcher the three completion paths call.
+    "app/tasks/speaker_attribute_task.py",
 )
 
 

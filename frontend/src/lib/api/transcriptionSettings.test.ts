@@ -19,6 +19,7 @@ vi.mock('$lib/axios', async () => {
 
 import {
   DEFAULT_TRANSCRIPTION_SETTINGS,
+  isLightweightModel,
   speakerPrefill,
   speakerSubmitRange,
   type TranscriptionSystemDefaults,
@@ -175,5 +176,13 @@ describe('speakerPrefill / speakerSubmitRange (#1198)', () => {
     expect(
       speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, null)
     ).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+});
+
+describe('isLightweightModel', () => {
+  it('recognises the models the server routes to the CPU worker', () => {
+    expect(['tiny', 'tiny.en', 'base', 'base.en'].every(isLightweightModel)).toBe(true);
+    expect(isLightweightModel('large-v3-turbo')).toBe(false);
+    expect(isLightweightModel(null)).toBe(false);
   });
 });

@@ -20,6 +20,11 @@ the three media-source panels (file / URL / record) and the wizard steps of the 
   import `upload-shared.css` (unscoped, so `.step-hint`/`.previous-banner` are global). Collections
   is the one child that calls the API itself (`POST /collections`).
 - `UploadStepSpeakers.svelte` — min/max/num speaker inputs; clamps to ≥1 and flags `min > max`.
+  **The parent drops this step (and sends no range) when speaker detection is off in the user's
+  settings or the Fast model is chosen** — the server discards the range in both cases — so the
+  Model step now comes BEFORE Speakers. Prefill and the "blank means system range under _use
+  system defaults_" rule live in `$lib/api/transcriptionSettings` (`speakerPrefill`,
+  `speakerSubmitRange`), shared with `SelectiveReprocessModal`.
 - `UploadStepModel.svelte`, `UploadStepReview.svelte` — model/summary toggles and final summary.
 
 ## Conventions / patterns

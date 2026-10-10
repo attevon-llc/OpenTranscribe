@@ -2025,6 +2025,8 @@
   "uploader.reviewNone": "なし",
   "uploader.reviewSkipped": "スキップ済み",
   "uploader.reviewDefaults": "保存済みのデフォルト",
+  "uploader.reviewSpeakersOff": "使用されません（設定で話者検出がオフになっています）",
+  "uploader.reviewSpeakersFast": "使用されません（高速モデルは話者を検出しません）",
   "uploader.usingPrevious": "前回のアップロードから入力済み",
   "uploader.clearPrevious": "クリア",
   "uploader.tagsHint": "ファイルを整理するためにタグを追加します。このステップは任意です。",

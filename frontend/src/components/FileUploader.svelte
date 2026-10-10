@@ -26,6 +26,7 @@
     type TranscriptionSettings,
     type TranscriptionSystemDefaults,
     DEFAULT_TRANSCRIPTION_SETTINGS,
+    isLightweightModel,
     speakerPrefill,
     speakerSubmitRange
   } from '$lib/api/transcriptionSettings';
@@ -99,14 +100,16 @@
     { id: 'media',       labelKey: 'uploader.stepMedia',       optional: false, skipped: false },
     { id: 'tags',        labelKey: 'uploader.stepTags',        optional: true,  skipped: false, contentWidth: '420px' },
     { id: 'collections', labelKey: 'uploader.stepCollections', optional: true,  skipped: false },
-    { id: 'speakers',    labelKey: 'uploader.stepSpeakers',    optional: false, skipped: false },
+    // Model comes first: choosing the Fast model (or having speaker detection off) removes the
+    // Speakers step, so the user must not type a range before learning it would be discarded.
     { id: 'model',       labelKey: 'uploader.stepModel',       optional: false, skipped: false },
+    { id: 'speakers',    labelKey: 'uploader.stepSpeakers',    optional: false, skipped: false },
     { id: 'review',      labelKey: 'uploader.stepReview',      optional: false, skipped: false },
   ];
   let currentStepIndex = 0;
   let maxStepReached = 0;
 
-  $: activeSteps = steps.filter(s => !s.skipped);
+  $: activeSteps = steps.filter(s => !s.skipped && (s.id !== 'speakers' || speakerCountApplies));
   $: currentStep = activeSteps[currentStepIndex];
   $: isFirstStep = currentStepIndex === 0;
   $: isLastStep = currentStepIndex === activeSteps.length - 1;
@@ -137,6 +140,12 @@
   let adminDefaultModel = 'large-v3-turbo';
   let transcriptionSettings: TranscriptionSettings | null = null;
   let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
+
+  // The server discards the speaker range when speaker detection is off or the Fast (CPU) model
+  // runs, so the step that collects it is not offered rather than collecting a value to drop.
+  $: speakerDetectionOff = transcriptionSettings?.diarization_source === 'off';
+  $: fastModelChosen = isLightweightModel(selectedWhisperModel);
+  $: speakerCountApplies = !speakerDetectionOff && !fastModelChosen;
 
   // ── Organization State ──
   let selectedCollections: Array<{uuid: string; name: string}> = [];
@@ -175,7 +184,8 @@
     (activeTab === 'url' && mediaUrl.trim() !== '' && MEDIA_URL_REGEX.test(mediaUrl.trim())) ||
     (activeTab === 'record' && recordedBlob !== null);
 
-  $: hasValidationError = minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers;
+  $: hasValidationError =
+    speakerCountApplies && minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers;
 
   $: tagsSkipped = steps.find(s => s.id === 'tags')?.skipped ?? false;
   $: collectionsSkipped = steps.find(s => s.id === 'collections')?.skipped ?? false;
@@ -298,16 +308,19 @@
   // user confirms, not later: audio extraction finishes in the background after the wizard
   // has reset its own state, so a lazy read there would see the defaults.
   function getTranscriptionParams(): UploadTranscriptionParams {
-    const range = speakerSubmitRange(
-      transcriptionSettings,
-      transcriptionSystemDefaults,
-      { minSpeakers, maxSpeakers },
-      numSpeakers
-    );
+    // Nothing to send for a range the server would discard (see speakerCountApplies).
+    const range = speakerCountApplies
+      ? speakerSubmitRange(
+          transcriptionSettings,
+          transcriptionSystemDefaults,
+          { minSpeakers, maxSpeakers },
+          numSpeakers
+        )
+      : { minSpeakers: null, maxSpeakers: null };
     return {
       minSpeakers: range.minSpeakers,
       maxSpeakers: range.maxSpeakers,
-      numSpeakers,
+      numSpeakers: speakerCountApplies ? numSpeakers : null,
       whisperModel: selectedWhisperModel,
       skipSummary
     };
@@ -719,6 +732,11 @@
       if (collectionIds) payload.collection_ids = collectionIds;
       if (tagNames) payload.tag_names = tagNames;
       if (skipSummary) payload.skip_summary = true;
+      const params = getTranscriptionParams();
+      if (params.minSpeakers != null) payload.min_speakers = params.minSpeakers;
+      if (params.maxSpeakers != null) payload.max_speakers = params.maxSpeakers;
+      if (params.numSpeakers != null) payload.num_speakers = params.numSpeakers;
+      if (params.whisperModel) payload.whisper_model = params.whisperModel;
 
       const response = await axiosInstance.post('/files/process-url', payload);
       const responseData = response.data;
@@ -753,7 +771,13 @@
     try {
       const filename = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
       const { collectionIds, tagNames } = getOrganizeParams();
-      const uploadId = uploadsStore.addRecording(blob, filename, collectionIds, tagNames);
+      const uploadId = uploadsStore.addRecording(
+        blob,
+        filename,
+        collectionIds,
+        tagNames,
+        getTranscriptionParams()
+      );
       savePreviousValues();
       recordingManager.clearRecording();
       resetAllState();
@@ -986,6 +1010,7 @@
             {minSpeakers}
             {maxSpeakers}
             {numSpeakers}
+            speakerCountNote={speakerDetectionOff ? 'off' : fastModelChosen ? 'fast' : null}
             {skipSummary}
             {selectedWhisperModel}
             {adminDefaultModel}

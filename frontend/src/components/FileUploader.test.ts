@@ -371,6 +371,17 @@ describe('the wizard hands its transcription choices to the queue (#1121)', () =
   }
 
   it('passes the chosen model, the summary opt-out and the speaker counts to addFile', async () => {
+    remember({ selectedWhisperModel: null, skipSummary: true, minSpeakers: 2 });
+
+    const { container } = render(FileUploader);
+    await reachReviewStep(container as HTMLElement, file({ size: 1024 }));
+    await fireEvent.click(container.querySelector('.nav-submit') as HTMLElement);
+
+    const [, transcriptionParams] = mockUploadsStore.addFile.mock.calls[0];
+    expect(transcriptionParams).toMatchObject({ skipSummary: true, minSpeakers: 2 });
+  });
+
+  it('sends the Fast model without a speaker range, which that model would discard (#1201)', async () => {
     remember({ selectedWhisperModel: 'base', skipSummary: true, minSpeakers: 2 });
 
     const { container } = render(FileUploader);
@@ -381,7 +392,7 @@ describe('the wizard hands its transcription choices to the queue (#1121)', () =
     expect(transcriptionParams).toMatchObject({
       whisperModel: 'base',
       skipSummary: true,
-      minSpeakers: 2,
+      minSpeakers: null,
     });
   });
 

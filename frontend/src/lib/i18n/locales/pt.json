@@ -2025,6 +2025,8 @@
   "uploader.reviewNone": "Nenhum",
   "uploader.reviewSkipped": "Pulado",
   "uploader.reviewDefaults": "Seus padrões salvos",
+  "uploader.reviewSpeakersOff": "Não usado (a detecção de locutores está desativada nas suas configurações)",
+  "uploader.reviewSpeakersFast": "Não usado (o modelo rápido não detecta locutores)",
   "uploader.usingPrevious": "Preenchido do upload anterior",
   "uploader.clearPrevious": "Limpar",
   "uploader.tagsHint": "Adicione tags para organizar seus arquivos. Esta etapa é opcional.",

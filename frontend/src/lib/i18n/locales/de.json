@@ -2733,6 +2733,8 @@
   "uploader.reviewNone": "Keine",
   "uploader.reviewSkipped": "Übersprungen",
   "uploader.reviewDefaults": "Ihre gespeicherten Standardwerte",
+  "uploader.reviewSpeakersOff": "Nicht verwendet (die Sprechererkennung ist in Ihren Einstellungen deaktiviert)",
+  "uploader.reviewSpeakersFast": "Nicht verwendet (das schnelle Modell erkennt keine Sprecher)",
   "uploader.usingPrevious": "Vorausgefüllt vom letzten Upload",
   "uploader.clearPrevious": "Löschen",
   "uploader.tagsHint": "Fügen Sie Tags hinzu, um Ihre Dateien zu organisieren. Dieser Schritt ist optional.",

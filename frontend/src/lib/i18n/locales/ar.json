@@ -2026,6 +2026,8 @@
   "uploader.reviewNone": "لا شيء",
   "uploader.reviewSkipped": "تم التخطي",
   "uploader.reviewDefaults": "إعداداتك الافتراضية المحفوظة",
+  "uploader.reviewSpeakersOff": "غير مستخدم (اكتشاف المتحدثين متوقف في إعداداتك)",
+  "uploader.reviewSpeakersFast": "غير مستخدم (النموذج السريع لا يكتشف المتحدثين)",
   "uploader.usingPrevious": "مملوء مسبقًا من الرفع السابق",
   "uploader.clearPrevious": "مسح",
   "uploader.tagsHint": "أضف وسومًا لتنظيم وسائطك. هذه الخطوة اختيارية.",

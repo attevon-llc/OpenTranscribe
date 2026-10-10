@@ -2026,6 +2026,8 @@
   "uploader.reviewNone": "Geen",
   "uploader.reviewSkipped": "Overgeslagen",
   "uploader.reviewDefaults": "Je opgeslagen standaardwaarden",
+  "uploader.reviewSpeakersOff": "Niet gebruikt (sprekerdetectie staat uit in je instellingen)",
+  "uploader.reviewSpeakersFast": "Niet gebruikt (het snelle model detecteert geen sprekers)",
   "uploader.usingPrevious": "Vooraf ingevuld op basis van vorige upload",
   "uploader.clearPrevious": "Wissen",
   "uploader.tagsHint": "Voeg tags toe om je media te organiseren. Deze stap is optioneel.",

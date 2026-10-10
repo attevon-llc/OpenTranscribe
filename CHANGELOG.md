@@ -150,6 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hands its range to the GPU re-diarize instead of falling back to the env default; the
   reprocess dialog starts from the saved range; and "use system defaults" now really sends the
   system range. One helper, `resolve_speaker_range`, decides: per file, then saved, then env.
+- **Upload: URL import, in-wizard recordings and the extracted-audio fallback keep the speaker
+  range and model (#1201).** `POST /files/process-url` accepts `min_speakers`, `max_speakers`,
+  `num_speakers` and `whisper_model` (playlists included). The Speakers step is no longer offered
+  when speaker detection is off or the Fast model is chosen, and now follows the Model step.
 - **The API no longer accepts per-file options it drops (#1202).** `disable_diarization` now
   reaches the pipeline from `/files/{uuid}/reprocess`, the bulk reprocess action, `/files/prepare`
   and `/files/complete`; bulk reprocess also forwards its speaker range. **Behaviour change for API

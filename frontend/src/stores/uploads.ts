@@ -149,12 +149,37 @@ function createUploadStore() {
       return uploadService.addMultipleFiles(files, collectionIds, tagNames, transcriptionParams);
     },
 
-    addUrl(url: string, collectionIds?: string[], tagNames?: string[]) {
-      return uploadService.addUpload('url', url, undefined, undefined, collectionIds, tagNames);
+    addUrl(
+      url: string,
+      collectionIds?: string[],
+      tagNames?: string[],
+      transcriptionParams?: UploadTranscriptionParams
+    ) {
+      return uploadService.addUpload(
+        'url',
+        url,
+        undefined,
+        transcriptionParams,
+        collectionIds,
+        tagNames
+      );
     },
 
-    addRecording(blob: Blob, name?: string, collectionIds?: string[], tagNames?: string[]) {
-      return uploadService.addUpload('recording', blob, name, undefined, collectionIds, tagNames);
+    addRecording(
+      blob: Blob,
+      name?: string,
+      collectionIds?: string[],
+      tagNames?: string[],
+      transcriptionParams?: UploadTranscriptionParams
+    ) {
+      return uploadService.addUpload(
+        'recording',
+        blob,
+        name,
+        transcriptionParams,
+        collectionIds,
+        tagNames
+      );
     },
 
     addExtractedAudio(

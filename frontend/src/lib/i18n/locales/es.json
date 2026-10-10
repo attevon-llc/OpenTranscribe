@@ -2733,6 +2733,8 @@
   "uploader.reviewNone": "Ninguno",
   "uploader.reviewSkipped": "Omitido",
   "uploader.reviewDefaults": "Tus valores predeterminados guardados",
+  "uploader.reviewSpeakersOff": "No se usa (la detección de hablantes está desactivada en tu configuración)",
+  "uploader.reviewSpeakersFast": "No se usa (el modelo rápido no detecta hablantes)",
   "uploader.usingPrevious": "Prellenado de la carga anterior",
   "uploader.clearPrevious": "Limpiar",
   "uploader.tagsHint": "Agregue etiquetas para organizar sus archivos. Este paso es opcional.",

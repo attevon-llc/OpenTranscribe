@@ -477,3 +477,81 @@ def test_handle_playlist_result_dispatches_every_video_with_no_source_url_filter
     assert result["created_count"] == 2
     dispatched_urls = [c["args"][0] for c in dispatch_recorder]
     assert dispatched_urls == ["https://youtu.be/good", "None"]
+
+
+# --------------------------------------------------------------------------------------
+# 4. The per-file speaker range / model survive the download hop (issue #1201)
+# --------------------------------------------------------------------------------------
+
+
+def test_a_url_import_dispatches_the_range_and_model_the_user_entered(
+    monkeypatch, db_session, normal_user, yt_url_seams
+):
+    """The import endpoint records the request on the placeholder row; when the download
+    finishes the worker dispatches transcription, and the first pipeline stage must be built
+    with those numbers, not with defaults. Dispatch is the real one, only the publish is stubbed."""
+    import app.tasks.transcription.dispatch as dispatch_module
+
+    media_file = _make_media_file(db_session, normal_user)
+    media_file.requested_min_speakers = 3
+    media_file.requested_max_speakers = 5
+    media_file.requested_whisper_model = "tiny"
+    db_session.commit()
+
+    built: list[dict[str, Any]] = []
+
+    def _chain(preprocess, *_rest):
+        built.append(dict(preprocess.kwargs))
+        return SimpleNamespace(apply_async=lambda **_kw: SimpleNamespace(id="stub"))
+
+    monkeypatch.setattr(dispatch_module, "session_scope", lambda: _yield(db_session))
+    monkeypatch.setattr(dispatch_module, "chain", _chain)
+    monkeypatch.setattr(
+        youtube_processing,
+        "dispatch_transcription_pipeline",
+        dispatch_module.dispatch_transcription_pipeline,
+    )
+    monkeypatch.setattr(
+        youtube_processing, "MediaDownloadService", lambda: _FakeMediaDownloadService()
+    )
+
+    result = process_youtube_url_task.apply(
+        args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+    ).get()
+
+    assert result["status"] == "success"
+    assert len(built) == 1
+    assert (built[0]["min_speakers"], built[0]["max_speakers"]) == (3, 5)
+    assert built[0]["whisper_model"] == "tiny"
+
+
+@contextlib.contextmanager
+def _yield(db):
+    yield db
+
+
+def test_every_video_of_a_playlist_is_stamped_with_the_requested_options(
+    monkeypatch, db_session, normal_user, dispatch_recorder
+):
+    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
+    monkeypatch.setattr(notification_service, "send_ws_event", lambda *_a, **_kw: None)
+    first = _make_media_file(db_session, normal_user, source_url="https://youtu.be/one")
+    second = _make_media_file(db_session, normal_user, source_url="https://youtu.be/two")
+
+    _handle_playlist_result(
+        {
+            "media_files": [first, second],
+            "playlist_info": {"playlist_title": "P", "playlist_id": "PL1"},
+            "created_count": 2,
+            "skipped_count": 0,
+            "total_videos": 2,
+        },
+        normal_user.id,
+        db_session,
+        transcription_options={"min_speakers": 2, "max_speakers": 4, "whisper_model": "base"},
+    )
+
+    for row in (first, second):
+        db_session.refresh(row)
+        assert (row.requested_min_speakers, row.requested_max_speakers) == (2, 4)
+        assert row.requested_whisper_model == "base"

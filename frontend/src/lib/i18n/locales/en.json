@@ -2026,6 +2026,8 @@
   "uploader.reviewNone": "None",
   "uploader.reviewSkipped": "Skipped",
   "uploader.reviewDefaults": "Your saved defaults",
+  "uploader.reviewSpeakersOff": "Not used (speaker detection is off in your settings)",
+  "uploader.reviewSpeakersFast": "Not used (the Fast model does not detect speakers)",
   "uploader.usingPrevious": "Pre-filled from previous upload",
   "uploader.clearPrevious": "Clear",
   "uploader.tagsHint": "Add tags to organize your media. This step is optional.",

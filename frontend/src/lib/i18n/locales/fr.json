@@ -2733,6 +2733,8 @@
   "uploader.reviewNone": "Aucun",
   "uploader.reviewSkipped": "Ignoré",
   "uploader.reviewDefaults": "Vos valeurs par défaut enregistrées",
+  "uploader.reviewSpeakersOff": "Non utilisé (la détection des locuteurs est désactivée dans vos paramètres)",
+  "uploader.reviewSpeakersFast": "Non utilisé (le modèle rapide ne détecte pas les locuteurs)",
   "uploader.usingPrevious": "Prérempli depuis l'envoi précédent",
   "uploader.clearPrevious": "Effacer",
   "uploader.tagsHint": "Ajoutez des tags pour organiser vos fichiers. Cette étape est facultative.",

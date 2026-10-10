@@ -2026,6 +2026,8 @@
   "uploader.reviewNone": "없음",
   "uploader.reviewSkipped": "건너뜀",
   "uploader.reviewDefaults": "저장된 기본값",
+  "uploader.reviewSpeakersOff": "사용되지 않음(설정에서 화자 감지가 꺼져 있습니다)",
+  "uploader.reviewSpeakersFast": "사용되지 않음(빠른 모델은 화자를 감지하지 않습니다)",
   "uploader.usingPrevious": "이전 업로드에서 미리 채워짐",
   "uploader.clearPrevious": "지우기",
   "uploader.tagsHint": "미디어를 정리하기 위해 태그를 추가합니다. 이 단계는 선택 사항입니다.",

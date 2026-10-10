@@ -2015,6 +2015,8 @@
   "uploader.reviewNone": "Нет",
   "uploader.reviewSkipped": "Пропущено",
   "uploader.reviewDefaults": "Ваши сохранённые значения по умолчанию",
+  "uploader.reviewSpeakersOff": "Не используется (распознавание говорящих отключено в ваших настройках)",
+  "uploader.reviewSpeakersFast": "Не используется (быстрая модель не распознаёт говорящих)",
   "uploader.usingPrevious": "Заполнено из предыдущей загрузки",
   "uploader.clearPrevious": "Очистить",
   "uploader.tagsHint": "Добавьте теги для организации файлов. Этот шаг необязателен.",

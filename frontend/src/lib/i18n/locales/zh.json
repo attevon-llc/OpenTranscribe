@@ -2025,6 +2025,8 @@
   "uploader.reviewNone": "无",
   "uploader.reviewSkipped": "已跳过",
   "uploader.reviewDefaults": "您保存的默认值",
+  "uploader.reviewSpeakersOff": "不使用（您的设置中已关闭说话人检测）",
+  "uploader.reviewSpeakersFast": "不使用（快速模型不检测说话人）",
   "uploader.usingPrevious": "已从上次上传预填",
   "uploader.clearPrevious": "清除",
   "uploader.tagsHint": "添加标签以整理您的文件。此步骤为可选。",

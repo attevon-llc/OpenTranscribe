@@ -842,6 +842,68 @@ describe('per-file transcription choices from the upload wizard', () => {
     expect(lastCall('/files/complete')).toMatchObject({ skip_summary: true, num_speakers: 3 });
   });
 
+  it('keeps the speaker range on the extracted-audio legacy fallback, as headers (#1201)', async () => {
+    // Prepare succeeds, the presigned PUT fails, so the body goes through POST /files. The
+    // main-file fallback always sent these headers; the extracted-audio one dropped them.
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared()).mockResolvedValueOnce({ data: {} });
+    mockAxiosDefault.put.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const id = uploadService.addExtractedAudio(
+      new Blob(['a'.repeat(10)]),
+      'extracted.opus',
+      extractedAudioMetadata(),
+      90,
+      { whisperModel: 'base', skipSummary: true, minSpeakers: 2, maxSpeakers: 6, numSpeakers: 4 }
+    );
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    const legacy = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacy?.[2]?.headers).toMatchObject({
+      'X-File-ID': 'file-uuid-1',
+      'X-Min-Speakers': '2',
+      'X-Max-Speakers': '6',
+      'X-Num-Speakers': '4',
+      'X-Skip-Summary': 'true',
+    });
+  });
+
+  it('sends the speaker range and model for a recording on /files/complete and /files/prepare (#1201)', async () => {
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared());
+    mockAxiosDefault.put.mockResolvedValueOnce({ headers: { etag: '"x"' } });
+
+    const id = uploadService.addUpload('recording', new Blob(['a']), 'rec.webm', {
+      minSpeakers: 3,
+      maxSpeakers: 5,
+      whisperModel: 'base',
+    });
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    expect(lastCall('/files/prepare')).toMatchObject({ whisper_model: 'base' });
+    expect(lastCall('/files/complete')).toMatchObject({ min_speakers: 3, max_speakers: 5 });
+  });
+
+  it('sends the speaker range and model when importing a URL (#1201)', async () => {
+    mockAxiosInstance.post.mockResolvedValueOnce({ data: { uuid: 'url-file' } });
+
+    const id = uploadService.addUpload('url', 'https://example.com/v', undefined, {
+      minSpeakers: 3,
+      maxSpeakers: 5,
+      numSpeakers: null,
+      whisperModel: 'base',
+      skipSummary: true,
+    });
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    expect(lastCall('/files/process-url')).toMatchObject({
+      url: 'https://example.com/v',
+      min_speakers: 3,
+      max_speakers: 5,
+      whisper_model: 'base',
+      skip_summary: true,
+    });
+    expect(lastCall('/files/process-url').num_speakers).toBeUndefined();
+  });
+
   it('keeps the summary opt-out on the legacy multipart fallback, as a header', async () => {
     mockAxiosInstance.post.mockResolvedValueOnce(prepared()).mockResolvedValueOnce({ data: {} });
     mockAxiosDefault.put.mockRejectedValueOnce(new Error('ECONNRESET'));

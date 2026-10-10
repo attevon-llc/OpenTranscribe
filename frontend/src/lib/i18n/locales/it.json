@@ -2026,6 +2026,8 @@
   "uploader.reviewNone": "Nessuno",
   "uploader.reviewSkipped": "Saltato",
   "uploader.reviewDefaults": "I tuoi valori predefiniti salvati",
+  "uploader.reviewSpeakersOff": "Non usato (il rilevamento dei parlanti è disattivato nelle tue impostazioni)",
+  "uploader.reviewSpeakersFast": "Non usato (il modello veloce non rileva i parlanti)",
   "uploader.usingPrevious": "Precompilato dal caricamento precedente",
   "uploader.clearPrevious": "Cancella",
   "uploader.tagsHint": "Aggiungi tag per organizzare i tuoi media. Questo passaggio è facoltativo.",

@@ -212,6 +212,17 @@ export function speakerSubmitRange(
 }
 
 /**
+ * Models the server routes to the CPU worker, where speaker detection never runs. Mirrors
+ * `LIGHTWEIGHT_MODELS` in `backend/app/transcription/config.py`; used only to hide inputs
+ * that cannot apply, the server stays the authority.
+ */
+const LIGHTWEIGHT_MODELS = new Set(['tiny', 'tiny.en', 'base', 'base.en']);
+
+export function isLightweightModel(model: string | null | undefined): boolean {
+  return !!model && LIGHTWEIGHT_MODELS.has(model);
+}
+
+/**
  * Helper to get display label for speaker prompt behavior
  */
 export function getSpeakerBehaviorLabel(behavior: SpeakerPromptBehavior): string {

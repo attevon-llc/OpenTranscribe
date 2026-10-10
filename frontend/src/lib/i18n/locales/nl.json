@@ -4259,6 +4259,7 @@
   "settings.contentRedaction.rescan": "Opnieuw scannen",
   "settings.contentRedaction.rescanTooltip": "Voer nu inhoudsredactiedetectie uit op dit bestand",
   "settings.contentRedaction.notRedacted": "Nog niet geredigeerd",
+  "settings.contentRedaction.scanNothingFound": "Gescand: niets om te maskeren met je huidige instellingen",
   "settings.contentRedaction.redactStarted": "Redactie gestart — het transcript wordt bijgewerkt zodra dit is voltooid.",
   "settings.contentRedaction.redactTriggerFailed": "Kan redactie voor dit bestand niet starten",
   "gallery.bulk.redact": "Redigeren",

@@ -4259,6 +4259,7 @@
   "settings.contentRedaction.rescan": "إعادة الفحص",
   "settings.contentRedaction.rescanTooltip": "تشغيل كشف حجب المحتوى على هذا الملف الآن",
   "settings.contentRedaction.notRedacted": "لم يُحجب بعد",
+  "settings.contentRedaction.scanNothingFound": "تم الفحص: لا يوجد ما يستوجب التنقيح وفق إعداداتك الحالية",
   "settings.contentRedaction.redactStarted": "بدأ الحجب — سيُحدَّث النص المفرغ عند الانتهاء.",
   "settings.contentRedaction.redactTriggerFailed": "تعذّر بدء الحجب لهذا الملف",
   "gallery.bulk.redact": "حجب",

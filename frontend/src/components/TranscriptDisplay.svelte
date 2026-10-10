@@ -5,7 +5,7 @@
   import { createEventDispatcher } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
   import TranscriptSegmentList from './transcript/TranscriptSegmentList.svelte';
-  import { type TranscriptSegment, findCurrentSegment } from '$lib/utils/scrollbarCalculations';
+  import { type TranscriptSegment, findNearestSegment } from '$lib/utils/scrollbarCalculations';
   import { toastStore } from '$stores/toast';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
@@ -80,7 +80,7 @@
   // (chased through `seekToPlayhead` -> `+page.svelte`'s `seekToTime`'s padding subtraction).
   // That whole chain is deleted; this handler talks straight to the segment list.
   function handleJumpToPlayhead() {
-    const target = findCurrentSegment(currentTime, transcriptSegments);
+    const target = findNearestSegment(currentTime, transcriptSegments);
     if (target?.uuid != null) {
       segmentListComponent?.scrollToCurrentSegment(String(target.uuid));
     }
@@ -213,9 +213,13 @@
       title={$t('transcriptSearch.jumpToPlayheadTitle')}
       aria-label={$t('transcriptSearch.jumpToPlayheadAriaLabel')}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="2" x2="5" y1="12" y2="12"></line>
+        <line x1="19" x2="22" y1="12" y2="12"></line>
+        <line x1="12" x2="12" y1="2" y2="5"></line>
+        <line x1="12" x2="12" y1="19" y2="22"></line>
+        <circle cx="12" cy="12" r="7"></circle>
+        <circle cx="12" cy="12" r="2" fill="currentColor"></circle>
       </svg>
     </button>
   </div>

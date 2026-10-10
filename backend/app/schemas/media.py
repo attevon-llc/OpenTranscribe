@@ -754,6 +754,10 @@ class MediaFileDetail(MediaFile):
     # "redaction in progress" state instead of un-redacted text.
     redaction_status: str | None = None  # pending | processing | done | failed | None
     redaction_pending: bool = False
+    # Whether the viewer's effective policy would mask anything (switch on AND a category
+    # enabled). The UI offers "Run redaction" only when true; the rescan action refuses
+    # (409) otherwise.
+    redaction_enabled: bool = False
 
     # Transcript pagination metadata
     total_segments: int | None = None  # Total number of transcript segments

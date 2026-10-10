@@ -8,7 +8,11 @@
  * in the same issue.
  */
 import { describe, it, expect } from 'vitest';
-import { findCurrentSegment, type TranscriptSegment } from './scrollbarCalculations';
+import {
+  findCurrentSegment,
+  findNearestSegment,
+  type TranscriptSegment,
+} from './scrollbarCalculations';
 
 function segment(start: number, end: number): TranscriptSegment {
   return { start_time: start, end_time: end, text: 'x' };
@@ -32,5 +36,27 @@ describe('findCurrentSegment', () => {
     expect(findCurrentSegment(100, segments)).toBeNull();
     expect(findCurrentSegment(NaN, segments)).toBeNull();
     expect(findCurrentSegment(5, [])).toBeNull();
+  });
+});
+
+describe('findNearestSegment', () => {
+  const segments = [segment(6, 10), segment(14, 20), segment(30, 40)];
+
+  it('returns the containing segment when there is one', () => {
+    expect(findNearestSegment(15, segments)).toBe(segments[1]);
+  });
+
+  it('falls back to the first segment before speech starts', () => {
+    expect(findNearestSegment(0, segments)).toBe(segments[0]);
+  });
+
+  it('falls back to the segment most recently passed in a silence gap', () => {
+    expect(findNearestSegment(25, segments)).toBe(segments[1]);
+    expect(findNearestSegment(500, segments)).toBe(segments[2]);
+  });
+
+  it('returns null only for an empty transcript or invalid time', () => {
+    expect(findNearestSegment(5, [])).toBeNull();
+    expect(findNearestSegment(NaN, segments)).toBeNull();
   });
 });

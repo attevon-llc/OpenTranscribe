@@ -23,6 +23,7 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
+from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.user import User
 from app.services import system_settings_service
@@ -972,6 +973,56 @@ def _handle_tag_action(
     )
 
 
+class RedactionNotEnabledError(HTTPException):
+    """The viewer's redaction policy masks nothing, so a scan could change nothing visible."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Redaction is not enabled. Turn it on and choose at least one "
+            "category in Settings > Content Redaction before running a scan.",
+        )
+
+
+def _require_redaction_enabled(
+    db: Session,
+    db_file: MediaFile,
+    current_user: User,
+    bypass: PlatformBypass,
+    organization_id: OrgScope,
+) -> None:
+    """Refuse a redaction scan when the governing policy would mask nothing.
+
+    Uses the same policy resolution as the transcript read, so the button the UI
+    shows and the action the server accepts can never disagree.
+    """
+    from app.api.endpoints.files.crud import _resolve_redaction_for_request
+
+    cfg, _ = _resolve_redaction_for_request(
+        db,
+        db_file,
+        current_user,
+        bypass=bypass,
+        redact=True,
+        organization_id=organization_id,
+    )
+    if not cfg.masks_anything:
+        raise RedactionNotEnabledError()
+
+
+def _redact_if_enabled(
+    db: Session,
+    db_file: MediaFile,
+    file_uuid: str,
+    file_id: int,
+    current_user: User,
+    bypass: PlatformBypass,
+    organization_id: OrgScope,
+) -> BulkActionResult:
+    _require_redaction_enabled(db, db_file, current_user, bypass, organization_id)
+    return _handle_redact_action(db, file_uuid, file_id)
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
@@ -1016,7 +1067,9 @@ def _process_single_file_action(
             db, file_uuid, file_id, is_admin, stages, min_speakers, max_speakers, num_speakers
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
-        "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
+        "redact": lambda: _redact_if_enabled(
+            db, db_file, file_uuid, file_id, current_user, bypass, organization_id
+        ),
         "identify_speakers": lambda: _handle_identify_speakers_action(
             db, file_uuid, file_id, current_user.id
         ),
@@ -1089,6 +1142,10 @@ def bulk_file_action(
                     is_org_admin=ctx.is_org_admin,
                 )
                 results.append(result)
+            except RedactionNotEnabledError:
+                # A policy-wide refusal, not a per-file failure: surface it as the 409
+                # it is so the caller sees why instead of a 200 with an inner error.
+                raise
             except HTTPException as e:
                 results.append(
                     BulkActionResult(

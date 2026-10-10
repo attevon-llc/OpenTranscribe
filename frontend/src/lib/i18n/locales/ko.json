@@ -4259,6 +4259,7 @@
   "settings.contentRedaction.rescan": "다시 스캔",
   "settings.contentRedaction.rescanTooltip": "지금 이 파일에 콘텐츠 마스킹 감지를 실행합니다",
   "settings.contentRedaction.notRedacted": "아직 마스킹되지 않음",
+  "settings.contentRedaction.scanNothingFound": "검사 완료: 현재 설정에서는 가릴 내용이 없습니다",
   "settings.contentRedaction.redactStarted": "마스킹이 시작되었습니다 — 완료되면 전사 결과가 업데이트됩니다.",
   "settings.contentRedaction.redactTriggerFailed": "이 파일의 마스킹을 시작하지 못했습니다",
   "gallery.bulk.redact": "마스킹",

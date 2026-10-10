@@ -1037,6 +1037,7 @@ def get_media_file_detail(
             reveal_categories=reveal_categories,
         )
         response.redaction_pending = pending
+        response.redaction_enabled = bool(redaction_cfg.masks_anything)
         response.redaction_status = (
             str(db_file.redaction_status) if db_file.redaction_status else None
         )

@@ -41,6 +41,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from tests.integration.deletion_residue import FkEdge
+from tests.integration.deletion_residue import centroid_residue
 from tests.integration.deletion_residue import media_file_closure
 from tests.integration.deletion_residue import minio_residue
 from tests.integration.deletion_residue import opensearch_planes
@@ -51,10 +52,12 @@ from tests.integration.deletion_residue import teardown_seed
 from tests.integration.deletion_seed import DELRES_PREFIX
 from tests.integration.deletion_seed import SeededChat
 from tests.integration.deletion_seed import SeededFile
+from tests.integration.deletion_seed import SharedCluster
 from tests.integration.deletion_seed import create_throwaway_user
 from tests.integration.deletion_seed import new_tag
 from tests.integration.deletion_seed import seed_citing_chat
 from tests.integration.deletion_seed import seed_complete_file
+from tests.integration.deletion_seed import seed_shared_cluster
 
 _STACK_ABSENT = (
     os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
@@ -354,6 +357,107 @@ def test_retention_purge_leaves_no_residue(engine, admin_id, created):
     assert _purge_expired_files([(sf.file_id, sf.file_uuid)]) == (1, 0)
 
     _assert_no_residue(engine, sf, reached, edge_rows)
+
+
+# ------------------------------------------------------- surviving clusters keep no deleted voice
+
+
+def _seed_shared_pair(
+    engine, created: Ledger, owner_id: int, *, status: str = "completed"
+) -> tuple[SeededFile, SeededFile, SharedCluster]:
+    """File ``a`` (deleted by the test) and ``b`` (survives), one cluster over both."""
+    a = _seed(engine, created, owner_id, status=status)
+    b = _seed(engine, created, owner_id, voiceprint_offset=20)
+    with Session(engine) as db:
+        return a, b, seed_shared_cluster(db, a, b)
+
+
+def _assert_centroid_still_averages_both(
+    cluster: SharedCluster, a: SeededFile, b: SeededFile
+) -> list[list[float]]:
+    """Negative control: before the delete, the scan must FIRE on the two-member average.
+
+    A centroid check that is silent before the delete would be silent after it whatever
+    the delete did. Returns the surviving member's voiceprint, the expected centroid.
+    """
+    remaining = [cluster.voiceprints[b.speaker_uuids[0]]]
+    assert centroid_residue(cluster.cluster_uuid, remaining), (
+        "the centroid scan found nothing wrong with a centroid that averages in the file "
+        "about to be deleted, so its silence afterwards would prove nothing"
+    )
+    return remaining
+
+
+def _assert_centroid_rebuilt(
+    engine, cluster: SharedCluster, remaining: list[list[float]], a: SeededFile
+) -> None:
+    assert centroid_residue(cluster.cluster_uuid, remaining) == [], (
+        f"deleting {a.file_uuid} left the surviving cluster's centroid averaged with its voiceprint"
+    )
+    with engine.connect() as conn:
+        count = conn.execute(
+            text("SELECT member_count FROM speaker_cluster WHERE id = :c"),
+            {"c": cluster.cluster_id},
+        ).scalar_one()
+    assert count == 1, "the surviving cluster's member_count was not brought in line"
+
+
+@pytest.mark.parametrize("route", ["single", "pending", "force", "bulk"])
+def test_surviving_cluster_centroid_forgets_a_deleted_file(api, engine, admin_id, created, route):
+    a, b, cluster = _seed_shared_pair(
+        engine, created, admin_id, status="pending" if route == "pending" else "completed"
+    )
+    _assert_backend_sees(api, a)
+    remaining = _assert_centroid_still_averages_both(cluster, a, b)
+
+    if route == "force":
+        resp = api.delete(f"/api/files/{a.file_uuid}/force")
+        assert resp.status_code == 200, resp.text
+    elif route == "bulk":
+        resp = api.post(
+            "/api/files/management/bulk-action",
+            json={"action": "delete", "file_uuids": [a.file_uuid]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert [r["success"] for r in resp.json()] == [True], resp.json()
+    else:
+        resp = api.delete(f"/api/files/{a.file_uuid}")
+        assert resp.status_code == 204, resp.text
+
+    _assert_centroid_rebuilt(engine, cluster, remaining, a)
+
+
+def test_surviving_cluster_centroid_forgets_a_retention_purged_file(engine, admin_id, created):
+    from app.tasks.cleanup import _purge_expired_files
+
+    a, b, cluster = _seed_shared_pair(engine, created, admin_id)
+    remaining = _assert_centroid_still_averages_both(cluster, a, b)
+
+    assert _purge_expired_files([(a.file_id, a.file_uuid)]) == (1, 0)
+
+    _assert_centroid_rebuilt(engine, cluster, remaining, a)
+
+
+def test_account_deletion_leaves_no_centroid_of_the_accounts_clusters(
+    api, engine, admin_id, created
+):
+    """An account's clusters die with it, so the shared cluster must not survive either."""
+    from app.services.opensearch_service import get_opensearch_client
+    from app.services.opensearch_service.aliases import get_active_speaker_index
+
+    with Session(engine) as db:
+        uid, user_uuid, _email = create_throwaway_user(db)
+    created.users.append(uid)
+    _a, _b, cluster = _seed_shared_pair(engine, created, uid)
+
+    resp = api.delete(f"/api/admin/users/{user_uuid}")
+    assert resp.status_code == 200, resp.text
+
+    client = get_opensearch_client()
+    assert client is not None
+    assert not client.exists(
+        index=get_active_speaker_index(), id=f"cluster_{cluster.cluster_uuid}"
+    ), "the deleted account's shared-cluster centroid survived"
 
 
 # --------------------------------------------------------------------------- account routes

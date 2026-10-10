@@ -744,6 +744,82 @@ def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
         logger.warning(f"Failed to clean up empty clusters: {e}")
 
 
+def _refresh_surviving_centroids(
+    db: Session, owner_id: int, plan: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Rebuild the centroid of every cluster that lost a member to this purge but kept others.
+
+    A centroid is the mean of its members' voiceprints, so after the file's speakers are
+    gone a surviving cluster's ``cluster_<uuid>`` document still averages in the deleted
+    voiceprint. Each is recomputed from the REMAINING members' stored voiceprints through
+    ``SpeakerClusteringService._update_cluster_centroid`` (the path merge/split use), which
+    also refreshes ``quality_score``/``min_similarity``; ``member_count`` is re-derived here.
+
+    Runs after the row delete committed and :func:`_cleanup_empty_clusters` ran, so only
+    clusters that still exist are visited, scoped to the file owner's own clusters. When a
+    centroid cannot be rebuilt, or no member is left to rebuild it from (an emptied cluster
+    kept alive by a profile promotion), the stale document is erased instead — an absent
+    centroid is rebuilt by the next recluster, a stale one is a copy of the deleted voice.
+    Only a document that may still exist is returned as a residual.
+
+    Returns:
+        One ``{"stage": "clusters", "file_uuid", "error"}`` dict per centroid that may
+        still carry the deleted file's contribution. Never raises.
+    """
+    file_uuid = plan["file_uuid"]
+    residual: list[dict[str, Any]] = []
+
+    def _fail(stage: str, err: object) -> None:
+        logger.warning(f"Centroid refresh incomplete for file {file_uuid} at '{stage}': {err}")
+        residual.append({"stage": stage, "file_uuid": file_uuid, "error": str(err)})
+
+    if plan.get("cluster_read_error"):
+        _fail("clusters", f"could not enumerate the file's clusters: {plan['cluster_read_error']}")
+    cluster_uuids = list(plan.get("cluster_uuids") or [])
+    if not cluster_uuids:
+        return residual
+
+    to_erase: list[str] = []
+    try:
+        from sqlalchemy import func
+
+        from app.models.media import SpeakerCluster
+        from app.models.media import SpeakerClusterMember
+        from app.services.speaker_clustering_service import CentroidRecomputeError
+        from app.services.speaker_clustering_service import SpeakerClusteringService
+
+        survivors = (
+            db.query(SpeakerCluster)
+            .filter(SpeakerCluster.uuid.in_(cluster_uuids), SpeakerCluster.user_id == owner_id)
+            .all()
+        )
+        service = SpeakerClusteringService(db)
+        for cluster in survivors:
+            remaining = int(
+                db.query(func.count(SpeakerClusterMember.id))
+                .filter(SpeakerClusterMember.cluster_id == cluster.id)
+                .scalar()
+                or 0
+            )
+            cluster.member_count = remaining  # type: ignore[assignment]
+            if remaining == 0:
+                to_erase.append(str(cluster.uuid))
+                continue
+            try:
+                service._update_cluster_centroid(cluster, owner_id, strict=True)
+            except CentroidRecomputeError as e:
+                logger.warning(f"Centroid of cluster {cluster.uuid} not rebuildable ({e}); erasing")
+                to_erase.append(str(cluster.uuid))
+        db.commit()
+    except Exception as e:  # noqa: BLE001 — reported, never swallowed
+        db.rollback()
+        _fail("clusters", f"could not refresh surviving centroids: {e}")
+        return residual
+
+    _erase_cluster_docs(to_erase, _fail)
+    return residual
+
+
 def scrub_chat_citations(db: Session, file_uuids: list[str]) -> int:
     """Drop every persisted chat citation that names one of these files. Does not commit.
 
@@ -823,12 +899,40 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
         "playback_path": str(file.playback_path) if file.playback_path else None,
         "speaker_uuids": [],
         "speaker_read_error": None,
+        "cluster_uuids": [],
+        "cluster_read_error": None,
     }
     try:
         plan["speaker_uuids"] = [str(speaker.uuid) for speaker in list(file.speakers)]
     except Exception as e:  # noqa: BLE001 — a failed load is itself a miss
         plan["speaker_read_error"] = str(e)
+    try:
+        plan["cluster_uuids"] = _clusters_holding_file_speakers(db, file)
+    except Exception as e:  # noqa: BLE001 — a failed load is itself a miss
+        plan["cluster_read_error"] = str(e)
     return plan
+
+
+def _clusters_holding_file_speakers(db: Session, file: MediaFile) -> list[str]:
+    """UUIDs of the owner's clusters that count one of this file's speakers as a member.
+
+    Must be read BEFORE the row delete: ``ON DELETE CASCADE`` removes the membership rows
+    with the speakers, after which nothing records which centroids averaged them in.
+    Column-only query, so no ORM instance escapes the plan.
+    """
+    from app.models.media import Speaker
+    from app.models.media import SpeakerCluster
+    from app.models.media import SpeakerClusterMember
+
+    rows = (
+        db.query(SpeakerCluster.uuid)
+        .join(SpeakerClusterMember, SpeakerClusterMember.cluster_id == SpeakerCluster.id)
+        .join(Speaker, Speaker.id == SpeakerClusterMember.speaker_id)
+        .filter(Speaker.media_file_id == file.id, SpeakerCluster.user_id == file.user_id)
+        .distinct()
+        .all()
+    )
+    return [str(row[0]) for row in rows]
 
 
 def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1073,7 +1177,8 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     3. Database row (CASCADE removes child rows), plus every chat citation quoting the
        file (:func:`scrub_chat_citations` — no foreign key reaches those).
     4. Redis caches for the owner.
-    5. Empty non-promoted speaker clusters orphaned by the CASCADE.
+    5. Empty non-promoted speaker clusters orphaned by the CASCADE; clusters that lost
+       a member but kept others get their centroid recomputed from the remaining members.
 
     SpeakerProfile records and their profile embeddings are intentionally preserved.
 
@@ -1156,6 +1261,7 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
             logger.debug(f"purge_media_file: cache invalidation failed (non-critical): {cache_err}")
 
         _cleanup_empty_clusters(db, owner_id)
+        residual.extend(_refresh_surviving_centroids(db, owner_id, plan))
 
         return {
             "deleted": True,

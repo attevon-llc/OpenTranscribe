@@ -56,6 +56,12 @@ INDEX_EXEMPT_PREFIXES: dict[str, str] = {
 }
 
 
+#: A centroid rebuilt from the remaining members matches their mean to float32 precision
+#: (~1.0); the two-member average the old code left behind measures ~0.95 for the seeded
+#: vectors, so this sits between the two with room on both sides.
+CENTROID_MATCH_COSINE = 0.99999
+
+
 @dataclass(frozen=True)
 class FkEdge:
     child: str
@@ -223,6 +229,8 @@ def residue_query(sf: SeededFile, *, include_owner: bool) -> dict[str, Any]:
             {"term": {"cluster_uuid": sf.cluster_uuid}},
             {"ids": {"values": [f"cluster_{sf.cluster_uuid}"]}},
         ]
+    for extra in sf.extra_cluster_uuids:
+        should += [{"term": {"cluster_uuid": extra}}, {"ids": {"values": [f"cluster_{extra}"]}}]
     if include_owner:
         should.append({"term": {"user_id": sf.owner_id}})
         if sf.profile_uuid:
@@ -269,6 +277,36 @@ def opensearch_planes(file_uuid: str) -> dict[str, int]:
         },
     )
     return {b["key"]: b["doc_count"] for b in resp["aggregations"]["t"]["buckets"]}
+
+
+def centroid_residue(cluster_uuid: str, remaining: list[list[float]]) -> list[str]:
+    """Findings when a SURVIVING cluster's centroid is not the mean of ``remaining`` voiceprints.
+
+    After a delete, a cluster that still has members must carry a centroid built from
+    those members alone. Cosine against the expected mean is used (the stored vector is
+    L2-normalised, the expectation is normalised here), so a centroid that still averages
+    in a deleted voiceprint reads as a measurable shortfall rather than as noise.
+    """
+    import numpy as np
+
+    from app.services.opensearch_service import get_opensearch_client
+    from app.services.opensearch_service.aliases import get_active_speaker_index
+
+    client = get_opensearch_client()
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    doc_id = f"cluster_{cluster_uuid}"
+    index = get_active_speaker_index()
+    if not client.exists(index=index, id=doc_id):
+        return [f"opensearch: surviving cluster {doc_id} has no centroid document"]
+    stored = np.array(client.get(index=index, id=doc_id)["_source"]["embedding"], dtype=np.float64)
+    expected = np.mean(np.array(remaining, dtype=np.float64), axis=0)
+    cosine = float(stored @ expected / (np.linalg.norm(stored) * np.linalg.norm(expected)))
+    if cosine < CENTROID_MATCH_COSINE:
+        return [
+            f"opensearch: surviving cluster {doc_id} centroid is not the mean of its remaining "
+            f"members (cosine {cosine:.6f} < {CENTROID_MATCH_COSINE})"
+        ]
+    return []
 
 
 def minio_residue(sf: SeededFile, *, include_owner: bool) -> list[str]:
@@ -374,6 +412,8 @@ def teardown_seed(
                 "ue": sf.usage_event_id,
             }
             conn.execute(text("DELETE FROM speaker_cluster WHERE id = :cl"), ids)
+            for extra_id in sf.extra_cluster_ids:
+                conn.execute(text("DELETE FROM speaker_cluster WHERE id = :cl"), {"cl": extra_id})
             conn.execute(text("DELETE FROM tag WHERE id = :tag"), ids)
             conn.execute(text("DELETE FROM collection_member WHERE collection_id = :col"), ids)
             conn.execute(text("DELETE FROM collection WHERE id = :col"), ids)

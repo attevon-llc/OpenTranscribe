@@ -41,7 +41,14 @@ export function sidebarRowFor(section: SettingsSection): SettingsSection {
   return tabAlias(section)?.row ?? ROW_ONLY_ALIASES[section] ?? section;
 }
 
-/** The tab an alias id opens inside its row, or null when the row's default applies. */
-export function initialTabFor(section: SettingsSection): string | null {
-  return tabAlias(section)?.tab ?? null;
+/** The Transcription tab an alias id opens, or null when the row's default applies. */
+export function transcriptionTabFor(section: SettingsSection): TranscriptionTabId | null {
+  const target = tabAlias(section);
+  return target?.row === 'transcription' ? target.tab : null;
+}
+
+/** The Speaker Identification tab an alias id opens, or null when the row's default applies. */
+export function speakerIdTabFor(section: SettingsSection): SpeakerIdTabId | null {
+  const target = tabAlias(section);
+  return target?.row === 'speaker-identification' ? target.tab : null;
 }

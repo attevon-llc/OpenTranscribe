@@ -15,7 +15,8 @@
   import LLMSettings from '$components/settings/LLMSettings.svelte';
   import PromptSettings from '$components/settings/PromptSettings.svelte';
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
-  import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
+  import TranscriptionSection from '$components/settings/TranscriptionSection.svelte';
+  import SpeakerIdentificationSection from '$components/settings/SpeakerIdentificationSection.svelte';
   import OrganizationContextSettings from '$components/settings/OrganizationContextSettings.svelte';
   import DownloadSettings from '$components/settings/DownloadSettings.svelte';
   import MediaSourcesSettings from '$components/settings/MediaSourcesSettings.svelte';
@@ -27,7 +28,6 @@
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import BackupSettings from '$components/settings/BackupSettings.svelte';
-  import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
   import SupportAccessStaffPanel from '$components/settings/SupportAccessStaffPanel.svelte';
   import SupportAccessApprovalsPanel from '$components/settings/SupportAccessApprovalsPanel.svelte';
   import { SupportAccessApi } from '$lib/api/supportAccess';
@@ -38,11 +38,8 @@
   import LockedAccountsPanel from '$components/settings/LockedAccountsPanel.svelte';
   import QuarantinePanel from '$components/settings/QuarantinePanel.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
-  import ASRSettings from '$components/settings/ASRSettings.svelte';
-  import EngineSettings from '$components/settings/EngineSettings.svelte';
   import PrivacyRedactionSettings from '$components/settings/PrivacyRedactionSettings.svelte';
   import ChatSettingsPanel from '$components/settings/ChatSettingsPanel.svelte';
-  import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
   import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import UserProfileSettings from '$components/settings/UserProfileSettings.svelte';
@@ -67,6 +64,12 @@
   } from '$lib/search/settingsSearchIndex';
   import type { FuzzyIndex } from '$lib/search/fuzzyMatcher';
   import { privacyRedactionTabs, privacyRedactionVisible } from '$lib/settings/privacyRedactionTabs';
+  import { transcriptionTabs, transcriptionVisible } from '$lib/settings/transcriptionTabs';
+  import {
+    speakerIdentificationTabs,
+    speakerIdentificationVisible,
+  } from '$lib/settings/speakerIdentificationTabs';
+  import { sidebarRowFor, speakerIdTabFor, transcriptionTabFor } from '$lib/settings/sectionAliases';
 
   // Import i18n
   import { t, locale } from '$stores/locale';
@@ -106,16 +109,17 @@
    * it, so a nav entry can no longer disagree with what the panel renders.
    *
    * Sections absent from the map are open to any signed-in user. `redaction-policy`
-   * is deliberately absent: it is now a tab of the Privacy & Redaction section (its id
-   * survives only as a deep-link alias), and `privacyRedactionTabs` gates that tab by
-   * the same super_admin tier.
+   * and `engine-settings` are deliberately absent: each is now a tab of another section
+   * (Privacy & Redaction, Speaker Identification; the ids survive only as deep-link
+   * aliases) and `privacyRedactionTabs` / `speakerIdentificationTabs` gate those tabs
+   * by the same super_admin tier. `asr-provider`, `custom-vocabulary` and
+   * `speaker-attributes` are open to all and likewise only alias a tab.
    */
   const SECTION_MIN_ROLE: Partial<Record<SettingsSection, 'admin' | 'super_admin'>> = {
     // super_admin — deployment configuration (P4.3 moved these off the admin tier)
     authentication: 'super_admin',
     'audit-logs': 'super_admin',
     backup: 'super_admin',
-    'engine-settings': 'super_admin',
     // admin
     'admin-users': 'admin',
     'admin-task-health': 'admin',
@@ -277,6 +281,20 @@
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
+  $: transcriptionAccess = {
+    prefsCap: capOn(capState, 'transcription.prefs'),
+    asrCap: capOn(capState, 'asr.user_providers'),
+    vocabCap: capOn(capState, 'vocab.user'),
+  };
+
+  $: speakerIdAccess = {
+    isAdmin,
+    isSuperAdmin,
+    prefsCap: capOn(capState, 'transcription.prefs'),
+    engineCap: capOn(capState, 'engine.settings'),
+    migrationCap: capOn(capState, 'speaker_attributes.migration'),
+  };
+
   $: privacyAccess = {
     isAdmin,
     isSuperAdmin,
@@ -298,9 +316,7 @@
   $: effectiveActiveSection =
     activeSection === 'system-statistics' && capState.loaded && !capOn(capState, 'system.hardware_stats')
       ? 'profile'
-      : activeSection === 'redaction-policy'
-        ? 'content-redaction' // alias: same sidebar row, policy tab
-        : activeSection;
+      : sidebarRowFor(activeSection); // aliases highlight the row that now holds them
 
   // Cloud-edition org-admin gating: the new billing/usage/team panels are only
   // surfaced when the backend marks their capability as enabled AND audience as
@@ -335,14 +351,12 @@
     {
       title: $t('settings.sections.transcription'),
       items: [
-        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' },
-        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic', cap: 'asr.user_providers' },
-        // Models/backends for ASR and speaker ID. super_admin, so a plain user never sees the
-        // row; an admin sees it locked (see sectionLocked), next to the ASR provider it tunes.
-        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' }] : []),
-        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
-        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
-        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
+        // Two jobs, two rows, each with tabs: words (language, provider and model, vocabulary,
+        // accuracy) and speakers (detection, attributes, engine, maintenance). The old rows
+        // asr-provider / custom-vocabulary / engine-settings / speaker-attributes survive as
+        // aliases that open their tab (see lib/settings/sectionAliases.ts).
+        ...(transcriptionVisible(transcriptionAccess) ? [{ id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' }] : []),
+        ...(speakerIdentificationVisible(speakerIdAccess) ? [{ id: 'speaker-identification' as SettingsSection, label: $t('settings.speakerIdentification.title'), icon: 'user' }] : [])
       ]
     },
     {
@@ -354,7 +368,9 @@
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
         // Org context is prompt material: OrganizationContextSettings persists
         // include_in_default_prompts / include_in_custom_prompts and nothing else reads it.
-        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' }
+        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
+        // Tags and collections, not speakers: it sat in the Transcription group only by history.
+        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
       ]
     },
     {
@@ -452,7 +468,25 @@
     ...(privacyRedactionTabs(privacyAccess).some((tab) => tab.id === 'policy' && !tab.locked)
       ? [{ id: 'redaction-policy', label: $t('settings.redactionPolicy.title') } as VisibleSection]
       : []),
+    // Same for the four ids that became tabs: no sidebar row, still searchable, and the
+    // hit lands on the tab, but only for users whose tab is present and unlocked.
+    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess),
   ];
+
+  function aliasSearchEntries(
+    tx: typeof transcriptionAccess,
+    spk: typeof speakerIdAccess
+  ): VisibleSection[] {
+    const txOpen = (id: string) => transcriptionTabs(tx).some((tab) => tab.id === id && !tab.locked);
+    const spkOpen = (id: string) =>
+      speakerIdentificationTabs(spk).some((tab) => tab.id === id && !tab.locked);
+    const entries: VisibleSection[] = [];
+    if (txOpen('tx-provider')) entries.push({ id: 'asr-provider', label: $t('settings.asrProvider.title') } as VisibleSection);
+    if (txOpen('tx-vocabulary')) entries.push({ id: 'custom-vocabulary', label: $t('settings.customVocabulary.title') } as VisibleSection);
+    if (spkOpen('spk-attributes')) entries.push({ id: 'speaker-attributes', label: $t('settings.speakerAttributes.title') } as VisibleSection);
+    if (spkOpen('spk-engine')) entries.push({ id: 'engine-settings', label: $t('settings.engineSettings.title') } as VisibleSection);
+    return entries;
+  }
 
   // Rebuild the fuzzy index only while the modal is open. `$locale` is referenced
   // so the index refreshes when the UI language changes (labels are localized).
@@ -945,7 +979,7 @@
               <label class="mobile-nav-label">{$t('settings.title')}</label>
               <select
                 class="mobile-nav-select"
-                value={activeSection}
+                value={effectiveActiveSection}
                 on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
               >
                 {#each sidebarSections as section}
@@ -1066,12 +1100,33 @@
             </div>
           {/if}
 
-          <!-- Transcription Settings Section -->
-          {#if activeSection === 'transcription'}
+          <!-- Transcription: language, provider and model, vocabulary, accuracy (tabs).
+               asr-provider and custom-vocabulary are kept as ids and open their tab. -->
+          {#if sidebarRowFor(activeSection) === 'transcription'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.transcription.title')}</h3>
               <p class="section-description">{$t('settings.transcription.description')}</p>
-              <TranscriptionSettings />
+              <TranscriptionSection
+                {isAdmin}
+                {isSuperAdmin}
+                {...transcriptionAccess}
+                initialTab={transcriptionTabFor(activeSection) ?? 'tx-language'}
+              />
+            </div>
+          {/if}
+
+          <!-- Speaker Identification: detection, voice attributes, engine, maintenance (tabs).
+               speaker-attributes and engine-settings are kept as ids and open their tab. -->
+          {#if sidebarRowFor(activeSection) === 'speaker-identification'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.speakerIdentification.title')}</h3>
+              <p class="section-description">{$t('settings.speakerIdentification.description')}</p>
+              <SpeakerIdentificationSection
+                {...speakerIdAccess}
+                embeddingCap={capOn(capState, 'admin.embedding_migration')}
+                initialTab={speakerIdTabFor(activeSection) ?? 'spk-detection'}
+                on:navigate={(e) => switchSection(e.detail)}
+              />
             </div>
           {/if}
 
@@ -1081,13 +1136,6 @@
               <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
               <p class="section-description">{$t('settings.orgContext.description')}</p>
               <OrganizationContextSettings />
-            </div>
-          {/if}
-
-          <!-- Speaker Attribute Settings Section -->
-          {#if activeSection === 'speaker-attributes'}
-            <div class="content-section">
-              <SpeakerAttributeSettings />
             </div>
           {/if}
 
@@ -1142,33 +1190,6 @@
               <h3 class="section-title">{$t('autoLabel.title')}</h3>
               <p class="section-description">{$t('autoLabel.description')}</p>
               <AutoLabelSettings />
-            </div>
-          {/if}
-
-          <!-- ASR Provider Section -->
-          {#if activeSection === 'asr-provider'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.asrProvider.sectionTitle')}</h3>
-              <p class="section-description">{$t('settings.asrProvider.description')}</p>
-              <ASRSettings {isAdmin} {isSuperAdmin} />
-            </div>
-          {/if}
-
-          <!-- Engine Configuration Section (admin only) -->
-          {#if activeSection === 'engine-settings'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.engineSettings.title')}</h3>
-              <p class="section-description">{$t('settings.engineSettings.description')}</p>
-              <EngineSettings />
-            </div>
-          {/if}
-
-          <!-- Custom Vocabulary Section -->
-          {#if activeSection === 'custom-vocabulary'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.customVocabulary.title')}</h3>
-              <p class="section-description">{$t('settings.customVocabulary.description')}</p>
-              <CustomVocabularySettings />
             </div>
           {/if}
 

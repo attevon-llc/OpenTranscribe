@@ -69,7 +69,7 @@ vi.mock('$lib/api/redactionSettings', async (importOriginal) => {
 
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
-import { settingsModalStore } from '$stores/settingsModalStore';
+import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
 
@@ -171,7 +171,7 @@ describe('privilege-gated sidebar sections', () => {
 
     // Absent entirely — distinct from a privilege-gated item, which stays
     // present, disabled, and carrying a lock icon (checked in the test above).
-    expect(navItem(container, 'settings.asrProvider.title')).toBeNull();
+    expect(navItem(container, 'settings.aiPrompts.title')).toBeNull();
   });
 
   // Issue #1141: the URL Import Quality entry was gated on `exports`, so it showed
@@ -206,7 +206,7 @@ describe('privilege-gated sidebar sections', () => {
   });
 });
 
-describe('merged Privacy & Redaction section and relocated engine row', () => {
+describe('merged Privacy & Redaction section', () => {
   function sectionOf(container: HTMLElement, label: string): string | null {
     const item = navItem(container, label);
     return (
@@ -270,21 +270,157 @@ describe('merged Privacy & Redaction section and relocated engine row', () => {
 
     expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
   });
+});
 
-  it('puts the engine row beside the ASR rows, hidden from users and locked for admins', async () => {
-    setUser('user');
-    const asUser = openModal();
-    await waitForOpen(asUser.container);
-    expect(navItem(asUser.container, 'settings.engineSettings.title')).toBeNull();
-    asUser.unmount();
+describe('Transcription and Speaker Identification sections', () => {
+  function sectionOf(container: HTMLElement, label: string): string | null {
+    const item = navItem(container, label);
+    return (
+      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+      null
+    );
+  }
 
-    setUser('admin');
-    const asAdmin = openModal();
-    await waitForOpen(asAdmin.container);
-    const row = navItem(asAdmin.container, 'settings.engineSettings.title');
-    expect(row?.classList.contains('locked')).toBe(true);
-    expect(sectionOf(asAdmin.container, 'settings.engineSettings.title')).toBe(
+  const engineValue = (value: unknown) => ({ value, source: 'default' });
+  async function openAs(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+    mockAxios.get.mockImplementation(async (url: string) => ({
+      data:
+        url === '/admin/engine-settings'
+          ? {
+              diarizer_backend: engineValue('native'),
+              diarizer_require_sidecar: engineValue(false),
+              boundary_smoothing_enabled: engineValue(true),
+              boundary_acoustic_recheck_enabled: engineValue(false),
+              boundary_acoustic_cosine_margin: engineValue(0.05),
+              boundary_acoustic_max_word_dur: engineValue(1.0),
+            }
+          : url === '/embeddings/migration/status'
+            ? { current_mode: 'v4', migration_needed: false }
+            : {},
+    }));
+    setUser(role);
+    settingsModalStore.open(section);
+    const view = render(SettingsModal);
+    await waitForOpen(view.container);
+    return view;
+  }
+  const tab = (container: HTMLElement, id: string) =>
+    container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
+  it('has no engine-settings, asr-provider, vocabulary or attributes row, for any role', async () => {
+    for (const role of ['user', 'admin', 'super_admin'] as const) {
+      const { container, unmount } = await openAs(role, 'recording');
+      for (const key of [
+        'settings.engineSettings.title',
+        'settings.asrProvider.title',
+        'settings.customVocabulary.title',
+        'settings.speakerAttributes.navTitle',
+      ]) {
+        expect(navItem(container, key)).toBeNull();
+      }
+      unmount();
+    }
+  });
+
+  it('lists the two rows under one group, and Auto-Labeling under AI & Chat', async () => {
+    const { container } = await openAs('user', 'recording');
+    expect(sectionOf(container, 'settings.transcription.title')).toBe(
       'settings.sections.transcription'
+    );
+    expect(sectionOf(container, 'settings.speakerIdentification.title')).toBe(
+      'settings.sections.transcription'
+    );
+    expect(sectionOf(container, 'autoLabel.title')).toBe('settings.sections.aiChat');
+  });
+
+  it('shows a plain user the speaker-identification row but not the engine or maintenance tabs', async () => {
+    const { container } = await openAs('user', 'speaker-identification');
+    expect(
+      container.querySelector('[data-testid="speaker-identification-section"]')
+    ).not.toBeNull();
+    expect(tab(container, 'spk-detection')).not.toBeNull();
+    expect(tab(container, 'spk-attributes')).not.toBeNull();
+    expect(tab(container, 'spk-engine')).toBeNull();
+    expect(tab(container, 'spk-maintenance')).toBeNull();
+  });
+
+  it('opens engine-settings as an admin on the section, with the engine tab locked and not selected', async () => {
+    const { container } = await openAs('admin', 'engine-settings');
+    expect(
+      navItem(container, 'settings.speakerIdentification.title')?.classList.contains('active')
+    ).toBe(true);
+    const engine = tab(container, 'spk-engine');
+    expect(engine?.disabled).toBe(true);
+    expect(engine?.getAttribute('aria-selected')).toBe('false');
+    expect(engine?.getAttribute('title')).toBe('settings.nav.requiresSuperAdmin');
+  });
+
+  it.each([
+    ['super_admin', 'engine-settings', 'spk-engine'],
+    ['user', 'speaker-attributes', 'spk-attributes'],
+    ['user', 'asr-provider', 'tx-provider'],
+    ['user', 'custom-vocabulary', 'tx-vocabulary'],
+    ['user', 'transcription', 'tx-language'],
+    ['user', 'speaker-identification', 'spk-detection'],
+  ] as const)('%s opening %s lands on tab %s', async (role, section, tabId) => {
+    const { container } = await openAs(role, section as SettingsSection);
+    expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps each old id working in the mobile picker with a matching option', async () => {
+    const { container } = await openAs('user', 'asr-provider');
+    const select = container.querySelector('.mobile-nav-select') as HTMLSelectElement;
+    expect(select.value).toBe('transcription');
+  });
+
+  it('drops the provider tab, not the whole row, when the ASR capability is off', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'asr.user_providers': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = await openAs('user', 'transcription');
+    expect(navItem(container, 'settings.transcription.title')).not.toBeNull();
+    expect(tab(container, 'tx-provider')).toBeNull();
+    expect(tab(container, 'tx-language')).not.toBeNull();
+  });
+
+  it('follows the Maintenance link card to the Speaker Embedding System section', async () => {
+    const { container } = await openAs('super_admin', 'speaker-identification');
+    await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+    const button = await waitFor(() => {
+      const el = container.querySelector('[data-testid="embedding-link-card"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(
+        navItem(container, 'settings.embeddingMigration.title')?.classList.contains('active')
+      ).toBe(true)
+    );
+  });
+
+  it('keeps the modal heading the first .section-title in the content area', async () => {
+    const { container } = await openAs('super_admin', 'speaker-attributes');
+    const first = container.querySelector('.settings-content .section-title');
+    expect(first?.textContent?.trim()).toBe('settings.speakerIdentification.title');
+  });
+
+  it('passes the unsaved flag of a child form up to the section row', async () => {
+    const { container } = await openAs('user', 'speaker-identification');
+    await waitFor(() =>
+      expect(container.querySelector('#diarization-source, #speaker-behavior')).not.toBeNull()
+    );
+    const select = container.querySelector('#speaker-behavior') as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: 'use_custom' } });
+    await waitFor(() =>
+      expect(
+        navItem(container, 'settings.speakerIdentification.title')?.classList.contains('dirty')
+      ).toBe(true)
     );
   });
 });

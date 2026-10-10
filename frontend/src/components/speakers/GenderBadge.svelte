@@ -15,7 +15,18 @@
   before this component existed, because their inline `{:else}` had no such guard.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import {
+    showAttributesOnCards,
+    refreshSpeakerAttributePrefs,
+  } from '$stores/speakerAttributePrefs';
+
+  // "Show predictions on speaker cards" (Settings -> Speaker Attributes). Off hides the
+  // badge on every card that renders it.
+  onMount(() => {
+    void refreshSpeakerAttributePrefs();
+  });
 
   // Typed `string` (not a `'male'|'female'` union) because the wire shape is looser than
   // that in places (`SpeakerClusterMember.predicted_gender: string | null`) — the runtime
@@ -29,7 +40,7 @@
   export let confirmed: boolean = false;
 </script>
 
-{#if gender === 'male' || gender === 'female'}
+{#if $showAttributesOnCards && (gender === 'male' || gender === 'female')}
   <span
     class="gender-icon"
     title="{gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{confidence !=

@@ -17,7 +17,7 @@ from .context import TranscriptionContext
 from .embeddings import _should_use_native_embeddings
 from .notifications import send_progress_notification
 from .notifications import send_transcript_ready_notification
-from .speaker_processor import apply_sidecar_gender
+from .speaker_processor import apply_sidecar_gender_for_user
 from .speaker_processor import create_speaker_mapping
 from .speaker_processor import extract_unique_speakers
 from .speaker_processor import mark_overlapping_segments
@@ -177,7 +177,9 @@ def _process_transcription_result(
         # The engine classified gender from the audio it had decoded for diarization, so the
         # answers are already here — writing them now saves the enrichment task from redoing
         # the same work on CPU.
-        applied = apply_sidecar_gender(db, ctx.file_id, result.get("speaker_gender"))
+        applied = apply_sidecar_gender_for_user(
+            db, ctx.file_id, ctx.user_id, result.get("speaker_gender")
+        )
         if applied:
             logger.info("Applied sidecar gender for %d speakers on file %d", applied, ctx.file_id)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
@@ -331,7 +333,9 @@ def _process_and_save_critical(
         # The engine classified gender from the audio it had decoded for diarization, so the
         # answers are already here — writing them now saves the enrichment task from redoing
         # the same work on CPU.
-        applied = apply_sidecar_gender(db, ctx.file_id, result.get("speaker_gender"))
+        applied = apply_sidecar_gender_for_user(
+            db, ctx.file_id, ctx.user_id, result.get("speaker_gender")
+        )
         if applied:
             logger.info("Applied sidecar gender for %d speakers on file %d", applied, ctx.file_id)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)

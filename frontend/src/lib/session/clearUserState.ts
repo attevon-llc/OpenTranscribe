@@ -78,6 +78,9 @@ export async function clearUserState(): Promise<void> {
     purgeTenantDataCaches(),
     import('$stores/sharing').then(({ sharingStore }) => sharingStore.reset()),
     import('$stores/llmStatus').then(({ llmStatusStore }) => llmStatusStore.reset()),
+    import('$stores/speakerAttributePrefs').then(({ resetSpeakerAttributePrefs }) =>
+      resetSpeakerAttributePrefs()
+    ),
     import('$stores/settingsModalStore').then(({ settingsModalStore }) =>
       settingsModalStore.reset()
     ),

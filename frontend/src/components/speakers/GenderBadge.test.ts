@@ -9,9 +9,26 @@
  * is safe only because it guards the outer `{#if}` on `predicted_gender && !== 'unknown'`
  * first; this component bakes that same guard in once, for every consumer.
  */
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, waitFor } from '@testing-library/svelte';
 import GenderBadge from './GenderBadge.svelte';
+import { getSpeakerAttributeSettings } from '$lib/api/speakerAttributeSettings';
+import { resetSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
+
+vi.mock('$lib/api/speakerAttributeSettings', () => ({
+  getSpeakerAttributeSettings: vi.fn(),
+}));
+
+const prefs = (show_attributes_on_cards: boolean) => ({
+  detection_enabled: true,
+  gender_detection_enabled: true,
+  show_attributes_on_cards,
+});
+
+beforeEach(() => {
+  resetSpeakerAttributePrefs();
+  vi.mocked(getSpeakerAttributeSettings).mockResolvedValue(prefs(true));
+});
 
 describe('GenderBadge', () => {
   it('renders the male icon and word', () => {
@@ -66,5 +83,18 @@ describe('GenderBadge', () => {
 
     const unconfirmed = render(GenderBadge, { props: { gender: 'male', confirmed: false } });
     expect(unconfirmed.container.querySelector('.gender-confirmed-tick')).toBeNull();
+  });
+
+  it('hides the badge once the user turns "show predictions on speaker cards" off', async () => {
+    vi.mocked(getSpeakerAttributeSettings).mockResolvedValue(prefs(false));
+    const { container } = render(GenderBadge, { props: { gender: 'male' } });
+    await waitFor(() => expect(container.querySelector('.gender-icon')).toBeNull());
+  });
+
+  it('keeps the badge when the preference cannot be loaded', async () => {
+    vi.mocked(getSpeakerAttributeSettings).mockRejectedValue(new Error('offline'));
+    const { container } = render(GenderBadge, { props: { gender: 'female' } });
+    await waitFor(() => expect(getSpeakerAttributeSettings).toHaveBeenCalled());
+    expect(container.querySelector('.gender-icon')).not.toBeNull();
   });
 });

@@ -85,6 +85,7 @@ from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
 from app.services import system_settings_service
+from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
@@ -1234,20 +1235,18 @@ def get_speaker_attribute_settings(
     )
 
     settings_map: dict[str, str] = {str(s.setting_key): str(s.setting_value) for s in user_settings}
+    # The same resolver the pipeline uses (user > system default > default), so the form
+    # shows what will actually happen.
+    flags = resolve_speaker_attribute_flags(db, current_user.id)
 
     return SpeakerAttributeSettings(
-        detection_enabled=settings_map.get("speaker_attribute_detection_enabled", "true").lower()
-        == "true",
-        gender_detection_enabled=settings_map.get(
-            "speaker_attribute_gender_detection_enabled", "true"
-        ).lower()
-        == "true",
+        detection_enabled=flags.detection_enabled,
+        gender_detection_enabled=flags.gender_detection_enabled,
         age_detection_enabled=settings_map.get(
             "speaker_attribute_age_detection_enabled", "true"
         ).lower()
         == "true",
-        show_attributes_on_cards=settings_map.get("speaker_attribute_show_on_cards", "true").lower()
-        == "true",
+        show_attributes_on_cards=flags.show_on_cards,
     )
 
 

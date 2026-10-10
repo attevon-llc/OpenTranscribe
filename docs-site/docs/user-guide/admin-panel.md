@@ -24,7 +24,7 @@ The Admin Panel is role-gated. The dividing rule is:
 :::warning[Changed in v0.5.0]
 Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a plain
-`admin` administers any of them today, promote that account (Settings → Users → Role) before
+`admin` administers any of them today, promote that account (Settings → User Management → Role) before
 upgrading, or hand the work to an existing super admin.
 :::
 
@@ -121,9 +121,9 @@ You cannot change your own role or delete your own account here; your row shows 
 **The last remaining super admin cannot be demoted or deleted.**
 :::
 
-## Speech Processing
+## Speaker Engine
 
-(Formerly **Engine Configuration**; it now sits in the **Transcription** group next to the ASR provider.)
+(Formerly **Engine Configuration**, then **Speech Processing**. It is now the **Speaker Engine** tab of **Settings → Speaker Identification**: the tab is visible to admins but locked, and only a super admin can change it. Nothing on it affects the transcribed words.)
 
 Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
 
@@ -263,11 +263,11 @@ security policy lives in the Authentication section above.
 - **External IdP users**: PKI and OIDC users bypass local MFA **only when they authenticated
   with their native method**. If such an account falls back to a local password, local MFA
   applies
-- **Admin reset**: Settings → Users → Reset MFA clears a user's enrolment so they can re-enrol
+- **Admin reset**: Settings → User Management → Reset MFA clears a user's enrolment so they can re-enrol
 
 ### Active sessions
 
-Every user sees their own sessions (device, IP, last activity) in **Settings → Profile** and can
+Every user sees their own sessions (device, IP, last activity) in **Settings → Profile & Security** and can
 revoke any of them. Admins can list and revoke another account's sessions from the Users
 section; changing a credential or a privilege revokes sessions automatically.
 

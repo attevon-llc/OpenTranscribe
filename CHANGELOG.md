@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for `super_admin`. New tables `support_access_grant` and `support_access_use` (migration
   `v432`), and the `X-Support-Access-Grant` request header.
 
+- **pyannote.ai API key form (#1204).** *Settings -> Speaker Identification -> Speaker Detection*
+  has a write-only key field (never shown again once saved, stored encrypted) with test
+  connection and remove, shown when users may bring their own provider keys. Choosing the
+  pyannote.ai cloud service without a saved key is refused with an explanation instead of
+  silently producing a transcript with no speakers.
+
 - **Celery queue-wait metrics (#1172).** Every task message is stamped with its publish time
   (header `x-ot-published-at`). Workers with `WORKER_METRICS_PORT` set now serve
   `celery_task_queue_wait_seconds{queue, task}` (publish, or ETA if later, to task start; buckets
@@ -60,6 +66,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moved into the Transcription group beside the ASR provider (same `super_admin` gate). The User
   Management *Invite user* and *Add user* buttons use the standard primary/secondary styles with
   a proper gap.
+
+- **Settings: Transcription and Speaker Identification are two tabbed sections.** The
+  Transcription group is now **Transcription & Speakers** with two rows. **Transcription** (words)
+  has the tabs Language, Provider & Model, Vocabulary and Accuracy & Cleanup; **Speaker
+  Identification** (who spoke) has Speaker Detection, Voice Attributes, Speaker Engine and
+  Maintenance. Speaker detection, speaker count and the engine used to be split across
+  *Transcription Settings*, *Speech Processing* and *Speaker Attributes*; the speaker engine
+  is now a tab (locked for admins, `super_admin` to change, hidden from plain users) and the
+  attribute bulk jobs moved to Maintenance with a link to *Speaker Embedding System*. Each
+  tab saves and resets only its own fields (`DELETE /api/user-settings/transcription?group=`),
+  keeps unsaved edits when you switch tabs, and marks a tab with `●` while it is dirty. The old
+  section ids `asr-provider`, `custom-vocabulary`, `engine-settings` and `speaker-attributes`
+  still deep-link and still work in settings search; they open the right tab. **Auto-Labeling
+  (Tags & Collections)** moved to the AI & Chat group. Tab arrow keys now mirror in right-to-left
+  languages. The acoustic backchannel re-check controls state that they apply to local GPU
+  transcription, not cloud ASR.
 
 - `celery_queue_reserved` excludes orphaned transcription stages; new gauges
   `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`,
@@ -138,6 +160,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Speaker Embedding System no longer 403s for admins (#1208).** Every migration route needs
+  `super_admin` while the section is open to admins, so admins got "Admin access required"
+  after a burst of failing requests. The migration panel now renders locked for an admin
+  ("Only a super admin can run or monitor the speaker embedding migration") and makes no
+  migration calls; the consistency panel beside it is unchanged.
+- **Speaker cards pick up *Show predictions on speaker cards* immediately** after saving it in
+  Voice Attributes, instead of after the preference cache expired.
+- **Docs point at real Settings entries (#1209).** Every "Settings -> X" path in the docs site now
+  names a sidebar entry that exists, and a unit test keeps it that way.
 - **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
   worker-loss replay allowlist named the bulk waveform backfill task
   (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches

@@ -31,7 +31,7 @@ and chat answers.
 | Suggest who a speaker is from what they said | Yes |
 | **Ask a question in Chat** | **Yes** |
 
-Leave `LLM_PROVIDER` empty (or simply never configure a provider in **Settings → AI**) and
+Leave `LLM_PROVIDER` empty (or simply never configure a provider in **Settings → LLM Provider Configuration**) and
 everything in the first group works normally. Nothing is disabled, hidden behind a paywall, or
 degraded — the features that need a model tell you so, and the rest do not mention it.
 
@@ -87,7 +87,7 @@ tool, not a deployment mode. Details in
 
 ## Turning a model on later
 
-Adding a provider is retroactive. Configure one in **Settings → AI** and every recording you
+Adding a provider is retroactive. Configure one in **Settings → LLM Provider Configuration** and every recording you
 already have becomes summarizable and chattable immediately — there is no re-processing step,
 because summaries and chat read the transcripts and the search index that already exist.
 

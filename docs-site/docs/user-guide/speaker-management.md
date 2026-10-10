@@ -29,7 +29,7 @@ Speaker diarization can be skipped when not needed (e.g., single-speaker monolog
 
 - **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog
 - **Per-reprocess**: The reprocess dialog includes the same toggle
-- **User default**: Set your preference in Settings → Transcription → Speaker Diarization
+- **User default**: Set your preference in Settings → Speaker Identification → Speaker Detection
 
 Transcripts processed without diarization will not have speaker labels but are otherwise complete.
 
@@ -109,7 +109,7 @@ OpenTranscribe can automatically detect speaker gender attributes:
 
 - **Gender badges** displayed on speaker profiles and cluster cards
 - Used for **gender-informed cluster validation** -- prevents merging speakers of different detected genders
-- Configure in **Settings > Speaker Attributes**
+- Configure in **Settings → Speaker Identification → Voice Attributes**
 - Gender detection runs during the diarization pipeline
 
 ## Speaker Analytics

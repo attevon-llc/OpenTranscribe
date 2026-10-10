@@ -67,7 +67,7 @@ Several providers support custom vocabulary to improve accuracy for domain-speci
 | Azure | No vocabulary support | — | — |
 | pyannote.ai | No vocabulary support | — | Phase A stub only |
 
-**Configuration via Settings UI:** Settings → ASR → Edit Config → Custom Vocabulary field accepts comma-separated terms, stored per-provider config in the database.
+**Configuration via Settings UI:** Settings → Transcription → Provider & Model → Edit Config → Custom Vocabulary field accepts comma-separated terms, stored per-provider config in the database.
 
 **Custom vocabulary is passed to the provider at transcription time.** The local provider passes vocabulary as an `initial_prompt` to Whisper (e.g., `"Vocabulary: PyAnnote, WhisperX, CTranslate2"`), which biases the model toward those spellings.
 
@@ -121,7 +121,7 @@ DEEPGRAM_API_KEY=dg_xxxxxxxxxxxxxxxx
 DEEPGRAM_MODEL=nova-3          # or nova-3-medical, nova-2
 ```
 
-**UI configuration:** Settings > ASR > Add Config > Deepgram > paste API key > select model > Test Connection.
+**UI configuration:** Settings > Transcription > Provider & Model > Add Config > Deepgram > paste API key > select model > Test Connection.
 
 **Models:**
 
@@ -560,7 +560,7 @@ curl -X POST http://localhost:5174/api/asr-settings/test \
 
 ### End-to-end transcription test
 
-1. Configure a cloud provider in Settings > ASR
+1. Configure a cloud provider in Settings → Transcription → Provider & Model
 2. Click "Test Connection" to verify credentials
 3. Set the config as active
 4. Upload a short audio file

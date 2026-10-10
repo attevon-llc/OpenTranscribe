@@ -22,7 +22,7 @@
     refreshSpeakerAttributePrefs,
   } from '$stores/speakerAttributePrefs';
 
-  // "Show predictions on speaker cards" (Settings -> Speaker Attributes). Off hides the
+  // "Show predictions on speaker cards" (Settings -> Speaker Identification -> Voice Attributes). Off hides the
   // badge on every card that renders it.
   onMount(() => {
     void refreshSpeakerAttributePrefs();

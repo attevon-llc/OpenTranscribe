@@ -492,7 +492,7 @@ token-counting check would duplicate logic `build_messages` already owns.
 
 ## User transcription settings
 
-Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows shaped by
+Per-user prefs (Settings → Transcription and Settings → Speaker Identification; one endpoint, saved per tab group) are `UserSetting` key/value rows shaped by
 `schemas/transcription_settings.py` and served from `api/endpoints/user_settings.py`
 (`GET/PUT /user-settings/transcription`): source language + translate-to-English, LLM output
 language, speaker behavior (`always_prompt` | `use_defaults` | `use_custom`), min/max speakers,

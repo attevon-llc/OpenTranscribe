@@ -217,8 +217,7 @@ typed. To keep it fast:
 - **Turn off *Use my transcripts*** for questions that aren't about your
   recordings — no retrieval happens, so nothing is sent but your question.
 
-Administrators can tune the excerpt counts themselves under **Settings → Chat &
-RAG** (see [Administration](#administration)).
+Administrators can tune the excerpt counts themselves under **Settings → Chat → Advanced** (see [Administration](#administration)).
 
 ## Citations
 
@@ -301,7 +300,7 @@ individual conversation can override them.
 Instructions are **additive**, applied broadest first:
 
 ```
-built-in rules  →  your Settings → Chat default  →  the project  →  this chat
+built-in rules  →  your default in Settings → Chat  →  the project  →  this chat
 ```
 
 They answer different questions, so they stack rather than replace: *"answer
@@ -312,7 +311,7 @@ excerpts data rather than instructions.
 
 ## Requirements
 
-Chat needs a language model. Configure a provider in **Settings → AI** — OpenAI,
+Chat needs a language model. Configure a provider in **Settings → LLM Provider Configuration** — OpenAI,
 Anthropic, OpenRouter, Amazon Bedrock, or a self-hosted vLLM / Ollama endpoint. Until one is
 configured, the chat page shows a setup prompt instead of a composer.
 

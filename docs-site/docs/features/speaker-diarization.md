@@ -225,7 +225,7 @@ OpenTranscribe can automatically detect speaker attributes to improve identifica
 - Minority-gender members in a cluster are flagged for review
 - Gender outlier analysis available per cluster
 
-**Configuration**: Enable/disable speaker attribute detection in Settings → Transcription.
+**Configuration**: Enable/disable speaker attribute detection in Settings → Speaker Identification → Voice Attributes.
 
 ### Speaker Pre-Clustering (New in v0.4.0)
 
@@ -266,7 +266,7 @@ Automatic detection and repair of inconsistent speaker embeddings:
 
 - Identifies speakers with missing or mismatched embeddings across indices
 - GPU-accelerated batch repair re-extracts embeddings from original audio
-- Admin-triggered via Settings → Admin → Embedding Consistency
+- Admin-triggered via Settings → Speaker Embedding System
 - Progress tracking with WebSocket notifications
 - Distributed locking prevents concurrent repairs
 
@@ -276,7 +276,7 @@ Speaker diarization can be disabled on a per-transcription or per-user basis:
 
 - **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog to skip diarization for a specific file. The transcript will still be produced but without speaker labels.
 - **Per-reprocess**: The reprocess dialog also includes the diarization toggle, allowing you to re-transcribe without diarization.
-- **User default**: Set your default in Settings → Transcription → Speaker Diarization to skip diarization on all uploads by default.
+- **User default**: Set your default in Settings → Speaker Identification → Speaker Detection (choose *Off*) to skip diarization on all uploads by default.
 
 This is useful when diarization is not needed (e.g., single-speaker monologues) and you want faster processing, or when processing audio where diarization quality is poor.
 
@@ -285,13 +285,13 @@ This is useful when diarization is not needed (e.g., single-speaker monologues) 
 OpenTranscribe's independent diarization provider architecture allows routing diarization to an external cloud service rather than running locally:
 
 - **pyannote.ai**: The cloud service from the creators of PyAnnote, offering the same algorithms without requiring a local GPU for diarization
-- Configure via Settings → Admin → Diarization Provider or via `DIARIZATION_PROVIDER` environment variable
+- Each user saves their own pyannote.ai API key in Settings → Speaker Identification → Speaker Detection (shown when users may bring their own provider keys), then chooses *pyannote.ai cloud service* as the speaker-detection source. The key is stored encrypted and is never shown again
 - When pyannote.ai is selected, speaker diarization is sent to the cloud API while transcription remains local
 - Falls back to local diarization if the cloud service is unavailable
 
 ### Diarization Source
 
-A per-user setting — **Settings → Transcription** (`transcription_diarization_source`,
+A per-user setting — **Settings → Speaker Identification → Speaker Detection** (`transcription_diarization_source`,
 backed by `UserDiarizationSettings`) — decides where a file's speaker labels actually come
 from. It takes four values:
 
@@ -398,7 +398,7 @@ Configure speaker detection for each upload or reprocess:
 
 - **Upload dialog**: Set min/max speakers before transcription
 - **Reprocess dialog**: Adjust speaker range for re-transcription
-- **User preferences**: Save default settings in Settings → Transcription
+- **User preferences**: Save default settings in Settings → Speaker Identification → Speaker Detection
   - **Always prompt**: Show speaker settings on every upload
   - **Use defaults**: Skip dialog, use system defaults (1-20)
   - **Use custom**: Skip dialog, use your saved min/max values

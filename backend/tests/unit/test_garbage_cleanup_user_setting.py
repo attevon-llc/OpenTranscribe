@@ -1,7 +1,7 @@
 """The user's garbage-cleanup preference must change the transcript that is saved (#1199).
 
 Before the fix the pipeline read only the admin ``transcription.*`` system settings, so the
-Settings -> Transcription toggle and threshold were stored and never consulted. These
+Settings -> Transcription -> Accuracy & Cleanup toggle and threshold were stored and never consulted. These
 tests run the real cleanup entry point both finalize paths call and compare the output
 text, not just which setting was read.
 

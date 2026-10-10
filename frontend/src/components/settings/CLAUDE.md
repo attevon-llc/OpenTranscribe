@@ -113,17 +113,46 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   deep-link/search alias that opens the policy tab, and the tab-level lock is the same super_admin tier.
   Watch Sources works the same way via `$lib/settings/watchSourcesTabs` (Sources for everyone; Email
   Notifications and Global Settings for super_admin). Add a tab by extending the helper and its test.
-- `engine-settings` is labelled **Speech Processing** (it tunes ASR/diarization backends and boundary
-  correction) and sits in the Transcription group behind a row-level `isAdmin` spread, beside the ASR
-  provider; the section id is unchanged.
+- **Transcription and Speaker Identification are two tabbed rows** under the group _Transcription &
+  Speakers_ (words vs who spoke; different models, stages and roles). `TranscriptionSection` has
+  `tx-language` / `tx-provider` / `tx-vocabulary` / `tx-accuracy`; `SpeakerIdentificationSection` has
+  `spk-detection` / `spk-attributes` / `spk-engine` / `spk-maintenance`. Which tabs exist comes from
+  `$lib/settings/transcriptionTabs` and `speakerIdentificationTabs` (capabilities and role), never inline.
+  Tab ids are global DOM ids (`tab-<id>`), hence the `tx-` / `spk-` namespaces.
+- **Old section ids are aliases, not rows** (`$lib/settings/sectionAliases`): `asr-provider` and
+  `custom-vocabulary` open Transcription at their tab, `engine-settings` and `speaker-attributes` open
+  Speaker Identification at theirs. They stay in the `SettingsSection` union so deep links, settings
+  search (`aliasSearchEntries` in the modal adds them when the tab is openable) and fixtures keep
+  working; the sidebar highlights the row via `sidebarRowFor`, and the mobile `<select>` binds the
+  effective id so an alias still has a matching option. Use `transcriptionTabFor` /
+  `speakerIdTabFor` for the tab an id opens. `engine-settings` is NOT in `SECTION_MIN_ROLE`: the lock is
+  the tab's.
+- **Lock rule for the speaker tabs.** _Speaker Engine_ and _Maintenance_ are super_admin: plain users do
+  not get the tab at all (they could never use it), admins see it **locked** (disabled, `title` tooltip
+  naming the tier), super_admins use it. Deployment capabilities (`engine.settings`,
+  `speaker_attributes.migration`, `asr.user_providers`, `vocab.user`, `transcription.prefs`) remove a tab
+  entirely. The same rule applies inside panels: ASR's local-model controls and the embedding migration
+  (`locked={!isSuperAdmin}`, no API calls while locked) render disabled for admins.
+- **Section shells own dirty state; children only dispatch `change` `{ hasChanges }`.** The shell calls
+  `settingsModalStore.setDirty('transcription' | 'speaker-identification', any)` and badges a dirty tab
+  with `●`. Panels mount on first visit and then stay mounted (`hidden`), so edits survive a tab switch.
+  Any child form in a shell must dispatch `change`, never call `setDirty` itself.
+- _Maintenance_ holds `SpeakerAttributeBulkPanel` plus a link card that dispatches `navigate` with
+  `embedding-migration`; **Speaker Embedding System** stays a System row (no second copy).
+- **E2E-guarded:** `.speaker-detection-settings` (its `.btn-primary` is the Save button, so
+  `PyannoteCredentialForm` uses its own button classes), the modal-level `.section-title` must remain the
+  first `.section-title` in `.settings-content`, and `#speaker-behavior`, `#min-speakers`, `#max-speakers`.
+- `PyannoteCredentialForm` (the user's pyannote.ai key) renders under the Speaker Detection source select
+  when `asr.user_providers` is on. The key is write-only: never pre-fill the input, never log it.
+  Its states come from `$lib/settings/pyannoteCredential`.
+- **Auto-Labeling** (`auto-labeling`) lives in the AI & Chat group; the panel and id are unchanged.
 
 ## Transcription forms
 
 `TranscriptionLanguageSettings`, `TranscriptionAccuracySettings` and `SpeakerDetectionSettings` are three
 self-contained forms; each saves only its own fields and resets only its own group
 (`resetTranscriptionSettings(group)`), and reports dirty state by dispatching `change` `{ hasChanges }`
-(never `setDirty`). `TranscriptionSettings.svelte` is only a stand-in shell that mounts all three and owns the
-`transcription` dirty flag until the tabbed sections replace it. Shared cards, tooltips, buttons and styles live
+(never `setDirty`); the two section shells mount them and own the dirty flag. Shared cards, tooltips, buttons and styles live
 in `transcription/` (styles are global CSS scoped under `.tx-form`). Deployment locks: `transcription.advanced`
 hides and omits the VAD/accuracy fields; `transcription.diarization_source` hides and omits the source.
 

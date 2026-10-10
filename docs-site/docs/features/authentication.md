@@ -126,7 +126,7 @@ Three roles, with one dividing rule:
 | `super_admin` | Authentication config, role changes, audit log, ASR provider, engine settings, backups, media mirror, watch sources, redaction policy |
 
 `user.role` is the sole authorization truth; `is_superuser` is a derived mirror enforced by a
-database CHECK constraint. Creating another `super_admin` is a UI action (Settings → Users →
+database CHECK constraint. Creating another `super_admin` is a UI action (Settings → User Management →
 Role), it is audited, and the last one cannot be demoted or deleted.
 
 **External identity providers grant at most `admin`.** `super_admin` is local-only — it is the
@@ -179,7 +179,7 @@ everything. An empty allow-list admits everyone, so upgrading changes nothing un
   is not weaker than "log out".
 - Changing a credential or a privilege revokes sessions — including role changes driven by a
   directory.
-- Users manage their own sessions in Settings → Profile; admins can list and revoke another
+- Users manage their own sessions in Settings → Profile & Security; admins can list and revoke another
   user's.
 
 ## Multi-factor authentication

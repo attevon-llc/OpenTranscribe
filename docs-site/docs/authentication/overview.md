@@ -52,8 +52,8 @@ password, and why can they still self-register?"*
 |---|---|---|
 | `local_enabled` | Authentication → Local | May accounts holding a local password authenticate at all |
 | `allow_registration` | Authentication → Local | May anyone create their own account |
-| `user.auth_type` | Settings → Users | Which source owns *this* account |
-| `user.allow_local_fallback` | Settings → Users (super_admin only) | May *this* external account also use a local password |
+| `user.auth_type` | Settings → User Management | Which source owns *this* account |
+| `user.allow_local_fallback` | Settings → User Management (super_admin only) | May *this* external account also use a local password |
 | `pki_allow_password_fallback` | Authentication → PKI | Deployment **ceiling** over the per-user flag, for `pki` accounts |
 
 Rules the code enforces:
@@ -116,7 +116,7 @@ Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech proce
 plain `admin` administers any of those today, promote them before upgrading.
 :::
 
-- **Creating more super_admins is a UI action.** Settings → Users → Role, visible only to a
+- **Creating more super_admins is a UI action.** Settings → User Management → Role, visible only to a
   super_admin, backed by an audited `PUT /api/admin/users/{uuid}/role`.
 - **The last super_admin cannot be demoted or deleted.**
 - **External identity providers grant at most `admin`.** `super_admin` is local-only, by
@@ -167,7 +167,7 @@ deployment cannot lock itself out of its own queue.
 
 ### Invitations
 
-Settings → Users → **Invite**. An admin names an address plus the target `role` and
+Settings → User Management → **Invite**. An admin names an address plus the target `role` and
 `auth_type`; the recipient gets an emailed link, proves control of the address, and chooses
 their own credential — or is handed straight to the IdP when `auth_type` is external.
 
@@ -235,7 +235,7 @@ the idle/absolute timeouts all key off those rows; there is no second session st
   upgrading does not sign everyone out a second time.
 - **Hitting the concurrent cap is audited**, whether the policy evicted the oldest session or
   rejected the new one (`reject` returns 429).
-- Users see and revoke their own sessions in **Settings → Profile → Active sessions**; an admin
+- Users see and revoke their own sessions in **Settings → Profile & Security → Active sessions**; an admin
   sees and revokes another user's via `GET`/`DELETE /api/admin/users/{uuid}/sessions`.
 
 #### Sessions held by an external identity provider

@@ -32145,7 +32145,7 @@
         ]
       },
       "get": {
-        "description": "Get AI tag and collection suggestions for a media file\n\nArgs:\n    file_uuid: Media file UUID\n    db: Database session\n    current_user: Authenticated user\n\nReturns:\n    Tag and collection suggestions from AI",
+        "description": "Get AI tag and collection suggestions for a media file\n\nAnswers 204 (no body) when the file has no suggestions yet, so the file page's routine\nprobe is not a failed request; 404 is reserved for a file that does not exist.\n\nArgs:\n    file_uuid: Media file UUID\n    db: Database session\n    current_user: Authenticated user\n\nReturns:\n    Tag and collection suggestions from AI",
         "operationId": "get_topic_suggestions_api_files__file_uuid__suggestions_get",
         "parameters": [
           {
@@ -32168,6 +32168,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "The file exists but has no AI suggestions yet."
           },
           "422": {
             "content": {

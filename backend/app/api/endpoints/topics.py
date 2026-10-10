@@ -19,6 +19,7 @@ from fastapi import APIRouter
 from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -290,15 +291,22 @@ def auto_label_single_file(
     }
 
 
-@router.get("/{file_uuid}/suggestions", response_model=TopicSuggestionResponse)
+@router.get(
+    "/{file_uuid}/suggestions",
+    response_model=TopicSuggestionResponse,
+    responses={204: {"description": "The file exists but has no AI suggestions yet."}},
+)
 def get_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-) -> TopicSuggestionResponse:
+) -> TopicSuggestionResponse | Response:
     """
     Get AI tag and collection suggestions for a media file
+
+    Answers 204 (no body) when the file has no suggestions yet, so the file page's routine
+    probe is not a failed request; 404 is reserved for a file that does not exist.
 
     Args:
         file_uuid: Media file UUID
@@ -318,10 +326,7 @@ def get_topic_suggestions(
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
 
     if not suggestion:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No AI suggestions found for file {file_uuid}. Run extraction first.",
-        )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Convert JSONB to Pydantic models
     suggested_tags_data = suggestion.suggested_tags if suggestion.suggested_tags is not None else []

@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import backref
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -1131,7 +1132,12 @@ class SpeakerCluster(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", backref="speaker_clusters")
+    # passive_deletes: speaker_cluster.user_id is NOT NULL + ON DELETE CASCADE, so the
+    # database removes the clusters with the account. A bare backref made the ORM NULL the
+    # FK first, and every account owning a cluster failed to delete.
+    user: Mapped["User"] = relationship(
+        "User", backref=backref("speaker_clusters", passive_deletes="all")
+    )
     promoted_to_profile: Mapped["SpeakerProfile | None"] = relationship(
         "SpeakerProfile", foreign_keys=[promoted_to_profile_id]
     )

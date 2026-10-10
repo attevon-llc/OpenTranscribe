@@ -58,8 +58,9 @@ class WatchSourceProcessingBase(BaseModel):
     skip_files_older_than_days: int | None = Field(default=30, ge=0)
     recursive: bool = True
     auto_transcribe: bool = True
-    min_speakers: int | None = Field(default=1, ge=1)
-    max_speakers: int | None = Field(default=20, ge=1)
+    # None = use the owner's saved speaker range (issue #1198).
+    min_speakers: int | None = Field(default=None, ge=1)
+    max_speakers: int | None = Field(default=None, ge=1)
     collection_ids: list[str] | None = None
     tag_names: list[str] | None = None
     # multipart

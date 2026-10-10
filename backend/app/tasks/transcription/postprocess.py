@@ -229,12 +229,20 @@ def _finalize(gpu_result: dict) -> dict:
             try:
                 from app.tasks.rediarize_task import rediarize_task
 
+                from .user_settings import resolve_speaker_range_for_user
+
+                speaker_range = resolve_speaker_range_for_user(
+                    user_id,
+                    gpu_result.get("min_speakers"),
+                    gpu_result.get("max_speakers"),
+                    gpu_result.get("num_speakers"),
+                )
                 rediarize_task.apply_async(
                     kwargs={
                         "file_uuid": str(file_uuid),
-                        "min_speakers": None,
-                        "max_speakers": None,
-                        "num_speakers": None,
+                        "min_speakers": speaker_range.min_speakers,
+                        "max_speakers": speaker_range.max_speakers,
+                        "num_speakers": speaker_range.num_speakers,
                         "downstream_tasks": downstream_tasks,
                         # This rediarize completes a fresh billable pipeline run —
                         # it is the metering terminus (we deliberately don't meter

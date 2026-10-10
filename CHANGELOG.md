@@ -138,6 +138,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A retry replays the file's own request (#1203).** Single and bulk retry, the SPA's retry
+  button and the recovery sweep re-ran a file with defaults: a file submitted with a Fast
+  (tiny/base) model came back on the GPU model, its speaker range was dropped, and a file using
+  `local` or `pyannote` diarization was switched to the provider's own. The per-file model,
+  range and "skip diarization" are now stored on the file (migration `v433`, new
+  `media_file.requested_*` columns) and replayed.
+- **The saved speaker range is honoured everywhere (#1198).** Watch sources no longer pass 1/20
+  on every import (new sources have no range of their own, and existing sources holding exactly
+  1/20 are set to "use my saved range" by migration `v433`); cloud ASR with `local` diarization
+  hands its range to the GPU re-diarize instead of falling back to the env default; the
+  reprocess dialog starts from the saved range; and "use system defaults" now really sends the
+  system range. One helper, `resolve_speaker_range`, decides: per file, then saved, then env.
+- **Upload: URL import, in-wizard recordings and the extracted-audio fallback keep the speaker
+  range and model (#1201).** `POST /files/process-url` accepts `min_speakers`, `max_speakers`,
+  `num_speakers` and `whisper_model` (playlists included). The Speakers step is no longer offered
+  when speaker detection is off or the Fast model is chosen, and now follows the Model step.
+- **The API no longer accepts per-file options it drops (#1202).** `disable_diarization` now
+  reaches the pipeline from `/files/{uuid}/reprocess`, the bulk reprocess action, `/files/prepare`
+  and `/files/complete`; bulk reprocess also forwards its speaker range. **Behaviour change for API
+  clients:** a `whisper_model` that is neither the deployment's model nor tiny/base is now a
+  `422` (it used to be accepted and silently replaced), and `disable_diarization` is a `422`
+  when the request cannot honour it (re-diarize-only or downstream-only stages, or a bulk action
+  other than `reprocess`).
+
 - **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
   worker-loss replay allowlist named the bulk waveform backfill task
   (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches

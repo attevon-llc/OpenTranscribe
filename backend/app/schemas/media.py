@@ -80,14 +80,19 @@ class ReprocessRequest(BaseModel):
     )
     disable_diarization: bool | None = Field(
         None,
-        description="Skip speaker diarization entirely",
+        description=(
+            "Skip speaker diarization for this run. Only meaningful when the transcription "
+            "stage runs (a full reprocess, or stages containing 'transcription'); any other "
+            "stage selection is rejected with 422."
+        ),
     )
     whisper_model: str | None = Field(
         None,
         description="Whisper model to use for reprocessing. "
         "None = use admin-configured default. "
-        "Only applies to local ASR provider.",
-        examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
+        "Only applies to local ASR provider. Accepts the deployment's model or a "
+        "lightweight CPU model (tiny, base); anything else is rejected with 422.",
+        examples=["tiny", "base", "large-v3-turbo"],
     )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
@@ -110,6 +115,17 @@ class ReprocessRequest(BaseModel):
                 f"Unknown Whisper model '{v}'. Valid models: {sorted(VALID_LOCAL_WHISPER_MODELS)}"
             )
         return v or None
+
+    @model_validator(mode="after")
+    def validate_disable_diarization_stage(self) -> "ReprocessRequest":
+        """``disable_diarization`` only changes a run that transcribes."""
+        if self.disable_diarization and self.stages and "transcription" not in self.stages:
+            raise ValueError(
+                "disable_diarization only applies when the 'transcription' stage is "
+                "reprocessed; re-diarizing or re-running downstream stages cannot skip "
+                "diarization"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_min_max_speakers(self) -> "ReprocessRequest":
@@ -191,8 +207,9 @@ class PrepareUploadRequest(BaseModel):
         None,
         description="Whisper model to use for this file. "
         "None = use admin-configured default. "
-        "Only applies to local ASR provider.",
-        examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
+        "Only applies to local ASR provider. Accepts the deployment's model or a "
+        "lightweight CPU model (tiny, base); anything else is rejected with 422.",
+        examples=["tiny", "base", "large-v3-turbo"],
     )
     use_presigned: bool | None = Field(
         False,

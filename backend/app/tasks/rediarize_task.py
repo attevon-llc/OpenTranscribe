@@ -23,6 +23,8 @@ from app.services.minio_service import cleanup_temp_audio
 from app.services.minio_service import download_file
 from app.services.minio_service import download_temp_audio
 from app.services.minio_service import temp_audio_exists
+from app.tasks.transcription.user_settings import SpeakerRange
+from app.tasks.transcription.user_settings import resolve_speaker_range_for_user
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -173,9 +175,7 @@ def _prepare_audio(
 
 def _run_diarization(
     audio_file_path: str,
-    min_speakers: int | None,
-    max_speakers: int | None,
-    num_speakers: int | None,
+    speaker_range: SpeakerRange,
     wav_path: str | None = None,
 ):
     """Run diarization (native sidecar or in-process PyAnnote fallback) on audio.
@@ -193,9 +193,9 @@ def _run_diarization(
     from app.transcription.model_manager import ModelManager
 
     config = TranscriptionConfig.from_environment(
-        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
-        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
     )
 
@@ -243,9 +243,9 @@ def rediarize_task(  # noqa: C901
 
     Args:
         file_uuid: UUID of the MediaFile to rediarize.
-        min_speakers: Minimum speakers for diarization (falls back to settings).
-        max_speakers: Maximum speakers for diarization (falls back to settings).
-        num_speakers: Fixed speaker count for diarization (falls back to settings).
+        min_speakers: Minimum speakers for diarization (None = the user's saved range).
+        max_speakers: Maximum speakers for diarization (None = the user's saved range).
+        num_speakers: Fixed speaker count for diarization (None = the env default).
         downstream_tasks: Optional list of downstream stage names to dispatch.
             Valid values: 'analytics', 'speaker_llm', 'summarization',
             'topic_extraction', 'search_indexing'.
@@ -311,11 +311,13 @@ def rediarize_task(  # noqa: C901
         send_progress_notification(user_id, file_id, 0.30, "Running speaker diarization")
         step_start = time.perf_counter()
 
+        # A blank field means "my saved range", not the env default (issue #1198).
+        speaker_range = resolve_speaker_range_for_user(
+            user_id, min_speakers, max_speakers, num_speakers
+        )
         diarize_df, overlap_info, native_embeddings = _run_diarization(
             audio_file_path,
-            min_speakers,
-            max_speakers,
-            num_speakers,
+            speaker_range,
             wav_path=audio_file_path if temp_dir is None else None,
         )
 

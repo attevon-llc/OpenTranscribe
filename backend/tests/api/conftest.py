@@ -11,7 +11,9 @@ ordering between them.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
+from types import SimpleNamespace
 
 import pytest
 
@@ -92,3 +94,30 @@ def rate_limiting_enabled():
     finally:
         limiter.enabled = was_enabled
         reset_rate_limiter()
+
+
+@pytest.fixture
+def pipeline_stages(monkeypatch, db_session):
+    """Run the REAL dispatch and capture what the first pipeline stage is built with.
+
+    ``preprocess_for_transcription`` is the stage whose keyword arguments carry the per-file
+    options into the pipeline, so its signature is the value that "reaches the task". Only
+    the broker publish (``chain(...).apply_async``) is stubbed.
+    """
+
+    import app.tasks.transcription.dispatch as dispatch_module
+
+    @contextlib.contextmanager
+    def _scope():
+        yield db_session
+
+    stages: list[dict] = []
+
+    def _chain(preprocess, *rest):
+        stages.append(dict(preprocess.kwargs))
+        return SimpleNamespace(apply_async=lambda **kw: SimpleNamespace(id="stub"))
+
+    monkeypatch.setenv("SKIP_CELERY", "False")
+    monkeypatch.setattr(dispatch_module, "session_scope", _scope)
+    monkeypatch.setattr(dispatch_module, "chain", _chain)
+    return stages

@@ -129,6 +129,48 @@ def test_create_s3_source_happy(client, user_token_headers):
     assert "creation-secret" not in response.text
 
 
+def _s3_payload(**extra) -> dict:
+    return {
+        "name": f"s3-{uuid.uuid4().hex[:6]}",
+        "source_type": "s3",
+        "s3_bucket_name": "mybucket",
+        "s3_access_key_id": "AKIATEST",
+        "s3_secret_key": "creation-secret",
+        "s3_endpoint_url": "https://s3.invalid.example.com",
+        **extra,
+    }
+
+
+def test_a_new_source_has_no_speaker_range_of_its_own(client, user_token_headers, db_session):
+    """It used to be stored as 1/20 and passed to every import, beating the owner's saved
+    range (issue #1198). None means "use my saved range"."""
+    response = client.post("/api/watch-sources", headers=user_token_headers, json=_s3_payload())
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert (body["min_speakers"], body["max_speakers"]) == (None, None)
+    row = db_session.query(WatchSource).filter(WatchSource.uuid == body["uuid"]).one()
+    assert (row.min_speakers, row.max_speakers) == (None, None)
+
+
+def test_a_range_set_on_the_source_is_kept_and_can_be_cleared(
+    client, user_token_headers, db_session
+):
+    created = client.post(
+        "/api/watch-sources",
+        headers=user_token_headers,
+        json=_s3_payload(min_speakers=2, max_speakers=6),
+    ).json()
+    assert (created["min_speakers"], created["max_speakers"]) == (2, 6)
+
+    cleared = client.put(
+        f"/api/watch-sources/{created['uuid']}",
+        headers=user_token_headers,
+        json={"min_speakers": None, "max_speakers": None},
+    )
+    assert cleared.status_code == status.HTTP_200_OK
+    assert (cleared.json()["min_speakers"], cleared.json()["max_speakers"]) == (None, None)
+
+
 def test_create_source_stamps_request_org(client, user_token_headers, normal_user, db_session):
     """Issue #262c: the source captures the CREATING request's tenant so every
     background import is stamped with it (never a first-membership guess)."""

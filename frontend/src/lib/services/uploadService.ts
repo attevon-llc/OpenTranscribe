@@ -182,6 +182,28 @@ class UploadService {
     this.eventListeners.forEach((listener) => listener(event));
   }
 
+  /**
+   * The per-file choices as legacy-multipart headers. The presigned flow carries the same
+   * values in the `/files/complete` body; this is its twin for `POST /files`, shared so the
+   * main-file and extracted-audio fallbacks cannot drift apart again.
+   */
+  private transcriptionHeaders(upload: UploadItem): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
+      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
+    }
+    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
+      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
+    }
+    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
+      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
+    }
+    if (upload.skipSummary) {
+      headers['X-Skip-Summary'] = 'true';
+    }
+    return headers;
+  }
+
   // Queue management
   addUpload(
     type: UploadType,
@@ -871,18 +893,7 @@ class UploadService {
       'X-File-Hash': fingerprint || '',
     };
 
-    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
-      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
-    }
-    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
-      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
-    }
-    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
-      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
-    }
-    if (upload.skipSummary) {
-      headers['X-Skip-Summary'] = 'true';
-    }
+    Object.assign(headers, this.transcriptionHeaders(upload));
 
     try {
       await this.sendBody((watchdog) =>
@@ -1062,6 +1073,7 @@ class UploadService {
             'Content-Type': 'multipart/form-data',
             'X-File-ID': fileId,
             'X-File-Hash': sourceFingerprint || '',
+            ...this.transcriptionHeaders(upload),
           },
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
@@ -1095,6 +1107,11 @@ class UploadService {
         url: url.trim(),
         collection_ids: upload.collectionIds || undefined,
         tag_names: upload.tagNames || undefined,
+        min_speakers: upload.minSpeakers ?? undefined,
+        max_speakers: upload.maxSpeakers ?? undefined,
+        num_speakers: upload.numSpeakers ?? undefined,
+        whisper_model: upload.whisperModel || undefined,
+        skip_summary: upload.skipSummary || undefined,
       },
       {
         timeout: CONTROL_REQUEST_TIMEOUT_MS,

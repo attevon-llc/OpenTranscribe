@@ -60,6 +60,7 @@ from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
+from app.utils.whisper_model_choice import require_servable_whisper_model
 
 from . import cancel_upload
 from . import complete_upload
@@ -1243,8 +1244,11 @@ def reprocess_media_file(
     max_speakers = reprocess_request.max_speakers if reprocess_request else None
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
     stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
-    whisper_model = effective_whisper_model(
-        reprocess_request.whisper_model if reprocess_request else None, http_request
+    disable_diarization = bool(reprocess_request and reprocess_request.disable_diarization)
+    whisper_model = require_servable_whisper_model(
+        effective_whisper_model(
+            reprocess_request.whisper_model if reprocess_request else None, http_request
+        )
     )
 
     return process_file_reprocess(
@@ -1256,6 +1260,7 @@ def reprocess_media_file(
         num_speakers,  # type: ignore[arg-type]
         stages=stages,
         whisper_model=whisper_model,
+        disable_diarization=disable_diarization,
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
     )

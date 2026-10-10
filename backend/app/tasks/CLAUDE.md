@@ -16,6 +16,12 @@ indexing → WebSocket notification.
   indexing, downstream dispatch). `dispatch.py` orchestrates the chain and routes
   `transcription.gpu_transcribe` / `cpu_transcribe` **at call time** — that's why they're
   deliberately absent from `task_routes`.
+- `transcription/requested_options.py` — the per-file request (Whisper model, speaker range,
+  "skip diarization") stored on `media_file.requested_*` by every fresh dispatch and replayed by
+  `dispatch_transcription_pipeline(..., reuse_requested_options=True)` — which retry, recovery and
+  the download hop of a URL import pass. A fresh request overwrites the stored one even with
+  `None`. Speaker-range precedence is decided once, in `user_settings.resolve_speaker_range`
+  (per file, then the user's saved range, then env); never re-derive it at a call site.
 - `transcription/hooks.py` — cloud-edition seam. Exceptions are swallowed; **hangs are not**
   (hooks run inside the completion path holding an open `session_scope`). Any outbound call
   in a hook needs a tight timeout.

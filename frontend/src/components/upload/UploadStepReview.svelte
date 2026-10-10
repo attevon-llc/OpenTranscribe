@@ -10,6 +10,8 @@
   export let minSpeakers: number | null = null;
   export let maxSpeakers: number | null = null;
   export let numSpeakers: number | null = null;
+  /** Why the speaker count is not used for this file, or null when it is. */
+  export let speakerCountNote: 'off' | 'fast' | null = null;
   export let skipSummary = false;
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
@@ -31,6 +33,8 @@
   }
 
   function getSpeakerLabel(): string {
+    if (speakerCountNote === 'off') return $t('uploader.reviewSpeakersOff');
+    if (speakerCountNote === 'fast') return $t('uploader.reviewSpeakersFast');
     if (numSpeakers !== null) return `${numSpeakers} (fixed)`;
     if (minSpeakers !== null || maxSpeakers !== null) {
       const min = minSpeakers ?? (transcriptionSystemDefaults?.min_speakers ?? 1);

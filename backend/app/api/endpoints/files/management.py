@@ -11,6 +11,7 @@ from fastapi import Query
 from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -89,6 +90,21 @@ class BulkActionRequest(BaseModel):
     max_speakers: int | None = None
     num_speakers: int | None = None
     disable_diarization: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_disable_diarization_scope(self) -> "BulkActionRequest":
+        """``disable_diarization`` only changes a reprocess that transcribes."""
+        if not self.disable_diarization:
+            return self
+        if self.action != "reprocess":
+            raise ValueError("disable_diarization only applies to action='reprocess'")
+        if self.stages and "transcription" not in self.stages:
+            raise ValueError(
+                "disable_diarization only applies when the 'transcription' stage is "
+                "reprocessed; re-diarizing or re-running downstream stages cannot skip "
+                "diarization"
+            )
+        return self
 
 
 class BulkActionResult(BaseModel):
@@ -319,11 +335,10 @@ def retry_file_processing(
         import os
 
         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-            # Preserve diarization setting from original processing run
-            disable_diarization = bool(getattr(db_file, "diarization_disabled", False))
+            # Re-run with what the file was submitted with: model, speaker range, and
+            # diarization only if it was skipped (issue #1203).
             task_id = dispatch_transcription_pipeline(
-                file_uuid=file_uuid,
-                disable_diarization=disable_diarization,
+                file_uuid=file_uuid, reuse_requested_options=True
             )
             logger.info(f"Started retry task {task_id} for file {file_id}")
             return {
@@ -613,7 +628,7 @@ def _handle_retry_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
         message = f"Retry started (task: {task_id})"
     else:
         message = "Retry prepared (test mode)"
@@ -652,6 +667,7 @@ def _handle_reprocess_action(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    disable_diarization: bool = False,
 ) -> BulkActionResult:
     """Handle reprocess action for bulk operations.
 
@@ -739,6 +755,7 @@ def _handle_reprocess_action(
             num_speakers,
             file_id=file_id,
             user_id=int(db_file.user_id),
+            disable_diarization=disable_diarization,
         )
         message = f"Selective reprocessing started (stages: {', '.join(stages)})"
         return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
@@ -754,7 +771,14 @@ def _handle_reprocess_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(
+            file_uuid=file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+            # False must reach the pipeline as "not asked" (see start_reprocessing_task).
+            disable_diarization=True if disable_diarization else None,
+        )
         message = f"Reprocessing started (task: {task_id})"
     else:
         message = "Reprocessing prepared (test mode)"
@@ -1036,6 +1060,7 @@ def _process_single_file_action(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    disable_diarization: bool = False,
     organization_id: OrgScope = UNSCOPED,
     tag: Tag | None = None,
     is_org_admin: bool = False,
@@ -1064,7 +1089,15 @@ def _process_single_file_action(
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
         "reprocess": lambda: _handle_reprocess_action(
-            db, file_uuid, file_id, is_admin, stages, min_speakers, max_speakers, num_speakers
+            db,
+            file_uuid,
+            file_id,
+            is_admin,
+            stages,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            disable_diarization,
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
         "redact": lambda: _redact_if_enabled(
@@ -1137,6 +1170,7 @@ def bulk_file_action(
                     min_speakers=request.min_speakers,
                     max_speakers=request.max_speakers,
                     num_speakers=request.num_speakers,
+                    disable_diarization=bool(request.disable_diarization),
                     organization_id=ctx.org_id,
                     tag=tag,
                     is_org_admin=ctx.is_org_admin,

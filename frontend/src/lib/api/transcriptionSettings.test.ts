@@ -17,6 +17,11 @@ vi.mock('$lib/axios', async () => {
 });
 
 import {
+  DEFAULT_TRANSCRIPTION_SETTINGS,
+  isLightweightModel,
+  speakerPrefill,
+  speakerSubmitRange,
+  type TranscriptionSystemDefaults,
   getTranscriptionSettings,
   getTranscriptionSystemDefaults,
   groupLanguages,
@@ -105,5 +110,59 @@ describe('CRUD requests', () => {
     const result = await getTranscriptionSystemDefaults();
     expect(mockInstance.get).toHaveBeenCalledWith('/user-settings/transcription/system-defaults');
     expect(result).toEqual({ min_speakers: 1, max_speakers: 20 });
+  });
+});
+
+describe('speakerPrefill / speakerSubmitRange (#1198)', () => {
+  const base = { ...DEFAULT_TRANSCRIPTION_SETTINGS, min_speakers: 3, max_speakers: 5 };
+  const system = { min_speakers: 1, max_speakers: 20 } as TranscriptionSystemDefaults;
+
+  it('starts from the saved range unless the user chose "use system defaults"', () => {
+    expect(speakerPrefill({ ...base, speaker_prompt_behavior: 'always_prompt' })).toEqual({
+      minSpeakers: 3,
+      maxSpeakers: 5,
+    });
+    expect(speakerPrefill({ ...base, speaker_prompt_behavior: 'use_custom' })).toEqual({
+      minSpeakers: 3,
+      maxSpeakers: 5,
+    });
+    expect(speakerPrefill({ ...base, speaker_prompt_behavior: 'use_defaults' })).toEqual({
+      minSpeakers: null,
+      maxSpeakers: null,
+    });
+    expect(speakerPrefill(null)).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+
+  it('sends the SYSTEM range for blank fields under "use system defaults"', () => {
+    const settings = { ...base, speaker_prompt_behavior: 'use_defaults' as const };
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, null)
+    ).toEqual({ minSpeakers: 1, maxSpeakers: 20 });
+    // A value the user typed still wins.
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: 2, maxSpeakers: null }, null)
+    ).toEqual({ minSpeakers: 2, maxSpeakers: 20 });
+  });
+
+  it('injects nothing when a fixed count replaces the range', () => {
+    const settings = { ...base, speaker_prompt_behavior: 'use_defaults' as const };
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, 4)
+    ).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+
+  it('leaves blanks blank elsewhere, so the server applies the saved range', () => {
+    const settings = { ...base, speaker_prompt_behavior: 'always_prompt' as const };
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, null)
+    ).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+});
+
+describe('isLightweightModel', () => {
+  it('recognises the models the server routes to the CPU worker', () => {
+    expect(['tiny', 'tiny.en', 'base', 'base.en'].every(isLightweightModel)).toBe(true);
+    expect(isLightweightModel('large-v3-turbo')).toBe(false);
+    expect(isLightweightModel(null)).toBe(false);
   });
 });

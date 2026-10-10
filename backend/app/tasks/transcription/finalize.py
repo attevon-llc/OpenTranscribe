@@ -436,4 +436,9 @@ def _process_and_save_critical(
         "diarization_disabled": result.get("diarization_disabled", False),
         "downstream_tasks": preprocess_context.get("downstream_tasks"),
         "audio_temp_path": preprocess_context.get("audio_temp_path"),
+        # The per-file speaker range, so cloud ASR + local diarization hands the same hints
+        # to the re-diarize it queues (issue #1198).
+        "min_speakers": preprocess_context.get("min_speakers"),
+        "max_speakers": preprocess_context.get("max_speakers"),
+        "num_speakers": preprocess_context.get("num_speakers"),
     }

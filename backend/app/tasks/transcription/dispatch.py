@@ -39,6 +39,7 @@ from app.utils.task_utils import update_task_status
 
 from .hooks import DispatchBlockedError
 from .hooks import QuotaExceededError
+from .requested_options import resolve_dispatch_options
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +280,7 @@ def dispatch_transcription_pipeline(
     task_id: str | None = None,
     retry: bool = False,
     countdown: int | None = None,
+    reuse_requested_options: bool = False,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -306,6 +308,10 @@ def dispatch_transcription_pipeline(
             ``GPUPriority.TRANSCRIPTION_RETRY``) so the file goes ahead of submissions
             that arrived after it rather than to the back of the queue.
         countdown: Seconds to hold the first stage before it runs (retry backoff).
+        reuse_requested_options: True for a re-run of a file the user already submitted
+            (retry, recovery): every per-file option left as ``None`` is read back from the
+            file's stored request (``requested_options``). False for a fresh request: the
+            options passed, ``None`` included, become the file's stored request.
     """
     from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
@@ -314,7 +320,6 @@ def dispatch_transcription_pipeline(
 
     if not task_id:
         task_id = str(uuid.uuid4())
-    use_cpu = whisper_model in LIGHTWEIGHT_MODELS
 
     # Create task record and set file to PROCESSING
     with session_scope() as db:
@@ -324,6 +329,24 @@ def dispatch_transcription_pipeline(
 
         file_id = int(media_file.id)
         user_id = int(media_file.user_id)
+
+        options = resolve_dispatch_options(
+            media_file,
+            reuse_requested_options=reuse_requested_options,
+            whisper_model=whisper_model,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+            disable_diarization=disable_diarization,
+            diarization_source=diarization_source,
+        )
+        whisper_model = options.whisper_model
+        min_speakers = options.min_speakers
+        max_speakers = options.max_speakers
+        num_speakers = options.num_speakers
+        disable_diarization = options.disable_diarization
+        diarization_source = options.diarization_source
+        use_cpu = whisper_model in LIGHTWEIGHT_MODELS
 
         # Pre-dispatch gate (duration ceiling + before-dispatch hooks). A refusal
         # propagates BEFORE the task record is created, so a blocked job leaves no

@@ -596,7 +596,7 @@ def _start_transcription_task(file_uuid: str, file_id: int, task_description: st
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         from app.tasks.transcription import dispatch_transcription_pipeline
 
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
         logger.info(f"Started recovery task {task_id} for {task_description} file {file_id}")
 
 

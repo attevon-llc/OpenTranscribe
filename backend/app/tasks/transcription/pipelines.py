@@ -39,6 +39,25 @@ if _align:
     )
 
 
+def _build_engine_config(overrides: dict):  # -> EngineConfig (imported lazily: heavy)
+    """Engine config for one job: DB settings > env, with the job's overrides applied.
+
+    Shared by the single-GPU fast path and the gpu-split transcribe stage so both honour the
+    admin Engine panel.
+    """
+    from app.transcription import EngineConfig
+    from app.transcription import TranscriptionConfig as _TranscriptionConfig
+
+    config = _TranscriptionConfig.from_environment(**overrides)
+    with session_scope() as db:
+        engine_config = EngineConfig.from_db_with_env_fallback(db)
+    for k, v in overrides.items():
+        if hasattr(engine_config, k):
+            setattr(engine_config, k, v)
+    engine_config._transcription_config = config
+    return engine_config
+
+
 def _resolve_language_settings(
     ctx: TranscriptionContext,
     source_language: str | None,
@@ -193,7 +212,6 @@ def _run_engine_pipeline(
         _run_transcription_pipeline() with ``asr_provider`` and ``asr_model`` set.
     """
     from app.transcription import Engine
-    from app.transcription import EngineConfig
     from app.transcription.engine.job import PreprocessResult
 
     min_speakers = preprocess_context.get("min_speakers")
@@ -254,13 +272,8 @@ def _run_engine_pipeline(
                 _TranscriptionConfig._pinned_model_name,
             )
 
-    config = _TranscriptionConfig.from_environment(**overrides)
-    with session_scope() as db:
-        engine_config = EngineConfig.from_db_with_env_fallback(db)
-    for k, v in overrides.items():
-        if hasattr(engine_config, k):
-            setattr(engine_config, k, v)
-    engine_config._transcription_config = config
+    engine_config = _build_engine_config(overrides)
+    config = engine_config.transcription_config
 
     engine = Engine(engine_config)
 
@@ -326,7 +339,6 @@ def _run_transcribe_only_stage(
         Serialized RawTranscriptResult dict for diarize_gpu_task.
     """
     from app.transcription import Engine
-    from app.transcription import EngineConfig
     from app.transcription import TranscriptionConfig as _TranscriptionConfig
     from app.transcription.engine.job import PreprocessResult
 
@@ -373,7 +385,11 @@ def _run_transcribe_only_stage(
             _TranscriptionConfig._pinned_model_name,
         )
 
-    engine_config = EngineConfig.from_environment(**overrides)
+    # DB-backed engine settings (boundary re-check, margins, ...) with env fallback, exactly
+    # as the single-GPU fast path builds them. from_environment() reads env only, so the
+    # admin values never reached the split pipeline and its snapshot carried the env ones to
+    # the diarize worker (issue #1205).
+    engine_config = _build_engine_config(overrides)
     engine = Engine(engine_config)
 
     pre = PreprocessResult(

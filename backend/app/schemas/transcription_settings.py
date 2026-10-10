@@ -59,9 +59,12 @@ class TranscriptionSettings(BaseModel):
     )
     garbage_cleanup_threshold: int = Field(
         default=DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
-        ge=0,
-        le=100,
-        description="Confidence threshold (0-100) below which segments are flagged as garbage",
+        ge=20,
+        le=200,
+        description=(
+            "Maximum word length in characters (20-200); longer unbroken tokens are "
+            "replaced with [background noise]. Unset inherits the admin default."
+        ),
     )
     source_language: str = Field(
         default=DEFAULT_SOURCE_LANGUAGE,
@@ -173,9 +176,12 @@ class TranscriptionSettingsUpdate(BaseModel):
     )
     garbage_cleanup_threshold: int | None = Field(
         default=None,
-        ge=0,
-        le=100,
-        description="Confidence threshold (0-100) below which segments are flagged as garbage",
+        ge=20,
+        le=200,
+        description=(
+            "Maximum word length in characters (20-200); longer unbroken tokens are "
+            "replaced with [background noise]. Unset inherits the admin default."
+        ),
     )
     source_language: str | None = Field(
         default=None,

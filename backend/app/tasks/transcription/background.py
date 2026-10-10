@@ -180,12 +180,9 @@ def _run_post_gpu_background(
         speaker_llm_explicit = downstream_tasks is not None and "speaker_llm" in downstream_tasks
         if not speaker_llm_explicit:
             try:
-                from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
-                from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+                from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
 
-                if _is_speaker_attribute_detection_enabled(ctx.user_id):
-                    detect_speaker_attributes_task.delay(str(ctx.file_uuid), ctx.user_id)
-                    logger.info(f"Dispatched speaker attribute detection for {ctx.file_uuid}")
+                dispatch_speaker_attribute_pipeline(str(ctx.file_uuid), ctx.user_id)
             except Exception as e:
                 logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 

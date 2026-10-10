@@ -16237,9 +16237,9 @@
           },
           "garbage_cleanup_threshold": {
             "default": 50,
-            "description": "Confidence threshold (0-100) below which segments are flagged as garbage",
-            "maximum": 100.0,
-            "minimum": 0.0,
+            "description": "Maximum word length in characters (20-200); longer unbroken tokens are replaced with [background noise]. Unset inherits the admin default.",
+            "maximum": 200.0,
+            "minimum": 20.0,
             "title": "Garbage Cleanup Threshold",
             "type": "integer"
           },
@@ -16387,15 +16387,15 @@
           "garbage_cleanup_threshold": {
             "anyOf": [
               {
-                "maximum": 100.0,
-                "minimum": 0.0,
+                "maximum": 200.0,
+                "minimum": 20.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Confidence threshold (0-100) below which segments are flagged as garbage",
+            "description": "Maximum word length in characters (20-200); longer unbroken tokens are replaced with [background noise]. Unset inherits the admin default.",
             "title": "Garbage Cleanup Threshold"
           },
           "hallucination_silence_threshold": {

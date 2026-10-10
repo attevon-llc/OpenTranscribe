@@ -715,19 +715,16 @@ def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None
 def _dispatch_speaker_attributes(
     file_uuid: str, user_id: int, downstream_tasks: list[str] | None
 ) -> None:
-    """Dispatch speaker attribute detection (fire-and-forget).
+    """Dispatch speaker attribute detection and LLM speaker ID (fire-and-forget).
 
-    Always runs when transcription completes — gender detection is part of the
-    standard pipeline. LLM speaker ID chains from gender (dispatched at the end
-    of detect_speaker_attributes_task).
+    LLM speaker ID chains from attribute detection (dispatched at the end of
+    detect_speaker_attributes_task); with detection off it is queued directly, so the two
+    features stay independent (issue #1148).
     """
     try:
-        from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
-        from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+        from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
 
-        if _is_speaker_attribute_detection_enabled(user_id):
-            detect_speaker_attributes_task.delay(str(file_uuid), user_id)
-            logger.info(f"Dispatched speaker attribute detection for {file_uuid}")
+        dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
     except Exception as e:
         logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 

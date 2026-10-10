@@ -150,6 +150,10 @@ class RawInferenceResult:
     # The engine that ACTUALLY served diarization (issue #706) — see JobResult's fields.
     diarization_provider: str | None = None
     diarization_model: str | None = None
+    # gpu-split only: words the diarize worker's acoustic re-check relabelled, as
+    # ``boundary_resolver.word_key(start, end) -> speaker``. The CPU finalize stage re-applies
+    # them after its own speaker assignment (issue #1205). None = nothing to apply.
+    word_speaker_overrides: dict[str, str] | None = None
 
     def serialize(self) -> dict:
         emb = None
@@ -172,6 +176,7 @@ class RawInferenceResult:
             "stage_timings": self.stage_timings,
             "diarization_provider": self.diarization_provider,
             "diarization_model": self.diarization_model,
+            "word_speaker_overrides": self.word_speaker_overrides,
         }
 
     @classmethod
@@ -190,6 +195,7 @@ class RawInferenceResult:
             stage_timings=payload.get("stage_timings", {}),
             diarization_provider=payload.get("diarization_provider"),
             diarization_model=payload.get("diarization_model"),
+            word_speaker_overrides=payload.get("word_speaker_overrides"),
         )
 
     @staticmethod

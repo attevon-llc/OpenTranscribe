@@ -101,28 +101,39 @@ def _is_speaker_attribute_detection_enabled(user_id: int) -> bool:
 
     Resolution order: User setting > System setting > .env > default (True).
     """
-    from app.models.prompt import UserSetting
-    from app.services.system_settings_service import get_setting_bool
-
-    env_enabled = os.environ.get("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", "true").lower() == "true"
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 
     with session_scope() as db:
-        system_enabled = get_setting_bool(
-            db, "speaker_attribute.detection_enabled", default=env_enabled
-        )
+        return resolve_speaker_attribute_flags(db, user_id).detection_enabled
 
-        user_setting = (
-            db.query(UserSetting)
-            .filter(
-                UserSetting.user_id == user_id,
-                UserSetting.setting_key == "speaker_attribute_detection_enabled",
-            )
-            .first()
-        )
-        if user_setting:
-            return str(user_setting.setting_value).lower() == "true"
 
-    return system_enabled
+def _is_gender_detection_enabled(user_id: int) -> bool:
+    """Check if gender prediction is enabled for a user (user > system > default True)."""
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+
+    with session_scope() as db:
+        return resolve_speaker_attribute_flags(db, user_id).gender_detection_enabled
+
+
+def dispatch_speaker_attribute_pipeline(file_uuid: str, user_id: int) -> str:
+    """Queue what follows a finished transcript: attribute detection, then LLM name suggestions.
+
+    The two are independent features (issue #1148). Attribute detection chains to the LLM
+    identification itself once it has run, so the LLM step is queued directly only when
+    detection is off; otherwise turning detection off would silently stop AI name
+    suggestions as a side effect.
+
+    Returns:
+        ``"attributes"`` when the detection task was queued (it owns the LLM hand-off),
+        ``"llm_only"`` when detection is off and the LLM step was queued directly.
+    """
+    if _is_speaker_attribute_detection_enabled(user_id):
+        detect_speaker_attributes_task.delay(str(file_uuid), user_id)
+        logger.info(f"Dispatched speaker attribute detection for {file_uuid}")
+        return "attributes"
+    logger.info(f"Speaker attribute detection off for {file_uuid}; dispatching LLM speaker ID")
+    _dispatch_llm_speaker_identification(str(file_uuid))
+    return "llm_only"
 
 
 def _resolve_file_id_for_tracking(file_uuid: str) -> int | None:
@@ -534,6 +545,14 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
             _update_attr_task(task_id, "skipped", progress=1.0)
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "disabled"}
+
+        if not _is_gender_detection_enabled(user_id):
+            # Gender is the only attribute with a model; with it off there is nothing to
+            # compute. Stamp nothing: a later opt-in must still be able to run detection.
+            logger.info("Gender detection disabled for user %s, skipping", user_id)
+            _update_attr_task(task_id, "skipped", progress=1.0)
+            _dispatch_llm_speaker_identification(file_uuid)
+            return {"status": "skipped", "reason": "gender_disabled"}
 
         # Phase 1 — read (DB session open, Postgres only).
         inputs = _load_detection_inputs(file_uuid)

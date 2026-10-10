@@ -1180,10 +1180,9 @@ fresh_generate_overlay() {
         # Host to the backend, so the WebSocket check's same-origin rule cannot admit them.
         local _extra=""
         local _o
-        IFS=',' read -ra _extra_origins <<< "${FRESH_EXTRA_CORS_ORIGINS:-}"
-        for _o in "${_extra_origins[@]}"; do
+        while IFS= read -r _o; do
           [ -n "$_o" ] && _extra+=",\"${_o}\""
-        done
+        done < <(printf '%s\n' "${FRESH_EXTRA_CORS_ORIGINS:-}" | tr ',' '\n')
         echo "    environment:"
         echo "      - CORS_ORIGINS=[\"http://localhost:5173\",\"http://127.0.0.1:5173\",\"http://localhost:${_fe_port}\",\"http://127.0.0.1:${_fe_port}\"${_extra}]"
       fi

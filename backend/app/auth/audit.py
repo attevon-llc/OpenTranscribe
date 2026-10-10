@@ -112,6 +112,11 @@ class AuditEventType(StrEnum):
     # Banner acknowledgment
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 
+    # A user saved or removed a third-party service credential of their own (issue #1204,
+    # the pyannote.ai key). ``details`` names the provider and purpose only, NEVER the key.
+    USER_CREDENTIAL_SET = "user.credential.set"
+    USER_CREDENTIAL_DELETE = "user.credential.delete"
+
     # Resource sharing (collections, tags) — see details.resource_type. Distinct from
     # PROMPT_SHARE/UNSHARE above, which predate this and are prompt-specific.
     RESOURCE_SHARE = "resource.share"

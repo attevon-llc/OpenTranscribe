@@ -469,7 +469,7 @@ def test_validate_connection_401():
     with patch("httpx.get", return_value=_FakeResponse(status_code=401)):
         ok, message, ms = provider.validate_connection()
     assert ok is False
-    assert "Invalid pyannote.ai API key" in message
+    assert message == "pyannote.ai rejected this API key"
 
 
 def test_validate_connection_503():
@@ -486,8 +486,8 @@ def test_validate_connection_exception_is_sanitized():
     with patch("httpx.get", side_effect=boom):
         ok, message, ms = provider.validate_connection()
     assert ok is False
-    assert message.startswith("Connection failed:")
-    assert "sk-super-secret-999" not in message
+    # A fixed sentence: the exception text (host names, the key) never reaches a client.
+    assert message == "Could not reach pyannote.ai"
     assert ms > 0
 
 

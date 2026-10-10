@@ -11495,6 +11495,170 @@
         "title": "ProviderDefaults",
         "type": "object"
       },
+      "PyannoteConnectionTestRequest": {
+        "description": "``POST /user-settings/diarization/pyannote/test``: omit ``api_key`` to test the saved one.",
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A key to test without saving it. Omit to test the saved key.",
+            "title": "Api Key"
+          }
+        },
+        "title": "PyannoteConnectionTestRequest",
+        "type": "object"
+      },
+      "PyannoteConnectionTestResult": {
+        "description": "Outcome of a connection test. ``message`` is a fixed sentence, never vendor text.",
+        "properties": {
+          "code": {
+            "description": "Stable outcome code for translated UI copy",
+            "enum": [
+              "connected",
+              "rejected",
+              "unreachable",
+              "error"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "response_time_ms": {
+            "title": "Response Time Ms",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "code",
+          "message",
+          "response_time_ms"
+        ],
+        "title": "PyannoteConnectionTestResult",
+        "type": "object"
+      },
+      "PyannoteCredentialDeleted": {
+        "description": "``DELETE /user-settings/diarization/pyannote``.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "diarization_source": {
+            "description": "The user's speaker-detection source after the delete",
+            "title": "Diarization Source",
+            "type": "string"
+          },
+          "source_reverted": {
+            "description": "The source was pyannote and has been reset to the default",
+            "title": "Source Reverted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted",
+          "diarization_source",
+          "source_reverted"
+        ],
+        "title": "PyannoteCredentialDeleted",
+        "type": "object"
+      },
+      "PyannoteCredentialStatus": {
+        "description": "What the client may know about the stored credential. Never the key itself.",
+        "properties": {
+          "configured": {
+            "description": "A key is stored for the current user",
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "last_tested": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested"
+          },
+          "locked": {
+            "description": "The deployment manages the speaker-detection source, so the key cannot be changed here (issue #1109)",
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "test_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Message"
+          },
+          "test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'success' or 'failed' from the last saved-key test",
+            "title": "Test Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured",
+          "locked"
+        ],
+        "title": "PyannoteCredentialStatus",
+        "type": "object"
+      },
+      "PyannoteCredentialUpdate": {
+        "description": "``PUT /user-settings/diarization/pyannote``: store (or replace) the key.",
+        "properties": {
+          "api_key": {
+            "description": "pyannote.ai API key. Stored encrypted, never returned.",
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "PyannoteCredentialUpdate",
+        "type": "object"
+      },
       "QuarantineActionResponse": {
         "description": "Result of a quarantine/release action.",
         "properties": {
@@ -41870,6 +42034,157 @@
         "summary": "Update Chat User Settings",
         "tags": [
           "chat-settings"
+        ]
+      }
+    },
+    "/api/user-settings/diarization/pyannote": {
+      "delete": {
+        "description": "Delete the current user's key; a ``pyannote`` source reverts to the default.\n\nAllowed even when the deployment locks the source: removing your own secret is always\npermitted.",
+        "operationId": "delete_pyannote_credential_api_user_settings_diarization_pyannote_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteCredentialDeleted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Delete Pyannote Credential",
+        "tags": [
+          "diarization-settings"
+        ]
+      },
+      "get": {
+        "description": "Whether the current user has a pyannote.ai key stored. The key is never returned.",
+        "operationId": "get_pyannote_credential_status_api_user_settings_diarization_pyannote_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Pyannote Credential Status",
+        "tags": [
+          "diarization-settings"
+        ]
+      },
+      "put": {
+        "description": "Store or replace the current user's pyannote.ai key, encrypted at rest.\n\nA replaced key loses its previous test result: that result described a different key.",
+        "operationId": "save_pyannote_credential_api_user_settings_diarization_pyannote_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PyannoteCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Save Pyannote Credential",
+        "tags": [
+          "diarization-settings"
+        ]
+      }
+    },
+    "/api/user-settings/diarization/pyannote/test": {
+      "post": {
+        "description": "Check a key against pyannote.ai's free ``GET /v1/test``. Runs no diarization job.\n\nWith ``api_key`` in the body that key is tested and nothing is stored. Without it the\nsaved key is tested and the outcome is recorded on it.",
+        "operationId": "test_pyannote_credential_api_user_settings_diarization_pyannote_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PyannoteConnectionTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Test Pyannote Credential",
+        "tags": [
+          "diarization-settings"
         ]
       }
     },

@@ -1095,3 +1095,118 @@ a 2-minute re-check before filing.
 
 Fixed **inside** this plan (no ticket needed): D5, D11, D12, D13, D14, D15, D16 (orphans), D17,
 D18, D19.
+
+---
+
+## Addendum: pyannote.ai credential (#1204)
+
+Fixes F15 / D16 without removing the `pyannote` diarization source. Written 2026-10-10 before
+the code; the implementation follows it.
+
+### A1. Who owns the key: a per-user key, stored like a cloud ASR key
+
+- **Per-user, never shared, never a deployment key.** Cloud ASR keys are per-user
+  (`user_asr_settings`, `api/endpoints/asr_settings.py`), and pyannote.ai only runs alongside a
+  per-user cloud ASR provider (`cloud_asr.py` `_run_cloud_asr_pipeline`). The vendor bills the
+  key's owner, so the key is not shareable (unlike ASR configs, which have `is_shared`). There is
+  no env fallback and no admin route that reads or writes another user's key.
+- **Storage: the existing `user_diarization_settings` table** (`v355`), one row per user with
+  `provider='pyannote'`, `name='pyannote.ai'`, `model_name=PYANNOTE_DEFAULT_DIARIZATION_MODEL`.
+  No Alembic revision. `api_key` holds `encrypt_api_key()` output (AES-256-GCM, `v3:` prefix), the
+  same helper the ASR endpoints use; the factory switches from `decrypt_value` to the matching
+  `decrypt_api_key`.
+- **Never on the wire, never logged, never audited in clear.** Every response is a status
+  object (`configured`, `test_status`, `last_tested`, `updated_at`, `locked`). There is no
+  "reveal key" route (ASR has one, `GET /config/{uuid}/api-key`; this credential deliberately
+  does not). Logs name the user id and the action only. Two new audit events,
+  `user.credential.set` and `user.credential.delete`, carry
+  `details={"provider": "pyannote.ai", "purpose": "diarization"}` and nothing else.
+- **Gating.** The router is mounted under the `asr.user_providers` capability (the per-user
+  cloud-provider-keys capability; off = 404, same as `/api/asr-settings`). When the deployment
+  locks `transcription.diarization_source` (#1109), a user cannot choose the source, so the
+  write routes refuse with **409** and `GET` reports `locked: true`; no platform-admin bypass,
+  matching #1109.
+
+### A2. API (`/api/user-settings/diarization/pyannote`, new module `api/endpoints/diarization_settings.py`)
+
+| Method | Body | Result |
+|---|---|---|
+| `GET` | none | `PyannoteCredentialStatus` |
+| `PUT` | `{"api_key": "<key>"}` (8 to 512 printable characters, no whitespace) | Upserts the encrypted key and clears the stale test result. `PyannoteCredentialStatus` |
+| `DELETE` | none | Deletes the row. If the user's `transcription_diarization_source` was `pyannote`, it is reset to the default (`provider`). `{"deleted", "diarization_source", "source_reverted"}` |
+| `POST /test` | optional `{"api_key": "<key>"}`; without one, the saved key | `{"success", "message", "response_time_ms"}`; the result is stored on the row only when the saved key was tested. Rate-limited like `POST /api/asr-settings/test`. |
+
+Schemas live in `app/schemas/diarization_settings.py`. OpenAPI is regenerated with
+`scripts/generate-openapi.py --write`.
+
+### A3. Validation must not bill
+
+`POST /test` calls the vendor's `GET /v1/test` (`PyAnnoteCloudDiarizationProvider.validate_connection`),
+an authenticated no-op that starts no job. It never calls `/v1/media/input` or `/v1/diarize`. The
+message is a fixed sentence per outcome (connected / key rejected / service unreachable); the vendor
+response body and exception text are logged after sanitization, never returned.
+
+### A4. No silent fallback
+
+- **Selection time.** `PUT /api/user-settings/transcription` with `diarization_source='pyannote'`
+  answers **409** with *"pyannote.ai speaker detection needs a pyannote.ai API key. Save your key
+  first, then choose this option."* when the user has no stored key and the stored source is not
+  already `pyannote`. A form that re-sends an unchanged legacy value is not rejected (the file-time
+  check below catches it), so unrelated settings stay saveable.
+- **Processing time.** `DiarizationProviderFactory.create_for_user` raises
+  `DiarizationNotConfiguredError` when the source is `pyannote` and no usable key exists (no row,
+  empty column, or a value that no longer decrypts). `_run_cloud_asr_pipeline` resolves the
+  provider **before** the cloud ASR call, so the file fails without spending the user's ASR credit.
+  The exception's text is a fixed sentence registered in `ErrorCategorizationService` as the new
+  user-facing reason `diarization_not_configured`. The file goes to ERROR with that sentence and
+  suggestions, through the existing #959 path, and is shown in the file list, file detail and
+  status modal with the existing Retry button. Its retry category is the new permanent
+  `ErrorCategory.CONFIGURATION_REQUIRED`, so automatic retries do not loop on it. The manual
+  Retry works once a key is saved or another source is chosen.
+- Before this change the same state produced a transcript with **no speakers at all**: the
+  fallback called the ASR provider with `enable_diarization=False`. Failing visibly is the owner's
+  "no silent fallback" rule. Vendor-side failures of a configured key (`diarize_error` in
+  `_run_parallel_cloud_asr_and_diarization`) are unchanged and out of scope.
+
+### A5. Data flow
+
+`PUT` encrypts and stores the key. At file time, `_run_cloud_asr_pipeline` calls
+`create_for_user(user_id, db)`. That reads `transcription_diarization_source` (the #1109 lock
+still forces `provider`), loads the user's active `pyannote` row, decrypts the key and builds
+`PyAnnoteCloudDiarizationProvider(api_key=..., model_name=current_pyannote_model(row.model_name))`,
+which runs in parallel with the cloud ASR call as before.
+
+### A6. Frontend (no settings components touched here)
+
+The typed client is `frontend/src/lib/api/pyannoteCredential.ts` and the pure view-state helper is
+`frontend/src/lib/settings/pyannoteCredential.ts`, both with vitest. The `settings.speakerIdentification.pyannoteKey.*`
+i18n keys are added to all 12 locales, and `errors.media.diarizationNotConfigured` is mapped in
+`lib/i18n/mediaErrors.ts`. The form itself is wired into the Speaker Identification tab by the
+settings restructuring work, using this contract:
+
+- Component `PyannoteCredentialForm.svelte` goes in the Speaker Identification tab, shown under the
+  speaker-detection select when the `asr.user_providers` capability is on. Props:
+  `diarizationSource: string` and `disabled?: boolean`. Events: `saved`, `deleted` (detail
+  `{ sourceReverted: boolean }`, so the parent reloads the source select) and `tested` (detail
+  `PyannoteTestResult`).
+- It uses `getPyannoteCredential`, `savePyannoteCredential`, `deletePyannoteCredential` and
+  `testPyannoteCredential` from the client, and `pyannoteCredentialView(status, diarizationSource)`
+  for the badge, the button states and the warning.
+- The key input is `type="password"` with `autocomplete="off"`. It is never pre-filled, because
+  the API never returns the key.
+
+### A7. Tests (each seen failing on the old code first)
+
+`tests/api/test_pyannote_credential_endpoints.py` covers:
+- store, then the DB column is not the plaintext and decrypts to it;
+- the key appears in no response body, log record or audit event;
+- 409 on selecting `pyannote` with no key, and success once a key is stored;
+- DELETE reverts the source;
+- users are isolated from each other;
+- 404 when the capability is off, 409 when the source is locked;
+- test-connection against a local fake HTTP server, asserting only `/v1/test` was hit.
+
+`tests/unit/test_pyannote_diarization_credential_flow.py` covers:
+- the factory returns a configured provider when a key exists;
+- it raises the fixed error when the key is missing;
+- the cloud pipeline fails the file with reason `diarization_not_configured` before calling ASR.

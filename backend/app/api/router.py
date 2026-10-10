@@ -17,6 +17,7 @@ from .endpoints import chat
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
+from .endpoints import diarization_settings
 from .endpoints import directory_sync_settings
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
@@ -251,6 +252,14 @@ include_router_with_consistency(
 )
 include_router_with_consistency(
     user_settings.router, prefix="/user-settings", tags=["user-settings"]
+)
+# The per-user pyannote.ai diarization key (issue #1204). Same gate as the per-user cloud
+# ASR keys: pyannote.ai only runs beside a per-user cloud ASR provider.
+include_router_with_consistency(
+    diarization_settings.router,
+    prefix="/user-settings",
+    tags=["diarization-settings"],
+    capability="asr.user_providers",
 )
 include_router_with_consistency(
     redaction_settings.user_router, prefix="/user-settings", tags=["redaction-settings"]

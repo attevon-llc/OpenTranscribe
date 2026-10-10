@@ -814,6 +814,7 @@
   "settings.embeddingMigration.loading": "جارٍ تحميل حالة الترحيل...",
   "settings.embeddingMigration.loadFailed": "فشل تحميل حالة الترحيل",
   "settings.embeddingMigration.adminRequired": "يلزم امتلاك صلاحيات المسؤول",
+  "settings.embeddingMigration.superAdminRequired": "يمكن لمشرف عام فقط تشغيل ترحيل تضمينات المتحدثين أو مراقبته. اطلب من مشرف عام القيام بذلك.",
   "settings.embeddingMigration.statusLoadFailed": "فشل تحميل الحالة",
   "settings.embeddingMigration.migrationStarted": "بدأ الترحيل بنجاح",
   "settings.embeddingMigration.migrationStartFailed": "فشل بدء الترحيل",

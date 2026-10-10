@@ -1338,7 +1338,7 @@
           <!-- Embedding Migration Section -->
           {#if activeSection === 'embedding-migration'}
             <div class="content-section">
-              <EmbeddingMigrationSettings />
+              <EmbeddingMigrationSettings locked={!isSuperAdmin} />
               <EmbeddingConsistencySettings />
             </div>
           {/if}

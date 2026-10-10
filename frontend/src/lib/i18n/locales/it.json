@@ -814,6 +814,7 @@
   "settings.embeddingMigration.loading": "Caricamento dello stato di migrazione in corso...",
   "settings.embeddingMigration.loadFailed": "Impossibile caricare lo stato di migrazione",
   "settings.embeddingMigration.adminRequired": "Richiesto accesso amministratore",
+  "settings.embeddingMigration.superAdminRequired": "Solo un super amministratore può avviare o monitorare la migrazione degli embedding parlante. Chiedi a un super amministratore di occuparsene.",
   "settings.embeddingMigration.statusLoadFailed": "Impossibile caricare lo stato",
   "settings.embeddingMigration.migrationStarted": "Migrazione avviata con successo",
   "settings.embeddingMigration.migrationStartFailed": "Impossibile avviare la migrazione",

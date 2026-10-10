@@ -784,6 +784,7 @@
   "settings.embeddingMigration.loading": "正在加载迁移状态...",
   "settings.embeddingMigration.loadFailed": "加载迁移状态失败",
   "settings.embeddingMigration.adminRequired": "需要管理员权限",
+  "settings.embeddingMigration.superAdminRequired": "只有超级管理员才能运行或监控说话人嵌入迁移。请联系超级管理员处理。",
   "settings.embeddingMigration.statusLoadFailed": "加载状态失败",
   "settings.embeddingMigration.migrationStarted": "迁移成功启动",
   "settings.embeddingMigration.migrationStartFailed": "启动迁移失败",

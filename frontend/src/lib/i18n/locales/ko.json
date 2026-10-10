@@ -814,6 +814,7 @@
   "settings.embeddingMigration.loading": "마이그레이션 상태를 불러오는 중...",
   "settings.embeddingMigration.loadFailed": "마이그레이션 상태를 불러오지 못했습니다",
   "settings.embeddingMigration.adminRequired": "관리자 권한이 필요합니다",
+  "settings.embeddingMigration.superAdminRequired": "화자 임베딩 마이그레이션은 최고 관리자만 실행하거나 모니터링할 수 있습니다. 최고 관리자에게 요청하세요.",
   "settings.embeddingMigration.statusLoadFailed": "상태를 불러오지 못했습니다",
   "settings.embeddingMigration.migrationStarted": "마이그레이션이 시작되었습니다",
   "settings.embeddingMigration.migrationStartFailed": "마이그레이션 시작에 실패했습니다",

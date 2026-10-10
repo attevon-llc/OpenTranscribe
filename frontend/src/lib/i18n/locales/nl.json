@@ -814,6 +814,7 @@
   "settings.embeddingMigration.loading": "Migratiestatus laden...",
   "settings.embeddingMigration.loadFailed": "Kon migratiestatus niet laden",
   "settings.embeddingMigration.adminRequired": "Beheerderstoegang vereist",
+  "settings.embeddingMigration.superAdminRequired": "Alleen een super admin kan de migratie van het sprekerembeddingsysteem uitvoeren of volgen. Vraag een super admin om dit te doen.",
   "settings.embeddingMigration.statusLoadFailed": "Kon status niet laden",
   "settings.embeddingMigration.migrationStarted": "Migratie succesvol gestart",
   "settings.embeddingMigration.migrationStartFailed": "Kon migratie niet starten",

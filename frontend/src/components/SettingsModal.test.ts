@@ -404,6 +404,20 @@ describe('Transcription and Speaker Identification sections', () => {
     );
   });
 
+  it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
+    const { container } = await openAs('admin', 'embedding-migration');
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="embedding-migration-locked"]')).not.toBeNull()
+    );
+    expect(mockAxios.get).not.toHaveBeenCalledWith('/embeddings/migration/status');
+  });
+
+  it('leaves the embedding migration unlocked and loaded for a super admin (#1208)', async () => {
+    const { container } = await openAs('super_admin', 'embedding-migration');
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/embeddings/migration/status'));
+    expect(container.querySelector('[data-testid="embedding-migration-locked"]')).toBeNull();
+  });
+
   it('keeps the modal heading the first .section-title in the content area', async () => {
     const { container } = await openAs('super_admin', 'speaker-attributes');
     const first = container.querySelector('.settings-content .section-title');

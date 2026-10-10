@@ -1253,6 +1253,7 @@
   "settings.embeddingMigration.loading": "Chargement de l'état de migration...",
   "settings.embeddingMigration.loadFailed": "Échec du chargement de l'état de migration",
   "settings.embeddingMigration.adminRequired": "Accès administrateur requis",
+  "settings.embeddingMigration.superAdminRequired": "Seul un super administrateur peut lancer ou suivre la migration des embeddings des locuteurs. Demandez à un super administrateur de s'en charger.",
   "settings.embeddingMigration.statusLoadFailed": "Échec du chargement de l'état",
   "settings.embeddingMigration.migrationStarted": "Migration démarrée avec succès",
   "settings.embeddingMigration.migrationStartFailed": "Échec du démarrage de la migration",

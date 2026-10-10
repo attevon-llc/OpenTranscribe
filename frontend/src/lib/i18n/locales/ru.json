@@ -775,6 +775,7 @@
   "settings.embeddingMigration.loading": "Загрузка статуса миграции...",
   "settings.embeddingMigration.loadFailed": "Не удалось загрузить статус миграции",
   "settings.embeddingMigration.adminRequired": "Требуется доступ администратора",
+  "settings.embeddingMigration.superAdminRequired": "Только суперадминистратор может запускать и отслеживать миграцию эмбеддингов говорящих. Обратитесь к суперадминистратору.",
   "settings.embeddingMigration.statusLoadFailed": "Не удалось загрузить статус",
   "settings.embeddingMigration.migrationStarted": "Миграция успешно запущена",
   "settings.embeddingMigration.migrationStartFailed": "Не удалось запустить миграцию",

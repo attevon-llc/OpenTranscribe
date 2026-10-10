@@ -784,6 +784,7 @@
   "settings.embeddingMigration.loading": "移行ステータスを読み込み中...",
   "settings.embeddingMigration.loadFailed": "移行ステータスの読み込みに失敗しました",
   "settings.embeddingMigration.adminRequired": "管理者権限が必要です",
+  "settings.embeddingMigration.superAdminRequired": "話者埋め込みの移行を実行・監視できるのはスーパー管理者のみです。スーパー管理者に依頼してください。",
   "settings.embeddingMigration.statusLoadFailed": "ステータスの読み込みに失敗しました",
   "settings.embeddingMigration.migrationStarted": "移行が正常に開始されました",
   "settings.embeddingMigration.migrationStartFailed": "移行の開始に失敗しました",

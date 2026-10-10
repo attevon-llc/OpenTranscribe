@@ -814,6 +814,7 @@
   "settings.embeddingMigration.loading": "Loading migration status...",
   "settings.embeddingMigration.loadFailed": "Failed to load migration status",
   "settings.embeddingMigration.adminRequired": "Admin access required",
+  "settings.embeddingMigration.superAdminRequired": "Only a super admin can run or monitor the speaker embedding migration. Ask a super admin to do it.",
   "settings.embeddingMigration.statusLoadFailed": "Failed to load status",
   "settings.embeddingMigration.migrationStarted": "Migration started successfully",
   "settings.embeddingMigration.migrationStartFailed": "Failed to start migration",

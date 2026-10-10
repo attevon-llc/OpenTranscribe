@@ -1253,6 +1253,7 @@
   "settings.embeddingMigration.loading": "Migrationsstatus wird geladen...",
   "settings.embeddingMigration.loadFailed": "Fehler beim Laden des Migrationsstatus",
   "settings.embeddingMigration.adminRequired": "Administratorzugang erforderlich",
+  "settings.embeddingMigration.superAdminRequired": "Nur ein Super-Admin kann die Migration des Sprecher-Embedding-Systems starten oder überwachen. Bitten Sie einen Super-Admin darum.",
   "settings.embeddingMigration.statusLoadFailed": "Fehler beim Laden des Status",
   "settings.embeddingMigration.migrationStarted": "Migration erfolgreich gestartet",
   "settings.embeddingMigration.migrationStartFailed": "Fehler beim Starten der Migration",

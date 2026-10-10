@@ -7,12 +7,15 @@ import {
 
 const dict: Record<string, string> = {
   // engine-settings namespace
-  'settings.engineSettings.title': 'Engine Configuration',
+  'settings.engineSettings.title': 'Speaker Engine',
   'settings.engineSettings.diarizerBackend': 'Diarizer backend',
   'settings.engineSettings.diarizerBackendHelp': 'Choose the diarization engine to use',
   'settings.engineSettings.save': 'Save', // chrome — excluded
   'settings.engineSettings.saveFailed': 'Save failed', // chrome — excluded
   'settings.engineSettings.toast.saved': 'Saved!', // toast — excluded
+  // speaker-identification namespace (speaker detection tab)
+  'settings.speakerIdentification.title': 'Speaker Identification',
+  'settings.speakerIdentification.minSpeakers': 'Minimum speakers',
   // authentication sub-panel (settings.ldap folds into authentication)
   'settings.authentication.title': 'Authentication',
   'settings.ldap.serverUrl': 'LDAP server URL',
@@ -25,7 +28,8 @@ const dict: Record<string, string> = {
 };
 
 const visible: VisibleSection[] = [
-  { id: 'engine-settings', label: 'Engine Configuration' },
+  { id: 'engine-settings', label: 'Speaker Engine' },
+  { id: 'speaker-identification', label: 'Speaker Identification' },
   { id: 'authentication', label: 'Authentication' },
   { id: 'content-redaction', label: 'Content Redaction' },
   // backup intentionally omitted (user can't see it)
@@ -37,7 +41,7 @@ describe('buildSettingsSearchItems', () => {
   it('includes a section-title row for each visible section', () => {
     const titles = items.filter((i) => i.isSectionTitle).map((i) => i.label);
     expect(titles).toEqual(
-      expect.arrayContaining(['Engine Configuration', 'Authentication', 'Content Redaction'])
+      expect.arrayContaining(['Speaker Engine', 'Authentication', 'Content Redaction'])
     );
   });
 
@@ -47,12 +51,20 @@ describe('buildSettingsSearchItems', () => {
     // failure this test is named for. Assert the row's identity.
     expect(items.find((i) => i.label === 'Diarizer backend')).toMatchObject({
       sectionId: 'engine-settings',
-      sectionLabel: 'Engine Configuration',
+      sectionLabel: 'Speaker Engine',
       anchorText: 'Diarizer backend',
       isSectionTitle: false,
     });
     expect(items.find((i) => i.label === 'LDAP server URL')).toMatchObject({
       sectionId: 'authentication',
+      isSectionTitle: false,
+    });
+  });
+
+  it('indexes speaker-count settings under the Speaker Identification row', () => {
+    expect(items.find((i) => i.label === 'Minimum speakers')).toMatchObject({
+      sectionId: 'speaker-identification',
+      sectionLabel: 'Speaker Identification',
       isSectionTitle: false,
     });
   });
@@ -68,7 +80,12 @@ describe('buildSettingsSearchItems', () => {
     // vacuous-exclusion trap. Asserting the complete set of indexed settings proves the
     // exclusions AND that there is something to exclude from.
     const settingLabels = items.filter((i) => !i.isSectionTitle).map((i) => i.label);
-    expect(settingLabels).toEqual(['Diarizer backend', 'LDAP server URL', 'Personal information']);
+    expect(settingLabels).toEqual([
+      'Diarizer backend',
+      'Minimum speakers',
+      'LDAP server URL',
+      'Personal information',
+    ]);
   });
 
   it('folds Help text into its base setting as keywords, not a separate row', () => {

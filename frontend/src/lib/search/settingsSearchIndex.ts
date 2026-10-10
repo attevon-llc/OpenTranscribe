@@ -35,6 +35,12 @@ export interface SettingsSearchItem {
  * namespaces are folded into their parent section so their settings are findable and
  * navigation lands somewhere the user can actually reach. Seeded from SettingsModal's
  * `sidebarSections`; keep in sync when sections/panels are added.
+ *
+ * `asr-provider`, `custom-vocabulary`, `engine-settings` and `speaker-attributes` are tabs of
+ * the Transcription / Speaker Identification rows, not sidebar rows; SettingsModal adds them to
+ * the searchable set as aliases, so a hit lands on the right tab. Speaker detection, speaker
+ * count and the pyannote.ai key live under `settings.speakerIdentification` and resolve to the
+ * `speaker-identification` row (its first tab).
  */
 const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   'system-statistics': ['settings.statistics'],
@@ -62,6 +68,7 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   'ai-prompts': ['settings.aiPrompts', 'prompts'],
   'asr-provider': ['settings.asrProvider'],
   'engine-settings': ['settings.engineSettings'],
+  'speaker-identification': ['settings.speakerIdentification'],
   'redaction-policy': ['settings.redactionPolicy'],
   'auto-labeling': ['autoLabel'],
   'custom-vocabulary': ['settings.customVocabulary', 'settings.vocabulary'],

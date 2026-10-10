@@ -25,7 +25,9 @@
     getTranscriptionSystemDefaults,
     type TranscriptionSettings,
     type TranscriptionSystemDefaults,
-    DEFAULT_TRANSCRIPTION_SETTINGS
+    DEFAULT_TRANSCRIPTION_SETTINGS,
+    speakerPrefill,
+    speakerSubmitRange
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { getMaxUploadBytes, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
@@ -289,28 +291,26 @@
   // ── Transcription Preferences ──
   function applyTranscriptionPreferences() {
     if (!transcriptionSettings) return;
-    const behavior = transcriptionSettings.speaker_prompt_behavior;
-    switch (behavior) {
-      case 'always_prompt':
-        minSpeakers = transcriptionSettings.min_speakers || null;
-        maxSpeakers = transcriptionSettings.max_speakers || null;
-        break;
-      case 'use_defaults':
-        minSpeakers = null;
-        maxSpeakers = null;
-        break;
-      case 'use_custom':
-        minSpeakers = transcriptionSettings.min_speakers || null;
-        maxSpeakers = transcriptionSettings.max_speakers || null;
-        break;
-    }
+    ({ minSpeakers, maxSpeakers } = speakerPrefill(transcriptionSettings));
   }
 
   // Everything the wizard collected about HOW to transcribe, as one object. Read it when the
   // user confirms, not later: audio extraction finishes in the background after the wizard
   // has reset its own state, so a lazy read there would see the defaults.
   function getTranscriptionParams(): UploadTranscriptionParams {
-    return { minSpeakers, maxSpeakers, numSpeakers, whisperModel: selectedWhisperModel, skipSummary };
+    const range = speakerSubmitRange(
+      transcriptionSettings,
+      transcriptionSystemDefaults,
+      { minSpeakers, maxSpeakers },
+      numSpeakers
+    );
+    return {
+      minSpeakers: range.minSpeakers,
+      maxSpeakers: range.maxSpeakers,
+      numSpeakers,
+      whisperModel: selectedWhisperModel,
+      skipSummary
+    };
   }
 
   function getOrganizeParams() {

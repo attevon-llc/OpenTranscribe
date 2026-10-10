@@ -4,6 +4,8 @@ Per-file overrides supplied at dispatch time win over these values; see
 ``app/services/CLAUDE.md``.
 """
 
+from dataclasses import dataclass
+
 from app.core.config import settings
 
 
@@ -147,3 +149,47 @@ def load_vocabulary_terms(db, user_id: int, file_id: int) -> list[str]:
         )
         .all()
     ]
+
+
+@dataclass(frozen=True)
+class SpeakerRange:
+    """The speaker-count hints a diarizer is given."""
+
+    min_speakers: int
+    max_speakers: int
+    num_speakers: int | None
+
+
+def resolve_speaker_range(
+    user_settings: dict,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+) -> SpeakerRange:
+    """The one place speaker-count precedence is decided (issue #1198).
+
+    Per-file value, then the user's saved setting, then the deployment env default. A
+    ``None`` from any caller therefore means "use my saved value", never "use the env
+    default": ``user_settings`` (``_get_user_transcription_settings``) has already folded
+    the env default in beneath the saved value. ``num_speakers`` has no per-user setting,
+    so it falls back to the env ``NUM_SPEAKERS`` alone.
+    """
+    return SpeakerRange(
+        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
+        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
+        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+    )
+
+
+def resolve_speaker_range_for_user(
+    user_id: int,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+) -> SpeakerRange:
+    """``resolve_speaker_range`` for a caller that has not loaded the user's settings."""
+    from app.db.session_utils import session_scope
+
+    with session_scope() as db:
+        user_settings = _get_user_transcription_settings(db, user_id)
+    return resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)

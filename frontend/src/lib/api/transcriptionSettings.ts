@@ -162,6 +162,55 @@ export async function getTranscriptionSystemDefaults(): Promise<TranscriptionSys
   return response.data;
 }
 
+/** A per-file speaker range as the upload wizard and the reprocess dialog hold it. */
+export interface SpeakerRangeValues {
+  minSpeakers: number | null;
+  maxSpeakers: number | null;
+}
+
+/**
+ * Starting values for a per-file speaker range, from the user's saved behaviour.
+ *
+ * `use_defaults` starts blank (the file takes the system range); the other two start from the
+ * saved range. Shared by the upload wizard and the reprocess dialog so a saved range is
+ * honoured on both, not just on upload.
+ */
+export function speakerPrefill(settings: TranscriptionSettings | null): SpeakerRangeValues {
+  if (!settings || settings.speaker_prompt_behavior === 'use_defaults') {
+    return { minSpeakers: null, maxSpeakers: null };
+  }
+  return {
+    minSpeakers: settings.min_speakers || null,
+    maxSpeakers: settings.max_speakers || null,
+  };
+}
+
+/**
+ * The range to send for a file. A blank field means "use the system range" under
+ * `use_defaults`, so those values are sent explicitly (the server would otherwise fall back to
+ * the user's saved range, which is not what that choice promises). Anywhere else a blank field
+ * stays `null`, which the server reads as "my saved range". Nothing is injected when a fixed
+ * speaker count is set: it replaces the range.
+ */
+export function speakerSubmitRange(
+  settings: TranscriptionSettings | null,
+  systemDefaults: TranscriptionSystemDefaults | null,
+  range: SpeakerRangeValues,
+  numSpeakers: number | null
+): SpeakerRangeValues {
+  if (
+    settings?.speaker_prompt_behavior !== 'use_defaults' ||
+    !systemDefaults ||
+    numSpeakers !== null
+  ) {
+    return range;
+  }
+  return {
+    minSpeakers: range.minSpeakers ?? systemDefaults.min_speakers,
+    maxSpeakers: range.maxSpeakers ?? systemDefaults.max_speakers,
+  };
+}
+
 /**
  * Helper to get display label for speaker prompt behavior
  */

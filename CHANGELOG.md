@@ -144,6 +144,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `local` or `pyannote` diarization was switched to the provider's own. The per-file model,
   range and "skip diarization" are now stored on the file (migration `v433`, new
   `media_file.requested_*` columns) and replayed.
+- **The saved speaker range is honoured everywhere (#1198).** Watch sources no longer pass 1/20
+  on every import (new sources have no range of their own, and existing sources holding exactly
+  1/20 are set to "use my saved range" by migration `v433`); cloud ASR with `local` diarization
+  hands its range to the GPU re-diarize instead of falling back to the env default; the
+  reprocess dialog starts from the saved range; and "use system defaults" now really sends the
+  system range. One helper, `resolve_speaker_range`, decides: per file, then saved, then env.
 - **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
   worker-loss replay allowlist named the bulk waveform backfill task
   (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches

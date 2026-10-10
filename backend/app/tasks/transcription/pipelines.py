@@ -17,6 +17,7 @@ from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
 from .user_settings import load_vocabulary_terms
+from .user_settings import resolve_speaker_range
 
 logger = logging.getLogger(__name__)
 
@@ -102,14 +103,15 @@ def _run_transcription_pipeline(
     # Get user's transcription tuning settings from DB
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     # Build overrides dict — local model is admin-controlled via WHISPER_MODEL env var
     overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
@@ -218,13 +220,14 @@ def _run_engine_pipeline(
 
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
@@ -344,13 +347,14 @@ def _run_transcribe_only_stage(
 
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],

@@ -103,6 +103,10 @@ vi.mock('$lib/api/tags', () => ({ listTags: vi.fn().mockResolvedValue([]) }));
 
 import FileUploader from './FileUploader.svelte';
 import { capabilities, resetCapabilities } from '$stores/capabilities';
+import {
+  DEFAULT_TRANSCRIPTION_SETTINGS,
+  getTranscriptionSettings,
+} from '$lib/api/transcriptionSettings';
 
 const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
 
@@ -429,6 +433,45 @@ describe('the wizard hands its transcription choices to the queue (#1121)', () =
     } finally {
       resetCapabilities();
     }
+  });
+});
+
+/**
+ * Issue #1198: "use system defaults" promised the system range but sent nothing, and the server
+ * then applied the user's SAVED range instead. The wizard now sends the system values, and
+ * "use my saved settings" sends the saved ones.
+ */
+describe('the speaker range follows the saved behaviour (#1198)', () => {
+  function saved(overrides: Record<string, unknown>) {
+    vi.mocked(getTranscriptionSettings).mockResolvedValueOnce({
+      ...DEFAULT_TRANSCRIPTION_SETTINGS,
+      min_speakers: 3,
+      max_speakers: 5,
+      ...overrides,
+    });
+  }
+
+  async function submittedParams() {
+    const { container } = render(FileUploader);
+    await reachReviewStep(container as HTMLElement, file({ size: 1024 }));
+    await fireEvent.click(container.querySelector('.nav-submit') as HTMLElement);
+    const [, transcriptionParams] = mockUploadsStore.addFile.mock.calls[0];
+    return transcriptionParams;
+  }
+
+  it('"use system defaults" sends the system range, not null, so the saved range cannot win', async () => {
+    saved({ speaker_prompt_behavior: 'use_defaults' });
+    expect(await submittedParams()).toMatchObject({ minSpeakers: 1, maxSpeakers: 20 });
+  });
+
+  it('"use my saved settings" sends the saved range', async () => {
+    saved({ speaker_prompt_behavior: 'use_custom' });
+    expect(await submittedParams()).toMatchObject({ minSpeakers: 3, maxSpeakers: 5 });
+  });
+
+  it('"always ask" starts from the saved range', async () => {
+    saved({ speaker_prompt_behavior: 'always_prompt' });
+    expect(await submittedParams()).toMatchObject({ minSpeakers: 3, maxSpeakers: 5 });
   });
 });
 

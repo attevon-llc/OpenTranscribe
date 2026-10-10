@@ -3,7 +3,6 @@
 import contextlib
 import logging
 
-from app.core.config import settings
 from app.db.session_utils import session_scope
 from app.utils.task_utils import update_task_status
 
@@ -12,6 +11,7 @@ from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
 from .user_settings import load_vocabulary_terms
+from .user_settings import resolve_speaker_range
 
 logger = logging.getLogger(__name__)
 
@@ -232,12 +232,13 @@ def _run_cloud_asr_pipeline(
     # Read user's speaker settings from DB (task param > user DB > env var)
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
+    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     config = ASRConfig(
         language=user_lang_settings["source_language"],
-        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
-        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        min_speakers=speaker_range.min_speakers,
+        max_speakers=speaker_range.max_speakers,
+        num_speakers=speaker_range.num_speakers,
         enable_diarization=(diarization_source == "provider" and provider.supports_diarization()),
         translate_to_english=translate_enabled,
         vocabulary=vocab_terms if vocab_terms else None,
@@ -259,13 +260,9 @@ def _run_cloud_asr_pipeline(
             config,
             provider,
             cloud_progress_callback,
-            min_speakers=min_speakers
-            if min_speakers is not None
-            else user_settings["min_speakers"],
-            max_speakers=max_speakers
-            if max_speakers is not None
-            else user_settings["max_speakers"],
-            num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+            min_speakers=speaker_range.min_speakers,
+            max_speakers=speaker_range.max_speakers,
+            num_speakers=speaker_range.num_speakers,
         )
     else:
         asr_result = provider.transcribe(audio_file_path, config, cloud_progress_callback)

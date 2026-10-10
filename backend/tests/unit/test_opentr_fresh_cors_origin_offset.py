@@ -51,7 +51,13 @@ def _function_body(text: str, name: str) -> str:
     return text[start : end + len("\n}\n")]
 
 
-def _generate(tmp_path: Path, *, offset: str, frontend_port: str | None) -> dict[str, Any]:
+def _generate(
+    tmp_path: Path,
+    *,
+    offset: str,
+    frontend_port: str | None,
+    extra_origins: str | None = None,
+) -> dict[str, Any]:
     text = OPENTR.read_text(encoding="utf-8")
     script_parts = [
         _function_body(text, "fresh_sanitize_name"),
@@ -71,6 +77,9 @@ def _generate(tmp_path: Path, *, offset: str, frontend_port: str | None) -> dict
     else:
         env.pop("FRONTEND_PORT", None)
     env.pop("CHOKIDAR_INTERVAL", None)
+    env.pop("FRESH_EXTRA_CORS_ORIGINS", None)
+    if extra_origins is not None:
+        env["FRESH_EXTRA_CORS_ORIGINS"] = extra_origins
 
     result = subprocess.run(
         ["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True
@@ -124,3 +133,34 @@ def test_offset_zero_adds_no_cors_origins_override(tmp_path: Path):
     doc = _generate(tmp_path, offset="0", frontend_port="5173")
     env = _environment_map(doc["services"]["backend"])
     assert "CORS_ORIGINS" not in env
+
+
+def test_lan_origins_from_the_environment_are_appended_in_order(tmp_path: Path):
+    """A stack browsed over the LAN needs its LAN origin allow-listed: the Vite dev proxy
+    rewrites Host to the backend, so the WebSocket check's same-origin rule cannot admit it."""
+    doc = _generate(
+        tmp_path,
+        offset="200",
+        frontend_port="5373",
+        extra_origins="http://10.10.10.20:5373,http://stack.lan:5373",
+    )
+    origins = json.loads(_environment_map(doc["services"]["backend"])["CORS_ORIGINS"])
+    assert origins == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5373",
+        "http://127.0.0.1:5373",
+        "http://10.10.10.20:5373",
+        "http://stack.lan:5373",
+    ]
+
+
+def test_empty_extra_origins_change_nothing(tmp_path: Path):
+    doc = _generate(tmp_path, offset="200", frontend_port="5373", extra_origins="")
+    origins = json.loads(_environment_map(doc["services"]["backend"])["CORS_ORIGINS"])
+    assert origins == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5373",
+        "http://127.0.0.1:5373",
+    ]

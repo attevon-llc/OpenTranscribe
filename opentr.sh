@@ -1175,8 +1175,17 @@ fresh_generate_overlay() {
         # `mode="before"` validator runs, so a comma-separated value raises
         # `SettingsError` at backend startup (measured while triaging this).
         local _fe_port="${FRONTEND_PORT:-5173}"
+        # FRESH_EXTRA_CORS_ORIGINS (comma-separated) adds origins this stack is browsed
+        # from over the LAN, e.g. http://10.0.0.5:${_fe_port}. The Vite dev proxy rewrites
+        # Host to the backend, so the WebSocket check's same-origin rule cannot admit them.
+        local _extra=""
+        local _o
+        IFS=',' read -ra _extra_origins <<< "${FRESH_EXTRA_CORS_ORIGINS:-}"
+        for _o in "${_extra_origins[@]}"; do
+          [ -n "$_o" ] && _extra+=",\"${_o}\""
+        done
         echo "    environment:"
-        echo "      - CORS_ORIGINS=[\"http://localhost:5173\",\"http://127.0.0.1:5173\",\"http://localhost:${_fe_port}\",\"http://127.0.0.1:${_fe_port}\"]"
+        echo "      - CORS_ORIGINS=[\"http://localhost:5173\",\"http://127.0.0.1:5173\",\"http://localhost:${_fe_port}\",\"http://127.0.0.1:${_fe_port}\"${_extra}]"
       fi
     done
   } > "$file"

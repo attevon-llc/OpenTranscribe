@@ -1,8 +1,3 @@
-/**
- * Deployment-owned transcription settings (`transcription.diarization_source`,
- * `transcription.advanced`): hidden in the panel, and left out of the save
- * payload so the request never tries to change a value the server ignores.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
@@ -18,7 +13,10 @@ vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 vi.mock('$lib/api/asrSettings', () => ({
-  ASRSettingsApi: { getStatus: vi.fn().mockResolvedValue({}) },
+  ASRSettingsApi: {
+    getStatus: vi.fn().mockResolvedValue({}),
+    getProviderDisplayName: (p: string) => p,
+  },
 }));
 
 const api = vi.hoisted(() => ({
@@ -32,7 +30,7 @@ vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
   return { ...actual, ...api };
 });
 
-import TranscriptionSettings from './TranscriptionSettings.svelte';
+import TranscriptionAccuracySettings from './TranscriptionAccuracySettings.svelte';
 import { capabilities, resetCapabilities } from '$stores/capabilities';
 
 const SETTINGS = {
@@ -64,26 +62,14 @@ function lock(caps: Record<string, boolean>) {
   });
 }
 
-async function renderLoaded() {
-  const result = render(TranscriptionSettings);
-  await waitFor(() =>
-    expect(result.container.querySelector('#llm-output-language')).not.toBeNull()
-  );
-  return result;
-}
-
-async function saveAfterLanguageChange(container: HTMLElement) {
-  const select = container.querySelector('#llm-output-language') as HTMLSelectElement;
-  await fireEvent.change(select, { target: { value: 'de' } });
-  await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
-  await waitFor(() => expect(api.updateTranscriptionSettings).toHaveBeenCalledOnce());
-  return api.updateTranscriptionSettings.mock.calls[0][0] as Record<string, unknown>;
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   api.getTranscriptionSettings.mockResolvedValue({ ...SETTINGS });
   api.getTranscriptionSystemDefaults.mockResolvedValue({
+    min_speakers: 1,
+    max_speakers: 20,
+    garbage_cleanup_threshold: 50,
+    diarization_source_default: 'provider',
     available_source_languages: { auto: 'Auto-detect', en: 'English' },
     available_llm_output_languages: { en: 'English', de: 'German' },
     common_languages: ['auto', 'en'],
@@ -92,27 +78,40 @@ beforeEach(() => {
 });
 
 afterEach(() => resetCapabilities());
+/**
+ * `transcription.advanced` is deployment-owned: the VAD and accuracy cards are hidden and
+ * their fields are left out of the save payload. Noise cleanup stays editable.
+ */
+async function renderLoaded() {
+  const result = render(TranscriptionAccuracySettings);
+  await waitFor(() => expect(result.container.querySelector('.btn-primary')).not.toBeNull());
+  return result;
+}
 
-describe('TranscriptionSettings deployment locks', () => {
-  it('shows the diarization source and Advanced block by default and saves them', async () => {
+async function saveAfterCleanupChange(container: HTMLElement) {
+  await fireEvent.input(container.querySelector('input[type="number"]') as HTMLInputElement, {
+    target: { value: '80' },
+  });
+  await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+  await waitFor(() => expect(api.updateTranscriptionSettings).toHaveBeenCalledOnce());
+  return api.updateTranscriptionSettings.mock.calls[0][0] as Record<string, unknown>;
+}
+
+describe('TranscriptionAccuracySettings deployment lock', () => {
+  it('shows the advanced cards by default and saves them', async () => {
     const { container } = await renderLoaded();
-    expect(container.querySelector('#diarization-source')).not.toBeNull();
-    expect(container.querySelector('.collapsible-header')).not.toBeNull();
-
-    const payload = await saveAfterLanguageChange(container);
-    expect(payload).toHaveProperty('diarization_source');
-    expect(payload).toHaveProperty('vad_threshold');
+    expect(container.querySelector('#vad-threshold')).not.toBeNull();
+    expect(await saveAfterCleanupChange(container)).toHaveProperty('vad_threshold');
   });
 
   it('hides and does not send locked settings', async () => {
-    lock({ 'transcription.diarization_source': false, 'transcription.advanced': false });
+    lock({ 'transcription.advanced': false });
     const { container } = await renderLoaded();
-    expect(container.querySelector('#diarization-source')).toBeNull();
-    expect(container.querySelector('.collapsible-header')).toBeNull();
+    expect(container.querySelector('#vad-threshold')).toBeNull();
+    expect(container.querySelector('#repetition-penalty')).toBeNull();
 
-    const payload = await saveAfterLanguageChange(container);
-    expect(payload.llm_output_language).toBe('de');
-    expect(payload).not.toHaveProperty('diarization_source');
+    const payload = await saveAfterCleanupChange(container);
+    expect(payload.garbage_cleanup_threshold).toBe(80);
     for (const key of [
       'vad_threshold',
       'vad_min_silence_ms',

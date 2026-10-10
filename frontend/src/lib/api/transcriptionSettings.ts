@@ -146,11 +146,19 @@ export async function updateTranscriptionSettings(
   return response.data;
 }
 
+/** The field groups the backend can reset independently (`?group=`). */
+export type TranscriptionSettingsGroup = 'language' | 'accuracy' | 'speakers';
+
 /**
- * Reset transcription settings to system defaults
+ * Reset transcription settings to system defaults. With a group, only that
+ * group's fields are reset; without one, every field is.
  */
-export async function resetTranscriptionSettings(): Promise<TranscriptionSettingsResetResponse> {
-  const response = await axiosInstance.delete('/user-settings/transcription');
+export async function resetTranscriptionSettings(
+  group?: TranscriptionSettingsGroup
+): Promise<TranscriptionSettingsResetResponse> {
+  const response = group
+    ? await axiosInstance.delete('/user-settings/transcription', { params: { group } })
+    : await axiosInstance.delete('/user-settings/transcription');
   return response.data;
 }
 
@@ -160,30 +168,6 @@ export async function resetTranscriptionSettings(): Promise<TranscriptionSetting
 export async function getTranscriptionSystemDefaults(): Promise<TranscriptionSystemDefaults> {
   const response = await axiosInstance.get('/user-settings/transcription/system-defaults');
   return response.data;
-}
-
-/**
- * Helper to get display label for speaker prompt behavior
- */
-export function getSpeakerBehaviorLabel(behavior: SpeakerPromptBehavior): string {
-  const labels: Record<SpeakerPromptBehavior, string> = {
-    always_prompt: 'Always show speaker settings',
-    use_defaults: 'Use system defaults',
-    use_custom: 'Use my saved settings',
-  };
-  return labels[behavior] || behavior;
-}
-
-/**
- * Helper to get description for speaker prompt behavior
- */
-export function getSpeakerBehaviorDescription(behavior: SpeakerPromptBehavior): string {
-  const descriptions: Record<SpeakerPromptBehavior, string> = {
-    always_prompt: 'Show advanced speaker settings during upload and reprocess',
-    use_defaults: 'Skip settings and use system MIN/MAX_SPEAKERS values',
-    use_custom: 'Automatically use your saved min/max speaker values',
-  };
-  return descriptions[behavior] || '';
 }
 
 /**

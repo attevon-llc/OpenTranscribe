@@ -12,6 +12,8 @@
   import SummaryResultCard from '$components/search/SummaryResultCard.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
+  import FilterPanelToggle from '$components/ui/FilterPanelToggle.svelte';
+  import FilterChipButton from '$components/ui/FilterChipButton.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
@@ -41,7 +43,6 @@
   let searchController: AbortController | null = null;
 
   // FilterSidebar state
-  let filterSearchQuery = '';
   let filterSelectedTags: string[] = [];
   let filterSelectedSpeakers: string[] = [];
   let filterDateRange: { from: Date | null; to: Date | null } = { from: null, to: null };
@@ -62,8 +63,7 @@
     filterSelectedLanguage !== null ||
     filterDateRange.from !== null ||
     filterDurationRange.min !== null || filterDurationRange.max !== null ||
-    filterFileSizeRange.min !== null || filterFileSizeRange.max !== null ||
-    filterSearchQuery !== '';
+    filterFileSizeRange.min !== null || filterFileSizeRange.max !== null;
 
   // Sticky preview player state
   let previewData: { fileUuid: string; title: string; startTime: number; speaker: string; contentType: string } | null = null;
@@ -171,7 +171,6 @@
     filterSelectedLanguage = $searchStore.selectedLanguage;
     filterDurationRange = { ...$searchStore.durationRange };
     filterFileSizeRange = { ...$searchStore.fileSizeRange };
-    filterSearchQuery = $searchStore.titleFilter;
     if ($searchStore.dateFrom || $searchStore.dateTo) {
       filterDateRange = {
         from: $searchStore.dateFrom ? new Date($searchStore.dateFrom + 'T00:00:00') : null,
@@ -230,7 +229,6 @@
       tags: $searchStore.selectedTags, dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
       fileTypes: $searchStore.selectedFileTypes, collectionId: $searchStore.selectedCollectionId,
       durationRange: $searchStore.durationRange, fileSizeRange: $searchStore.fileSizeRange,
-      titleFilter: $searchStore.titleFilter,
     });
   }
 
@@ -308,9 +306,6 @@
       }
       if ($searchStore.fileSizeRange.max !== null) {
         apiParams.max_file_size = $searchStore.fileSizeRange.max * 1024 * 1024; // MB to bytes
-      }
-      if ($searchStore.titleFilter) {
-        apiParams.title_filter = $searchStore.titleFilter;
       }
 
       const res = await axiosInstance.get('/search', {
@@ -442,9 +437,6 @@
     if (detail.statuses !== undefined) {
       searchStore.setStatuses(detail.statuses);
     }
-    if (detail.search !== undefined) {
-      searchStore.setTitleFilter(detail.search);
-    }
 
     // Re-run search with new filters
     if ($searchStore.query) {
@@ -462,8 +454,6 @@
     searchStore.setDurationRange({ min: null, max: null });
     searchStore.setFileSizeRange({ min: null, max: null });
     searchStore.setStatuses([]);
-    searchStore.setTitleFilter('');
-    filterSearchQuery = '';
     filterSelectedTags = [];
     filterSelectedSpeakers = [];
     filterDateRange = { from: null, to: null };
@@ -591,26 +581,14 @@
   <!-- Left Sidebar: Filters (Sticky) -->
   <div class="filter-sidebar {showFilters ? 'show' : ''}" class:animate={sidebarMounted}>
     <div class="filter-toggle-container">
-      <button
-        class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
-        on:click={() => (showFilters = !showFilters)}
-        title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
-          <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
-          <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
-          <line x1="17" y1="16" x2="23" y2="16"></line>
-        </svg>
-      </button>
+      <FilterPanelToggle expanded={showFilters} on:click={() => (showFilters = !showFilters)} />
     </div>
 
     <!-- Filter Content (hidden when collapsed) -->
     {#if showFilters}
       <div class="filter-content">
         <FilterSidebar
-          bind:searchQuery={filterSearchQuery}
+          showSearchField={false}
           bind:selectedTags={filterSelectedTags}
           bind:selectedSpeakers={filterSelectedSpeakers}
           bind:dateRange={filterDateRange}
@@ -665,18 +643,14 @@
             aria-describedby="search-source-counts-hint"
           >
             {#each SEARCH_SOURCES as source (source)}
-              <button
-                type="button"
-                class="source-btn"
-                class:active={$searchStore.selectedSources.includes(source)}
-                aria-pressed={$searchStore.selectedSources.includes(source)}
+              <FilterChipButton
+                selected={$searchStore.selectedSources.includes(source)}
+                showCheck
+                count={$searchStore.sourceCounts[source] ?? null}
                 on:click={() => handleToggleSource(source)}
               >
                 {sourceLabel(source)}
-                {#if $searchStore.sourceCounts[source] !== undefined && $searchStore.sourceCounts[source] !== null}
-                  <span class="source-count">({$searchStore.sourceCounts[source]})</span>
-                {/if}
-              </button>
+              </FilterChipButton>
             {/each}
           </div>
           <p id="search-source-counts-hint" class="visually-hidden">
@@ -950,46 +924,6 @@
     padding: 0.5rem 1rem 0;
   }
 
-  .filter-toggle-btn {
-    width: 100%;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
-  }
-
-  .filter-toggle-btn:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .filter-toggle-btn:active {
-    transform: scale(0.98);
-  }
-
-  .filter-toggle-btn svg {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  .filter-toggle-btn.collapsed {
-    justify-content: center;
-    padding: 0.6rem;
-    width: auto;
-  }
-
   .filter-content {
     flex: 1;
     overflow-y: auto;
@@ -1148,12 +1082,9 @@
      pills — `role="group"` + `aria-pressed`, NOT `tablist`/`tab`/`aria-selected`,
      which are single-select by definition. */
   .source-toggle {
-    display: inline-flex;
+    display: flex;
     flex-wrap: wrap;
-    background: var(--hover-color, #f1f5f9);
-    border-radius: 8px;
-    padding: 2px;
-    gap: 2px;
+    gap: 0.5rem;
     margin-top: 0.5rem;
   }
 
@@ -1167,39 +1098,6 @@
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
-  }
-
-  .source-btn {
-    padding: 0.375rem 0.875rem;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--text-secondary, #6b7280);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-
-  .source-btn .source-count {
-    opacity: 0.75;
-    margin-inline-start: 0.25em;
-  }
-
-  .source-btn.active {
-    background: var(--primary-color, #4f46e5);
-    color: white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  }
-
-  .source-btn:hover:not(.active) {
-    color: var(--text-color, #374151);
-  }
-
-  .source-btn:focus-visible {
-    outline: 2px solid var(--primary-color, #4f46e5);
-    outline-offset: 1px;
   }
 
   .section-heading {

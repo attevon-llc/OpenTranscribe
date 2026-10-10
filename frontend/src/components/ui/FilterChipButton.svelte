@@ -18,6 +18,8 @@
   export let title: string | undefined = undefined;
   /** Overrides the default `aria-pressed={selected}` when the control isn't a pure toggle. */
   export let ariaPressed: boolean | undefined = undefined;
+  /** Shows a leading check while selected, so on/off never relies on colour alone. */
+  export let showCheck = false;
 
   let className = '';
   export { className as class };
@@ -32,6 +34,20 @@
   {...$$restProps}
   on:click
 >
+  {#if showCheck && selected}
+    <svg
+      class="filter-chip-check"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  {/if}
   <slot name="icon" />
   <span class="filter-chip-label"><slot /></span>
   {#if count !== null && count !== undefined}

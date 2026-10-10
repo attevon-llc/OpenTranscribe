@@ -63,14 +63,11 @@
    * `showSearchField={false}` — the search UI simply doesn't belong in the
    * sidebar there any more.
    *
-   * `/search` (`routes/search/+page.svelte`) is a DIFFERENT consumer of this
-   * same component: it binds `searchQuery` as its own "filter results by
-   * title" facet, independent of the page's main search query, and keeps this
-   * section visible (`showSearchField` defaults to `true`). The `searchQuery`
-   * prop, its debounce watcher, and the `search` field in the `filter` event
-   * payload are NOT removed — only the sidebar section that lets the GALLERY
-   * user type into it is hidden, and `searchQuery` there is now driven by the
-   * toolbar's own state instead of a bound local input.
+   * `/search` renders it with `showSearchField={false}` too (issue #1197): the
+   * page has its own query box plus the title/speaker/summary source chips, so
+   * a second filename box in the sidebar was a confusing duplicate. The
+   * `searchQuery` prop, its debounce watcher, and the `search` field in the
+   * `filter` event payload remain for any consumer that opts back in.
    */
   export let showSearchField = true;
 

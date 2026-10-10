@@ -77,7 +77,6 @@ search::light::aria-input-field-name::4        # BACKLOG #785 — same filter/so
 search::dark::aria-input-field-name::4         # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 search::light::color-contrast::1               # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
 search::light::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute
-search::dark::label-title-only::1              # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
 
 file-detail::light::label-title-only::1        # BACKLOG #785 — a control's only accessible name comes from a title attribute

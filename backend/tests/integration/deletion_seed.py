@@ -72,6 +72,10 @@ class SeededFile:
     speaker_uuids: list[str] = field(default_factory=list)
     cluster_id: int | None = None
     cluster_uuid: str | None = None
+    # Clusters this file's teardown must also remove: shared clusters seeded by
+    # ``seed_shared_cluster`` that outlive a sibling file's deletion on purpose.
+    extra_cluster_ids: list[int] = field(default_factory=list)
+    extra_cluster_uuids: list[str] = field(default_factory=list)
     profile_id: int | None = None
     profile_uuid: str | None = None
     tag_id: int | None = None
@@ -80,6 +84,16 @@ class SeededFile:
     usage_event_id: str | None = None
     objects: list[tuple[str, str]] = field(default_factory=list)  # (bucket, key)
     redis_keys: list[tuple[int, str]] = field(default_factory=list)  # (db, key)
+
+
+@dataclass
+class SharedCluster:
+    """A cluster holding one speaker from each of two seeded files, and its centroid."""
+
+    cluster_id: int
+    cluster_uuid: str
+    # speaker uuid -> the voiceprint stored for it in OpenSearch
+    voiceprints: dict[str, list[float]]
 
 
 @dataclass
@@ -166,6 +180,7 @@ def seed_complete_file(  # noqa: C901 — one linear recipe; splitting it hides 
     register: Callable[[SeededFile], None],
     status: str = "completed",
     with_profile: bool = True,
+    voiceprint_offset: int = 0,
 ) -> SeededFile:
     """Write one completed file into Postgres, OpenSearch, MinIO and Redis.
 
@@ -179,6 +194,9 @@ def seed_complete_file(  # noqa: C901 — one linear recipe; splitting it hides 
             that was transcribed and then put back in the queue (retry / reprocess /
             recovery all do this) while every derived copy still exists.
         with_profile: Also create a speaker profile (blacklist target + embedding).
+        voiceprint_offset: Shifts the speakers' synthetic voiceprints, so two seeded
+            files do not share identical vectors (a centroid over identical members
+            equals each member and could not tell the average from one of them).
 
     Returns:
         A :class:`SeededFile` naming everything written.
@@ -434,7 +452,7 @@ def seed_complete_file(  # noqa: C901 — one linear recipe; splitting it hides 
             speaker_uuid=suuid,
             user_id=owner_id,
             name=f"SPEAKER_0{n}",
-            embedding=_unit_vector(dim, n + 1),
+            embedding=_unit_vector(dim, n + 1 + voiceprint_offset),
             media_file_id=fid,
         )
     if not store_cluster_embedding(
@@ -507,3 +525,55 @@ def seed_citing_chat(db: Session, owner_id: int, cited: list[SeededFile]) -> See
     return SeededChat(
         conversation_id=int(row[0]), message_id=int(row[1]), foreign_uuid=foreign_uuid
     )
+
+
+def seed_shared_cluster(db: Session, a: SeededFile, b: SeededFile) -> SharedCluster:
+    """One cluster over ``a``'s and ``b``'s first speakers, centroid = the mean voiceprint.
+
+    The centroid is built exactly as production builds it (L2-normalised equal-weight mean
+    of the members' stored voiceprints), so it differs from either member's own voiceprint
+    — which is what lets a test tell "still averaged with the deleted file" from "rebuilt
+    from the survivor". Registered on ``b`` for teardown, because ``a`` is the file the
+    tests delete and ``b`` is the one whose cluster must outlive it.
+    """
+    import numpy as np
+
+    from app.services.opensearch_service import get_speaker_embedding
+    from app.services.opensearch_service import store_cluster_embedding
+
+    assert a.owner_id == b.owner_id, "a cluster never spans owners"
+    members = [(a.speaker_ids[0], a.speaker_uuids[0]), (b.speaker_ids[0], b.speaker_uuids[0])]
+    voiceprints = {}
+    for _sid, suuid in members:
+        vector = get_speaker_embedding(suuid)
+        assert vector is not None, f"seeded voiceprint for {suuid} is not readable"
+        voiceprints[suuid] = vector
+
+    row = db.execute(
+        text(
+            "INSERT INTO speaker_cluster (uuid, user_id, label, member_count, "
+            "representative_speaker_id) VALUES (gen_random_uuid(), :uid, :label, 2, :rep) "
+            "RETURNING id, uuid"
+        ),
+        {"uid": a.owner_id, "label": f"{DELRES_PREFIX}{b.tag}-shared", "rep": members[0][0]},
+    ).one()
+    cluster = SharedCluster(int(row[0]), str(row[1]), voiceprints)
+    b.extra_cluster_ids.append(cluster.cluster_id)
+    b.extra_cluster_uuids.append(cluster.cluster_uuid)
+    for sid, _suuid in members:
+        db.execute(
+            text(
+                "INSERT INTO speaker_cluster_member (uuid, cluster_id, speaker_id, confidence) "
+                "VALUES (gen_random_uuid(), :cl, :sid, 0.9)"
+            ),
+            {"cl": cluster.cluster_id, "sid": sid},
+        )
+    db.commit()
+
+    mean = np.mean(np.array(list(voiceprints.values()), dtype=np.float32), axis=0)
+    mean = mean / np.linalg.norm(mean)
+    if not store_cluster_embedding(
+        cluster.cluster_uuid, a.owner_id, mean.tolist(), label=f"{DELRES_PREFIX}{b.tag}-shared"
+    ):
+        raise RuntimeError("seed: shared cluster centroid was not stored")
+    return cluster

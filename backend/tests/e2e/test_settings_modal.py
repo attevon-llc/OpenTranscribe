@@ -48,7 +48,8 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: 
 # entry reading "Download" matched nothing while the >= 3 floor hid it (#861).
 SECTIONS_TO_SWITCH = [
     ("Profile & Security", "Profile"),
-    ("Transcription Settings", "Transcription"),
+    ("Transcription", "Transcription"),
+    ("Speaker Identification", "Speaker Identification"),
     ("Recording Settings", "Recording"),
     ("URL Import Quality", "URL Import Quality"),
 ]
@@ -201,7 +202,7 @@ class TestSettingsModal:
             app_page.wait_for_timeout(300)
             switched += 1
 
-        assert switched >= 4, f"Expected to switch through all 4 settings sections, did {switched}"
+        assert switched >= 5, f"Expected to switch through all 5 settings sections, did {switched}"
 
         unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors while switching sections: {unexpected}"
@@ -251,16 +252,59 @@ class TestProfileSection:
 
 
 class TestTranscriptionSection:
-    """Transcription Settings section (issue #123 Phase 3) — read-only checks."""
+    """Speaker Identification > Speaker Detection (issue #123 Phase 3) — read-only checks.
+
+    The speaker-count controls used to live in "Transcription Settings"; they moved to the
+    Speaker Identification section's first tab. Their element ids did not change.
+    """
 
     def test_transcription_controls_render(self, app_page: Page) -> None:
         """Speaker-behavior selector renders; min/max inputs when applicable."""
-        _open_section(app_page, "Transcription Settings")
+        _open_section(app_page, "Speaker Identification")
         expect(app_page.locator("#speaker-behavior")).to_be_visible(timeout=8000)
         # min/max inputs render only for the defaults/saved behaviors
         if app_page.locator("#min-speakers").count():
             expect(app_page.locator("#min-speakers")).to_be_visible()
             expect(app_page.locator("#max-speakers")).to_be_visible()
+
+
+class TestTranscriptionSpeakerTabs:
+    """The Transcription and Speaker Identification sections are tabbed (read-only checks).
+
+    Never clicks Save or Reset: this class must not change any dev data.
+    """
+
+    def test_transcription_tabs_render_and_follow_arrow_keys(self, app_page: Page) -> None:
+        """Four tabs by id; ArrowRight moves selection and focus to the next tab."""
+        _open_section(app_page, "Transcription")
+        for tab_id in ("tx-language", "tx-provider", "tx-vocabulary", "tx-accuracy"):
+            expect(app_page.locator(f"#tab-{tab_id}")).to_be_visible(timeout=8000)
+        first = app_page.locator("#tab-tx-language")
+        expect(first).to_have_attribute("aria-selected", "true")
+        first.focus()
+        first.press("ArrowRight")
+        expect(app_page.locator("#tab-tx-provider")).to_have_attribute("aria-selected", "true")
+        expect(app_page.locator("#tab-tx-provider")).to_be_focused()
+
+    def test_speaker_identification_tabs_and_engine(self, app_page: Page) -> None:
+        """The super admin sees all four tabs, and Speaker Engine shows the backend select."""
+        _open_section(app_page, "Speaker Identification")
+        for tab_id in ("spk-detection", "spk-attributes", "spk-engine", "spk-maintenance"):
+            expect(app_page.locator(f"#tab-{tab_id}")).to_be_visible(timeout=8000)
+        expect(app_page.locator("#tab-spk-detection")).to_have_attribute("aria-selected", "true")
+
+        app_page.locator("#tab-spk-engine").click()
+        expect(app_page.locator("#diarizer-backend")).to_be_visible(timeout=8000)
+
+    def test_tab_ids_are_the_aliases_old_section_ids_open(self, app_page: Page) -> None:
+        """Provider & Model and Vocabulary tabs render their panels (old ids: asr-provider, custom-vocabulary)."""
+        _open_section(app_page, "Transcription")
+        app_page.locator("#tab-tx-provider").click()
+        expect(app_page.locator("#tabpanel-tx-provider .asr-settings")).to_be_visible(timeout=8000)
+        app_page.locator("#tab-tx-vocabulary").click()
+        expect(app_page.locator("#tabpanel-tx-vocabulary .vocab-settings")).to_be_visible(
+            timeout=8000
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -317,12 +361,12 @@ class TestTranscriptionSettingsPersistence:
         new_behavior = next(v for v in SPEAKER_BEHAVIOR_VALUES if v != original_behavior)
 
         try:
-            _open_section(app_page, "Transcription Settings")
+            _open_section(app_page, "Speaker Identification")
             select = app_page.locator("#speaker-behavior")
             expect(select).to_be_visible(timeout=8000)
             select.select_option(new_behavior)
 
-            save_btn = app_page.locator(".transcription-settings .btn-primary")
+            save_btn = app_page.locator(".speaker-detection-settings .btn-primary")
             expect(save_btn).to_be_enabled(timeout=5000)
             save_btn.click()
             expect(app_page.locator(".toast.toast-success")).to_be_visible(timeout=10000)
@@ -331,7 +375,7 @@ class TestTranscriptionSettingsPersistence:
             # in-memory Svelte reactivity.
             app_page.reload()
             app_page.wait_for_selector(".user-button", timeout=30000)
-            _open_section(app_page, "Transcription Settings")
+            _open_section(app_page, "Speaker Identification")
             reloaded_select = app_page.locator("#speaker-behavior")
             expect(reloaded_select).to_be_visible(timeout=8000)
             expect(reloaded_select).to_have_value(new_behavior, timeout=8000)

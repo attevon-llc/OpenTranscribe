@@ -302,6 +302,9 @@
             <span class="toggle-switch"></span>
             <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
           </label>
+          <p class="field-hint scope-note" data-testid="recheck-scope">
+            {$t('settings.engineSettings.boundaryAcousticScope')}
+          </p>
         </div>
       </div>
 
@@ -339,6 +342,9 @@
             disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
           />
           <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticCosineMarginHelp')}</p>
+          <p class="field-hint scope-note" data-testid="recheck-scope">
+            {$t('settings.engineSettings.boundaryAcousticScope')}
+          </p>
         </div>
       </div>
 
@@ -376,6 +382,9 @@
             disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
           />
           <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}</p>
+          <p class="field-hint scope-note" data-testid="recheck-scope">
+            {$t('settings.engineSettings.boundaryAcousticScope')}
+          </p>
         </div>
       </div>
 
@@ -399,9 +408,10 @@
 </div>
 
 <style>
+  /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
+     beneath left-aligned tabs reads as misaligned. */
   .engine-settings {
     max-width: 800px;
-    margin: 0 auto;
   }
 
   .section-title {

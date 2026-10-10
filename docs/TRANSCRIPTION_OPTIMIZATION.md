@@ -155,10 +155,10 @@ DEPLOYMENT_MODE=lite
 
 ### Admin-Pinned Model
 
-The active Whisper model is **admin-controlled** and shared across all users. An admin sets the model via **Settings → ASR → Local Model** in the UI. The model is loaded once into GPU VRAM at worker startup and remains warm between tasks (GPU pool type: `threads`, single warm model shared by all concurrent tasks).
+The active Whisper model is **admin-controlled** and shared across all users. An admin sets the model via **Settings → Transcription → Provider & Model** in the UI. The model is loaded once into GPU VRAM at worker startup and remains warm between tasks (GPU pool type: `threads`, single warm model shared by all concurrent tasks).
 
 To switch models:
-1. Admin selects the new model in Settings → ASR → Local Model
+1. Admin selects the new model in Settings → Transcription → Provider & Model
 2. Click **Restart Worker** — the worker drains in-flight tasks, then restarts
 3. New model loads on the next task (or immediately if pre-loading is enabled)
 

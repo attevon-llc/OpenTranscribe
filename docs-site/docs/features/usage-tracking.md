@@ -95,7 +95,7 @@ To reduce it:
 
 - **Scope tightly.** Fewer recordings means fewer, better excerpts.
 - **Start a new chat when the topic changes** — long threads carry history forward.
-- **Lower "Excerpts per answer"** in **Settings → Chat & RAG** (administrators).
+- **Lower "Excerpts per answer"** in **Settings → Chat → Advanced** (administrators).
 - **Turn off "Use my transcripts"** for questions that aren't about your
   recordings; no retrieval happens, so only your question is sent.
 
@@ -104,5 +104,5 @@ See [AI Chat](./rag-chat.md#chatting-efficiently) for the fuller version.
 ## Limits
 
 Administrators can cap per-user messages per hour and concurrent replies in
-**Settings → Chat & RAG**. These bound request *volume*; the excerpt settings
+**Settings → Chat → Advanced**. These bound request *volume*; the excerpt settings
 above bound the tokens each request costs.

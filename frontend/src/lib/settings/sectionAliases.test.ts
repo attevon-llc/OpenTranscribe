@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { SECTION_ALIASES, initialTabFor, sidebarRowFor } from './sectionAliases';
+import {
+  SECTION_ALIASES,
+  sidebarRowFor,
+  speakerIdTabFor,
+  transcriptionTabFor,
+} from './sectionAliases';
 
 describe('SECTION_ALIASES', () => {
   it.each([
@@ -10,7 +15,8 @@ describe('SECTION_ALIASES', () => {
   ] as const)('%s opens %s > %s', (id, row, tab) => {
     expect(SECTION_ALIASES[id]).toEqual({ row, tab });
     expect(sidebarRowFor(id)).toBe(row);
-    expect(initialTabFor(id)).toBe(tab);
+    expect((row === 'transcription' ? transcriptionTabFor : speakerIdTabFor)(id)).toBe(tab);
+    expect((row === 'transcription' ? speakerIdTabFor : transcriptionTabFor)(id)).toBeNull();
   });
 });
 
@@ -28,14 +34,18 @@ describe('sidebarRowFor', () => {
   });
 });
 
-describe('initialTabFor', () => {
-  it('is null for a row id, so the shell default applies', () => {
-    expect(initialTabFor('transcription')).toBeNull();
-    expect(initialTabFor('speaker-identification')).toBeNull();
+describe('transcriptionTabFor / speakerIdTabFor', () => {
+  it('are null for a row id, so the shell default applies', () => {
+    for (const fn of [transcriptionTabFor, speakerIdTabFor]) {
+      expect(fn('transcription')).toBeNull();
+      expect(fn('speaker-identification')).toBeNull();
+    }
   });
 
-  it('is null for a row-only alias and for ordinary ids', () => {
-    expect(initialTabFor('redaction-policy')).toBeNull();
-    expect(initialTabFor('profile')).toBeNull();
+  it('are null for a row-only alias and for ordinary ids', () => {
+    for (const fn of [transcriptionTabFor, speakerIdTabFor]) {
+      expect(fn('redaction-policy')).toBeNull();
+      expect(fn('profile')).toBeNull();
+    }
   });
 });

@@ -117,7 +117,7 @@ Maximum file size: **4GB**
 - **Translation Toggle**: Choose to keep original language or translate to English
 - **Word-Level Timestamps**: ~42 languages support word-level alignment (others fall back to segment-level)
 
-Configure language settings in: **Settings → Transcription → Language Settings**
+Configure language settings in: **Settings → Transcription → Language**
 
 **Note:** English transcription quality is best. Other languages work but accuracy varies.
 
@@ -137,7 +137,7 @@ Configure language settings in: **Settings → Transcription → Language Settin
 - Russian (\u0420\u0443\u0441\u0441\u043a\u0438\u0439)
 - Chinese (\u4e2d\u6587)
 
-Change the UI language in: **Settings → Language**
+Change the UI language in: **Settings → Profile & Security** (Language)
 
 Want to contribute a translation? Submit a PR with a new locale file!
 
@@ -223,7 +223,7 @@ Yes! AI summaries can be generated in **12 languages** (`LLM_OUTPUT_LANGUAGES`,
 - Italian, Portuguese, Dutch, Russian
 - Chinese, Japanese, Korean, Arabic
 
-Configure in: **Settings → Transcription → LLM Output Language**
+Configure in: **Settings → Transcription → Language** (*Language for AI features*)
 
 The LLM will generate the summary in your chosen language regardless of the original audio language.
 
@@ -308,7 +308,7 @@ Yes! Admins can configure **file retention policies** to automatically clean up 
 
 ### How can I improve AI summary quality for my organization?
 
-Configure **Organization Context** in **Settings → Transcription**. This lets you provide background information about your organization — such as its mission, common terminology, and typical meeting types. The LLM uses this context when generating summaries, resulting in more relevant and accurate output tailored to your specific domain.
+Configure **Organization Context** in **Settings → Organization Context**. This lets you provide background information about your organization — such as its mission, common terminology, and typical meeting types. The LLM uses this context when generating summaries, resulting in more relevant and accurate output tailored to your specific domain.
 
 ### Can I switch between grid and list view?
 

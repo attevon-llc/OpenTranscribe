@@ -71,7 +71,7 @@ Create groups to organize team members for easier sharing:
 
 Shared collections appear in recipients' collection lists. **Speaker profiles** associated with files in the collection are automatically shared with recipients, enabling cross-collection speaker recognition.
 
-**Shared Configs and Prompts**: When you share a collection, you can also share the custom AI prompts and configuration presets associated with it. Recipients can use these shared prompts when generating summaries for files in that collection. Prompt sharing is managed separately from collection sharing — see Settings → AI Prompts to share individual prompts with users or groups without sharing an entire collection.
+**Shared Configs and Prompts**: When you share a collection, you can also share the custom AI prompts and configuration presets associated with it. Recipients can use these shared prompts when generating summaries for files in that collection. Prompt sharing is managed separately from collection sharing — see Settings → AI Summarization Prompts to share individual prompts with users or groups without sharing an entire collection.
 
 ### Removing Access
 

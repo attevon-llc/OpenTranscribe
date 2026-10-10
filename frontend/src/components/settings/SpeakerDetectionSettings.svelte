@@ -12,12 +12,15 @@
     type TranscriptionSystemDefaults
   } from '$lib/api/transcriptionSettings';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
+  import { getErrorStatus } from '$lib/utils/apiError';
+  import { pyannoteSelectionErrorKey } from '$lib/settings/pyannoteCredential';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import Spinner from '../ui/Spinner.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import InfoTip from './transcription/InfoTip.svelte';
   import FormActions from './transcription/FormActions.svelte';
+  import PyannoteCredentialForm from './PyannoteCredentialForm.svelte';
   import './transcription/formLayout.css';
   import './transcription/formControls.css';
 
@@ -34,6 +37,8 @@
 
   // Deployment-owned: hidden here, and the server ignores writes to it.
   $: diarizationSourceEnabled = isCapabilityEnabled($capabilities, 'transcription.diarization_source');
+  // The key routes 404 unless the deployment lets users bring their own provider keys.
+  $: pyannoteKeyEnabled = isCapabilityEnabled($capabilities, 'asr.user_providers');
 
   let systemDefaults: TranscriptionSystemDefaults | null = null;
   let loading = true;
@@ -153,9 +158,22 @@
       dispatch('save');
     } catch (err) {
       console.error('Failed to save transcription settings:', err);
-      toastStore.error($t('settings.speakerIdentification.saveFailed'));
+      // 409: the server refuses the pyannote.ai source until a key is saved.
+      const keyError = pyannoteSelectionErrorKey(getErrorStatus(err), diarizationSource);
+      toastStore.error($t(keyError ?? 'settings.speakerIdentification.saveFailed'));
     } finally {
       saving = false;
+    }
+  }
+
+  // Removing the key can switch the saved source back; re-read only the source so unsaved
+  // edits to the speaker range survive.
+  async function reloadSource() {
+    try {
+      const settings = await getTranscriptionSettings();
+      diarizationSource = originalDiarizationSource = settings.diarization_source ?? 'provider';
+    } catch (err) {
+      console.error('Failed to reload the speaker detection source:', err);
     }
   }
 
@@ -207,6 +225,13 @@
               <p class="field-desc hint-italic">
                 {$t('settings.speakerIdentification.source.pyannoteHint')}
               </p>
+            {/if}
+            {#if pyannoteKeyEnabled}
+              <PyannoteCredentialForm
+                {diarizationSource}
+                disabled={saving || resetting}
+                on:deleted={(e) => e.detail.sourceReverted && reloadSource()}
+              />
             {/if}
           </div>
         </SettingsCard>

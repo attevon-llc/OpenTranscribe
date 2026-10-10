@@ -94,3 +94,26 @@ describe('EngineSettings — diarizer_require_sidecar toggle', () => {
     );
   });
 });
+
+describe('EngineSettings — acoustic re-check scope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('says on each of the three re-check controls that it applies to local GPU transcription only', async () => {
+    get.mockResolvedValue({ data: makeSettings() });
+    const { container } = render(EngineSettings);
+    await screen.findByLabelText('settings.engineSettings.diarizerBackend');
+
+    const notes = Array.from(container.querySelectorAll('[data-testid="recheck-scope"]'));
+    expect(notes).toHaveLength(3);
+    for (const note of notes) {
+      expect(note.textContent?.trim()).toBe('settings.engineSettings.boundaryAcousticScope');
+    }
+    // each sits in the same form row as the control it qualifies
+    const rows = notes.map((n) => n.closest('.form-row'));
+    expect(rows[0]?.querySelector('#boundary-acoustic-recheck-input')).not.toBeNull();
+    expect(rows[1]?.querySelector('#boundary-acoustic-cosine-margin')).not.toBeNull();
+    expect(rows[2]?.querySelector('#boundary-acoustic-max-word-dur')).not.toBeNull();
+  });
+});

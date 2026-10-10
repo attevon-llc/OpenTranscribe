@@ -644,9 +644,10 @@
 />
 
 <style>
+  /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
+     beneath left-aligned tabs reads as misaligned. */
   .asr-settings {
     max-width: 800px;
-    margin: 0 auto;
   }
 
   .loading {

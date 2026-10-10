@@ -182,7 +182,7 @@ def test_a_centroid_that_can_be_neither_rebuilt_nor_erased_is_reported(
 
 
 def test_a_failed_cluster_enumeration_is_reported_not_swallowed(
-    db_session, normal_user, os_seams, monkeypatch
+    db_session, normal_user, os_seams, monkeypatch, caplog
 ):
     fa, _fb, sa, sb = _two_files(db_session, normal_user, os_seams)
     _cluster(db_session, normal_user, sa, sb)
@@ -195,8 +195,10 @@ def test_a_failed_cluster_enumeration_is_reported_not_swallowed(
     result = fcs.purge_media_file(db_session, fa)
 
     errors = [r["error"] for r in result["residual_errors"]]
-    assert errors and all("cluster table unreadable" in e for e in errors)
+    assert errors == ["could not enumerate the file's clusters"]
     assert {r["stage"] for r in result["residual_errors"]} == {"clusters"}
+    # The driver's text belongs in the log, never in a value that can reach a response or audit row.
+    assert "cluster table unreadable" in caplog.text
 
 
 def test_a_promoted_cluster_left_with_no_members_has_its_centroid_erased(

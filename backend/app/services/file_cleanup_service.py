@@ -773,8 +773,8 @@ def _refresh_surviving_centroids(
         logger.warning(f"Centroid refresh incomplete for file {file_uuid} at '{stage}': {err}")
         residual.append({"stage": stage, "file_uuid": file_uuid, "error": str(err)})
 
-    if plan.get("cluster_read_error"):
-        _fail("clusters", f"could not enumerate the file's clusters: {plan['cluster_read_error']}")
+    if plan.get("cluster_read_failed"):
+        _fail("clusters", "could not enumerate the file's clusters")
     cluster_uuids = list(plan.get("cluster_uuids") or [])
     if not cluster_uuids:
         return residual
@@ -900,7 +900,7 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
         "speaker_uuids": [],
         "speaker_read_error": None,
         "cluster_uuids": [],
-        "cluster_read_error": None,
+        "cluster_read_failed": False,
     }
     try:
         plan["speaker_uuids"] = [str(speaker.uuid) for speaker in list(file.speakers)]
@@ -908,8 +908,13 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
         plan["speaker_read_error"] = str(e)
     try:
         plan["cluster_uuids"] = _clusters_holding_file_speakers(db, file)
-    except Exception as e:  # noqa: BLE001 — a failed load is itself a miss
-        plan["cluster_read_error"] = str(e)
+    except Exception:  # noqa: BLE001 — a failed load is itself a miss
+        logger.warning(
+            "Could not enumerate the clusters holding file %s's speakers",
+            plan["file_uuid"],
+            exc_info=True,
+        )
+        plan["cluster_read_failed"] = True
     return plan
 
 

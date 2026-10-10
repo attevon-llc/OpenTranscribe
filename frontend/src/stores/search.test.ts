@@ -102,11 +102,6 @@ describe('page-resetting filter setters', () => {
       expected: { selectedStatuses: ['completed'] },
     },
     {
-      name: 'setTitleFilter',
-      apply: () => searchStore.setTitleFilter('foo'),
-      expected: { titleFilter: 'foo' },
-    },
-    {
       name: 'setFilters',
       apply: () => searchStore.setFilters({ query: 'bulk', selectedTags: ['x'] }),
       expected: { query: 'bulk', selectedTags: ['x'] },
@@ -206,14 +201,14 @@ describe('setPage', () => {
 describe('setFilters', () => {
   it('merges the given fields, leaving unrelated fields untouched', () => {
     searchStore.setSpeakers(['alice']);
-    searchStore.setTitleFilter('kickoff');
+    searchStore.setTags(['kickoff']);
 
     searchStore.setFilters({ query: 'bulk-update' });
 
     const state = get(searchStore);
     expect(state.query).toBe('bulk-update');
     expect(state.selectedSpeakers).toEqual(['alice']);
-    expect(state.titleFilter).toBe('kickoff');
+    expect(state.selectedTags).toEqual(['kickoff']);
   });
 });
 

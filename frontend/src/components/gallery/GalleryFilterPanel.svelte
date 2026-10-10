@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import { t } from '$stores/locale';
   import FilterSidebar from '$components/FilterSidebar.svelte';
+  import FilterPanelToggle from '$components/ui/FilterPanelToggle.svelte';
   import type { DurationRange, DateRange } from '$lib/types/media';
 
   export let showFilters: boolean;
@@ -55,29 +56,7 @@
        rotate()`, which is RTL-correct for free (a rotation has no
        handedness). -->
   <div class="filter-toggle-container">
-    <button
-      class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
-      on:click={toggleFilters}
-      aria-expanded={showFilters}
-      title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
-      aria-label={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="toggle-chevron"
-        class:rotated={showFilters}
-      >
-        <polyline points="9 18 15 12 9 6"></polyline>
-      </svg>
-    </button>
+    <FilterPanelToggle expanded={showFilters} on:click={toggleFilters} />
   </div>
 
   <!-- Filter Content (hidden when collapsed) -->
@@ -134,48 +113,6 @@
 
   .filter-sidebar.show .filter-toggle-container {
     padding: 0.5rem 1rem 0;
-  }
-
-  /* Compact square control, not the old 40px full-width button (#750 item 1). */
-  .filter-toggle-btn {
-    width: 32px;
-    height: 32px;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .filter-toggle-btn:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .filter-toggle-btn:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .filter-toggle-btn:active {
-    transform: scale(0.94);
-  }
-
-  .toggle-chevron {
-    flex-shrink: 0;
-    opacity: 0.8;
-    transition: transform 0.2s ease;
-  }
-
-  .toggle-chevron.rotated {
-    transform: rotate(180deg);
   }
 
   .filter-content {

@@ -109,7 +109,6 @@ export interface SearchState {
   durationRange: { min: number | null; max: number | null };
   fileSizeRange: { min: number | null; max: number | null };
   selectedStatuses: string[];
-  titleFilter: string;
   lastSearchParams: string;
   scrollPosition: number;
   // Issue #760: multi-select result sources, replacing the exclusive
@@ -148,7 +147,6 @@ const initialState: SearchState = {
   durationRange: { min: null, max: null },
   fileSizeRange: { min: null, max: null },
   selectedStatuses: [],
-  titleFilter: '',
   lastSearchParams: '',
   scrollPosition: 0,
   // Issue #760, default-selection decision: ALL FOUR sources on by default.
@@ -208,7 +206,6 @@ function createSearchStore() {
       update((s) => ({ ...s, fileSizeRange, page: 1 })),
     setStatuses: (selectedStatuses: string[]) =>
       update((s) => ({ ...s, selectedStatuses, page: 1 })),
-    setTitleFilter: (titleFilter: string) => update((s) => ({ ...s, titleFilter, page: 1 })),
     setFilters: (filters: Partial<SearchState>) => update((s) => ({ ...s, ...filters, page: 1 })),
     setLastSearchParams: (lastSearchParams: string) => update((s) => ({ ...s, lastSearchParams })),
     setScrollPosition: (scrollPosition: number) => update((s) => ({ ...s, scrollPosition })),

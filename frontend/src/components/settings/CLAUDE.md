@@ -106,6 +106,17 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   `...(isAdmin ? [...] : [])` around the whole group; a privileged row inside an **ungated**
   group carries the same spread on the row, so the group stays visible to everyone else.
 
+- **Tabbed sections decide their tabs from a pure helper, not inline.** Privacy & Redaction is ONE
+  sidebar row (`content-redaction`) over `PrivacyRedactionSettings`; `$lib/settings/privacyRedactionTabs`
+  returns the tabs per role (plain user: personal only, no tab strip; admin: policy tab present but
+  locked; super_admin: both). `redaction-policy` is NOT in `SECTION_MIN_ROLE` — it survives only as a
+  deep-link/search alias that opens the policy tab, and the tab-level lock is the same super_admin tier.
+  Watch Sources works the same way via `$lib/settings/watchSourcesTabs` (Sources for everyone; Email
+  Notifications and Global Settings for super_admin). Add a tab by extending the helper and its test.
+- `engine-settings` is labelled **Speech Processing** (it tunes ASR/diarization backends and boundary
+  correction) and sits in the Transcription group behind a row-level `isAdmin` spread, beside the ASR
+  provider; the section id is unchanged.
+
 ## Gotchas
 
 - **E2E-guarded selectors** in the shell: `.settings-modal`, `.settings-sidebar`,

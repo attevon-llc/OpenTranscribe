@@ -5,6 +5,8 @@
     /** Optional count/badge shown after the label. */
     badge?: string | number | null;
     disabled?: boolean;
+    /** Native tooltip; used to say why a tab is disabled. */
+    title?: string;
   }
 </script>
 
@@ -74,6 +76,7 @@
       aria-controls={`tabpanel-${tab.id}`}
       tabindex={tab.id === activeId ? 0 : -1}
       disabled={tab.disabled}
+      title={tab.title}
       on:click={() => select(tab.id)}
       on:keydown={(e) => onKeydown(e, i)}
     >

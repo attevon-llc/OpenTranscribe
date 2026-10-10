@@ -40,9 +40,8 @@
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
   import ASRSettings from '$components/settings/ASRSettings.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
-  import ContentRedactionSettings from '$components/settings/ContentRedactionSettings.svelte';
+  import PrivacyRedactionSettings from '$components/settings/PrivacyRedactionSettings.svelte';
   import ChatSettingsPanel from '$components/settings/ChatSettingsPanel.svelte';
-  import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
   import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
   import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
@@ -67,6 +66,7 @@
     type VisibleSection,
   } from '$lib/search/settingsSearchIndex';
   import type { FuzzyIndex } from '$lib/search/fuzzyMatcher';
+  import { privacyRedactionTabs, privacyRedactionVisible } from '$lib/settings/privacyRedactionTabs';
 
   // Import i18n
   import { t, locale } from '$stores/locale';
@@ -105,7 +105,10 @@
    * may open what: the sidebar, the mobile picker and the content router all read
    * it, so a nav entry can no longer disagree with what the panel renders.
    *
-   * Sections absent from the map are open to any signed-in user.
+   * Sections absent from the map are open to any signed-in user. `redaction-policy`
+   * is deliberately absent: it is now a tab of the Privacy & Redaction section (its id
+   * survives only as a deep-link alias), and `privacyRedactionTabs` gates that tab by
+   * the same super_admin tier.
    */
   const SECTION_MIN_ROLE: Partial<Record<SettingsSection, 'admin' | 'super_admin'>> = {
     // super_admin — deployment configuration (P4.3 moved these off the admin tier)
@@ -113,7 +116,6 @@
     'audit-logs': 'super_admin',
     backup: 'super_admin',
     'engine-settings': 'super_admin',
-    'redaction-policy': 'super_admin',
     // admin
     'admin-users': 'admin',
     'admin-task-health': 'admin',
@@ -275,6 +277,13 @@
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
+  $: privacyAccess = {
+    isAdmin,
+    isSuperAdmin,
+    userCap: capOn(capState, 'redaction.user'),
+    policyCap: capOn(capState, 'redaction.policy'),
+  };
+
   // The modal's default landing section is 'system-statistics' (self-host: a
   // reasonable dashboard for any signed-in user). The capabilities store is
   // fail-open until its fetch resolves (see stores/capabilities.ts) so on a
@@ -289,7 +298,9 @@
   $: effectiveActiveSection =
     activeSection === 'system-statistics' && capState.loaded && !capOn(capState, 'system.hardware_stats')
       ? 'profile'
-      : activeSection;
+      : activeSection === 'redaction-policy'
+        ? 'content-redaction' // alias: same sidebar row, policy tab
+        : activeSection;
 
   // Cloud-edition org-admin gating: the new billing/usage/team panels are only
   // surfaced when the backend marks their capability as enabled AND audience as
@@ -316,6 +327,8 @@
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
         { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
+        // One row, two tabs: the per-user preference and (admin) the policy floor that overrides it.
+        ...(privacyRedactionVisible(privacyAccess) ? [{ id: 'content-redaction' as SettingsSection, label: $t('settings.privacyRedaction.title'), icon: 'eye-off' }] : []),
         ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : [])
       ]
     },
@@ -324,6 +337,9 @@
       items: [
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' },
         { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic', cap: 'asr.user_providers' },
+        // Models/backends for ASR and speaker ID. super_admin, so a plain user never sees the
+        // row; an admin sees it locked (see sectionLocked), next to the ASR provider it tunes.
+        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' }] : []),
         { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
         { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
@@ -339,16 +355,6 @@
         // Org context is prompt material: OrganizationContextSettings persists
         // include_in_default_prompts / include_in_custom_prompts and nothing else reads it.
         { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' }
-      ]
-    },
-    {
-      // The user setting and the admin policy sit together on purpose: their labels
-      // are near-identical, and adjacency is what makes the padlock explain the
-      // difference instead of the two reading as duplicate rows apart.
-      title: $t('settings.sections.privacyRedaction'),
-      items: [
-        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
-        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield', cap: 'redaction.policy' }] : [])
       ]
     },
     {
@@ -382,7 +388,6 @@
         items: [
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount },
           { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
-          { id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' },
           { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
           // issue #576: abuse/DMCA takedown review queue. `admin.takedown` is
           // declared in the backend capability maps but gates the NAV ENTRY only —
@@ -436,11 +441,18 @@
   // limited to these so it never surfaces a section the user can't navigate to.
   // Locked entries are excluded on purpose: they stay discoverable in the sidebar
   // (greyed out, with a tooltip), but a search hit promises a usable destination.
-  $: visibleSections = sidebarSections.flatMap((section) =>
-    section.items
-      .filter((item) => !item.locked)
-      .map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
-  );
+  $: visibleSections = [
+    ...sidebarSections.flatMap((section) =>
+      section.items
+        .filter((item) => !item.locked)
+        .map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
+    ),
+    // The policy tab has no sidebar row of its own, but its settings stay searchable
+    // for exactly the users who can open it; the hit lands on that tab.
+    ...(privacyRedactionTabs(privacyAccess).some((tab) => tab.id === 'policy' && !tab.locked)
+      ? [{ id: 'redaction-policy', label: $t('settings.redactionPolicy.title') } as VisibleSection]
+      : []),
+  ];
 
   // Rebuild the fuzzy index only while the modal is open. `$locale` is referenced
   // so the index refreshes when the UI language changes (labels are localized).
@@ -1160,11 +1172,19 @@
             </div>
           {/if}
 
-          <!-- Content Redaction Section (per-user, all users) -->
-          {#if activeSection === 'content-redaction'}
+          <!-- Privacy & Redaction: per-user preference tab + admin policy tab.
+               'redaction-policy' is kept as a section id (settings search, deep links)
+               and opens the policy tab of this same panel. -->
+          {#if activeSection === 'content-redaction' || activeSection === 'redaction-policy'}
             <div class="content-section">
-              <h3 class="section-title">{$t('settings.contentRedaction.title')}</h3>
-              <ContentRedactionSettings />
+              <h3 class="section-title">{$t('settings.privacyRedaction.title')}</h3>
+              <PrivacyRedactionSettings
+                {isAdmin}
+                {isSuperAdmin}
+                userCap={privacyAccess.userCap}
+                policyCap={privacyAccess.policyCap}
+                initialTab={activeSection === 'redaction-policy' ? 'policy' : 'personal'}
+              />
             </div>
           {/if}
 
@@ -1179,14 +1199,6 @@
                 {isAdmin}
                 initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
               />
-            </div>
-          {/if}
-
-          <!-- Redaction Policy Section (admin governance) -->
-          {#if activeSection === 'redaction-policy'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.redactionPolicy.title')}</h3>
-              <RedactionPolicySettings />
             </div>
           {/if}
 

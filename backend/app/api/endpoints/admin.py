@@ -2691,25 +2691,68 @@ def admin_erase_user(
 
 @router.post("/data-integrity")
 def start_data_integrity_check(
+    request: Request,
+    force: bool = Query(
+        False,
+        description=(
+            "Override the per-index ratio guard (a sweep may otherwise delete at most "
+            "10% of an index). For reconciling a LARGE legitimate orphan set — after a "
+            "database restore or out-of-band row removal. Requires confirm=true."
+        ),
+    ),
+    confirm: bool = Query(False, description="Required with force=true."),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an OpenSearch orphan cleanup task.
 
     Scans all OpenSearch indices for documents referencing deleted files
     and removes them.
+
+    **Reconciling a large orphan set.** The sweep refuses (``refused: ratio_guard``)
+    to delete more than 10% of an index unasked, because that is what a database
+    restored EMPTY looks like from here. When the orphans are real, the operator path
+    is: ``GET /admin/data-integrity/counts`` (a dry run that names every orphaned
+    identifier per index in ``orphan_keys``), review it, then
+    ``POST /admin/data-integrity?force=true&confirm=true``. The forced run is
+    audit-logged (``admin.data_integrity.purge``). It can never delete the documents
+    of a file or speaker that exists: every candidate is re-checked against Postgres
+    after the index is read and before anything is deleted, and an EMPTY Postgres
+    side is refused outright, force or not.
     """
     from app.tasks.opensearch_integrity_task import get_integrity_status
     from app.tasks.opensearch_integrity_task import opensearch_orphan_cleanup_task
 
-    status = get_integrity_status()
-    if status.get("running"):
+    if force and not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "force=true overrides the orphan-sweep ratio guard and deletes index "
+                "documents deployment-wide. Review GET /admin/data-integrity/counts, then "
+                "retry with confirm=true."
+            ),
+        )
+
+    integrity = get_integrity_status()
+    if integrity.get("running"):
         return {"status": "already_running"}
+
+    if force:
+        client_ip, user_agent = _get_client_info(request)
+        audit_logger.log(
+            event_type=AuditEventType.ADMIN_DATA_INTEGRITY_PURGE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            details={"action": "forced_orphan_purge_requested"},
+        )
 
     # Pass the requester so progress reaches THEM. The task used to publish to a
     # hardcoded user_id=1, so an admin who was not account 1 triggered a sweep and
     # then waited forever while whoever held id 1 got the toasts (issue #431).
-    result = opensearch_orphan_cleanup_task.delay(user_id=int(current_user.id))
-    return {"status": "started", "task_id": str(result.id)}
+    result = opensearch_orphan_cleanup_task.delay(user_id=int(current_user.id), force=force)
+    return {"status": "started", "task_id": str(result.id), "force": force}
 
 
 @router.get("/data-integrity/status")

@@ -104,7 +104,7 @@ def test_starting_a_sweep_attributes_it_to_the_requesting_admin(
     body = response.json()
     assert body["status"] == "started"
     assert body["task_id"] == "stand-in-integrity-id"
-    assert integrity_seams.sweep.dispatches == [{"user_id": admin_user.id}]
+    assert integrity_seams.sweep.dispatches == [{"user_id": admin_user.id, "force": False}]
 
 
 def test_a_sweep_already_running_dispatches_nothing(client, admin_token_headers, integrity_seams):
@@ -121,6 +121,56 @@ def test_a_sweep_already_running_dispatches_nothing(client, admin_token_headers,
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"status": "already_running"}
     assert integrity_seams.sweep.dispatches == []
+
+
+def test_a_forced_sweep_without_confirm_is_refused_and_dispatches_nothing(
+    client, admin_token_headers, integrity_seams
+):
+    """``force`` overrides the ratio guard deployment-wide; one flag must not be enough.
+
+    Catches the double opt-in being dropped: a stray ``?force=true`` would queue a
+    sweep allowed to delete most of every index.
+    """
+    response = client.post(f"{DATA_INTEGRITY}?force=true", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "confirm=true" in response.json()["detail"]
+    assert integrity_seams.sweep.dispatches == []
+
+
+def test_a_confirmed_forced_sweep_dispatches_force_and_is_audited(
+    client, admin_token_headers, admin_user, integrity_seams, caplog
+):
+    """The reconcile path: ``force`` reaches the task, and the request is on the trail.
+
+    Catches the flag being accepted and then dropped (the task would run unforced and
+    refuse again with ``ratio_guard``, with the operator told it had started), and the
+    audit record going missing for the one sweep that can delete most of an index.
+    """
+    with caplog.at_level("INFO", logger="audit"):
+        response = client.post(
+            f"{DATA_INTEGRITY}?force=true&confirm=true", headers=admin_token_headers
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["force"] is True
+    assert integrity_seams.sweep.dispatches == [{"user_id": admin_user.id, "force": True}]
+    purge_events = [
+        r.getMessage() for r in caplog.records if "admin.data_integrity.purge" in r.getMessage()
+    ]
+    assert len(purge_events) == 1
+    assert f'"user_id": {admin_user.id}' in purge_events[0]
+
+
+def test_an_unforced_sweep_is_not_audited_as_a_purge(
+    client, admin_token_headers, integrity_seams, caplog
+):
+    """The control for the audit assertion above: only a FORCED run is a purge event."""
+    with caplog.at_level("INFO", logger="audit"):
+        response = client.post(DATA_INTEGRITY, headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert not [r for r in caplog.records if "admin.data_integrity.purge" in r.getMessage()]
 
 
 def test_starting_a_sweep_is_refused_for_a_plain_user(client, user_token_headers, integrity_seams):

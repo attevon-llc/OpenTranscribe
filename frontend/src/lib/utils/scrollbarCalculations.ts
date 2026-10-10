@@ -50,3 +50,31 @@ export function findCurrentSegment(
 
   return null;
 }
+
+/**
+ * Like `findCurrentSegment`, but never null for a non-empty transcript: in a silence gap
+ * (or before the first segment, e.g. a paused player at 0:00 when speech starts at 0:06)
+ * it returns the segment the playhead most recently passed, else the first one. "Jump to
+ * current" needs a target there; returning null made the button a silent no-op.
+ */
+export function findNearestSegment(
+  currentTime: number,
+  transcriptSegments: TranscriptSegment[]
+): TranscriptSegment | null {
+  if (!transcriptSegments || transcriptSegments.length === 0 || isNaN(currentTime)) {
+    return null;
+  }
+  const containing = findCurrentSegment(currentTime, transcriptSegments);
+  if (containing) return containing;
+
+  let previous: TranscriptSegment | null = null;
+  for (const segment of transcriptSegments) {
+    if (
+      segment.start_time <= currentTime &&
+      (!previous || segment.start_time >= previous.start_time)
+    ) {
+      previous = segment;
+    }
+  }
+  return previous ?? transcriptSegments[0];
+}

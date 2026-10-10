@@ -217,4 +217,25 @@ describe('TranscriptDisplay', () => {
       expect(highlights).toHaveLength(2);
     });
   });
+
+  it('"Jump to current" scrolls to the nearest segment when the playhead is in a gap', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    // Speech starts at 0:05 and the player is paused at 0:00 — the exact state of a freshly
+    // opened file. No segment contains t=0, which used to make the button do nothing.
+    const file = makeFile();
+    file.transcript_segments = file.transcript_segments.map((s) => ({
+      ...s,
+      start_time: s.start_time + 5,
+      end_time: s.end_time + 5,
+    }));
+
+    const { container } = render(TranscriptDisplay, {
+      props: { ...baseProps, file, currentTime: 0 },
+    });
+    await fireEvent.click(container.querySelector('.jump-to-playhead-button') as HTMLElement);
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toBe(container.querySelector('[data-segment-id="a"]'));
+  });
 });

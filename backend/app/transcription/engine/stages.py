@@ -653,18 +653,12 @@ class _GpuStage:
         # voiceprint — relabels existing words only, never fabricates. Flows to the core.py
         # chokepoint before resegment/merge, so the corrected labels drive segmentation.
         if native_embeddings and config is not None and config.boundary_acoustic_recheck_enabled:
-            from app.transcription.boundary_resolver import acoustic_recheck
+            from app.transcription.boundary_resolver import recheck_segment_words
 
-            words = [
-                w
-                for s in result.get("segments", [])
-                for w in s.get("words", []) or []
-                if "speaker" in w and "start" in w
-            ]
             recheck_diarizer = manager.get_diarizer(tc)
             try:
-                acoustic_recheck(
-                    words,
+                recheck_segment_words(
+                    result.get("segments", []),
                     native_embeddings,
                     lambda s, e: recheck_diarizer.embed_window(audio, s, e),
                     overlap_regions=overlap_info.get("regions"),
@@ -911,6 +905,22 @@ class _GpuRawStage:
                 async_diarization.close(timeout=_shutdown_join_timeout())
 
 
+def _apply_word_speaker_overrides(segments: list[dict], overrides: dict[str, str]) -> int:
+    """Re-apply the gpu-split diarize worker's acoustic re-check relabels (issue #1205)."""
+    from app.transcription.boundary_resolver import word_key
+
+    applied = 0
+    for seg in segments:
+        for w in seg.get("words", []) or []:
+            if "start" not in w or "end" not in w:
+                continue
+            speaker = overrides.get(word_key(w["start"], w["end"]))
+            if speaker is not None and w.get("speaker") != speaker:
+                w["speaker"] = speaker
+                applied += 1
+    return applied
+
+
 class _FinalizeStage:
     """Stage 3 (CPU): segment dedup and speaker assignment."""
 
@@ -958,6 +968,10 @@ class _FinalizeStage:
                 result["native_speaker_embeddings"] = raw.native_speaker_embeddings
             if raw.speaker_gender:
                 result["speaker_gender"] = raw.speaker_gender
+            if raw.word_speaker_overrides:
+                _apply_word_speaker_overrides(
+                    result.get("segments", []), raw.word_speaker_overrides
+                )
         else:
             from app.utils.segment_dedup import clean_segments
 
@@ -1111,6 +1125,7 @@ class _DiarizerOnlyStage:
         diarize_records: list[dict] = []
         overlap_info: dict = {}
         native_embs_serialized: dict[str, list[float]] | None = None
+        word_overrides: dict[str, str] | None = None
         diar_provider: str | None = None
         diar_model: str | None = None
 
@@ -1139,6 +1154,17 @@ class _DiarizerOnlyStage:
                     k: v.tolist() if hasattr(v, "tolist") else list(v)
                     for k, v in native_embeddings.items()
                 }
+                if config.boundary_acoustic_recheck_enabled:
+                    word_overrides = self._acoustic_recheck_overrides(
+                        audio,
+                        transcript,
+                        diarize_df,
+                        overlap_info,
+                        native_embeddings,
+                        diarizer,
+                        tc,
+                        config,
+                    )
 
         # Re-enable TF32 after PyAnnote (its fix_reproducibility disables it)
         if tc.device == "cuda":
@@ -1177,7 +1203,66 @@ class _DiarizerOnlyStage:
             stage_timings=merged_timings,
             diarization_provider=diar_provider,
             diarization_model=diar_model,
+            word_speaker_overrides=word_overrides,
         )
+
+    @staticmethod
+    def _acoustic_recheck_overrides(
+        audio,
+        transcript,
+        diarize_df,
+        overlap_info: dict,
+        native_embeddings,
+        diarizer,
+        tc,
+        config,
+    ) -> dict[str, str] | None:
+        """Phase 3 acoustic re-check for the gpu-split path (issue #1205).
+
+        Only this worker has the audio and the speaker centroids, but word-to-speaker
+        assignment happens later on CPU in ``_FinalizeStage``. So assign on a private copy of
+        the segments exactly as finalize will, relabel by voiceprint, and ship only the words
+        that changed (``word_key`` -> speaker) for finalize to re-apply after its own
+        assignment. Returns None when nothing changed or the re-check failed (the max-overlap
+        labels are kept).
+        """
+        import copy
+
+        from app.transcription.boundary_resolver import recheck_segment_words
+        from app.transcription.boundary_resolver import word_key
+        from app.transcription.speaker_assigner import assign_speakers
+
+        segments = copy.deepcopy(transcript.raw_segments)
+        if tc.enable_dedup:
+            from app.utils.segment_dedup import clean_segments
+
+            segments = clean_segments(segments)
+        try:
+            assigned = assign_speakers(diarize_df, {"segments": segments})["segments"]
+            words = [
+                w
+                for seg in assigned
+                for w in seg.get("words", []) or []
+                if "speaker" in w and "start" in w and "end" in w
+            ]
+            before = [w["speaker"] for w in words]
+            recheck_segment_words(
+                assigned,
+                native_embeddings,
+                lambda s, e: diarizer.embed_window(audio, s, e),
+                overlap_regions=overlap_info.get("regions"),
+                cosine_margin=config.boundary_acoustic_cosine_margin,
+                max_word_dur=config.boundary_acoustic_max_word_dur,
+            )
+            overrides = {
+                word_key(w["start"], w["end"]): w["speaker"]
+                for w, prev in zip(words, before, strict=True)
+                if w["speaker"] != prev
+            }
+        except Exception:
+            logger.exception("acoustic_recheck failed; keeping max-overlap labels")
+            return None
+        return overrides or None
 
 
 def _get_total_vram_mb() -> int:

@@ -289,6 +289,7 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
+| **User credentials** | `user.credential.set`, `user.credential.delete` (a user saved or removed their own pyannote.ai key; the key itself is never recorded) |
 
 A few of these are worth knowing about specifically:
 

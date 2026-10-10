@@ -1,6 +1,7 @@
 """Cloud ASR provider pipeline and cloud diarization merging."""
 
 import contextlib
+import dataclasses
 import logging
 
 from app.core.config import settings
@@ -85,17 +86,25 @@ def _run_parallel_cloud_asr_and_diarization(
     from app.services.diarization.types import DiarizeConfig
     from app.utils.diarization_merge import merge_cloud_diarization
 
-    # Create diarization provider for this user
+    # Resolved BEFORE either leg starts. A pyannote selection with no usable key raises
+    # DiarizationNotConfiguredError here (issue #1204), so the file fails visibly without
+    # the user being billed for a cloud ASR run.
     with session_scope() as db:
         diarize_provider = DiarizationProviderFactory.create_for_user(ctx.user_id, db)
 
     if diarize_provider is None:
-        logger.warning(
-            "diarization_source=pyannote but no provider configured for user %d, "
-            "falling back to ASR-only",
+        # The stored source is no longer pyannote: the user changed it after this file was
+        # dispatched, or the deployment locked it (#1109). Honour what the settings say now,
+        # which is the ASR provider's own speaker detection.
+        logger.info(
+            "Diarization source for user %d is no longer pyannote; using %s's own diarization",
             ctx.user_id,
+            asr_provider.provider_name,
         )
-        return asr_provider.transcribe(audio_file_path, asr_config, progress_callback)
+        provider_config = dataclasses.replace(
+            asr_config, enable_diarization=asr_provider.supports_diarization()
+        )
+        return asr_provider.transcribe(audio_file_path, provider_config, progress_callback)
 
     diarize_config = DiarizeConfig(
         min_speakers=min_speakers,

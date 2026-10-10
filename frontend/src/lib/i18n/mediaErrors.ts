@@ -19,6 +19,7 @@ const MEDIA_ERROR_REASON_I18N_KEY: Record<MediaErrorReason, string> = {
   network_error: 'errors.media.networkError',
   permission_error: 'errors.media.permissionError',
   interrupted: 'errors.media.interrupted',
+  diarization_not_configured: 'errors.media.diarizationNotConfigured',
   unclassified: 'errors.media.unclassified',
 };
 

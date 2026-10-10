@@ -601,6 +601,37 @@ def _upsert_user_setting(
         db.add(new_setting)
 
 
+PYANNOTE_KEY_REQUIRED_DETAIL = (
+    "pyannote.ai speaker detection needs a pyannote.ai API key. Save your key first, then "
+    "choose this option."
+)
+
+
+def _require_pyannote_key_for_new_selection(db: Session, user_id: int, source: str) -> None:
+    """Refuse switching TO the pyannote.ai source when no key is stored (issue #1204).
+
+    Only a change is refused: the settings form re-sends every field on save, and a
+    selection stored before #1204 must not make the user's other settings unsaveable. That
+    case is reported per file by the transcription pipeline instead.
+    """
+    from app.services.diarization.factory import PYANNOTE_PROVIDER
+    from app.services.diarization.factory import has_pyannote_credential
+
+    if source != PYANNOTE_PROVIDER:
+        return
+    stored = (
+        db.query(models.UserSetting.setting_value)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == "transcription_diarization_source",
+        )
+        .scalar()
+    )
+    if stored == PYANNOTE_PROVIDER or has_pyannote_credential(user_id, db):
+        return
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PYANNOTE_KEY_REQUIRED_DETAIL)
+
+
 @router.get("/transcription", response_model=TranscriptionSettings)
 def get_transcription_settings(
     request: Request,
@@ -831,6 +862,7 @@ def update_transcription_settings(
                     f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
                 ),
             )
+        _require_pyannote_key_for_new_selection(db, current_user.id, diarization_src)
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():

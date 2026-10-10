@@ -16,10 +16,22 @@ never changes the other.
 
 - `factory.py` — `DiarizationProviderFactory`. Sources are `provider | local | pyannote | off`
   (`VALID_DIARIZATION_SOURCES`, duplicated in `core/constants.py` under the same name), default
-  `provider`. Returns **`None`** for `provider` (use the ASR provider's own labels) and `off`,
-  and **raises `ValueError`** for an unknown source or a missing pyannote key — unlike the ASR
-  factory, which silently degrades to local. Credentials come from `UserDiarizationSettings` and
-  are decrypted with `decrypt_value` (ASR uses `decrypt_api_key` for the same job).
+  `provider`. Returns **`None`** for `provider` (use the ASR provider's own labels) and `off`.
+  `create_for_source` raises `ValueError` for an unknown source or a missing key;
+  `create_for_user` raises **`DiarizationNotConfiguredError`** when the user chose `pyannote`
+  with no usable key (none stored, or one that no longer decrypts). That exception's text is
+  the fixed sentence registered in `ErrorCategorizationService` as reason
+  `diarization_not_configured` (permanent retry category `CONFIGURATION_REQUIRED`), so the file
+  fails visibly instead of the pre-#1204 silent fallback that transcribed with diarization OFF.
+- **The credential (issue #1204).** One `UserDiarizationSettings` row per user
+  (`provider='pyannote'`, `name='pyannote.ai'`), written ONLY by
+  `api/endpoints/diarization_settings.py` (`GET/PUT/DELETE /user-settings/diarization/pyannote`,
+  `POST .../test`), gated by the `asr.user_providers` capability and refused (409) while the
+  #1109 `transcription.diarization_source` lock is on. Encrypted with `encrypt_api_key`, read
+  with `decrypt_api_key` (`get_pyannote_credential` / `has_pyannote_credential` here), and
+  returned by no route. `PUT /user-settings/transcription` refuses switching TO `pyannote`
+  without a key (409); deleting the key resets a `pyannote` source to the default. The
+  connection test hits only the vendor's free `GET /v1/test`.
 - `local_provider.py` — delegates to `ModelManager.get_diarizer()`, which is **native-first**:
   the diar-native sidecar with automatic in-process PyAnnote failover, not PyAnnote directly. It
   stuffs native objects (`native_embeddings`, `overlap_info`, `diarize_df`) into
@@ -52,8 +64,7 @@ never changes the other.
   `object.__new__(ASRProvider)`, which trips the ABC check and raised `TypeError` on **every** call,
   killing the label-normalization call in `pyannote_provider._parse_segments` and its twin in
   `local_provider.diarize`.)
-- `factory.create_for_user`'s pyannote branch still carries the comment "UserDiarizationSettings
-  model will be created in a separate task". The model exists
-  (`models/user_diarization_settings.py`) and the branch imports it two lines later; the comment
-  is stale.
+- **Vendor-side failures of a configured key are still non-fatal**:
+  `_run_parallel_cloud_asr_and_diarization` returns the speakerless ASR result when the
+  pyannote.ai job itself fails. Only a *missing* key fails the file (#1204).
 - `test_provider_sdk_compat.py` covers **no** module in this package.

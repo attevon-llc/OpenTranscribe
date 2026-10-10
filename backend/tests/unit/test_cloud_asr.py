@@ -228,17 +228,26 @@ class TestRunParallelCloudAsrAndDiarization:
     the merge/fallback/error-handling logic is the thing under test.
     """
 
-    def test_no_diarize_provider_falls_back_to_asr_only(self, cloud_asr_seams, normal_user):
+    def test_source_no_longer_pyannote_uses_the_providers_own_diarization(
+        self, cloud_asr_seams, normal_user
+    ):
+        """The factory answers None only when the stored source is no longer pyannote (the
+        user changed it after dispatch, or the deployment locked it). That source means the
+        ASR provider's own speaker detection, so it must be switched ON; the pre-#1204
+        fallback sent the pyannote-mode config (diarization off) and lost every speaker.
+        A missing key raises instead; see test_pyannote_diarization_credential_flow.py."""
         ctx = _make_ctx(normal_user, "task-1")
-        asr = FakeASRProvider(result=_asr_result())
+        asr = FakeASRProvider(result=_asr_result(), supports_diar=True)
 
         with patch(_DIARIZE_FACTORY_CREATE, return_value=None):
             result = _run_parallel_cloud_asr_and_diarization(
-                ctx, "/fake/audio.wav", ASRConfig(), asr, None
+                ctx, "/fake/audio.wav", ASRConfig(enable_diarization=False), asr, None
             )
 
         assert result is asr._result
         assert asr.calls == 1
+        assert asr.captured_config is not None
+        assert asr.captured_config.enable_diarization is True
 
     def test_both_succeed_merges_speakers_onto_asr_result(self, cloud_asr_seams, normal_user):
         ctx = _make_ctx(normal_user, "task-2")

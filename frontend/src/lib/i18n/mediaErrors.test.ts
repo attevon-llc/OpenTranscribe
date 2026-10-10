@@ -21,6 +21,8 @@ const ALL_MEDIA_ERROR_REASONS: MediaErrorReason[] = [
   'processing_error',
   'network_error',
   'permission_error',
+  'interrupted',
+  'diarization_not_configured',
   'unclassified',
 ];
 

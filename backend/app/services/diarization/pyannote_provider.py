@@ -38,6 +38,11 @@ _POLL_MAX_ATTEMPTS = 150  # 150 * 2s = 5 minutes
 # pyannote.ai job terminal statuses.
 _TERMINAL_STATUSES = frozenset({"succeeded", "failed", "canceled"})
 
+# The fixed sentences ``validate_connection`` may return; clients map them to a code.
+CONNECTED_MESSAGE = "Connected to pyannote.ai"
+KEY_REJECTED_MESSAGE = "pyannote.ai rejected this API key"
+UNREACHABLE_MESSAGE = "Could not reach pyannote.ai"
+
 
 # Retired model ids -> their replacement. A setting saved while a retired model was the
 # default would otherwise fail every job once the vendor stops accepting it.
@@ -82,17 +87,14 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
     def validate_connection(self) -> tuple[bool, str, float]:
         """Validate the API key by calling ``GET /v1/test``.
 
-        Returns:
-            Tuple of (success, message, response_time_ms).
+        ``/v1/test`` is an authenticated no-op: it starts no job and is not billed, which is
+        why "test connection" (``POST /user-settings/diarization/pyannote/test``, issue
+        #1204) uses it and never ``/v1/media/input`` or ``/v1/diarize``.
 
-        Note (#914 STEP 7): this method has ZERO call sites -- no endpoint
-        dials a diarization provider the way asr_settings.py dials an ASR
-        one. It exists only because DiarizationProvider (base.py) declares it
-        ``@abstractmethod``, which every concrete provider must implement to
-        be instantiable. Reported rather than redesigned: whether the ABC
-        should drop this requirement, or whether a "test diarization
-        connection" admin action should exist, is a design question for the
-        owner, not something to decide inside a response-sanitization sweep.
+        Returns:
+            Tuple of (success, message, response_time_ms). ``message`` is one of a few fixed
+            sentences and goes to the client as-is: neither the vendor's response body nor
+            the exception text is ever part of it (those are logged, sanitized, instead).
         """
         start = time.time()
 
@@ -106,17 +108,21 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
                 headers=self._auth_headers(),
                 timeout=_HTTP_TIMEOUT,
             )
-            ms = (time.time() - start) * 1000
-
-            if resp.status_code == 200:
-                return True, "Connected to pyannote.ai", ms
-            if resp.status_code == 401:
-                return False, "Invalid pyannote.ai API key", ms
-            return False, f"pyannote.ai returned HTTP {resp.status_code}", ms
         except Exception as exc:
             ms = (time.time() - start) * 1000
-            sanitized = self._sanitize_error(str(exc), self._api_key)
-            return False, f"Connection failed: {sanitized}", ms
+            logger.warning(
+                "pyannote.ai connection test failed: %s",
+                self._sanitize_error(str(exc), self._api_key),
+            )
+            return False, UNREACHABLE_MESSAGE, ms
+
+        ms = (time.time() - start) * 1000
+        if resp.status_code == 200:
+            return True, CONNECTED_MESSAGE, ms
+        if resp.status_code in (401, 403):
+            return False, KEY_REJECTED_MESSAGE, ms
+        logger.warning("pyannote.ai connection test returned HTTP %d", resp.status_code)
+        return False, f"pyannote.ai returned HTTP {resp.status_code}", ms
 
     # -- Main diarization flow ---------------------------------------------------
 

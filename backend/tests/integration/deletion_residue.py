@@ -88,7 +88,7 @@ def fk_edges(conn: Connection) -> list[FkEdge]:
             """
         )
     ).all()
-    return [FkEdge(*row) for row in rows]
+    return [FkEdge(str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4])) for r in rows]
 
 
 def _primary_key(conn: Connection, table: str) -> str | None:
@@ -189,7 +189,8 @@ def _json_references(conn: Connection, needle: str, *, skip_tables: set[str]) ->
         )
     ).all()
     findings = []
-    for table, column in cols:
+    for row in cols:
+        table, column = str(row[0]), str(row[1])
         if table in skip_tables or (table, column) in JSON_REFERENCE_EXEMPT:
             continue
         tbl = sa_table(table, sa_column(column))

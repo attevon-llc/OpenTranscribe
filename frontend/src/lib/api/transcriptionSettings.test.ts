@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
  * `groupLanguages` is the real logic in this module — a partition + two
- * independent sorts. `getSpeakerBehaviorLabel`/`Description` are simple maps
- * whose only branch worth testing is the raw-value fallback. The CRUD
+ * independent sorts. The CRUD
  * functions get one request-shape assertion each.
  */
 const mockInstance = vi.hoisted(() => ({
@@ -18,8 +17,6 @@ vi.mock('$lib/axios', async () => {
 });
 
 import {
-  getSpeakerBehaviorDescription,
-  getSpeakerBehaviorLabel,
   getTranscriptionSettings,
   getTranscriptionSystemDefaults,
   groupLanguages,
@@ -70,32 +67,6 @@ describe('groupLanguages', () => {
   });
 });
 
-describe('getSpeakerBehaviorLabel', () => {
-  it('returns the known label for each valid behavior', () => {
-    expect(getSpeakerBehaviorLabel('always_prompt')).toBe('Always show speaker settings');
-    expect(getSpeakerBehaviorLabel('use_defaults')).toBe('Use system defaults');
-    expect(getSpeakerBehaviorLabel('use_custom')).toBe('Use my saved settings');
-  });
-
-  it('falls back to echoing the raw value for an unrecognized behavior', () => {
-    // Cast past the union to simulate a server value the client doesn't know about.
-    expect(getSpeakerBehaviorLabel('unknown_behavior' as never)).toBe('unknown_behavior');
-  });
-});
-
-describe('getSpeakerBehaviorDescription', () => {
-  it('returns the known description for each valid behavior', () => {
-    expect(getSpeakerBehaviorDescription('use_defaults')).toBe(
-      'Skip settings and use system MIN/MAX_SPEAKERS values'
-    );
-  });
-
-  it('falls back to an empty string for an unrecognized behavior, not the raw value', () => {
-    // Unlike getSpeakerBehaviorLabel, the description fallback is '' rather than the raw value.
-    expect(getSpeakerBehaviorDescription('unknown_behavior' as never)).toBe('');
-  });
-});
-
 describe('CRUD requests', () => {
   it('gets transcription settings from the user-settings endpoint', async () => {
     mockInstance.get.mockResolvedValue({ data: { min_speakers: 1 } });
@@ -118,6 +89,15 @@ describe('CRUD requests', () => {
     const result = await resetTranscriptionSettings();
     expect(mockInstance.delete).toHaveBeenCalledWith('/user-settings/transcription');
     expect(result).toEqual(resetResponse);
+  });
+
+  it('scopes a reset to one field group through the group query param', async () => {
+    mockInstance.delete.mockResolvedValue({ data: { message: 'reset' } });
+    const result = await resetTranscriptionSettings('speakers');
+    expect(result).toEqual({ message: 'reset' });
+    expect(mockInstance.delete).toHaveBeenCalledWith('/user-settings/transcription', {
+      params: { group: 'speakers' },
+    });
   });
 
   it('gets system defaults from the system-defaults endpoint', async () => {

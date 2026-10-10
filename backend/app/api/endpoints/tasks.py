@@ -544,7 +544,9 @@ def recover_all_stuck_tasks(
             try:
                 from app.tasks.transcription import dispatch_transcription_pipeline
 
-                new_task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                new_task_id = dispatch_transcription_pipeline(
+                    file_uuid=file_uuid, reuse_requested_options=True
+                )
                 retried_count += 1
                 logger.info(
                     f"Retrying transcription for file {file_uuid}, new task ID: {new_task_id}"
@@ -749,7 +751,9 @@ def recover_task(
                 try:
                     from app.tasks.transcription import dispatch_transcription_pipeline
 
-                    new_task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                    new_task_id = dispatch_transcription_pipeline(
+                        file_uuid=file_uuid, reuse_requested_options=True
+                    )
                     retry_scheduled = True
                     logger.info(
                         f"Retrying transcription for file {file_uuid}, new task ID: {new_task_id}"
@@ -949,7 +953,9 @@ def retry_file_processing(
         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
             from app.tasks.transcription import dispatch_transcription_pipeline
 
-            new_task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+            new_task_id = dispatch_transcription_pipeline(
+                file_uuid=file_uuid, reuse_requested_options=True
+            )
             logger.info(f"Started new transcription for file {file_id}, task ID: {new_task_id}")
             return {
                 "success": True,

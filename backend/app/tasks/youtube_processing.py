@@ -390,7 +390,9 @@ def process_youtube_url_task(
                 # the original media (Phase 2 PR #3).
                 try:
                     benchmark_timing.mark(task_id, "http_response_end")
-                    dispatch_transcription_pipeline(file_uuid=file_uuid, task_id=task_id)
+                    dispatch_transcription_pipeline(
+                        file_uuid=file_uuid, task_id=task_id, reuse_requested_options=True
+                    )
                     logger.info(
                         f"Dispatched pipeline chain for MediaFile {file_id} (task_id={task_id})"
                     )

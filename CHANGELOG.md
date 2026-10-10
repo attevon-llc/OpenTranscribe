@@ -138,6 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A retry replays the file's own request (#1203).** Single and bulk retry, the SPA's retry
+  button and the recovery sweep re-ran a file with defaults: a file submitted with a Fast
+  (tiny/base) model came back on the GPU model, its speaker range was dropped, and a file using
+  `local` or `pyannote` diarization was switched to the provider's own. The per-file model,
+  range and "skip diarization" are now stored on the file (migration `v433`, new
+  `media_file.requested_*` columns) and replayed.
 - **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
   worker-loss replay allowlist named the bulk waveform backfill task
   (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches

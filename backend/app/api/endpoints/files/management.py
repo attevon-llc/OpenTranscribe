@@ -319,11 +319,10 @@ def retry_file_processing(
         import os
 
         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-            # Preserve diarization setting from original processing run
-            disable_diarization = bool(getattr(db_file, "diarization_disabled", False))
+            # Re-run with what the file was submitted with: model, speaker range, and
+            # diarization only if it was skipped (issue #1203).
             task_id = dispatch_transcription_pipeline(
-                file_uuid=file_uuid,
-                disable_diarization=disable_diarization,
+                file_uuid=file_uuid, reuse_requested_options=True
             )
             logger.info(f"Started retry task {task_id} for file {file_id}")
             return {
@@ -613,7 +612,7 @@ def _handle_retry_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
         message = f"Retry started (task: {task_id})"
     else:
         message = "Retry prepared (test mode)"

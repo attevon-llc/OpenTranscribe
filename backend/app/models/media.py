@@ -287,6 +287,12 @@ class MediaFile(Base):
     requested_whisper_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Model user asked for at upload
+    # The rest of the file's per-file request, so a retry or recovery re-dispatches what the
+    # user chose rather than falling back to defaults. NULL = "not asked" (saved setting wins).
+    requested_min_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_max_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_num_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_disable_diarization: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     diarization_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # e.g., "pyannote/speaker-diarization-3.1"

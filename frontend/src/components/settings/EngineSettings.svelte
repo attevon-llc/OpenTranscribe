@@ -150,18 +150,6 @@
   {#if loading}
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else if settings}
-    <!-- Section header -->
-    <div class="section-header">
-      <h4>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-          <line x1="8" y1="21" x2="16" y2="21"/>
-          <line x1="12" y1="17" x2="12" y2="21"/>
-        </svg>
-        {$t('settings.engineSettings.title')}
-      </h4>
-    </div>
-
     <div class="settings-form">
 
       <!-- Diarizer Backend -->
@@ -414,25 +402,6 @@
     padding: 3rem;
     color: var(--text-muted);
     font-size: 0.8125rem;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .section-header h4 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 500;
-    color: var(--text-color);
   }
 
   .settings-form {

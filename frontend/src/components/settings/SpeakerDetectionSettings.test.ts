@@ -30,6 +30,20 @@ vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
   return { ...actual, ...api };
 });
 
+vi.mock('$lib/api/pyannoteCredential', () => ({
+  getPyannoteCredential: vi.fn().mockResolvedValue({
+    configured: false,
+    locked: false,
+    test_status: null,
+    test_message: null,
+    last_tested: null,
+    updated_at: null,
+  }),
+  savePyannoteCredential: vi.fn(),
+  deletePyannoteCredential: vi.fn(),
+  testPyannoteCredential: vi.fn(),
+}));
+
 import SpeakerDetectionSettings from './SpeakerDetectionSettings.svelte';
 import { resetCapabilities } from '$stores/capabilities';
 

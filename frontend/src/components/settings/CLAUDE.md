@@ -117,6 +117,16 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   correction) and sits in the Transcription group behind a row-level `isAdmin` spread, beside the ASR
   provider; the section id is unchanged.
 
+## Transcription forms
+
+`TranscriptionLanguageSettings`, `TranscriptionAccuracySettings` and `SpeakerDetectionSettings` are three
+self-contained forms; each saves only its own fields and resets only its own group
+(`resetTranscriptionSettings(group)`), and reports dirty state by dispatching `change` `{ hasChanges }`
+(never `setDirty`). `TranscriptionSettings.svelte` is only a stand-in shell that mounts all three and owns the
+`transcription` dirty flag until the tabbed sections replace it. Shared cards, tooltips, buttons and styles live
+in `transcription/` (styles are global CSS scoped under `.tx-form`). Deployment locks: `transcription.advanced`
+hides and omits the VAD/accuracy fields; `transcription.diarization_source` hides and omits the source.
+
 ## Gotchas
 
 - **E2E-guarded selectors** in the shell: `.settings-modal`, `.settings-sidebar`,

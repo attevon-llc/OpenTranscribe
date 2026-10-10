@@ -4180,6 +4180,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "단어를 재배정하기 전에 현재 화자 대비 필요한 최소 음성 지문 유사도 개선치입니다. 값이 높을수록 더 보수적으로 동작합니다(변경 횟수 감소). 기본값 0.05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "재확인 최대 단어 길이(초)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "이 길이(초) 이하인 단어만 재확인합니다 — 백채널은 짧습니다. 기본값 1.0.",
+  "settings.engineSettings.boundaryAcousticScope": "이 서버의 GPU에서 수행하는 전사(빠른 경로 및 GPU 분할 모드)에 적용됩니다. 클라우드 ASR 제공업체가 전사한 파일에는 사용되지 않습니다.",
   "settings.engineSettings.sourceDb": "DB 재정의",
   "settings.engineSettings.sourceEnv": "환경 변수",
   "settings.engineSettings.sourceDefault": "기본값",

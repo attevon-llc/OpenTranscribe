@@ -7,6 +7,7 @@
     resetSpeakerAttributeSettings,
     type SpeakerAttributeSettings,
   } from '$lib/api/speakerAttributeSettings';
+  import { refreshSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
 
   let settings: SpeakerAttributeSettings = {
     detection_enabled: true,
@@ -51,6 +52,9 @@
     try {
       settings = await updateSpeakerAttributeSettings(settings);
       originalSettings = { ...settings };
+      // Speaker cards read the cached preference; without this they keep the old badge
+      // visibility until the cache goes stale.
+      void refreshSpeakerAttributePrefs(true);
       successMessage = $t('settings.speakerAttributes.saved');
       setTimeout(() => (successMessage = ''), 3000);
     } catch (e) {
@@ -67,6 +71,7 @@
     try {
       await resetSpeakerAttributeSettings();
       await loadSettings();
+      void refreshSpeakerAttributePrefs(true);
       successMessage = $t('settings.speakerAttributes.reset');
       setTimeout(() => (successMessage = ''), 3000);
     } catch (e) {

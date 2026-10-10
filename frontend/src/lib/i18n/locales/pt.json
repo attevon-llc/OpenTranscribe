@@ -4186,6 +4186,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Melhoria mínima de similaridade de impressão vocal em relação ao falante atual antes de reatribuir uma palavra. Valores mais altos são mais conservadores (menos alterações). Padrão 0,05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Duração máxima de palavra da reverificação (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Só reverifica palavras com esta duração ou menos, em segundos — os marcadores de escuta são curtos. Padrão 1,0.",
+  "settings.engineSettings.boundaryAcousticScope": "Aplica-se à transcrição na GPU deste servidor (caminho rápido e modo GPU dividida). Não é usado em arquivos transcritos por um provedor ASR na nuvem.",
   "settings.cache.title": "Cache de mídia",
   "settings.cache.description": "Vídeos com legendas incorporadas e áudio extraído são duplicatas regeneráveis dos seus originais, armazenadas em cache para acelerar downloads repetidos. Expiram automaticamente para economizar espaço e são recriadas sob demanda.",
   "settings.cache.loadFailed": "Falha ao carregar as configurações de cache",

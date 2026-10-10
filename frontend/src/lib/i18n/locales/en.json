@@ -4180,6 +4180,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Minimum voiceprint similarity improvement over the current speaker before a word is reassigned. Higher is more conservative (fewer changes). Default 0.05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Re-check Max Word Duration (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Only re-check words at or below this length in seconds — backchannels are short. Default 1.0.",
+  "settings.engineSettings.boundaryAcousticScope": "Applies to transcription on this server's GPU (fast path and GPU-split mode). Not used for files transcribed by a cloud ASR provider.",
   "settings.engineSettings.sourceDb": "DB override",
   "settings.engineSettings.sourceEnv": "Env var",
   "settings.engineSettings.sourceDefault": "Default",

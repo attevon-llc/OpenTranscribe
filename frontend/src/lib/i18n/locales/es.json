@@ -4186,6 +4186,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Mejora mínima de similitud de huella vocal sobre el hablante actual antes de reasignar una palabra. Un valor más alto es más conservador (menos cambios). Predeterminado 0,05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Duración máxima de palabra de reverificación (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Solo reverifica palabras con esta duración o menos, en segundos: las muletillas son breves. Predeterminado 1,0.",
+  "settings.engineSettings.boundaryAcousticScope": "Se aplica a la transcripción en la GPU de este servidor (ruta rápida y modo GPU dividida). No se usa en archivos transcritos por un proveedor ASR en la nube.",
   "settings.cache.title": "Caché de medios",
   "settings.cache.description": "Los vídeos con subtítulos incrustados y el audio extraído son duplicados regenerables de tus originales, almacenados en caché para acelerar las descargas repetidas. Caducan automáticamente para ahorrar espacio y se recrean cuando se necesitan.",
   "settings.cache.loadFailed": "Error al cargar la configuración de la caché",

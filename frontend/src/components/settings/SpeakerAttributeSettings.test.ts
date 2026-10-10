@@ -16,6 +16,8 @@ vi.mock('$lib/api/speakerAttributeSettings', () => ({
   resetSpeakerAttributeSettings: vi.fn(),
 }));
 
+vi.mock('$stores/speakerAttributePrefs', () => ({ refreshSpeakerAttributePrefs: vi.fn() }));
+
 vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
@@ -29,12 +31,22 @@ vi.mock('$stores/locale', () => ({
 }));
 
 import axiosInstance from '$lib/axios';
+import {
+  getSpeakerAttributeSettings,
+  updateSpeakerAttributeSettings,
+} from '$lib/api/speakerAttributeSettings';
+import { refreshSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
 import SpeakerAttributeSettings from './SpeakerAttributeSettings.svelte';
 
 describe('SpeakerAttributeSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(axiosInstance.get).mockResolvedValue({ data: {} });
+    vi.mocked(getSpeakerAttributeSettings).mockResolvedValue({
+      detection_enabled: true,
+      gender_detection_enabled: true,
+      show_attributes_on_cards: true,
+    });
   });
 
   it('renders no bulk section and never requests migration status', async () => {
@@ -63,5 +75,28 @@ describe('SpeakerAttributeSettings', () => {
     const toggle = await screen.findByLabelText('settings.speakerAttributes.enableDetection');
     await fireEvent.click(toggle);
     await waitFor(() => expect(changes.at(-1)).toBe(true));
+  });
+
+  it('refreshes the speaker-card preference right after a successful save', async () => {
+    vi.mocked(updateSpeakerAttributeSettings).mockResolvedValue({
+      detection_enabled: true,
+      gender_detection_enabled: true,
+      show_attributes_on_cards: false,
+    });
+    render(SpeakerAttributeSettings);
+    await fireEvent.click(await screen.findByLabelText('settings.speakerAttributes.showOnCards'));
+    await fireEvent.click(screen.getByRole('button', { name: 'settings.speakerAttributes.save' }));
+
+    await waitFor(() => expect(refreshSpeakerAttributePrefs).toHaveBeenCalledWith(true));
+  });
+
+  it('does not refresh the preference when the save fails', async () => {
+    vi.mocked(updateSpeakerAttributeSettings).mockRejectedValue(new Error('boom'));
+    render(SpeakerAttributeSettings);
+    await fireEvent.click(await screen.findByLabelText('settings.speakerAttributes.showOnCards'));
+    await fireEvent.click(screen.getByRole('button', { name: 'settings.speakerAttributes.save' }));
+
+    await screen.findByText('settings.speakerAttributes.saveFailed');
+    expect(refreshSpeakerAttributePrefs).not.toHaveBeenCalled();
   });
 });

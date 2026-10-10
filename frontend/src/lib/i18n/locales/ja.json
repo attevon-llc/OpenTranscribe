@@ -4186,6 +4186,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "語を再割り当てする前に、現在の話者に対して必要な声紋類似度の最小改善量。値が大きいほど保守的になります（変更が少なくなります）。デフォルトは0.05。",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "再チェックの最大語長（秒）",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "この秒数以下の語のみを再チェックします。あいづちは短いためです。デフォルトは1.0。",
+  "settings.engineSettings.boundaryAcousticScope": "このサーバーのGPUで行う文字起こし（高速パスおよびGPU分割モード）に適用されます。クラウドASRプロバイダーで文字起こしされたファイルには使用されません。",
   "settings.cache.title": "メディアキャッシュ",
   "settings.cache.description": "字幕を埋め込んだ動画や抽出した音声は、元データの再生成可能な複製で、再ダウンロードを高速化するためにキャッシュされます。ディスク容量を節約するために自動的に期限切れになり、必要に応じて再作成されます。",
   "settings.cache.loadFailed": "キャッシュ設定の読み込みに失敗しました",

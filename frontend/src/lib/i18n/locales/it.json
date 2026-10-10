@@ -4180,6 +4180,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Miglioramento minimo della somiglianza dell'impronta vocale rispetto al parlante attuale prima che una parola venga riassegnata. Un valore più alto è più prudente (meno modifiche). Predefinito 0,05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Durata massima parola per ricontrollo (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Ricontrolla solo le parole di durata pari o inferiore a questa, in secondi — i backchannel sono brevi. Predefinito 1,0.",
+  "settings.engineSettings.boundaryAcousticScope": "Si applica alla trascrizione sulla GPU di questo server (percorso rapido e modalità GPU divisa). Non viene usato per i file trascritti da un provider ASR cloud.",
   "settings.engineSettings.sourceDb": "Sostituzione DB",
   "settings.engineSettings.sourceEnv": "Variabile d'ambiente",
   "settings.engineSettings.sourceDefault": "Predefinito",

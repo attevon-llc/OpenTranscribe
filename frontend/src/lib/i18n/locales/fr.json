@@ -4186,6 +4186,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Amélioration minimale de similarité d'empreinte vocale par rapport au locuteur actuel avant de réattribuer un mot. Une valeur plus élevée est plus prudente (moins de changements). Par défaut 0,05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Durée maximale de mot pour la revérification (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Ne revérifie que les mots dont la durée est inférieure ou égale à cette valeur en secondes — les marqueurs d'écoute sont courts. Par défaut 1,0.",
+  "settings.engineSettings.boundaryAcousticScope": "S'applique à la transcription sur le GPU de ce serveur (chemin rapide et mode GPU réparti). Non utilisé pour les fichiers transcrits par un fournisseur ASR cloud.",
   "settings.cache.title": "Cache des médias",
   "settings.cache.description": "Les vidéos avec sous-titres incrustés et l'audio extrait sont des doublons régénérables de vos originaux, mis en cache pour accélérer les téléchargements répétés. Ils expirent automatiquement pour économiser de l'espace et sont recréés à la demande.",
   "settings.cache.loadFailed": "Échec du chargement des paramètres du cache",

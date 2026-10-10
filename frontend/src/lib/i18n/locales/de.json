@@ -4186,6 +4186,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Mindestverbesserung der Stimmabdruck-Ähnlichkeit gegenüber dem aktuellen Sprecher, bevor ein Wort neu zugewiesen wird. Höhere Werte sind konservativer (weniger Änderungen). Standard 0,05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Maximale Wortdauer der Überprüfung (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Überprüft nur Wörter mit dieser Länge in Sekunden oder kürzer — Backchannels sind kurz. Standard 1,0.",
+  "settings.engineSettings.boundaryAcousticScope": "Gilt für die Transkription auf der GPU dieses Servers (Schnellpfad und GPU-Split-Modus). Wird nicht für Dateien verwendet, die von einem Cloud-ASR-Anbieter transkribiert werden.",
   "settings.cache.title": "Medien-Cache",
   "settings.cache.description": "Videos mit eingebetteten Untertiteln und extrahiertes Audio sind regenerierbare Duplikate Ihrer Originale, die zwischengespeichert werden, um wiederholte Downloads zu beschleunigen. Sie verfallen automatisch, um Speicherplatz zu sparen, und werden bei Bedarf neu erstellt.",
   "settings.cache.loadFailed": "Cache-Einstellungen konnten nicht geladen werden",

@@ -4180,6 +4180,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Minimale verbetering in stemafdrukgelijkenis ten opzichte van de huidige spreker voordat een woord opnieuw wordt toegewezen. Hoger is voorzichtiger (minder wijzigingen). Standaard 0,05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "Max. woordduur voor herbeoordeling (s)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Controleert alleen woorden met deze lengte in seconden of korter opnieuw — backchannels zijn kort. Standaard 1,0.",
+  "settings.engineSettings.boundaryAcousticScope": "Geldt voor transcriptie op de GPU van deze server (snelle route en GPU-splitmodus). Wordt niet gebruikt voor bestanden die door een cloud-ASR-provider zijn getranscribeerd.",
   "settings.engineSettings.sourceDb": "DB-override",
   "settings.engineSettings.sourceEnv": "Omgevingsvariabele",
   "settings.engineSettings.sourceDefault": "Standaard",

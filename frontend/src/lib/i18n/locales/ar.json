@@ -4180,6 +4180,7 @@
   "settings.engineSettings.boundaryAcousticCosineMarginHelp": "الحد الأدنى لتحسن تشابه البصمة الصوتية عن المتحدث الحالي قبل إعادة تعيين الكلمة. القيمة الأعلى أكثر تحفظًا (تغييرات أقل). الافتراضي 0.05.",
   "settings.engineSettings.boundaryAcousticMaxWordDur": "أقصى مدة كلمة لإعادة التحقق (ثانية)",
   "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "أعِد التحقق فقط من الكلمات التي تساوي هذه المدة بالثواني أو أقل — لأن القنوات الخلفية قصيرة. الافتراضي 1.0.",
+  "settings.engineSettings.boundaryAcousticScope": "ينطبق على النسخ الصوتي على وحدة معالجة الرسوميات (GPU) في هذا الخادم (المسار السريع ووضع تقسيم GPU). لا يُستخدم للملفات التي ينسخها مزوّد ASR سحابي.",
   "settings.engineSettings.sourceDb": "تجاوز قاعدة البيانات",
   "settings.engineSettings.sourceEnv": "متغيّر بيئة",
   "settings.engineSettings.sourceDefault": "افتراضي",

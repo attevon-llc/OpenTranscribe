@@ -38,7 +38,15 @@
     if (enabled.length === 0) return;
     const pos = enabled.findIndex(({ i }) => i === index);
     let nextPos = pos;
-    switch (event.key) {
+    // Left/Right follow the visual order, which a right-to-left layout reverses.
+    const rtl = (event.currentTarget as HTMLElement).closest('[dir]')?.getAttribute('dir') === 'rtl';
+    const key =
+      rtl && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+        ? event.key === 'ArrowLeft'
+          ? 'ArrowRight'
+          : 'ArrowLeft'
+        : event.key;
+    switch (key) {
       case 'ArrowRight':
       case 'ArrowDown':
         nextPos = (pos + 1) % enabled.length;

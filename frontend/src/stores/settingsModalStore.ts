@@ -6,6 +6,7 @@ export type SettingsSection =
   | 'recording'
   | 'audio-extraction'
   | 'transcription'
+  | 'speaker-identification'
   | 'organization-context'
   | 'speaker-attributes'
   | 'download'
@@ -63,6 +64,7 @@ const initialState: SettingsModalState = {
     recording: false,
     'audio-extraction': false,
     transcription: false,
+    'speaker-identification': false,
     'organization-context': false,
     'speaker-attributes': false,
     download: false,

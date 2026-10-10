@@ -624,6 +624,23 @@ DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
 DEFAULT_GARBAGE_CLEANUP_ENABLED = True
 DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 
+# Field groups for the scoped reset (DELETE /user-settings/transcription?group=...).
+# The union must equal the fields the PUT handler persists; a unit test enforces it.
+TRANSCRIPTION_SETTING_GROUPS: dict[str, tuple[str, ...]] = {
+    "language": ("source_language", "translate_to_english", "llm_output_language"),
+    "accuracy": (
+        "garbage_cleanup_enabled",
+        "garbage_cleanup_threshold",
+        "vad_threshold",
+        "vad_min_silence_ms",
+        "vad_min_speech_ms",
+        "vad_speech_pad_ms",
+        "hallucination_silence_threshold",
+        "repetition_penalty",
+    ),
+    "speakers": ("diarization_source", "speaker_prompt_behavior", "min_speakers", "max_speakers"),
+}
+
 # Watch Sources global tuning (DB-backed via SystemSettings, admin-UI managed,
 # no restart). Coded defaults here are the single source of truth — there are
 # NO watch tuning .env vars (only the physical WATCH_FOLDER_PATH mount).

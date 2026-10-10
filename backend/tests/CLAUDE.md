@@ -405,6 +405,17 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   Before #297 `gpu` was unregistered and silenced by a `PytestUnknownMarkWarning` filter, so
   those 17 tests ran in the fast suite *and* CPU-only CI, passing only on their own runtime skip
   guards, while the gate selected none of them.
+- **`integration/test_deletion_residue_live.py` is the "does delete really delete" gate.** It
+  seeds a synthetic, fully-indexed file into every store (`deletion_seed.py` — the real
+  indexing task writes the OpenSearch planes), deletes it through each entry point (single,
+  pending/requeued, force, bulk, retention, admin/users account delete, GDPR erasure), then
+  scans Postgres/OpenSearch/MinIO/Redis GENERICALLY (`deletion_residue.py`: the FK closure
+  from `pg_constraint`, every non-system index, every bucket). Before each delete it asserts
+  every scan FIRES and every table depending on `media_file` was populated — a new table the
+  seed does not fill fails the test by name. Two transports: `inprocess` (this checkout's app)
+  and `live` (`DELETION_RESIDUE_BACKEND_URL`, else `E2E_BACKEND_URL`, else :5174 — it must
+  share the Postgres named by `POSTGRES_PORT`, and refuses a mixed stack). The GDPR legs leave
+  id-only `erasure_ledger` rows behind by design (the ledger outlives what it records).
 - **The three diarization `gpu` suites do NOT run in the gate's `-m gpu` phase — they need a
   container, and the gate runs the venv.** `test_diarizer_lifecycle.py`,
   `test_diarization_perf_gates.py` and `test_diarization_regression.py` each open with an

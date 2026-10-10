@@ -21049,8 +21049,34 @@
     },
     "/api/admin/data-integrity": {
       "post": {
-        "description": "Start an OpenSearch orphan cleanup task.\n\nScans all OpenSearch indices for documents referencing deleted files\nand removes them.",
+        "description": "Start an OpenSearch orphan cleanup task.\n\nScans all OpenSearch indices for documents referencing deleted files\nand removes them.\n\n**Reconciling a large orphan set.** The sweep refuses (``refused: ratio_guard``)\nto delete more than 10% of an index unasked, because that is what a database\nrestored EMPTY looks like from here. When the orphans are real, the operator path\nis: ``GET /admin/data-integrity/counts`` (a dry run that names every orphaned\nidentifier per index in ``orphan_keys``), review it, then\n``POST /admin/data-integrity?force=true&confirm=true``. The forced run is\naudit-logged (``admin.data_integrity.purge``). It can never delete the documents\nof a file or speaker that exists: every candidate is re-checked against Postgres\nafter the index is read and before anything is deleted, and an EMPTY Postgres\nside is refused outright, force or not.",
         "operationId": "start_data_integrity_check_api_admin_data_integrity_post",
+        "parameters": [
+          {
+            "description": "Override the per-index ratio guard (a sweep may otherwise delete at most 10% of an index). For reconciling a LARGE legitimate orphan set — after a database restore or out-of-band row removal. Requires confirm=true.",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Override the per-index ratio guard (a sweep may otherwise delete at most 10% of an index). For reconciling a LARGE legitimate orphan set — after a database restore or out-of-band row removal. Requires confirm=true.",
+              "title": "Force",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Required with force=true.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Required with force=true.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -21063,6 +21089,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

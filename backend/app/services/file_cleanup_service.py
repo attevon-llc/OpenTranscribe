@@ -389,8 +389,8 @@ def _count_surviving(index: str, query: dict[str, Any]) -> int:
     because "I could not ask" is not "nothing is there"; the caller records that
     as a residual error rather than silently treating it as a clean sweep.
 
-    Its one caller is the speaker/voiceprint sweep, which addresses documents by
-    id across three indices that have no planes. **Do not route a
+    Its callers are the voiceprint and cluster-centroid sweeps, which address
+    documents by id across speaker indices that have no planes. **Do not route a
     ``transcript_chunks`` count through it**: since index v6 that index holds two
     kinds of document, so every read of it has to say which it means, and a
     helper that takes a caller-supplied predicate can only launder that decision
@@ -531,6 +531,33 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
             remove_profile_embedding(profile_uuid)
         except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
             fail("profiles", e)
+
+
+def _erase_cluster_docs(cluster_uuids: list[str], fail: Callable[[str, object], None]) -> None:
+    """Delete speaker-cluster centroid documents (``cluster_<uuid>``) and verify.
+
+    A centroid is the mean of the cluster's member voiceprints — biometric data in its
+    own right. Swept across every speaker index (a mid-migration cluster can sit in v3
+    or v4), and, like the voiceprints, proven gone by a survivor count rather than by
+    the delete's own return value.
+    """
+    if not cluster_uuids:
+        return
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
+
+    query = {"ids": {"values": [f"cluster_{u}" for u in cluster_uuids]}}
+    for idx in speaker_embedding_indices():
+        try:
+            client = _opensearch_client()
+            if client is None:
+                raise RuntimeError("OpenSearch client unavailable")
+            if client.indices.exists(index=idx):
+                client.delete_by_query(index=idx, body={"query": query}, refresh=True)
+            left = _count_surviving(idx, query)
+            if left:
+                fail("clusters", f"{left} centroid doc(s) survive in {idx}")
+        except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+            fail("clusters", f"could not erase/verify {idx}: {e}")
 
 
 def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -> None:
@@ -717,6 +744,58 @@ def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
         logger.warning(f"Failed to clean up empty clusters: {e}")
 
 
+def scrub_chat_citations(db: Session, file_uuids: list[str]) -> int:
+    """Drop every persisted chat citation that names one of these files. Does not commit.
+
+    A citation stores a verbatim ``snippet`` of the transcript it quotes (unmasked
+    whenever the answering model was local — see ``chat/citations.build_citation``),
+    plus the file's title and UUID, in ``chat_message.citations``: a copy of the
+    recording's text in Postgres with **no foreign key back to the file**, so no
+    cascade reaches it. Deleting the file used to leave every such quote readable
+    in the conversation history and its export, in the deleting user's chats and in
+    every other user's chat that cited a shared file.
+
+    The WHOLE entry goes, not just ``snippet`` — the same decision
+    ``api/endpoints/chat/citation_takedown.py`` records for quarantine: a title and a
+    link still name the recording. ``message.content`` (the assistant's own prose) is
+    left alone for the reason recorded there too; its ``[n]`` marker dangles.
+
+    Conversation SCOPES (``chat_conversation.context`` / ``chat_project.scope``) are
+    deliberately NOT touched: they hold UUIDs, not content, and an emptied scope means
+    "every transcript I can access" — removing the last UUID would widen retrieval.
+
+    Args:
+        db: The caller's session; the UPDATE joins its transaction.
+        file_uuids: UUIDs of the files being destroyed.
+
+    Returns:
+        Number of chat messages rewritten.
+    """
+    if not file_uuids:
+        return 0
+    from sqlalchemy import text
+
+    result = db.execute(
+        text(
+            """
+            UPDATE chat_message SET citations = (
+                SELECT COALESCE(jsonb_agg(c.value ORDER BY c.ordinality), '[]'::jsonb)
+                FROM jsonb_array_elements(chat_message.citations) WITH ORDINALITY AS c
+                WHERE (c.value ->> 'file_uuid') IS NULL
+                   OR NOT ((c.value ->> 'file_uuid') = ANY(:uuids))
+            )
+            WHERE jsonb_typeof(citations) = 'array'
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(chat_message.citations) AS e
+                WHERE (e.value ->> 'file_uuid') = ANY(:uuids)
+              )
+            """
+        ),
+        {"uuids": [str(u) for u in file_uuids]},
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
 def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     """Read everything the external destroy needs, then hand back PLAIN DATA.
 
@@ -817,12 +896,21 @@ class AccountPurgePlan:
         profile_uuids: Every ``SpeakerProfile.uuid`` this account owns (issue #715),
             for the same reason: ``admin._delete_user_owned_records`` used to remove
             the profile embeddings itself, also from inside the open transaction.
+        cluster_uuids: Every ``SpeakerCluster.uuid`` this account owns. The rows go by
+            ``ON DELETE CASCADE`` off ``user``, which no code sees, so the clusters'
+            centroid embeddings (``cluster_<uuid>`` documents in the speaker index — an
+            average of the account's voiceprints, i.e. biometric) outlived every
+            deleted account until they were read here.
+        user_id: The account, so its Redis caches (file listings name every file)
+            can be invalidated once the rows are gone.
     """
 
     files: list[dict[str, Any]] = field(default_factory=list)
     avatar_paths: list[str] = field(default_factory=list)
     speaker_uuids: list[str] = field(default_factory=list)
     profile_uuids: list[str] = field(default_factory=list)
+    cluster_uuids: list[str] = field(default_factory=list)
+    user_id: int | None = None
 
 
 def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
@@ -896,11 +984,18 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
     )
     profile_uuids = [str(row[0]) for row in profile_uuid_rows]
 
+    from app.models.media import SpeakerCluster
+
+    cluster_rows = db.query(SpeakerCluster.uuid).filter(SpeakerCluster.user_id == user_id).all()
+    cluster_uuids = [str(row[0]) for row in cluster_rows]
+
     return AccountPurgePlan(
         files=files,
         avatar_paths=avatar_paths,
         speaker_uuids=speaker_uuids,
         profile_uuids=profile_uuids,
+        cluster_uuids=cluster_uuids,
+        user_id=int(user_id),
     )
 
 
@@ -944,6 +1039,15 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
 
     _erase_speaker_docs(plan.speaker_uuids, _fail)
     _erase_profile_docs(plan.profile_uuids, _fail)
+    _erase_cluster_docs(plan.cluster_uuids, _fail)
+
+    if plan.user_id is not None:
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_all_for_user(plan.user_id)
+        except Exception as cache_err:  # noqa: BLE001 — caches expire on their own TTL
+            logger.debug(f"account purge: cache invalidation failed (non-critical): {cache_err}")
 
     for avatar_path in plan.avatar_paths:
         try:
@@ -966,7 +1070,8 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
     1. Object storage: original + thumbnail + playback rendition + regenerable derived cache.
     2. OpenSearch: speaker embeddings (v3+v4), transcript doc, transcript chunks, summaries.
-    3. Database row (CASCADE removes child rows).
+    3. Database row (CASCADE removes child rows), plus every chat citation quoting the
+       file (:func:`scrub_chat_citations` — no foreign key reaches those).
     4. Redis caches for the owner.
     5. Empty non-promoted speaker clusters orphaned by the CASCADE.
 
@@ -1036,7 +1141,9 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
         # Phase 2 — object storage + OpenSearch. NO transaction is held here.
         residual.extend(_purge_external_copies(plan))
 
-        # Phase 3 — write.
+        # Phase 3 — write. The citation scrub rides the row delete's transaction, so a
+        # failed delete never leaves the history scrubbed for a file that still exists.
+        scrub_chat_citations(db, [file_uuid])
         db.delete(file)
         db.commit()
         logger.info(f"purge_media_file: deleted file {file_uuid} from database")

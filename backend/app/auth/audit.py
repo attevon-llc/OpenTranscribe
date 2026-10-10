@@ -93,6 +93,9 @@ class AuditEventType(StrEnum):
     ADMIN_FILE_QUARANTINE = "admin.file.quarantine"
     ADMIN_FILE_RELEASE = "admin.file.release"
 
+    # A forced OpenSearch orphan purge that overrode the sweep's ratio guard
+    ADMIN_DATA_INTEGRITY_PURGE = "admin.data_integrity.purge"
+
     # A permanent delete refused by services/delete_permissions.py (issue #1103)
     FILE_DELETE_DENIED = "file.delete.denied"
 

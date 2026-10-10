@@ -202,6 +202,12 @@ MEDIA_FILENAME_SPECS: list[MediaFilenameSpec] = [
     MediaFilenameSpec(
         'lite-mode', r'lite-mode-test-%', re.compile(r'^lite-mode-test-[0-9a-f]{8}\.wav$')
     ),
+    # integration/test_deletion_residue_live.py + test_orphan_reconcile_opensearch.py
+    # (deletion_seed.DELRES_PREFIX): synthetic fully-processed files seeded straight into
+    # every store. Teardown removes them; this is the backstop for a killed run.
+    MediaFilenameSpec(
+        'deletion-residue', r'e2e-delres-%', re.compile(r'^e2e-delres-[0-9a-f]{8}\.wav$')
+    ),
 ]
 
 #: name/title-prefix + <8hex> shape, one entry per non-media resource type.
@@ -215,11 +221,11 @@ NAME_PREFIX_SPECS: dict[str, tuple[str, str]] = {
 }
 
 NAME_PREFIXES: dict[str, list[str]] = {
-    'collection': ['e2e-shared-', 'e2e-collection-'],
-    'tag': ['e2e-tag-'],
-    'watch_source': ['e2e-watch-'],
-    'speaker_profile': ['e2e-gender-'],
-    'chat_conversation': ['e2e-chat-'],
+    'collection': ['e2e-shared-', 'e2e-collection-', 'e2e-delres-'],
+    'tag': ['e2e-tag-', 'e2e-delres-'],
+    'watch_source': ['e2e-watch-', 'e2e-delres-'],
+    'speaker_profile': ['e2e-gender-', 'e2e-delres-'],
+    'chat_conversation': ['e2e-chat-', 'e2e-delres-'],
 }
 
 _HEX8_SHAPE = re.compile(r'[0-9a-f]{8}')

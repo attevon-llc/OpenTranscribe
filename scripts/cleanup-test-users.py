@@ -94,6 +94,9 @@ ORPHAN_PATTERNS_UNAMBIGUOUS = [
     'litemode-%@example.invalid',
     'support-e2e-%@example.com',  # test_support_access.py SUPPORT_SUBJECT_PREFIX
     'share-e2e-%@example.com',  # e2e second-user fixture (conftest.SECOND_USER_PREFIX)
+    # integration/test_deletion_residue_live.py's throwaway account owners
+    # (deletion_seed.DELRES_USER_PREFIX); the test deletes them, this is the backstop.
+    'delres-e2e-%@example.com',
 ]
 
 ORPHAN_PATTERNS_REVIEW = [

@@ -288,6 +288,7 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Banner** | `auth.banner.acknowledged` |
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` |
+| **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
 
 A few of these are worth knowing about specifically:
@@ -416,6 +417,25 @@ Click **Run Check** to scan all indices for orphaned documents -- records in Ope
 4. Reports results in a summary table
 
 Results show per-index totals: documents scanned, orphans found, and orphans cleaned.
+
+#### Reconciling a large orphan set
+
+A sweep refuses to delete more than **10%** of an index in one run (`refused: ratio_guard`
+in the result), because that is exactly what a database restored empty looks like from
+OpenSearch's side. When the orphans are real — documents left behind by a database
+restore or by rows removed directly in Postgres — reconcile them through the API:
+
+1. `GET /api/admin/data-integrity/counts` — a dry run. Each index reports `orphaned_docs`,
+   `refused`, and `orphan_keys`: the file (or speaker) identifiers whose documents would
+   be deleted (the first 200; `orphan_keys_truncated` says when there are more).
+2. Check those identifiers really are gone from the application.
+3. `POST /api/admin/data-integrity?force=true&confirm=true` — the forced run. It is
+   recorded in the audit log as `admin.data_integrity.purge`.
+
+A forced run still cannot delete the documents of a file or speaker that exists: every
+candidate is re-checked against PostgreSQL after the index is read and immediately
+before the delete, and a sweep whose PostgreSQL side is empty is refused even with
+`force`. Index documents are derived data — a mistaken purge is repaired by a reindex.
 
 ## Embedding Consistency
 

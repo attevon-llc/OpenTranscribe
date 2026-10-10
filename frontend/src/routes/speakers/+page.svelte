@@ -917,6 +917,8 @@
       {unassignBlacklist}
       {clusterPage}
       {clusterPages}
+      reviewCount={inboxTotal}
+      on:openReview={() => switchTab('inbox')}
       on:search={handleClusterSearch}
       on:recluster={handleRecluster}
       on:toggleSection={(e) => toggleSection(e.detail)}

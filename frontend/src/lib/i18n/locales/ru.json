@@ -3413,6 +3413,8 @@
   "speakers.error.deleteProfile": "Не удалось удалить профиль",
   "speakers.clusters.emptyTitle": "Нет кластеров дикторов",
   "speakers.clusters.emptyDesc": "Загрузите и транскрибируйте медиафайлы, затем нажмите «Перекластеризовать всё» для обнаружения групп дикторов.",
+  "speakers.clusters.emptyReviewDesc": "Групп говорящих пока нет. {{count}} говорящих без совпадений ожидают в разделе «Проверка».",
+  "speakers.clusters.openReview": "Открыть проверку",
   "speakers.inbox.emptyTitle": "Нечего проверять",
   "speakers.inbox.emptyAllVerified": "Все дикторы верифицированы! Отличная работа.",
   "speakers.inbox.emptyNoProfiles": "Сначала создайте профили дикторов, продвинув кластеры, а затем используйте проверку, чтобы просмотреть дикторов, сопоставленных ИИ.",

@@ -3321,6 +3321,8 @@
   "speakers.clusters.empty": "Aucun groupe trouvé. Téléchargez et transcrivez des fichiers pour découvrir des groupes de locuteurs.",
   "speakers.clusters.emptyTitle": "Aucun cluster de locuteurs",
   "speakers.clusters.emptyDesc": "Téléversez et transcrivez des fichiers multimédias, puis cliquez sur Regrouper tout pour découvrir les groupes de locuteurs.",
+  "speakers.clusters.emptyReviewDesc": "Aucun groupe de locuteurs pour l'instant. {{count}} locuteurs sans correspondance attendent dans la Révision.",
+  "speakers.clusters.openReview": "Ouvrir la révision",
   "speakers.profiles.empty": "Aucun profil de locuteur. Promouvez des groupes pour créer des profils.",
   "speakers.profiles.unnamed": "Sans nom",
   "speakers.profiles.embeddings": "embeddings",

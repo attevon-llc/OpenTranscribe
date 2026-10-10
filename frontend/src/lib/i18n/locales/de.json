@@ -3321,6 +3321,8 @@
   "speakers.clusters.empty": "Keine Gruppen gefunden. Laden Sie Dateien hoch und transkribieren Sie sie, um Sprechergruppen zu entdecken.",
   "speakers.clusters.emptyTitle": "Keine Sprecher-Cluster",
   "speakers.clusters.emptyDesc": "Laden Sie Mediendateien hoch und transkribieren Sie sie, klicken Sie dann auf Alle neu clustern, um Sprechergruppen zu erkennen.",
+  "speakers.clusters.emptyReviewDesc": "Noch keine Sprechergruppen. {{count}} Sprecher haben keine Übereinstimmung und warten in der Überprüfung.",
+  "speakers.clusters.openReview": "Überprüfung öffnen",
   "speakers.profiles.empty": "Noch keine Sprecherprofile. Befördern Sie Gruppen, um Profile zu erstellen.",
   "speakers.profiles.unnamed": "Unbenannt",
   "speakers.profiles.embeddings": "Einbettungen",

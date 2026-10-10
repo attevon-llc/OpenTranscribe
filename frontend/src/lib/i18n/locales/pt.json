@@ -3423,6 +3423,8 @@
   "speakers.error.deleteProfile": "Falha ao excluir perfil",
   "speakers.clusters.emptyTitle": "Nenhum cluster de falantes",
   "speakers.clusters.emptyDesc": "Faça upload e transcreva arquivos de mídia, depois clique em Reclusterizar tudo para descobrir grupos de falantes.",
+  "speakers.clusters.emptyReviewDesc": "Ainda não há grupos de falantes. {{count}} falantes sem correspondência aguardam na Revisão.",
+  "speakers.clusters.openReview": "Abrir Revisão",
   "speakers.inbox.emptyTitle": "Nada para revisar",
   "speakers.inbox.emptyAllVerified": "Todos os falantes verificados! Bom trabalho.",
   "speakers.inbox.emptyNoProfiles": "Primeiro crie perfis de locutor promovendo clusters e depois use a revisão para verificar os locutores correspondidos pela IA.",

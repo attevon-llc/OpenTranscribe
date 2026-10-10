@@ -3427,6 +3427,8 @@
   "speakers.error.deleteProfile": "فشل حذف الملف الشخصي",
   "speakers.clusters.emptyTitle": "لا توجد مجموعات صوتية",
   "speakers.clusters.emptyDesc": "ارفع ملفات وسائط وفرّغها نصيًا، ثم انقر على إعادة تجميع الكل لاكتشاف مجموعات المتحدثين.",
+  "speakers.clusters.emptyReviewDesc": "لا توجد مجموعات متحدثين بعد. يوجد {{count}} متحدثين بلا تطابق في انتظار المراجعة.",
+  "speakers.clusters.openReview": "فتح المراجعة",
   "speakers.inbox.emptyTitle": "لا يوجد ما يستدعي المراجعة",
   "speakers.inbox.emptyAllVerified": "تم توثيق جميع المتحدثين! عمل رائع.",
   "speakers.inbox.emptyNoProfiles": "أنشئ ملفات تعريف المتحدثين أولاً عن طريق ترقية المجموعات، ثم استخدم المراجعة للتحقق من المتحدثين الذين طابقهم الذكاء الاصطناعي.",

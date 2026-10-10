@@ -3321,6 +3321,8 @@
   "speakers.clusters.empty": "No se encontraron grupos. Suba y transcriba archivos para empezar a descubrir grupos de hablantes.",
   "speakers.clusters.emptyTitle": "Sin clústeres de hablantes",
   "speakers.clusters.emptyDesc": "Cargue y transcriba archivos multimedia, luego haga clic en Reagrupar todo para descubrir grupos de hablantes.",
+  "speakers.clusters.emptyReviewDesc": "Aún no hay grupos de hablantes. {{count}} hablantes no tienen coincidencias y esperan en Revisión.",
+  "speakers.clusters.openReview": "Abrir Revisión",
   "speakers.profiles.empty": "Aún no hay perfiles de hablantes. Promueva grupos para crear perfiles.",
   "speakers.profiles.unnamed": "Sin nombre",
   "speakers.profiles.embeddings": "incrustaciones",

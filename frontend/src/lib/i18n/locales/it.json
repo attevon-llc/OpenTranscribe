@@ -3427,6 +3427,8 @@
   "speakers.error.deleteProfile": "Impossibile eliminare il profilo",
   "speakers.clusters.emptyTitle": "Nessun cluster di parlanti",
   "speakers.clusters.emptyDesc": "Carica e trascrivi file multimediali, quindi clicca su Ri-raggruppa tutto per scoprire i gruppi di parlanti.",
+  "speakers.clusters.emptyReviewDesc": "Ancora nessun gruppo di parlanti. {{count}} parlanti senza corrispondenze sono in attesa nella Revisione.",
+  "speakers.clusters.openReview": "Apri Revisione",
   "speakers.inbox.emptyTitle": "Niente da rivedere",
   "speakers.inbox.emptyAllVerified": "Tutti i parlanti verificati! Ottimo lavoro.",
   "speakers.inbox.emptyNoProfiles": "Crea prima i profili degli speaker promuovendo i cluster, quindi usa la revisione per controllare gli speaker abbinati dall'IA.",

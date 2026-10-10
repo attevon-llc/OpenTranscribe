@@ -3427,6 +3427,8 @@
   "speakers.error.deleteProfile": "Verwijderen van profiel mislukt",
   "speakers.clusters.emptyTitle": "Geen sprekerclusters",
   "speakers.clusters.emptyDesc": "Upload en transcribeer mediabestanden en klik vervolgens op Alles opnieuw clusteren om sprekergroepen te ontdekken.",
+  "speakers.clusters.emptyReviewDesc": "Nog geen sprekersgroepen. {{count}} sprekers zonder match wachten in Beoordeling.",
+  "speakers.clusters.openReview": "Beoordeling openen",
   "speakers.inbox.emptyTitle": "Niets te beoordelen",
   "speakers.inbox.emptyAllVerified": "Alle sprekers geverifieerd! Goed gedaan.",
   "speakers.inbox.emptyNoProfiles": "Maak eerst sprekersprofielen door clusters te promoveren en gebruik daarna Beoordelen om door AI gematchte sprekers te controleren.",

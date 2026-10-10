@@ -3423,6 +3423,8 @@
   "speakers.error.deleteProfile": "プロフィールの削除に失敗しました",
   "speakers.clusters.emptyTitle": "スピーカークラスターがありません",
   "speakers.clusters.emptyDesc": "メディアファイルをアップロードして文字起こしし、「全て再クラスタリング」をクリックして話者グループを検出してください。",
+  "speakers.clusters.emptyReviewDesc": "話者グループはまだありません。一致のない{{count}}人の話者が「確認」で待機しています。",
+  "speakers.clusters.openReview": "確認を開く",
   "speakers.inbox.emptyTitle": "確認するものはありません",
   "speakers.inbox.emptyAllVerified": "すべての話者が確認されました！",
   "speakers.inbox.emptyNoProfiles": "まずクラスターを昇格して話者プロファイルを作成し、その後「確認」でAIが照合した話者を確認してください。",

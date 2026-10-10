@@ -3427,6 +3427,8 @@
   "speakers.error.deleteProfile": "Failed to delete profile",
   "speakers.clusters.emptyTitle": "No Speaker Clusters",
   "speakers.clusters.emptyDesc": "Upload and transcribe media files, then click Re-cluster All to discover speaker groups.",
+  "speakers.clusters.emptyReviewDesc": "No speaker groups yet. {{count}} speakers have no match and are waiting in Review.",
+  "speakers.clusters.openReview": "Open Review",
   "speakers.inbox.emptyTitle": "Nothing to review",
   "speakers.inbox.emptyAllVerified": "All speakers verified! Great job.",
   "speakers.inbox.emptyNoProfiles": "Create speaker profiles first by promoting clusters, then use Review to check AI-matched speakers.",

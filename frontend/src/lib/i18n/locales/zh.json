@@ -3423,6 +3423,8 @@
   "speakers.error.deleteProfile": "删除档案失败",
   "speakers.clusters.emptyTitle": "没有说话人聚类",
   "speakers.clusters.emptyDesc": "上传并转录媒体文件，然后点击\"全部重新聚类\"来发现说话人组。",
+  "speakers.clusters.emptyReviewDesc": "尚无说话人分组。有 {{count}} 位说话人没有匹配项，正在“审核”中等待。",
+  "speakers.clusters.openReview": "打开审核",
   "speakers.inbox.emptyTitle": "没有待审核的内容",
   "speakers.inbox.emptyAllVerified": "所有说话人已验证！做得好。",
   "speakers.inbox.emptyNoProfiles": "请先通过提升聚类来创建说话人档案，然后使用待审核来检查 AI 匹配的说话人。",

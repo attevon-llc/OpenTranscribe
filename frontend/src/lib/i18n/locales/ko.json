@@ -3427,6 +3427,8 @@
   "speakers.error.deleteProfile": "프로필 삭제에 실패했습니다",
   "speakers.clusters.emptyTitle": "화자 클러스터 없음",
   "speakers.clusters.emptyDesc": "미디어 파일을 업로드하고 전사한 후, 전체 재클러스터링을 클릭하여 화자 그룹을 찾으세요.",
+  "speakers.clusters.emptyReviewDesc": "아직 화자 그룹이 없습니다. 일치 항목이 없는 화자 {{count}}명이 검토에서 대기 중입니다.",
+  "speakers.clusters.openReview": "검토 열기",
   "speakers.inbox.emptyTitle": "검토할 항목 없음",
   "speakers.inbox.emptyAllVerified": "모든 화자가 확인되었습니다! 잘하셨습니다.",
   "speakers.inbox.emptyNoProfiles": "먼저 클러스터를 승격하여 화자 프로필을 만든 다음 검토를 사용하여 AI가 일치시킨 화자를 확인하세요.",

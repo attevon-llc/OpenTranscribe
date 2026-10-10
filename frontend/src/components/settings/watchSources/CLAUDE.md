@@ -15,8 +15,8 @@ plus the two modals that make the watch-source backend fully reachable: per-file
   It owns every API call and all source-of-truth state.
 - `WatchSourceCard.svelte` — one source row. Dispatches
   `toggle`/`test`/`scan`/`edit`/`delete`/`files`/`notifications`.
-- `EmailConfigList.svelte` — the deployment-wide mailers (super_admin).
-- `GlobalWatchSettingsForm.svelte` — global watch settings (super_admin); `settings` is bound.
+- `EmailConfigList.svelte` — the deployment-wide mailers (super_admin); the Email Notifications tab.
+- `GlobalWatchSettingsForm.svelte` — global watch settings (super_admin), the Global Settings tab; `settings` is bound. Its Save lives in a right-aligned `.form-actions` row — a bare `.btn` in a flex column stretches full width.
 - `WatchSourceFilesModal.svelte` + `WatchSourceFilesTable.svelte` — #489.
 - `WatchSourceEmailLinksModal.svelte` — #490.
 

@@ -48,6 +48,20 @@ def caps_off():
     reset_capability_resolver()
 
 
+@pytest.fixture
+def complete_without_storage(monkeypatch):
+    """Let ``/files/complete`` run with no object store: the object "exists", no header reads."""
+
+    def _no_header(*args, **kwargs):
+        raise RuntimeError("no s3")
+
+    monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda path: 4096)
+    monkeypatch.setattr("app.services.minio_service.range_read", _no_header)
+    monkeypatch.setattr(
+        "app.api.endpoints.files.complete_upload._fingerprint_object", lambda *a, **k: None
+    )
+
+
 def _seed_prepared_file(db_session, owner, **overrides) -> MediaFile:
     file_uuid = str(uuid.uuid4())
     values = {
@@ -171,33 +185,42 @@ class TestModelChoice:
         dispatch.assert_called_once()
         assert dispatch.call_args.kwargs["whisper_model"] == expected
 
+    @pytest.mark.parametrize(
+        ("locked", "expected"),
+        [(False, "base"), (True, None)],
+        ids=["unlocked", "locked-after-prepare"],
+    )
     def test_complete_without_a_model_uses_the_one_recorded_at_prepare(
-        self, client, user_token_headers, normal_user, db_session
+        self,
+        client,
+        user_token_headers,
+        normal_user,
+        db_session,
+        caps_off,
+        pipeline_stages,
+        complete_without_storage,
+        locked,
+        expected,
     ):
         """The upload wizard sends its model choice on /prepare only (#1121).
 
         /complete then carries no ``whisper_model``, and the transcription must still run
-        with the model the user picked -- read back from the row /prepare wrote. Without
-        this fallback the wizard's choice would be recorded and never used.
+        with the model the user picked -- read back from the row /prepare wrote, unless the
+        deployment has locked model choice since. The read-back lives in
+        ``dispatch_transcription_pipeline`` (``reuse_requested_options``), so this drives the
+        real dispatch and asserts on what the first pipeline stage is built with.
         """
+        if locked:
+            caps_off("transcription.model_choice")
         media_file = _seed_prepared_file(db_session, normal_user, requested_whisper_model="base")
-        dispatch = MagicMock()
-        with (
-            patch("app.services.minio_service.object_exists_and_size", return_value=4096),
-            patch("app.services.minio_service.range_read", side_effect=RuntimeError("no s3")),
-            patch("app.api.endpoints.files.complete_upload._fingerprint_object", return_value=None),
-            patch(
-                "app.api.endpoints.files.upload.dispatch_upload_pipeline_or_mark_error", dispatch
-            ),
-        ):
-            response = client.post(
-                "/api/files/complete",
-                headers=user_token_headers,
-                json={"file_id": str(media_file.uuid)},
-            )
+
+        response = client.post(
+            "/api/files/complete",
+            headers=user_token_headers,
+            json={"file_id": str(media_file.uuid)},
+        )
         assert response.status_code == status.HTTP_200_OK, response.text
-        dispatch.assert_called_once()
-        assert dispatch.call_args.kwargs["whisper_model"] == "base"
+        assert [stage["whisper_model"] for stage in pipeline_stages] == [expected]
 
     @pytest.mark.parametrize(
         ("locked", "expected"),

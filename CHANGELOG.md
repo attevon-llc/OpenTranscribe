@@ -150,6 +150,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hands its range to the GPU re-diarize instead of falling back to the env default; the
   reprocess dialog starts from the saved range; and "use system defaults" now really sends the
   system range. One helper, `resolve_speaker_range`, decides: per file, then saved, then env.
+- **The API no longer accepts per-file options it drops (#1202).** `disable_diarization` now
+  reaches the pipeline from `/files/{uuid}/reprocess`, the bulk reprocess action, `/files/prepare`
+  and `/files/complete`; bulk reprocess also forwards its speaker range. **Behaviour change for API
+  clients:** a `whisper_model` that is neither the deployment's model nor tiny/base is now a
+  `422` (it used to be accepted and silently replaced), and `disable_diarization` is a `422`
+  when the request cannot honour it (re-diarize-only or downstream-only stages, or a bulk action
+  other than `reprocess`).
+
 - **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
   worker-loss replay allowlist named the bulk waveform backfill task
   (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches

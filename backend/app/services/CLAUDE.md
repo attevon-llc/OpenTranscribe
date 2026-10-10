@@ -497,8 +497,15 @@ Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows sha
 (`GET/PUT /user-settings/transcription`): source language + translate-to-English, LLM output
 language, speaker behavior (`always_prompt` | `use_defaults` | `use_custom`), min/max speakers,
 garbage-segment cleanup + threshold, VAD tuning; recording/audio-extraction live on sibling
-routes. **Per-file overrides win** — `tasks/transcription/dispatch.py` takes `source_language`,
-`translate_to_english`, and speaker counts at upload/reprocess time.
+routes. **Per-file overrides win, for these only**: speaker counts (`resolve_speaker_range` in
+`tasks/transcription/user_settings.py` is the one precedence — per file, then the user's saved
+range, then env), the Whisper model (the deployment's model or tiny/base; anything else is a
+422), and "skip diarization". They are stored on the `media_file.requested_*` columns when a
+file is dispatched, and a retry/recovery replays them (`reuse_requested_options`,
+`tasks/transcription/requested_options.py`). **Language is NOT per file**:
+`dispatch_transcription_pipeline` still accepts `source_language`/`translate_to_english`, but no
+endpoint sets them, so language and translation always come from the user's prefs. Adding them
+to the upload/reprocess requests is a separate decision.
 
 ## Media URL ingestion (yt-dlp)
 

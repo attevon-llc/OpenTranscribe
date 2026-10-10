@@ -36,6 +36,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.utils import benchmark_timing
+from app.utils.whisper_model_choice import require_servable_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,12 @@ class CompleteUploadRequest(BaseModel):
     num_speakers: int | None = None
     skip_summary: bool | None = False
     whisper_model: str | None = None
+    disable_diarization: bool | None = Field(
+        None,
+        description=(
+            "Skip speaker diarization for this file. Overrides what /files/prepare recorded."
+        ),
+    )
 
 
 def _record_client_markers(task_id: str | None, req: CompleteUploadRequest) -> None:
@@ -204,6 +211,13 @@ def complete_upload(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="MediaFile has no storage_path (was /prepare called with use_presigned=true?)",
         )
+
+    # Reject an unservable model before the storage phase does any work. One recorded at
+    # /prepare is re-checked (and dropped if the deployment has since locked model choice)
+    # when dispatch reads it back; this checks only a model sent with /complete.
+    whisper_model: str | None = require_servable_whisper_model(
+        effective_whisper_model(request.whisper_model, http_request)
+    )
 
     # Everything the storage phase needs, as plain data — then end the read
     # transaction. Nothing between here and the write phase touches Postgres
@@ -339,11 +353,6 @@ def complete_upload(
     db_file.status = FileStatus.PENDING  # type: ignore[assignment]
     # Snapshot the per-file model BEFORE commit so resolving it doesn't trigger
     # an expire-on-commit refetch (we deliberately skip db.refresh() here).
-    whisper_model: str | None = request.whisper_model
-    if not whisper_model and db_file.requested_whisper_model:
-        whisper_model = str(db_file.requested_whisper_model)
-    # Also drops a model stored at /prepare before the deployment locked model choice.
-    whisper_model = effective_whisper_model(whisper_model, http_request)
     db.commit()
 
     # Fire the thumbnail + transcription pipeline via the shared dispatch tail
@@ -363,6 +372,7 @@ def complete_upload(
         min_speakers=request.min_speakers,
         max_speakers=request.max_speakers,
         num_speakers=request.num_speakers,
+        disable_diarization=True if request.disable_diarization else None,
         task_id=request.task_id,
     )
 

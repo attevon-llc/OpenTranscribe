@@ -180,7 +180,9 @@ def start_reprocessing_task(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             downstream_tasks=downstream_tasks,
-            disable_diarization=disable_diarization,
+            # False must reach the pipeline as "not asked": the bool is mapped to
+            # diarization_source "provider" there, which would override the user's choice.
+            disable_diarization=True if disable_diarization else None,
             whisper_model=whisper_model,
         )
     else:
@@ -370,6 +372,7 @@ def dispatch_selective_tasks(
     file_id: int | None = None,
     user_id: int | None = None,
     whisper_model: str | None = None,
+    disable_diarization: bool = False,
 ) -> None:
     """Dispatch Celery tasks for selected pipeline stages.
 
@@ -382,6 +385,7 @@ def dispatch_selective_tasks(
         file_id: Internal file ID (passed to tasks that need it).
         user_id: Owner user ID (passed to tasks that need it).
         whisper_model: Optional Whisper model override for transcription.
+        disable_diarization: Skip diarization; honoured by the transcription stage only.
     """
     import os
 
@@ -400,6 +404,7 @@ def dispatch_selective_tasks(
             downstream_tasks=downstream if downstream else None,
             whisper_model=whisper_model,
             user_id=user_id,
+            disable_diarization=disable_diarization,
         )
     elif "rediarize" in stages:
         from app.tasks.rediarize_task import rediarize_task
@@ -427,6 +432,7 @@ def process_file_reprocess(
     num_speakers: int | None = None,
     stages: list[str] | None = None,
     whisper_model: str | None = None,
+    disable_diarization: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
@@ -443,6 +449,8 @@ def process_file_reprocess(
         num_speakers: Optional fixed number of speakers for diarization
         stages: Optional list of pipeline stages to re-run. Empty/None = full reprocess.
         whisper_model: Optional Whisper model override for this transcription.
+        disable_diarization: Skip diarization for the transcription run. The request model
+            rejects it for stage selections that do not transcribe.
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
         bypass: The request's platform bypass (``ctx.bypass``), decided on the file's tenant.
 
@@ -514,11 +522,6 @@ def process_file_reprocess(
                 detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
-        # Store the user's requested whisper model before dispatching
-        if whisper_model:
-            media_file.requested_whisper_model = whisper_model  # type: ignore[assignment]
-            db.commit()
-
         logger.info(
             f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"
         )
@@ -560,6 +563,7 @@ def process_file_reprocess(
                 file_id=file_id,
                 user_id=current_user.id,
                 whisper_model=whisper_model,
+                disable_diarization=disable_diarization,
             )
 
             logger.info(
@@ -587,6 +591,7 @@ def process_file_reprocess(
                 whisper_model=whisper_model,
                 user_id=current_user.id,
                 db=db,
+                disable_diarization=disable_diarization,
             )
 
             logger.info(

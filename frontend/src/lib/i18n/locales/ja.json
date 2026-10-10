@@ -4257,6 +4257,7 @@
   "settings.contentRedaction.rescan": "Re-scan",
   "settings.contentRedaction.rescanTooltip": "Run content-redaction detection on this file now",
   "settings.contentRedaction.notRedacted": "Not yet redacted",
+  "settings.contentRedaction.scanNothingFound": "スキャン済み：現在の設定では伏せ字にする内容はありません",
   "settings.contentRedaction.redactStarted": "Redaction started — the transcript will update when it completes.",
   "settings.contentRedaction.redactTriggerFailed": "Could not start redaction for this file",
   "gallery.bulk.redact": "Redact",

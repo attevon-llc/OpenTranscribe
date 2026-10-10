@@ -4257,6 +4257,7 @@
   "settings.contentRedaction.rescan": "Rianalizza",
   "settings.contentRedaction.rescanTooltip": "Esegui ora il rilevamento della redazione dei contenuti su questo file",
   "settings.contentRedaction.notRedacted": "Non ancora redatto",
+  "settings.contentRedaction.scanNothingFound": "Analizzato: niente da oscurare con le impostazioni attuali",
   "settings.contentRedaction.redactStarted": "Redazione avviata — la trascrizione si aggiornerà al completamento.",
   "settings.contentRedaction.redactTriggerFailed": "Impossibile avviare la redazione per questo file",
   "gallery.bulk.redact": "Redigi",

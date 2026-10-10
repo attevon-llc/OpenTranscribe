@@ -214,6 +214,8 @@
   // When redaction is enabled but detection hasn't finished, the transcript is withheld.
   let redactionPending = false;
   let redactionStatus = ''; // pending | processing | done | failed
+  // Backend-decided: the viewer's policy would mask something (switch on AND a category).
+  let redactionEnabled = false;
   $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
@@ -386,6 +388,7 @@
         // Content-redaction state: pending (transcript withheld) + whether masking applied.
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
+        redactionEnabled = response.data.redaction_enabled === true;
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
           if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
@@ -465,6 +468,7 @@
         };
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
+        redactionEnabled = response.data.redaction_enabled === true;
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
           if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
@@ -499,7 +503,11 @@
       }
     } catch (err) {
       console.error('Trigger redaction error:', err);
-      toastStore.error($t('settings.contentRedaction.redactTriggerFailed'));
+      // The 409 "redaction is not enabled" carries the reason; show it, not a generic failure.
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toastStore.error(
+        typeof detail === 'string' ? detail : $t('settings.contentRedaction.redactTriggerFailed')
+      );
     }
   }
 
@@ -2409,6 +2417,8 @@
           <RedactionControls
             {showRedactionToggle}
             {canViewOriginal}
+            {redactionEnabled}
+            {redactionStatus}
             {showOriginal}
             {redactionToggleBusy}
             on:rescan={triggerRedaction}

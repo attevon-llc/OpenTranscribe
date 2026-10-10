@@ -8933,6 +8933,11 @@
               }
             ]
           },
+          "redaction_enabled": {
+            "default": false,
+            "title": "Redaction Enabled",
+            "type": "boolean"
+          },
           "redaction_pending": {
             "default": false,
             "title": "Redaction Pending",

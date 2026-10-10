@@ -717,6 +717,58 @@ def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
         logger.warning(f"Failed to clean up empty clusters: {e}")
 
 
+def scrub_chat_citations(db: Session, file_uuids: list[str]) -> int:
+    """Drop every persisted chat citation that names one of these files. Does not commit.
+
+    A citation stores a verbatim ``snippet`` of the transcript it quotes (unmasked
+    whenever the answering model was local — see ``chat/citations.build_citation``),
+    plus the file's title and UUID, in ``chat_message.citations``: a copy of the
+    recording's text in Postgres with **no foreign key back to the file**, so no
+    cascade reaches it. Deleting the file used to leave every such quote readable
+    in the conversation history and its export, in the deleting user's chats and in
+    every other user's chat that cited a shared file.
+
+    The WHOLE entry goes, not just ``snippet`` — the same decision
+    ``api/endpoints/chat/citation_takedown.py`` records for quarantine: a title and a
+    link still name the recording. ``message.content`` (the assistant's own prose) is
+    left alone for the reason recorded there too; its ``[n]`` marker dangles.
+
+    Conversation SCOPES (``chat_conversation.context`` / ``chat_project.scope``) are
+    deliberately NOT touched: they hold UUIDs, not content, and an emptied scope means
+    "every transcript I can access" — removing the last UUID would widen retrieval.
+
+    Args:
+        db: The caller's session; the UPDATE joins its transaction.
+        file_uuids: UUIDs of the files being destroyed.
+
+    Returns:
+        Number of chat messages rewritten.
+    """
+    if not file_uuids:
+        return 0
+    from sqlalchemy import text
+
+    result = db.execute(
+        text(
+            """
+            UPDATE chat_message SET citations = (
+                SELECT COALESCE(jsonb_agg(c.value ORDER BY c.ordinality), '[]'::jsonb)
+                FROM jsonb_array_elements(chat_message.citations) WITH ORDINALITY AS c
+                WHERE (c.value ->> 'file_uuid') IS NULL
+                   OR NOT ((c.value ->> 'file_uuid') = ANY(:uuids))
+            )
+            WHERE jsonb_typeof(citations) = 'array'
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(chat_message.citations) AS e
+                WHERE (e.value ->> 'file_uuid') = ANY(:uuids)
+              )
+            """
+        ),
+        {"uuids": [str(u) for u in file_uuids]},
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
 def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     """Read everything the external destroy needs, then hand back PLAIN DATA.
 
@@ -966,7 +1018,8 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
     1. Object storage: original + thumbnail + playback rendition + regenerable derived cache.
     2. OpenSearch: speaker embeddings (v3+v4), transcript doc, transcript chunks, summaries.
-    3. Database row (CASCADE removes child rows).
+    3. Database row (CASCADE removes child rows), plus every chat citation quoting the
+       file (:func:`scrub_chat_citations` — no foreign key reaches those).
     4. Redis caches for the owner.
     5. Empty non-promoted speaker clusters orphaned by the CASCADE.
 
@@ -1036,7 +1089,9 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
         # Phase 2 — object storage + OpenSearch. NO transaction is held here.
         residual.extend(_purge_external_copies(plan))
 
-        # Phase 3 — write.
+        # Phase 3 — write. The citation scrub rides the row delete's transaction, so a
+        # failed delete never leaves the history scrubbed for a file that still exists.
+        scrub_chat_citations(db, [file_uuid])
         db.delete(file)
         db.commit()
         logger.info(f"purge_media_file: deleted file {file_uuid} from database")

@@ -663,6 +663,17 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         if tasks_deleted:
             logger.info(f"Deleted {tasks_deleted} tasks against these media files")
 
+        # Quotes of these recordings in ANY account's chat history (a shared file is
+        # cited in other users' conversations). No FK reaches them, so the bulk delete
+        # below cannot either.
+        from app.services.file_cleanup_service import scrub_chat_citations
+
+        file_uuids = [
+            str(row[0])
+            for row in db.query(MediaFile.uuid).filter(MediaFile.id.in_(media_ids)).all()
+        ]
+        scrub_chat_citations(db, file_uuids)
+
         # Now delete the media files
         db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {media_count} media files for user {user_id}")

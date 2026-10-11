@@ -125,6 +125,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **English source strings rewritten so they translate cleanly (#1220).** The 11 translation
+  reviewers of #1193 flagged copy that only works in English. Engine settings prose no longer
+  leaks env var names, badge values or internal terms (the `ENGINE_DIARIZER_BACKEND` detail is a
+  separate admin line); quarantine copy says plainly what is hidden and uses "quarantine" throughout;
+  the orphaned-data panel uses one noun pair ("orphaned media files" / "stored items"); the upload
+  model options, the break-glass confirmation (one sentence per access level) and the language-default
+  values are whole strings or templates instead of fragments glued together in code; `common.orphaned`
+  now names the noun; the support-session toasts say what happened. Removed keys:
+  `uploader.highQualitySuffix`, `uploader.fastProcessingSuffix`, `supportAccess.breakGlass.confirmSummary`.
+  All 12 locales carry provisional translations of the changed keys pending a native-level re-review
+  (the `de` "fur" typo is fixed too); the Spanish tu/usted mix is not decided here.
+
 - **Upload wizard and tray polish (UX review items 4, 6, 9, 12).** The Tags and Collections steps
   now use the same searchable multi-select dropdown as the filter sidebar, **Create collection**
   opens the gallery's own create-collection dialog (name, description, default summary prompt)

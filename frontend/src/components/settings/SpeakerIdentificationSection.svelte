@@ -114,7 +114,10 @@
       hidden={activeId !== 'spk-detection'}
     >
       {#if visited['spk-detection']}
-        <SpeakerDetectionSettings on:change={(e) => (dirty.detection = e.detail.hasChanges)} />
+        <SpeakerDetectionSettings
+          on:change={(e) => (dirty.detection = e.detail.hasChanges)}
+          on:navigate={(e) => dispatch('navigate', e.detail)}
+        />
       {/if}
     </div>
   {/if}

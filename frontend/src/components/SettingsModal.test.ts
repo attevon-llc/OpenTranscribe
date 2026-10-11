@@ -445,6 +445,23 @@ describe('Transcription and Speaker Identification sections', () => {
     );
   });
 
+  it('jumps from the Automatic detection line to Transcription > Provider & Model', async () => {
+    const { container } = await openAs('admin', 'speaker-identification');
+    const link = await waitFor(() => {
+      const el = container.querySelector('[data-testid="detection-credential-line"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(link);
+
+    await waitFor(() =>
+      expect(navItem(container, 'settings.transcription.title')?.classList.contains('active')).toBe(
+        true
+      )
+    );
+    expect(tab(container, 'tx-provider')?.getAttribute('aria-selected')).toBe('true');
+  });
+
   describe('revealing the active sidebar row', () => {
     const scrolled: { row: Element | null; opts: ScrollIntoViewOptions | undefined }[] = [];
 

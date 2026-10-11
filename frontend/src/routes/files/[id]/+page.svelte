@@ -25,6 +25,7 @@
   import VideoPlayer from '$components/VideoPlayer.svelte';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
+  import ProcessingSection from '$components/fileDetail/ProcessingSection.svelte';
   import AnalyticsSection from '$components/AnalyticsSection.svelte';
   import TranscriptDisplay from '$components/TranscriptDisplay.svelte';
   import TranscriptActionsBar from '$components/transcript/TranscriptActionsBar.svelte';
@@ -2380,6 +2381,7 @@
             {file}
             bind:showMetadata
           />
+          <ProcessingSection steps={file?.processing_steps ?? []} />
         {/if}
       </section>
 

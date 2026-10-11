@@ -40,6 +40,7 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from tests.integration.deletion_residue import CENTROID_MATCH_COSINE
 from tests.integration.deletion_residue import FkEdge
 from tests.integration.deletion_residue import centroid_residue
 from tests.integration.deletion_residue import media_file_closure
@@ -112,6 +113,9 @@ class Api:
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> Any:
         return self.http.post(f"{self.base}{path}", json=json or {}, headers=self._headers())
+
+    def put(self, path: str, json: dict[str, Any] | None = None) -> Any:
+        return self.http.put(f"{self.base}{path}", json=json or {}, headers=self._headers())
 
     def logout(self) -> None:
         self.http.post(f"{self.base}/api/auth/logout", headers=self._headers())
@@ -190,6 +194,17 @@ class Ledger:
         self.files: list[SeededFile] = []
         self.users: list[int] = []
         self.chats: list[int] = []
+        # Profiles a test made through the API (a cluster promotion), not via the seed.
+        self.profile_uuids: list[str] = []
+
+
+def _remove_api_profiles(engine, profile_uuids: list[str]) -> None:
+    from app.services.opensearch_service import remove_profile_embedding
+
+    for profile_uuid in profile_uuids:
+        remove_profile_embedding(profile_uuid)
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM speaker_profile WHERE uuid = :p"), {"p": profile_uuid})
 
 
 @pytest.fixture
@@ -198,12 +213,15 @@ def created(engine) -> Iterator[Ledger]:
     try:
         yield ledger
     finally:
-        teardown_seed(
-            engine,
-            ledger.files,
-            throwaway_user_ids=ledger.users,
-            chat_conversation_ids=ledger.chats,
-        )
+        try:
+            _remove_api_profiles(engine, ledger.profile_uuids)
+        finally:
+            teardown_seed(
+                engine,
+                ledger.files,
+                throwaway_user_ids=ledger.users,
+                chat_conversation_ids=ledger.chats,
+            )
 
 
 def _seed(engine, created: Ledger, owner_id: int, **kwargs: Any) -> SeededFile:
@@ -458,6 +476,258 @@ def test_account_deletion_leaves_no_centroid_of_the_accounts_clusters(
     assert not client.exists(
         index=get_active_speaker_index(), id=f"cluster_{cluster.cluster_uuid}"
     ), "the deleted account's shared-cluster centroid survived"
+
+
+# ------------------------------------- a speaker leaving a cluster keeps no copy of its voice (#1214)
+
+
+def _cosine(u: list[float], v: list[float]) -> float:
+    import numpy as np
+
+    a, b = np.array(u, dtype=np.float64), np.array(v, dtype=np.float64)
+    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+def _voiceprint_docs(speaker_uuid: str) -> int:
+    """How many speaker indices still hold this speaker's own voiceprint document."""
+    from app.services.opensearch_service import get_opensearch_client
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
+
+    client = get_opensearch_client()
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    total = 0
+    for idx in speaker_embedding_indices():
+        if client.indices.exists(index=idx):
+            client.indices.refresh(index=idx)
+            body = {"query": {"ids": {"values": [speaker_uuid]}}}
+            total += int(client.count(index=idx, body=body)["count"])
+    return total
+
+
+def _speaker_doc(doc_id: str) -> list[float] | None:
+    """The embedding of a ``profile_*``/``cluster_*`` document, or None when absent."""
+    from app.services.opensearch_service import get_opensearch_client
+    from app.services.opensearch_service.aliases import get_active_speaker_index
+
+    client = get_opensearch_client()
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    index = get_active_speaker_index()
+    if not client.exists(index=index, id=doc_id):
+        return None
+    return list(client.get(index=index, id=doc_id)["_source"]["embedding"])
+
+
+def _link_to_profile(engine, sf: SeededFile, speaker_ids: list[int], voices: list[list[float]]):
+    """Link speakers to ``sf``'s seeded profile; its embedding becomes their mean."""
+    import numpy as np
+
+    from app.services.opensearch_service import store_profile_embedding
+
+    assert sf.profile_id is not None and sf.profile_uuid is not None
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE speaker SET profile_id = :p WHERE id = ANY(:ids)"),
+            {"p": sf.profile_id, "ids": speaker_ids},
+        )
+    mean = np.mean(np.array(voices, dtype=np.float64), axis=0)
+    mean = (mean / np.linalg.norm(mean)).tolist()
+    assert store_profile_embedding(
+        sf.profile_id, sf.profile_uuid, f"{DELRES_PREFIX}{sf.tag}", mean, len(voices), sf.owner_id
+    ), "seed: profile embedding was not stored"
+
+
+def _remove_speaker_through(api: Api, engine, route: str, victim: str, keeper: str) -> None:
+    if route == "speaker-delete":
+        resp = api.delete(f"/api/speakers/{victim}")
+        assert resp.status_code == 204, resp.text
+    elif route == "segment-reassign":
+        # Reassigning a speaker's last segment deletes the now-empty speaker.
+        with engine.connect() as conn:
+            segments = conn.execute(
+                text(
+                    "SELECT ts.uuid FROM transcript_segment ts JOIN speaker s "
+                    "ON s.id = ts.speaker_id WHERE s.uuid = :u"
+                ),
+                {"u": victim},
+            ).scalars()
+            segment_uuids = [str(u) for u in segments]
+        assert segment_uuids, "the victim speaker has no segments to reassign"
+        for segment_uuid in segment_uuids:
+            resp = api.put(
+                f"/api/transcripts/segments/{segment_uuid}/speaker", json={"speaker_uuid": keeper}
+            )
+            assert resp.status_code == 200, resp.text
+    else:
+        resp = api.post(f"/api/speakers/{victim}/merge/{keeper}")
+        assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.parametrize("route", ["speaker-delete", "segment-reassign", "speaker-merge"])
+def test_a_removed_speaker_leaves_no_copy_of_its_voice(api, engine, admin_id, created, route):
+    """Deleting one speaker rebuilds every centroid and profile that averaged it in (#1214).
+
+    The cluster holds one speaker from each of two files; the profile links the same two.
+    Removing ``a``'s speaker through each entry point must leave the cluster's centroid and
+    the profile's embedding equal to the SURVIVOR's voiceprint, ``member_count`` at 1, and
+    (except for a merge, whose source voiceprint is folded into the target by the
+    background task) no voiceprint document of the removed speaker anywhere.
+    """
+    a, b, cluster = _seed_shared_pair(engine, created, admin_id)
+    _assert_backend_sees(api, a)
+    victim, keeper = a.speaker_uuids
+    survivor_voice = cluster.voiceprints[b.speaker_uuids[0]]
+    remaining = _assert_centroid_still_averages_both(cluster, a, b)
+    _link_to_profile(
+        engine,
+        a,
+        [a.speaker_ids[0], b.speaker_ids[0]],
+        [cluster.voiceprints[victim], survivor_voice],
+    )
+    before = _speaker_doc(f"profile_{a.profile_uuid}")
+    assert before is not None and _cosine(before, survivor_voice) < CENTROID_MATCH_COSINE, (
+        "control: the profile must average in the speaker about to be removed"
+    )
+    assert _voiceprint_docs(victim) >= 1, "control: the victim's voiceprint must be indexed"
+
+    _remove_speaker_through(api, engine, route, victim, keeper)
+
+    _assert_centroid_rebuilt(engine, cluster, remaining, a)
+    with engine.connect() as conn:
+        left = conn.execute(
+            text("SELECT count(*) FROM speaker WHERE uuid = :u"), {"u": victim}
+        ).scalar_one()
+    assert left == 0, f"{route} did not remove the speaker row"
+    after = _speaker_doc(f"profile_{a.profile_uuid}")
+    assert after is not None, "the profile kept a member, so it must keep an embedding"
+    assert _cosine(after, survivor_voice) >= CENTROID_MATCH_COSINE, (
+        f"{route} left the profile embedding averaged with the removed speaker's voice"
+    )
+    if route != "speaker-merge":
+        assert _voiceprint_docs(victim) == 0, f"{route} left the removed speaker's voiceprint"
+
+
+def test_unassigning_every_member_deletes_the_cluster_and_its_centroid(
+    api, engine, admin_id, created
+):
+    a, b, cluster = _seed_shared_pair(engine, created, admin_id)
+    assert _speaker_doc(f"cluster_{cluster.cluster_uuid}") is not None, "control: centroid seeded"
+
+    resp = api.post(
+        f"/api/speaker-clusters/{cluster.cluster_uuid}/unassign",
+        json={"speaker_uuids": [a.speaker_uuids[0], b.speaker_uuids[0]], "blacklist": False},
+    )
+    assert resp.status_code == 200, resp.text
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT count(*) FROM speaker_cluster WHERE id = :c"), {"c": cluster.cluster_id}
+        ).scalar_one()
+    assert rows == 0, "an emptied cluster must be deleted"
+    assert _speaker_doc(f"cluster_{cluster.cluster_uuid}") is None, (
+        "the emptied cluster's centroid (an average of both voices) survived its row"
+    )
+
+
+@pytest.mark.parametrize("op", ["unassign", "split"])
+def test_a_speaker_moved_out_of_a_cluster_leaves_its_centroid(api, engine, admin_id, created, op):
+    a, b, cluster = _seed_shared_pair(engine, created, admin_id)
+    victim = a.speaker_uuids[0]
+    with engine.begin() as conn:  # the product keeps Speaker.cluster_id beside the membership
+        conn.execute(
+            text("UPDATE speaker SET cluster_id = :c WHERE id = ANY(:ids)"),
+            {"c": cluster.cluster_id, "ids": [a.speaker_ids[0], b.speaker_ids[0]]},
+        )
+    remaining = _assert_centroid_still_averages_both(cluster, a, b)
+
+    resp = api.post(
+        f"/api/speaker-clusters/{cluster.cluster_uuid}/{op}",
+        json={"speaker_uuids": [victim], **({"blacklist": False} if op == "unassign" else {})},
+    )
+    assert resp.status_code == 200, resp.text
+    if op == "split":
+        new_uuid = resp.json()["uuid"]
+        with engine.connect() as conn:
+            new_id = conn.execute(
+                text("SELECT id FROM speaker_cluster WHERE uuid = :u"), {"u": new_uuid}
+            ).scalar_one()
+        b.extra_cluster_ids.append(int(new_id))
+        b.extra_cluster_uuids.append(new_uuid)
+        assert centroid_residue(new_uuid, [cluster.voiceprints[victim]]) == [], (
+            "the split-off cluster's centroid is not its one member's voiceprint"
+        )
+
+    _assert_centroid_rebuilt(engine, cluster, remaining, a)
+
+
+def test_deleting_a_cluster_erases_its_centroid_and_keeps_its_members(
+    api, engine, admin_id, created
+):
+    a, b, cluster = _seed_shared_pair(engine, created, admin_id)
+    assert _speaker_doc(f"cluster_{cluster.cluster_uuid}") is not None, "control: centroid seeded"
+
+    resp = api.delete(f"/api/speaker-clusters/{cluster.cluster_uuid}")
+    assert resp.status_code == 204, resp.text
+
+    assert _speaker_doc(f"cluster_{cluster.cluster_uuid}") is None
+    with engine.connect() as conn:
+        assert (
+            conn.execute(
+                text("SELECT count(*) FROM speaker_cluster WHERE id = :c"),
+                {"c": cluster.cluster_id},
+            ).scalar_one()
+            == 0
+        )
+        assert (
+            conn.execute(
+                text("SELECT count(*) FROM speaker WHERE uuid = ANY(CAST(:u AS uuid[]))"),
+                {"u": [a.speaker_uuids[0], b.speaker_uuids[0]]},
+            ).scalar_one()
+            == 2
+        ), "deleting a grouping must not delete the speakers in it"
+
+
+def test_deleting_a_promoted_profile_restores_member_labels(api, engine, admin_id, created):
+    """A profile's name reached its members through promotion; deleting it takes it back."""
+    a, b, cluster = _seed_shared_pair(engine, created, admin_id)
+    with engine.begin() as conn:  # an unnamed cluster, so promotion names it after the profile
+        conn.execute(
+            text("UPDATE speaker_cluster SET label = NULL WHERE id = :c"), {"c": cluster.cluster_id}
+        )
+    name = f"{DELRES_PREFIX}{new_tag()}"
+    resp = api.post(f"/api/speaker-clusters/{cluster.cluster_uuid}/promote", json={"name": name})
+    assert resp.status_code == 200, resp.text
+    profile_uuid = resp.json()["profile_uuid"]
+    created.profile_uuids.append(profile_uuid)
+    members = [a.speaker_uuids[0], b.speaker_uuids[0]]
+    with engine.connect() as conn:
+        labels = conn.execute(
+            text("SELECT display_name FROM speaker WHERE uuid = ANY(CAST(:u AS uuid[]))"),
+            {"u": members},
+        ).scalars()
+        assert set(labels) == {name}, "control: promotion names its members"
+        assert (
+            conn.execute(
+                text("SELECT label FROM speaker_cluster WHERE id = :c"), {"c": cluster.cluster_id}
+            ).scalar_one()
+            == name
+        ), "control: promotion names the cluster"
+
+    resp = api.delete(f"/api/speaker-profiles/profiles/{profile_uuid}")
+    assert resp.status_code == 204, resp.text
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT display_name, profile_id FROM speaker WHERE uuid = ANY(CAST(:u AS uuid[]))"
+            ),
+            {"u": members},
+        ).all()
+        label = conn.execute(
+            text("SELECT label FROM speaker_cluster WHERE id = :c"), {"c": cluster.cluster_id}
+        ).scalar_one()
+    assert rows and all(r.display_name is None and r.profile_id is None for r in rows), rows
+    assert label != name, "the cluster still carries the deleted profile's name"
+    assert _speaker_doc(f"profile_{profile_uuid}") is None, "the deleted profile kept its embedding"
 
 
 # --------------------------------------------------------------------------- account routes

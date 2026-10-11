@@ -17,6 +17,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
+from app.models.media import SpeakerClusterMember
 from app.models.user import User
 from app.schemas.speaker_cluster import BatchVerifyRequest
 from app.schemas.speaker_cluster import ClusterPromoteRequest
@@ -27,6 +28,9 @@ from app.schemas.speaker_cluster import SpeakerClusterUpdate
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.playback_rendition import resolve_playback
+from app.services.speaker_cleanup import SpeakerImpact
+from app.services.speaker_cleanup import raise_if_incomplete
+from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_clustering_service import SpeakerClusteringService
 
 logger = logging.getLogger(__name__)
@@ -445,9 +449,11 @@ def delete_cluster(
 
     Destroys only the grouping. Member speakers survive with ``cluster_id`` reset to
     null, so the transcripts and their labels are untouched and the speakers become
-    candidates for re-clustering. Removing the cluster's centroid embedding from
-    OpenSearch is best-effort — a failure there is logged at debug and does not fail
-    the request, because Postgres is the source of truth for cluster membership.
+    candidates for re-clustering. The memberships are removed first and the emptied
+    cluster is then deleted, row and centroid, by the shared ``speaker_cleanup`` — the
+    centroid is an average of the members' voices, so its erasure is verified, and a
+    centroid that may survive is reported (503 with a fixed message), not logged at
+    debug and forgotten.
     """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
@@ -463,18 +469,10 @@ def delete_cluster(
         if not cluster:
             raise HTTPException(status_code=404, detail="Cluster not found")
 
-        # Clear speaker cluster_id references
         db.query(Speaker).filter(Speaker.cluster_id == cluster.id).update({"cluster_id": None})
-
-        # Remove from OpenSearch
-        try:
-            from app.services.opensearch_service import delete_cluster_embedding
-
-            delete_cluster_embedding(str(cluster.uuid))
-        except Exception:
-            logger.debug("Failed to remove cluster embedding from OpenSearch")
-
-        db.delete(cluster)
+        db.query(SpeakerClusterMember).filter(SpeakerClusterMember.cluster_id == cluster.id).delete(
+            synchronize_session=False
+        )
         db.commit()
 
     except HTTPException:
@@ -483,6 +481,12 @@ def delete_cluster(
         logger.exception("Error deleting cluster: %s", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
+
+    raise_if_incomplete(
+        reconcile_speaker_impact(
+            db, SpeakerImpact(owner_ids={int(current_user.id)}, cluster_uuids={cluster_uuid})
+        )
+    )
 
 
 @router.post("/{cluster_uuid}/promote", response_model=dict[str, Any])

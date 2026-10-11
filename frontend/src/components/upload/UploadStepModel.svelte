@@ -42,10 +42,10 @@
     </label>
     <select id="whisper-model-select" bind:value={selectedWhisperModel} on:change={emitChange} class="model-select">
       <option value={null}>
-        {$t('uploader.highQuality')} ({adminDefaultModel}){$t('uploader.highQualitySuffix')}
+        {$t('uploader.highQualityOption', { model: adminDefaultModel })}
       </option>
       <option value="base">
-        {$t('uploader.fastProcessing')}{$t('uploader.fastProcessingSuffix')}
+        {$t('uploader.fastProcessingOption')}
       </option>
     </select>
     {#if selectedWhisperModel === 'base'}

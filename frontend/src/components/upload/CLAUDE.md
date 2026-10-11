@@ -82,3 +82,6 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
   `UploadStepCollections` and `UploadStepSpeakers`). Keep it that way — only the active locale is
   loaded at runtime, so a bare English literal here is a live regression for 11 of 12 languages.
   New copy needs a key in all 12 locale files (`npm run check:i18n` gates it).
+  Never build one visible string from two keys (the model options once appended a leading
+  " – " suffix key): word order differs by language, so each option is one self-contained
+  key, with `{{model}}` interpolated (#1220; `lib/i18n/sourceCopy.test.ts` guards it).

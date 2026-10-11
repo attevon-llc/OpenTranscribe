@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SUPPORT_LEVEL_KEYS } from '$lib/i18n/keyMaps';
+  import { BREAK_GLASS_SUMMARY_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -139,8 +139,7 @@
     </h3>
     <p class="warning" role="note">{$t('supportAccess.breakGlass.warning')}</p>
     <p>
-      {$t('supportAccess.breakGlass.confirmSummary', {
-        level: $t(SUPPORT_LEVEL_KEYS[level]),
+      {$t(BREAK_GLASS_SUMMARY_KEYS[level], {
         target: target.label,
         duration: durationLabel(duration, $t),
       })}

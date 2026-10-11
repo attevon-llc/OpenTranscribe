@@ -28,11 +28,17 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
+
+# These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach
+# as a failure. CI has no OpenSearch, so stand the stores in with the recorders; the live
+# behaviour is covered by test_deletion_residue_live.
+pytestmark = pytest.mark.usefixtures("speaker_os_seams")
 
 PREFIX = "/api/speaker-clusters"
 

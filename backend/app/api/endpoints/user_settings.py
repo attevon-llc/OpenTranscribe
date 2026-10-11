@@ -87,6 +87,9 @@ from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
 from app.services import system_settings_service
+from app.services.auto_llm_settings import SPEAKER_ID_SYSTEM_KEY
+from app.services.auto_llm_settings import SPEAKER_ID_USER_KEY
+from app.services.auto_llm_settings import resolve_auto_llm_flags
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 from app.utils.tenant_sharing import owner_in_tenant
 
@@ -1242,6 +1245,7 @@ _SPEAKER_ATTR_DB_KEYS = [
     "speaker_attribute_gender_detection_enabled",
     "speaker_attribute_age_detection_enabled",
     "speaker_attribute_show_on_cards",
+    SPEAKER_ID_USER_KEY,
 ]
 
 
@@ -1273,6 +1277,9 @@ def get_speaker_attribute_settings(
         ).lower()
         == "true",
         show_attributes_on_cards=flags.show_on_cards,
+        auto_llm_speaker_identification=resolve_auto_llm_flags(
+            db, current_user.id
+        ).speaker_identification,
     )
 
 
@@ -1294,6 +1301,7 @@ def update_speaker_attribute_settings(
         "gender_detection_enabled": "speaker_attribute_gender_detection_enabled",
         "age_detection_enabled": "speaker_attribute_age_detection_enabled",
         "show_attributes_on_cards": "speaker_attribute_show_on_cards",
+        "auto_llm_speaker_identification": SPEAKER_ID_USER_KEY,
     }
 
     for frontend_key, value in update_data.items():
@@ -1350,6 +1358,7 @@ def get_speaker_attribute_system_defaults(
             "speaker_attribute.gender_detection_enabled",
             "speaker_attribute.age_detection_enabled",
             "speaker_attribute.show_on_cards",
+            SPEAKER_ID_SYSTEM_KEY,
         ],
     )
 
@@ -1362,6 +1371,7 @@ def get_speaker_attribute_system_defaults(
         gender_detection_enabled=_b("speaker_attribute.gender_detection_enabled", True),
         age_detection_enabled=_b("speaker_attribute.age_detection_enabled", True),
         show_attributes_on_cards=_b("speaker_attribute.show_on_cards", True),
+        auto_llm_speaker_identification=_b(SPEAKER_ID_SYSTEM_KEY, True),
     )
 
 
@@ -1521,7 +1531,10 @@ def update_auto_label_settings(
     from app.services.auto_label_service import AutoLabelService
 
     service = AutoLabelService(db)
-    service.save_user_auto_label_settings(current_user.id, settings_data.model_dump())
+    # exclude_unset: a client that predates a field must not reset it to its default.
+    service.save_user_auto_label_settings(
+        current_user.id, settings_data.model_dump(exclude_unset=True)
+    )
     return service.get_user_auto_label_settings(current_user.id)
 
 

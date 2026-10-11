@@ -96,6 +96,10 @@ class AuditEventType(StrEnum):
     # A forced OpenSearch orphan purge that overrode the sweep's ratio guard
     ADMIN_DATA_INTEGRITY_PURGE = "admin.data_integrity.purge"
 
+    # A storage-object orphan sweep (issue #1212): requested, and again on completion
+    # with counters only
+    ADMIN_DATA_INTEGRITY_STORAGE_PURGE = "admin.data_integrity.storage_purge"
+
     # A permanent delete refused by services/delete_permissions.py (issue #1103)
     FILE_DELETE_DENIED = "file.delete.denied"
 

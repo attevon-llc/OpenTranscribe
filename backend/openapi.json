@@ -14284,6 +14284,218 @@
         "title": "SpeakerUpdate",
         "type": "object"
       },
+      "StorageOrphanFile": {
+        "description": "One file whose row is gone but whose objects remain.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "integer"
+          },
+          "objects": {
+            "title": "Objects",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "user_id",
+          "objects",
+          "bytes"
+        ],
+        "title": "StorageOrphanFile",
+        "type": "object"
+      },
+      "StorageOrphanReport": {
+        "description": "What a storage sweep found (dry run) or did (last run).",
+        "properties": {
+          "deleted_bytes": {
+            "title": "Deleted Bytes",
+            "type": "integer"
+          },
+          "deleted_files": {
+            "title": "Deleted Files",
+            "type": "integer"
+          },
+          "deleted_objects": {
+            "title": "Deleted Objects",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_objects": {
+            "title": "Failed Objects",
+            "type": "integer"
+          },
+          "force": {
+            "title": "Force",
+            "type": "boolean"
+          },
+          "orphan_bytes": {
+            "title": "Orphan Bytes",
+            "type": "integer"
+          },
+          "orphan_files": {
+            "title": "Orphan Files",
+            "type": "integer"
+          },
+          "orphan_objects": {
+            "title": "Orphan Objects",
+            "type": "integer"
+          },
+          "orphans": {
+            "items": {
+              "$ref": "#/components/schemas/StorageOrphanFile"
+            },
+            "title": "Orphans",
+            "type": "array"
+          },
+          "orphans_truncated": {
+            "title": "Orphans Truncated",
+            "type": "boolean"
+          },
+          "rechecked_present": {
+            "title": "Rechecked Present",
+            "type": "integer"
+          },
+          "refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused"
+          },
+          "skipped_recent_files": {
+            "title": "Skipped Recent Files",
+            "type": "integer"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "total_objects": {
+            "title": "Total Objects",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "force",
+          "total_objects",
+          "total_bytes",
+          "orphan_files",
+          "orphan_objects",
+          "orphan_bytes",
+          "orphans",
+          "orphans_truncated",
+          "skipped_recent_files",
+          "rechecked_present",
+          "deleted_files",
+          "deleted_objects",
+          "deleted_bytes",
+          "failed_objects"
+        ],
+        "title": "StorageOrphanReport",
+        "type": "object"
+      },
+      "StorageSweepLastRun": {
+        "properties": {
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "results": {
+            "$ref": "#/components/schemas/StorageOrphanReport"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "number"
+          }
+        },
+        "required": [
+          "timestamp",
+          "duration_seconds",
+          "results"
+        ],
+        "title": "StorageSweepLastRun",
+        "type": "object"
+      },
+      "StorageSweepStarted": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StorageSweepStarted",
+        "type": "object"
+      },
+      "StorageSweepStatus": {
+        "properties": {
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StorageSweepLastRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running"
+        ],
+        "title": "StorageSweepStatus",
+        "type": "object"
+      },
       "SubtitleValidationResult": {
         "description": "Result of subtitle validation.",
         "properties": {
@@ -21388,6 +21600,123 @@
         "summary": "Get Data Integrity Status",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/admin/data-integrity/storage": {
+      "post": {
+        "description": "Delete the storage objects of files that no longer exist.\n\nRefuses without ``confirm=true``. Review ``GET /admin/data-integrity/storage/counts``\nfirst. Every file id is re-checked against Postgres right before its objects are\nremoved, an empty Postgres side is refused outright, and objects younger than the grace\nperiod are never touched. Audit-logged as ``admin.data_integrity.storage_purge`` (at\nrequest, and again on completion with counters).",
+        "operationId": "start_storage_orphan_sweep_api_admin_data_integrity_storage_post",
+        "parameters": [
+          {
+            "description": "Required: this deletes objects. Review the dry run first.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Required: this deletes objects. Review the dry run first.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Override the ratio guard (a sweep may otherwise delete at most 10% of the file-shaped objects). Never overrides the empty-database refusal.",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Override the ratio guard (a sweep may otherwise delete at most 10% of the file-shaped objects). Never overrides the empty-database refusal.",
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSweepStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Start Storage Orphan Sweep",
+        "tags": [
+          "admin-storage-integrity"
+        ]
+      }
+    },
+    "/api/admin/data-integrity/storage/counts": {
+      "get": {
+        "description": "Dry run: list storage objects whose ``media_file`` row no longer exists.\n\nDeletes nothing. The refusals a real run would apply (``empty_valid_set``,\n``ratio_guard``) are evaluated and reported in ``refused``.",
+        "operationId": "get_storage_orphan_counts_api_admin_data_integrity_storage_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageOrphanReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Storage Orphan Counts",
+        "tags": [
+          "admin-storage-integrity"
+        ]
+      }
+    },
+    "/api/admin/data-integrity/storage/status": {
+      "get": {
+        "description": "Whether a storage sweep is running, and the result of the last one.",
+        "operationId": "get_storage_sweep_status_api_admin_data_integrity_storage_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSweepStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Storage Sweep Status",
+        "tags": [
+          "admin-storage-integrity"
         ]
       }
     },

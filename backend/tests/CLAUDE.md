@@ -416,6 +416,17 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   and `live` (`DELETION_RESIDUE_BACKEND_URL`, else `E2E_BACKEND_URL`, else :5174 — it must
   share the Postgres named by `POSTGRES_PORT`, and refuses a mixed stack). The GDPR legs leave
   id-only `erasure_ledger` rows behind by design (the ledger outlives what it records).
+- **`integration/test_orphan_sweep_storage.py` proves the storage orphan sweep (#1212) on a
+  THROWAWAY bucket**, never the real media bucket: a fixture makes `e2e-orphan-sweep-<hex>`,
+  points `settings.MEDIA_BUCKET_NAME` at it, and empties and removes it in `finally`. The
+  "existing file" is a real committed `media_file` row named with `DELRES_PREFIX` (so
+  `cleanup-test-data.py` already covers a leaked row); orphan ids are far above any real
+  sequence value and asserted absent. The sweep skips objects younger than its grace period,
+  so tests that expect deletion move `storage_orphan_sweep_task._now` forward (`old_clock`)
+  instead of waiting an hour, and `test_recent_objects_are_skipped` is the control that
+  proves the clock shift is what makes the others delete. Needs `MINIO_PORT` exported for an
+  isolated stack (`SKIP_S3` otherwise skips it). The route contract (confirm gate, authz,
+  audit) is `api/endpoints/test_admin_storage_integrity_routes.py`, with the task replaced.
 - **The three diarization `gpu` suites do NOT run in the gate's `-m gpu` phase — they need a
   container, and the gate runs the venv.** `test_diarizer_lifecycle.py`,
   `test_diarization_perf_gates.py` and `test_diarization_regression.py` each open with an

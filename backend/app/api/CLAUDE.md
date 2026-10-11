@@ -120,7 +120,8 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `POST /search/repair-indices` | Probes 4 indices, repairs only on failure. The speakers branch **recreates the index from Postgres**, so OpenSearch-only docs are lost |
 | `POST /speakers/cleanup-orphaned-embeddings` | `get_current_active_user` — self-scoped by `user_id`, the only unprivileged search-index mutation here |
 | `POST /files/management/cleanup-orphaned` · `GET /files/management/stuck` | Stuck-file recovery, **not** orphan cleanup — see Gotchas |
-| `GET /admin/data-integrity/counts` | `run_orphan_cleanup(dry_run=True)` inline; read-only |
+| `GET /admin/data-integrity/counts` | `run_orphan_cleanup(dry_run=True)` inline; read-only; the SPA's Data Integrity panel calls it |
+| `GET /admin/data-integrity/storage/{counts,status}` · `POST /admin/data-integrity/storage?confirm=true[&force=true]` | Storage-object orphan sweep (#1212; `admin_storage_integrity.py` + `tasks/storage_orphan_sweep_task.py`). Dry run first; the POST refuses without `confirm=true`, dispatches Celery `storage_orphan_sweep` and audits `admin.data_integrity.storage_purge` (request, then completion with counters only). Guards mirror the index sweep: empty Postgres refused (force cannot override), 10%-of-objects ratio guard (`force`), per-file Postgres re-check, 1 h grace period |
 | `POST /admin/media-duration-backfill` | super_admin; dispatches `recovery.media_duration_backfill` (issue #969), `dry_run=true` default |
 | `/speakers/combined-migration/{start,status,stop}` · `DELETE .../progress` | super_admin; `stop` revokes in-flight batches |
 | `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |

@@ -1,5 +1,11 @@
 # UX designer review: implementation status and remaining-work plan
 
+> **Update 2026-10-11 (after packages A to D landed on `feat/v0.6.0-frontend-ux`).** Items 4, 6, 9, 12
+> (upload), 14 (notification logo), 17, 18, 19, 26, 29, 30 (gallery and filter sidebar) are now DONE.
+> Still open: 15 (auto-clear; proposal pending an owner decision), 39 (file detail header; needs the
+> designer's mockup), 40 (toolbar rows; order done, verify against the mockup). The file-size filter was
+> removed on the owner's decision. Unused locale keys from items 4 and 29 were deleted.
+
 Audit of the 45 items in `docs/design/ux_designer_review_notes.md` against branch
 `feat/v0.6.0-frontend-ux` (worktree `.claude/worktrees/v0.6.0`, HEAD `00d6b229`), 2026-10-11.
 Code-verified only (file:line reads), **not browser-verified**. Line numbers are as of that HEAD.

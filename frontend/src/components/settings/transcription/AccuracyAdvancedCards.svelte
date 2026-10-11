@@ -97,6 +97,20 @@
     </div>
     <p class="input-hint">{$t('settings.transcription.vadSpeechPadHint')}</p>
   </div>
+
+  {#if systemDefaults}
+    <div class="defaults-info">
+      <span class="defaults-label">{$t('settings.transcription.advancedDefaults')}</span>
+      <span class="defaults-value">
+        {$t('settings.transcription.vadDefaultsValue', {
+          vad: systemDefaults.vad_threshold,
+          silence: systemDefaults.vad_min_silence_ms,
+          speech: systemDefaults.vad_min_speech_ms,
+          pad: systemDefaults.vad_speech_pad_ms
+        })}
+      </span>
+    </div>
+  {/if}
 </SettingsCard>
 
 <SettingsCard
@@ -163,11 +177,7 @@
     <div class="defaults-info">
       <span class="defaults-label">{$t('settings.transcription.advancedDefaults')}</span>
       <span class="defaults-value">
-        {$t('settings.transcription.advancedDefaultsValue', {
-          vad: systemDefaults.vad_threshold,
-          silence: systemDefaults.vad_min_silence_ms,
-          speech: systemDefaults.vad_min_speech_ms,
-          pad: systemDefaults.vad_speech_pad_ms,
+        {$t('settings.transcription.repetitionDefaultsValue', {
           repetition: systemDefaults.repetition_penalty
         })}
       </span>

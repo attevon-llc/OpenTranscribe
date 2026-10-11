@@ -8,8 +8,9 @@ own session, invisible to the savepoint harness otherwise) and
 themselves are lightweight fakes standing in for a network call to a cloud ASR
 vendor — mocking *those* is the "heavy external call" the task instructions
 call out, not the orchestration around them. Diarization merging
-(``merge_cloud_diarization``) is exercised for real: it is the actual business
-logic this module exists to drive.
+(``assign_speakers``) is exercised for real: it is the actual business
+logic this module exists to drive. The parallel leg returns the turns unmerged and
+``_run_cloud_asr_pipeline`` merges them with ``assign_speakers`` (the one merge, #1226).
 """
 
 from __future__ import annotations
@@ -240,16 +241,17 @@ class TestRunParallelCloudAsrAndDiarization:
         asr = FakeASRProvider(result=_asr_result(), supports_diar=True)
 
         with patch(_DIARIZE_FACTORY_CREATE, return_value=None):
-            result = _run_parallel_cloud_asr_and_diarization(
+            result, turns = _run_parallel_cloud_asr_and_diarization(
                 ctx, "/fake/audio.wav", ASRConfig(enable_diarization=False), asr, None
             )
 
         assert result is asr._result
+        assert turns is None
         assert asr.calls == 1
         assert asr.captured_config is not None
         assert asr.captured_config.enable_diarization is True
 
-    def test_both_succeed_merges_speakers_onto_asr_result(self, cloud_asr_seams, normal_user):
+    def test_both_succeed_returns_the_transcript_and_the_turns(self, cloud_asr_seams, normal_user):
         ctx = _make_ctx(normal_user, "task-2")
         asr = FakeASRProvider(result=_asr_result(with_speaker=False))
         diarize_result = DiarizeResult(
@@ -260,15 +262,14 @@ class TestRunParallelCloudAsrAndDiarization:
         diarize = FakeDiarizeProvider(result=diarize_result)
 
         with patch(_DIARIZE_FACTORY_CREATE, return_value=diarize):
-            result = _run_parallel_cloud_asr_and_diarization(
+            result, turns = _run_parallel_cloud_asr_and_diarization(
                 ctx, "/fake/audio.wav", ASRConfig(), asr, None
             )
 
         assert asr.calls == 1
         assert diarize.calls == 1
-        # merge_cloud_diarization ran for real: the previously-speakerless
-        # segment now carries the diarization provider's label.
-        assert result.segments[0].speaker == "SPEAKER_01"
+        assert result is asr._result
+        assert turns is diarize_result
 
     def test_diarization_failure_is_non_fatal(self, cloud_asr_seams, normal_user):
         ctx = _make_ctx(normal_user, "task-3")
@@ -277,12 +278,13 @@ class TestRunParallelCloudAsrAndDiarization:
         diarize = FakeDiarizeProvider(error=RuntimeError("pyannote.ai timed out"))
 
         with patch(_DIARIZE_FACTORY_CREATE, return_value=diarize):
-            result = _run_parallel_cloud_asr_and_diarization(
+            result, turns = _run_parallel_cloud_asr_and_diarization(
                 ctx, "/fake/audio.wav", ASRConfig(), asr, None
             )
 
         # ASR result is returned untouched — diarization is best-effort.
         assert result is asr_result
+        assert turns is None
 
     def test_asr_failure_is_fatal(self, cloud_asr_seams, normal_user):
         ctx = _make_ctx(normal_user, "task-4")
@@ -456,7 +458,7 @@ class TestRunCloudAsrPipeline:
         expected = _asr_result()
 
         with patch(
-            f"{_CLOUD_ASR}._run_parallel_cloud_asr_and_diarization", return_value=expected
+            f"{_CLOUD_ASR}._run_parallel_cloud_asr_and_diarization", return_value=(expected, None)
         ) as parallel_mock:
             result = _run_cloud_asr_pipeline(
                 ctx,
@@ -495,3 +497,89 @@ class TestRunCloudAsrPipeline:
 
         factory_mock.assert_called_once()
         assert result["asr_provider"] == "deepgram"
+
+
+class TestParallelMergeUsesAssignSpeakers:
+    """The parallel path's turns reach the text through ``assign_speakers`` (#1226)."""
+
+    def _run(self, normal_user, make_task, task_id, asr_result, turns, provider_name="pyannote"):
+        make_task(task_id)
+        ctx = _make_ctx(normal_user, task_id)
+        asr = FakeASRProvider(result=asr_result)
+        diarize = FakeDiarizeProvider(
+            provider_name=provider_name,
+            result=DiarizeResult(
+                segments=[DiarizeSegment(a, b, c) for a, b, c in turns],
+                num_speakers=len({c for _, _, c in turns}),
+                provider_name=provider_name,
+                model_name="precision-3",
+            ),
+        )
+        with patch(_DIARIZE_FACTORY_CREATE, return_value=diarize):
+            return _run_cloud_asr_pipeline(
+                ctx,
+                "/fake/audio.wav",
+                min_speakers=None,
+                max_speakers=None,
+                num_speakers=None,
+                provider=asr,
+                diarization_source="pyannote",
+            )
+
+    def test_word_timed_model_labels_each_word_by_overlap(
+        self, db_session, cloud_asr_seams, normal_user, make_task
+    ):
+        result = self._run(
+            normal_user,
+            make_task,
+            "task-merge-word",
+            _asr_result(),  # deepgram nova-3: word timing
+            [(0.0, 0.4, "SPEAKER_00"), (0.4, 1.0, "SPEAKER_01")],
+        )
+
+        segment = result["segments"][0]
+        assert [w["speaker"] for w in segment["words"]] == ["SPEAKER_00", "SPEAKER_01"]
+        assert segment["speaker"] == "SPEAKER_01"  # 0.6 s against 0.4 s
+        assert result["diarization_provider"] == "pyannote"
+        assert result["diarization_model"] == "precision-3"
+
+    def test_segment_timed_model_gives_words_the_segment_speaker(
+        self, db_session, cloud_asr_seams, normal_user, make_task
+    ):
+        asr_result = _asr_result()
+        asr_result.provider_name, asr_result.model_name = "openai", "whisper-1"
+        result = self._run(
+            normal_user,
+            make_task,
+            "task-merge-segment",
+            asr_result,
+            [(0.0, 0.4, "SPEAKER_00"), (0.4, 1.0, "SPEAKER_01")],
+        )
+
+        segment = result["segments"][0]
+        assert segment["speaker"] == "SPEAKER_01"
+        assert [w["speaker"] for w in segment["words"]] == ["SPEAKER_01", "SPEAKER_01"]
+
+    def test_turns_given_out_of_order_merge_the_same(
+        self, db_session, cloud_asr_seams, normal_user, make_task
+    ):
+        result = self._run(
+            normal_user,
+            make_task,
+            "task-merge-order",
+            _asr_result(),
+            [(0.4, 1.0, "SPEAKER_01"), (0.0, 0.4, "SPEAKER_00")],
+        )
+        words = result["segments"][0]["words"]
+        assert [w["speaker"] for w in words] == ["SPEAKER_00", "SPEAKER_01"]
+
+    def test_empty_turns_leave_the_transcript_speakerless_and_record_no_detector(
+        self, db_session, cloud_asr_seams, normal_user, make_task
+    ):
+        result = self._run(normal_user, make_task, "task-merge-empty", _asr_result(), [])
+
+        segment = result["segments"][0]
+        assert segment["speaker"] is None
+        assert all("speaker" not in w for w in segment["words"])
+        assert result["diarization_provider"] is None
+        assert result["diarization_model"] is None

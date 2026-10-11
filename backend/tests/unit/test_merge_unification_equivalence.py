@@ -18,7 +18,9 @@ GPU runs in ``tests/fixtures/boundary`` (Whisper words + diarizer turns, 10 minu
 Every disagreement (7 + 2 words) is a word overlapping turns of TWO speakers, where the
 midpoint fell in one turn and the larger overlap in the other; the overlap rule is the one
 that agrees more often with the hand-labelled reference. Segments agree 26/26 and 25/25. The
-``_midpoint_reference`` below is a frozen copy of the deleted rule, kept only as the oracle.
+``_midpoint_reference`` below is a frozen copy of the deleted rule, kept only as the oracle; the
+commit that introduced this file pinned it to the real ``merge_cloud_diarization`` word for word
+on both fixtures before that function was deleted.
 
 Segment timing (``whisper-1``, ``gpt-4o-transcribe-diarize``, Azure): each segment takes the
 speaker with the most overlap over the whole segment and its words inherit it, so a speaker
@@ -156,34 +158,6 @@ def test_the_overlap_rule_matches_the_hand_labelled_reference_at_least_as_often(
     old_correct = sum(o is not None and mapping.get(o) == t for t, o, _ in rows)
     new_correct = sum(mapping[n] == t for t, _, n in rows)
     assert new_correct >= old_correct
-
-
-@pytest.mark.parametrize("name", _REAL)
-def test_the_oracle_is_the_merge_it_replaces(name):
-    """Pins the frozen oracle to the real old merge while both exist: one word per segment,
-    so the old merge's segment label is exactly its per-word midpoint label."""
-    from app.services.asr.types import ASRResult
-    from app.services.asr.types import ASRSegment
-    from app.services.asr.types import ASRWord
-    from app.services.diarization.types import DiarizeResult
-    from app.utils.diarization_merge import merge_cloud_diarization
-
-    segments, turns = _load(name)
-    words = [w for s in segments for w in s["words"]]
-    asr = ASRResult(
-        segments=[
-            ASRSegment(
-                w["word"], w["start"], w["end"], words=[ASRWord(w["word"], w["start"], w["end"])]
-            )
-            for w in words
-        ],
-        language="en",
-    )
-    diarized = DiarizeResult(
-        segments=[DiarizeSegment(a, b, c) for a, b, c in turns], num_speakers=2, provider_name="x"
-    )
-    real = [s.speaker for s in merge_cloud_diarization(asr, diarized).segments]
-    assert real == _midpoint_reference(words, turns)
 
 
 def test_the_agreement_measure_can_fail():

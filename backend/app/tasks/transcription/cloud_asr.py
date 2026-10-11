@@ -74,17 +74,21 @@ def _run_parallel_cloud_asr_and_diarization(
     max_speakers: int = 20,
     num_speakers: int | None = None,
 ):
-    """Run cloud ASR and pyannote.ai diarization in parallel, then merge.
+    """Run cloud ASR and a cloud speaker detector in parallel.
 
     Both are I/O-bound HTTP calls, so ThreadPoolExecutor is the right pattern
     (consistent with migration_pipeline.py, speaker_attribute_task.py, llm_service.py).
+
+    Returns:
+        ``(asr_result, diarize_result)``. ``diarize_result`` is ``None`` when nothing
+        diarized separately (the source changed, or the detector failed non-fatally); the
+        caller merges the turns with ``assign_speakers``, the one merge (plan C7).
     """
     from concurrent.futures import ThreadPoolExecutor
     from concurrent.futures import as_completed
 
     from app.services.diarization.factory import DiarizationProviderFactory
     from app.services.diarization.types import DiarizeConfig
-    from app.utils.diarization_merge import merge_cloud_diarization
 
     # Resolved BEFORE either leg starts. A pyannote selection with no usable key raises
     # DiarizationNotConfiguredError here (issue #1204), so the file fails visibly without
@@ -104,7 +108,7 @@ def _run_parallel_cloud_asr_and_diarization(
         provider_config = dataclasses.replace(
             asr_config, enable_diarization=asr_provider.supports_diarization()
         )
-        return asr_provider.transcribe(audio_file_path, provider_config, progress_callback)
+        return asr_provider.transcribe(audio_file_path, provider_config, progress_callback), None
 
     diarize_config = DiarizeConfig(
         min_speakers=min_speakers,
@@ -166,19 +170,40 @@ def _run_parallel_cloud_asr_and_diarization(
     # Diarization failure is non-fatal — return ASR result without speakers
     if diarize_error or diarize_result is None:
         logger.warning("Cloud diarization failed, proceeding without speakers: %s", diarize_error)
-        return asr_result
+        return asr_result, None
+    if not diarize_result.segments:
+        logger.warning("Cloud diarization returned no speaker turns; proceeding without speakers")
+        return asr_result, None
 
-    # Both succeeded — merge diarization results onto ASR transcript
     if asr_result is None:
         raise RuntimeError("Cloud ASR transcription returned no result")
-    merged = merge_cloud_diarization(asr_result, diarize_result)
     logger.info(
         "Parallel cloud pipeline complete: ASR=%s, diarization=%s, file=%d",
         asr_provider.provider_name,
         diarize_provider.provider_name,
         ctx.file_id,
     )
-    return merged
+    return asr_result, diarize_result
+
+
+def _merge_turns(raw_segments: list[dict], diarize_result, asr_result) -> None:
+    """Assign the detector's speaker turns to the converted segments, in place.
+
+    One merge for every engine (``assign_speakers``), at the granularity the transcription
+    model's timing supports (catalog ``timestamp_granularity``; plan C7).
+    """
+    from app.services.asr.factory import ASRProviderFactory
+    from app.transcription.speaker_assigner import assign_speakers
+    from app.transcription.speaker_assigner import diarize_segments_to_frame
+
+    timing = ASRProviderFactory.get_model_capabilities(
+        asr_result.provider_name, asr_result.model_name
+    )["timestamp_granularity"]
+    assign_speakers(
+        diarize_segments_to_frame(diarize_result.segments),
+        {"segments": raw_segments},
+        granularity="word" if timing == "word" else "segment",
+    )
 
 
 def _run_cloud_asr_pipeline(
@@ -261,9 +286,10 @@ def _run_cloud_asr_pipeline(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
 
-    # Parallel cloud execution: ASR + pyannote.ai diarization simultaneously
+    # Parallel cloud execution: ASR + a cloud speaker detector simultaneously
+    diarize_result = None
     if diarization_source == "pyannote":
-        asr_result = _run_parallel_cloud_asr_and_diarization(
+        asr_result, diarize_result = _run_parallel_cloud_asr_and_diarization(
             ctx,
             audio_file_path,
             config,
@@ -278,6 +304,8 @@ def _run_cloud_asr_pipeline(
 
     # Convert ASRResult to the dict format the rest of the pipeline expects
     raw_segments = _convert_asr_result_to_segments(asr_result, ctx.file_id)
+    if diarize_result is not None:
+        _merge_turns(raw_segments, diarize_result, asr_result)
 
     seg_speakers: set[str] = {s["speaker"] for s in raw_segments if s.get("speaker")}
     logger.info(
@@ -289,18 +317,24 @@ def _run_cloud_asr_pipeline(
         ctx.file_id,
     )
 
-    # The engine that ACTUALLY served diarization. `merge_cloud_diarization` records both
-    # from the DiarizeResult itself (utils/diarization_merge.py), so this reports what really
-    # ran rather than what was configured. Absent — and therefore None — in the two cases
-    # where nothing diarized: the `else` branch above (ASR only) and the non-fatal diarization
-    # failure that returns the unmerged ASRResult.
+    # The engine that ACTUALLY served diarization, read off the DiarizeResult itself, so this
+    # reports what really ran rather than what was configured. None in the two cases where
+    # nothing diarized separately: the `else` branch above (ASR only) and the non-fatal
+    # diarization failure.
     #
     # ⚠️ Do NOT substitute a default here or downstream. These were dropped on the floor until
     # issue #28, and `finalize.py` covered for it with a hardcoded
     # "pyannote/speaker-diarization-community-1" — correct only by luck, because the local
     # provider happens to serve those weights. Any other diarization provider on this path was
     # recorded under PyAnnote's name, while `diarization_provider` went to NULL beside it.
-    diar_meta = getattr(asr_result, "metadata", None) or {}
+    diar_meta = (
+        {
+            "diarization_provider": diarize_result.provider_name,
+            "diarization_model": diarize_result.model_name,
+        }
+        if diarize_result is not None
+        else {}
+    )
 
     return {
         "segments": raw_segments,

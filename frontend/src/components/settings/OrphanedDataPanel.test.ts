@@ -138,7 +138,9 @@ describe('OrphanedDataPanel', () => {
     await fireEvent.click(await removeButton());
 
     expect(
-      await screen.findByText(/permanently deletes 4 orphaned search documents and 2 files/)
+      await screen.findByText(
+        /permanently deletes 4 orphaned search documents and 2 orphaned media files/
+      )
     ).toBeInTheDocument();
     expect(removeSearchOrphans).not.toHaveBeenCalled();
     expect(removeStorageOrphans).not.toHaveBeenCalled();

@@ -82,13 +82,17 @@ describe('UploadStepModel — AI summary toggle polarity (#751 item 3)', () => {
     expect(container.textContent).not.toContain('upload.skipSummary');
   });
 
-  it('appends the quality/speed suffix keys to each model option (#751 item 2)', () => {
+  it('gives each model option one self-contained string, not a concatenated suffix (#751 item 2, #1220)', () => {
     const { container } = render(UploadStepModel, {
       props: { adminDefaultModel: 'large-v3-turbo' },
     });
     const options = Array.from(container.querySelectorAll('option')).map((o) => o.textContent);
-    expect(options.some((t) => t?.includes('uploader.highQualitySuffix'))).toBe(true);
-    expect(options.some((t) => t?.includes('uploader.fastProcessingSuffix'))).toBe(true);
+    expect(options.some((t) => t?.includes('uploader.highQualityOption'))).toBe(true);
+    expect(options.some((t) => t?.includes('uploader.fastProcessingOption'))).toBe(true);
+    for (const text of options) {
+      expect(text).not.toContain('Suffix');
+      expect(text?.includes(' – ')).toBe(false);
+    }
   });
 });
 

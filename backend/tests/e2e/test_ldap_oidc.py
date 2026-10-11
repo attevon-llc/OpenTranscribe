@@ -38,6 +38,8 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from idp_overlay import start_overlay
+from idp_overlay import stop_overlay
 from ldap_fixture_users import LDAP_ADMIN
 from ldap_fixture_users import LDAP_NEGATIVE
 from ldap_fixture_users import LDAP_REGULAR
@@ -269,23 +271,29 @@ def _keycloak_api_get(path: str, token: str) -> dict | list:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_lldap_running():
+def ensure_lldap_running(request):
     """Ensure LLDAP container is running and has test users."""
     project_root = Path(__file__).resolve().parents[3]
 
-    if not _is_port_open("localhost", LLDAP_LDAP_PORT):
-        subprocess.run(
-            ["docker", "compose", "-f", "docker-compose.ldap-test.yml", "up", "-d"],
-            cwd=str(project_root),
-            check=True,
-            capture_output=True,
-        )
+    # Started here only when nothing is listening; the handle remembers whether this fixture
+    # is what brought it up so teardown puts back exactly that (see idp_overlay).
+    handle = start_overlay(
+        "docker-compose.ldap-test.yml",
+        (),
+        cwd=project_root,
+        port=LLDAP_LDAP_PORT,
+        is_open=_is_port_open,
+    )
+    # Registered BEFORE the readiness wait so a failed start is undone too. A no-op when the
+    # port was already open: the stack owns that overlay and its teardown.
+    request.addfinalizer(lambda: stop_overlay(handle))
+    if handle.started_by_test:
         # Wait for LLDAP to be ready
         for _ in range(20):
             if _is_port_open("localhost", LLDAP_LDAP_PORT):
                 break
-            # Kept (issue #431): polling a container's TCP port from a session fixture with no
-            # Playwright page — no locator exists to wait on.
+            # Kept (issue #431): polling a container's TCP port from a session fixture with
+            # no Playwright page — no locator exists to wait on.
             time.sleep(1)
         else:
             pytest.fail("LLDAP failed to start within 20 seconds")
@@ -363,22 +371,24 @@ def ensure_lldap_running():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_keycloak_running(base_url: str, backend_url: str):
+def ensure_keycloak_running(request, base_url: str, backend_url: str):
     """Ensure Keycloak container is running and has test realm/users."""
     project_root = Path(__file__).resolve().parents[3]
 
-    if not _is_port_open("localhost", 8180):
-        subprocess.run(
-            ["docker", "compose", "-f", "docker-compose.keycloak.yml", "up", "-d", "keycloak"],
-            cwd=str(project_root),
-            check=True,
-            capture_output=True,
-        )
+    handle = start_overlay(
+        "docker-compose.keycloak.yml",
+        ("keycloak",),
+        cwd=project_root,
+        port=8180,
+        is_open=_is_port_open,
+    )
+    request.addfinalizer(lambda: stop_overlay(handle))
+    if handle.started_by_test:
         for _ in range(60):
             if _is_port_open("localhost", 8180):
-                # Kept (issue #431): Keycloak's port opens before its realm import/DB migration
-                # finishes, with no observable signal until then — this fixed grace period is
-                # what's under test, not a UI wait.
+                # Kept (issue #431): Keycloak's port opens before its realm import/DB
+                # migration finishes, with no observable signal until then — this fixed
+                # grace period is what's under test, not a UI wait.
                 time.sleep(5)  # Extra wait for Keycloak startup
                 break
             # Kept (issue #431): container-startup TCP poll interval, no Playwright page in

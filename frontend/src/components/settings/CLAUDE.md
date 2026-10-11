@@ -107,7 +107,9 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   group carries the same spread on the row, so the group stays visible to everyone else.
 
 - **Tabbed sections decide their tabs from a pure helper, not inline.** Privacy & Redaction is ONE
-  sidebar row (`content-redaction`) over `PrivacyRedactionSettings`; `$lib/settings/privacyRedactionTabs`
+  sidebar row (`content-redaction`, in the **AI & Chat** group right after Chat: its detectors are ML
+  models on the redaction worker and its policy governs what an AI model may see; not an Account
+  setting) over `PrivacyRedactionSettings`; `$lib/settings/privacyRedactionTabs`
   returns the tabs per role (plain user: personal only, no tab strip; admin: policy tab present but
   locked; super_admin: both). `redaction-policy` is NOT in `SECTION_MIN_ROLE` — it survives only as a
   deep-link/search alias that opens the policy tab, and the tab-level lock is the same super_admin tier.

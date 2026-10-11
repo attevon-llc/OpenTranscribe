@@ -225,6 +225,33 @@ describe('merged Privacy & Redaction section', () => {
     expect(navItem(container, 'settings.redactionPolicy.title')).toBeNull();
   });
 
+  it('files the redaction row under AI & Chat right after Chat, not under Account', async () => {
+    setUser('user');
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'chat.rag': true },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(sectionOf(container, 'settings.privacyRedaction.title')).toBe(
+      'settings.sections.aiChat'
+    );
+    const labels = Array.from(
+      navItem(container, 'settings.privacyRedaction.title')!
+        .closest('.sidebar-section')!
+        .querySelectorAll('.nav-item-label')
+    ).map((el) => el.textContent?.trim());
+    expect(labels.indexOf('settings.privacyRedaction.title')).toBe(
+      labels.indexOf('chat.settings.title') + 1
+    );
+    const account = navItem(container, 'settings.profile.title')!.closest('.sidebar-section')!;
+    expect(account.textContent).not.toContain('settings.privacyRedaction.title');
+  });
+
   it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
     setUser('user');
     settingsModalStore.open('content-redaction');

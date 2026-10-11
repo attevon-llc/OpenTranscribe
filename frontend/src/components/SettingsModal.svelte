@@ -343,8 +343,6 @@
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
         { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
-        // One row, two tabs: the per-user preference and (admin) the policy floor that overrides it.
-        ...(privacyRedactionVisible(privacyAccess) ? [{ id: 'content-redaction' as SettingsSection, label: $t('settings.privacyRedaction.title'), icon: 'eye-off' }] : []),
         ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : [])
       ]
     },
@@ -364,6 +362,10 @@
       items: [
         // Admin platform tuning for chat lives in this panel's Advanced tab, not a second row.
         { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
+        // Content analysis, not an account setting: ML detectors on the redaction worker, and the
+        // policy decides what an AI model may see. One row, two tabs: the per-user preference and
+        // (admin) the policy floor that overrides it.
+        ...(privacyRedactionVisible(privacyAccess) ? [{ id: 'content-redaction' as SettingsSection, label: $t('settings.privacyRedaction.title'), icon: 'eye-off' }] : []),
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
         // Org context is prompt material: OrganizationContextSettings persists

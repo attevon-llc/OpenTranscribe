@@ -207,6 +207,12 @@ export const SUPPORT_LEVEL_KEYS: Record<AccessLevel, string> = {
   write: 'supportAccess.level.write',
 };
 
+/** One whole sentence per level, so no translation has to inflect a level name into a template. */
+export const BREAK_GLASS_SUMMARY_KEYS: Record<AccessLevel, string> = {
+  read: 'supportAccess.breakGlass.confirmSummaryRead',
+  write: 'supportAccess.breakGlass.confirmSummaryWrite',
+};
+
 /** Why a support session ended (every reason except a silent logout). */
 export const SUPPORT_SESSION_END_KEYS = {
   user: 'supportAccess.session.user',

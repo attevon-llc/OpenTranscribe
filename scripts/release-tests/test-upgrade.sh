@@ -90,6 +90,10 @@ TEST_SCENARIO="upgrade"
 # docker compose stays at its default ('opentranscribe') so this scenario
 # exercises stock container, network, and volume names — same as a real user.
 TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-upgrade}"
+# Defaulted = "this run picks a fresh timestamped root". `--cleanup` then means the LAST
+# run's root, which gr_check_test_root records (issue #1195); see gr_cleanup.
+TEST_ROOT_DEFAULTED=0
+[[ -n "${TEST_ROOT:-}" ]] || TEST_ROOT_DEFAULTED=1
 TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S)}"
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
@@ -278,7 +282,7 @@ source "$LIB_DIR/compose-chain.sh"
 
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
-    gr_cleanup
+    gr_cleanup "$TEST_ROOT_DEFAULTED"
     exit 0
 fi
 
@@ -2595,7 +2599,10 @@ print(len(items or []))
             [[ -n "$fid" ]] || continue
             pre_transcript="$TEST_ROOT/snapshots/before/transcript-$fid.json"
             [[ -s "$pre_transcript" ]] || continue
-            post_transcript="$(mktemp)"
+            # Under TEST_ROOT beside its "before" twin, not a bare mktemp an interrupted run
+            # orphans in /tmp (issue #1195); TEST_ROOT goes with --cleanup.
+            mkdir -p "$TEST_ROOT/snapshots/after"
+            post_transcript="$TEST_ROOT/snapshots/after/transcript-$fid.json"
             ac_get_segments "$fid" > "$post_transcript" 2>/dev/null || true
             local detail
             detail=""

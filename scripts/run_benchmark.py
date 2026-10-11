@@ -568,68 +568,75 @@ def run_level(
 
     log(f'===== LEVEL {label} (mode={phase.mode} conc={conc}) =====')
     teardown(env)
-    log('starting fresh bench stack...')
-    compose(['up', '-d'], files, env=env, profile=profile)
-    wait_ready(workers)
-    wait_auth()
+    # Everything from `up` on is inside try/finally: wait_ready/wait_auth call sys.exit and a
+    # Ctrl-C raises, and either used to leave the otbench stack and its volumes running until
+    # the next run's first teardown (issue #1195).
+    sampler: AllGpuSampler | None = None
+    try:
+        log('starting fresh bench stack...')
+        compose(['up', '-d'], files, env=env, profile=profile)
+        wait_ready(workers)
+        wait_auth()
 
-    outdir.mkdir(parents=True, exist_ok=True)
-    sampler = AllGpuSampler(outdir / 'gpu_all.csv')
-    sampler.start()
+        outdir.mkdir(parents=True, exist_ok=True)
+        sampler = AllGpuSampler(outdir / 'gpu_all.csv')
+        sampler.start()
 
-    cmd = [
-        str(PY),
-        'scripts/benchmark_parallel.py',
-        '--corpus-file',
-        str(corpus_path),
-        '--profile',
-        phase.profile,
-        '--upload',
-        '--audio-dir',
-        str(AUDIO_DIR),
-        '--gpu-id',
-        str(phase.gpu_device),
-        '--cooldown',
-        '0',
-        '--output',
-        str(outdir),
-        '--run-label',
-        label,
-    ]
-    if phase.sequential:
-        cmd += ['--sequential', '--batches', '1']
-    else:
-        cmd += ['--batches', str(n_files)]
-    if phase.shuffle:
-        cmd += ['--shuffle']
+        cmd = [
+            str(PY),
+            'scripts/benchmark_parallel.py',
+            '--corpus-file',
+            str(corpus_path),
+            '--profile',
+            phase.profile,
+            '--upload',
+            '--audio-dir',
+            str(AUDIO_DIR),
+            '--gpu-id',
+            str(phase.gpu_device),
+            '--cooldown',
+            '0',
+            '--output',
+            str(outdir),
+            '--run-label',
+            label,
+        ]
+        if phase.sequential:
+            cmd += ['--sequential', '--batches', '1']
+        else:
+            cmd += ['--batches', str(n_files)]
+        if phase.shuffle:
+            cmd += ['--shuffle']
 
-    bench_env = {
-        'BENCHMARK_DB_CONTAINER': f'{PROJECT}-postgres',
-        'BENCHMARK_BACKEND_URL': BACKEND_URL,
-        'BENCHMARK_STATS_CONTAINERS': ','.join(stats_containers_for(phase.mode)),
-        'BENCHMARK_EMAIL': os.environ.get('BENCHMARK_EMAIL', 'admin@example.com'),
-        'BENCHMARK_PASSWORD': os.environ.get('BENCHMARK_PASSWORD', 'password'),
-    }
-    rc = run(cmd, env=bench_env, check=False).returncode
-    sampler.stop()
+        bench_env = {
+            'BENCHMARK_DB_CONTAINER': f'{PROJECT}-postgres',
+            'BENCHMARK_BACKEND_URL': BACKEND_URL,
+            'BENCHMARK_STATS_CONTAINERS': ','.join(stats_containers_for(phase.mode)),
+            'BENCHMARK_EMAIL': os.environ.get('BENCHMARK_EMAIL', 'admin@example.com'),
+            'BENCHMARK_PASSWORD': os.environ.get('BENCHMARK_PASSWORD', 'password'),
+        }
+        rc = run(cmd, env=bench_env, check=False).returncode
+        sampler.stop()  # idempotent; stop sampling before the post-run bookkeeping
 
-    stable = 'oom' if oom_detected(workers) else 'yes'
-    if rc != 0:
-        log(f'ABORT: benchmark_parallel exited {rc} for {label} — not recording.')
+        stable = 'oom' if oom_detected(workers) else 'yes'
+        if rc != 0:
+            log(f'ABORT: benchmark_parallel exited {rc} for {label} — not recording.')
+            return None
+
+        metrics = json.loads((outdir / 'metrics.json').read_text())
+        batches = metrics.get('batches', [])
+        last = batches[-1] if batches else {}
+        record_result(phase.name, label, conc, phase.gpu_device, last, stable)
+        log(
+            f'result {label}: rtf={last.get("throughput_audio_hrs_per_wall_hr")} '
+            f'vram_peak={last.get("vram_peak_mb")}MB cpu_avg={last.get("cpu_pct_avg")}% stable={stable}'
+        )
+
+        return {'label': label, 'stable': stable, **last}
+    finally:
+        if sampler is not None:
+            sampler.stop()
         teardown(env)
-        return None
-
-    metrics = json.loads((outdir / 'metrics.json').read_text())
-    batches = metrics.get('batches', [])
-    last = batches[-1] if batches else {}
-    record_result(phase.name, label, conc, phase.gpu_device, last, stable)
-    log(
-        f'result {label}: rtf={last.get("throughput_audio_hrs_per_wall_hr")} '
-        f'vram_peak={last.get("vram_peak_mb")}MB cpu_avg={last.get("cpu_pct_avg")}% stable={stable}'
-    )
-
-    teardown(env)
-    return {'label': label, 'stable': stable, **last}
 
 
 # ---------------------------------------------------------------------------

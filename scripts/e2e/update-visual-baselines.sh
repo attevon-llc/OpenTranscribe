@@ -552,11 +552,15 @@ start_capture_stack() {
         # in-shell. `--fresh` refuses to start on a bound port and tells the operator
         # to pick another offset; that manual step is the one people skip, so the
         # bump is done here.
+        # Claimed BEFORE the start: assert_project_is_not_live above proved this project was
+        # not running, so anything that exists after a failed or interrupted start is ours,
+        # and the EXIT trap's stop_capture_stack must stop it (issue #1195). It used to be set
+        # only on success, so a start that died part-way left the otfresh stack running.
+        STACK_STARTED_BY_US=true
         out="$("$OPENTR" "${start_args[@]}" 2>&1)" || rc=$?
         printf '%s\n' "$out" >&2
 
         if [[ $rc -eq 0 ]]; then
-            STACK_STARTED_BY_US=true
             return 0
         fi
 

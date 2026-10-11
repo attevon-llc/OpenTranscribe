@@ -55,6 +55,11 @@ META="$OUT_DIR/last.meta"
 RUN_LOG="$OUT_DIR/run-$$.log"
 RUN_XML="$OUT_DIR/run-$$.xml"
 mkdir -p "$OUT_DIR"
+# An interrupted run never reaches the publish step below, so its PID-scoped files were left
+# in $OUT_DIR for good (issue #1195). INT/TERM only, never EXIT: a finished run MOVES these
+# files to last.*, and an EXIT trap removing them first would delete the evidence.
+trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; exit 130' INT
+trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; exit 143' TERM
 
 # ── Reporting from the saved artifacts (no pytest) ─────────────────────────
 

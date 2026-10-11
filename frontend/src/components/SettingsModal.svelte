@@ -77,6 +77,8 @@
 
   // Modal state
   let modalElement: HTMLElement;
+  // The nav list (not the sidebar) scrolls; the search header above it draws a divider once it has.
+  let sidebarScrolled = false;
   let showCloseConfirmation = false;
 
   // Settings state
@@ -507,9 +509,11 @@
   // Any change of section (sidebar click, alias, search hit, in-panel jump link) must show where the
   // user landed: a row far below the fold is otherwise invisible and the change reads as "nothing
   // happened". One reactive hook covers every path instead of each caller scrolling.
-  $: void revealActiveNavItem(effectiveActiveSection);
+  // The list is unmounted while a search is open, so it also re-reveals when the search closes.
+  $: void revealActiveNavItem(effectiveActiveSection, desktopSearchActive);
+  $: if (desktopSearchActive) sidebarScrolled = false;
 
-  async function revealActiveNavItem(_section: string) {
+  async function revealActiveNavItem(_section: string, _searching: boolean) {
     await tick();
     const row = modalElement?.querySelector('.settings-sidebar .nav-item.active');
     if (!row?.scrollIntoView) return;
@@ -937,10 +941,16 @@
           <SettingsSearch
             index={settingsSearchIndex}
             idPrefix="settings-search-desktop"
+            layout="sidebar"
+            raised={sidebarScrolled}
             bind:active={desktopSearchActive}
             on:navigate={handleSettingsNavigate}
           />
           {#if !desktopSearchActive}
+            <div
+              class="sidebar-scroll"
+              on:scroll={(event) => (sidebarScrolled = event.currentTarget.scrollTop > 0)}
+            >
             {#each sidebarSections as section}
               <div class="sidebar-section">
                 <h3 class="section-heading">{section.title}</h3>
@@ -976,6 +986,7 @@
                 </nav>
               </div>
             {/each}
+            </div>
           {/if}
         </aside>
 
@@ -1518,14 +1529,25 @@
     overflow: hidden;
   }
 
+  /* A column, not a scroller: the search is a fixed header and only .sidebar-scroll scrolls, so a
+     scrollbar can never sit on top of the input. */
   .settings-sidebar {
+    display: flex;
+    flex-direction: column;
     width: 240px;
     background-color: var(--background-color);
     border-right: 1px solid var(--border-color);
-    padding: 0.75rem 0;
-    overflow-y: auto;
+    overflow: hidden;
     flex-shrink: 0;
+  }
+
+  .sidebar-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 0.75rem;
     overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
 
   .sidebar-section {
@@ -1533,9 +1555,9 @@
     padding-top: 0.75rem;
   }
 
-  /* The divider belongs BETWEEN groups. `:first-child` could never match here —
-     `.settings-search` is the sidebar's first child — so the top group used to
-     render a stray rule directly under the search box. */
+  /* The divider belongs BETWEEN groups. Keep the sibling combinator: the top group must not
+     draw a rule directly under the search header (it once did, when the search shared the
+     scroller with the groups and `:first-child` could never match). */
   .sidebar-section + .sidebar-section {
     border-top: 1px solid var(--border-color);
   }

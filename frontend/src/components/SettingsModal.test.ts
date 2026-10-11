@@ -555,6 +555,51 @@ describe('Transcription and Speaker Identification sections', () => {
   });
 });
 
+describe('settings search placement', () => {
+  it('keeps the search outside the scrolling nav list so a scrollbar cannot overlap it', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    const sidebar = container.querySelector('.settings-sidebar') as HTMLElement;
+    const scroller = sidebar.querySelector('.sidebar-scroll') as HTMLElement;
+    const search = sidebar.querySelector('#settings-search-desktop-input') as HTMLElement;
+
+    expect(scroller).not.toBeNull();
+    expect(scroller.contains(search)).toBe(false);
+    expect(scroller.querySelectorAll('.nav-item').length).toBeGreaterThan(0);
+    expect(sidebar.querySelectorAll('.nav-item').length).toBe(
+      scroller.querySelectorAll('.nav-item').length
+    );
+    // Search first, list after: the search is a fixed header, not part of the scrolled content.
+    expect(sidebar.firstElementChild?.contains(search)).toBe(true);
+    expect(sidebar.firstElementChild).not.toBe(scroller);
+  });
+
+  it('raises the search header only once the nav list has scrolled', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    const scroller = container.querySelector('.settings-sidebar .sidebar-scroll') as HTMLElement;
+    const header = () =>
+      container.querySelector('.settings-sidebar .settings-search') as HTMLElement;
+
+    expect(header().classList.contains('raised')).toBe(false);
+    scroller.scrollTop = 120;
+    await fireEvent.scroll(scroller);
+    expect(header().classList.contains('raised')).toBe(true);
+    scroller.scrollTop = 0;
+    await fireEvent.scroll(scroller);
+    expect(header().classList.contains('raised')).toBe(false);
+  });
+
+  it('gives the mobile instance the same landmark and search input', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    const mobile = container.querySelector('.mobile-section-nav') as HTMLElement;
+    expect(mobile.querySelector('[role="search"]')).not.toBeNull();
+    expect(mobile.querySelector('input[type="search"]')).not.toBeNull();
+  });
+});
+
 describe('pending-approval badge', () => {
   it('fetches the count on mount for an admin and shows it on the Users nav item', async () => {
     mockUserApprovalsApi.list.mockResolvedValue([{ uuid: 'a' }, { uuid: 'b' }]);

@@ -105,6 +105,9 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   a group outgrows that, split it rather than appending. A group that needs a privilege carries
   `...(isAdmin ? [...] : [])` around the whole group; a privileged row inside an **ungated**
   group carries the same spread on the row, so the group stays visible to everyone else.
+  The sidebar is a **column, not a scroller**: `SettingsSearch` is a fixed header and only
+  `.sidebar-scroll` scrolls, so a scrollbar can never overlap the input. The tab strips of the four
+  tabbed sections are sticky (`<Tabs sticky>`; `.settings-content` publishes `--tabs-sticky-inset`).
 
 - **Tabbed sections decide their tabs from a pure helper, not inline.** Privacy & Redaction is ONE
   sidebar row (`content-redaction`, in the **AI & Chat** group right after Chat: its detectors are ML

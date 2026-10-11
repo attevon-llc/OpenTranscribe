@@ -76,6 +76,19 @@ AI-powered automatic tagging and collection assignment ([#140](https://github.co
 4. **Batch grouping**: For bulk imports, the system tracks which files were uploaded together via an `upload_batch` table. After all files in a batch complete topic extraction, topics appearing in 2+ files trigger automatic shared collection creation.
 5. **Provenance tracking**: Every tag and collection tracks its `source` ("manual", "auto_ai", or "bulk_group") so users can distinguish AI-applied labels from human ones. The frontend displays a sparkle icon on auto-applied items with confidence tooltips.
 
+### Turn off the automatic AI suggestions
+
+After a file is transcribed, OpenTranscribe can automatically ask your configured AI provider for two things, and each one sends the transcript text to that provider. Both are **on by default** and each has its own switch:
+
+| Switch | Where | What it controls |
+|---|---|---|
+| **Suggest tags and collections automatically after transcription** (`auto_topic_extraction`) | Settings → AI & Chat → Auto-Labeling (Tags & Collections) | The topic-extraction step that produces tag and collection suggestions. Suggestions are applied automatically only if Auto-Labeling itself is on; otherwise you review them. |
+| **Suggest speaker names automatically with AI** (`auto_llm_speaker_identification`) | Settings → Speaker Identification → Voice Attributes | The AI step that suggests who each speaker is. Suggestions are never applied automatically; you confirm each one. It is independent of voice-attribute (gender) detection. |
+
+The switches only affect the automatic step. The manual buttons on a file (suggest speaker names, extract suggestions, auto-label, reprocessing selected stages) always work. With no AI provider configured the switches are disabled, because nothing is sent either way. The background recovery sweep respects the switches too: it will not re-queue a step you turned off.
+
+Administrators can set a deployment-wide default by adding the system settings `auto_llm.topic_extraction` or `auto_llm.speaker_identification` with the value `false`; a user's own choice always wins over it.
+
 ### Disable AI Summary Generation
 
 Users can disable automatic AI summarization:

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-user switches for the automatic AI suggestions (#1148).** After a transcription the app
+  automatically asked the configured AI provider for speaker names and for tag/collection
+  suggestions, with no way to stop either. *Settings -> Speaker Identification -> Voice
+  Attributes* now has **Suggest speaker names automatically with AI**
+  (`auto_llm_speaker_identification`) and *Settings -> AI & Chat -> Auto-Labeling* has **Suggest
+  tags and collections automatically after transcription** (`auto_topic_extraction`). Both
+  default to on, so nothing changes until a user turns one off; both state that transcript text
+  goes to the AI provider and are disabled with an explanation when none is configured. Resolved
+  user > system default (`auto_llm.*` system settings) > on, by one helper used by every automatic
+  dispatch and by the post-transcription recovery sweep, which no longer re-queues a step the user
+  turned off. Manual buttons and explicit reprocess stage lists are unaffected. The Voice
+  Attributes note that said turning detection off also stops AI name suggestions is gone: they
+  are decoupled.
+
 - **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
   `multi`, `single`; default `auto`). New API under `/api/support-access`,
   `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,

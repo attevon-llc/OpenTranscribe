@@ -1997,6 +1997,8 @@
   "uploader.tags": "Tags",
   "uploader.selectCollection": "Zoek of maak een collectie...",
   "uploader.createNewCollection": "Collectie aanmaken",
+  "uploader.selectTagsPlaceholder": "Bestaande tags selecteren...",
+  "uploader.selectCollectionsPlaceholder": "Bestaande collecties selecteren...",
   "uploader.collectionCreated": "Collectie succesvol aangemaakt",
   "uploader.collectionAlreadyExists": "Er bestaat al een collectie met die naam",
   "uploader.createCollectionFailed": "Aanmaken van collectie mislukt",

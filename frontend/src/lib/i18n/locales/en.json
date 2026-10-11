@@ -1997,6 +1997,8 @@
   "uploader.tags": "Tags",
   "uploader.selectCollection": "Search or create collection...",
   "uploader.createNewCollection": "Create collection",
+  "uploader.selectTagsPlaceholder": "Select existing tags...",
+  "uploader.selectCollectionsPlaceholder": "Select existing collections...",
   "uploader.collectionCreated": "Collection created successfully",
   "uploader.collectionAlreadyExists": "A collection with that name already exists",
   "uploader.createCollectionFailed": "Failed to create collection",

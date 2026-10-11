@@ -1967,6 +1967,8 @@
   "uploader.tags": "Теги",
   "uploader.selectCollection": "Поиск или создание коллекции...",
   "uploader.createNewCollection": "Создать коллекцию",
+  "uploader.selectTagsPlaceholder": "Выберите существующие теги...",
+  "uploader.selectCollectionsPlaceholder": "Выберите существующие коллекции...",
   "uploader.collectionCreated": "Коллекция успешно создана",
   "uploader.collectionAlreadyExists": "Коллекция с таким именем уже существует",
   "uploader.createCollectionFailed": "Не удалось создать коллекцию",

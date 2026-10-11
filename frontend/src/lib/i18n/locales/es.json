@@ -2676,6 +2676,8 @@
   "uploader.tags": "Etiquetas",
   "uploader.selectCollection": "Buscar o crear colección...",
   "uploader.createNewCollection": "Crear colección",
+  "uploader.selectTagsPlaceholder": "Seleccionar etiquetas existentes...",
+  "uploader.selectCollectionsPlaceholder": "Seleccionar colecciones existentes...",
   "uploader.collectionCreated": "Colección creada exitosamente",
   "uploader.collectionAlreadyExists": "Ya existe una colección con ese nombre",
   "uploader.createCollectionFailed": "Error al crear la colección",

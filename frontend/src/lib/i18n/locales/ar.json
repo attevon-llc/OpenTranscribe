@@ -1997,6 +1997,8 @@
   "uploader.tags": "الوسوم",
   "uploader.selectCollection": "بحث أو إنشاء مجموعة...",
   "uploader.createNewCollection": "إنشاء مجموعة",
+  "uploader.selectTagsPlaceholder": "اختر من الوسوم الحالية...",
+  "uploader.selectCollectionsPlaceholder": "اختر من المجموعات الحالية...",
   "uploader.collectionCreated": "تم إنشاء المجموعة بنجاح",
   "uploader.collectionAlreadyExists": "توجد مجموعة بهذا الاسم بالفعل",
   "uploader.createCollectionFailed": "فشل إنشاء المجموعة",

@@ -84,6 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Upload wizard and tray polish (UX review items 4, 6, 9, 12).** The Tags and Collections steps
+  now use the same searchable multi-select dropdown as the filter sidebar, **Create collection**
+  opens the gallery's own create-collection dialog (name, description, default summary prompt)
+  instead of a private inline field, the button on the step before Review now says **Review**
+  (the redundant "Review with defaults" button is hidden on that step), and the upload tray's
+  active count is a white pill with blue text (5.17:1; the old amber was 3.10:1 on the header).
+  The queued/completed counts are white (5.17:1, were 3.51 and 3.68). Adds two strings
+  (`uploader.selectTagsPlaceholder`, `uploader.selectCollectionsPlaceholder`) in all 12 locales.
+
 - **Settings: Watch Sources tabs, merged Privacy & Redaction, Speech Processing.** Watch Sources
   is split into Sources, Email Notifications and Global Settings tabs (the last two for
   `super_admin` only), and its Save button is the standard right-aligned action. *Content

@@ -18,6 +18,7 @@ from collections.abc import Callable
 import httpx
 
 from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+from app.services.pipeline_plan import PYANNOTE_AI
 
 from .base import DiarizationProvider
 from .types import DiarizeConfig
@@ -77,7 +78,9 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
 
     @property
     def provider_name(self) -> str:
-        return "pyannote"
+        # ``pyannote.ai``, never ``pyannote``: that is the local in-process engine's id,
+        # and a file's provenance must say which of the two detected its speakers (#1229).
+        return PYANNOTE_AI
 
     def supports_speaker_count(self) -> bool:
         return True
@@ -217,7 +220,7 @@ class PyAnnoteCloudDiarizationProvider(DiarizationProvider):
         return DiarizeResult(
             segments=segments,
             num_speakers=len(speaker_set),
-            provider_name="pyannote",
+            provider_name=PYANNOTE_AI,
             model_name=model,
             metadata={"job_id": job_id, "elapsed_ms": round(elapsed_ms, 1)},
         )

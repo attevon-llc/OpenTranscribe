@@ -116,8 +116,10 @@ class LocalDiarizationProvider(DiarizationProvider):
         result = DiarizeResult(
             segments=segments,
             num_speakers=unique_speakers,
-            provider_name="local",
-            model_name="pyannote/speaker-diarization-community-1",
+            # The engine that actually served, after any fallback (#706): ``native`` or
+            # ``pyannote``, the same ids the inline pipeline records (#1229).
+            provider_name=diarizer.last_provider,
+            model_name=diarizer.last_model or "pyannote/speaker-diarization-community-1",
         )
         # Attach native objects as metadata for downstream pipeline compatibility
         # (e.g. assign_speakers(), embedding extraction)

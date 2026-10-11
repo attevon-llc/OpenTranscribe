@@ -118,7 +118,11 @@ def test_rediarize_completes_when_the_diarizer_returns_a_dataframe(db_session):
         # would not affect it. Patch the name where the task actually looks it up.
         patch.object(mod, "session_scope", _test_session_scope),
         patch.object(mod, "_prepare_audio", return_value=("/tmp/fake.wav", None)),  # noqa: S108
-        patch.object(mod, "_run_diarization", return_value=(diarize_df, {"regions": []}, None)),
+        patch.object(
+            mod,
+            "_run_diarization",
+            return_value=(diarize_df, {"regions": []}, None, ("native", "community-1")),
+        ),
         patch("app.tasks.transcription.notifications.send_progress_notification"),
         patch("app.tasks.transcription.notifications.send_completion_notification"),
         patch(

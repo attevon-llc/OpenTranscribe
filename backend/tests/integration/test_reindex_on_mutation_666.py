@@ -400,7 +400,11 @@ def test_rediarize_always_dispatches_a_reindex_even_with_no_downstream_tasks_req
     with (
         patch(_DISPATCH) as dispatch_mock,
         patch.object(mod, "_prepare_audio", return_value=("/tmp/fake.wav", None)),  # noqa: S108 — stand-in path, never opened (the diarization stage is also stubbed)
-        patch.object(mod, "_run_diarization", return_value=(diarize_df, {"regions": []}, None)),
+        patch.object(
+            mod,
+            "_run_diarization",
+            return_value=(diarize_df, {"regions": []}, None, ("native", "community-1")),
+        ),
         patch("app.tasks.transcription.notifications.send_progress_notification"),
         patch("app.tasks.transcription.notifications.send_completion_notification"),
         patch(

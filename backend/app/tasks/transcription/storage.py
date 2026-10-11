@@ -11,6 +11,7 @@ from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import record_transcription_run
 from app.utils.language import normalize_language
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,15 @@ def update_media_file_transcription_status(
     if hasattr(media_file, "diarization_disabled"):
         media_file.diarization_disabled = diarization_disabled
 
+    record_transcription_run(
+        db,
+        file_id,
+        asr_provider=asr_provider,
+        asr_model=asr_model,
+        diarization_provider=diarization_provider,
+        diarization_model=diarization_model,
+        diarization_disabled=diarization_disabled,
+    )
     db.commit()
     logger.info(f"Updated media file {file_id} transcription status")
 

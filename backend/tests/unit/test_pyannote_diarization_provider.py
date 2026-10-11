@@ -132,7 +132,8 @@ def _run_diarize(
 def test_happy_path_succeeds_on_first_poll(tmp_path):
     result, job_capture = _run_diarize(tmp_path)
 
-    assert result.provider_name == "pyannote"
+    # ``pyannote.ai``, not ``pyannote`` (the local engine's id) — #1229.
+    assert result.provider_name == "pyannote.ai"
     assert result.model_name == "precision-3"
     assert result.num_speakers == 2
     assert len(result.segments) == 2

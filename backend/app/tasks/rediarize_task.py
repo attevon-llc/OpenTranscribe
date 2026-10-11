@@ -19,6 +19,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import record_diarization
 from app.services.minio_service import cleanup_temp_audio
 from app.services.minio_service import download_file
 from app.services.minio_service import download_temp_audio
@@ -185,7 +186,9 @@ def _run_diarization(
     a plain ``SpeakerDiarizer`` (PyAnnote) never sees the extra kwarg it doesn't accept.
 
     Returns:
-        Tuple of (diarize_df, overlap_info, native_embeddings).
+        Tuple of (diarize_df, overlap_info, native_embeddings, served), where ``served`` is
+        the ``(provider, model)`` of the engine that actually ran, read off the diarizer
+        after any fallback (issue #706), for the provenance record (#1229).
     """
     from app.transcription.audio import load_audio
     from app.transcription.config import TranscriptionConfig
@@ -203,8 +206,9 @@ def _run_diarization(
     manager = ModelManager.get_instance()
     diarizer = manager.get_diarizer(config)
     diarize_df, overlap_info, native_embeddings = _run_diarize(diarizer, audio, wav_path)
+    served = (getattr(diarizer, "last_provider", None), getattr(diarizer, "last_model", None))
 
-    return diarize_df, overlap_info, native_embeddings
+    return diarize_df, overlap_info, native_embeddings, served
 
 
 def _dispatch_downstream(
@@ -315,7 +319,7 @@ def rediarize_task(  # noqa: C901
         speaker_range = resolve_speaker_range_for_user(
             user_id, min_speakers, max_speakers, num_speakers
         )
-        diarize_df, overlap_info, native_embeddings = _run_diarization(
+        diarize_df, overlap_info, native_embeddings, served = _run_diarization(
             audio_file_path,
             speaker_range,
             wav_path=audio_file_path if temp_dir is None else None,
@@ -365,6 +369,7 @@ def rediarize_task(  # noqa: C901
 
         with session_scope() as db:
             save_transcript_segments(db, file_id, processed_segments)
+            record_diarization(db, file_id, *served)
             update_task_status(db, task_id, "in_progress", progress=0.85)
 
         # Step 7: Process speaker embeddings (native centroids or traditional)

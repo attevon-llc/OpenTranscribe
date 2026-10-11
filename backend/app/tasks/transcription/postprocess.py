@@ -25,6 +25,7 @@ from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import clear_run_markers
 from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
+from app.services.file_provenance import record_inline_voiceprints
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 from app.utils.task_utils import update_task_status_with_duration
@@ -621,6 +622,7 @@ def _process_native_embeddings(
             native_embeddings=db_embeddings,
             accessible_profile_ids=accessible_ids,
         )
+        record_inline_voiceprints(db, file_id, next(iter(db_embeddings.values())).shape[0])
         update_task_status(db, task_id, "in_progress", progress=0.85)
 
     logger.info(

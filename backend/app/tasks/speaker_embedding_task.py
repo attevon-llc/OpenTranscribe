@@ -17,6 +17,8 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import record_stage
+from app.services.file_provenance import voiceprint_facts
 from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
@@ -195,6 +197,7 @@ def _extract_aggregated_embeddings(
             raw_embeddings = embedding_service.extract_embeddings_for_segments(
                 audio_file_path, inputs["processed_segments"], speaker_mapping
             )
+        inputs["voiceprint_facts"] = voiceprint_facts(embedding_service)
         # ``aggregate_embeddings`` mean-pools and L2-normalizes; feeding the
         # result back through the matching service is a no-op re-normalization,
         # so this is the same vector ``process_speaker_segments`` would have
@@ -245,6 +248,8 @@ def _match_and_finalize_embeddings(
             f"Speaker matching completed: {len(speaker_results) if speaker_results else 0} results"
         )
 
+        if aggregated_embeddings and inputs.get("voiceprint_facts"):
+            record_stage(db, file_id, "voiceprints", **inputs["voiceprint_facts"])
         update_task_status(db, task_id, "in_progress", progress=0.9)
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 

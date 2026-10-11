@@ -12,6 +12,9 @@ from typing import Any
 from app.core import stage_timing
 from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import session_scope
+from app.services.file_provenance import record_inline_voiceprints
+from app.services.file_provenance import record_stage
+from app.services.file_provenance import voiceprint_facts
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.utils.task_utils import update_task_status
 
@@ -139,6 +142,7 @@ def _process_speaker_embeddings(
             f"TIMING: speaker profile matching completed in {matching_elapsed:.3f}s - "
             f"got {len(speaker_results) if speaker_results else 0} results"
         )
+        record_stage(db, ctx.file_id, "voiceprints", **voiceprint_facts(embedding_service))
         update_task_status(db, ctx.task_id, "in_progress", progress=0.82)
 
     total_elapsed = time.perf_counter() - total_start
@@ -211,6 +215,7 @@ def _process_speaker_embeddings_native(
             f"TIMING: process_speaker_embeddings_native completed in {matching_elapsed:.3f}s - "
             f"got {len(speaker_results) if speaker_results else 0} results"
         )
+        record_inline_voiceprints(db, ctx.file_id, next(iter(db_embeddings.values())).shape[0])
         update_task_status(db, ctx.task_id, "in_progress", progress=0.82)
 
     total_elapsed = time.perf_counter() - total_start

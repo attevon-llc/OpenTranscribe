@@ -562,6 +562,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'requested_disable_diarization')"
     )
 
+    # v435: per-file processing provenance (issue #1229). Single-marker revision: the
+    # column IS the fingerprint.
+    has_processing_provenance = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'processing_provenance')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -604,8 +611,26 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v433: same as v432 plus the requested per-file transcription options. The newest
-    # revision on this chain, so this is the top of the ladder.
+    # v435: same as v433 plus the processing provenance column. The newest revision on
+    # this chain, so this is the top of the ladder.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+        and has_support_access_grant
+        and has_requested_options
+        and has_processing_provenance
+    ):
+        return "v435_add_media_processing_provenance"
+    # v433: same as v432 plus the requested per-file transcription options.
     if (
         matches_v389
         and has_file_facts

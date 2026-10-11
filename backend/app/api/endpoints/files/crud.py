@@ -30,6 +30,7 @@ from app.schemas.media import Speaker as SpeakerResponseSchema
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
+from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
@@ -1044,6 +1045,7 @@ def get_media_file_detail(
 
         # Set caller's permission on the response
         response.my_permission = my_permission
+        response.processing_steps = build_processing_steps(db_file)
 
         return response
 

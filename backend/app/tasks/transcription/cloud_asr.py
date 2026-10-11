@@ -5,6 +5,7 @@ import dataclasses
 import logging
 
 from app.db.session_utils import session_scope
+from app.services.file_provenance import inline_speakers_by
 from app.utils.task_utils import update_task_status
 
 from .context import TranscriptionContext
@@ -301,6 +302,7 @@ def _run_cloud_asr_pipeline(
     # provider happens to serve those weights. Any other diarization provider on this path was
     # recorded under PyAnnote's name, while `diarization_provider` went to NULL beside it.
     diar_meta = getattr(asr_result, "metadata", None) or {}
+    inline = inline_speakers_by(asr_result, config.enable_diarization)
 
     return {
         "segments": raw_segments,
@@ -308,6 +310,6 @@ def _run_cloud_asr_pipeline(
         "asr_provider": asr_result.provider_name,
         "asr_model": asr_result.model_name,
         "diarization_source": diarization_source,
-        "diarization_provider": diar_meta.get("diarization_provider"),
-        "diarization_model": diar_meta.get("diarization_model"),
+        "diarization_provider": diar_meta.get("diarization_provider") or inline.get("provider"),
+        "diarization_model": diar_meta.get("diarization_model") or inline.get("model"),
     }

@@ -30,6 +30,8 @@ from app.db.session_utils import session_scope
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import llm_facts
+from app.services.file_provenance import record_stage
 from app.services.llm_service import LLMService
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
 from app.services.metadata_speaker_extractor import build_cross_reference_context
@@ -267,7 +269,9 @@ def _run_llm_identification(
         llm_service.close()
 
 
-def _store_speaker_predictions(file_id: int, predictions: dict[str, Any]) -> None:
+def _store_speaker_predictions(
+    file_id: int, predictions: dict[str, Any], provenance: dict[str, Any] | None = None
+) -> None:
     """Store speaker predictions as suggestions in speaker records.
 
     Opens its **own** short session: the caller has just returned from the LLM
@@ -309,6 +313,9 @@ def _store_speaker_predictions(file_id: int, predictions: dict[str, Any]) -> Non
                 speaker.confidence = confidence
                 speaker.suggestion_source = "llm_analysis"  # type: ignore[assignment]
                 tracker.record(file_id, before, canonical_speaker_label_for_row(speaker))
+
+        if provenance:
+            record_stage(db, file_id, "speaker_names", **provenance)
 
         # Commit explicitly (rather than relying on session_scope's exit-time
         # commit) so the tracker can flush — dispatch after commit, never
@@ -549,7 +556,7 @@ def identify_speakers_llm_task(self, file_uuid: str):
             return {"status": "skipped", "reason": "LLM not configured", "file_id": file_id}
 
         # Phase 3 — write (short sessions, Postgres only).
-        _store_speaker_predictions(file_id, predictions)
+        _store_speaker_predictions(file_id, predictions, predictions.pop("llm_provenance", None))
         with session_scope() as db:
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
@@ -621,6 +628,7 @@ def _generate_predictions(
         logger.info(f"Starting LLM speaker identification for file {file_id}")
         logger.info(f"Using LLM output language: {output_language}")
 
+        provenance = llm_facts(llm_service.config)
         predictions = _run_llm_identification(
             llm_service,
             full_transcript,
@@ -629,6 +637,8 @@ def _generate_predictions(
             output_language,
             metadata_context,
         )
+        if not predictions.get("error"):
+            predictions["llm_provenance"] = provenance
 
         logger.info(
             f"Generated {len(predictions.get('speaker_predictions', []))} speaker predictions"

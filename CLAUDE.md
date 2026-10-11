@@ -676,13 +676,15 @@ subsystem, and put new subsystem detail **there**, not in this file.
   a window where a stash can capture the reverted state, and races every other writer:
 
   ```bash
-  git archive HEAD | (mkdir -p /tmp/redcheck && tar -x -C /tmp/redcheck)
-  cp backend/tests/.../test_the_new_one.py /tmp/redcheck/backend/tests/.../   # new tests, old source
-  cd /tmp/redcheck/backend && <run them; expect red>
+  RED="$(mktemp -d -t ot-redcheck.XXXXXX)" && git archive HEAD | tar -x -C "$RED"
+  cp backend/tests/.../test_the_new_one.py "$RED/backend/tests/.../"   # new tests, old source
+  cd "$RED/backend" && <run them; expect red>
   ```
 
   Immune to stash windows, costs no reloads, disturbs nobody, and the tree you are testing is
-  provably HEAD rather than "what I think I reverted".
+  provably HEAD rather than "what I think I reverted". Use that `ot-redcheck.` name: hand-named
+  `/tmp/redcheck*` trees reached **4.1 GB** on this host, and `scripts/cleanup-test-data.py`'s
+  tmp plane (`./opentr.sh test-cleanup`) removes only registered shapes (issue #1195).
 - **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
   in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
   in the worktree, including commits that do not touch it — twice in one day a lane's own

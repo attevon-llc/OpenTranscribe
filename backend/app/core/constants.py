@@ -638,7 +638,13 @@ TRANSCRIPTION_SETTING_GROUPS: dict[str, tuple[str, ...]] = {
         "hallucination_silence_threshold",
         "repetition_penalty",
     ),
-    "speakers": ("diarization_source", "speaker_prompt_behavior", "min_speakers", "max_speakers"),
+    "speakers": (
+        "diarization_source",
+        "diarization_asr_config_uuid",
+        "speaker_prompt_behavior",
+        "min_speakers",
+        "max_speakers",
+    ),
 }
 
 # Watch Sources global tuning (DB-backed via SystemSettings, admin-UI managed,
@@ -808,8 +814,11 @@ DEFAULT_REPETITION_PENALTY = 1.0  # 1.0 = no penalty
 # Valid speaker prompt behaviors
 VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]
 
-# Diarization source options
-VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
+# Diarization source options. What each one resolves to, per transcription engine and
+# deployment, is decided in one place: services/pipeline_plan.resolve_pipeline_plan.
+# ``asr_config`` = another saved ASR configuration's speaker detection, named by the
+# ``transcription_diarization_asr_config_uuid`` user setting.
+VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "asr_config", "off")
 DEFAULT_DIARIZATION_SOURCE = "provider"
 
 # Native diarizer (diar-native sidecar) model provisioning.

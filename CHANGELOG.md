@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One resolver decides how a recording is processed, and `GET /api/user-settings/pipeline`
+  shows it (#1224).** Transcription and speaker detection are now planned together by one pure
+  function (`services/pipeline_plan.py`) instead of string checks spread over the pipeline: for
+  the user's transcription engine (local GPU, local CPU, cloud) and stored speaker-detection
+  choice it decides which detector runs, where (this server or a named cloud vendor), on which
+  queue, how speaker turns are merged into the text (word or segment timing), and that
+  voiceprints are always computed on this server. The new read-only endpoint returns the four
+  steps (transcription, speaker detection, speaker identification, AI features) with where each
+  runs, whether audio leaves the server, and any blocking or advisory issue as a stable code
+  plus a fixed sentence. A new speaker-detection source, `asr_config`, names another saved
+  provider's speaker detection (`diarization_asr_config_uuid`, covered by the #1109 lock).
+  The ASR catalog and `/asr-settings/status` now report `supports_diarization` per model,
+  `timestamp_granularity` (`word` / `segment` / `none`) and the speaker-count hints each
+  provider actually sends. The pipeline stages start reading the plan in the next change (WP3);
+  until then this is the settings-side half.
+
 - **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
   notifications panel already uses, so the toolbar's three buttons all lead with an icon.
 
@@ -124,6 +140,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Changed
+
+- **Saving a speaker-detection choice is checked against the pipeline plan (#1224).**
+  `PUT /api/user-settings/transcription` resolves the plan for the settings being saved and
+  answers 409 with `detail: {"code", "message"}` (a stable code and a fixed sentence) when a NEW
+  choice cannot run: pyannote.ai with no key (`pyannote_key_missing`, previously a bare-string
+  409), any speaker detection with a model that returns no timestamps such as OpenAI
+  `gpt-4o-transcribe` (`asr_no_timing_for_speakers`; there is no forced alignment), another
+  provider that is missing or returns no speakers (`diarizer_config_missing`,
+  `diarizer_config_no_speakers`), and on lite local speaker detection or Automatic with a
+  text-only model (`local_diarization_unavailable`, `automatic_needs_speaker_provider`).
+  Re-saving an unchanged stored choice is never refused. Local transcription with pyannote.ai is
+  a valid, accepted combination.
 
 - **Upload wizard and tray polish (UX review items 4, 6, 9, 12).** The Tags and Collections steps
   now use the same searchable multi-select dropdown as the filter sidebar, **Create collection**

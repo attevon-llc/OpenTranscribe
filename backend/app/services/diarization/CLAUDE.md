@@ -12,11 +12,27 @@ picks **where** diarization runs, per user (`transcription_diarization_source`).
 runs once the answer here is "on our own GPU" — see `app/transcription/CLAUDE.md`. Changing one
 never changes the other.
 
+## What a source MEANS is decided in one place: `services/pipeline_plan.py` (#1224)
+
+`resolve_pipeline_plan` is the single decision point for "given this transcription engine
+(local GPU / local CPU / cloud) and this stored source, which detector runs, where, on which
+queue, and how its turns reach the text". Sources are `provider | local | pyannote |
+asr_config | off` (`core/constants.VALID_DIARIZATION_SOURCES`, the only copy; the factory's
+duplicate is gone). `asr_config` names another saved ASR configuration's speaker detection via
+the `transcription_diarization_asr_config_uuid` user setting (locked with the source, #1109).
+`load_plan_inputs` (`services/pipeline_plan_inputs.py`) gathers the inputs; the settings PUT and
+`GET /user-settings/pipeline` already use it. **Never add a new `source == "..."` check at a
+call site** — extend the resolver and its matrix test (`tests/unit/test_pipeline_plan.py`).
+
+⚠️ **The pipeline stages do not read the plan yet (WP3).** Until they do, the runtime still
+behaves as below: `pyannote` + local Whisper runs the LOCAL diarizer, `asr_config` produces no
+speakers, a per-file lightweight model forces diarization off, and Automatic + a text-only
+cloud model yields a speakerless transcript. The plan already describes what WP3 makes run.
+
 ## Key files
 
-- `factory.py` — `DiarizationProviderFactory`. Sources are `provider | local | pyannote | off`
-  (`VALID_DIARIZATION_SOURCES`, duplicated in `core/constants.py` under the same name), default
-  `provider`. Returns **`None`** for `provider` (use the ASR provider's own labels) and `off`.
+- `factory.py` — `DiarizationProviderFactory`. Returns **`None`** for `provider` (use the ASR
+  provider's own labels) and `off`.
   `create_for_source` raises `ValueError` for an unknown source or a missing key;
   `create_for_user` raises **`DiarizationNotConfiguredError`** when the user chose `pyannote`
   with no usable key (none stored, or one that no longer decrypts). That exception's text is
@@ -30,7 +46,8 @@ never changes the other.
   #1109 `transcription.diarization_source` lock is on. Encrypted with `encrypt_api_key`, read
   with `decrypt_api_key` (`get_pyannote_credential` / `has_pyannote_credential` here), and
   returned by no route. `PUT /user-settings/transcription` refuses switching TO `pyannote`
-  without a key (409); deleting the key resets a `pyannote` source to the default. The
+  without a key (409, `detail.code == "pyannote_key_missing"`, decided by the plan); deleting
+  the key resets a `pyannote` source to the default. The
   connection test hits only the vendor's free `GET /v1/test`.
 - `local_provider.py` — delegates to `ModelManager.get_diarizer()`, which is **native-first**:
   the diar-native sidecar with automatic in-process PyAnnote failover, not PyAnnote directly. It
@@ -43,8 +60,9 @@ never changes the other.
 
 ## How it connects
 
-- The user setting is `UserSetting["transcription_diarization_source"]`, written and validated in
-  `api/endpoints/user_settings.py`, read in `factory.create_for_user` and in
+- The user setting is `UserSetting["transcription_diarization_source"]`, written in
+  `api/endpoints/user_settings.py` (validated by the pipeline plan), read in
+  `services/pipeline_plan_inputs.py`, `factory.create_for_user` and in
   `tasks/transcription/user_settings.py` (which also derives `disable_diarization` from
   `source == "off"`). Frontend: `components/settings/TranscriptionSettings.svelte`.
 - **Only `source == "pyannote"` actually reaches this factory.** The single production call site

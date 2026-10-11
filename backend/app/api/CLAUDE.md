@@ -87,8 +87,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 
 **This is a self-hosted app; the non-UI API is a feature.** Homelab users, cron scripts, CI and
 AI agents drive it directly, so "no SPA call site" is not evidence an endpoint is dead.
-`tests/unit/test_route_has_a_caller.py` xfails **78 of 374** routes for having no frontend
-caller; the sections below say what those 78 are *for*, so the xfail list reads as intent.
+`tests/unit/test_route_has_a_caller.py` xfails **80 of 413** routes for having no frontend
+caller (measured 2026-10-11; re-derive with that test rather than trusting the number); the
+sections below say what they are *for*, so the xfail list reads as intent. Backend-first
+routes whose UI is planned (support access #1122, the pipeline view #1224) carry their own
+reason there.
 
 The detector keys on path literals in `frontend/src`, which gives it two blind spots — check
 both before believing it:
@@ -227,6 +230,19 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 `backend/app/tasks/CLAUDE.md`.
 
 ## Gotchas
+
+- **Speaker-detection choices are validated by the pipeline plan, never re-derived here
+  (#1224).** `GET /user-settings/pipeline` (`endpoints/pipeline_settings.py`, capability
+  `transcription.prefs`, read-only, DB reads only) returns the four steps of the caller's next
+  file from `services/pipeline_plan`. `PUT /user-settings/transcription` resolves the plan on
+  the would-be state and answers **409 with `detail: {"code", "message"}`** (stable code + the
+  fixed sentence from `pipeline_plan.ISSUE_MESSAGES`, never exception text) for a NEW
+  `diarization_source` / `diarization_asr_config_uuid` that produces a diarization-step
+  error; re-saving an unchanged stored value is never refused. An endpoint that changes what
+  the plan depends on must ask the plan, not add a `source == "..."` check. ⚠️ The ASR-side
+  switches (`/asr-settings/set-active`, `/clear-active`, first-config auto-activation, the
+  promotion on delete) do not re-check the plan yet: they can leave a stored speaker choice
+  that the plan now reports as an error, visible only on `GET /user-settings/pipeline` (WP3/WP6).
 
 - **The upload failure boundary is the commit of the row with its `storage_path`** (issue #905).
   Before that commit — bad MIME, magic-byte mismatch, oversized, object never landed — delete the

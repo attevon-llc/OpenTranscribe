@@ -14,8 +14,8 @@ factory module must not import ``LocalDiarizationProvider`` for that source.
 
 from __future__ import annotations
 
-from app.services.diarization.factory import DEFAULT_DIARIZATION_SOURCE
-from app.services.diarization.factory import VALID_DIARIZATION_SOURCES
+from app.core.constants import DEFAULT_DIARIZATION_SOURCE
+from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.services.diarization.factory import DiarizationProviderFactory
 
 
@@ -62,8 +62,20 @@ class TestCreateForUser:
     def test_default_source_is_provider(self):
         assert DEFAULT_DIARIZATION_SOURCE == "provider"
 
-    def test_valid_sources_unchanged(self):
-        assert set(VALID_DIARIZATION_SOURCES) == {"provider", "local", "pyannote", "off"}
+    def test_valid_sources(self):
+        assert set(VALID_DIARIZATION_SOURCES) == {
+            "provider",
+            "local",
+            "pyannote",
+            "asr_config",
+            "off",
+        }
+
+    def test_the_factory_holds_no_second_copy_of_the_sources(self):
+        """One definition (core.constants); the factory's duplicate drifted from it once."""
+        from app.services.diarization import factory as factory_mod
+
+        assert not hasattr(factory_mod, "VALID_DIARIZATION_SOURCES")
 
 
 def test_factory_module_never_imports_local_diarization_provider():

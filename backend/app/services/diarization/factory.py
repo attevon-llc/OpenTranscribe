@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.services.error_categorization_service import DIARIZATION_NOT_CONFIGURED_MESSAGE
 
 from .base import DiarizationProvider
@@ -15,9 +16,6 @@ if TYPE_CHECKING:
     from app.models.user_diarization_settings import UserDiarizationSettings
 
 logger = logging.getLogger(__name__)
-
-VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
-DEFAULT_DIARIZATION_SOURCE = "provider"
 
 #: The ``user_diarization_settings`` identity of a user's pyannote.ai credential: one row
 #: per user (issue #1204), written only by ``api/endpoints/diarization_settings.py``.
@@ -73,7 +71,7 @@ class DiarizationProviderFactory:
         """Create a diarization provider for the given source.
 
         Args:
-            source: One of ``VALID_DIARIZATION_SOURCES``.
+            source: One of ``core.constants.VALID_DIARIZATION_SOURCES``.
             api_key: API key for cloud providers (pyannote).
             model_name: Model identifier for cloud providers.
 

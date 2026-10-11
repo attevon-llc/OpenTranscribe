@@ -10986,6 +10986,239 @@
         "title": "PendingAccount",
         "type": "object"
       },
+      "PipelineIssueOut": {
+        "properties": {
+          "code": {
+            "description": "Stable code; i18n key settings.pipeline.issue.<code>",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "description": "The fixed English sentence for the code",
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "step": {
+            "enum": [
+              "transcription",
+              "diarization",
+              "speaker_id",
+              "llm"
+            ],
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "step",
+          "message"
+        ],
+        "title": "PipelineIssueOut",
+        "type": "object"
+      },
+      "PipelineStepOut": {
+        "properties": {
+          "adapter_billing": {
+            "default": false,
+            "description": "Diarization by another transcription provider, billed as a transcription",
+            "title": "Adapter Billing",
+            "type": "boolean"
+          },
+          "audio_leaves_server": {
+            "title": "Audio Leaves Server",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "engine": {
+            "description": "Stable id: local_gpu|local_cpu|cloud (transcription), asr|local|pyannote_ai|asr_config|off (diarization), inline_native|embedding_stage|none (speaker_id), llm|off (llm)",
+            "title": "Engine",
+            "type": "string"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the step is carried out (diarization only)",
+            "title": "Execution"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "provider_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Display"
+          },
+          "returns_speakers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transcription step: the model returns speaker labels",
+            "title": "Returns Speakers"
+          },
+          "settings_section": {
+            "description": "Settings section id that changes this step",
+            "title": "Settings Section",
+            "type": "string"
+          },
+          "speaker_hints": {
+            "items": {
+              "enum": [
+                "min",
+                "max",
+                "num"
+              ],
+              "type": "string"
+            },
+            "title": "Speaker Hints",
+            "type": "array"
+          },
+          "step": {
+            "enum": [
+              "transcription",
+              "diarization",
+              "speaker_id",
+              "llm"
+            ],
+            "title": "Step",
+            "type": "string"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "word",
+                  "segment",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transcription step: timestamp granularity of the text",
+            "title": "Timing"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "enum": [
+                  "server",
+                  "cloud"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the step runs; null when it does not run",
+            "title": "Where"
+          }
+        },
+        "required": [
+          "step",
+          "enabled",
+          "where",
+          "engine",
+          "provider",
+          "provider_display",
+          "model",
+          "audio_leaves_server",
+          "settings_section"
+        ],
+        "title": "PipelineStepOut",
+        "type": "object"
+      },
+      "PipelineView": {
+        "properties": {
+          "deployment_mode": {
+            "enum": [
+              "full",
+              "lite"
+            ],
+            "title": "Deployment Mode",
+            "type": "string"
+          },
+          "diarization_source_locked": {
+            "title": "Diarization Source Locked",
+            "type": "boolean"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "steps": {
+            "description": "Always four, in processing order",
+            "items": {
+              "$ref": "#/components/schemas/PipelineStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps",
+          "issues",
+          "deployment_mode",
+          "diarization_source_locked"
+        ],
+        "title": "PipelineView",
+        "type": "object"
+      },
       "PlaylistProcessingResponse": {
         "description": "Response model for YouTube playlist processing requests.",
         "properties": {
@@ -16705,9 +16938,22 @@
           "vad_threshold": 0.5
         },
         "properties": {
+          "diarization_asr_config_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved ASR configuration used for speakers when the source is asr_config",
+            "title": "Diarization Asr Config Uuid"
+          },
           "diarization_source": {
             "default": "provider",
-            "description": "Diarization source: 'provider' (use ASR provider's diarization), 'local' (always use local PyAnnote on GPU), 'pyannote' (pyannote.ai cloud diarization), 'off' (no diarization)",
+            "description": "Diarization source: 'provider' (Automatic: the transcription provider's speakers, or this server when it returns text only), 'local' (this server's engine), 'pyannote' (pyannote.ai cloud diarization), 'asr_config' (another saved provider's speaker detection, named by diarization_asr_config_uuid), 'off' (no diarization)",
             "title": "Diarization Source",
             "type": "string"
           },
@@ -16842,6 +17088,19 @@
           "vad_threshold": 0.3
         },
         "properties": {
+          "diarization_asr_config_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved ASR configuration to use for speakers with source asr_config",
+            "title": "Diarization Asr Config Uuid"
+          },
           "diarization_source": {
             "anyOf": [
               {
@@ -16851,7 +17110,7 @@
                 "type": "null"
               }
             ],
-            "description": "Diarization source: 'provider', 'local', 'pyannote', or 'off'",
+            "description": "Diarization source: 'provider', 'local', 'pyannote', 'asr_config' or 'off'",
             "title": "Diarization Source"
           },
           "garbage_cleanup_enabled": {
@@ -17172,6 +17431,7 @@
               "provider",
               "local",
               "pyannote",
+              "asr_config",
               "off"
             ],
             "description": "Valid diarization source options",
@@ -43144,6 +43404,33 @@
         "summary": "Use Shared Organization Context",
         "tags": [
           "user-settings"
+        ]
+      }
+    },
+    "/api/user-settings/pipeline": {
+      "get": {
+        "description": "The four processing steps for the caller's next file, with where each one runs.",
+        "operationId": "get_pipeline_api_user_settings_pipeline_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Pipeline",
+        "tags": [
+          "pipeline-settings"
         ]
       }
     },

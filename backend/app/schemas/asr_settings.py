@@ -3,6 +3,7 @@
 import re
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -115,6 +116,27 @@ def _validate_region_for_provider(provider: str | None, region: str | None) -> N
         raise ValueError(f"Unknown AWS region '{region}'")
 
 
+SpeakerCountHint = Literal["min", "max", "num"]
+TimestampGranularity = Literal["word", "segment", "none"]
+
+
+class ASRModelCapabilities(BaseModel):
+    """What the active transcription model can do (``/asr-settings/status``).
+
+    Model-level values win over provider-level ones (``ASRProviderFactory.get_model_
+    capabilities``): OpenAI as a provider returns no speakers, its ``-diarize`` model does.
+    """
+
+    provider: str
+    model_id: str
+    supports_translation: bool
+    language_support: str
+    languages: int | None = None
+    supports_diarization: bool
+    speaker_count_hints: list[SpeakerCountHint]
+    timestamp_granularity: TimestampGranularity
+
+
 class ASRModelInfo(BaseModel):
     id: str
     display_name: str
@@ -129,6 +151,9 @@ class ASRModelInfo(BaseModel):
     supports_translation: bool = False
     supports_confidence: bool = False
     max_file_size_mb: int | None = None
+    # Present only where the model differs from its provider entry.
+    speaker_count_hints: list[SpeakerCountHint] | None = None
+    timestamp_granularity: TimestampGranularity | None = None
 
 
 class ASRProviderInfo(BaseModel):
@@ -139,6 +164,8 @@ class ASRProviderInfo(BaseModel):
     requires_region: bool = False
     supports_custom_url: bool = False
     supports_diarization: bool
+    speaker_count_hints: list[SpeakerCountHint]
+    timestamp_granularity: TimestampGranularity
     supports_vocabulary: bool
     supports_translation: bool
     description: str = ""
@@ -305,3 +332,4 @@ class ASRStatusResponse(BaseModel):
     active_model: str | None = None
     active_config_uuid: UUID | None = None
     is_cloud_provider: bool = False
+    active_model_capabilities: ASRModelCapabilities | None = None

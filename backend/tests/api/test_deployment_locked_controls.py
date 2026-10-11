@@ -30,22 +30,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi import status
 
-from app.core.capabilities import COMMUNITY_CAPABILITIES
-from app.core.capabilities import reset_capability_resolver
-from app.core.capabilities import set_capability_resolver
 from app.models.media import MediaFile
-
-
-@pytest.fixture
-def caps_off():
-    """Install a resolver that turns the given capability keys off."""
-
-    def _install(*keys: str) -> None:
-        overrides = dict.fromkeys(keys, False)
-        set_capability_resolver(lambda _request: {**COMMUNITY_CAPABILITIES, **overrides})
-
-    yield _install
-    reset_capability_resolver()
 
 
 @pytest.fixture

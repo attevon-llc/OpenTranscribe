@@ -34,6 +34,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
+from app.schemas.asr_settings import ASRModelCapabilities
 from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -420,7 +421,11 @@ def get_asr_status(
         "active_model": active_model,
         "active_config_uuid": active_config_uuid_str,
         "is_cloud_provider": is_cloud_provider,
-        "active_model_capabilities": model_capabilities,
+        # Validated through the typed schema so a catalog entry missing a capability
+        # field fails here rather than reaching the SPA as an absent key.
+        "active_model_capabilities": ASRModelCapabilities.model_validate(
+            model_capabilities
+        ).model_dump(),
     }
 
 

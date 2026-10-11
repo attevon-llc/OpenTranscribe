@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
+  About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,
+  local auth, SCIM tokens) had been copied from English into seven locales because `check:i18n`
+  only counts keys. They are translated, and `untranslated.test.ts` now fails when a long value in a
+  non-English locale equals the English one unless the key is allowlisted with a written reason.
+
 - **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
   notifications panel already uses, so the toolbar's three buttons all lead with an icon.
 

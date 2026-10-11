@@ -63,8 +63,15 @@ confined to the factory. Call sites branch only on `provider_name != "local"`, n
   `resolve_active_config`. **Cloud ASR config is per-user**; the
   local model is admin-pinned globally via the `SystemSettings` key **`asr.local_model`**
   (`transcription/config.py:_resolve_model_name` — worker-pinned → DB → `WHISPER_MODEL` → `large-v3-turbo`).
-- `tasks/transcription/dispatch.py:_resolve_gpu_queue` routes non-local providers to the **`cloud-asr`**
-  queue (service `celery-cloud-asr-worker`, concurrency 16) so network-bound jobs never block the GPU.
+- The pipeline plan's transcription step routes non-local providers to the **`cloud-asr`**
+  queue (service `celery-cloud-asr-worker`, concurrency 16) so network-bound jobs never block the
+  GPU; `tasks/transcription/dispatch.py:_plan_for_dispatch` resolves it once per run.
+- `resolve_config(cfg)` is the same env / local fallback for ANY row (or `None`): it lets
+  `services/asr_switch_plan` plan a switch before making it. Every ASR-side switch
+  (`set-active`, `clear-active`, first-config auto-activation, the promotion on delete)
+  goes through `assess_asr_switch` and refuses (409 `{code, message}`) only a diarization-step
+  error the switch introduces (#1225); `REFUSED_STEPS` is where lite's transcription-step
+  refusal (WP6) belongs.
 - **Failure is asymmetric on purpose** (`tasks/transcription/core.py:2076-2103`): errors *constructing*
   the provider fall back to local; errors from `transcribe()` propagate and the file is marked FAILED
   rather than silently re-running on GPU. Providers wrap failures in `RuntimeError`, which is **not** in

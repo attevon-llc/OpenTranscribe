@@ -206,16 +206,21 @@ def test_env_fallback_matches_the_runtime_rule(monkeypatch, provider, key, local
     assert (ASRProviderFactory.resolve_config(None)[0] == "local") is local
 
 
-def test_the_downgrade_is_a_no_op(db_session, local_env):
+def test_the_downgrade_is_a_no_op():
+    """Nothing records which rows were rewritten, so there is nothing to restore: the
+    downgrade body is its docstring alone (no ``op`` call, no SQL)."""
+    import ast
+    import inspect as pyinspect
+    import textwrap
+
     module = _revision_module()
-    conn = db_session.connection()
-    try:
-        user_id = _user(conn, "pyannote")
-        _reset(conn, module, [user_id])
-        module.downgrade()
-        assert _source(conn, user_id) == "provider"
-    finally:
-        db_session.rollback()
+    tree = ast.parse(textwrap.dedent(pyinspect.getsource(module.downgrade)))
+    func = tree.body[0]
+    assert isinstance(func, ast.FunctionDef)
+    body = func.body
+    assert len(body) == 1
+    assert isinstance(body[0], ast.Expr)
+    assert isinstance(body[0].value, ast.Constant)
 
 
 def test_an_unusable_choice_makes_detection_stamp_v433(db_session, local_env):

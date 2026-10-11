@@ -22,8 +22,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider's speaker detection (`diarization_asr_config_uuid`, covered by the #1109 lock).
   The ASR catalog and `/asr-settings/status` now report `supports_diarization` per model,
   `timestamp_granularity` (`word` / `segment` / `none`) and the speaker-count hints each
-  provider actually sends. The pipeline stages start reading the plan in the next change (WP3);
-  until then this is the settings-side half.
+  provider actually sends.
+
+- **Every transcription / speaker-detection combination the plan allows now runs (#1225).**
+  Dispatch resolves the pipeline plan once and every stage reads it from the chain context:
+  - **Local Whisper + pyannote.ai** runs pyannote.ai after the transcript is saved, on the
+    `cloud-asr` queue (no GPU slot held while the vendor works). It used to run this server's
+    detector silently.
+  - **The tiny/base CPU models detect speakers** through the same post stage. They used to
+    force speaker detection off.
+  - **Automatic + a text-only cloud model** detects speakers on this server after the
+    transcript is saved: per word with word timestamps, per segment with segment timestamps
+    (reported as the `segment_timing_only` warning). A model with no timestamps stays refused.
+  - **A cloud speaker-detection failure is non-fatal**: the transcript is kept without
+    speakers, and the reason is recorded as a fixed sentence.
+  - **One voiceprint interface** (`services/voiceprint_extractor.py`:
+    `extract(audio_path, turns) -> per-speaker 256-d vectors`), free when this server's engine
+    already produced vectors, otherwise the CPU embedding stage, exactly once per run.
+  - **One metering terminus per run.**
+  - The ASR-side switches (`set-active`, `clear-active`, first-config auto-activation, the
+    promotion on delete) re-plan too. A switch that would make the stored speaker-detection
+    choice unrunnable is refused with the settings PUT's 409, and the responses carry
+    `pipeline_issues`. `POST /api/asr-settings` reports `auto_activated`.
+  - A plan refusal is reported with the new `pipeline_not_runnable` reason, in all 12 locales.
 
 - **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
   notifications panel already uses, so the toolbar's three buttons all lead with an icon.
@@ -140,6 +161,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Changed
+
+- **Billing: users with a pyannote.ai key and local transcription are now billed by
+  pyannote.ai (#1225).** Choosing pyannote.ai with the built-in model used to run this server's
+  detector without saying so. It now does what it says, so every file such a user transcribes
+  is sent to pyannote.ai and billed to their key.
+  - Users who chose pyannote.ai **without** ever saving a key are moved back to Automatic by
+    migration `v434_reset_unusable_pyannote_source`, so their behaviour is unchanged. Without
+    that, every one of their files would fail.
+  - Users with cloud transcription keep their choice.
+  - The migration is data-only and idempotent. Downgrade is a no-op.
+- **The legacy single-task transcription path is gone (#1225).** `transcription.process_file`,
+  `legacy_task.py` and `background.py` (superseded by the 3-stage chain long ago) are deleted,
+  along with `DiarizationProviderFactory.create_for_source` / `create_for_user` and the
+  dispatcher's `_resolve_gpu_queue`. The plan is the only place that decides which detector
+  runs and on which queue.
+- **Manual "re-detect speakers" uses the file owner's current choice** (pyannote.ai, this
+  server, or another configured detector) instead of always this server's engine. It runs on
+  the plan's queue and never meters.
 
 - **Saving a speaker-detection choice is checked against the pipeline plan (#1224).**
   `PUT /api/user-settings/transcription` resolves the plan for the settings being saved and
@@ -289,6 +328,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loads, user sync, lockout, audit and session work now run in the threadpool.
 
 ### Fixed
+
+- **Re-detecting speakers re-splits segments at speaker changes (#1225).** `rediarize_task`
+  saved the new speakers without `finalize_segments`, so a segment spanning two speakers kept
+  one label. It now goes through the same boundary smoothing, re-segmentation and merge as
+  every other transcription path.
 
 - **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
   orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,

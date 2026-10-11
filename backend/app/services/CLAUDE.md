@@ -612,9 +612,11 @@ Owner decisions it encodes (do not re-open): lite has no local transcription and
 speaker detection; Automatic with a text-only model detects speakers on this server (full only);
 **no forced alignment / wav2vec2** — a model with `timing == "none"` is refused for every speaker
 detector (`asr_no_timing_for_speakers`); voiceprints are never taken from a vendor. Every cell is
-pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). Consumers today: the settings
-PUT (409 on a NEW selection with a diarization-step error) and `GET /user-settings/pipeline`.
-The pipeline stages adopt it in WP3 (`docs/design/v060_pipeline_composition_plan.md`).
+pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). Consumers: the settings
+PUT (409 on a NEW selection with a diarization-step error), the ASR-side switches
+(`services/asr_switch_plan`, same rule), `GET /user-settings/pipeline`, and every pipeline
+stage (#1225: dispatch resolves it once and carries it in the chain context; what each cell
+then does is pinned by `tests/unit/test_pipeline_execution_matrix.py`).
 
 ## Media URL ingestion (yt-dlp)
 

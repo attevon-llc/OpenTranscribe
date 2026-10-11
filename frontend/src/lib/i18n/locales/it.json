@@ -1402,7 +1402,7 @@
   "auth.resetPassword": "Reimposta password",
   "auth.resetPasswordDescription": "Inserisci qui sotto la tua nuova password.",
   "auth.passwordResetSuccess": "La tua password è stata reimpostata con successo.",
-  "auth.resetPasswordFailed": "Failed to reset password. The link may have expired.",
+  "auth.resetPasswordFailed": "Reimpostazione della password non riuscita. Il link potrebbe essere scaduto.",
   "auth.invalidResetLink": "Link di reimpostazione non valido o mancante. Richiedine uno nuovo.",
   "auth.requestNewLink": "Richiedi un nuovo link",
   "auth.newPassword": "Nuova password",

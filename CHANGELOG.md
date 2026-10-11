@@ -84,6 +84,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Gallery filter sidebar and list, from the UX designer review (#750, #747, #749).** The
+  sidebar sections now follow the list columns: Type, Speakers, Duration, Date, Status, Tags,
+  Collections, Language (only with more than one language), Ownership. **Ownership is one
+  section**: All/Mine/Shared chips plus the searchable owners dropdown. The **file-size filter is
+  removed from the UI** (owner decision; size is a proxy for duration) and the dead filename
+  search block in the sidebar is deleted; the API's `min_file_size`/`max_file_size` parameters
+  are unchanged. The gallery toolbar reads **Tags, Collections, Add media** (Add media
+  rightmost). The sort control's direction arrow now points **down for descending and up for
+  ascending**, on the gallery and on `/search`. List-view headers are title case at weight 500
+  instead of uppercase 600, the status column uses the same size as the other columns, and the
+  grid's speaker count is translated (it was a hardcoded `spk` in every language). Unused filter
+  locale keys are removed from all 12 locales.
+
 - **Settings: Watch Sources tabs, merged Privacy & Redaction, Speech Processing.** Watch Sources
   is split into Sources, Email Notifications and Global Settings tabs (the last two for
   `super_admin` only), and its Save button is the standard right-aligned action. *Content

@@ -169,10 +169,18 @@ describe('SortDropdown', () => {
     });
   });
 
-  it('renders the trigger direction arrow unrotated for desc and rotated for asc', () => {
-    // Issue #747 §4.3: the glyph changed from a bare chevron to a real arrow
-    // (shaft + head), and this rotation contract had NO coverage at all before
-    // this test — any change to it was invisible to the suite.
+  // The arrow's geometry is drawn, not rotated by CSS, so jsdom can see which way it points:
+  // an arrow whose head sits ABOVE the shaft's midpoint points up, below points down.
+  function arrowPoints(svg: Element | null | undefined): 'up' | 'down' {
+    const tip = svg?.querySelector('polyline')?.getAttribute('points')?.split(' ');
+    if (!tip) throw new Error('arrow has no head');
+    // points = "x y x y x y"; the tip is the middle vertex.
+    return Number(tip[3]) < Number(tip[1]) ? 'up' : 'down';
+  }
+
+  it('draws a DOWN arrow for descending and an UP arrow for ascending on the trigger', () => {
+    // Issue #747 §4.3 made it a real arrow (shaft + head); UX review item 19 fixed the
+    // direction: descending = down arrow, ascending = up arrow.
     const { container: descContainer } = render(SortDropdown, {
       props: {
         sortOptions: gallerySortOptions,
@@ -183,11 +191,10 @@ describe('SortDropdown', () => {
     });
     const descArrow = descContainer.querySelector('.direction-arrow');
     expect(descArrow).not.toBeNull();
-    expect(descArrow?.classList.contains('asc')).toBe(false);
+    expect(arrowPoints(descArrow)).toBe('down');
     // A real arrow has a shaft (line) as well as a head (polyline) — a bare
     // chevron has only the polyline.
     expect(descArrow?.querySelector('line')).not.toBeNull();
-    expect(descArrow?.querySelector('polyline')).not.toBeNull();
 
     const { container: ascContainer } = render(SortDropdown, {
       props: {
@@ -197,10 +204,11 @@ describe('SortDropdown', () => {
         ariaLabelKey: 'gallery.sort.label',
       },
     });
-    expect(ascContainer.querySelector('.direction-arrow')?.classList.contains('asc')).toBe(true);
+    expect(arrowPoints(ascContainer.querySelector('.direction-arrow'))).toBe('up');
   });
 
-  it('never rotates the trigger arrow for a noDirection (relevance) option', () => {
+  it('always draws the trigger arrow downward for a noDirection (relevance) option', () => {
+    // Relevance is fixed best-first, i.e. descending, whatever sortOrder says.
     const { container } = render(SortDropdown, {
       props: {
         sortOptions: searchSortOptions,
@@ -210,10 +218,10 @@ describe('SortDropdown', () => {
       },
     });
 
-    expect(container.querySelector('.direction-arrow')?.classList.contains('asc')).toBe(false);
+    expect(arrowPoints(container.querySelector('.direction-arrow'))).toBe('down');
   });
 
-  it('marks only the active dropdown item with a rotated option-arrow', async () => {
+  it('gives only the active dropdown item an arrow, pointing the same way as the trigger', async () => {
     render(SortDropdown, {
       props: {
         sortOptions: gallerySortOptions,
@@ -230,13 +238,31 @@ describe('SortDropdown', () => {
       .closest('.dropdown-item');
     const optionArrow = activeItem?.querySelector('.option-arrow');
     expect(optionArrow).not.toBeNull();
-    expect(optionArrow?.classList.contains('asc')).toBe(true);
+    expect(arrowPoints(optionArrow)).toBe('up');
 
     // A non-active option renders no arrow at all.
     const inactiveItem = screen
       .getByText('gallery.sort.duration', { selector: '.option-label' })
       .closest('.dropdown-item');
     expect(inactiveItem?.querySelector('.option-arrow')).toBeNull();
+  });
+
+  it('points the active menu item down when the current order is descending', async () => {
+    render(SortDropdown, {
+      props: {
+        sortOptions: gallerySortOptions,
+        sortBy: 'filename',
+        sortOrder: 'desc',
+        ariaLabelKey: 'gallery.sort.label',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'gallery.sort.label' }));
+
+    const activeItem = screen
+      .getByText('gallery.sort.filename', { selector: '.option-label' })
+      .closest('.dropdown-item');
+    expect(arrowPoints(activeItem?.querySelector('.option-arrow'))).toBe('down');
   });
 
   it('applies the align-right class to the menu when align="right"', async () => {

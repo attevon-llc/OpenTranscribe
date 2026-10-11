@@ -156,3 +156,27 @@ def test_engine_paths_carry_the_files_settings_through_the_snapshot(
     assert restored.hallucination_silence_threshold == 2.5
     assert restored.repetition_penalty == 1.1
     assert vocab_calls == [(3, 7)]
+
+
+@pytest.mark.parametrize(
+    ("source", "inline"),
+    [
+        ("provider", True),  # this server's engine, inside the GPU stage
+        ("local", True),
+        ("pyannote", False),  # pyannote.ai runs as a post stage (issue #1225)
+        ("off", False),
+    ],
+)
+def test_the_engine_diarizes_inline_only_when_the_plan_says_so(
+    ctx, vocab_calls, monkeypatch, source, inline
+):
+    """Local Whisper + pyannote.ai used to diarize locally regardless; the GPU stage now
+    leaves speakers to the post stage whenever the plan's execution is not inline."""
+    seen = _capture_engine(monkeypatch)
+    with pytest.raises(_StopError):
+        pipelines._run_engine_pipeline(
+            ctx, "/scratch/a.wav", {"pipeline_plan": plan_context("local_gpu", source)}
+        )
+
+    restored = EngineConfig.from_snapshot(seen[0].config_snapshot).transcription_config
+    assert restored.enable_diarization is inline

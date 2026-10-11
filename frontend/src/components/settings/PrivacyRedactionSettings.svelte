@@ -62,9 +62,7 @@
 
 <div class="privacy-redaction" data-testid="privacy-redaction-panel">
   {#if tabItems.length > 1}
-    <div class="tab-strip">
-      <Tabs tabs={tabItems} bind:activeId ariaLabel={$t('settings.privacyRedaction.title')} />
-    </div>
+    <Tabs sticky tabs={tabItems} bind:activeId ariaLabel={$t('settings.privacyRedaction.title')} />
   {/if}
 
   {#if activeSpec?.locked}
@@ -97,9 +95,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  .tab-strip {
-    margin-bottom: 1.25rem;
-  }
-</style>

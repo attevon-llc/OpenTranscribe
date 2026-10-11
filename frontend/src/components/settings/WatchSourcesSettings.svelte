@@ -253,9 +253,12 @@
   <div class="ws-loading"><Spinner /></div>
 {:else}
   {#if tabItems.length > 1}
-    <div class="tab-strip">
-      <Tabs tabs={tabItems} bind:activeId={activeTab} ariaLabel={$t('settings.watchSources.title')} />
-    </div>
+    <Tabs
+      sticky
+      tabs={tabItems}
+      bind:activeId={activeTab}
+      ariaLabel={$t('settings.watchSources.title')}
+    />
   {/if}
 
   {#if activeTab === 'sources'}
@@ -432,9 +435,6 @@
     display: flex;
     justify-content: center;
     padding: 32px;
-  }
-  .tab-strip {
-    margin-bottom: 1.25rem;
   }
   .scope-toggle {
     display: flex;

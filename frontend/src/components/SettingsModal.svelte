@@ -1626,6 +1626,7 @@
   }
 
   .settings-content {
+    --tabs-sticky-inset: 1.5rem;
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
@@ -1836,6 +1837,7 @@
     }
 
     .settings-content {
+      --tabs-sticky-inset: 1rem;
       padding: 1rem;
       flex: 1 1 0;
       min-height: 0;

@@ -89,6 +89,11 @@ describe('SpeakerIdentificationSection tabs by role', () => {
     expect(ids(container)).toEqual(['tab-spk-detection', 'tab-spk-attributes']);
   });
 
+  it('pins its tab strip while the panel scrolls beneath it', () => {
+    const { container } = render(SpeakerIdentificationSection);
+    expect(container.querySelector('[role="tablist"]')).toHaveClass('sticky');
+  });
+
   it('shows an admin the engine and maintenance tabs locked with the super-admin reason', () => {
     const { container } = render(SpeakerIdentificationSection, { props: { isAdmin: true } });
     expect(ids(container)).toEqual([

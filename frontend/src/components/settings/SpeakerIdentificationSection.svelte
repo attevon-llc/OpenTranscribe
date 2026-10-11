@@ -90,13 +90,12 @@
 
 <div class="speaker-identification-section" data-testid="speaker-identification-section">
   {#if tabItems.length > 1}
-    <div class="tab-strip">
-      <Tabs
-        tabs={tabItems}
-        bind:activeId
-        ariaLabel={$t('settings.speakerIdentification.tabs.ariaLabel')}
-      />
-    </div>
+    <Tabs
+      sticky
+      tabs={tabItems}
+      bind:activeId
+      ariaLabel={$t('settings.speakerIdentification.tabs.ariaLabel')}
+    />
   {/if}
 
   {#if activeSpec?.locked}
@@ -179,9 +178,6 @@
 </div>
 
 <style>
-  .tab-strip {
-    margin-bottom: 1.25rem;
-  }
 
   .tab-description {
     max-width: 800px;

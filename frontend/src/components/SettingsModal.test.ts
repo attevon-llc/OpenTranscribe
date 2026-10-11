@@ -252,6 +252,20 @@ describe('merged Privacy & Redaction section', () => {
     expect(account.textContent).not.toContain('settings.privacyRedaction.title');
   });
 
+  it('pins the Privacy & Redaction and Watch Sources tab strips', async () => {
+    for (const section of ['content-redaction', 'watch-sources'] as const) {
+      setUser('super_admin');
+      settingsModalStore.open(section);
+      const { container, unmount } = render(SettingsModal);
+      await waitFor(() =>
+        expect(container.querySelector('.settings-content [role="tablist"]')).not.toBeNull()
+      );
+      expect(container.querySelector('.settings-content [role="tablist"]')).toHaveClass('sticky');
+      unmount();
+      settingsModalStore.reset();
+    }
+  });
+
   it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
     setUser('user');
     settingsModalStore.open('content-redaction');

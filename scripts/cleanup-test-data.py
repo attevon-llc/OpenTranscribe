@@ -37,11 +37,24 @@ creation timestamp, so the sweep cutoff is ``min(started_at)`` across every curr
 live run marker (including this run's own), and only rows older than that are ever
 touched.
 
+Store planes (issue #1195, ``scripts/lib/test_artifact_sweep.py``): besides ROWS, a killed
+run leaves artifacts no API reaches — throwaway OpenSearch indexes and ingest pipelines,
+MinIO buckets and test-keyed objects, scratch Postgres databases, ``/tmp`` trees, and labelled
+throwaway docker containers/networks. Same tiers, same liveness cutoff, plus: a name must FULLY
+match a registered test shape, protected names (production indexes, configured buckets, the
+target database, ``.``-prefixed system indexes) are refused before any shape is consulted, and
+every delete re-classifies its target first. Docker is Tier B only (never automatic). The store
+planes refuse to run (exit 2) when the exported ``*_PORT`` values point at different stacks.
+
 Usage (from repo root, inside backend venv):
-    python scripts/cleanup-test-data.py                        # dry run, all tiers reported
+    python scripts/cleanup-test-data.py                        # dry run, all planes, all tiers
     python scripts/cleanup-test-data.py --execute-unambiguous   # delete Tier A only
     python scripts/cleanup-test-data.py --execute               # delete Tier A + Tier B
+    python scripts/cleanup-test-data.py --planes indexes,tmp    # a subset of planes
     python scripts/cleanup-test-data.py --json                  # machine-readable report
+
+Against an isolated stack, export every port it uses (``POSTGRES_PORT``, ``OPENSEARCH_PORT``,
+``MINIO_PORT``, ``E2E_BACKEND_URL``), as ``./opentr.sh --fresh --port-offset N`` sets them.
 """
 
 from __future__ import annotations
@@ -53,8 +66,10 @@ import importlib.util
 import json as json_module
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from types import ModuleType
@@ -65,11 +80,38 @@ from dotenv import dotenv_values
 from sqlalchemy import create_engine, text
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-# TESTRUN_REGISTRY_DIR overrides this — same override name testrun-registry.sh honours,
-# used only by backend/tests/integration/test_cleanup_test_data_isolated.py so that test
-# never reads (or is affected by) the real repo's .testruns/.
-_TESTRUNS_DIR = Path(os.environ.get('TESTRUN_REGISTRY_DIR', str(_REPO_ROOT / '.testruns')))
 _CLEANUP_USERS_SCRIPT = _REPO_ROOT / 'scripts' / 'cleanup-test-users.py'
+_ARTIFACT_SWEEP_MODULE = _REPO_ROOT / 'scripts' / 'lib' / 'test_artifact_sweep.py'
+
+
+def default_testruns_dir() -> Path:
+    """The liveness registry: the MAIN checkout's ``.testruns`` (shared by every worktree).
+
+    Same resolution as ``scripts/testrun-registry.sh`` and ``backend/tests/testrun_marker.py``
+    (``unit/test_testrun_registry_location.py`` pins the three together). A per-worktree
+    directory hid a run in one worktree from a sweep started in another against the same
+    stack. ``TESTRUN_REGISTRY_DIR`` overrides it, for tests that need a throwaway registry.
+    """
+    override = os.environ.get('TESTRUN_REGISTRY_DIR')
+    if override:
+        return Path(override)
+    git = shutil.which('git')
+    if git is None:
+        return _REPO_ROOT / '.testruns'
+    argv = [git, '-C', str(_REPO_ROOT), 'rev-parse', '--path-format=absolute', '--git-common-dir']
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv from a resolved binary, no shell
+            argv, capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return _REPO_ROOT / '.testruns'
+    common = result.stdout.strip()
+    if result.returncode != 0 or not common:
+        return _REPO_ROOT / '.testruns'
+    return Path(common).parent / '.testruns'
+
+
+_TESTRUNS_DIR = default_testruns_dir()
 
 _env = dotenv_values(_REPO_ROOT / '.env')
 
@@ -156,6 +198,19 @@ def live_marker_start_times(testruns_dir: Path) -> list[int]:
     return live
 
 
+def apply_age_floor(cutoff: int, min_age_minutes: int, *, now: int | None = None) -> int:
+    """Lower the cutoff so nothing younger than ``min_age_minutes`` is ever a candidate.
+
+    The liveness markers protect every REGISTERED run; the floor protects the rest — an ad
+    hoc script, a browser session, a test started from a checkout whose registry this sweep
+    cannot see. ``scripts/cleanup-test-leftovers.sh`` runs unattended, so it always sets one.
+    """
+    if min_age_minutes <= 0:
+        return cutoff
+    resolved_now = now if now is not None else int(time.time())
+    return min(cutoff, resolved_now - min_age_minutes * 60)
+
+
 def resolve_cutoff(live_starts: list[int], *, now: int | None = None) -> int:
     """The sweep cutoff: the oldest currently-live run's start time, or now if none.
 
@@ -208,6 +263,18 @@ MEDIA_FILENAME_SPECS: list[MediaFilenameSpec] = [
     MediaFilenameSpec(
         'deletion-residue', r'e2e-delres-%', re.compile(r'^e2e-delres-[0-9a-f]{8}\.wav$')
     ),
+    # e2e/test_full_pipeline_smoke.py's real upload (issue #1195): one unchecked DELETE was
+    # its only cleanup, so a failed teardown left a fully processed file behind.
+    MediaFilenameSpec(
+        'pipeline-smoke', r'pipeline-smoke-%', re.compile(r'^pipeline-smoke-[0-9a-f]{8}\.wav$')
+    ),
+    # integration/test_diar_native_{cross_card_placement,multigpu_provider}_live.py's uploads,
+    # uniquified by pid: diar-native-crosscard-<pid>.wav, diar-native-<topology>-<pid>.wav.
+    MediaFilenameSpec(
+        'diar-native-live',
+        r'diar-native-%',
+        re.compile(r'^diar-native-[a-z0-9]+(-[a-z0-9]+)*-\d+\.wav$'),
+    ),
 ]
 
 #: name/title-prefix + <8hex> shape, one entry per non-media resource type.
@@ -218,27 +285,45 @@ NAME_PREFIX_SPECS: dict[str, tuple[str, str]] = {
     'watch_source': ('watch_source', 'name'),
     'speaker_profile': ('speaker_profile', 'name'),
     'chat_conversation': ('chat_conversation', 'title'),
+    # Clusters a test's speakers form (deletion_seed's `e2e-delres-<hex8>[-shared]`, a profile-
+    # backed cluster labelled after an e2e profile). A profile delete only NULLs the cluster's
+    # promoted_to_profile_id, and an empty promoted cluster is not reaped, so these outlive the
+    # test that made them (issue #1195). Deleted through the API: it also drops the centroid.
+    'speaker_cluster': ('speaker_cluster', 'label'),
 }
 
 NAME_PREFIXES: dict[str, list[str]] = {
     'collection': ['e2e-shared-', 'e2e-collection-', 'e2e-delres-'],
     'tag': ['e2e-tag-', 'e2e-delres-'],
     'watch_source': ['e2e-watch-', 'e2e-delres-'],
-    'speaker_profile': ['e2e-gender-', 'e2e-delres-'],
-    'chat_conversation': ['e2e-chat-', 'e2e-delres-'],
+    'speaker_profile': ['e2e-gender-', 'e2e-delres-', 'e2e-propagated-'],
+    # probe-: scripts/probe_chat_rag.py's per-run 'probe-<hex8>: <label>' titles (issue #1195).
+    'chat_conversation': ['e2e-chat-', 'e2e-delres-', 'probe-'],
+    'speaker_cluster': ['e2e-gender-', 'e2e-propagated-', 'e2e-delres-'],
 }
 
 _HEX8_SHAPE = re.compile(r'[0-9a-f]{8}')
 
+#: Names tests minted BEFORE they were renamed to a registered lowercase prefix. Kept so a
+#: leftover already sitting on a stack is still swept; nothing may mint these any more
+#: (test_cleanup_test_data_safety.py's e2e literal gate refuses an unregistered head). FULL
+#: match, uniquifier included, so a human's "E2E Propagated notes" is never one.
+LEGACY_NAME_SHAPES: dict[str, list[re.Pattern[str]]] = {
+    # test_speaker_gender_clusters.py's rename target until 2026-10-11 (issue #1195): the
+    # rename creates a speaker profile the test never deleted. Seen on the v060 stack.
+    'speaker_profile': [re.compile(r'E2E Propagated [0-9a-f]{8}')],
+}
 
-def _name_matches_shape(name: str, prefixes: list[str]) -> bool:
+
+def _name_matches_shape(name: str, prefixes: list[str], resource: str | None = None) -> bool:
     """A registered prefix followed somewhere by an 8-hex-char uniquifier — never a
     bare prefix match, so a human-created ``e2e-tag-notes`` (no hex suffix) survives.
+    ``resource`` additionally admits that resource's FULL-match legacy shapes.
     """
     for prefix in prefixes:
         if name.startswith(prefix) and _HEX8_SHAPE.search(name[len(prefix) :]):
             return True
-    return False
+    return any(shape.fullmatch(name) for shape in LEGACY_NAME_SHAPES.get(resource or '', []))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -332,7 +417,7 @@ def find_named_resources(conn: Any, cutoff: int) -> dict[str, list[Candidate]]:
         matches = [
             Candidate(resource, str(row.uuid), row.label or '', row.email)
             for row in rows
-            if row.label and _name_matches_shape(row.label, NAME_PREFIXES[resource])
+            if row.label and _name_matches_shape(row.label, NAME_PREFIXES[resource], resource)
         ]
         results[resource] = matches
     return results
@@ -349,6 +434,7 @@ _DELETE_PATH_BY_RESOURCE = {
     'watch_source': '/api/watch-sources/{uuid}',
     'speaker_profile': '/api/speaker-profiles/profiles/{uuid}',
     'chat_conversation': '/api/chat/conversations/{uuid}',
+    'speaker_cluster': '/api/speaker-clusters/{uuid}',
 }
 
 
@@ -483,8 +569,28 @@ def _delete_candidates(
     return deleted, any_failed
 
 
+#: Every plane this script sweeps. ``records`` is the original issue #629 sweep (rows, over
+#: the API, plus the cleanup-test-users.py subprocess); the other five are the store-level
+#: artifacts of issue #1195, implemented in ``scripts/lib/test_artifact_sweep.py``.
+PLANES = ('records', 'indexes', 'databases', 'buckets', 'tmp', 'docker')
+STORE_PLANES = ('indexes', 'databases', 'buckets')
+_MAX_LINES_PER_PLANE = 25
+
+
+def _parse_planes(value: str) -> tuple[str, ...]:
+    planes = tuple(p.strip() for p in value.split(',') if p.strip())
+    unknown = [p for p in planes if p not in PLANES]
+    if unknown or not planes:
+        raise argparse.ArgumentTypeError(
+            f'unknown plane(s) {unknown or value!r}; choose from {",".join(PLANES)}'
+        )
+    return planes
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         '--execute-unambiguous', action='store_true', help='Delete Tier A candidates only'
     )
@@ -492,32 +598,277 @@ def build_parser() -> argparse.ArgumentParser:
         '--execute', action='store_true', help='Delete Tier A + Tier B (review) candidates'
     )
     parser.add_argument('--json', action='store_true', help='Machine-readable aggregate report')
+    parser.add_argument(
+        '--min-age-minutes',
+        type=int,
+        default=0,
+        help='Never touch anything younger than this (on top of the liveness cutoff)',
+    )
+    parser.add_argument(
+        '--planes',
+        type=_parse_planes,
+        default=PLANES,
+        help=f'Comma-separated subset of {",".join(PLANES)} (default: all)',
+    )
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def _load_artifact_sweep() -> ModuleType:
+    """``scripts/lib/test_artifact_sweep.py`` by path (``scripts/`` is not a package)."""
+    spec = importlib.util.spec_from_file_location('test_artifact_sweep', _ARTIFACT_SWEEP_MODULE)
+    assert spec is not None and spec.loader is not None, f'cannot load {_ARTIFACT_SWEEP_MODULE}'
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault(spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _resolve_port(sweep: ModuleType, var: str) -> Any:
+    """Env first, then ``.env``, then the stack default: the order ``_setting`` uses."""
+    if os.environ.get(var):
+        return sweep.ResolvedPort(var, int(os.environ[var]), 'env')
+    if _env.get(var):
+        return sweep.ResolvedPort(var, int(str(_env[var])), 'dotenv')
+    return sweep.ResolvedPort(var, sweep.BASE_PORTS[var], 'default')
+
+
+def prune_stale_markers(testruns_dir: Path, *, execute: bool, grace_seconds: int) -> list[Path]:
+    """Marker files no process holds any more (their run exited or was killed).
+
+    A marker younger than ``grace_seconds`` is never pruned: ``testrun_begin`` creates the
+    file a moment BEFORE it takes the lock, and deleting it inside that window would leave
+    the run holding a lock on an unlinked file, invisible to every later sweep.
+    """
+    if not testruns_dir.is_dir():
+        return []
+    stale: list[Path] = []
+    for marker in sorted(testruns_dir.glob('*.lock')):
+        try:
+            if time.time() - marker.stat().st_mtime < grace_seconds:
+                continue
+            fd = os.open(str(marker), os.O_RDONLY)
+        except OSError:
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            continue  # held: a live run
+        else:
+            stale.append(marker)
+            if execute:
+                with contextlib.suppress(OSError):
+                    marker.unlink()
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+    return stale
+
+
+def _delete_artifacts(
+    plane: Any, findings: list[Any], cutoff: int, *, include_tier_b: bool
+) -> tuple[int, bool]:
+    """The ONLY caller of a store plane's ``delete``. Each delete re-classifies its target
+    first, so a protected or no-longer-eligible name is refused at the point of deletion too.
+    """
+    deleted = 0
+    any_failed = False
+    for finding in findings:
+        try:
+            if plane.delete_one(finding, cutoff, include_tier_b=include_tier_b):
+                deleted += 1
+            else:
+                any_failed = True
+                print(f'  REFUSED/FAILED  {finding.name} (re-check did not allow it)')
+        except Exception as exc:  # noqa: BLE001 - one bad artifact must not stop the plane
+            any_failed = True
+            print(f'  FAILED  {finding.name}: {exc}')
+    return deleted, any_failed
+
+
+def _build_store_planes(sweep: ModuleType, planes: tuple[str, ...]) -> dict[str, Any]:
+    built: dict[str, Any] = {}
+    if 'indexes' in planes:
+        os_port = _resolve_port(sweep, 'OPENSEARCH_PORT').port
+        os_host = os.environ.get('OPENSEARCH_HOST', 'localhost')
+        scheme = 'https' if _setting('OPENSEARCH_USE_TLS', 'false').lower() == 'true' else 'http'
+        session = requests.Session()
+        user = _setting('OPENSEARCH_USER', '')
+        if user:
+            session.auth = (user, _setting('OPENSEARCH_PASSWORD', ''))
+        session.verify = _setting('OPENSEARCH_VERIFY_CERTS', 'false').lower() == 'true'
+        built['indexes'] = sweep.OpenSearchPlane(session, f'{scheme}://{os_host}:{os_port}')
+    if 'databases' in planes:
+        built['databases'] = sweep.PostgresDatabasePlane(
+            create_engine(_engine_url()), _setting('POSTGRES_DB', 'opentranscribe')
+        )
+    if 'buckets' in planes:
+        from minio import Minio
+
+        minio_port = _resolve_port(sweep, 'MINIO_PORT').port
+        client = Minio(
+            f'{os.environ.get("MINIO_HOST", "localhost")}:{minio_port}',
+            access_key=_setting('MINIO_ROOT_USER', 'minioadmin'),
+            secret_key=_setting('MINIO_ROOT_PASSWORD', 'minioadmin'),
+            secure=_setting('MINIO_SECURE', 'false').lower() == 'true',
+        )
+        configured = {
+            'MEDIA_BUCKET_NAME': _setting('MEDIA_BUCKET_NAME', 'opentranscribe'),
+            'CACHE_BUCKET_NAME': _setting('CACHE_BUCKET_NAME', 'processed-videos'),
+        }
+        built['buckets'] = sweep.MinioPlane(client, set(configured.values()), configured)
+    if 'tmp' in planes:
+        built['tmp'] = sweep.TmpPlane(Path(tempfile.gettempdir()))
+    if 'docker' in planes:
+        docker = shutil.which('docker')
+        if docker is not None:
+            built['docker'] = sweep.DockerPlane(docker)
+        else:
+            print('\ndocker: docker CLI not found, plane skipped')
+    return built
+
+
+def _sweep_store_planes(args: argparse.Namespace, cutoff: int, report: dict[str, Any]) -> int:
+    """Indexes, databases, buckets and /tmp trees left by killed test runs (issue #1195)."""
+    sweep = _load_artifact_sweep()
     effective_execute = args.execute or args.execute_unambiguous
-
-    backend_url = _backend_url()
-    db_user = _setting('POSTGRES_USER', 'postgres')
-    db_host = _host_setting()
-    db_port = _setting('POSTGRES_PORT', '5176')
-    db_name = _setting('POSTGRES_DB', 'opentranscribe')
-    print(f'Target: {db_user}@{db_host}:{db_port}/{db_name} + API {backend_url}')
-
-    cleanup_users = _load_cleanup_users_module()
-    live_starts = live_marker_start_times(_TESTRUNS_DIR)
-    cutoff = resolve_cutoff(live_starts)
-    print(
-        f'Cutoff: rows created before {cutoff} ({len(live_starts)} concurrently live '
-        f'run marker(s) found)'
-    )
-
-    engine = create_engine(_engine_url())
-    report: dict[str, Any] = {'cutoff': cutoff, 'resources': {}}
+    include_tier_b = bool(args.execute)
     exit_code = 0
 
+    # Only the stores this run will actually open are compared: a databases-only pass
+    # touches Postgres alone and has nothing to disagree with.
+    port_vars = {'POSTGRES_PORT'}
+    if 'indexes' in args.planes:
+        port_vars.add('OPENSEARCH_PORT')
+    if 'buckets' in args.planes:
+        port_vars.add('MINIO_PORT')
+    store_planes = [p for p in args.planes if p in STORE_PLANES]
+    if store_planes:
+        ports = [
+            _resolve_port(sweep, v)
+            for v in ('POSTGRES_PORT', 'OPENSEARCH_PORT', 'MINIO_PORT')
+            if v in port_vars
+        ]
+        mismatch = sweep.port_scope_mismatch(ports)
+        print('\nStores: ' + ', '.join(f'{p.var}={p.port} ({p.source})' for p in ports))
+        if mismatch:
+            print(f'  REFUSED  {mismatch}')
+            report['store_planes_refused'] = mismatch
+            return 2
+
+    try:
+        planes = _build_store_planes(sweep, args.planes)
+    except Exception as exc:  # noqa: BLE001 - a missing client library degrades, never crashes
+        print(f'  WARN  could not set up the store planes: {exc}')
+        return 1
+
+    for name, plane in planes.items():
+        try:
+            findings = plane.list_findings(cutoff)
+        except Exception as exc:  # noqa: BLE001 - an unreachable store degrades, never crashes
+            print(f'\n{name}: UNAVAILABLE ({exc})')
+            report['resources'][name] = {'error': str(exc)}
+            exit_code = 1
+            continue
+        tier_a = [f for f in findings if f.tier == sweep.TIER_A]
+        tier_b = [f for f in findings if f.tier == sweep.TIER_B]
+        # Registered shape, but held back (may be live, has connections, no test label).
+        held = [
+            f
+            for f in findings
+            if f.tier is None and 'registered' not in f.reason and 'protected' not in f.reason
+        ]
+        protected = [f for f in findings if 'protected' in f.reason]
+        print(f'\n{name}: {len(tier_a)} Tier A, {len(tier_b)} Tier B candidate(s)')
+        for i, f in enumerate(tier_a + tier_b):
+            if i == _MAX_LINES_PER_PLANE:
+                print(f'  ... and {len(tier_a) + len(tier_b) - i} more (--json lists all)')
+                break
+            chosen = sweep.selected(f, include_tier_b=include_tier_b)
+            verb = 'DELETE' if (effective_execute and chosen) else 'WOULD DELETE'
+            if not chosen:
+                verb = 'REVIEW (--execute)'
+            print(f'  {verb}  [{f.tier}] {f.name}  ({f.reason})')
+        for f in held[:_MAX_LINES_PER_PLANE]:
+            print(f'  KEEP  {f.name}  ({f.reason})')
+        if protected:
+            print(f'  KEEP  {len(protected)} protected name(s), never swept')
+        report['resources'][name] = {
+            'tier_a': [f.name for f in tier_a],
+            'tier_b': [f.name for f in tier_b],
+            'deleted': 0,
+        }
+        targets = [f for f in tier_a + tier_b if sweep.selected(f, include_tier_b=include_tier_b)]
+        # Every store delete is behind THIS guard — test_cleanup_test_data_safety.py's AST
+        # scan fails the build on a `_delete_artifacts(...)` call it cannot see inside one.
+        if effective_execute and targets:
+            deleted, failed = _delete_artifacts(
+                plane, targets, cutoff, include_tier_b=include_tier_b
+            )
+            report['resources'][name]['deleted'] = deleted
+            print(f'  Deleted {deleted}/{len(targets)}')
+            if failed:
+                exit_code = 1
+
+    if 'indexes' in planes:
+        _report_orphan_profile_docs(planes['indexes'], report)
+
+    if 'tmp' in args.planes:
+        stale = prune_stale_markers(
+            _TESTRUNS_DIR, execute=effective_execute, grace_seconds=sweep.GRACE_SECONDS
+        )
+        verb = 'Removed' if effective_execute else 'Would remove'
+        print(f'\n.testruns: {verb} {len(stale)} stale liveness marker(s) in {_TESTRUNS_DIR}')
+    return exit_code
+
+
+def find_orphan_profile_docs(docs: list[dict[str, Any]], live_uuids: set[str]) -> list[str]:
+    """Speaker-index profile docs (``profile_<uuid>``) whose ``speaker_profile`` row is gone.
+
+    Pure. A profile deleted through the app takes its doc with it; one deleted any other way
+    (raw SQL, a killed request) leaves a voiceprint that still matches new speakers.
+    """
+    orphans = []
+    for doc in docs:
+        source = doc.get('_source') or {}
+        profile_uuid = str(source.get('profile_uuid') or '')
+        if profile_uuid and profile_uuid not in live_uuids:
+            orphans.append(f'{doc.get("_index")}/{doc.get("_id")}')
+    return sorted(orphans)
+
+
+def _report_orphan_profile_docs(plane: Any, report: dict[str, Any]) -> None:
+    """REPORT ONLY (Tier C): the speaker index is a production index this tool never writes.
+    The fix for an orphan is the data-integrity reconcile in the admin UI, not this script."""
+    try:
+        resp = plane.session.post(
+            f'{plane.base_url}/speakers*/_search',
+            json={
+                'size': 10000,
+                'query': {'exists': {'field': 'profile_uuid'}},
+                '_source': ['profile_uuid', 'profile_name'],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        docs = resp.json().get('hits', {}).get('hits', [])
+        with create_engine(_engine_url()).connect() as conn:
+            live = {str(r[0]) for r in conn.execute(text('SELECT uuid FROM speaker_profile'))}
+    except Exception as exc:  # noqa: BLE001 - a report must not fail the sweep
+        print(f'\nspeaker profile docs: UNAVAILABLE ({exc})')
+        return
+    orphans = find_orphan_profile_docs(docs, live)
+    print(f'\nspeaker profile docs (report only): {len(orphans)} with no speaker_profile row')
+    for ref in orphans[:_MAX_LINES_PER_PLANE]:
+        print(f'  ORPHAN  {ref}  (reconcile from Admin > Data integrity)')
+    report['resources']['orphan_profile_docs'] = orphans
+
+
+def _sweep_records(args: argparse.Namespace, cutoff: int, report: dict[str, Any]) -> int:
+    effective_execute = args.execute or args.execute_unambiguous
+    backend_url = _backend_url()
+    cleanup_users = _load_cleanup_users_module()
+    engine = create_engine(_engine_url())
+    exit_code = 0
     with engine.connect() as conn:
         media_candidates = find_media_by_filename(conn, cutoff)
         media_candidates += find_media_by_tier_a_owner(
@@ -573,10 +924,38 @@ def main() -> int:
     cmd = [sys.executable, str(_CLEANUP_USERS_SCRIPT)]
     if subprocess_flag:
         cmd.append(subprocess_flag)
-    print(f'\n--- {" ".join(cmd)} ---')
+    print(f'\n--- {" ".join(cmd)} ---', flush=True)
     result = subprocess.run(cmd, capture_output=False, check=False)  # noqa: S603
     if result.returncode not in (0,):
         exit_code = 1
+
+    return exit_code
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    backend_url = _backend_url()
+    db_user = _setting('POSTGRES_USER', 'postgres')
+    db_host = _host_setting()
+    db_port = _setting('POSTGRES_PORT', '5176')
+    db_name = _setting('POSTGRES_DB', 'opentranscribe')
+    print(f'Target: {db_user}@{db_host}:{db_port}/{db_name} + API {backend_url}')
+    print(f'Planes: {",".join(args.planes)}')
+
+    live_starts = live_marker_start_times(_TESTRUNS_DIR)
+    cutoff = apply_age_floor(resolve_cutoff(live_starts), args.min_age_minutes)
+    print(
+        f'Cutoff: rows created before {cutoff} ({len(live_starts)} concurrently live '
+        f'run marker(s) found in {_TESTRUNS_DIR}; age floor {args.min_age_minutes} min)'
+    )
+
+    report: dict[str, Any] = {'cutoff': cutoff, 'planes': list(args.planes), 'resources': {}}
+    exit_code = 0
+    if 'records' in args.planes:
+        exit_code = max(exit_code, _sweep_records(args, cutoff, report))
+    if any(p != 'records' for p in args.planes):
+        exit_code = max(exit_code, _sweep_store_planes(args, cutoff, report))
 
     if args.json:
         print('\n--- JSON report ---')

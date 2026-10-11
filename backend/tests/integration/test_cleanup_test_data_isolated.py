@@ -42,6 +42,7 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from tests.docker_ops import TEST_ARTIFACT_LABEL
 from tests.integration.throwaway_pg import _READY_TIMEOUT
 
 pytestmark = [
@@ -80,6 +81,11 @@ _SEED_STATEMENTS = (
     (
         "CREATE TABLE speaker_profile (id serial PRIMARY KEY, uuid uuid NOT NULL, "
         'user_id int NOT NULL REFERENCES "user"(id), name text, '
+        "created_at timestamptz NOT NULL DEFAULT now())"
+    ),
+    (
+        "CREATE TABLE speaker_cluster (id serial PRIMARY KEY, uuid uuid NOT NULL, "
+        'user_id int NOT NULL REFERENCES "user"(id), label text, '
         "created_at timestamptz NOT NULL DEFAULT now())"
     ),
     (
@@ -162,24 +168,26 @@ def throwaway_pg() -> Iterator[dict[str, Any]]:
         "refusing to start a throwaway container that could be mistaken for it"
     )
 
-    started = _run(
-        [
-            "docker",
-            "run",
-            "-d",
-            "--name",
-            name,
-            "-p",
-            f"127.0.0.1:{port}:5432",
-            "-e",
-            f"POSTGRES_PASSWORD={password}",
-            "--tmpfs",
-            "/var/lib/postgresql/data",
-            image,
-        ]
-    )
-    assert started.returncode == 0, f"failed to start throwaway postgres: {started.stderr}"
     try:
+        started = _run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                name,
+                "--label",
+                TEST_ARTIFACT_LABEL,
+                "-p",
+                f"127.0.0.1:{port}:5432",
+                "-e",
+                f"POSTGRES_PASSWORD={password}",
+                "--tmpfs",
+                "/var/lib/postgresql/data",
+                image,
+            ]
+        )
+        assert started.returncode == 0, f"failed to start throwaway postgres: {started.stderr}"
         _wait_ready(port, password)
         yield {"container": name, "port": port, "password": password}
     finally:
@@ -253,6 +261,7 @@ class _StubApiServer(ThreadingHTTPServer):
         "watch_source": "/api/watch-sources/",
         "speaker_profile": "/api/speaker-profiles/profiles/",
         "chat_conversation": "/api/chat/conversations/",
+        "speaker_cluster": "/api/speaker-clusters/",
     }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -420,7 +429,10 @@ def _run_script(
         "TESTRUN_REGISTRY_DIR": str(testruns_dir),
     }
     return subprocess.run(  # noqa: S603
-        [sys.executable, str(_SCRIPT), *flags],
+        # `--planes records`: this proves the ROW sweep against a throwaway Postgres. The store
+        # planes would otherwise reach whatever OpenSearch/MinIO//tmp this host has, which is
+        # not this test's to touch (they are proved in test_test_artifact_sweep_live.py).
+        [sys.executable, str(_SCRIPT), "--planes", "records", *flags],
         env=full_env,
         capture_output=True,
         text=True,
@@ -566,7 +578,7 @@ def test_unreachable_api_degrades_to_db_only_and_reports_nonzero(
         "TESTRUN_REGISTRY_DIR": str(tmp_path / ".testruns"),
     }
     result = subprocess.run(  # noqa: S603
-        [sys.executable, str(_SCRIPT), "--execute-unambiguous"],
+        [sys.executable, str(_SCRIPT), "--planes", "records", "--execute-unambiguous"],
         env=env,
         capture_output=True,
         text=True,

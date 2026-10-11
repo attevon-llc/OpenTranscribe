@@ -157,6 +157,9 @@ show_help() {
   echo "  status [--fresh [name]]                - Show container status (or a fresh deployment)"
   echo "  logs [service]                         - View logs (all services by default)"
   echo "  data-paths                             - Print resolved live data locations (check before deleting!)"
+  echo "  test-cleanup (--project P|--fresh N) [--once|--background|--status|--stop] [--dry-run]"
+  echo "               [--interval-minutes N] [--min-age-minutes N]"
+  echo "                                         - Sweep test leftovers (Tier A only) from ONE stack"
   echo ""
   echo "Fresh Deployment Commands (isolated, guard-railed — never touch real data):"
   echo "  start dev --fresh [name] [--port-offset N] [--seed-benchmark] [--no-bindmount]"
@@ -4187,6 +4190,11 @@ case "$1" in
 
   fresh-list)
     fresh_list
+    ;;
+
+  test-cleanup)
+    shift
+    exec ./scripts/cleanup-test-leftovers.sh "$@"
     ;;
 
   fresh-destroy)

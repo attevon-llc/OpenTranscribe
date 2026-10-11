@@ -97,6 +97,11 @@ ORPHAN_PATTERNS_UNAMBIGUOUS = [
     # integration/test_deletion_residue_live.py's throwaway account owners
     # (deletion_seed.DELRES_USER_PREFIX); the test deletes them, this is the backstop.
     'delres-e2e-%@example.com',
+    # integration/test_reindex_on_mutation_666.py's real_db owner (and, through the owner
+    # sweep in cleanup-test-data.py, its reindex666-<hex8>.wav file). Issue #1195.
+    'reindex666-%@example.invalid',
+    # scripts/test-fedramp.sh registers one account per run and never deletes it.
+    'fedramp-e2e-%@example.com',
 ]
 
 ORPHAN_PATTERNS_REVIEW = [
@@ -107,6 +112,9 @@ ORPHAN_PATTERNS_REVIEW = [
     r'unique\_%@example.com',
     r'newuser\_%@example.com',
     'test-%@example.com',  # test-<uuid>@example.com
+    # test-fedramp.sh's shape before issue #1195 renamed it; leftovers of it are still out
+    # there. Review tier: "fedramp-test-" is something a person could plausibly type.
+    'fedramp-test-%@example.com',
 ]
 
 ORPHAN_PATTERNS = [*ORPHAN_PATTERNS_UNAMBIGUOUS, *ORPHAN_PATTERNS_REVIEW]

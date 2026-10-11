@@ -210,6 +210,11 @@
             </p>
           {/if}
         </div>
+
+        <div class="defaults-info">
+          <span class="defaults-label">{$t('settings.transcription.defaults')}</span>
+          <span class="defaults-value">{$t('settings.transcription.languageDefaultsValue')}</span>
+        </div>
       </SettingsCard>
 
       <SettingsCard
@@ -231,7 +236,7 @@
 
         <div class="defaults-info">
           <span class="defaults-label">{$t('settings.transcription.defaults')}</span>
-          <span class="defaults-value">{$t('settings.transcription.defaultsValue')}</span>
+          <span class="defaults-value">{$t('settings.transcription.aiLanguageDefaultsValue')}</span>
         </div>
       </SettingsCard>
 

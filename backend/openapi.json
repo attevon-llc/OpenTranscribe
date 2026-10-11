@@ -5949,6 +5949,77 @@
         "title": "EmailVerificationResendRequest",
         "type": "object"
       },
+      "EngineSettingValue": {
+        "description": "One engine setting's effective value and where it came from.",
+        "properties": {
+          "source": {
+            "enum": [
+              "db",
+              "env",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "source"
+        ],
+        "title": "EngineSettingValue",
+        "type": "object"
+      },
+      "EngineSettingsResponse": {
+        "description": "Every runtime-tunable engine setting, plus a read-only look at the diarization sidecar.",
+        "properties": {
+          "boundary_acoustic_cosine_margin": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "boundary_acoustic_max_word_dur": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "boundary_acoustic_recheck_enabled": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "boundary_smoothing_enabled": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "diarizer_backend": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "diarizer_require_sidecar": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "diarizer_sidecar_status": {
+            "description": "Whether the diar-native sidecar can serve right now, from the cached readiness probe. 'unknown' when the probe itself could not run.",
+            "enum": [
+              "reachable",
+              "unreachable",
+              "unknown"
+            ],
+            "title": "Diarizer Sidecar Status",
+            "type": "string"
+          },
+          "transcriber_backend": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          }
+        },
+        "required": [
+          "transcriber_backend",
+          "diarizer_backend",
+          "diarizer_require_sidecar",
+          "boundary_smoothing_enabled",
+          "boundary_acoustic_recheck_enabled",
+          "boundary_acoustic_cosine_margin",
+          "boundary_acoustic_max_word_dur",
+          "diarizer_sidecar_status"
+        ],
+        "title": "EngineSettingsResponse",
+        "type": "object"
+      },
       "ExtractTopicsRequest": {
         "description": "Request to extract AI suggestions from transcript\n\nAttributes:\n    force_regenerate: Force re-extraction even if suggestions exist",
         "properties": {
@@ -21998,7 +22069,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Engine Settings Api Admin Engine Settings Get"
+                  "$ref": "#/components/schemas/EngineSettingsResponse"
                 }
               }
             },

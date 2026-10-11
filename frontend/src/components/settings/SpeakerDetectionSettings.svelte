@@ -20,7 +20,7 @@
   import SettingsCard from './transcription/SettingsCard.svelte';
   import InfoTip from './transcription/InfoTip.svelte';
   import FormActions from './transcription/FormActions.svelte';
-  import PyannoteCredentialForm from './PyannoteCredentialForm.svelte';
+  import SpeakerDetectionProviderCard from './SpeakerDetectionProviderCard.svelte';
   import './transcription/formLayout.css';
   import './transcription/formControls.css';
 
@@ -63,29 +63,6 @@
       desc: 'settings.speakerIdentification.countMode.useCustomDesc'
     }
   ];
-  const sourceOptions: { value: DiarizationSource; label: string; desc: string }[] = [
-    {
-      value: 'provider',
-      label: 'settings.speakerIdentification.source.provider',
-      desc: 'settings.speakerIdentification.source.providerDesc'
-    },
-    {
-      value: 'local',
-      label: 'settings.speakerIdentification.source.local',
-      desc: 'settings.speakerIdentification.source.localDesc'
-    },
-    {
-      value: 'pyannote',
-      label: 'settings.speakerIdentification.source.pyannote',
-      desc: 'settings.speakerIdentification.source.pyannoteDesc'
-    },
-    {
-      value: 'off',
-      label: 'settings.speakerIdentification.source.off',
-      desc: 'settings.speakerIdentification.source.offDesc'
-    }
-  ];
-
   $: settingsChanged =
     minSpeakers !== originalMinSpeakers ||
     maxSpeakers !== originalMaxSpeakers ||
@@ -202,39 +179,13 @@
   {:else}
     <div class="settings-form">
       {#if diarizationSourceEnabled}
-        <SettingsCard
-          title={$t('settings.speakerIdentification.detectionHeading')}
-          description={$t('settings.speakerIdentification.detectionDesc')}
-        >
-          <div class="form-group">
-            <label for="diarization-source" class="form-label">
-              {$t('settings.speakerIdentification.source.label')}
-            </label>
-            <select id="diarization-source" class="form-select" bind:value={diarizationSource}>
-              {#each sourceOptions as source (source.value)}
-                <option value={source.value}>{$t(source.label)}</option>
-              {/each}
-            </select>
-            <p class="field-desc">
-              {$t(sourceOptions.find((source) => source.value === diarizationSource)?.desc ?? '')}
-            </p>
-            {#if diarizationSource === 'off'}
-              <p class="field-warning">{$t('settings.speakerIdentification.source.offWarning')}</p>
-            {/if}
-            {#if diarizationSource === 'pyannote'}
-              <p class="field-desc hint-italic">
-                {$t('settings.speakerIdentification.source.pyannoteHint')}
-              </p>
-            {/if}
-            {#if pyannoteKeyEnabled}
-              <PyannoteCredentialForm
-                {diarizationSource}
-                disabled={saving || resetting}
-                on:deleted={(e) => e.detail.sourceReverted && reloadSource()}
-              />
-            {/if}
-          </div>
-        </SettingsCard>
+        <SpeakerDetectionProviderCard
+          bind:diarizationSource
+          disabled={saving || resetting}
+          keyEnabled={pyannoteKeyEnabled}
+          on:navigate={(e) => dispatch('navigate', e.detail)}
+          on:deleted={(e) => e.detail.sourceReverted && reloadSource()}
+        />
       {/if}
 
       <SettingsCard

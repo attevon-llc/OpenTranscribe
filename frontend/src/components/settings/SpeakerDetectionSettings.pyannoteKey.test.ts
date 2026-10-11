@@ -71,10 +71,26 @@ async function renderLoaded() {
   return result;
 }
 const form = (c: HTMLElement) => c.querySelector('[data-testid="pyannote-credential-form"]');
+const choosePyannote = (c: HTMLElement) =>
+  fireEvent.change(c.querySelector('#diarization-source') as HTMLSelectElement, {
+    target: { value: 'pyannote' },
+  });
 
 describe('pyannote.ai key form in Speaker Detection', () => {
+  it('is hidden until the pyannote.ai cloud service is the chosen provider', async () => {
+    const { container } = await renderLoaded();
+    expect(form(container)).toBeNull();
+    await choosePyannote(container);
+    expect(form(container)).not.toBeNull();
+    await fireEvent.change(container.querySelector('#diarization-source') as HTMLSelectElement, {
+      target: { value: 'local' },
+    });
+    expect(form(container)).toBeNull();
+  });
+
   it('renders under the source select when users may bring their own provider keys', async () => {
     const { container } = await renderLoaded();
+    await choosePyannote(container);
     const select = container.querySelector('#diarization-source') as HTMLElement;
     expect(form(container)).not.toBeNull();
     // Same card, after the select
@@ -111,6 +127,7 @@ describe('pyannote.ai key form in Speaker Detection', () => {
 
   it('keeps the form from hijacking the Save and Reset buttons of the settings form', async () => {
     const { container } = await renderLoaded();
+    await choosePyannote(container);
     const primary = container.querySelectorAll('.btn-primary');
     expect(primary).toHaveLength(1);
     expect(form(container)?.querySelector('.btn-primary, .btn-secondary')).toBeNull();

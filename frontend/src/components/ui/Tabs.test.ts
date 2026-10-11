@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import Tabs from './Tabs.svelte';
 
@@ -51,6 +51,46 @@ describe('Tabs', () => {
       expect(screen.getByRole('tab', { name: /Beta/ })).toHaveAttribute('aria-selected', 'true');
       await fireEvent.keyDown(screen.getByRole('tab', { name: /Beta/ }), { key: 'End' });
       expect(screen.getByRole('tab', { name: /Gamma/ })).toHaveAttribute('aria-selected', 'true');
+    });
+  });
+
+  describe('sticky strip', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('is not sticky unless asked, and renders no sentinel', () => {
+      const { container } = render(Tabs, { props: { tabs, activeId: 'a' } });
+      expect(screen.getByRole('tablist')).not.toHaveClass('sticky');
+      expect(container.querySelector('.tabs-sentinel')).toBeNull();
+    });
+
+    it('pins the tablist itself when sticky, keeping roving tabindex intact', () => {
+      render(Tabs, { props: { tabs, activeId: 'b', sticky: true } });
+      expect(screen.getByRole('tablist')).toHaveClass('sticky');
+      expect(screen.getByRole('tab', { name: /Beta/ })).toHaveAttribute('tabindex', '0');
+      expect(screen.getByRole('tab', { name: /Alpha/ })).toHaveAttribute('tabindex', '-1');
+    });
+
+    it('marks the strip stuck once its sentinel scrolls out of view, and unstuck on return', async () => {
+      let notify: (entries: { isIntersecting: boolean }[]) => void = () => {};
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          constructor(cb: typeof notify) {
+            notify = cb;
+          }
+          observe() {}
+          disconnect() {}
+        }
+      );
+      render(Tabs, { props: { tabs, activeId: 'a', sticky: true } });
+      const list = screen.getByRole('tablist');
+      expect(list).not.toHaveClass('stuck');
+      notify([{ isIntersecting: false }]);
+      await vi.waitFor(() => expect(list).toHaveClass('stuck'));
+      notify([{ isIntersecting: true }]);
+      await vi.waitFor(() => expect(list).not.toHaveClass('stuck'));
     });
   });
 });

@@ -90,13 +90,12 @@
 
 <div class="speaker-identification-section" data-testid="speaker-identification-section">
   {#if tabItems.length > 1}
-    <div class="tab-strip">
-      <Tabs
-        tabs={tabItems}
-        bind:activeId
-        ariaLabel={$t('settings.speakerIdentification.tabs.ariaLabel')}
-      />
-    </div>
+    <Tabs
+      sticky
+      tabs={tabItems}
+      bind:activeId
+      ariaLabel={$t('settings.speakerIdentification.tabs.ariaLabel')}
+    />
   {/if}
 
   {#if activeSpec?.locked}
@@ -115,7 +114,10 @@
       hidden={activeId !== 'spk-detection'}
     >
       {#if visited['spk-detection']}
-        <SpeakerDetectionSettings on:change={(e) => (dirty.detection = e.detail.hasChanges)} />
+        <SpeakerDetectionSettings
+          on:change={(e) => (dirty.detection = e.detail.hasChanges)}
+          on:navigate={(e) => dispatch('navigate', e.detail)}
+        />
       {/if}
     </div>
   {/if}
@@ -163,6 +165,13 @@
             <div class="embedding-link-text">
               <strong>{$t('settings.speakerIdentification.maintenance.embeddingLinkTitle')}</strong>
               <p>{$t('settings.speakerIdentification.maintenance.embeddingLinkDesc')}</p>
+              <p class="embedding-link-path" data-testid="embedding-link-path">
+                {$t('settings.speakerIdentification.maintenance.embeddingLinkPath', {
+                  settings: $t('settings.title'),
+                  group: $t('settings.sections.system'),
+                  section: $t('settings.embeddingMigration.title')
+                })}
+              </p>
             </div>
             <button
               type="button"
@@ -179,9 +188,6 @@
 </div>
 
 <style>
-  .tab-strip {
-    margin-bottom: 1.25rem;
-  }
 
   .tab-description {
     max-width: 800px;
@@ -213,6 +219,11 @@
     margin: 0.25rem 0 0;
     color: var(--text-secondary);
     font-size: 0.85rem;
+  }
+
+  .embedding-link-text .embedding-link-path {
+    font-size: 0.8rem;
+    font-style: italic;
   }
 
   @media (max-width: 600px) {

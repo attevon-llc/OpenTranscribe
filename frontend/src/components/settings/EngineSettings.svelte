@@ -5,6 +5,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import EngineIntro, { type SidecarStatus } from '$components/settings/EngineIntro.svelte';
 
   type SettingSource = 'db' | 'env' | 'default';
 
@@ -20,9 +21,11 @@
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_cosine_margin: EngineSettingValue<number>;
     boundary_acoustic_max_word_dur: EngineSettingValue<number>;
+    /** Read-only probe result; not a setting, so it has no source badge or reset. */
+    diarizer_sidecar_status?: SidecarStatus;
   }
 
-  type EngineSettingKey = keyof EngineSettingsResponse;
+  type EngineSettingKey = Exclude<keyof EngineSettingsResponse, 'diarizer_sidecar_status'>;
 
   const dispatch = createEventDispatcher<{ change: { hasChanges: boolean } }>();
 
@@ -155,6 +158,8 @@
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else if settings}
     <div class="settings-form">
+      <EngineIntro sidecarStatus={settings.diarizer_sidecar_status} />
+
       <h3 class="section-title">{$t('settings.engineSettings.diarizerHeading')}</h3>
 
       <!-- Diarizer Backend -->

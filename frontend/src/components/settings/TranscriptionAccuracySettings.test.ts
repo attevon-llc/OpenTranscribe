@@ -90,6 +90,20 @@ describe('TranscriptionAccuracySettings', () => {
     expect(container.querySelector('.collapsible-header')).toBeNull();
   });
 
+  it('shows each system default inside the card holding the control it describes', async () => {
+    const { container } = await renderLoaded();
+    const cardOf = (id: string) => container.querySelector(id)!.closest('.settings-section')!;
+    const vad = cardOf('#vad-threshold');
+    const repetition = cardOf('#repetition-penalty');
+
+    expect(cardOf('#vad-speech-pad')).toBe(vad);
+    expect(vad.textContent).toContain('settings.transcription.vadDefaultsValue');
+    expect(vad.textContent).not.toContain('settings.transcription.repetitionDefaultsValue');
+    expect(repetition).not.toBe(vad);
+    expect(repetition.textContent).toContain('settings.transcription.repetitionDefaultsValue');
+    expect(repetition.textContent).not.toContain('settings.transcription.vadDefaultsValue');
+  });
+
   it('saves only cleanup, VAD, hallucination and repetition fields', async () => {
     const { container } = await renderLoaded();
     await fireEvent.input(container.querySelector('#vad-min-silence') as HTMLInputElement, {

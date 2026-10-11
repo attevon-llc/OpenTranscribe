@@ -91,6 +91,19 @@ describe('TranscriptionLanguageSettings', () => {
     });
   });
 
+  it('shows the language defaults in the language card and the summary default beside its select', async () => {
+    const { container } = await renderLoaded();
+    const cardOf = (id: string) => container.querySelector(id)!.closest('.settings-section')!;
+    const language = cardOf('#source-language');
+    const summary = cardOf('#llm-output-language');
+
+    expect(language).not.toBe(summary);
+    expect(language.textContent).toContain('settings.transcription.languageDefaultsValue');
+    expect(language.textContent).not.toContain('settings.transcription.aiLanguageDefaultsValue');
+    expect(summary.textContent).toContain('settings.transcription.aiLanguageDefaultsValue');
+    expect(summary.textContent).not.toContain('settings.transcription.languageDefaultsValue');
+  });
+
   it('resets only the language group and applies its defaults', async () => {
     api.getTranscriptionSettings.mockResolvedValue({ ...SETTINGS, llm_output_language: 'de' });
     api.resetTranscriptionSettings.mockResolvedValue({ message: 'ok', default_settings: SETTINGS });

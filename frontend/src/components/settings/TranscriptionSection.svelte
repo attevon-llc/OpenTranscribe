@@ -72,9 +72,7 @@
 
 <div class="transcription-section" data-testid="transcription-section">
   {#if tabItems.length > 1}
-    <div class="tab-strip">
-      <Tabs tabs={tabItems} bind:activeId ariaLabel={$t('settings.transcription.tabs.ariaLabel')} />
-    </div>
+    <Tabs sticky tabs={tabItems} bind:activeId ariaLabel={$t('settings.transcription.tabs.ariaLabel')} />
   {/if}
 
   {#if has('tx-language')}
@@ -130,9 +128,6 @@
 </div>
 
 <style>
-  .tab-strip {
-    margin-bottom: 1.25rem;
-  }
 
   .tab-description {
     max-width: 800px;

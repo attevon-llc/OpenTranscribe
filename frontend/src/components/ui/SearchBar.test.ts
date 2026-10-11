@@ -64,4 +64,20 @@ describe('SearchBar', () => {
     expect(input).toHaveAttribute('aria-autocomplete', 'list');
     expect(input).toHaveAttribute('id', 'settings-search-input');
   });
+
+  it('defaults to a plain text field with the outlined look', () => {
+    const { container } = render(SearchBar);
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).not.toHaveAttribute('enterkeyhint');
+    expect(container.querySelector('.search-bar')).not.toHaveClass('pill');
+  });
+
+  it('opts into the pill look and native search semantics', () => {
+    const { container } = render(SearchBar, { props: { variant: 'pill', type: 'search' } });
+    const input = screen.getByRole('searchbox');
+    expect(input).toHaveAttribute('type', 'search');
+    expect(input).toHaveAttribute('enterkeyhint', 'search');
+    expect(container.querySelector('.search-bar')).toHaveClass('pill');
+  });
 });

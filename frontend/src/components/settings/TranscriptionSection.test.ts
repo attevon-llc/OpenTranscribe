@@ -121,6 +121,11 @@ describe('TranscriptionSection', () => {
     expect(panel(container, 'tx-language').hidden).toBe(false);
   });
 
+  it('pins its tab strip while the panel scrolls beneath it', () => {
+    const { container } = render(TranscriptionSection);
+    expect(container.querySelector('[role="tablist"]')).toHaveClass('sticky');
+  });
+
   it('opens the requested tab', () => {
     const { container } = render(TranscriptionSection, { props: { initialTab: 'tx-vocabulary' } });
     expect(tab(container, 'tx-vocabulary')?.getAttribute('aria-selected')).toBe('true');

@@ -10,7 +10,7 @@
  * ~40 child settings panels themselves are out of scope here (each is/should be
  * tested independently, and Playwright already exercises this modal end to end).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -225,6 +225,47 @@ describe('merged Privacy & Redaction section', () => {
     expect(navItem(container, 'settings.redactionPolicy.title')).toBeNull();
   });
 
+  it('files the redaction row under AI & Chat right after Chat, not under Account', async () => {
+    setUser('user');
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'chat.rag': true },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(sectionOf(container, 'settings.privacyRedaction.title')).toBe(
+      'settings.sections.aiChat'
+    );
+    const labels = Array.from(
+      navItem(container, 'settings.privacyRedaction.title')!
+        .closest('.sidebar-section')!
+        .querySelectorAll('.nav-item-label')
+    ).map((el) => el.textContent?.trim());
+    expect(labels.indexOf('settings.privacyRedaction.title')).toBe(
+      labels.indexOf('chat.settings.title') + 1
+    );
+    const account = navItem(container, 'settings.profile.title')!.closest('.sidebar-section')!;
+    expect(account.textContent).not.toContain('settings.privacyRedaction.title');
+  });
+
+  it('pins the Privacy & Redaction and Watch Sources tab strips', async () => {
+    for (const section of ['content-redaction', 'watch-sources'] as const) {
+      setUser('super_admin');
+      settingsModalStore.open(section);
+      const { container, unmount } = render(SettingsModal);
+      await waitFor(() =>
+        expect(container.querySelector('.settings-content [role="tablist"]')).not.toBeNull()
+      );
+      expect(container.querySelector('.settings-content [role="tablist"]')).toHaveClass('sticky');
+      unmount();
+      settingsModalStore.reset();
+    }
+  });
+
   it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
     setUser('user');
     settingsModalStore.open('content-redaction');
@@ -404,6 +445,81 @@ describe('Transcription and Speaker Identification sections', () => {
     );
   });
 
+  it('jumps from the Automatic detection line to Transcription > Provider & Model', async () => {
+    const { container } = await openAs('admin', 'speaker-identification');
+    const link = await waitFor(() => {
+      const el = container.querySelector('[data-testid="detection-credential-line"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(link);
+
+    await waitFor(() =>
+      expect(navItem(container, 'settings.transcription.title')?.classList.contains('active')).toBe(
+        true
+      )
+    );
+    expect(tab(container, 'tx-provider')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  describe('revealing the active sidebar row', () => {
+    const scrolled: { row: Element | null; opts: ScrollIntoViewOptions | undefined }[] = [];
+
+    beforeEach(() => {
+      scrolled.length = 0;
+      Element.prototype.scrollIntoView = function (
+        this: Element,
+        opts?: boolean | ScrollIntoViewOptions
+      ) {
+        scrolled.push({ row: this, opts: opts as ScrollIntoViewOptions | undefined });
+      };
+    });
+
+    afterEach(() => {
+      // jsdom ships no scrollIntoView, so removing the stub restores the original state.
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      vi.unstubAllGlobals();
+    });
+
+    async function followMaintenanceLink(container: HTMLElement) {
+      await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+      const button = await waitFor(() => {
+        const el = container.querySelector('[data-testid="embedding-link-card"] button');
+        expect(el).not.toBeNull();
+        return el as HTMLElement;
+      });
+      await fireEvent.click(button);
+    }
+
+    it('scrolls the Speaker Embedding System row into view when the link card jumps there', async () => {
+      const { container } = await openAs('super_admin', 'speaker-identification');
+      scrolled.length = 0;
+      await followMaintenanceLink(container);
+
+      const embedding = navItem(container, 'settings.embeddingMigration.title');
+      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+      expect(embedding?.classList.contains('active')).toBe(true);
+      const call = scrolled.find((c) => c.row === embedding);
+      expect(call?.opts?.block).toBe('nearest');
+    });
+
+    it('does not animate the scroll when the user prefers reduced motion', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      const { container } = await openAs('super_admin', 'speaker-identification');
+      scrolled.length = 0;
+      await followMaintenanceLink(container);
+
+      const embedding = navItem(container, 'settings.embeddingMigration.title');
+      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+      expect(scrolled.find((c) => c.row === embedding)?.opts?.behavior).toBe('auto');
+    });
+  });
+
   it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
     const { container } = await openAs('admin', 'embedding-migration');
     await waitFor(() =>
@@ -436,6 +552,51 @@ describe('Transcription and Speaker Identification sections', () => {
         navItem(container, 'settings.speakerIdentification.title')?.classList.contains('dirty')
       ).toBe(true)
     );
+  });
+});
+
+describe('settings search placement', () => {
+  it('keeps the search outside the scrolling nav list so a scrollbar cannot overlap it', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    const sidebar = container.querySelector('.settings-sidebar') as HTMLElement;
+    const scroller = sidebar.querySelector('.sidebar-scroll') as HTMLElement;
+    const search = sidebar.querySelector('#settings-search-desktop-input') as HTMLElement;
+
+    expect(scroller).not.toBeNull();
+    expect(scroller.contains(search)).toBe(false);
+    expect(scroller.querySelectorAll('.nav-item').length).toBeGreaterThan(0);
+    expect(sidebar.querySelectorAll('.nav-item').length).toBe(
+      scroller.querySelectorAll('.nav-item').length
+    );
+    // Search first, list after: the search is a fixed header, not part of the scrolled content.
+    expect(sidebar.firstElementChild?.contains(search)).toBe(true);
+    expect(sidebar.firstElementChild).not.toBe(scroller);
+  });
+
+  it('raises the search header only once the nav list has scrolled', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    const scroller = container.querySelector('.settings-sidebar .sidebar-scroll') as HTMLElement;
+    const header = () =>
+      container.querySelector('.settings-sidebar .settings-search') as HTMLElement;
+
+    expect(header().classList.contains('raised')).toBe(false);
+    scroller.scrollTop = 120;
+    await fireEvent.scroll(scroller);
+    expect(header().classList.contains('raised')).toBe(true);
+    scroller.scrollTop = 0;
+    await fireEvent.scroll(scroller);
+    expect(header().classList.contains('raised')).toBe(false);
+  });
+
+  it('gives the mobile instance the same landmark and search input', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    const mobile = container.querySelector('.mobile-section-nav') as HTMLElement;
+    expect(mobile.querySelector('[role="search"]')).not.toBeNull();
+    expect(mobile.querySelector('input[type="search"]')).not.toBeNull();
   });
 });
 

@@ -1402,7 +1402,7 @@
   "auth.resetPassword": "Wachtwoord opnieuw instellen",
   "auth.resetPasswordDescription": "Voer hieronder uw nieuwe wachtwoord in.",
   "auth.passwordResetSuccess": "Uw wachtwoord is succesvol opnieuw ingesteld.",
-  "auth.resetPasswordFailed": "Failed to reset password. The link may have expired.",
+  "auth.resetPasswordFailed": "Wachtwoord opnieuw instellen mislukt. De link is mogelijk verlopen.",
   "auth.invalidResetLink": "Ongeldige of ontbrekende resetlink. Vraag een nieuwe aan.",
   "auth.requestNewLink": "Nieuwe link aanvragen",
   "auth.newPassword": "Nieuw wachtwoord",

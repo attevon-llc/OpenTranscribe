@@ -314,6 +314,17 @@ deprecated alias for `anthropic`).
   `bool(settings.LLM_PROVIDER)`: a provider with no key or endpoint passes that check while
   every task skips, which made the post-transcription sweep re-dispatch topic extraction for
   every file every 10 minutes (issue #1017).
+- **Automatic LLM steps have per-user opt-outs (#1148).** `auto_llm_speaker_identification` and
+  `auto_topic_extraction` (default ON; `UserSetting` rows, system tier `auto_llm.speaker_identification`
+  / `auto_llm.topic_extraction`) are resolved ONLY by `services/auto_llm_settings.py`
+  (user > system > True). The AUTOMATIC dispatch sites consult it: `_dispatch_llm_speaker_identification`
+  in `speaker_attribute_task.py` (every chain exit, `dispatch_speaker_attribute_pipeline`, and so
+  postprocess/background/rediarize), `trigger_automatic_summarization` in `transcription/downstream.py`
+  (only when `tasks_to_run is None`), and `TaskDetectionService.identify_incomplete_post_transcription_files`
+  (the recovery sweep: a step the user turned off must not be flagged missing, or it is re-queued and
+  re-detected every 10 minutes). Manual triggers and an explicit stage list (`speaker_llm` /
+  `topic_extraction` via `dispatch_task_by_name` or `llm_requested=True`) never consult it. A new
+  automatic dispatch of either step must go through the resolver.
 - **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
   Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
   chain (IAM role, profile, or environment) — and no per-configuration region: both

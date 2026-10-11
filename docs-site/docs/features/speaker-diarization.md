@@ -227,6 +227,8 @@ OpenTranscribe can automatically detect speaker attributes to improve identifica
 
 **Configuration**: Enable/disable speaker attribute detection in Settings → Speaker Identification → Voice Attributes.
 
+The same tab has a separate switch, **Suggest speaker names automatically with AI**. When it is on (the default) and an AI provider is configured, the transcript text is sent to that provider after transcription to suggest speaker names; suggestions are never applied automatically. It works independently of attribute detection, and it does not affect the manual suggest button.
+
 ### Speaker Pre-Clustering (New in v0.4.0)
 
 GPU-accelerated speaker clustering runs automatically after transcription:

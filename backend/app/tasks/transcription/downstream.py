@@ -62,6 +62,20 @@ def _dispatch_automatic_summary(
     logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
 
 
+def _auto_topic_extraction_enabled(file_uuid: str) -> bool:
+    """Owner's ``auto_topic_extraction`` switch (user > system default > True)."""
+    from app.services.auto_llm_settings import resolve_auto_llm_flags
+
+    with session_scope() as db:
+        owner = db.query(MediaFile.user_id).filter(MediaFile.uuid == file_uuid).scalar()
+        if owner is None:
+            return True
+        enabled = resolve_auto_llm_flags(db, int(owner)).topic_extraction
+    if not enabled:
+        logger.info(f"Automatic topic extraction is off for the owner of {file_uuid}; skipping")
+    return enabled
+
+
 def _get_collection_prompt_uuid(file_id: int) -> str | None:
     """Look up the default summary prompt UUID from the file's first collection (by added_at)."""
     try:
@@ -137,7 +151,11 @@ def trigger_automatic_summarization(
             _dispatch_automatic_summary(file_id, file_uuid, collection_prompt_uuid)
 
         # Topic extraction
-        if tasks_to_run is None or "topic_extraction" in tasks_to_run:
+        # An explicit stage list is a manual request, so only the automatic path
+        # (tasks_to_run is None) honours the user's opt-out (issue #1148).
+        if "topic_extraction" in (tasks_to_run or []) or (
+            tasks_to_run is None and _auto_topic_extraction_enabled(file_uuid)
+        ):
             from app.tasks.topic_extraction import extract_topics_task
 
             topic_task = extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=False)

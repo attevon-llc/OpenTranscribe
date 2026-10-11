@@ -749,6 +749,12 @@
       "AutoLabelSettingsSchema": {
         "description": "User auto-label settings.",
         "properties": {
+          "auto_topic_extraction": {
+            "default": true,
+            "description": "Automatically ask the configured AI provider for tag and collection suggestions after a file is transcribed. Does not affect the manual extract/auto-label buttons.",
+            "title": "Auto Topic Extraction",
+            "type": "boolean"
+          },
           "bulk_grouping_enabled": {
             "default": true,
             "description": "Group bulk imports by topic",
@@ -13983,6 +13989,11 @@
             "title": "Age Detection Enabled",
             "type": "boolean"
           },
+          "auto_llm_speaker_identification": {
+            "default": true,
+            "title": "Auto Llm Speaker Identification",
+            "type": "boolean"
+          },
           "detection_enabled": {
             "default": true,
             "title": "Detection Enabled",
@@ -14015,6 +14026,17 @@
               }
             ],
             "title": "Age Detection Enabled"
+          },
+          "auto_llm_speaker_identification": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Llm Speaker Identification"
           },
           "detection_enabled": {
             "anyOf": [
@@ -14060,6 +14082,10 @@
             "title": "Age Detection Enabled",
             "type": "boolean"
           },
+          "auto_llm_speaker_identification": {
+            "title": "Auto Llm Speaker Identification",
+            "type": "boolean"
+          },
           "detection_enabled": {
             "title": "Detection Enabled",
             "type": "boolean"
@@ -14077,7 +14103,8 @@
           "detection_enabled",
           "gender_detection_enabled",
           "age_detection_enabled",
-          "show_attributes_on_cards"
+          "show_attributes_on_cards",
+          "auto_llm_speaker_identification"
         ],
         "title": "SpeakerAttributeSystemDefaults",
         "type": "object"

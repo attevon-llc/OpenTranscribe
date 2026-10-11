@@ -796,6 +796,13 @@ class TaskDetectionService:
         for uid in unique_user_ids:
             llm_configured_by_user[uid] = LLMService.is_configured_for_user(db, uid)
 
+        # A user who switched an automatic AI step off (issue #1148) must not have it
+        # re-queued by this sweep: it would silently override the choice, and because the
+        # step never produces a row it would be re-detected as "missing" every 10 minutes.
+        from app.services.auto_llm_settings import resolve_auto_llm_flags_for_users
+
+        auto_llm_by_user = resolve_auto_llm_flags_for_users(db, sorted(unique_user_ids))
+
         # Batch-fetch existence: files with topics
         files_with_topics = set(
             row[0]
@@ -911,13 +918,16 @@ class TaskDetectionService:
                 and c.summary_status in (None, "pending", "failed")
                 and (c.id, "summarization") not in recently_attempted
             )
+            auto_llm = auto_llm_by_user[c.user_id]
             missing_topics = (
                 llm_ok
+                and auto_llm.topic_extraction
                 and c.id not in files_with_topics
                 and (c.id, "topic_extraction") not in recently_attempted
             )
             missing_speaker_id = (
                 llm_ok
+                and auto_llm.speaker_identification
                 and c.id not in files_with_speaker_id
                 and (c.id, "speaker_identification") not in recently_attempted
             )

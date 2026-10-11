@@ -23,6 +23,7 @@ const prefs = (show_attributes_on_cards: boolean) => ({
   detection_enabled: true,
   gender_detection_enabled: true,
   show_attributes_on_cards,
+  auto_llm_speaker_identification: true,
 });
 
 beforeEach(() => {

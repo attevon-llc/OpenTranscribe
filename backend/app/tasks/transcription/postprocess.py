@@ -732,7 +732,11 @@ def _dispatch_speaker_attributes(
     try:
         from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
 
-        dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
+        dispatch_speaker_attribute_pipeline(
+            str(file_uuid),
+            user_id,
+            llm_requested=downstream_tasks is not None and "speaker_llm" in downstream_tasks,
+        )
     except Exception as e:
         logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 

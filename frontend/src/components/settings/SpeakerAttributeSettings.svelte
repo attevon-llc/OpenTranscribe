@@ -8,11 +8,13 @@
     type SpeakerAttributeSettings,
   } from '$lib/api/speakerAttributeSettings';
   import { refreshSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
+  import { llmStatusStore } from '$stores/llmStatus';
 
   let settings: SpeakerAttributeSettings = {
     detection_enabled: true,
     gender_detection_enabled: true,
     show_attributes_on_cards: true,
+    auto_llm_speaker_identification: true,
   };
 
   let originalSettings: SpeakerAttributeSettings = { ...settings };
@@ -24,18 +26,31 @@
   $: isDirty =
     settings.detection_enabled !== originalSettings.detection_enabled ||
     settings.gender_detection_enabled !== originalSettings.gender_detection_enabled ||
-    settings.show_attributes_on_cards !== originalSettings.show_attributes_on_cards;
+    settings.show_attributes_on_cards !== originalSettings.show_attributes_on_cards ||
+    settings.auto_llm_speaker_identification !== originalSettings.auto_llm_speaker_identification;
+
+  // Known only after the first status check, so the switch does not flash greyed-out.
+  $: noProvider =
+    !$llmStatusStore.checking && $llmStatusStore.lastChecked !== null && !$llmStatusStore.available;
 
   const dispatch = createEventDispatcher<{ change: { hasChanges: boolean } }>();
   $: dispatch('change', { hasChanges: isDirty });
 
-  onMount(loadSettings);
+  onMount(() => {
+    void llmStatusStore.initialize();
+    void loadSettings();
+  });
 
   async function loadSettings() {
     loading = true;
     error = '';
     try {
-      settings = await getSpeakerAttributeSettings();
+      const loaded = await getSpeakerAttributeSettings();
+      // A server that predates the field must read as the default (on).
+      settings = {
+        ...loaded,
+        auto_llm_speaker_identification: loaded.auto_llm_speaker_identification ?? true,
+      };
       originalSettings = { ...settings };
     } catch (e) {
       error = $t('settings.speakerAttributes.loadFailed');
@@ -50,7 +65,13 @@
     error = '';
     successMessage = '';
     try {
-      settings = await updateSpeakerAttributeSettings(settings);
+      // Partial update: send only what this form changed.
+      const changed = Object.fromEntries(
+        (Object.keys(settings) as (keyof SpeakerAttributeSettings)[])
+          .filter((key) => settings[key] !== originalSettings[key])
+          .map((key) => [key, settings[key]])
+      );
+      settings = await updateSpeakerAttributeSettings(changed);
       originalSettings = { ...settings };
       // Speaker cards read the cached preference; without this they keep the old badge
       // visibility until the cache goes stale.
@@ -112,8 +133,8 @@
           <p class="setting-description">
             {$t('settings.speakerAttributes.enableDetectionDesc')}
           </p>
-          <p class="setting-note" data-testid="llm-coupling-note">
-            {$t('settings.speakerAttributes.llmCouplingNote')}
+          <p class="setting-note" data-testid="llm-independent-note">
+            {$t('settings.speakerAttributes.llmIndependentNote')}
           </p>
         </div>
         <label class="toggle">
@@ -165,6 +186,33 @@
           </label>
         </div>
       {/if}
+    </div>
+
+    <div class="settings-group">
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="setting-label" for="auto-llm-speaker-identification">
+            {$t('settings.speakerAttributes.autoLlmNames')}
+          </label>
+          <p class="setting-description">
+            {$t('settings.speakerAttributes.autoLlmNamesDesc')}
+          </p>
+          {#if noProvider}
+            <p class="setting-note" data-testid="auto-llm-no-provider">
+              {$t('settings.speakerAttributes.autoLlmNamesNoProvider')}
+            </p>
+          {/if}
+        </div>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            id="auto-llm-speaker-identification"
+            bind:checked={settings.auto_llm_speaker_identification}
+            disabled={noProvider}
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
     {#if error}
@@ -300,6 +348,11 @@
 
   .toggle input:checked + .toggle-slider::before {
     transform: translateX(20px);
+  }
+
+  .toggle input:disabled + .toggle-slider {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 
   .button-group {

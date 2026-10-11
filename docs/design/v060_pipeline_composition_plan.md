@@ -1,6 +1,11 @@
 # Pipeline composition: independently selectable transcription and speaker detection
 
 Status: PLAN ONLY (2026-10-11). Nothing here is implemented. Absorbs issue #1219.
+**Amended 2026-10-11 (owner corrections):** lite is fully cloud-only for transcription AND
+speaker detection (WP6 rewritten, #1228); timestamp granularity is a first-class capability
+(A10, C7); a separate local voiceprint stage runs after every diarization source (C6); the
+open questions are now decided items (H); per-file provenance is WP7 (A11, new); the docs-site
+architecture diagrams are WP8 (new, last). All eight work packages ship in v0.6.0.
 Branch this was planned against: `feat/v0.6.0-frontend-ux` @ `8ec69ebc`
 (worktree `.claude/worktrees/v0.6.0`). Line numbers are from that commit; re-check them with
 `rg -n` before editing, the tree moves fast.
@@ -15,7 +20,7 @@ each **local or cloud**, each **on or off**, mix-and-match:
 
 | Wanted combination | Works today? |
 |---|---|
-| Local CPU transcription + cloud speaker detection (lite-like) | **No** (CPU path forces diarization off; lite has no local ASR at all) |
+| Local CPU transcription + cloud speaker detection | **No** (CPU path forces diarization off). Full image only: the per-file lightweight model. Lite stays cloud-only by owner decision (WP6). |
 | Local GPU transcription + pyannote.ai speaker detection | **No, silently**: pyannote.ai is ignored and the local diarizer runs |
 | Cloud ASR + local speaker detection | Yes (`source=local`) |
 | One cloud ASR that does both | Yes (`source=provider`) |
@@ -172,6 +177,19 @@ Repo rule: one path per job. This plan unifies on `assign_speakers` (WP4).
   lite bypasses `_resolve_gpu_queue` (`dispatch.py:357`), routes to `cpu-transcribe` (consumed by
   `celery-cpu-worker`, `docker-compose.yml:526`) and would fail on the missing faster-whisper
   instead of the clear `ASRConfigurationError`. No lite guard on that branch was found.
+- Why lite keeps `pyannote.audio` + `torch+cpu`: the voiceprint path. The diar-native sidecar must
+  export its own ONNX graphs from the PyAnnote/WeSpeaker weights (`requirements-lite.txt:73-120`
+  comment block), and the in-process WeSpeaker fallback is the lite degrade path
+  (`speaker_embedding_service.py:105-117`); `tests/unit/test_lite_export_requirements_declared.py`,
+  `test_requirements_lite_torch_guard.py`, `test_diar_native_lite_image_pairing.py` and
+  `test_opentranscribe_lite_diar_native_image.py` pin that. The owner's rule "lite means no GPU,
+  not small" (root `CLAUDE.md`, memory "Capability over image size") forbids stripping these.
+
+**Owner decision (2026-10-11): lite is cloud-only for transcription AND speaker detection.** Lite
+runs no local transcription (already true) and, after WP6, no local speaker detection. Voiceprint
+embeddings still run locally on CPU in lite. The existing lite rediarize-on-CPU path
+(`postprocess.py:224-265`, whose comment at `:255-259` names lite as its reason for routing via
+`gpu_preferred_queue()`) is removed for lite; see WP6 for exactly what remains.
 
 ### A8. Full image local CPU transcription
 
@@ -187,6 +205,60 @@ local runs reuse the diarizer's native embeddings (`postprocess.py:301-310`); cl
 `tasks/speaker_embedding_task.py:1-9`). v4 vectors come from the diar-native `/embed_window` or
 in-process WeSpeaker (`services/CLAUDE.md` "Speaker embeddings: two backends"). Nothing is sent
 to a vendor for voiceprints.
+
+How today's cloud path gets voiceprints, precisely: `_run_cloud_asr_pipeline` returns only
+segments + provider/model (`cloud_asr.py:305-313`), no vectors. The transcript is saved, then
+`finalize_transcription` dispatches `extract_speaker_embeddings_task` on `cpu`
+(`postprocess.py:269-292`). That task reads the stored segments' `start_time`/`end_time`/
+`speaker_id` from Postgres (`speaker_embedding_task.py:66-108`), stages the preprocessed WAV
+(`:134-152`), calls `embedding_service.extract_embeddings_for_segments` per speaker
+(`:169-195`), then matches against profiles/clusters (`_match_and_finalize_embeddings`, `:213`).
+The pyannote.ai diarization provider requests turns only (`transcription: False`, no
+embedding/voiceprint option, `diarization/pyannote_provider.py:325-340`) and its
+`DiarizeResult.metadata` holds only `job_id`/`elapsed_ms` (`:216-222`). So the vendor contributes
+turns; the voiceprint is always ours. The rule this plan generalises in C6.
+
+### A10. Timestamp granularity each provider/model returns (from code)
+
+Assigning speakers to text needs times on the text. What each provider module actually parses:
+
+| Provider / model | Granularity | Evidence | Notes |
+|---|---|---|---|
+| local faster-whisper | **word** | `transcription/transcriber.py:401` (`word_timestamps=True`) | cross-attention word times, no wav2vec2 alignment |
+| deepgram (all) | **word** | `deepgram_provider.py:209-230` | |
+| assemblyai (all) | **word** | `assemblyai_provider.py:177-192,213-228` | ms -> s |
+| openai `whisper-1` | **segment** | `openai_provider.py:127-136` (`verbose_json`, no `timestamp_granularities`) | The API can return word times with `timestamp_granularities=["word"]` (vendor docs, **unverified**, not requested here). A cheap upgrade to word, tracked as a WP4 sub-step. |
+| openai `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` | **none** | `openai_provider.py:146-153` (`json` only), fallback `:247-248` makes ONE segment with `start=end=0.0` | The code comment records that `verbose_json` is rejected for these models. |
+| openai `gpt-4o-transcribe-diarize` | **segment** | `openai_provider.py:138-145` (`diarized_json` segments with start/end) | speakers included, at segment level |
+| google (all) | **word** | `google_provider.py:128` (`enable_word_time_offsets=True`), `:183-235` | |
+| azure (all) | **segment, word only if returned** | `azure_provider.py:125` (`OutputFormat.Detailed`), `:182-196,281-297` parse `NBest[0].Words` | Word-level timestamps are not explicitly requested (`request_word_level_timestamps()` is absent), so `Words` may be empty (Azure SDK behaviour: **unverified**). Treat as segment until a live test proves word. |
+| aws (all) | **word** | `aws_provider.py:369,393` (items with start/end) | |
+| speechmatics | **word** | `speechmatics_provider.py:233` | |
+| gladia | **word** | `gladia_provider.py:397-404` | |
+| pyannote (STT orchestration) | **word** | `asr/pyannote_provider.py:432-468` (`wordLevelTranscription`) | |
+
+There is **no forced-alignment stage** in the pipeline today. `whisperx==3.8.6` is installed in the
+full image (`requirements-nodeps.txt:22`, it ships wav2vec2 alignment), but nothing under
+`backend/app` calls its `align`/`load_align_model` (rg finds no caller). Lite has no whisperx.
+
+### A11. Per-file provenance recorded today
+
+| Step | What is recorded | Where written | Where shown |
+|---|---|---|---|
+| Transcription | `media_file.asr_provider`, `asr_model`, `whisper_model` (`models/media.py:285-310`); also `FilePipelineTiming.asr_provider/asr_model` (`models/pipeline_timing.py:144-145`) | `tasks/transcription/storage.py:201-213` | `MediaFile` schema `schemas/media.py:700-709`; `components/MetadataDisplay.svelte:239-275` (hardcoded English label "Whisper:"); `/my-files/{uuid}/status` adds `whisper_model`/`requested_whisper_model` (`api/endpoints/user_files.py:301,342-347`) |
+| Speaker detection | `diarization_provider`, `diarization_model`, `diarization_disabled` | `storage.py:204-216`; values come from the engine that ran (`finalize.py:228,362`) or `merge_cloud_diarization` metadata (`diarization_merge.py:108-111`) | `MetadataDisplay.svelte:255-262` |
+| Voiceprints | `embedding_mode` only (`v3`/`v4`); not the backend (native vs in-process) nor the model | `storage.py:207-208` | `MetadataDisplay.svelte:269-274` |
+| Summary | `media_file.summary_data["metadata"]["provider"/"model"]` | `services/llm_service.py:1510-1513` (also `:1472-1473` partial path) | not shown as provenance |
+| Topics | nothing (`models/topic.py:58-100` has no provider/model) | `tasks/topic_extraction.py` | — |
+| Speaker-name suggestions | `speaker.suggestion_source` (`llm_analysis`/`voice_match`/`profile_match`, `models/media.py:630-632`), no provider/model | `tasks/speaker_identification_task.py` | — |
+
+Defects found while mapping this (fixed in WP7):
+- **Ambiguous id**: the local engine and the pyannote.ai cloud provider both report
+  `diarization_provider = "pyannote"` (`diarization/pyannote_provider.py:220`; local PyAnnote
+  engine via `finalize.py`), and `MetadataDisplay.svelte:258-260` renders anything that is not
+  `native` as the local PyAnnote engine. A pyannote.ai run, or after WP4 a Deepgram-as-diarizer
+  run, displays as "PyAnnote engine (this server)". Historical rows cannot be disambiguated.
+- `local_provider.py:119` reports `provider_name="local"`, a third spelling.
 
 ---
 
@@ -247,13 +319,32 @@ Trade-offs, stated in UI copy and docs:
 - Quality depends on the vendor's word timestamps; turns are derived from words, so overlap is
   lost (same as today's provider path).
 
-First-class diarization-only providers stay as they are (pyannote.ai,
-`PyAnnoteCloudDiarizationProvider`). A new hosted diarization-only vendor would be a new module
-in `services/diarization/` plus a factory branch, exactly like pyannote.ai.
+Badges (decided, owner 2026-10-11): every provider/model shows exactly one of
+**Speakers included** (model returns speaker labels), **Text only** (it does not), and, where it
+is chosen as a diarizer for a different transcription provider, **Speakers via adapter (extra
+billing)**. A second badge shows timing: **Word timing / Segment timing / No timing** (A10, C7).
 
-Credentials: the adapter is built from a **saved ASR configuration** (`UserASRSettings`) via
-`ASRProviderFactory.create_from_db_config(cfg)` (the one decryption path, `asr/CLAUDE.md`). No new
-credential store. pyannote.ai keeps its #1204 table.
+### B2. Do vendors return speaker embeddings? (no usable ones)
+
+| Vendor | Returns vectors? | Form | Usable in our space? |
+|---|---|---|---|
+| pyannote.ai `/v1/diarize` (precision-2/3) | No vectors in the diarize output as requested here (code: turns only, `diarization/pyannote_provider.py:216-222,325-340`). | — | — |
+| pyannote.ai voiceprint / identify (`/v1/voiceprint`, identify jobs) | A "voiceprint" per enrolled sample (vendor docs, **unverified**: an opaque encoded string, built from a short reference clip, consumed only by their identify endpoint). | Opaque vendor token, model and dimension undocumented. | **No.** Our index is 256-d WeSpeaker ResNet34 cosine (`services/CLAUDE.md`, `opensearch_service`); an opaque token from another model has no linear map into it (the same reason v3 512-d cannot be routed at v4). |
+| Speechmatics speaker identification, OpenAI `known_speaker_references`, Azure speaker recognition | Enrollment-style identifiers or reference audio, not embeddings returned per speaker (vendor docs, **unverified**; Azure Speaker Recognition was announced for retirement, **unverified**). | Opaque / reference-based. | **No.** |
+| Deepgram, AssemblyAI, Gladia, Google, AWS | No speaker vectors (vendor docs, **unverified**; none parsed in code). | — | — |
+
+Confidence: high that nothing usable exists (no vendor exposes raw vectors in the
+pyannote/WeSpeaker 256-d space, and the code consumes none); medium on the exact shape of each
+vendor's identification features (unverified docs). **Decided (Q12): vendor voiceprints stay
+unused.** Voiceprints come from the local embedding stage (C6) for every combination.
+
+(B1 continued, placed here for reading order:) first-class diarization-only providers stay as
+they are (pyannote.ai, `PyAnnoteCloudDiarizationProvider`); a new hosted diarization-only vendor
+would be a new module in `services/diarization/` plus a factory branch. The adapter's
+credentials come from a **saved ASR configuration** (`UserASRSettings`) via
+`ASRProviderFactory.create_from_db_config(cfg)` (the one decryption path, `asr/CLAUDE.md`); no
+new credential store; pyannote.ai keeps its #1204 table. The adapter keeps `ASRWord` times when
+the vendor returns them; a vendor with segment-only timing yields segment-granular turns (C7).
 
 ---
 
@@ -293,6 +384,7 @@ class TranscriptionStep:
     where: Where
     queue: str                 # CeleryQueues value
     returns_speakers: bool     # model-level supports_diarization
+    timing: Literal["word", "segment", "none"]   # catalog timestamp_granularity (A10, C7)
     config_uuid: str | None
 
 @dataclass(frozen=True)
@@ -306,12 +398,15 @@ class DiarizationStep:
     queue: str | None
     speaker_hints: frozenset[str]   # subset of {"min","max","num"} the engine honours
     config_uuid: str | None         # the ASR config used as a diarizer (asr_config only)
+    merge: Literal["word", "segment", "none"]   # how turns reach the text (C7)
 
 @dataclass(frozen=True)
 class SpeakerIdStep:
     runs: bool                 # False when diarization is off
-    where: Where               # always "server"
+    where: Where               # always "server" (C6), lite included
     backend: str               # "native" | "pyannote" (embedding backend, informational)
+    execution: Literal["inline_native", "embedding_stage", "none"]   # C6
+    queue: str | None          # cpu for embedding_stage; None when inline/none
 
 @dataclass(frozen=True)
 class PipelinePlan:
@@ -332,6 +427,7 @@ class PlanInputs:
     asr_config_uuid: str | None
     asr_returns_speakers: bool
     asr_speaker_hints: frozenset[str]
+    asr_timing: Literal["word", "segment", "none"]
     whisper_model_override: str | None   # per-file; lightweight -> local_cpu
     diarization_source: str              # after lock + per-file "off"
     source_locked: bool
@@ -358,15 +454,15 @@ the factory nor the plan re-implements the precedence), locks via
 | Engine | Chosen by | Queue | Where |
 |---|---|---|---|
 | `local_gpu` | active ASR = local (and model not lightweight) | `gpu` / `gpu-transcribe` | server |
-| `local_cpu` | per-file lightweight model (today); user default model if Q7 is accepted; lite once WP6 lands | `cpu-transcribe` | server |
+| `local_cpu` | per-file lightweight model, **full image only** (lite has no local transcription, decided) | `cpu-transcribe` | server |
 | `cloud` | active ASR config = vendor+model | `cloud-asr` | cloud |
 
 **Speaker detection** (`transcription_diarization_source`, values extended by ONE):
 
 | Stored value | UI label (en) | Engine resolved |
 |---|---|---|
-| `provider` | Automatic (recommended) | `asr` if the transcription model returns speakers; else see Q1 (recommended: `local`) |
-| `local` | This server | `local` (engine = admin `engine.diarizer_backend`, read-only for users) |
+| `provider` | Automatic (recommended) | `asr` if the transcription model returns speakers; else `local` on the full image when the model has word or segment timing (decided Q1, C7); else an error (no timing, or lite) |
+| `local` | This server | `local` (engine = admin `engine.diarizer_backend`, chosen at setup, read-only for users, decided Q3). **Not offered on lite.** |
 | `pyannote` | pyannote.ai cloud service | `pyannote_ai` |
 | `asr_config` **(new)** | Another provider's speaker detection | `asr_config`, using `UserSetting["transcription_diarization_asr_config_uuid"]` **(new key)** |
 | `off` | Off | `off` |
@@ -383,22 +479,43 @@ Rows: transcription engine. Columns: resolved diarization engine.
 | **local_gpu** | = `local` (local's own is local) -> `inline_local` in GPU task (today) | `inline_local` (today) | **NEW** GPU task runs Whisper with diarization OFF; postprocess dispatches `rediarize_task(engine=pyannote_ai)` on `cloud-asr` -> `assign_speakers` -> embeddings on `cpu` | **NEW** same as pyannote_ai with `ASRDiarizationAdapter(V)` | today |
 | **local_cpu** | = `local` -> `post_stage_local` (rediarize on `gpu_preferred_queue()`) **NEW** (today forced off) | `post_stage_local` **NEW** | `post_stage_cloud` **NEW** | `post_stage_cloud` **NEW** | today |
 | **cloud** (returns speakers) | `inline_asr` (today) | `post_stage_local` (today, rediarize) | `parallel_cloud` (today) | `parallel_cloud` **NEW** via adapter | today |
-| **cloud** (text only) | Q1: recommended -> `local` with `info automatic_uses_server`; alternative: no speakers with `warning asr_text_only_automatic` (today's behaviour, #1219) | today | today | **NEW** | today |
+| **cloud** (text only, word or segment timing) | decided Q1: -> `local` (`post_stage_local`) with `info automatic_uses_server` | `post_stage_local` | `parallel_cloud` | `parallel_cloud` **NEW** | today |
+| **cloud** (no timing: `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`) | **refused** `asr_no_timing_for_speakers` | **refused** (same) | **refused** (same) | **refused** (same) | today (the only valid choice) |
 
-Errors (block dispatch AND the settings PUT for a new selection):
+The timing column is applied on top of every cell (C7): `word` -> per-word merge; `segment` ->
+segment-level merge with a `segment_timing_only` warning; `none` -> any diarization is refused.
+
+**Lite rows (decided: lite is cloud-only for transcription and speaker detection).**
+
+| Lite transcription | `asr` | `local` | `pyannote_ai` | `asr_config` | `off` |
+|---|---|---|---|---|---|
+| `local_gpu` / `local_cpu` | **refused** `local_asr_unavailable` | refused | refused | refused | refused |
+| cloud (returns speakers) | `inline_asr` | **refused** `local_diarization_unavailable` | `parallel_cloud` | `parallel_cloud` | ok |
+| cloud (text only, timed) | **refused** `automatic_needs_speaker_provider` (steer: pick pyannote.ai or a provider that returns speakers) | refused | `parallel_cloud` | `parallel_cloud` | ok |
+| cloud (no timing) | refused `asr_no_timing_for_speakers` | refused | refused | refused | ok |
+
+On every lite row that diarizes, the voiceprint stage still runs locally on CPU (C6).
+Impossible on lite because there is no local alignment and no local diarizer: any diarization
+with a no-timing model; Automatic with any text-only model; `local` with anything.
+
+Errors (block dispatch AND the settings PUT for a new selection; stable codes, each with a fixed
+user sentence registered in `ErrorCategorizationService`):
 
 | Code | When |
 |---|---|
 | `pyannote_key_missing` | `pyannote` with no stored key (today's `DiarizationNotConfiguredError`, kept) |
 | `diarizer_config_missing` | `asr_config` and the uuid is absent, deleted, or no longer shared with the user |
 | `diarizer_config_no_speakers` | `asr_config` and that config's model does not return speakers |
-| `local_asr_unavailable` | `local_gpu`/`local_cpu` on lite (today's `ASRConfigurationError`, kept; lifted for `local_cpu` by WP6) |
+| `local_asr_unavailable` | `local_gpu`/`local_cpu` on lite (today's `ASRConfigurationError`, kept) |
+| `local_diarization_unavailable` | **new**, lite + `local` |
+| `automatic_needs_speaker_provider` | **new**, lite + Automatic + text-only model |
+| `asr_no_timing_for_speakers` | **new**, any diarization with a `timing == "none"` model (full and lite) |
 
-Warnings/info (never block): `asr_text_only_automatic` or `automatic_uses_server` (Q1),
+Warnings/info (never block): `automatic_uses_server` (Q1), `segment_timing_only` (C7),
 `speaker_hints_ignored` (engine honours none of the user's hints; native engine included),
-`local_diarization_cpu` (lite: local speaker detection runs on CPU, slow), `diarizer_double_billing`
-(asr_config), `audio_leaves_server` is not an issue but a per-step `where == "cloud"` flag the UI
-renders as the privacy note, `source_locked` (info, #1109).
+`diarizer_double_billing` (asr_config), `source_locked` (info, #1109). `audio_leaves_server` is
+not an issue but a per-step `where == "cloud"` flag the UI renders as the privacy note.
+(`local_diarization_cpu` from the first draft is deleted: lite no longer diarizes locally.)
 
 Topology notes:
 
@@ -409,8 +526,8 @@ Topology notes:
   worker: holding a GPU slot while polling pyannote.ai is the waste this design avoids. Cost:
   latency = ASR + cloud diarization, sequential. A later optimisation (out of scope) can submit
   the pyannote.ai job from preprocess and poll in the post stage.
-- Lite: `post_stage_local` already resolves to `cpu` (`constants.gpu_preferred_queue`, #865);
-  `cloud-asr` is staffed on lite (`docker-compose.lite.yml:25-29`). Add both routes to
+- Lite: `post_stage_local` is never produced (refused above). `cloud-asr` is staffed on lite
+  (`docker-compose.lite.yml:25-29`) and the embedding stage's `cpu` queue is too; add both to
   `tests/unit/test_lite_mode_queue_consumers.py`.
 
 ### C4. The post stage: one task, engine-parametrised
@@ -432,9 +549,13 @@ def rediarize_task(self, file_uuid, min_speakers=None, max_speakers=None, num_sp
 - Merge: `assign_speakers` on the stored transcript (today's rediarize behaviour). For cloud
   results convert `DiarizeResult.segments` to the frame `assign_speakers` expects via a small
   helper `diarize_segments_to_frame()` in `transcription/speaker_assigner.py`.
-- Embeddings: `local` keeps today's inline native-embedding handling; cloud engines dispatch
-  `extract_speaker_embeddings_task` on `cpu` with `pipeline_task_id` (it already closes the
-  pipeline task, `speaker_embedding_task.py:_close_pipeline_task`).
+- Embeddings: `local` keeps today's inline native-embedding handling; cloud engines hand off to
+  the voiceprint stage (C6), dispatching `extract_speaker_embeddings_task` on `cpu` with
+  `pipeline_task_id` (it already closes the pipeline task,
+  `speaker_embedding_task.py:_close_pipeline_task`).
+- Merge granularity follows C7 (`plan.diarization.merge`).
+- Lite: `engine == "local"` raises the `local_diarization_unavailable` configuration error at the
+  top of the task (defence in depth behind the plan and the API).
 - Session lifetime: read phase (plain data incl. decrypted key resolved into the provider object
   only, never an ORM row), HTTP/model work with **no session open**, short write phase.
   `scripts/audit-session-lifetime.py` must stay clean.
@@ -447,7 +568,8 @@ def rediarize_task(self, file_uuid, min_speakers=None, max_speakers=None, num_sp
   Confirm `celery-cloud-asr-worker`'s import list includes `app.tasks.rediarize_task`
   (`core/celery.py` include) and that the module has no model-loading top-level import.
 - Manual "rediarize" reprocess stage (`api/endpoints/files/reprocess.py`): uses the user's current
-  plan engine (Q9; `asr` -> `local`).
+  plan engine (decided Q9; `asr` -> `local` on the full image; on lite `asr`/`local` -> 409
+  `local_diarization_unavailable`, a cloud engine runs on `cloud-asr`).
 
 ### C5. Speaker-count hints per engine
 
@@ -459,13 +581,58 @@ stays the one precedence for the values; the plan only says which are honoured, 
 show "This engine ignores the speaker range" (`speaker_hints_ignored`). Wiring the
 docs-only hints (AssemblyAI min/max, Speechmatics, Gladia) is a follow-up issue, not this plan.
 
-### C6. Speaker identification when diarization is cloud
+### C6. Voiceprints: one local embedding stage after ANY speaker detection
 
-Unchanged principle: voiceprints are always computed on this server (A9), in the 256-d WeSpeaker
-space, from audio + whichever turns won. No vendor voiceprint API (pyannote.ai identify) is used:
-it would put voiceprints in a vendor's space, incompatible with the stored index (Q12). Lite:
-embeddings on CPU (sidecar CPU EP or in-process). The Pipeline view shows this step as
-"This server" always.
+Principle (decided, Q12): voiceprints are always computed on this server, in the 256-d WeSpeaker
+space, from the audio plus whichever speaker turns won (A9, B2). Vendor voiceprints are never
+used. Today this is already true for cloud ASR (A9, "How today's cloud path gets voiceprints");
+the target makes it an explicit, plan-driven stage so cross-file speaker identification and
+clustering behave identically for every combination, lite included.
+
+Rule: after the transcript carries its final speaker labels, exactly one of these runs
+(`plan.speaker_id.execution`):
+
+| Execution | When | Where it runs | Cost |
+|---|---|---|---|
+| `inline_native` | `inline_local` diarization on the full image (the diarizer already produced per-speaker vectors in the same pass; `postprocess.py:301-310`) | GPU worker, no extra pass | ~0 (already paid by the diarizer) |
+| `embedding_stage` | every other diarizing combination: `inline_asr`, `parallel_cloud`, `post_stage_cloud`, and `post_stage_local` when the local engine returned no native vectors | `extract_speaker_embeddings_task` on `cpu` (`postprocess.py:269-292`; `speaker_embedding_task.py:295`), backend = diar-native `/embed_window` (CPU EP on lite, GPU/CPU on full) or in-process WeSpeaker fallback | One WAV staging + one embedding per speaker over its segments (`speaker_embedding_task.py:169-195`); per-segment work bounded by `NATIVE_EMBEDDING_MAX_TILES`. Wall time is NOT measured for this plan (do not quote a number): WP3 records the stage timing via `benchmark_timing` on one real file. |
+| `none` | diarization off | — | 0 |
+
+Inputs are the stored segments (start/end/speaker), so the stage works for word- or
+segment-timed transcripts; it cannot run for `timing == "none"`, which is why that combination is
+refused (C3). The stage is the one place matching/clustering happens
+(`_match_and_finalize_embeddings`, `speaker_embedding_task.py:213`), so every combination feeds
+the same profiles and clusters. Lite: the stage is the reason lite keeps `pyannote.audio`,
+`torch+cpu` and the diar-native sidecar's embedding graph (A7). The Pipeline view shows this step
+as "This server" always.
+
+### C7. Timing-aware merge (decided strategy by capability)
+
+A diarizer returns speaker **turns** `(start, end, speaker)`. Text needs times to receive them.
+`ASR_PROVIDER_CATALOG` gains `timestamp_granularity: "word" | "segment" | "none"` per provider and
+per model (model wins), filled from A10's code evidence only; Azure is `segment` until a live
+test proves `Words` are populated; `whisper-1` is `segment` unless WP4's sub-step requests word
+granularity and a test proves it.
+
+| Granularity | Merge | What is lost | Plan issue |
+|---|---|---|---|
+| `word` | `assign_speakers` per word (overlap), segment speaker = dominant word speaker; then `utils/segment_postprocess.finalize_segments` (boundary smoothing, re-segment at word-speaker boundaries, merge same-speaker; `finalize.py:156-165`) splits segments at turn changes. ⚠️ `rediarize_task` today skips `finalize_segments` (`rediarize_task.py:336-366` goes straight from `assign_speakers` to `save_transcript_segments`), so today's cloud ASR + local path never re-splits; WP3's post stage must call `finalize_segments` (the documented single chokepoint, `finalize.py:157`) | nothing beyond the diarizer's own error | none |
+| `segment` | `assign_speakers` at segment level: each segment gets the speaker whose turns overlap it most (the same overlap rule, applied to the segment interval); words, if any, inherit the segment speaker | speaker changes **inside** a segment (whisper-1 segments run up to ~30 s): the shorter speaker's words are attributed to the dominant one; backchannels vanish; voiceprints for a segment mixing two voices are slightly contaminated | `segment_timing_only` (warning, shown in Settings and the Pipeline view) |
+| `none` | impossible | everything | `asr_no_timing_for_speakers` (error; UI warning on the model badge and in the speaker card) |
+
+Options for `none`, considered:
+1. **Refuse** with the stable error and a UI warning (decided default; works identically on full
+   and lite).
+2. **Local forced alignment**: run wav2vec2 alignment (`whisperx.align`, already installed in the
+   full image, `requirements-nodeps.txt:22`, but unused today, A10) on a GPU worker to obtain word
+   times for the vendor's text, then merge per word. Costs: a new pipeline stage, per-language
+   wav2vec2 model downloads (offline deployments must pre-provision them), languages without an
+   alignment model still fail, the text must first be split into the vendor's segment-less blob.
+   Not possible on lite (no whisperx, no GPU). Recorded as a follow-up issue, not in v0.6.0
+   scope (see H, "remaining owner decision").
+
+`merge_cloud_diarization`'s midpoint rule (A5) is deleted in WP4; `assign_speakers` covers both
+the `word` and `segment` rows, with the equivalence test in WP4 as the gate.
 
 ---
 
@@ -486,7 +653,26 @@ embeddings on CPU (sidecar CPU EP or in-process). The Pipeline view shows this s
   with `pyannote_key_missing`. Cloud-ASR users keep #1204's fail-visible behaviour (deliberate,
   do not "fix"). Downgrade: no-op (document it). Users with a key + local ASR are left alone and
   start using pyannote.ai (Q2; CHANGELOG "Changed").
-- **`diarizer_backend` untouched.** It stays the admin's choice of local engine.
+- **Lite data migration** (WP6, Python data revision; only acts when
+  `os.getenv("DEPLOYMENT_MODE","full").lower() == "lite"` at migration time, otherwise a no-op):
+  users whose `transcription_diarization_source` is `local` (or `provider` with a text-only
+  active model) can no longer run on lite. For each such user: if the active ASR config's model
+  returns speakers, rewrite the value to `provider` (they keep getting speakers, now from their
+  transcription vendor). Otherwise leave the value untouched: the plan reports
+  `local_diarization_unavailable` / `automatic_needs_speaker_provider` in Settings and dispatch
+  refuses with that fixed sentence, so the user sees exactly what to choose. The migration
+  decides "returns speakers" from a **frozen copy** of the (provider, model) -> diarizes table
+  inside the revision file (a migration must not import the live catalog, which will change).
+  Downgrade: no-op. No transcript, speaker, voiceprint or profile data changes: files diarized on
+  lite's CPU before the change keep their speakers and embeddings. A deployment that switches
+  from full to lite later is not migrated; the runtime refusal covers it with a clear error.
+- Migration numbering: three revisions are planned (WP3 data, WP6 lite data, WP7 schema). They
+  land from different worktrees, so take numbers in merge order from the live head
+  (`scripts/release-tests/lib/alembic-head.py`) at rebase time, never from this document, and
+  follow the lane rules in `backend/alembic/CLAUDE.md` and `backend/app/db/CLAUDE.md` (the
+  detection guard in `app/db/migrations.py` needs an entry for the WP7 column).
+- **`diarizer_backend` untouched.** It stays the admin's choice of local engine, made at setup
+  (decided Q3), shown read-only to users.
 - **Delete, do not shim** (owner rule), all in the WP that replaces them:
   - WP3: `preprocess.py:265-278` bool->source mapping (the plan carries the resolved source);
     every `== "off"` derivation in `core.py:471`, `pipelines.py:224,353`, `diarize_task.py:79`
@@ -524,6 +710,8 @@ embeddings on CPU (sidecar CPU EP or in-process). The Pipeline view shows this s
        provider_display: str | None # pre-formatted display name from the catalog (fat backend)
        model: str | None
        returns_speakers: bool | None          # transcription step only
+       timing: Literal["word","segment","none"] | None   # transcription step: badge 'Word timing / Segment timing / No timing'
+       adapter_billing: bool        # diarization via ASRDiarizationAdapter: 'Speakers via adapter (extra billing)'
        speaker_hints: list[Literal["min","max","num"]]
        audio_leaves_server: bool
        settings_section: str        # deep-link target (alias id), e.g. "asr-provider", "speaker-identification"
@@ -550,21 +738,34 @@ embeddings on CPU (sidecar CPU EP or in-process). The Pipeline view shows this s
    `TRANSCRIPTION_FIELD_CAPABILITY` (`core/locked_settings.py:30-38`). `asr_config` additionally
    requires capability `asr.user_providers` (mirror of the pyannote key gate in
    `diarization_settings.py`).
-4. ASR catalog and capabilities: add `speaker_count_hints` (C5); add `supports_diarization` and
-   `speaker_count_hints` to `get_model_capabilities` (`asr/factory.py:772-831`) so
+4. ASR catalog and capabilities: add `speaker_count_hints` (C5) and `timestamp_granularity` (C7)
+   per provider and model; add `supports_diarization`, `speaker_count_hints` and
+   `timestamp_granularity` to `get_model_capabilities` (`asr/factory.py:772-831`) so
    `GET /asr-settings/status.active_model_capabilities` carries them (#1219). Model-level
    `supports_diarization` wins over provider-level (OpenAI).
 5. Deleting a `UserASRSettings` row referenced as a diarizer, or unsharing it: the plan reports
    `diarizer_config_missing`; additionally `DELETE /asr-settings/config/{uuid}` resets that user's
    `asr_config` source to `provider` (mirror of `diarization_settings.py:220`'s
    `source_reverted`), returning `diarizer_source_reverted: bool`.
-6. Per-file overrides: unchanged (only "skip speaker detection"). No per-file engine (Q5).
+6. Per-file overrides: unchanged (only "skip speaker detection"). No per-file engine (decided Q5).
 7. OpenAPI: regenerate whatever the repo's frontend type source is (check
    `frontend/src/lib/api/*.ts` are hand-written; they are, so update by hand).
-8. Alembic: only the D data migration. No schema change (UserSetting is key/value).
+8. Alembic: the two D data migrations (WP3, WP6) and the WP7 provenance column. No schema change
+   for the settings themselves (UserSetting is key/value).
 9. Task context: `preprocess_context["pipeline_plan"] = plan.to_context()`; downstream tasks read
    `PipelinePlan.from_context`. Re-runs recompute the plan at dispatch (settings may have changed;
    same rule as today, where the source is re-read from the user setting).
+10. Lite refusals (WP6), all 409 with stable `detail.code` and a fixed sentence: `PUT
+   /user-settings/transcription` (`local_diarization_unavailable`,
+   `automatic_needs_speaker_provider`, `asr_no_timing_for_speakers`), `POST /asr-settings/set-active`
+   and `/clear-active` (`asr_settings.py:700,759`) when the resulting plan is blocking
+   (`local_asr_unavailable` for clear-active on lite, which today silently points at local), the
+   super-admin local-model endpoints (`asr_settings.py:887-1026`: `local_asr_unavailable`), and
+   `PUT /admin/engine-settings` for `diarizer_backend` (`engine_settings.py:202-214`:
+   `local_diarization_unavailable`). `GET /user-settings/transcription/system-defaults` drops
+   `local` from `valid_diarization_sources` on lite.
+11. Per-file provenance (WP7): `MediaFileDetail` and `/my-files/{uuid}/status` gain
+   `processing_steps: list[ProcessingStepOut]` (see WP7).
 
 ---
 
@@ -594,7 +795,12 @@ Each card:
 - Engine line: provider display name + model.
 - Chip **This server** (neutral) or **Cloud: <Vendor>** (accent). Off steps show **Off** and are
   dimmed, not hidden.
-- Transcription card: badge **Speakers included** / **Text only** (from `returns_speakers`).
+- Transcription card: badge **Speakers included** / **Text only** (from `returns_speakers`) and
+  timing badge **Word timing** / **Segment timing** / **No timing** (from `timing`).
+- Speaker detection card: badge **Speakers via adapter (extra billing)** when `adapter_billing`.
+- Lite: a banner line "This deployment has no GPU: transcription and speaker detection use cloud
+  providers; voiceprints are computed on this server"; local options never appear as choices,
+  and a stored local selection renders its blocking issue with the deep link that fixes it.
 - Speaker detection card: hint line "Uses your speaker range" / "Ignores the speaker range".
 - Privacy note when `audio_leaves_server`: "Audio is sent to <Vendor>." Two cloud vendors ->
   both named.
@@ -609,15 +815,22 @@ fetches); unit-tested. API client `frontend/src/lib/api/pipeline.ts`. Refresh on
 
 - `ASRSettings.svelte` config list and `ASRConfigModal.svelte` model select: badge
   **Speakers included** / **Text only** per provider and per model (`supports_diarization`,
-  model-level first).
+  model-level first), plus the timing badge and info text per provider (e.g. "Returns speaker
+  labels with word timing"; "Text only, no timing: speakers cannot be added"). On lite the local
+  model card (`ASRSettings.svelte` A1-A3 rows in the settings plan) is hidden, not just disabled.
+- `EngineSettings.svelte` (admin): on lite the panel shows a read-only note that local speaker
+  detection is unavailable; the sidebar row stays for the boundary-smoothing controls only if
+  they still apply (they do: smoothing runs on any diarized transcript, `finalize.py`).
 - `SpeakerDetectionProviderCard.svelte`:
   - options per C2, labels re-worded; `asr_config` reveals a select of the user's saved ASR
     configs that return speakers (excluding the active transcription config), plus the
     double-billing + privacy note;
   - `pyannote` keeps `PyannoteCredentialForm`;
-  - warning when Automatic + text-only transcription model (Q1 decides wording: "Speakers will be
-    detected on this server" info vs "No speakers will be detected" warning), with a link to the
-    Provider tab;
+  - Automatic + text-only transcription model (decided Q1): full image, timed model -> info
+    "Speakers will be detected on this server" (`automatic_uses_server`); no-timing model -> error
+    `asr_no_timing_for_speakers`; lite -> error `automatic_needs_speaker_provider` that steers to
+    pyannote.ai / another provider; each with a link to the tab that fixes it;
+  - on lite the `local` option is not rendered at all;
   - "where" chip under the select;
   - when the source is locked (#1109) the card is read-only and says the deployment chose it.
 - `SpeakerDetectionSettings.svelte`: min/max inputs show `speaker_hints_ignored` note.
@@ -657,10 +870,8 @@ Keys to ADD (flat keys, `frontend/src/lib/i18n/locales/*.json`), en text:
 | `settings.pipeline.issue.diarizer_config_missing` | The provider chosen for speaker detection no longer exists or is no longer shared with you. |
 | `settings.pipeline.issue.diarizer_config_no_speakers` | The provider chosen for speaker detection does not return speakers. |
 | `settings.pipeline.issue.local_asr_unavailable` | This deployment cannot transcribe on this server. Choose a cloud provider. |
-| `settings.pipeline.issue.asr_text_only_automatic` | Your transcription model returns text only, so Automatic detects no speakers. |
 | `settings.pipeline.issue.automatic_uses_server` | Your transcription model returns text only, so speakers are detected on this server. |
 | `settings.pipeline.issue.speaker_hints_ignored` | This speaker detection engine ignores the minimum and maximum speaker count. |
-| `settings.pipeline.issue.local_diarization_cpu` | Speaker detection runs on this server's CPU, which is slower than a GPU. |
 | `settings.pipeline.issue.diarizer_double_billing` | That provider charges for a full transcription even though only its speakers are used. |
 | `settings.pipeline.issue.diarizer_same_as_transcription` | This is your transcription provider, so its own speaker detection is used. |
 | `settings.pipeline.issue.source_locked` | Your administrator manages speaker detection for this deployment. |
@@ -670,10 +881,21 @@ Keys to ADD (flat keys, `frontend/src/lib/i18n/locales/*.json`), en text:
 | `settings.speakerIdentification.source.asrConfigNone` | No saved provider returns speakers. Add one under Transcription > Provider. |
 | `settings.asrProvider.speakersIncluded` | Speakers included |
 | `settings.asrProvider.textOnly` | Text only |
+| `settings.asrProvider.speakersViaAdapter` | Speakers via adapter (extra billing) |
+| `settings.asrProvider.timing.word` | Word timing |
+| `settings.asrProvider.timing.segment` | Segment timing |
+| `settings.asrProvider.timing.none` | No timing |
+| `settings.asrProvider.timing.noneInfo` | This model returns text without timestamps, so speakers cannot be added to it. |
+| `settings.pipeline.issue.local_diarization_unavailable` | This deployment has no local speaker detection. Choose pyannote.ai or a provider that returns speakers. |
+| `settings.pipeline.issue.automatic_needs_speaker_provider` | Your transcription model returns text only and this deployment cannot detect speakers itself. Choose pyannote.ai or another provider for speaker detection. |
+| `settings.pipeline.issue.asr_no_timing_for_speakers` | Your transcription model returns no timestamps, so speakers cannot be assigned. Choose a model with word or segment timing, or turn speaker detection off. |
+| `settings.pipeline.issue.segment_timing_only` | Your transcription model returns segment timing only, so a speaker change inside a segment is not detected. |
+| `settings.pipeline.liteBanner` | This deployment has no GPU: transcription and speaker detection use cloud providers. Voiceprints are computed on this server. |
 
 Keys whose en TEXT changes (key unchanged, all 12 locales): `source.provider`/`providerDesc`
-(per Q1), `source.local` -> "This server", `source.localDesc` (no "GPU" claim: lite runs it on
-CPU), `source.pyannoteDesc` (drop "when a cloud provider transcribes" in WP3),
+(per decided Q1: "Uses your transcription provider's speaker labels, or detects speakers on
+this server when the provider returns text only"), `source.local` -> "This server",
+`source.localDesc` (no "GPU" claim; the option is hidden on lite), `source.pyannoteDesc` (drop "when a cloud provider transcribes" in WP3),
 `credential.local` (drop "GPU").
 
 ---
@@ -719,9 +941,9 @@ refusal is correct, tiny, and WP3 deletes it.
 
 Files: new `backend/app/services/pipeline_plan.py`, new `backend/app/schemas/pipeline.py`, new
 `backend/app/api/endpoints/pipeline_settings.py`, `backend/app/api/router.py`,
-`backend/app/services/asr/factory.py` (`speaker_count_hints` in catalog;
-`resolve_active_config`; `get_model_capabilities` gains `supports_diarization` +
-`speaker_count_hints`), `backend/app/schemas/asr_settings.py` (capabilities typing),
+`backend/app/services/asr/factory.py` (`speaker_count_hints` and `timestamp_granularity` in
+catalog; `resolve_active_config`; `get_model_capabilities` gains `supports_diarization`,
+`speaker_count_hints`, `timestamp_granularity`), `backend/app/schemas/asr_settings.py` (capabilities typing),
 `backend/app/services/diarization/CLAUDE.md` + `backend/app/services/asr/CLAUDE.md` (document the
 plan as the one decision point).
 No pipeline consumer changes yet (pure addition), so it cannot regress transcription.
@@ -739,6 +961,14 @@ Tests (red first):
   (monkeypatch requests to raise).
 - `backend/tests/api/test_asr_status_capabilities.py`: OpenAI `whisper-1` -> `supports_diarization
   False`, `gpt-4o-transcribe-diarize` -> True.
+- `backend/tests/unit/test_asr_catalog_timestamp_granularity.py`: every provider/model has
+  `timestamp_granularity`; for each provider, feed its parser a recorded fixture response (the
+  provider unit tests already hold these) and assert the parsed `ASRResult` matches the declared
+  granularity (words with times present for `word`; segments with `end > start` for `segment`;
+  `gpt-4o-transcribe` -> one `0.0/0.0` segment for `none`). A catalog that says `word` for a
+  parser that produces none must fail.
+- `test_pipeline_plan.py` also covers: `asr_no_timing_for_speakers` for every diarizing column
+  with `gpt-4o-transcribe`; `segment_timing_only` for `whisper-1`; every lite row of C3.
 
 ### WP3: execute the plan (post stage, local x cloud, CPU path diarizes). **L, ~4 days**
 
@@ -754,6 +984,11 @@ Depends on WP2. Files:
   `enable_diarization = execution == "inline_asr"`; `parallel_cloud` builds the diarizer via
   `create_for_engine` (pyannote_ai now; asr_config in WP4). `cpu_task.py`: fix the docstring;
   stop forcing one speaker when a post stage will diarize.
+- The post stage calls `finalize_segments` after `assign_speakers` (C7; today's
+  `rediarize_task.py:336-366` skips it) and merges at `plan.diarization.merge` granularity.
+- Voiceprint stage (C6): `plan.speaker_id.execution` decides inline native vs
+  `extract_speaker_embeddings_task`; replace the `is_cloud_asr` branching in
+  `postprocess.py:217-331` with it.
 - `postprocess.py:214-344`: branch on `plan.diarization.execution`: `post_stage_local` and
   `post_stage_cloud` dispatch `rediarize_task(engine=..., pipeline_completion=True,
   pipeline_task_id=task_id)` on the plan's queue and leave the task open (today's
@@ -794,6 +1029,12 @@ Tests (red first; each must fail on HEAD):
   kept; no key + cloud -> kept; other values -> untouched).
 - `backend/tests/unit/test_requested_options.py`: a re-run of a file whose stored source is
   `pyannote` keeps it (no bool->provider mapping left).
+- `backend/tests/unit/test_post_stage_resegments.py`: a word-timed transcript whose single
+  segment spans two turns comes out of the post stage as two segments (red on HEAD: rediarize
+  skips `finalize_segments`).
+- `backend/tests/unit/test_voiceprint_stage_every_combination.py`: for each diarizing C3 cell the
+  plan yields `inline_native` or `embedding_stage`, and postprocess / the post stage dispatches
+  the embedding task exactly once (never zero, never twice).
 - Live: `--with-mock-asr` + a stubbed pyannote endpoint is not available; run the unit layer plus
   one real pyannote.ai file only if the owner provides a key (do not bill unasked).
 
@@ -806,6 +1047,9 @@ WP2. Files: new `backend/app/services/diarization/asr_adapter.py`;
 `api/endpoints/asr_settings.py` delete endpoint (E5); `tasks/transcription/cloud_asr.py` parallel
 path -> `assign_speakers` (via a dict conversion of `ASRResult`, done once in
 `_convert_asr_result_to_segments`'s neighbourhood); delete `utils/diarization_merge.py`.
+Sub-step: `openai_provider.py` requests `timestamp_granularities=["word"]` for `whisper-1`
+(vendor docs say it is supported with `verbose_json`, **unverified**); flip the catalog to `word`
+only with a recorded real response fixture proving word times; otherwise leave `segment`.
 
 Tests (red first):
 - `backend/tests/unit/test_asr_diarization_adapter.py`: words with speakers -> coalesced turns;
@@ -842,101 +1086,323 @@ Tests (red first):
   dimmed, issue links call `settingsModalStore.open` with the right alias.
 - `SpeakerDetectionProviderCard.test.ts`: Automatic + text-only warning (#1219); `asr_config`
   sub-select lists only configs that return speakers and excludes the active one.
-- `ASRSettings` badge test: whisper-1 "Text only", gpt-4o-transcribe-diarize "Speakers included".
+- `ASRSettings` badge test: whisper-1 "Text only" + "Segment timing", gpt-4o-transcribe "Text
+  only" + "No timing", gpt-4o-transcribe-diarize "Speakers included" + "Segment timing"; a config
+  chosen as diarizer shows "Speakers via adapter (extra billing)".
+- Lite render test: with `deployment_mode: "lite"` no local option/card is rendered anywhere
+  (provider tab, speaker card, Pipeline view) and the lite banner shows.
 - E2E `backend/tests/e2e/test_settings_pipeline.py` (marker `settings`): open the section,
   screenshot light/dark/`ar` with `DISPLAY=:11` when headed; no persisted changes (cancel path).
 
-### WP6: local CPU transcription as a first-class engine (owner-gated, Q6/Q7). **M, ~2 days + image build**
+### WP6 (#1228): lite is cloud-only for transcription and speaker detection. **M, ~2 days, backend + frontend + locales**
 
-- Q7: `UserSetting["transcription_default_whisper_model"]` (gated by `transcription.model_choice`,
-  resolved by `effective_whisper_model`), so a user can stand on `local_cpu`; plan maps
-  lightweight -> `local_cpu`.
-- Q6 (lite): add `ctranslate2` (CPU wheel) + `faster-whisper` (`--no-deps`, as in
-  `requirements-nodeps.txt`) to `backend/requirements-lite.txt`/`Dockerfile.lite`; relax
-  `_guard_local_allowed` to allow lightweight models on lite (plan error
-  `local_asr_unavailable` stays for GPU models); measure the image delta and record it.
-- Fix A7's unverified hazard first with a red test
-  (`backend/tests/unit/test_lite_lightweight_model_route.py`).
-- Docs: `docs-site/docs/operations/deployment-configuration.md:30` stale PyAnnote claim; lite
-  section of `docs-site/docs/features/transcription.md`.
-- Locales: only if a model-picker string changes.
+Decided (owner, 2026-10-11): lite runs **no** local transcription and **no** local speaker
+detection; both are cloud providers only. Voiceprint embeddings still run locally on CPU (C6),
+so the lite image keeps `pyannote.audio`, `torch+cpu`, `onnxruntime` and the diar-native
+embedding graph (A7). **No image change** in this package; "lite means no GPU, not small" rules
+out stripping anything the voiceprint path needs.
+
+Depends on WP2 (plan) and WP3 (post stage); parallel with WP4/WP7. Work:
+1. **Plan** (`services/pipeline_plan.py`): the lite rows of C3; `local_diarization_unavailable`,
+   `automatic_needs_speaker_provider`, `asr_no_timing_for_speakers` errors; lite never yields
+   `post_stage_local` or `inline_local`.
+2. **Dispatch refusal** (`tasks/transcription/dispatch.py`): every blocking lite issue marks the
+   file ERROR with the fixed sentence and creates no task record (same shape as
+   `ASRConfigurationError` at `:357-366`). Close A7's hazard: the `use_cpu` branch (`:349,375`)
+   goes through the plan, so a per-file `tiny` on lite gets `local_asr_unavailable` instead of a
+   `ModuleNotFoundError` in `cpu-transcribe`. Upload/reprocess endpoints refuse a lightweight
+   `whisper_model` on lite with 409 `local_asr_unavailable` before dispatch.
+3. **The existing lite rediarize-on-CPU path** (`postprocess.py:224-265`, comment `:255-259`
+   explicitly written for lite; queue via `gpu_preferred_queue()` = `cpu`,
+   `core/constants.gpu_preferred_queue`, `core/celery.py:131-145`): **removed for local engines
+   on lite, kept for cloud engines.** Justification: under the decision there is no local
+   speaker detection on lite, and the plan can no longer produce `post_stage_local` there; the
+   same task stays the post stage for `pyannote_ai`/`asr_config` on `cloud-asr` (C4), which lite
+   staffs. `rediarize` stays in `GPU_PREFERRED_TASKS` (`celery.py:132`) because that list is about
+   the full image's GPU preference; on lite it is reachable only for cloud engines, which route
+   explicitly to `cloud-asr`. `rediarize_task(engine="local")` on lite raises the configuration
+   error (defence in depth, C4). Rewrite the `:255-259` comment to say so. The embedding tasks in
+   `GPU_PREFERRED_TASKS` (`update_speaker_embedding_on_reassignment`, `extract_v4_embeddings*`,
+   `speaker.recluster_all`, ...) stay on `cpu` in lite: they are the voiceprint path.
+4. **API 409s** (E10): transcription settings PUT, ASR set-active/clear-active, super-admin
+   local-model endpoints, engine-settings `diarizer_backend`; `system-defaults` omits `local` on
+   lite.
+5. **UI** (same PR, all 12 locales): hide every local option on lite (provider tab local model
+   card and admin model pin/restart, speaker card `local` option, EngineSettings diarizer
+   backend select replaced by a read-only note), Pipeline view lite banner (F2), stored stale
+   selections render their blocking issue with a fix link.
+6. **Lite data migration** (D): `local` -> `provider` where the active model returns speakers;
+   otherwise untouched + visible blocking issue. No transcript/speaker/voiceprint data changes.
+7. **Docs**: `docs-site/docs/operations/deployment-configuration.md:30` becomes: "Lite (cloud
+   only): no GPU. Transcription and speaker detection are done by cloud providers you configure;
+   lite has no local Whisper and no local speaker detection. Voiceprints for cross-file speaker
+   identification are still computed on this server's CPU, by the diar-native sidecar's CPU
+   build (`--with-diar-native`) or, as a fallback, the in-process WeSpeaker model; that is why
+   the lite image still ships `pyannote.audio` and a CPU `torch`." Also
+   `docs-site/docs/features/transcription.md:315` (API-Lite paragraph), `docs-site/docs/faq.md:60`
+   and `:291`, and `docs-site/docs/features/speaker-diarization.md:287-292` (says "transcription
+   remains local" and "falls back to local diarization if the cloud service is unavailable"; both
+   are wrong today and after this plan: a vendor failure gives a speakerless transcript, C4).
+
+Tests (red first):
+- `backend/tests/unit/test_lite_lightweight_model_route.py`: lite + `whisper_model="tiny"` ->
+  dispatch refuses with `local_asr_unavailable`, nothing published to `cpu-transcribe` (red on
+  HEAD if A7's hazard is real; if it is already green, record that and keep it as a guard).
+- `backend/tests/unit/test_lite_no_local_diarization.py`: lite + cloud ASR + `local` -> dispatch
+  refusal, no `rediarize_task(engine="local")` published; lite + `pyannote` -> `rediarize_task`
+  on `cloud-asr`; lite + any diarizing source -> embedding task on `cpu` (voiceprints still run).
+- `backend/tests/api/test_lite_settings_refusals.py`: every endpoint in E10 returns its 409 code
+  on lite and 200 on full (control).
+- `backend/tests/unit/test_lite_mode_queue_consumers.py`: unchanged consumer set still covers
+  every route (no exemption added).
+- Migration test: lite + `local` + speakers model -> `provider`; lite + `local` + text-only ->
+  untouched; full -> no-op.
+- Frontend: lite render test (WP5's) extended to EngineSettings and the upload model picker.
+
+### WP7 (#1229): per-file provenance on File details and File status. **M-L, ~3 days**
+
+Requirement (owner, 2026-10-11): show which provider/model completed each step for a file:
+transcription (provider, model, local/cloud), speaker detection (engine/provider, local/cloud),
+voiceprints (embedding backend/model), and the LLM features (summary, topics, speaker-name
+suggestions: provider and model), on the file details page and the file status page.
+
+Today (A11): transcription and diarization provider/model columns exist, voiceprints only
+`embedding_mode`, summary provider/model inside `summary_data.metadata`, topics and speaker-name
+suggestions record nothing; `diarization_provider` is ambiguous between the local PyAnnote engine
+and pyannote.ai.
+
+**Data (decided shape: one JSONB column, one write path).**
+- New column `media_file.processing_provenance JSONB NULL` (Alembic schema revision, number per
+  D; add the detection-guard entry in `backend/app/db/migrations.py` like v433's at `:558-607`;
+  model field in `backend/app/models/media.py` beside `asr_provider`). `NULL` = predates
+  recording.
+- Shape (`schemas/processing_provenance.py`, new; validated on write and read):
+  ```json
+  {"v": 1, "steps": {
+    "transcription": {"provider": "openai", "model": "whisper-1", "where": "cloud",
+                       "engine": "cloud", "timing": "segment", "completed_at": "...", "task_id": "..."},
+    "diarization":   {"provider": "pyannote.ai", "model": "precision-3", "where": "cloud",
+                       "engine": "pyannote_ai", "execution": "post_stage_cloud", "merge": "segment", ...},
+    "voiceprints":   {"provider": "native", "model": "pyannote/wespeaker-voxceleb-resnet34-LM",
+                       "dims": 256, "where": "server", ...},
+    "summary":       {"provider": "vllm", "model": "gemma-4-e4b", "where": "server", ...},
+    "topics":        {...}, "speaker_names": {...}
+  }}
+  ```
+  Provider ids are canonical and unambiguous: the local engines report `native` / `pyannote`,
+  the cloud diarizer reports `pyannote.ai` (change `diarization/pyannote_provider.py:220`;
+  `local_provider.py:119`'s `local` becomes the engine actually used). `where` for LLM steps
+  comes from `redaction/llm_guard.is_local_provider` (`:207`). Never stored: config UUIDs, keys,
+  base URLs (a private LLM endpoint URL must not reach a shared viewer).
+- One writer: `backend/app/services/processing_provenance.py` (new) `record_step(db, file_id,
+  step, entry)` issuing a single atomic statement
+  `UPDATE media_file SET processing_provenance = jsonb_set(coalesce(processing_provenance,
+  '{"v":1,"steps":{}}'::jsonb), ARRAY['steps', :step], CAST(:entry AS jsonb), true) WHERE id =
+  :id` (summary, topics and speaker-name tasks run concurrently; no read-modify-write). The
+  existing scalar columns (`asr_provider`, `asr_model`, `whisper_model`, `diarization_provider`,
+  `diarization_model`, `embedding_mode`) stay as the queryable index (read in 19+ backend
+  modules), but `storage.py:201-216`'s direct assignments move into `record_step`, so there is
+  one write path for both.
+- Hook sites: transcription + diarization at `storage.py:201-216` (save) and at the post stage's
+  save in `rediarize_task`; voiceprints in `speaker_embedding_task._match_and_finalize_embeddings`
+  (`:213`) and the inline native path (`postprocess.py:301-310`); summary in
+  `tasks/summarization.py` after `generate_summary` (`:540-566`, from `llm_service.config`);
+  topics in `tasks/topic_extraction.py`; speaker names in `tasks/speaker_identification_task.py`.
+  Each hook writes in its existing short write phase (session-lifetime rule).
+- **Early vs late hooks**: summary, topics, speaker names, voiceprints and the transcription half
+  do not depend on the plan and can land right after WP2 (or independently). The diarization
+  entry's `engine`/`execution`/`merge` and the post-stage hook need WP3's plan and post stage.
+
+**Exposure (fat backend).** `build_processing_steps(media_file) -> list[ProcessingStepOut]` in the
+same service, used by `MediaFileDetail` (`schemas/media.py:722`, served by
+`api/endpoints/files/__init__.py:509`) and by `GET /my-files/{uuid}/status`
+(`api/endpoints/user_files.py:253-370`). `ProcessingStepOut`: `step`, `status`
+(`done` | `off` | `not_run` | `not_recorded`), `provider_display` (pre-formatted from the
+catalogs), `model`, `where` (`server` | `cloud` | null), `recorded` (`full` | `legacy` | `none`).
+Historical files (`processing_provenance IS NULL`): transcription/diarization/voiceprints are
+composed from the legacy columns with `recorded: "legacy"`; `where` only when unambiguous
+(`asr_provider == "local"` -> server, a vendor id -> cloud, `diarization_provider == "native"` ->
+server, `"pyannote"` -> null "not recorded" because local PyAnnote and pyannote.ai are
+indistinguishable); summary from `summary_data.metadata.provider/model`; topics and speaker
+names -> `not_recorded`.
+
+**Permissions / redaction.** Provenance is not transcript content: no masking. It travels inside
+the file responses, so it inherits the file read gate, sharing and quarantine
+(`takedown_service.exclude_quarantined`) unchanged. No URLs, keys or config ids (above).
+
+**UI.** New `frontend/src/components/ProcessingProvenance.svelte` (one row per step: step name,
+provider + model, This server / Cloud chip, "Not recorded" for historical gaps), used in:
+- file details: replace the models block in `frontend/src/components/MetadataDisplay.svelte:239-275`
+  (delete it, including the hardcoded "Whisper:" label and the `native`-else-PyAnnote ternary,
+  A11), rendered on `frontend/src/routes/files/[id]/+page.svelte`;
+- file status: `frontend/src/components/fileStatus/FileDetailModal.svelte` (data from
+  `UserFileStatus.svelte:235`'s `/my-files/{id}/status`; children do not fetch, per
+  `fileStatus/CLAUDE.md`).
+Light/dark parity, `ar` RTL, 12 locales. Keys: `provenance.title` ("How this file was
+processed"), `provenance.step.transcription|diarization|voiceprints|summary|topics|speakerNames`,
+`provenance.server` ("This server"), `provenance.cloud` ("Cloud: {{vendor}}"), `provenance.off`
+("Off"), `provenance.notRun` ("Not run"), `provenance.notRecorded` ("Not recorded (processed
+before this was tracked)").
+
+Tests (red first):
+- `backend/tests/unit/test_processing_provenance_record.py`: concurrent `record_step` for three
+  steps from three sessions leaves all three (red against a read-modify-write implementation);
+  entry rejects `base_url`/`api_key` fields.
+- `backend/tests/unit/test_processing_provenance_build.py`: historical row -> legacy/none mapping
+  incl. ambiguous `pyannote` -> `where: null`; new row -> full.
+- `backend/tests/unit/test_diarization_provider_ids.py`: pyannote.ai reports `pyannote.ai`, local
+  engines report `native`/`pyannote` (red on HEAD: both say `pyannote`).
+- `backend/tests/api/test_file_detail_processing_steps.py` and
+  `backend/tests/api/test_my_files_status_processing_steps.py`: the six steps present, shared
+  viewer sees them, quarantined file still 404s for non-admins.
+- Per-hook tests: each task writes its step (summary/topics/speaker names with a mock LLM,
+  `--with-mock-llm` fixtures; voiceprints; transcription; diarization incl. post stage).
+- Frontend: `ProcessingProvenance.test.ts` (chips, not-recorded text, RTL class), and
+  `MetadataDisplay` test asserting the old hardcoded "Whisper:" label is gone.
+- E2E (`backend/tests/e2e/`, read-only): open a file's details and the file-status modal, assert
+  the provenance rows; screenshots light/dark/`ar`.
+
+### WP8 (#1230): docs-site architecture diagrams and pages describe what shipped. **M, ~1.5 days, LAST**
+
+Runs after WP1-WP7 are merged so it documents the shipped flow, not the plan.
+- Specs (`docs-site/architecture-diagrams/specs/`, hand-authored Archify JSON, README there):
+  `transcription-pipeline.workflow.json` (plan resolution at dispatch, inline vs post-stage
+  diarization, voiceprint stage), `cloud-asr.workflow.json` (parallel_cloud with any diarizer,
+  adapter, timing-aware merge, refusal of no-timing models), `transcription-enrichment.workflow.json`
+  (provenance recording per step), `speaker-clustering.workflow.json` (embedding stage after every
+  source), `celery-queues.architecture.json` (post stage on `cloud-asr`/`gpu`; lite consumers),
+  `system-overview.architecture.json` (lite cloud-only boundary). Every node cites real code
+  (as the README requires), re-verified on the merged tree.
+- Regenerate with `scripts/generate-architecture-diagrams.sh` (requires the Archify skill:
+  `npx skills add tt-a1i/archify -g`); commit `docs-site/static/architecture/*.html`. Never
+  hand-edit the HTML.
+- **Drift check (none exists today**: no hit for `architecture` in `.pre-commit-config.yaml` or
+  `.github/workflows/*.yml`). Add: the generator appends `<!-- spec-sha256: <hash> -->` to each
+  rendered HTML; new `scripts/check-architecture-diagram-drift.py` (stdlib only, so CI can run it
+  without Archify) fails when a spec's hash differs from its HTML's comment or a spec has no
+  HTML; wire it as a pre-commit hook (`files: ^docs-site/(architecture-diagrams/specs|static/architecture)/`)
+  and it then runs in CI's existing pre-commit job. Self-test: a must-fire case (edited spec) and
+  a must-stay-clean case.
+- Pages: `docs-site/docs/developer-guide/architecture.md`, `docs-site/docs/features/
+  speaker-diarization.md` (composition matrix, adapter billing, timing rules, voiceprints always
+  local), `docs-site/docs/features/transcription.md` (provider table with Speakers / Timing
+  columns generated from the catalog facts in this plan), `docs-site/docs/operations/
+  deployment-configuration.md` (lite row, already fixed by WP6, re-checked), a "Processing
+  pipeline" user-guide page with screenshots (use the `docs-screenshots` skill), and
+  `docs-site/src/pages/architecture.tsx` only if a diagram is added or renamed.
+- Verification: `cd docs-site && npm run build`; the drift check; open `/architecture` locally.
 
 ### G1. Order, parallelism, collisions
 
 ```
-WP1 ──► (merged)            WP2 ──┬──► WP3 ──► WP4(local rows) ──┐
-                                  ├──► WP4(parallel_cloud half) ─┤
-                                  ├──► WP6 (backend, owner-gated)│
-                                  └──► WP5 (UI, built on WP2 API; lands last)
+WP1 ─► WP2 ─┬─► WP3 ─┬─► WP4 (local-ASR rows; parallel_cloud half may start after WP2) ─┐
+            │        ├─► WP6 (lite cloud-only) ──────────────────────────────────────────┤
+            │        └─► WP7 late hooks (diarization/post stage) ────────────────────────┤
+            ├─► WP7 early hooks + column + UI (after WP2, parallel with WP3) ────────────┤
+            └─► WP5 (UI on WP2's API; rebases after WP3, WP4, WP6) ──────────────────────┴─► WP8 (last)
 ```
 
-- WP1 first, alone (it is the stopgap).
-- WP2 then WP3 serially (WP3 consumes WP2's types).
-- WP4 and WP6 can run in parallel worktrees after WP2; WP4's local-ASR rows need WP3 merged.
-- WP5 can be developed in parallel from WP2's contract but must rebase last.
-- **Locale JSON collisions**: WP1, WP3, WP5 (and WP6 if it touches copy) all edit all 12
-  `frontend/src/lib/i18n/locales/*.json`. Never run two of them concurrently on unmerged
-  branches; merge in order WP1 -> WP3 -> WP5. Backend-only collisions: WP3 and WP4 both edit
-  `services/diarization/factory.py`, `tasks/transcription/cloud_asr.py`,
-  `api/endpoints/user_settings.py`, so WP4 rebases on WP3.
+- WP1 first, alone (stopgap). WP2, then WP3 (consumes WP2's types).
+- After WP3: WP4, WP6 and WP7-late in parallel worktrees. WP7-early (column, record_step, LLM and
+  voiceprint hooks, UI) can start right after WP2.
+- WP5 is built against WP2's contract and merges after WP3/WP4/WP6 (it renders their options and
+  lite rules). WP8 strictly last.
+- **Locale JSON collisions** (all 12 `frontend/src/lib/i18n/locales/*.json`): WP1, WP3, WP5, WP6,
+  WP7 (and WP8 only if it adds UI copy, it should not). Merge order: **WP1 -> WP3 -> WP6 -> WP7 ->
+  WP5**; never two of them with unmerged locale edits at the same time; each rebases and re-runs
+  `npm run check:i18n` before merge.
+- Backend collisions: WP3/WP4/WP6 all edit `services/pipeline_plan.py`, `dispatch.py`,
+  `postprocess.py`, `rediarize_task.py`, `user_settings.py`; WP4 and WP6 rebase on WP3, the
+  second of them on the first. WP7 touches `storage.py`, `rediarize_task.py` (post-stage hook)
+  and `models/media.py`; its late hooks rebase on WP3.
+- Alembic: WP3 (data), WP6 (data), WP7 (schema) take numbers in merge order (D).
 
 ---
 
-## H. Effort, risk, open questions
+## H. Effort, risk, decisions
 
-Effort: WP1 0.5 d, WP2 2 d, WP3 4 d, WP4 2-3 d, WP5 3-4 d, WP6 2 d + image build. Total about
-2.5-3 weeks for one implementer; WP4/WP6 parallelism saves ~3 days.
+Effort: WP1 0.5 d, WP2 2 d, WP3 4 d, WP4 2-3 d, WP5 3-4 d, WP6 2 d, WP7 3 d, WP8 1.5 d. Total
+about 18-20 implementer days (~4 weeks serial); with WP4/WP6/WP7 in parallel worktrees about 3
+weeks elapsed. All in v0.6.0 (due 2026-10-31), which is tight: WP3 and WP5 are the critical path.
 
 Risks:
 - **Billing surprise**: users with a pyannote.ai key and local ASR start being billed after WP3
-  (Q2). Mitigation: CHANGELOG + the Pipeline view chip.
-- **Latency** of post stages (sequential ASR then cloud diarization). Measured, not assumed:
-  record per-stage timings via the existing `benchmark_timing` markers on one real file.
-- **Metering double count**: exactly one terminus per run (post stage when present). Covered by
-  extending the existing rediarize metering tests.
-- **Dead routes on lite** (#865 shape): every new route must be in
-  `test_lite_mode_queue_consumers.py`.
-- **Session leaks** in the new cloud branch of `rediarize_task` (HTTP inside a session):
-  `scripts/audit-session-lifetime.py` gate.
-- **Merge regression** when unifying on `assign_speakers`: the equivalence test is the gate.
-- **Milestone fit**: v0.6.0's milestone says "No new subsystems" (due 2026-10-31). See Q0.
+  (decided: honour). Mitigation: CHANGELOG "Changed" + the Pipeline view chip.
+- **Timestamp-less providers** (`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`): any diarization
+  is refused; users who had Automatic + these models today got a speakerless transcript silently,
+  after WP3 they get a settings error until they pick a timed model or turn speakers off. Mitigate
+  with the badge and a CHANGELOG note. Azure's real granularity is unverified (A10): treated as
+  `segment` until proven.
+- **Segment-only merge quality** (`whisper-1`, `gpt-4o-transcribe-diarize`, Azure): turn changes
+  inside a segment are lost; the `segment_timing_only` warning makes it visible.
+- **Lite cloud-only migration**: lite users on `local` with a text-only model are blocked until
+  they choose a cloud diarizer; the blocking issue and the dispatch error name the fix. Their
+  existing transcripts and voiceprints are untouched.
+- **Post stage skipped `finalize_segments` today** (C7): WP3 adds it; transcripts re-split
+  differently from today's cloud+local output. Covered by `test_post_stage_resegments.py`.
+- **Latency** of post stages (sequential ASR then cloud diarization): record per-stage timings via
+  `benchmark_timing` on one real file.
+- **Metering double count**: exactly one terminus per run; extend the rediarize metering tests.
+- **Dead routes on lite** (#865 shape): `test_lite_mode_queue_consumers.py`.
+- **Session leaks** in the cloud post stage and the provenance hooks: `audit-session-lifetime.py`.
+- **Merge regression** when unifying on `assign_speakers`: the WP4 equivalence test.
+- **Concurrent provenance writes**: the atomic `jsonb_set` statement and its concurrency test.
+- **Three Alembic revisions from parallel worktrees**: numbers taken in merge order (D).
 
-Open questions (each has a recommendation, so work is not blocked):
+Decided items (owner 2026-10-11 unless marked "adopted", meaning the planner default stands with
+no owner objection; these are no longer open):
 
-| # | Question | Recommendation |
-|---|---|---|
-| Q0 | Which milestone? | v0.6.0: WP1 + the #1219 part of WP5 (badges + Automatic warning, works on today's semantics). v0.6.x/v0.7.0: WP2-WP4, rest of WP5, WP6. |
-| Q1 | Automatic + text-only transcription model: no speakers (today) or detect on this server? | Detect on this server (`automatic_uses_server`, info). "Automatic (recommended)" should not produce a speakerless transcript; no extra audio leaves the server. |
-| Q2 | Users with a pyannote.ai key + local ASR: honour after WP3 (they will be billed)? | Honour; CHANGELOG "Changed"; the Pipeline view shows the cloud chip. |
-| Q3 | Should users pick the LOCAL engine (native vs in-process PyAnnote)? | No. Keep `engine.diarizer_backend` admin-only; per-user switching would thrash the `ModelManager` singleton's cached diarizer (`model_manager.py:_diarizer_current`). Show it read-only. |
-| Q4 | Is the Pipeline view editable? | Read-only with deep links; one place to edit each setting. |
-| Q5 | Per-file speaker-detection engine at upload/reprocess? | Not now; keep "skip speaker detection" only. |
-| Q6 | Ship local CPU Whisper in the lite image? | Yes (lite means "no GPU", not "small"); measure and record the image delta. |
-| Q7 | A user-level default local model (so CPU can be a standing choice)? | Yes, gated by `transcription.model_choice`. |
-| Q8 | Allow another vendor as diarizer despite double billing? | Yes behind `asr.user_providers`, with the billing + privacy note on selection. |
-| Q9 | Manual "rediarize" uses the user's current speaker-detection choice? | Yes; `asr` falls back to this server (re-running a cloud ASR just for speakers would re-bill). |
-| Q10 | Admin-configurable deployment default for speaker detection when locked (#1109)? | Defer; the lock keeps meaning `provider`. File an issue. |
-| Q11 | Unify merges on `assign_speakers`? | Yes, gated by the equivalence test (WP4). |
-| Q12 | Use vendor voiceprints (pyannote.ai identify)? | No; voiceprints stay local in the WeSpeaker 256-d space. |
+| # | Decision |
+|---|---|
+| Q0 | v0.6.0 includes ALL work packages WP1-WP8 (new subsystems allowed in 0.6.0). |
+| Q1 | Automatic with a text-only model detects speakers on this server, on the full image, when the model has word or segment timing (C7). No timing -> refused. Lite -> refused and steered to pyannote.ai / another provider. |
+| Q2 | Honour a pyannote.ai key + local ASR (CHANGELOG "Changed"). |
+| Q3 | The LOCAL engine (native vs in-process PyAnnote) is an ADMIN choice made at setup (`engine.diarizer_backend`), shown read-only to users. |
+| Q4 | (adopted) The Pipeline view is read-only with deep links. |
+| Q5 | (adopted) No per-file speaker-detection engine; per-file "skip speaker detection" only. |
+| Q6 | Lite: NO local transcription and NO local speaker detection; voiceprints stay local on CPU (WP6). Supersedes the earlier "CPU Whisper on lite" recommendation. |
+| Q7 | (adopted) No user-level default local model; the per-file lightweight model remains the only `local_cpu` entry point, full image only. |
+| Q8 | Other vendors as diarizers: yes, behind `asr.user_providers`, labelled "Speakers via adapter (extra billing)". |
+| Q9 | (adopted) Manual rediarize uses the current choice; `asr` -> this server on full, refused on lite. |
+| Q10 | (adopted) No admin-configurable default under the #1109 lock in this plan; follow-up issue. |
+| Q11 | (adopted) One merge (`assign_speakers`), gated by the equivalence test. |
+| Q12 | Vendor voiceprints are never used; one local embedding stage after every source (C6, B2). |
+
+Remaining owner decision (genuinely open, default chosen so nothing blocks): for no-timing models
+(`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`), v0.6.0 **refuses** speaker detection. Building a
+local forced-alignment stage (wav2vec2 via the installed but unused whisperx, full image only,
+C7 option 2) is a follow-up issue; say if it should be scheduled.
 
 Out-of-scope findings to file as issues (per repo rule, fold into the open branch if trivial):
-1. `docs-site/docs/operations/deployment-configuration.md:30` contradicts the code about
-   in-process PyAnnote on lite (folded into WP6).
-2. Possible lite failure for per-file lightweight models (A7; red test first, WP6).
-3. Docs-only speaker-count hints not wired for AssemblyAI min/max, Speechmatics, Gladia (C5).
-4. `preprocess.py:269`'s `False -> provider` mapping is a latent trap until WP3 deletes it.
+1. Docs-only speaker-count hints not wired for AssemblyAI min/max, Speechmatics, Gladia (C5).
+2. Forced alignment for no-timing models (above).
+3. Azure: request word-level timestamps explicitly and verify with a live call (A10).
+Folded into packages instead of filed: the lite docs line and A7 hazard (WP6),
+`speaker-diarization.md:291-292` (WP6/WP8), `preprocess.py:269` trap (WP3), ambiguous
+`diarization_provider` and the hardcoded "Whisper:" label (WP7), rediarize skipping
+`finalize_segments` (WP3).
 
 ## Verification checklist for the implementer
 
-- [ ] Every C3 cell has a passing unit test that failed on HEAD (WP2/WP3/WP4).
+- [ ] Every C3 cell, full and lite, has a passing unit test that failed on HEAD (WP2/WP3/WP4/WP6).
+- [ ] The catalog's `timestamp_granularity` is proven per provider by parser fixtures (WP2), and
+      the badges render it (WP5).
+- [ ] Every diarizing combination dispatches the voiceprint stage exactly once, including lite
+      (WP3/WP6).
 - [ ] `rg -n '== "off"|== "pyannote"|diarization_source ==' backend/app/tasks` returns only plan
       code after WP3.
 - [ ] `rg -n "merge_cloud_diarization|create_for_source|_run_diarization" backend/app` is empty
       after WP4/WP3.
-- [ ] `./scripts/run-dev-tests.sh --full` green on the WP branch with the stack up via
+- [ ] On a lite stack (`./opentr.sh start dev --lite --fresh <name>`): no local option visible
+      anywhere, every E10 endpoint 409s, a cloud ASR + pyannote.ai (or `--with-mock-asr` adapter)
+      file completes with speakers and voiceprints.
+- [ ] `./scripts/run-dev-tests.sh --full` green on each WP branch with the stack up via
       `./opentr.sh start dev` (or `--fresh` when other agents are active).
-- [ ] One real file per new combination run on the dev stack (local GPU + pyannote.ai only with
-      an owner-provided key), Processing details show the diarization provider that ran.
-- [ ] Settings > Processing pipeline opened in a browser in light, dark and `ar`; screenshots
-      attached to the PR.
-- [ ] `cd frontend && npm run check:i18n` and `npm run check` and `npm run build` pass.
+- [ ] One real file per new combination on the dev stack (local GPU + pyannote.ai only with an
+      owner-provided key); its file details and file-status modal show the provenance of every
+      step (WP7).
+- [ ] A file processed before WP7 shows "Not recorded" where nothing was recorded, never a guess.
+- [ ] Settings > Processing pipeline, file details and file status opened in a browser in light,
+      dark and `ar`; screenshots attached to the PRs.
+- [ ] `cd frontend && npm run check:i18n && npm run check && npm run build` pass.
+- [ ] WP8: diagrams regenerated with the script, drift check green, `docs-site` builds.

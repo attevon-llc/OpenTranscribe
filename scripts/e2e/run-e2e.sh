@@ -214,11 +214,16 @@ fi
 # Signature-scoped sweep of orphaned test data (issue #629) — registers this run as a
 # live testrun marker first (protecting anything IT creates from a concurrently
 # starting sweep), then clears Tier A leftovers from any PREVIOUS killed run. A sweep
-# failure must never block the e2e run itself — this file has no log-dir convention
-# and no trap, so it is guarded the same way the pytest phases further down are
-# (`|| sweep_rc=$?` + a printed warning), not with `set +e`.
+# failure must never block the e2e run itself, so it is guarded the same way the pytest
+# phases further down are (`|| sweep_rc=$?` + a printed warning), not with `set +e`.
+# The same Tier A sweep runs again at the END from an EXIT trap (issue #1195), so this
+# run's own leftovers are cleared even when a phase fails or the run is interrupted; it
+# never changes the exit code.
 source "$PROJECT_ROOT/scripts/testrun-registry.sh"
 testrun_begin
+# shellcheck source=scripts/lib/test-data-sweep.sh
+source "$PROJECT_ROOT/scripts/lib/test-data-sweep.sh"
+tds_sweep_at_exit "$VENV_PY" "$PROJECT_ROOT"
 if [ "${OT_SKIP_TEST_DATA_SWEEP:-}" = "1" ]; then
     echo -e "${YELLOW}Test-data sweep: skipped (OT_SKIP_TEST_DATA_SWEEP=1)${NC}"
 else

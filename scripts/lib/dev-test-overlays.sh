@@ -320,6 +320,12 @@ teardown_overlays() {
             continue
         fi
         local c="${OVERLAY_CONTAINER[$flag]:-}"
+        # Not recorded yet = the batched start failed or was interrupted part-way, after some
+        # of its containers came up. Resolve it now (project-label scoped) rather than leak it.
+        local svc="${OVERLAY_SERVICE[$flag]:-}"
+        if [[ -z "$c" && -n "$svc" ]]; then
+            c="$(overlay_container_name "$svc" || true)"
+        fi
         if [[ -n "$c" ]]; then
             echo -e "${YELLOW}==>${NC} stopping $flag (this run started it): $c"
             docker stop "$c" >/dev/null 2>&1 || true
@@ -438,9 +444,11 @@ setup_overlays() {
         local with_flags=() f
         for f in "${OVERLAYS_NEEDED[@]}"; do with_flags+=("--with-$f"); done
         echo -e "${YELLOW}==>${NC} bringing up overlays in one batched call: ${with_flags[*]}"
+        # Recorded BEFORE the start, so a start that dies part-way (exit 3 below, Ctrl-C)
+        # still tears down whatever it brought up; teardown resolves the containers itself.
+        for f in "${OVERLAYS_TO_START[@]}"; do OVERLAYS_STARTED_BY_US+=("$f"); done
         start_stack_or_die "overlays (${with_flags[*]})" "overlay-bringup" "${with_flags[@]}"
         for f in "${OVERLAYS_TO_START[@]}"; do
-            OVERLAYS_STARTED_BY_US+=("$f")
             local svc="${OVERLAY_SERVICE[$f]}"
             if [[ -n "$svc" ]]; then
                 OVERLAY_CONTAINER[$f]="$(overlay_container_name "$svc")"

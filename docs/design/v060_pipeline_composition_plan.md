@@ -628,8 +628,7 @@ Options for `none`, considered:
    times for the vendor's text, then merge per word. Costs: a new pipeline stage, per-language
    wav2vec2 model downloads (offline deployments must pre-provision them), languages without an
    alignment model still fail, the text must first be split into the vendor's segment-less blob.
-   Not possible on lite (no whisperx, no GPU). Recorded as a follow-up issue, not in v0.6.0
-   scope (see H, "remaining owner decision").
+   Not possible on lite (no whisperx, no GPU). **Rejected by the owner (final), see H.**
 
 `merge_cloud_diarization`'s midpoint rule (A5) is deleted in WP4; `assign_speakers` covers both
 the `word` and `segment` rows, with the equivalence test in WP4 as the gate.
@@ -1368,14 +1367,23 @@ no owner objection; these are no longer open):
 | Q11 | (adopted) One merge (`assign_speakers`), gated by the equivalence test. |
 | Q12 | Vendor voiceprints are never used; one local embedding stage after every source (C6, B2). |
 
-Remaining owner decision (genuinely open, default chosen so nothing blocks): for no-timing models
-(`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`), v0.6.0 **refuses** speaker detection. Building a
-local forced-alignment stage (wav2vec2 via the installed but unused whisperx, full image only,
-C7 option 2) is a follow-up issue; say if it should be scheduled.
+**Decided by the owner (2026-10-11, final): no forced alignment and no wav2vec2.** It is another
+model to serve and optimise, and it complicates the pipeline. No-timing models
+(`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`) are REFUSED for speaker detection with the stable
+code `asr_no_timing_for_speakers`, a "No timing" badge and an explanatory UI warning; the owner
+does not want this re-opened. `whisperx` stays out of every new code path.
+
+**Decided by the owner (2026-10-11): lite voiceprints move to Rust in v0.8.0.** Lite is cloud-only
+for transcription and speaker detection and does ONLY local voiceprinting. For v0.6.0 the
+voiceprint stage uses the existing CPU embedding task, but it MUST be written behind one narrow
+interface (input: audio path + speaker turns; output: per-speaker 256-d WeSpeaker-space vectors) so
+the v0.8.0 Rust implementation (diar-native sidecar family, see #572 and the new v0.8.0 issue) can
+replace it with no change to callers, storage or clustering. Do not add Python-only coupling to the
+extractor.
 
 Out-of-scope findings to file as issues (per repo rule, fold into the open branch if trivial):
 1. Docs-only speaker-count hints not wired for AssemblyAI min/max, Speechmatics, Gladia (C5).
-2. Forced alignment for no-timing models (above).
+2. (removed: forced alignment is not wanted, see the owner decision above.)
 3. Azure: request word-level timestamps explicitly and verify with a live call (A10).
 Folded into packages instead of filed: the lite docs line and A7 hazard (WP6),
 `speaker-diarization.md:291-292` (WP6/WP8), `preprocess.py:269` trap (WP3), ambiguous

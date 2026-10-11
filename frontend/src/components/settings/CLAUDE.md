@@ -23,6 +23,10 @@ AdminTaskHealthPanel).
   routes and passes `activeSection`. Import panels via `$components/settings/...`.
 - Button styling uses the global `.btn`/`.btn-primary`/`.btn-secondary` classes (form-elements.css);
   cancel/reset buttons must hover grey, never blue. i18n via `$t`; light/dark parity required.
+  User-facing settings prose must read plainly: no env var names, badge values or internal engine
+  names in it. If an admin needs the env var, put it in a separate admin-detail string
+  (`settings.engineSettings.intro.overrideAdmin`). Interpolate defaults, never hardcode them in a
+  value string (`languageDefaultsValue` takes `{{source}}`/`{{translate}}`) (#1220).
 - Keep panels under ~300 lines; split large ones into nested modals.
 
 ## How it connects

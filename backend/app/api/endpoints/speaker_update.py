@@ -96,6 +96,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             .first()
         )
 
+        old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         if existing_profile:
             # Assign speaker to existing profile
             speaker.profile_id = existing_profile.id
@@ -103,15 +104,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
             )
 
-            # Update profile embedding
-            try:
-                from app.services.profile_embedding_service import ProfileEmbeddingService
-
-                ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, speaker.id, existing_profile.id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to update profile embedding: {e}")
+            _update_profile_embedding(db, int(speaker.id), old_profile_id, int(existing_profile.id))
 
             # Sync profile assignment to OpenSearch
             try:
@@ -151,15 +144,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
             )
 
-            # Initialize profile embedding
-            try:
-                from app.services.profile_embedding_service import ProfileEmbeddingService
-
-                ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, speaker.id, new_profile.id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to initialize profile embedding: {e}")
+            _update_profile_embedding(db, int(speaker.id), old_profile_id, int(new_profile.id))
 
             # Sync new profile assignment to OpenSearch
             try:
@@ -241,14 +226,22 @@ def _push_speaker_documents(documents: list[dict[str, Any]]) -> None:
             logger.exception(f"Failed to sync speaker {document['speaker_id']} to OpenSearch: {e}")
 
 
-def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> None:
-    """Update the profile embedding when a speaker is added to a profile."""
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
+def _update_profile_embedding(
+    db: Session, speaker_id: int, old_profile_id: int | None, profile_id: int
+) -> None:
+    """Rebuild the profiles a speaker moved between, and the clusters it belongs to.
 
-        ProfileEmbeddingService.add_speaker_to_profile_embedding(db, speaker_id, profile_id)
-    except Exception as e:
-        logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
+    The new profile gains the voice; a profile the speaker had before loses it, which
+    used to be skipped here, so the old profile kept averaging a voice that had been
+    reassigned away from it (issue #1214). Delegates to ``speaker_cleanup``, which logs
+    any residual at ERROR; the label that triggered this has already committed.
+    """
+    from app.services.speaker_cleanup import capture_speaker_impact
+    from app.services.speaker_cleanup import reconcile_speaker_impact
+
+    impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
+    impact.profile_ids |= {p for p in (old_profile_id, profile_id) if p}
+    reconcile_speaker_impact(db, impact)
 
 
 def _apply_high_confidence_match(
@@ -283,8 +276,9 @@ def _apply_high_confidence_match(
     speaker.verified = True  # type: ignore[assignment]
 
     if trigger["profile_id"]:
+        old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
-        _update_profile_embedding(db, speaker.id, int(trigger["profile_id"]))
+        _update_profile_embedding(db, speaker.id, old_profile_id, int(trigger["profile_id"]))
 
     tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))
 

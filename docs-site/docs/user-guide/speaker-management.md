@@ -101,6 +101,17 @@ The dedicated **Speakers** page (accessible from the sidebar) provides a central
 - **Outlier analysis** -- identify segments that don't match the cluster well
 - Trigger manual re-clustering when needed
 
+### What removing a speaker removes
+
+A cluster and a profile each store an average of their members' voices. When a speaker is
+deleted, merged into another, unassigned or split out of a cluster, or moved to a different
+profile, every cluster and profile it belonged to is rebuilt from the members that remain, so
+the removed voice is not kept inside the average. A cluster left with nobody in it is deleted.
+Deleting a profile removes its name from the speakers and cluster it was applied to, unless you
+had given a speaker a different name yourself. If the search service is unavailable and the
+cleanup cannot finish, the app reports an error (the change itself is saved) and logs it for
+repair.
+
 ![Speaker management clusters view with identified speakers across all files](/img/screenshots/speakers/speaker-management-clusters.png)
 
 ### Gender Classification

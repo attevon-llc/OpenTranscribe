@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider actually sends. The pipeline stages start reading the plan in the next change (WP3);
   until then this is the settings-side half.
 
+- **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
+  About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,
+  local auth, SCIM tokens) had been copied from English into seven locales because `check:i18n`
+  only counts keys. They are translated, and `untranslated.test.ts` now fails when a long value in a
+  non-English locale equals the English one unless the key is allowlisted with a written reason.
+
 - **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
   notifications panel already uses, so the toolbar's three buttons all lead with an icon.
 
@@ -153,6 +159,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-saving an unchanged stored choice is never refused. Local transcription with pyannote.ai is
   a valid, accepted combination.
 
+- **English source strings rewritten so they translate cleanly (#1220).** The 11 translation
+  reviewers of #1193 flagged copy that only works in English. Engine settings prose no longer
+  leaks env var names, badge values or internal terms (the `ENGINE_DIARIZER_BACKEND` detail is a
+  separate admin line); quarantine copy says plainly what is hidden and uses "quarantine" throughout;
+  the orphaned-data panel uses one noun pair ("orphaned media files" / "stored items"); the upload
+  model options, the break-glass confirmation (one sentence per access level) and the language-default
+  values are whole strings or templates instead of fragments glued together in code; `common.orphaned`
+  now names the noun; the support-session toasts say what happened. Removed keys:
+  `uploader.highQualitySuffix`, `uploader.fastProcessingSuffix`, `supportAccess.breakGlass.confirmSummary`.
+  All 12 locales carry provisional translations of the changed keys pending a native-level re-review
+  (the `de` "fur" typo is fixed too); the Spanish tu/usted mix is not decided here.
+
 - **Upload wizard and tray polish (UX review items 4, 6, 9, 12).** The Tags and Collections steps
   now use the same searchable multi-select dropdown as the filter sidebar, **Create collection**
   opens the gallery's own create-collection dialog (name, description, default summary prompt)
@@ -277,6 +295,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loads, user sync, lockout, audit and session work now run in the threadpool.
 
 ### Fixed
+
+- **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
+  orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,
+  merge and delete, profile delete, profile reassignment, batch profile assignment, a retry
+  reset and a reprocess all left the cluster centroids and profile embeddings that averaged
+  the voice in place (a retry never removed the voiceprints at all, and an emptied cluster's
+  centroid outlived its row). One shared cleanup now runs after each: the voiceprint is
+  erased and verified, every affected centroid and profile embedding is rebuilt from the
+  remaining members (or erased when it cannot be), an emptied cluster is deleted with its
+  centroid, promoted or not, and the file is re-indexed so no index plane names the removed
+  speaker. A file purge now also rebuilds the profiles its speakers belonged to. Deleting a
+  profile clears the profile's name from the speakers and cluster it was applied to. A
+  failure answers 503 with a fixed message instead of being logged and dropped.
 
 - **Tests no longer leak stores on failure (#1195).** Twenty-odd fixtures created an OpenSearch
   index, bucket, container or temp file and then did fallible work before the `try` that

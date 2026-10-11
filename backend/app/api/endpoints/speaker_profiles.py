@@ -801,18 +801,59 @@ def delete_speaker_profile(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete a speaker profile."""
+    """Delete a speaker profile, taking its name and voice back from everything it reached.
+
+    A linked speaker carries the profile's name as its display name (the invariant
+    ``services/speaker_profile_rename`` documents), so unlinking alone left every member
+    still labelled as the deleted identity. Members whose display name IS the profile's
+    name get it cleared (their label falls back to the suggestion or diarizer label, and
+    the chunk plane is told), and a cluster named after the profile loses that label.
+    The profile's embedding is erased and verified, and every cluster that held a member
+    or was promoted to the profile is rebuilt by ``speaker_cleanup`` — an emptied
+    promoted cluster is deleted with its centroid instead of being left listed with
+    nobody in it (issue #1214). A display name the user set to something else survives.
+    """
+    from app.models.media import SpeakerCluster
+    from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
+    from app.services.speaker_cleanup import capture_speaker_impact
+    from app.services.speaker_cleanup import raise_if_incomplete
+    from app.services.speaker_cleanup import reconcile_speaker_impact
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
+
+    tracker = SpeakerRenameTracker()
     try:
         profile = require_profile_in_scope(
             db, profile_uuid, current_user, organization_id=ctx.org_id
         )
         profile_id = profile.id
+        profile_name = str(profile.name)
 
-        # Unassign all speakers from this profile
         speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
+        impact = capture_speaker_impact(
+            db, [int(s.id) for s in speakers], removed=False, reindex=False
+        )
+        impact.owner_ids.add(int(profile.user_id))
+        promoted = (
+            db.query(SpeakerCluster)
+            .filter(SpeakerCluster.promoted_to_profile_id == profile_id)
+            .all()
+        )
+        for cluster in promoted:
+            impact.cluster_uuids.add(str(cluster.uuid))
+            impact.owner_ids.add(int(cluster.user_id))
+            if cluster.label == profile_name:
+                cluster.label = None  # type: ignore[assignment]
+
         for speaker in speakers:
+            indexed_as = canonical_speaker_label_for_row(speaker)
             speaker.profile_id = None  # type: ignore[assignment]
             speaker.verified = False  # type: ignore[assignment]
+            if speaker.display_name == profile_name:
+                speaker.display_name = None  # type: ignore[assignment]
+            tracker.record(
+                int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker)
+            )
 
         # Delete avatar from MinIO if exists
         if profile.avatar_path:
@@ -823,28 +864,20 @@ def delete_speaker_profile(
             except Exception:
                 logger.warning(f"Failed to delete avatar for profile {profile.uuid}")
 
-        # Capture UUID before DB delete
-        profile_uuid_str = str(profile.uuid)
-
-        # Delete the profile
+        impact.erase_profile_uuids.add(str(profile.uuid))
         db.delete(profile)
         db.commit()
+        tracker.flush(db)
 
-        # Remove profile embedding from all OpenSearch indices (non-fatal)
-        try:
-            from app.services.opensearch_service import remove_profile_embedding
-
-            remove_profile_embedding(profile_uuid_str)
-        except Exception as e:
-            logger.warning(f"Failed to remove profile {profile_uuid_str} from OpenSearch: {e}")
-
+        raise_if_incomplete(reconcile_speaker_impact(db, impact))
         return None
 
-    except HTTPException:
+    except (HTTPException, SpeakerCleanupIncompleteError):
         raise
     except Exception as e:
         logger.exception(f"Error deleting speaker profile: {e}")
         db.rollback()
+        tracker.discard()
         raise ErrorHandler.internal_error() from e
 
 

@@ -38,6 +38,11 @@ from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 from app.models.user import User
 
+# These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach
+# as a failure. CI has no OpenSearch, so stand the stores in with the recorders; the live
+# behaviour is covered by test_deletion_residue_live.
+pytestmark = pytest.mark.usefixtures("speaker_os_seams")
+
 SPK = "/api/speakers"
 PROF = "/api/speaker-profiles"
 CLU = "/api/speaker-clusters"
@@ -629,7 +634,8 @@ def test_profile_embedding_averages_only_speakers_of_the_profiles_tenant(world, 
         return [1.0, 0.0]
 
     monkeypatch.setattr(pes, "get_speaker_embedding", fake_embedding)
-    monkeypatch.setattr(pes, "_process_profile_with_embeddings", lambda *a, **k: None)
+    # Stands for an accepted write: the recompute reports whether the store landed (#1214).
+    monkeypatch.setattr(pes, "_process_profile_with_embeddings", lambda *a, **k: True)
     assert pes.ProfileEmbeddingService.update_profile_embedding(w.db, w.a_profile.id)
     assert fetched == [str(w.a_speaker.uuid)]
 

@@ -482,7 +482,7 @@ def test_deleting_the_file_deletes_its_rendition(
             pass
 
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
-    monkeypatch.setattr(fcs, "_cleanup_empty_clusters", lambda db, owner_id: None)
+    monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
     monkeypatch.setattr(minio_service, "MinIOService", lambda: None)
     monkeypatch.setattr(video_processing_service, "VideoProcessingService", _NoDerivedCache)
     row = _row(db_session, normal_user, "a.aiff", store, media)

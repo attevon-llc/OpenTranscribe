@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
+  notifications panel already uses, so the toolbar's three buttons all lead with an icon.
+
 - **Transcription notifications carry the OpenTranscribe logo (UX review item 14).** The
   notifications panel showed a generic document glyph for `transcription_status`; it now shows the
   product mark (`assets/logo-icon.png`, decorative `alt=""`), with the tag glyph already shared by

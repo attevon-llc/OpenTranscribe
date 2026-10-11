@@ -26,7 +26,8 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   "no files match", not "your library is empty" (#747).
 - `VirtualGrid.svelte` / `VirtualList.svelte` — virtualized renderers (thumbnail cache, prefetch).
 - `GalleryPrimaryActions.svelte` — the row-1-right trio, in DOM order **Tags, Collections,
-  Add media** (Add media rightmost; UX review item 40, pinned by `GalleryPrimaryActions.test.ts`),
+  Add media** (Add media rightmost; UX review item 40, pinned by `GalleryPrimaryActions.test.ts`), each with a
+  leading icon — Tags and Collections reuse `NotificationsPanel`'s tag and folder glyphs, so the two surfaces stay consistent,
   normal mode only (reads `galleryStore`).
 - `VirtualList.svelte` header: title case, weight 500 (not uppercase 600); numeric columns
   (duration, date, size, status) are right-aligned and every body cell is 0.875rem — pinned by

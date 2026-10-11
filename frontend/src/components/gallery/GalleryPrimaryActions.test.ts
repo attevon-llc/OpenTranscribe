@@ -47,4 +47,19 @@ describe('GalleryPrimaryActions', () => {
     expect(fired).toEqual(['tags', 'collections', 'upload']);
     unsubs.forEach((u) => u());
   });
+
+  it('gives all three buttons a leading icon, and Tags/Collections the notification glyphs', () => {
+    const { container } = render(GalleryPrimaryActions);
+    for (const cls of ['tags-btn', 'collections-btn', 'upload-btn']) {
+      const first = container.querySelector(`.${cls}`)?.firstElementChild;
+      expect(first?.tagName.toLowerCase(), `${cls} should start with its icon`).toBe('svg');
+    }
+    // Same tag and folder glyphs NotificationsPanel uses, so the two surfaces stay consistent.
+    expect(container.querySelector('.tags-btn path')?.getAttribute('d')).toBe(
+      'M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z'
+    );
+    expect(container.querySelector('.collections-btn path')?.getAttribute('d')).toBe(
+      'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z'
+    );
+  });
 });

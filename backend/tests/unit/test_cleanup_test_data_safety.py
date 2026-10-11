@@ -331,3 +331,399 @@ def test_media_by_owner_and_media_by_filename_are_reconciled_without_duplication
             deduped.append(cand)
     assert {c.uuid for c in deduped} == {same_uuid, other_uuid}
     assert len(deduped) == 2
+
+
+# ---------------------------------------------------------------------------------------------
+# 7. Store planes (issue #1195): flags, gating, age floor, stale markers, stack scoping
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_planes_default_to_all_and_reject_an_unknown_plane() -> None:
+    assert cleanup.build_parser().parse_args([]).planes == cleanup.PLANES
+    assert cleanup.build_parser().parse_args(["--planes", "indexes,tmp"]).planes == (
+        "indexes",
+        "tmp",
+    )
+    with pytest.raises(SystemExit):
+        cleanup.build_parser().parse_args(["--planes", "indexes,everything"])
+
+
+@pytest.mark.unit
+def test_min_age_defaults_to_zero() -> None:
+    assert cleanup.build_parser().parse_args([]).min_age_minutes == 0
+
+
+def _find_ungated_artifact_deletes(source: str) -> list[str]:
+    """``_delete_artifacts(...)`` outside an ``effective_execute`` guard, and any plane
+    ``.delete_one(...)`` call outside ``_delete_artifacts`` itself."""
+    tree = ast.parse(source)
+    violations: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        for node in ast.walk(fn):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "delete_one"
+                and fn.name != "_delete_artifacts"
+            ):
+                violations.append(f"line {node.lineno}: delete_one outside _delete_artifacts")
+
+    class _Visitor(ast.NodeVisitor):
+        depth = 0
+
+        def visit_If(self, node: ast.If) -> None:  # noqa: N802
+            guarded = any(
+                isinstance(n, ast.Name) and n.id == "effective_execute" for n in ast.walk(node.test)
+            )
+            self.depth += guarded
+            for stmt in node.body:
+                self.visit(stmt)
+            self.depth -= guarded
+            for stmt in node.orelse:
+                self.visit(stmt)
+
+        def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+            name = getattr(node.func, "id", getattr(node.func, "attr", ""))
+            if name == "_delete_artifacts" and self.depth == 0:
+                violations.append(f"line {node.lineno}: ungated _delete_artifacts(...)")
+            self.generic_visit(node)
+
+    _Visitor().visit(tree)
+    return violations
+
+
+@pytest.mark.unit
+def test_store_deletes_are_reachable_only_behind_the_execute_guard() -> None:
+    assert _find_ungated_artifact_deletes(_SCRIPT.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.unit
+def test_the_store_delete_gate_detector_fires() -> None:
+    ungated = "def main(plane, f):\n    _delete_artifacts(plane, [f], 0, include_tier_b=False)\n"
+    stray = "def main(plane, f):\n    plane.delete_one(f, 0, include_tier_b=True)\n"
+    gated = (
+        "def main(effective_execute, plane, f):\n"
+        "    if effective_execute and f:\n"
+        "        _delete_artifacts(plane, [f], 0, include_tier_b=False)\n"
+    )
+    assert _find_ungated_artifact_deletes(ungated)
+    assert _find_ungated_artifact_deletes(stray)
+    assert _find_ungated_artifact_deletes(gated) == []
+
+
+@pytest.mark.unit
+def test_the_age_floor_only_ever_lowers_the_cutoff() -> None:
+    assert cleanup.apply_age_floor(1_000_000, 0, now=1_000_000) == 1_000_000
+    assert cleanup.apply_age_floor(1_000_000, 30, now=1_000_000) == 1_000_000 - 1800
+    # A live run's earlier cutoff already wins.
+    assert cleanup.apply_age_floor(500, 30, now=1_000_000) == 500
+
+
+@pytest.mark.unit
+def test_stale_markers_are_pruned_and_live_or_young_ones_kept(tmp_path: Path) -> None:
+    import fcntl
+    import os
+    import time as time_mod
+
+    stale = tmp_path / "stale.lock"
+    young = tmp_path / "young.lock"
+    live = tmp_path / "live.lock"
+    for marker in (stale, young, live):
+        marker.write_text("started_at=1\n", encoding="utf-8")
+    old = time_mod.time() - 3600
+    os.utime(stale, (old, old))
+    os.utime(live, (old, old))
+    fd = os.open(str(live), os.O_RDONLY)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        dry = cleanup.prune_stale_markers(tmp_path, execute=False, grace_seconds=120)
+        assert dry == [stale] and stale.exists(), "a dry run reports and removes nothing"
+        removed = cleanup.prune_stale_markers(tmp_path, execute=True, grace_seconds=120)
+        assert removed == [stale]
+        assert not stale.exists() and young.exists() and live.exists()
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.unit
+def test_store_planes_refuse_a_mixed_stack_before_touching_anything(tmp_path: Path) -> None:
+    """POSTGRES_PORT exported for one stack, OPENSEARCH_PORT for another: exit 2, no I/O.
+    Ports point at closed localhost ports, so reaching a store would fail differently."""
+    import os
+    import subprocess
+
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.endswith("_PORT") and k not in {"E2E_BACKEND_URL"}
+    }
+    env.update(
+        {
+            "POSTGRES_PORT": "5976",
+            "OPENSEARCH_PORT": "5180",
+            "MINIO_PORT": "5978",
+            "TESTRUN_REGISTRY_DIR": str(tmp_path / ".testruns"),
+        }
+    )
+    result = subprocess.run(  # noqa: S603 - fixed argv: this interpreter and the script
+        [sys.executable, str(_SCRIPT), "--planes", "indexes"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "REFUSED" in result.stdout and "OPENSEARCH_PORT=5180" in result.stdout
+
+
+@pytest.mark.unit
+def test_orphan_profile_docs_are_the_ones_without_a_row() -> None:
+    docs = [
+        {"_index": "speakers_v4", "_id": "profile_a", "_source": {"profile_uuid": "a"}},
+        {"_index": "speakers_v4", "_id": "profile_b", "_source": {"profile_uuid": "b"}},
+        {"_index": "speakers_v4", "_id": "x", "_source": {}},
+    ]
+    assert cleanup.find_orphan_profile_docs(docs, {"a"}) == ["speakers_v4/profile_b"]
+    assert cleanup.find_orphan_profile_docs(docs, {"a", "b"}) == []
+
+
+# ---------------------------------------------------------------------------------------------
+# 8. Speaker profiles: the registered prefix, and the LEGACY shape already leaked on stacks
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("name", "swept"),
+    [
+        ("e2e-propagated-794e5669", True),
+        ("E2E Propagated 794e5669", True),  # legacy: the leftover found on the v060 stack
+        ("E2E Propagated notes", False),  # a human's profile with the same words
+        ("E2E Propagated 794e5669 copy", False),  # legacy shapes are FULL match
+        ("e2e propagated 794e5669", False),
+        ("Alice", False),
+    ],
+)
+def test_speaker_profile_shapes(name: str, swept: bool) -> None:
+    prefixes = cleanup.NAME_PREFIXES["speaker_profile"]
+    assert cleanup._name_matches_shape(name, prefixes, "speaker_profile") is swept
+
+
+@pytest.mark.unit
+def test_legacy_shapes_apply_only_to_their_own_resource() -> None:
+    assert not cleanup._name_matches_shape(
+        "E2E Propagated 794e5669", cleanup.NAME_PREFIXES["tag"], "tag"
+    )
+
+
+# ---------------------------------------------------------------------------------------------
+# 9. e2e literal gate: every uniquified name an e2e test mints must have a registered head
+# ---------------------------------------------------------------------------------------------
+#
+# Section 5 only sees `..._PREFIX = "foo-"` constants. `test_speaker_gender_clusters.py`
+# minted f"E2E Propagated {uuid4().hex[:8]}" inline, which no constant scan can see, and a
+# profile of that name leaked onto a stack with nothing able to sweep it. This scans every
+# f-string in tests/e2e whose value carries a random uniquifier.
+
+_E2E_DIR = _TESTS_DIR / "e2e"
+
+
+def _is_uniquifier(node: ast.AST, bindings: dict[str, ast.AST]) -> bool:
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute):
+        return node.value.attr == "hex"
+    if isinstance(node, ast.Attribute):
+        return node.attr == "hex"
+    if isinstance(node, ast.Call):
+        name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+        if name in {"uuid4", "token_hex"}:
+            return True
+        if name == "str" and node.args:
+            return _is_uniquifier(node.args[0], bindings)
+    if isinstance(node, ast.Name) and node.id in bindings:
+        return _is_uniquifier(bindings[node.id], {})
+    return False
+
+
+def _string_constants(source: str) -> dict[str, ast.AST]:
+    tree = ast.parse(source)
+    return {
+        t.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for t in node.targets
+        if isinstance(t, ast.Name)
+    }
+
+
+def _shared_e2e_constants() -> dict[str, ast.AST]:
+    """Module-level string constants of every e2e module (``OWNED_MEDIA_PREFIX`` lives in
+    conftest and is imported by the suites that mint names with it)."""
+    shared: dict[str, ast.AST] = {}
+    for path in sorted(_E2E_DIR.rglob("*.py")):
+        shared.update(_string_constants(path.read_text(encoding="utf-8")))
+    return shared
+
+
+def uniquified_e2e_literals(
+    source: str, shared: dict[str, ast.AST] | None = None
+) -> list[tuple[int, str, bool]]:
+    """``(lineno, head, is_email)``: the constant text before the uniquifier (string
+    constants resolved, an unresolvable part rendered as ``{name}``), and whether the
+    literal is an email address."""
+    tree = ast.parse(source)
+    bindings: dict[str, ast.AST] = dict(shared or {})
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name):
+                bindings[target.id] = node.value
+    found: list[tuple[int, str, bool]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.JoinedStr):
+            continue
+        values = node.values
+        if not any(
+            isinstance(v, ast.FormattedValue) and _is_uniquifier(v.value, bindings) for v in values
+        ):
+            continue
+        head = ""
+        for value in values:
+            if isinstance(value, ast.Constant):
+                head += str(value.value)
+                continue
+            assert isinstance(value, ast.FormattedValue)
+            bound = bindings.get(getattr(value.value, "id", ""))
+            if isinstance(bound, ast.Constant) and isinstance(bound.value, str):
+                head += bound.value
+                continue
+            if not _is_uniquifier(value.value, bindings):
+                head += "{" + ast.unparse(value.value) + "}"
+            break
+        tail = "".join(str(v.value) for v in values if isinstance(v, ast.Constant))
+        found.append((node.lineno, head, "@" in tail))
+    return found
+
+
+def _email_heads() -> list[str]:
+    users = cleanup._load_cleanup_users_module()
+    return [p.split("%", 1)[0].replace("\\_", "_") for p in users.ORPHAN_PATTERNS]
+
+
+def _head_registered(head: str, is_email: bool) -> bool:
+    if not head or head.startswith("{"):
+        return False
+    if is_email:
+        return any(head.startswith(h) and h for h in _email_heads())
+    return any(head.startswith(p) for p in _registered_name_prefixes())
+
+
+#: Uniquified e2e literals that name nothing persistent, keyed ``file::head``.
+_E2E_LITERAL_NOT_PERSISTED: dict[str, str] = {
+    "backend/tests/e2e/conftest.py::Zq3!": "a password value, not a name",
+    "backend/tests/e2e/test_support_access.py::Zq3!": "a password value, not a name",
+    "backend/tests/e2e/test_support_access.py::INC-": (
+        "an incident reference typed into the support-access grant; stored on the grant row, "
+        "which is removed with the support-e2e- subject account (cleanup-test-users.py)"
+    ),
+    "backend/tests/e2e/test_support_access.py::Support Subject ": (
+        "the display name of the support-e2e- account (email swept by cleanup-test-users.py)"
+    ),
+    "backend/tests/e2e/test_full_pipeline_smoke.py::Pipeline smoke vLLM ": (
+        "an LLM config name; leaked configs are swept by base_url (llm-test-vllm) in "
+        "cleanup-test-users.py, not by name"
+    ),
+    "backend/tests/e2e/test_chat_trace_panel.py::gh514-trace-e2e-": (
+        "an LLM config name; swept by base_url (mock-llm) in cleanup-test-users.py"
+    ),
+    "backend/tests/e2e/test_visual_regression.py::gh514-visual-": (
+        "an LLM config name; swept by base_url (mock-llm) in cleanup-test-users.py"
+    ),
+    "backend/tests/e2e/test_chat.py::{label}": (
+        "_unique() names LLM provider configs (swept by base_url in cleanup-test-users.py); "
+        "conversation titles use unique_conversation_title() and its e2e-chat- prefix"
+    ),
+    "backend/tests/e2e/test_chat_grounding.py::{name}": (
+        "llm_config_factory's LLM config name; swept by base_url in cleanup-test-users.py"
+    ),
+    "backend/tests/e2e/test_watch_sources_e2e.py::noreply+": (
+        "the from_address of the e2e-watch-mailer- email config, not an account; the "
+        "config row is deleted in the test's finally"
+    ),
+    "backend/tests/e2e/test_registration.py::unique_": (
+        "registration form username field for a unique_%@example.com account (review tier)"
+    ),
+    "backend/tests/e2e/test_registration.py::testuser_": (
+        "registration form username for a testuser_%@example.com account (review tier)"
+    ),
+    "backend/tests/e2e/test_registration.py::newuser_": (
+        "registration form username for a newuser_%@example.com account (review tier)"
+    ),
+}
+
+
+def _e2e_offenders() -> tuple[dict[str, str], int]:
+    offenders: dict[str, str] = {}
+    scanned = 0
+    shared = _shared_e2e_constants()
+    for path in sorted(_E2E_DIR.rglob("*.py")):
+        rel = path.relative_to(_REPO_ROOT)
+        source = path.read_text(encoding="utf-8")
+        for lineno, head, is_email in uniquified_e2e_literals(source, shared):
+            scanned += 1
+            if _head_registered(head, is_email) or f"{rel}::{head}" in _E2E_LITERAL_NOT_PERSISTED:
+                continue
+            offenders[f"{rel}:{lineno}"] = repr(head)
+    return offenders, scanned
+
+
+@pytest.mark.unit
+def test_every_uniquified_e2e_name_has_a_registered_head() -> None:
+    offenders, scanned = _e2e_offenders()
+    assert scanned > 10, f"scanned only {scanned} literals: the scanner stopped matching"
+    assert offenders == {}, (
+        "e2e literals minting a uniquified name whose head no sweep recognises "
+        "(register the prefix in scripts/cleanup-test-data.py NAME_PREFIXES/"
+        "MEDIA_FILENAME_SPECS or cleanup-test-users.py ORPHAN_PATTERNS, or add a "
+        f"_E2E_LITERAL_NOT_PERSISTED entry with a reason): {offenders}"
+    )
+
+
+@pytest.mark.unit
+def test_every_e2e_literal_allowlist_entry_is_still_used() -> None:
+    used = set()
+    shared = _shared_e2e_constants()
+    for path in sorted(_E2E_DIR.rglob("*.py")):
+        rel = path.relative_to(_REPO_ROOT)
+        for _, head, _ in uniquified_e2e_literals(path.read_text(encoding="utf-8"), shared):
+            used.add(f"{rel}::{head}")
+    stale = sorted(set(_E2E_LITERAL_NOT_PERSISTED) - used)
+    assert stale == [], f"stale _E2E_LITERAL_NOT_PERSISTED entries: {stale}"
+
+
+@pytest.mark.unit
+def test_the_e2e_literal_scanner_fires_and_stays_clean() -> None:
+    leaky = "import uuid\nnew_name = f'E2E Propagated {uuid.uuid4().hex[:8]}'\n"
+    [(_, head, is_email)] = uniquified_e2e_literals(leaky)
+    assert head == "E2E Propagated " and not is_email
+    assert not _head_registered(head, is_email)
+
+    via_constant = (
+        "import uuid\nTAG_PREFIX = 'e2e-tag-'\nname = f'{TAG_PREFIX}{uuid.uuid4().hex[:8]}'\n"
+    )
+    [(_, head, is_email)] = uniquified_e2e_literals(via_constant)
+    assert head == "e2e-tag-" and _head_registered(head, is_email)
+
+    email = "import uuid\ne = f'mfa-e2e-{uuid.uuid4().hex[:8]}@example.com'\n"
+    [(_, head, is_email)] = uniquified_e2e_literals(email)
+    assert is_email and _head_registered(head, is_email)
+    unregistered_email = "import uuid\ne = f'brand-new-{uuid.uuid4().hex[:8]}@example.com'\n"
+    [(_, head, is_email)] = uniquified_e2e_literals(unregistered_email)
+    assert not _head_registered(head, is_email)
+
+    no_uniquifier = "x = 5\nmsg = f'count {x}'\n"
+    assert uniquified_e2e_literals(no_uniquifier) == []

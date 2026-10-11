@@ -84,6 +84,10 @@ TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-lite}"
 # scopes every `docker ps` lookup below to THIS rehearsal's stack, never whatever
 # unrelated stack (e.g. the live dev one) happens to be running on the same host.
 export COMPOSE_PROJECT_NAME="$TEST_PROJECT_NAME"
+# Defaulted = "this run picks a fresh timestamped root". `--cleanup` then means the LAST
+# run's root, which gr_check_test_root records (issue #1195); see gr_cleanup.
+TEST_ROOT_DEFAULTED=0
+[[ -n "${TEST_ROOT:-}" ]] || TEST_ROOT_DEFAULTED=1
 TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S)}"
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
@@ -175,7 +179,7 @@ gr_log "version under test: $LOCAL_IMAGE_TAG"
 # ─── Cleanup mode ───────────────────────────────────────────────────────────
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
-    gr_cleanup
+    gr_cleanup "$TEST_ROOT_DEFAULTED"
     exit 0
 fi
 
@@ -773,7 +777,9 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
             # way test_lite_mode_mocked_providers.py's api_session fixture
             # does, and export it for the helper.
             local cookie_jar csrf_token
-            cookie_jar=$(mktemp)
+            # In TEST_ROOT (removed by --cleanup), not a bare mktemp an interrupted run
+            # leaves in /tmp holding a live session cookie (issue #1195).
+            cookie_jar="$TEST_ROOT/.lite-chat-cookie-jar"
             curl -sS -c "$cookie_jar" -X POST "$API_BASE/auth/token" \
                 -d "username=${TEST_ADMIN_EMAIL}&password=${TEST_ADMIN_PASSWORD}" >/dev/null
             csrf_token=$(grep -oP 'csrf_token\s+\K\S+' "$cookie_jar" || true)

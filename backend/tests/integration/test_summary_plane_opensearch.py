@@ -156,10 +156,10 @@ def chunk_index(monkeypatch, db_session):
 
     name = f"test_summary_plane_{uuid_pkg.uuid4().hex[:12]}"
     client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
-    monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-    svc.reset_neural_pipeline_state()
     try:
+        monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
+        monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
+        svc.reset_neural_pipeline_state()
         yield client
     finally:
         client.indices.delete(index=name, ignore=[404])
@@ -503,11 +503,11 @@ def test_semantic_retrieval_finds_a_summary_leaf_with_no_lexical_overlap(monkeyp
 
     name = f"test_summary_plane_semantic_{uuid_pkg.uuid4().hex[:12]}"
     client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
-    monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
-    svc.reset_neural_pipeline_state()
-    svc.ensure_chunks_index_exists()
     try:
+        monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
+        monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
+        svc.reset_neural_pipeline_state()
+        svc.ensure_chunks_index_exists()
         assert is_neural_pipeline_available(), (
             "the neural ingest pipeline could not be verified against this cluster — "
             "this test must FAIL, not skip, because a skip here is indistinguishable "

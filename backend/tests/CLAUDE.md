@@ -322,9 +322,11 @@ was finding nothing at all.
   helper (prefix `E2E_CONVERSATION_PREFIX = "e2e-chat-"`) — deliberately its own helper, not
   a reuse of `test_chat.py`'s `_unique()`, which also names LLM provider configs and would be
   wrong to prefix the same way. Both scripts are unconditionally invoked (Tier A only, via
-  `cleanup-test-data.py --execute-unambiguous`) at the start of
-  `scripts/run-integration-tests.sh` and `scripts/e2e/run-e2e.sh`, degrading rather than
-  blocking the run on failure; `OT_SKIP_TEST_DATA_SWEEP=1` is the escape hatch.
+  `cleanup-test-data.py --execute-unambiguous`) at the start AND, from an EXIT trap, at the
+  end of `scripts/run-integration-tests.sh` and `scripts/e2e/run-e2e.sh` (and once, after all
+  phases, by `scripts/run-dev-tests.sh`), degrading rather than blocking the run on failure
+  and never changing its exit code; `OT_SKIP_TEST_DATA_SWEEP=1` is the escape hatch. See
+  "Cleaning up after tests" below for the rest of the rule.
 - **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`,
   `nosuchuser-e2e@example.com`, `ldap-nosuchuser-e2e`), never a wrong password for
   `admin@example.com` — lockout is keyed on the **resolved account** (`canonical_identifier`
@@ -345,6 +347,50 @@ was finding nothing at all.
   either — it would exercise the relaxation, not the cap; that control is covered at unit/API
   level only (`backend/tests/unit/test_session_ceiling.py`,
   `backend/tests/unit/test_session_cap_sweep.py`).
+
+## Cleaning up after tests (issue #1195)
+
+**A test leaves nothing behind — not on success, not on failure, not when its worker is
+killed.** That covers everything OUTSIDE the `db_session` savepoint: OpenSearch indexes,
+pipelines and documents, MinIO buckets and objects, Postgres databases and live-committed
+rows, docker containers/networks/volumes, Redis keys and `/tmp` trees. Audit and per-file
+status: `docs/design/v060_test_hygiene_audit.md`.
+
+Three layers, each needed:
+
+1. **Teardown on every failure path** — enforced by `unit/test_test_artifact_teardown_discipline.py`
+   (AST). A creation (`indices.create`, `put_pipeline`, `make_bucket`, `CREATE DATABASE`,
+   `docker run -d` / `network create`, `mkdtemp`/`mkstemp`/`NamedTemporaryFile(delete=False)`)
+   must sit inside a `try` whose `finally` removes it, or be the statement IMMEDIATELY before
+   that `try`. "Create, seed, then try" is the defect it exists for: eight index fixtures
+   bulk-seeded between the create and the `try`, so a failed seed leaked the index. A helper
+   that creates and returns hands the obligation to its caller. Its `_ALLOWED` dict needs a
+   reason per entry and is empty.
+2. **A registered shape for everything a killed run can leave** — enforced by
+   `unit/test_test_artifact_sweep.py` (every index/pipeline/bucket/tmp-prefix name a test mints
+   must match a shape in `scripts/lib/test_artifact_sweep.py`) and
+   `unit/test_cleanup_test_data_safety.py` (every uniquified name an e2e test mints — f-strings
+   included, not just `_PREFIX` constants — must start with a registered prefix; the leaked
+   profile `E2E Propagated <hex8>` was an inline f-string no constant scan could see). Use a
+   lowercase registered prefix plus `uuid4().hex[:N]`, never a title-case literal.
+   Docker resources a test starts carry `--label ot-test-artifact=1` (`tests/docker_ops.py`
+   `TEST_ARTIFACT_LABEL`).
+3. **Liveness**: every pytest controller registers a flock marker in the main checkout's
+   `.testruns/` (`tests/testrun_marker.py`, via `conftest.py`), so a concurrent sweep never
+   removes a store a running test is using, even a bare `pytest` run from another worktree.
+
+**The sweep** — `scripts/cleanup-test-data.py` (dry run by default; `--execute-unambiguous`
+Tier A; `--execute` adds Tier B; `--planes` selects; `--min-age-minutes N`). Rows go through the
+app's own DELETE endpoints; store planes re-check each name at the point of deletion and refuse
+production names, unregistered names, anything younger than the liveness cutoff, and a run whose
+exported `*_PORT`s point at different stacks. Unattended: `./opentr.sh test-cleanup --fresh
+<name> [--background]` (scripts/CLAUDE.md). Against an isolated stack always export every port:
+
+```bash
+POSTGRES_PORT=5376 OPENSEARCH_PORT=5380 MINIO_PORT=5378 E2E_BACKEND_URL=http://localhost:5374 \
+  backend/venv/bin/python scripts/cleanup-test-data.py            # read the dry run first
+./opentr.sh test-cleanup --fresh v060 --dry-run                     # same, ports resolved for you
+```
 
 ## Before you debug a "flaky" E2E test, rule out the STACK (issue #431)
 

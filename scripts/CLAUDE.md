@@ -1013,6 +1013,49 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
     loud warning (DB-only planes — the `cleanup-test-users.py` subprocess — still run) and
     the process exits non-zero, so `run-integration-tests.sh`/`e2e/run-e2e.sh`'s
     `|| sweep_rc=$?` guard is what keeps a sweep failure from blocking the actual test run.
+  - **Store planes (issue #1195)** — `scripts/lib/test_artifact_sweep.py`: throwaway
+    OpenSearch indexes + ingest pipelines (Tier A when EMPTY, Tier B with documents), test
+    buckets and test-keyed objects in the media/cache buckets, scratch Postgres databases
+    (`ot_<word>_test`, Tier B, never with an open connection), `/tmp` trees of this user, and
+    labelled throwaway docker containers/networks (Tier B only — `throwaway_pg.py` records why
+    a container is never removed automatically). A name must FULLY match a registered shape
+    ending in the fixture's uniquifier; the protected list (production indexes, `.`-prefixed
+    system indexes, configured buckets, the target and system databases) is checked first and
+    again at the point of deletion. Orphan `profile_<uuid>` speaker docs are reported, never
+    deleted (Tier C). `--planes records,indexes,...` selects; the integration test of the row
+    sweep runs `--planes records` so it never touches the host's real stores.
+  - **Stack scoping**: the store planes exit 2 when the EXPORTED `POSTGRES_PORT`/
+    `OPENSEARCH_PORT`/`MINIO_PORT` resolve to different stacks (base + one `--port-offset`),
+    which is the "exported one port, forgot another" accident. `.env`/default values are one
+    stack by construction and never trip it.
+  - **`--min-age-minutes N`** lowers the cutoff further: nothing younger is ever touched.
+- `cleanup-test-leftovers.sh` (`./opentr.sh test-cleanup`, issue #1195) — the unattended
+  wrapper. `--project <compose-project>` or `--fresh <name>` is REQUIRED (it lists candidates
+  and refuses otherwise); every port, credential and bucket name is read from that project's
+  own containers, selected by `com.docker.compose.project`. Runs ONLY the Tier A sweep with an
+  age floor (`--min-age-minutes`, default 30). Modes: `--once` (default), `--background
+  [--interval-minutes N]`, `--status`, `--stop`, plus `--dry-run`. State in
+  `.test-cleanup/<project>.{log,pid,lock}` (`OT_TEST_CLEANUP_DIR`): one summary paragraph per
+  pass in the log, a lock so passes never overlap, a pid file so a project has one loop.
+  `--stop` checks `/proc/<pid>/cmdline` names this script's loop for this project and sends a
+  plain TERM to that pid only — never pkill/kill -9; a pass in progress finishes first.
+
+  ```bash
+  ./opentr.sh test-cleanup --fresh v060 --dry-run          # what a pass would remove
+  ./opentr.sh test-cleanup --fresh v060                    # one Tier A pass now
+  ./opentr.sh test-cleanup --fresh v060 --background --interval-minutes 60
+  ./opentr.sh test-cleanup --fresh v060 --status           # running? last pass summary
+  ./opentr.sh test-cleanup --fresh v060 --stop
+  ```
+- **End-of-run sweep** — `lib/test-data-sweep.sh`: `run-integration-tests.sh` and
+  `e2e/run-e2e.sh` call `tds_sweep_at_exit`, which runs the Tier A sweep from an EXIT trap
+  (so after a failed phase, a `set -e` abort, Ctrl-C or TERM), ends the run's own liveness
+  marker first (`testrun_end`) so its own leftovers are not protected by its own start time,
+  and never changes the exit code. `run-dev-tests.sh` sweeps ONCE after all phases
+  (`tds_own_end_sweep_for_children` exports `OT_TEST_DATA_SWEEP_AT_EXIT=parent`, which the
+  wrapped scripts honour) and owns the single EXIT trap that also stops a `--with-llm-test`
+  vLLM it started and the overlays. ⚠️ A second top-level `trap ... EXIT` in any of these
+  scripts silently replaces the sweep — `unit/test_test_data_sweep_at_exit.py` fails on one.
 - `testrun-registry.sh` — not itself destructive (it only ever creates a lock file under
   `.testruns/`), but is the liveness mechanism `cleanup-test-data.py`'s safety argument
   depends on. `testrun_begin` opens a marker file, takes `flock -n` on it, and holds the fd
@@ -1020,6 +1063,11 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   exit, including SIGKILL/OOM/reboot, so a crashed run cannot be mistaken for a still-live
   one and there is no PID-reuse hazard. `TESTRUN_REGISTRY_DIR` overrides the `.testruns/`
   location — used only by the isolated-DB test proving this mechanism, never in normal use.
+  The directory is the MAIN checkout's `.testruns/` (resolved through `git rev-parse
+  --git-common-dir`), shared by every worktree; `backend/tests/testrun_marker.py` (every
+  pytest controller) and `cleanup-test-data.py` resolve the same path
+  (`unit/test_testrun_registry_location.py`). `testrun_end` releases and removes a run's own
+  marker; stale markers are pruned by the sweep's tmp plane (issue #1195).
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
 - `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
   **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock
@@ -1038,7 +1086,8 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   under `frontend/` — pass `--no-claude` if you don't want your index touched.
 - Everything else writes to the **live dev stack**: benchmarks upload files and never delete them;
   `test-all-auth.sh` / `test-fedramp.sh` register real users and never clean up (that is why
-  `cleanup-test-users.py` exists); `run-auth-e2e.sh` mutates admin auth config (restored on an exit
+  `cleanup-test-users.py` exists; `test-fedramp.sh`'s `fedramp-e2e-<ts>` account is a registered
+  Tier A shape since #1195); `run-auth-e2e.sh` mutates admin auth config (restored on an exit
   trap) and stops the frontend container.
 
 ## Gotchas

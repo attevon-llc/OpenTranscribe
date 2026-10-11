@@ -30,6 +30,7 @@ import requests
 # Absolute import — the e2e dir is not a package, so a relative import breaks
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
 from conftest import COMMITTED_SAMPLE_MEDIA
+from conftest import E2E_STORAGE_STATE_PREFIX
 from conftest import OWNED_MEDIA_PREFIX
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
@@ -122,36 +123,35 @@ def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[
     `BaseModal` on first authenticated page load whose backdrop intercepts every
     click, including the `.select-btn` / `.upload-btn` this suite's tests drive.
     """
-    context = browser.new_context(
-        viewport={"width": 1920, "height": 1080},
-        ignore_https_errors=True,
-    )
-    page = context.new_page()
-    page.goto(base_url)
-    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
-    page.fill("#email", TEST_ADMIN_EMAIL)
-    page.fill("#password", TEST_ADMIN_PASSWORD)
-    page.click("button[type=submit]")
-    # Wait for gallery to load (confirms login succeeded). NOT a `.file-card` wait:
-    # this fixture's only contract is "logged in and the gallery chrome rendered" —
-    # requiring a file card here made every consumer implicitly depend on the dev
-    # library being non-empty, which is exactly the ambient-data assumption this
-    # module's other fixtures (`api_owned_file_uuid`) exist to avoid. An empty
-    # `--fresh` instance has zero file cards until a test uploads its own.
-    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
+    fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
+    try:
+        os.close(fd)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        page.goto(base_url)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
+        page.fill("#email", TEST_ADMIN_EMAIL)
+        page.fill("#password", TEST_ADMIN_PASSWORD)
+        page.click("button[type=submit]")
+        # Wait for gallery to load (confirms login succeeded). NOT a `.file-card` wait:
+        # this fixture's only contract is "logged in and the gallery chrome rendered" —
+        # requiring a file card here made every consumer implicitly depend on the dev
+        # library being non-empty, which is exactly the ambient-data assumption this
+        # module's other fixtures (`api_owned_file_uuid`) exist to avoid. An empty
+        # `--fresh` instance has zero file cards until a test uploads its own.
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
 
-    # Save storage state to a temp file
-    fd, state_file = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    context.storage_state(path=state_file)
-    page.close()
-    context.close()
+        context.storage_state(path=state_file)
+        page.close()
+        context.close()
 
-    yield state_file
-
-    # Cleanup
-    if os.path.exists(state_file):
-        os.unlink(state_file)
+        yield state_file
+    finally:
+        if os.path.exists(state_file):
+            os.unlink(state_file)
 
 
 @pytest.fixture

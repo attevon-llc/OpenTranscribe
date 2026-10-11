@@ -113,32 +113,35 @@ def injected(session, owner_id, opensearch, adapter):
 
     records = {}
     turns_by_file = {}
-    for meeting_id in adapter.meeting_ids():
-        record, turn_rows = inject_meeting(
-            session, adapter.load(meeting_id), owner_id, seed=SEED, tool_version="pytest"
-        )
-        session.commit()
-        dispatch_indexing(record, owner_id, mode="eager")
-        records[meeting_id] = record
-        turns_by_file[record.file_uuid] = turn_rows
-
-    yield records, turns_by_file
-
-    # Refresh BEFORE deleting: the indexer bulk-loads with refresh=false and
-    # delete_by_query refreshes *after* it runs, so freshly indexed chunks are
-    # otherwise invisible to the delete and survive as orphans.
-    opensearch.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
-    indexer = TranscriptIndexingService()
-    for record in records.values():
-        media_file = session.get(MediaFile, record.media_file_id)
-        if media_file is not None:
-            session.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == media_file.id
-            ).delete()
-            session.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete()
-            session.delete(media_file)
+    try:
+        for meeting_id in adapter.meeting_ids():
+            record, turn_rows = inject_meeting(
+                session, adapter.load(meeting_id), owner_id, seed=SEED, tool_version="pytest"
+            )
             session.commit()
-        indexer.delete_transcript_chunks(record.file_uuid)
+            records[meeting_id] = record
+            turns_by_file[record.file_uuid] = turn_rows
+            dispatch_indexing(record, owner_id, mode="eager")
+
+        yield records, turns_by_file
+    finally:
+        # A setup that died mid-inject leaves the session in a failed transaction.
+        session.rollback()
+        # Refresh BEFORE deleting: the indexer bulk-loads with refresh=false and
+        # delete_by_query refreshes *after* it runs, so freshly indexed chunks are
+        # otherwise invisible to the delete and survive as orphans.
+        opensearch.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+        indexer = TranscriptIndexingService()
+        for record in records.values():
+            media_file = session.get(MediaFile, record.media_file_id)
+            if media_file is not None:
+                session.query(TranscriptSegment).filter(
+                    TranscriptSegment.media_file_id == media_file.id
+                ).delete()
+                session.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete()
+                session.delete(media_file)
+                session.commit()
+            indexer.delete_transcript_chunks(record.file_uuid)
 
 
 def _fetch_chunks(client, file_uuids):

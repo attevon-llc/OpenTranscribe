@@ -331,7 +331,10 @@ check_stage3_precondition() {
             # ("./opentr.sh stop") is the wrong advice for this cause and sends the operator
             # looking at the dev stack instead of at the previous leg's residue.
             local _clean_log _scenario
-            _clean_log="$(mktemp)"
+            # In the ledger dir, not a bare mktemp: kept with the run's other evidence, and
+            # never orphaned in /tmp by an interrupted matrix (issue #1195).
+            mkdir -p "$LEDGER_DIR"
+            _clean_log="$LEDGER_DIR/release-test-cleanup.log"
             for _scenario in test-fresh-install test-upgrade test-lite-mode; do
                 if ! OT_RELEASE_TEST_RESET_VOLUMES=1 \
                         "./scripts/release-tests/${_scenario}.sh" --cleanup --yes \
@@ -340,7 +343,6 @@ check_stage3_precondition() {
                     sed 's/^/    /' "$_clean_log" >&2
                 fi
             done
-            rm -f "$_clean_log"
             for _ in $(seq 1 30); do
                 service_reachable localhost 5174 || break
                 sleep 2

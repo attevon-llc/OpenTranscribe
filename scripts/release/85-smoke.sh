@@ -104,7 +104,9 @@ assert_cuda_capability() {
     # second as a pass — the same collapse of "could not check" into "checked and correct"
     # the paragraph above is about.
     local run_out run_rc=0 run_err err_file
-    err_file=$(mktemp)
+    # Registered prefix (scripts/lib/test_artifact_sweep.py TEST_TMP_SPECS): removed two lines
+    # down, swept if an interrupt lands inside the multi-minute docker run (issue #1195).
+    err_file=$(mktemp -t ot-release-smoke-probe.XXXXXX)
     run_out=$(docker "${ctx_args[@]}" run --rm "$img" \
         python3 -c 'import torch; print("CUDAVER:" + (torch.version.cuda or ""))' \
         2>"$err_file") || run_rc=$?

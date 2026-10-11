@@ -13,7 +13,10 @@ NC='\033[0m' # No Color
 
 # Configuration
 API_BASE="${API_BASE:-http://localhost:5174/api}"
-TEST_EMAIL="fedramp-test-$(date +%s)@example.com"
+# A registered throwaway shape (cleanup-test-users.py ORPHAN_PATTERNS_UNAMBIGUOUS): this script
+# registers a real account and never deletes it, so the sweep is its only cleanup. The old
+# fedramp-test-<ts> shape matched no pattern at all (issue #1195).
+TEST_EMAIL="fedramp-e2e-$(date +%s)@example.com"
 TEST_PASSWORD="SecureP@ssw0rd123!"
 REJECTED_PW="password123"
 

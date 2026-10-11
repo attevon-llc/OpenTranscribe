@@ -152,8 +152,8 @@ def isolated_chunk_index(monkeypatch):
 
     name = f"test_label_drift_{uuid.uuid4().hex[:12]}"
     client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
     try:
+        monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield client, name
     finally:
         client.indices.delete(index=name, ignore=[404])

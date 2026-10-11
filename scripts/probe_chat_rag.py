@@ -13,8 +13,11 @@ observe the one thing that path cannot: what the PRODUCT actually returns — ho
 files a multi-file scope query really consulted, whether a negative control gets a
 refusal, how long an answer takes end to end.
 
-Read-only against the corpus it points at: it creates conversations (which persist)
-but never reindexes, dispatches a bulk task, or deletes anything.
+Read-only against the corpus it points at: it never reindexes or dispatches a bulk task.
+What it changes it puts back (issue #1195): its conversations (titled ``probe-<hex8>: ``, a
+shape ``scripts/cleanup-test-data.py`` sweeps) are deleted at the end unless
+``--keep-conversations``, and the admin chat flags and the user's active LLM config it
+switched are restored, on failure and Ctrl-C too.
 
 Two environment gotchas that cost a debugging cycle each, the first time:
 
@@ -56,11 +59,13 @@ For a single ad hoc question, pass ``--question``/``--scope`` instead of
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import sys
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -389,6 +394,56 @@ def ensure_chat_flags(session: Any, base_url: str, updates: dict[str, bool]) -> 
     return read_back
 
 
+def snapshot_chat_flags(session: Any, base_url: str, fields: list[str]) -> dict[str, Any]:
+    """The current value of each chat flag this run is about to change, for restoring."""
+    if not fields:
+        return {}
+    response = session.get(f'{base_url}/admin/chat-settings', timeout=30)
+    response.raise_for_status()
+    current = response.json()
+    return {field: current.get(field) for field in fields}
+
+
+def active_llm_config(session: Any, base_url: str) -> str | None:
+    response = session.get(f'{base_url}/llm-settings', timeout=30)
+    response.raise_for_status()
+    active = response.json().get('active_configuration_id')
+    return str(active) if active else None
+
+
+def restore_state(
+    session: Any,
+    base_url: str,
+    *,
+    chat_flags: dict[str, Any],
+    prior_llm: str | None,
+    current_llm: str | None,
+    conversations: list[str],
+) -> None:
+    """Undo what the run changed. Best effort per item, each failure logged with what to fix."""
+    for conversation_uuid in conversations:
+        try:
+            session.delete(f'{base_url}/chat/conversations/{conversation_uuid}', timeout=30)
+        except Exception as exc:  # noqa: BLE001 - keep restoring the rest
+            logger.warning('could not delete probe conversation %s: %s', conversation_uuid, exc)
+    if chat_flags:
+        try:
+            session.put(f'{base_url}/admin/chat-settings', json=chat_flags, timeout=30)
+            logger.info('restored chat flags: %s', chat_flags)
+        except Exception as exc:  # noqa: BLE001 - report, do not mask the run's own result
+            logger.warning('could not restore chat flags %s: %s', chat_flags, exc)
+    if prior_llm and prior_llm != current_llm:
+        try:
+            session.post(
+                f'{base_url}/llm-settings/set-active',
+                json={'configuration_id': prior_llm},
+                timeout=30,
+            )
+            logger.info('restored active LLM config %s', prior_llm)
+        except Exception as exc:  # noqa: BLE001 - report, do not mask the run's own result
+            logger.warning('could not restore active LLM config %s: %s', prior_llm, exc)
+
+
 def create_conversation(session: Any, base_url: str, file_uuids: list[str], title: str) -> str:
     """POST a new chat conversation scoped to ``file_uuids``. Returns its uuid."""
     body = {
@@ -535,6 +590,11 @@ def fetch_thread_metadata(session: Any, base_url: str, conversation_uuid: str) -
     return assistant_messages[-1] if assistant_messages else {}
 
 
+#: One uniquifier per probe run: conversation titles are ``probe-<hex8>: <label>``, a shape
+#: registered in scripts/cleanup-test-data.py (NAME_PREFIXES['chat_conversation']).
+RUN_TAG = uuid.uuid4().hex[:8]
+
+
 def run_question(session: Any, base_url: str, question: Question) -> Result:
     """Run one question end to end, catching everything into ``Result.error``.
 
@@ -544,7 +604,7 @@ def run_question(session: Any, base_url: str, question: Question) -> Result:
     result = Result(q=question)
     try:
         conversation_uuid = create_conversation(
-            session, base_url, question.file_uuids, f'probe: {question.label}'
+            session, base_url, question.file_uuids, f'probe-{RUN_TAG}: {question.label}'
         )
         result.conversation_uuid = conversation_uuid
         answer, reasoning, warnings, offered_citations, latency = send_message_and_collect(
@@ -672,6 +732,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument('--llm-name', default='probe-llm-config')
+    parser.add_argument(
+        '--keep-conversations',
+        action='store_true',
+        help='Leave the probe conversations on the stack for inspection (default: delete)',
+    )
     parser.add_argument('--llm-provider', default='vllm')
     parser.add_argument('--llm-model', default='gemma-4-e4b')
     parser.add_argument(
@@ -766,6 +831,44 @@ def main(argv: list[str] | None = None) -> int:
     session = requests.Session()
 
     login(session, base_url, args.email, args.password)
+    chat_flag_updates = _parse_chat_flags(args.chat_flag)
+    prior_flags = snapshot_chat_flags(session, base_url, list(chat_flag_updates))
+    prior_llm = None if args.skip_llm_config else active_llm_config(session, base_url)
+    config_uuid: str | None = None
+    records: list[dict[str, Any]] = []
+    try:
+        return _run(args, session, base_url, questions, chat_flag_updates, records, requests)
+    finally:
+        if not args.skip_llm_config:
+            config_uuid = active_llm_config(session, base_url)
+        conversations = (
+            []
+            if args.keep_conversations
+            else [str(r['conversation_uuid']) for r in records if r.get('conversation_uuid')]
+        )
+        restore_state(
+            session,
+            base_url,
+            chat_flags=prior_flags,
+            prior_llm=prior_llm,
+            current_llm=config_uuid,
+            conversations=conversations,
+        )
+        with contextlib.suppress(Exception):
+            session.post(f'{base_url}/auth/logout', timeout=15)
+
+
+def _run(
+    args: argparse.Namespace,
+    session: Any,
+    base_url: str,
+    questions: list[Question],
+    chat_flag_updates: dict[str, bool],
+    records: list[dict[str, Any]],
+    requests: Any,
+) -> int:
+    """The probe proper. Appends each finished record to ``records`` as it goes, so the
+    caller's cleanup sees every conversation even when a later question raises."""
     if not args.skip_llm_config:
         config_uuid = ensure_llm_config(
             session,
@@ -779,7 +882,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         logger.info('active LLM config: %s', config_uuid)
 
-    chat_flag_updates = _parse_chat_flags(args.chat_flag)
     if chat_flag_updates:
         ensure_chat_flags(session, base_url, chat_flag_updates)
 
@@ -802,9 +904,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return result_to_record(result)
 
-    records: list[dict[str, Any]]
     if args.concurrency <= 1:
-        records = [run_one(item, session) for item in enumerate(questions)]
+        for item in enumerate(questions):
+            records.append(run_one(item, session))
     else:
         # One Session per worker THREAD, not one shared: requests.Session is not
         # thread-safe, and each carries its own auth + CSRF cookie pair (see the
@@ -826,7 +928,7 @@ def main(argv: list[str] | None = None) -> int:
             args.concurrency,
         )
         with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-            records = list(pool.map(worker, enumerate(questions)))
+            records.extend(pool.map(worker, enumerate(questions)))
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

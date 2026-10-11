@@ -122,7 +122,7 @@ def test_cleanup_also_selects_volumes_by_the_test_compose_project():
 
 
 @needs_docker
-def test_compose_really_does_keep_the_hyphens():
+def test_compose_really_does_keep_the_hyphens(tmp_path: Path) -> None:
     """Prove the premise instead of restating it.
 
     The entire defect was a belief about how compose names a volume. If that ever changes,
@@ -139,7 +139,7 @@ def test_compose_really_does_keep_the_hyphens():
         volumes:
           probe_data:
     """)
-    tmp = Path(subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip())
+    tmp = tmp_path
     (tmp / "docker-compose.yml").write_text(compose, encoding="utf-8")
     try:
         subprocess.run(

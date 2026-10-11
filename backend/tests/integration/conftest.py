@@ -75,8 +75,8 @@ def shared_pg_container() -> Iterator[str]:
     # Fresh per session and not a credential anyone relies on: the container is
     # `--network none`, so the only way in is our own `docker exec`, which authenticates
     # over the local Unix socket rather than with this password.
-    throwaway_pg.start_container(name, password=uuid.uuid4().hex)
     try:
+        throwaway_pg.start_container(name, password=uuid.uuid4().hex)
         throwaway_pg.wait_ready(name)
         yield name
     finally:

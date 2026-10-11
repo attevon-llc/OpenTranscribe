@@ -336,6 +336,7 @@ def _inject_transcript(
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
     from app.scripts.corpus_injection.injector import inject_meeting
+    from app.scripts.corpus_injection.model import InjectionRecord
     from app.scripts.corpus_injection.model import MeetingDoc
 
     user_id = _admin_user_id(TEST_ADMIN_EMAIL)
@@ -351,80 +352,84 @@ def _inject_transcript(
         language="en",
     )
 
-    session = SessionLocal()
+    # `record` is set the moment the row exists; the finally below deletes it however far
+    # setup got. The API readback asserts are the likeliest thing to fail, and they run
+    # AFTER the row is committed.
+    record: InjectionRecord | None = None
     try:
-        record, _ = inject_meeting(session, doc, user_id, seed=seed, tool_version="e2e-fixture")
-        # Rename to carry OWNED_MEDIA_PREFIX in the exact shape
-        # `scripts/cleanup-test-data.py`'s `owned` spec matches, so a run killed
-        # before this fixture's teardown still gets swept. The injector's own
-        # `{corpus}__{meeting_id}.transcript` name matches nothing there.
-        media_file = session.get(MediaFile, record.media_file_id)
-        assert media_file is not None, "inject_meeting returned an id that does not resolve"
-        media_file.filename = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}.transcript"
+        session = SessionLocal()
+        try:
+            record, _ = inject_meeting(session, doc, user_id, seed=seed, tool_version="e2e-fixture")
+            # Rename to carry OWNED_MEDIA_PREFIX in the exact shape
+            # `scripts/cleanup-test-data.py`'s `owned` spec matches, so a run killed
+            # before this fixture's teardown still gets swept. The injector's own
+            # `{corpus}__{meeting_id}.transcript` name matches nothing there.
+            media_file = session.get(MediaFile, record.media_file_id)
+            assert media_file is not None, "inject_meeting returned an id that does not resolve"
+            media_file.filename = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}.transcript"
 
-        # ⚠️ Without this the transcript is INVISIBLE through the API, and the
-        # reason is not obvious from either side.
-        #
-        # `inject_meeting` leaves `redaction_status` NULL — the transcription
-        # pipeline sets it, and injection skips the pipeline. But
-        # `api/endpoints/files/crud.py::_redaction_pending` treats
-        # `None | pending | processing` alike, so `GET /api/files/{uuid}` and
-        # `/segments` both answer `transcript_segments: []` with
-        # `redaction_pending: true` **forever**. Measured directly: 12 rows in
-        # `transcript_segment`, 0 through the API. That was a live defect in the
-        # injector itself, not something this fixture introduced — every corpus
-        # `app/scripts/corpus_injection` had ever written had an unreadable
-        # transcript in the product, which the RAG eval harness never noticed
-        # because it calls `retrieve_chunks` in-process and never touches the
-        # HTTP file surface.
-        #
-        # ⚠️ Still required, despite `injector.dispatch_redaction`. That repair
-        # is called from `corpus_injection/__main__.py` only — `inject_meeting`,
-        # which is what this fixture calls, still returns a row with
-        # `redaction_status` NULL. Re-checked 2026-09-07: `dispatch_redaction`
-        # has exactly two call sites, the CLI and its own unit test.
-        #
-        # The honest repair here would be to dispatch the real `redaction.detect`
-        # task, but the E2E process has no broker: `tests/conftest.py` sets
-        # `SKIP_REDIS=True` and Celery would publish to localhost:6379, which on
-        # this host is an unrelated container (see that file's own note). So the
-        # fixture writes the terminal state the scan would reach. It is accurate
-        # in substance — this transcript is generated filler containing no PII,
-        # so "scanned, nothing to mask" is the correct end state — but it is
-        # asserted here rather than measured, which is why no redaction test may
-        # be built on this fixture. `test_redaction_e2e.py` uses
-        # `owned_transcribed_file`, which goes through the real scan.
-        media_file.redaction_status = REDACTION_STATUS_DONE
-        session.commit()
-    finally:
-        session.close()
+            # ⚠️ Without this the transcript is INVISIBLE through the API, and the
+            # reason is not obvious from either side.
+            #
+            # `inject_meeting` leaves `redaction_status` NULL — the transcription
+            # pipeline sets it, and injection skips the pipeline. But
+            # `api/endpoints/files/crud.py::_redaction_pending` treats
+            # `None | pending | processing` alike, so `GET /api/files/{uuid}` and
+            # `/segments` both answer `transcript_segments: []` with
+            # `redaction_pending: true` **forever**. Measured directly: 12 rows in
+            # `transcript_segment`, 0 through the API. That was a live defect in the
+            # injector itself, not something this fixture introduced — every corpus
+            # `app/scripts/corpus_injection` had ever written had an unreadable
+            # transcript in the product, which the RAG eval harness never noticed
+            # because it calls `retrieve_chunks` in-process and never touches the
+            # HTTP file surface.
+            #
+            # ⚠️ Still required, despite `injector.dispatch_redaction`. That repair
+            # is called from `corpus_injection/__main__.py` only — `inject_meeting`,
+            # which is what this fixture calls, still returns a row with
+            # `redaction_status` NULL. Re-checked 2026-09-07: `dispatch_redaction`
+            # has exactly two call sites, the CLI and its own unit test.
+            #
+            # The honest repair here would be to dispatch the real `redaction.detect`
+            # task, but the E2E process has no broker: `tests/conftest.py` sets
+            # `SKIP_REDIS=True` and Celery would publish to localhost:6379, which on
+            # this host is an unrelated container (see that file's own note). So the
+            # fixture writes the terminal state the scan would reach. It is accurate
+            # in substance — this transcript is generated filler containing no PII,
+            # so "scanned, nothing to mask" is the correct end state — but it is
+            # asserted here rather than measured, which is why no redaction test may
+            # be built on this fixture. `test_redaction_e2e.py` uses
+            # `owned_transcribed_file`, which goes through the real scan.
+            media_file.redaction_status = REDACTION_STATUS_DONE
+            session.commit()
+        finally:
+            session.close()
 
-    assert record.segment_count == turns, (
-        f"injected {record.segment_count} segments, expected {turns} — the fixture's "
-        "own precondition, not something a consuming test should discover"
-    )
+        assert record.segment_count == turns, (
+            f"injected {record.segment_count} segments, expected {turns} — the fixture's "
+            "own precondition, not something a consuming test should discover"
+        )
 
-    # Prove the rows are readable THROUGH THE API before any test acts on them. Rows in
-    # `transcript_segment` are not the same claim as a transcript the product will serve
-    # — the redaction gate above is exactly that gap, and it presented as ten unrelated
-    # setup errors in files that had nothing to do with redaction.
-    served = requests.get(
-        f"{backend_url}/api/files/{record.file_uuid}/segments",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        params={"segment_limit": "1"},
-        timeout=30,
-    )
-    assert served.status_code == 200, (
-        f"owned injected transcript unreadable: {served.status_code} {served.text[:300]}"
-    )
-    served_total = served.json().get("total_segments", 0)
-    assert served_total == turns, (
-        f"the API serves {served_total} of the {turns} injected segments "
-        f"(redaction_pending={served.json().get('redaction_pending')!r}). The rows exist; "
-        "something is withholding them."
-    )
+        # Prove the rows are readable THROUGH THE API before any test acts on them. Rows in
+        # `transcript_segment` are not the same claim as a transcript the product will serve
+        # — the redaction gate above is exactly that gap, and it presented as ten unrelated
+        # setup errors in files that had nothing to do with redaction.
+        served = requests.get(
+            f"{backend_url}/api/files/{record.file_uuid}/segments",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            params={"segment_limit": "1"},
+            timeout=30,
+        )
+        assert served.status_code == 200, (
+            f"owned injected transcript unreadable: {served.status_code} {served.text[:300]}"
+        )
+        served_total = served.json().get("total_segments", 0)
+        assert served_total == turns, (
+            f"the API serves {served_total} of the {turns} injected segments "
+            f"(redaction_pending={served.json().get('redaction_pending')!r}). The rows exist; "
+            "something is withholding them."
+        )
 
-    try:
         yield {
             "uuid": record.file_uuid,
             "media_file_id": record.media_file_id,
@@ -437,7 +442,8 @@ def _inject_transcript(
         # segments, the speakers, the storage object (there is none — the endpoint
         # tolerates that) and the OpenSearch chunks in one call, and it is the same
         # cleanup every other owned artifact in this suite uses.
-        delete_media_file(backend_url, admin_token, record.file_uuid)
+        if record is not None:
+            delete_media_file(backend_url, admin_token, record.file_uuid)
 
 
 @pytest.fixture(scope="session")

@@ -190,46 +190,50 @@ def search_corpus(search_corpus_user, search_corpus_token):
     user_id = search_corpus_user["id"]
     seed = f"pytest-searchqual-{uuid.uuid4().hex[:10]}"
 
-    db = SessionLocal()
+    # Teardown covers a FAILED setup too: once a meeting is injected and dispatched, its
+    # rows and its transcript_chunks documents exist whether or not `_wait_for_indexed`
+    # converges, so the finally below must run on that path as well.
     records = {}
     try:
-        for doc in build_meeting_docs():
-            record, _ = inject_meeting(db, doc, user_id, seed=seed, tool_version="pytest")
-            db.commit()
-            dispatch_indexing(record, user_id, mode="eager")
-            records[doc.meeting_id] = record
-    finally:
-        db.close()
-
-    _wait_for_indexed([r.file_uuid for r in records.values()])
-
-    meeting_id_to_file_uuid = {mid: r.file_uuid for mid, r in records.items()}
-    file_uuid_to_meeting_id = {r.file_uuid: mid for mid, r in records.items()}
-
-    yield {
-        "records": records,
-        "meeting_id_to_file_uuid": meeting_id_to_file_uuid,
-        "file_uuid_to_meeting_id": file_uuid_to_meeting_id,
-    }
-
-    client = get_opensearch_client()
-    if client is not None:
-        client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
-    indexer = TranscriptIndexingService()
-    db = SessionLocal()
-    try:
-        for record in records.values():
-            media_file = db.get(MediaFile, record.media_file_id)
-            if media_file is not None:
-                db.query(TranscriptSegment).filter(
-                    TranscriptSegment.media_file_id == media_file.id
-                ).delete()
-                db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete()
-                db.delete(media_file)
+        db = SessionLocal()
+        try:
+            for doc in build_meeting_docs():
+                record, _ = inject_meeting(db, doc, user_id, seed=seed, tool_version="pytest")
                 db.commit()
-            indexer.delete_transcript_chunks(record.file_uuid)
+                records[doc.meeting_id] = record
+                dispatch_indexing(record, user_id, mode="eager")
+        finally:
+            db.close()
+
+        _wait_for_indexed([r.file_uuid for r in records.values()])
+
+        meeting_id_to_file_uuid = {mid: r.file_uuid for mid, r in records.items()}
+        file_uuid_to_meeting_id = {r.file_uuid: mid for mid, r in records.items()}
+
+        yield {
+            "records": records,
+            "meeting_id_to_file_uuid": meeting_id_to_file_uuid,
+            "file_uuid_to_meeting_id": file_uuid_to_meeting_id,
+        }
     finally:
-        db.close()
+        client = get_opensearch_client()
+        if client is not None:
+            client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+        indexer = TranscriptIndexingService()
+        db = SessionLocal()
+        try:
+            for record in records.values():
+                media_file = db.get(MediaFile, record.media_file_id)
+                if media_file is not None:
+                    db.query(TranscriptSegment).filter(
+                        TranscriptSegment.media_file_id == media_file.id
+                    ).delete()
+                    db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete()
+                    db.delete(media_file)
+                    db.commit()
+                indexer.delete_transcript_chunks(record.file_uuid)
+        finally:
+            db.close()
 
 
 @pytest.fixture(scope="session")

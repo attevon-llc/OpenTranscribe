@@ -95,11 +95,11 @@ def test_deleting_a_user_removes_their_media_object_from_real_storage(
     thumb_key = f"tests/issue695/{fuuid}/thumb.jpg"
     bystander_key = f"tests/issue695/bystander-{uuid_pkg.uuid4()}/orig.bin"
 
-    _put(bucket, original_key)
-    _put(bucket, thumb_key)
-    _put(bucket, bystander_key)
-
     try:
+        _put(bucket, original_key)
+        _put(bucket, thumb_key)
+        _put(bucket, bystander_key)
+
         _make_media_file(
             db_session,
             int(normal_user.id),
@@ -134,9 +134,8 @@ def test_the_users_router_delete_removes_the_objects_too(
     fuuid = uuid_pkg.uuid4()
     original_key = f"tests/issue695/{fuuid}/orig.bin"
 
-    _put(bucket, original_key)
-
     try:
+        _put(bucket, original_key)
         _make_media_file(db_session, int(normal_user.id), uuid=fuuid, storage_path=original_key)
 
         response = client.delete(f"/api/users/{normal_user.uuid}", headers=admin_token_headers)
@@ -182,11 +181,11 @@ def test_the_derived_cache_renders_are_removed(
     other_media_file_id = int(other_media_file.id)
     neighbour_key = f"derived/{other_media_file_id}_{base}_with_speakers.mp4"
 
-    _put(bucket, plain_key)
-    _put(bucket, fingerprinted_key)
-    _put(bucket, neighbour_key)
-
     try:
+        _put(bucket, plain_key)
+        _put(bucket, fingerprinted_key)
+        _put(bucket, neighbour_key)
+
         response = client.delete(
             f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers
         )
@@ -211,18 +210,18 @@ def test_the_speaker_profile_avatar_goes_with_the_account(
     """``SpeakerProfile.avatar_path`` is orphaned by the ADMIN path too (issue #695)."""
     bucket = settings.MEDIA_BUCKET_NAME
     avatar_key = f"tests/issue695/avatars/{uuid_pkg.uuid4()}.jpg"
-    _put(bucket, avatar_key)
-
-    profile = SpeakerProfile(
-        uuid=uuid_pkg.uuid4(),
-        user_id=int(normal_user.id),
-        name=f"Profile {uuid_pkg.uuid4().hex[:8]}",
-        avatar_path=avatar_key,
-    )
-    db_session.add(profile)
-    db_session.commit()
-
     try:
+        _put(bucket, avatar_key)
+
+        profile = SpeakerProfile(
+            uuid=uuid_pkg.uuid4(),
+            user_id=int(normal_user.id),
+            name=f"Profile {uuid_pkg.uuid4().hex[:8]}",
+            avatar_path=avatar_key,
+        )
+        db_session.add(profile)
+        db_session.commit()
+
         response = client.delete(
             f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers
         )

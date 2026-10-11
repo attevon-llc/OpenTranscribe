@@ -106,6 +106,7 @@ log_step() {{ :; }}
 log_ok()   {{ :; }}
 overlay_container_name() {{ echo "opentranscribe-$1-test"; }}
 STOPPED_LOG="$(mktemp)"
+trap 'rm -f "$STOPPED_LOG"' EXIT
 docker() {{
     if [ "$1" = "stop" ] || [ "$1" = "rm" ]; then
         echo "$1:$2" >> "$STOPPED_LOG"

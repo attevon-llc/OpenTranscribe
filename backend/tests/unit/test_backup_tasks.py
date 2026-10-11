@@ -56,8 +56,8 @@ from app.services import backup_service as bs
 from app.services import media_mirror_service as mm
 from app.tasks import backup_tasks
 from app.utils.task_lock import TaskLockManager
+from tests.docker_ops import remove_container
 from tests.docker_ops import run_container
-from tests.docker_ops import stop_container
 
 pytestmark = pytest.mark.xdist_group("backup_system_settings")
 
@@ -201,25 +201,29 @@ def real_lock_manager(monkeypatch):
 
     port = _free_port()
     name = f"ot-test-redis-backup-tasks-{uuid.uuid4().hex[:10]}"
-    # No try/except here: the precondition check above is the intended skip
+    # No `except` here: the precondition check above is the intended skip
     # path (docker missing entirely, e.g. some CI runners). If the docker CLI
     # IS present but this invocation fails for some other reason, that is a
     # real environment problem worth failing loudly on, not masking as a skip.
-    run_container(
-        [
-            "run",
-            "-d",
-            "--rm",
-            "--name",
-            name,
-            "-p",
-            f"127.0.0.1:{port}:6379",
-            "redis:7-alpine",
-        ],
-    )
-
-    client = redis.Redis(host="127.0.0.1", port=port, db=0)
+    # The try opens BEFORE run_container: a client-side timeout followed by the retry can
+    # leave a running container even though run_container raised, so teardown must
+    # remove it by name regardless of how far setup got.
+    client: redis.Redis | None = None
     try:
+        run_container(
+            [
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                name,
+                "-p",
+                f"127.0.0.1:{port}:6379",
+                "redis:7-alpine",
+            ],
+        )
+
+        client = redis.Redis(host="127.0.0.1", port=port, db=0)
         deadline = time.time() + 15
         ready = False
         while time.time() < deadline:
@@ -237,8 +241,9 @@ def real_lock_manager(monkeypatch):
         monkeypatch.setattr(backup_tasks, "task_lock_manager", mgr)
         yield mgr
     finally:
-        client.close()
-        stop_container(name)
+        if client is not None:
+            client.close()
+        remove_container(name)
 
 
 def test_run_backup_lock_actually_prevents_a_concurrent_run(real_lock_manager):

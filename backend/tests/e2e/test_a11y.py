@@ -48,6 +48,7 @@ from a11y_lib import form_login_with_retry
 from a11y_lib import load_allowlist
 from a11y_lib import run_axe
 from a11y_lib import set_theme
+from conftest import E2E_STORAGE_STATE_PREFIX
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -70,22 +71,23 @@ def auth_storage_state(browser: Any, base_url: str) -> Any:
     import os
     import tempfile
 
-    context = browser.new_context(
-        viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
-    )
-    page = context.new_page()
-    form_login_with_retry(page, base_url)
+    fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
+    try:
+        os.close(fd)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
+        )
+        page = context.new_page()
+        form_login_with_retry(page, base_url)
 
-    fd, state_file = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    context.storage_state(path=state_file)
-    page.close()
-    context.close()
+        context.storage_state(path=state_file)
+        page.close()
+        context.close()
 
-    yield state_file
-
-    if os.path.exists(state_file):
-        os.unlink(state_file)
+        yield state_file
+    finally:
+        if os.path.exists(state_file):
+            os.unlink(state_file)
 
 
 @pytest.fixture

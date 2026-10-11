@@ -28,8 +28,13 @@ so one contended second costs an entire module.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import time
+
+#: Label every throwaway container/network a test creates must carry, so a run killed before
+#: its teardown leaves something the test-artifact sweep can find and nothing else matches.
+TEST_ARTIFACT_LABEL = "ot-test-artifact=1"
 
 #: Budget for a single docker CLI operation that starts or stops a container.
 #:
@@ -65,7 +70,12 @@ def run_container(
     Returns the completed process on success; raises :class:`DockerOpError` with every
     attempt's diagnosis when all attempts fail. The message names the elapsed time and the
     stderr of the last attempt, because "it timed out" without the budget is unactionable.
+
+    A ``run`` is always given :data:`TEST_ARTIFACT_LABEL`: every caller is a test, and the
+    label is what lets the test-artifact sweep find a container whose teardown never ran.
     """
+    if args and args[0] == "run":
+        args = ["run", "--label", TEST_ARTIFACT_LABEL, *args[1:]]
     problems: list[str] = []
     for attempt in range(1, attempts + 1):
         started = time.monotonic()
@@ -93,10 +103,18 @@ def run_container(
     )
 
 
-def stop_container(name: str, *, timeout: int = DOCKER_OP_TIMEOUT) -> None:
-    """Best-effort teardown.
+def remove_container(name: str, *, timeout: int = DOCKER_OP_TIMEOUT) -> None:
+    """Best-effort ``docker rm -f`` by name, tolerant of the container not existing.
+
+    For teardown that must also cover a ``run_container`` that raised: a client-side timeout
+    can still leave the daemon starting the container, and the retry can then fail on the
+    name conflict, so only removal by NAME is guaranteed to find it. ``rm -f`` rather than
+    ``stop``: a container that was created but never started is not removed by ``--rm``.
 
     Never raises: this runs in fixture teardown, where masking the test's own failure with
-    a cleanup error loses the finding. ``--rm`` removes the container once stopped.
+    a cleanup error loses the finding.
     """
-    subprocess.run(["docker", "stop", name], capture_output=True, timeout=timeout, check=False)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        subprocess.run(
+            ["docker", "rm", "-f", name], capture_output=True, timeout=timeout, check=False
+        )

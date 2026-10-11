@@ -250,6 +250,30 @@ fi
 # shellcheck source=scripts/lib/dev-test-overlays.sh
 source "$REPO_ROOT/scripts/lib/dev-test-overlays.sh"
 
+# ONE exit trap for everything this run must undo (dev-test-overlays.sh's own `trap
+# teardown_overlays EXIT` is replaced here, and called from it): the end-of-run test-data
+# sweep (issue #1195), the llm-test container if this run started it, then the overlays.
+# The sweep is armed only once a phase that writes to the stack is about to run, so
+# --dry-run / --list-overlays / a precondition failure never sweep. The wrapped scripts see
+# OT_TEST_DATA_SWEEP_AT_EXIT=parent and leave the end sweep to this one, which runs after
+# every phase rather than once per phase.
+LLM_TEST_STARTED_BY_US=false
+_rdt_exit_cleanup() {
+    if $LLM_TEST_STARTED_BY_US; then
+        echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: stopping llm-test-vllm (this run started it)"
+        local c
+        c="$(overlay_container_name llm-test-vllm || true)"
+        if [[ -n "$c" ]]; then docker stop "$c" >/dev/null 2>&1 || true; fi
+        LLM_TEST_STARTED_BY_US=false
+    fi
+    teardown_overlays
+}
+# shellcheck source=scripts/lib/test-data-sweep.sh
+source "$REPO_ROOT/scripts/lib/test-data-sweep.sh"
+TDS_SWEEP_ENABLED=0
+tds_own_end_sweep_for_children
+tds_sweep_at_exit "$VENV_PY" "$REPO_ROOT" _rdt_exit_cleanup
+
 
 # ---------------------------------------------------------------------------- --list-overlays
 if $LIST_OVERLAYS || $DRY_RUN; then
@@ -398,7 +422,6 @@ fi
 # default 2 — an idle secondary card, never this project's own GPU 1). Same "bring it up if
 # not already there" shape as --with-gpu-scale above, but unlike that one this container is
 # cheap to tear back down, so it does — only if THIS run was the one that started it.
-LLM_TEST_STARTED_BY_US=false
 if $WITH_PIPELINE_SMOKE; then
     LLM_TEST_PORT="${LLM_TEST_PORT:-5195}"
     LLM_TEST_CONTAINER="$(overlay_container_name llm-test-vllm)"
@@ -407,8 +430,10 @@ if $WITH_PIPELINE_SMOKE; then
     else
         echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: bringing up --with-llm-test (real GPU-backed model," \
              "can take several minutes on a cold model download)"
-        start_stack_or_die "--with-llm-test (GPU-backed vLLM)" "llm-test-bringup" --with-llm-test
+        # Set BEFORE the start: a start or health wait that fails (exit 3) or is interrupted
+        # still stops the GPU-holding container from the exit trap.
         LLM_TEST_STARTED_BY_US=true
+        start_stack_or_die "--with-llm-test (GPU-backed vLLM)" "llm-test-bringup" --with-llm-test
         echo -e "${YELLOW}==>${NC} waiting for the vLLM OpenAI-compatible endpoint on :$LLM_TEST_PORT..."
         LLM_TEST_DEADLINE=$(( $(date +%s) + 600 ))
         until curl -sf "http://localhost:$LLM_TEST_PORT/v1/models" >/dev/null 2>&1; do
@@ -422,6 +447,11 @@ if $WITH_PIPELINE_SMOKE; then
         echo -e "${GREEN}==>${NC} llm-test-vllm is healthy"
     fi
     export RUN_PIPELINE_SMOKE=1
+fi
+
+# Phases are about to write to the stack: arm the end-of-run sweep (see the trap above).
+if $RUN_BACKEND || $RUN_E2E || $WITH_PIPELINE_SMOKE || $WITH_MUTATION_TESTS; then
+    TDS_SWEEP_ENABLED=1
 fi
 
 declare -a PHASE_NAMES=()
@@ -805,9 +835,12 @@ if $WITH_PIPELINE_SMOKE; then
         "$REPO_ROOT/scripts/e2e/run-e2e.sh" backend/tests/e2e/test_full_pipeline_smoke.py -v
 fi
 
+# Stopped here (before the report) rather than left to the exit trap, so the GPU is free
+# as soon as the last phase that needs it is done; the trap covers every early exit.
 if $LLM_TEST_STARTED_BY_US; then
     echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: stopping llm-test-vllm (this run started it)"
     docker stop "$(overlay_container_name llm-test-vllm)" >/dev/null 2>&1 || true
+    LLM_TEST_STARTED_BY_US=false
 fi
 
 echo ""

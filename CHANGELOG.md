@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a raw `type="range"` input or on thumb rules declared outside the shared stylesheet. The
   gallery's dual-thumb file-size and duration sliders keep their own style.
 
+- **Test runs clean up after themselves, and `./opentr.sh test-cleanup` sweeps what an
+  interrupted one left (#1195).** `scripts/cleanup-test-data.py` gains store planes for leaked
+  test OpenSearch indexes and ingest pipelines, MinIO buckets and test objects, scratch Postgres
+  databases, `/tmp` trees and labelled throwaway docker resources, plus speaker profiles and
+  clusters in the row sweep. Only registered test shapes are ever candidates; production names
+  are refused, a mixed-stack port set is refused, and everything younger than the liveness
+  cutoff (now registered by every pytest run) or `--min-age-minutes` is kept.
+  `scripts/cleanup-test-leftovers.sh` runs its Tier A pass once or in the background against
+  one named stack. The gate scripts now also sweep at the END of a run, from an EXIT trap.
+
 - **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
   `multi`, `single`; default `auto`). New API under `/api/support-access`,
   `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,
@@ -201,6 +211,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loads, user sync, lockout, audit and session work now run in the threadpool.
 
 ### Fixed
+
+- **Tests no longer leak stores on failure (#1195).** Twenty-odd fixtures created an OpenSearch
+  index, bucket, container or temp file and then did fallible work before the `try` that
+  removes it; every pytest process left an `opentranscribe_test_*` tree in `/tmp`; the speaker
+  rename e2e test left an `E2E Propagated <hex>` profile; release rehearsals' `--cleanup` never
+  removed the TEST_ROOT tree; `run-dev-tests.sh` could leave a GPU-holding vLLM and its
+  overlays up after an early exit; and `probe_chat_rag.py` left its conversations, chat flags
+  and active LLM changed. An AST guard now fails any new creation without a teardown path.
 
 - **A retry replays the file's own request (#1203).** Single and bulk retry, the SPA's retry
   button and the recovery sweep re-ran a file with defaults: a file submitted with a Fast

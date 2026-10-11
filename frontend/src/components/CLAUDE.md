@@ -20,6 +20,12 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   through to one branch's copy for any surface it wasn't written to handle. Dismissal is
   per-surface in `localStorage` (`opentr:retrievalQualityNotice:<surface>`) and, being a UI
   preference, is deliberately NOT cleared by `clearUserState`.
+- `NotificationsPanel.svelte` — bell panel. `ICON_BY_TYPE` maps every notification type to an
+  icon name and **each name needs a render branch** (an unmapped name silently shows the bell;
+  `NotificationsPanel.test.ts` asserts coverage). `transcription_status` is the `logo` icon, an
+  `<img>` of `assets/logo-icon.png` (the only non-SVG entry, so tests query `.notification-icon img`);
+  topic/auto-label share the tag glyph and collection notifications use the folder glyph. Auto-clear
+  is deliberately NOT built; it needs a written policy first.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`.
   Each subfolder holds the presentational children split out of one oversized coordinator.

@@ -107,7 +107,6 @@ export interface SearchState {
   // nothing in the UI sent or rendered it.
   selectedLanguage: string | null;
   durationRange: { min: number | null; max: number | null };
-  fileSizeRange: { min: number | null; max: number | null };
   selectedStatuses: string[];
   lastSearchParams: string;
   scrollPosition: number;
@@ -145,7 +144,6 @@ const initialState: SearchState = {
   selectedCollectionId: null,
   selectedLanguage: null,
   durationRange: { min: null, max: null },
-  fileSizeRange: { min: null, max: null },
   selectedStatuses: [],
   lastSearchParams: '',
   scrollPosition: 0,
@@ -202,8 +200,6 @@ function createSearchStore() {
       update((s) => ({ ...s, selectedLanguage, page: 1 })),
     setDurationRange: (durationRange: { min: number | null; max: number | null }) =>
       update((s) => ({ ...s, durationRange, page: 1 })),
-    setFileSizeRange: (fileSizeRange: { min: number | null; max: number | null }) =>
-      update((s) => ({ ...s, fileSizeRange, page: 1 })),
     setStatuses: (selectedStatuses: string[]) =>
       update((s) => ({ ...s, selectedStatuses, page: 1 })),
     setFilters: (filters: Partial<SearchState>) => update((s) => ({ ...s, ...filters, page: 1 })),

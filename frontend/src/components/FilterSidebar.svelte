@@ -52,24 +52,12 @@
    */
 
   // Props
+  // The filename/title search lives in the gallery toolbar (`GalleryHeader`)
+  // and on /search's own query box, never in this sidebar. The prop stays only
+  // so the `filter` event keeps echoing the page's current search text back to
+  // the route handler unchanged.
   /** @type {string} */
   export let searchQuery = '';
-
-  /**
-   * Show the "Search Files" section in this sidebar.
-   *
-   * Issue #747 moved the gallery's filename/title search into the toolbar
-   * (`GalleryHeader`), so `GalleryFilterPanel` renders this component with
-   * `showSearchField={false}` — the search UI simply doesn't belong in the
-   * sidebar there any more.
-   *
-   * `/search` renders it with `showSearchField={false}` too (issue #1197): the
-   * page has its own query box plus the title/speaker/summary source chips, so
-   * a second filename box in the sidebar was a confusing duplicate. The
-   * `searchQuery` prop, its debounce watcher, and the `search` field in the
-   * `filter` event payload remain for any consumer that opts back in.
-   */
-  export let showSearchField = true;
 
   /** @type {string[]} */
   export let selectedTags: string[] = [];
@@ -105,20 +93,11 @@
   // FAILED — the old catch set `metadataLoaded = true` and carried on with the
   // seed, so the control silently described a library that did not exist.
   let durationBounds = { min: 0, max: 3600 };
-  let fileSizeBounds = { min: 0, max: 1024 }; // in MB
   let metadataLoaded = false;
   let errorMetadata: string | null = null;
 
   // Slider values (two-element arrays for dual handles)
   let durationSliderValues: [number, number] = [0, 3600];
-  let fileSizeSliderValues: [number, number] = [0, 1024];
-
-  // File size range for filtering (in MB)
-  /** @type {{ min: number|null, max: number|null }} */
-  export let fileSizeRange: { min: number | null, max: number | null } = {
-    min: null,
-    max: null
-  };
 
   /** @type {string[]} */
   export let selectedFileTypes: string[] = []; // ['audio', 'video']
@@ -138,10 +117,9 @@
   export let selectedOwners: string[] = []; // Owner UUIDs
 
   // `GET /search` has no notion of a specific-owner filter (it ranks
-  // OpenSearch hits, not `/files` rows), so the search page hides this
-  // section the same way it already hides `showSearchField`'s counterpart —
-  // rendering a control that silently does nothing would be worse than not
-  // rendering it.
+  // OpenSearch hits, not `/files` rows), so the search page hides the owner
+  // dropdown (the Mine/Shared chips above it stay) — rendering a control that
+  // silently does nothing would be worse than not rendering it.
   export let showOwnerFilter = true;
 
   // State
@@ -242,7 +220,6 @@
   const debouncedApply = createDebouncedHandler(() => applyFilters(), DEBOUNCE_DELAY);
 
   // Previous values for reactive change detection
-  let prevSearchQuery = searchQuery;
   let prevCollectionId = selectedCollectionId;
   let prevLanguage = selectedLanguage;
 
@@ -258,19 +235,6 @@
   onDestroy(() => {
     debouncedApply.cleanup();
   });
-
-  // Reactive watchers for text inputs (debounced).
-  //
-  // Gated on `showSearchField` too: when it's false (the gallery — issue #747),
-  // `searchQuery` is driven entirely by the toolbar's own SearchBar and its own
-  // debounce/fetch, one level up in routes/+page.svelte. Without this gate,
-  // every toolbar keystroke would ALSO retrigger this component's independent
-  // 400ms debounce and dispatch a second, redundant `filter` event — a
-  // duplicate fetch for a value that was already applied.
-  $: if (isInitialized && showSearchField && searchQuery !== prevSearchQuery) {
-    prevSearchQuery = searchQuery;
-    triggerFiltersDebounced();
-  }
 
   // Reactive watcher for collection selection (immediate)
   $: if (isInitialized && selectedLanguage !== prevLanguage) {
@@ -582,15 +546,6 @@
         }
       }
 
-      if (data.file_size) {
-        const minSize = Math.floor((data.file_size.min ?? 0) / (1024 * 1024));
-        const maxSize = Math.ceil((data.file_size.max ?? 0) / (1024 * 1024));
-        fileSizeBounds = { min: minSize, max: Math.max(maxSize, minSize + 1) };
-        if (fileSizeRange.min === null && fileSizeRange.max === null) {
-          fileSizeSliderValues = [fileSizeBounds.min, fileSizeBounds.max];
-        }
-      }
-
       availableLanguages = Array.isArray(data.languages) ? data.languages : [];
 
       metadataLoaded = true;
@@ -603,11 +558,6 @@
       metadataLoaded = false;
       errorMetadata = describeError(error);
     }
-  }
-
-  function formatFileSize(mb: number): string {
-    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-    return `${Math.round(mb)} MB`;
   }
 
   function handleDurationSliderChange(e: CustomEvent<{ values: number[] }>) {
@@ -667,17 +617,6 @@
     triggerFiltersImmediate();
   }
 
-  function handleFileSizeSliderChange(e: CustomEvent<{ values: number[] }>) {
-    const [min, max] = e.detail.values;
-    const isAtMin = min <= fileSizeBounds.min;
-    const isAtMax = max >= fileSizeBounds.max;
-    fileSizeRange = {
-      min: isAtMin ? null : min,
-      max: isAtMax ? null : max,
-    };
-    triggerFiltersDebounced();
-  }
-
   /**
    * Handle ownership filter change
    */
@@ -726,7 +665,6 @@
       language: selectedLanguage,
       dates: dateRange,
       durationRange,
-      fileSizeRange,
       fileTypes: selectedFileTypes,
       statuses: selectedStatuses,
       ownership: ownershipFilter,
@@ -746,7 +684,6 @@
     selectedLanguage = null;
     dateRange = { from: null, to: null };
     durationRange = { min: null, max: null };
-    fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
     ownershipFilter = 'all';
@@ -754,10 +691,8 @@
 
     // Reset sliders to full bounds
     durationSliderValues = [durationBounds.min, durationBounds.max];
-    fileSizeSliderValues = [fileSizeBounds.min, fileSizeBounds.max];
 
     // Sync prev values so watchers don't fire on re-enable
-    prevSearchQuery = '';
     prevCollectionId = null;
 
     // Clear any pending debounce
@@ -808,15 +743,8 @@
         durationRange.max ?? durationBounds.max,
       ];
     }
-    if (fileSizeRange.min !== null || fileSizeRange.max !== null) {
-      fileSizeSliderValues = [
-        fileSizeRange.min ?? fileSizeBounds.min,
-        fileSizeRange.max ?? fileSizeBounds.max,
-      ];
-    }
 
     // Sync prev values and enable reactive watchers after mount
-    prevSearchQuery = searchQuery;
     prevCollectionId = selectedCollectionId;
     setTimeout(() => {
       isInitialized = true;
@@ -840,29 +768,11 @@
     </div>
   </div>
 
-  {#if showSearchField}
-    <div class="filter-section">
-      <h3>{$t('filter.searchFiles')}</h3>
-      <input
-        type="text"
-        bind:value={searchQuery}
-        on:keydown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
-        placeholder={$t('filter.searchPlaceholder')}
-        class="filter-input"
-        title={$t('filter.searchTooltip')}
-      />
-      <small class="input-help">{$t('filter.searchHelp')}</small>
-    </div>
-  {/if}
-
-  <!-- Section order (#750 item 5, J11): sections that have a matching list-view
-       column, in that column's order (Type, Speakers, Duration, Date, Size,
-       Status), then the sections with no column at all (Tags, Collections,
-       Language), then Ownership last. This is a judgment call, not a
-       derivation — the list view has no Tags/Collections/Language/Ownership
-       column, so "matches the column order" only constrains part of the list.
-       Flagging as reviewable rather than settled; take it from the designer's
-       mockup if one exists. -->
+  <!-- Section order is settled (#750 item 26, owner decision 2026-10-11): the
+       sections that mirror a list-view column come first in that column's
+       order (Type, Speakers, Duration, Date, Status), then the sections with
+       no column (Tags, Collections, Language), then Ownership last. The
+       file-size filter was removed on purpose; size is a proxy for duration. -->
 
   <!-- File Type -->
   <div class="filter-section">
@@ -1065,46 +975,6 @@
     />
   </div>
 
-  <!-- File Size range — same gate as Duration, above. -->
-  {#if errorMetadata}
-    <div class="filter-section">
-      <h3>{$t('filter.fileSize')}</h3>
-      <EmptyState
-        icon="⚠️"
-        title={$t('filter.rangesLoadFailed')}
-        description={$t('filter.rangesLoadFailedHelp')}
-        padding="12px 0"
-      >
-        <button class="retry-button" data-testid="filesize-metadata-retry" on:click={fetchMediaMetadata}
-          >{$t('filter.retry')}</button>
-      </EmptyState>
-    </div>
-  {:else if !metadataLoaded}
-    <div class="filter-section">
-      <h3>{$t('filter.fileSize')}</h3>
-      <p class="loading-text">{$t('filter.loadingRanges')}</p>
-    </div>
-  {:else}
-    <div class="filter-section">
-      <h3>{$t('filter.fileSize')}</h3>
-      <div class="slider-labels">
-        <span>{formatFileSize(fileSizeSliderValues[0])}</span>
-        <span>{formatFileSize(fileSizeSliderValues[1])}</span>
-      </div>
-      <div class="slider-wrapper">
-        <RangeSlider
-          bind:values={fileSizeSliderValues}
-          min={fileSizeBounds.min}
-          max={fileSizeBounds.max}
-          step={fileSizeBounds.max > 10240 ? 100 : fileSizeBounds.max > 1024 ? 10 : 1}
-          range
-          pushy
-          on:change={handleFileSizeSliderChange}
-        />
-      </div>
-    </div>
-  {/if}
-
   <!-- Processing Status -->
   <div class="filter-section">
     <h3>{$t('filter.processingStatus')}</h3>
@@ -1218,11 +1088,7 @@
         {$t('filter.sharedWithMe')}
       </FilterChipButton>
     </div>
-  </div>
-
-  {#if showOwnerFilter}
-    <div class="filter-section">
-      <h3>{$t('filter.owners')}</h3>
+    {#if showOwnerFilter}
       {#if loadingOwners}
         <p class="loading-text">{$t('filter.loadingOwners')}</p>
       {:else if errorOwners}
@@ -1249,8 +1115,8 @@
           />
         </div>
       {/if}
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -1336,13 +1202,6 @@
     letter-spacing: 0.04em;
     color: var(--text-secondary);
     margin: 0;
-  }
-
-  .filter-input {
-    padding: 0.45rem 0.7rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font-size: 0.8rem;
   }
 
   /* Section header with inline clear button */

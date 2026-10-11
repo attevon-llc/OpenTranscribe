@@ -9,7 +9,7 @@
   }
 </script>
 
-<!-- Implicit label (no id): the panel is mounted from two places, so an id would be duplicated. -->
+<!-- Implicit label: pairs the text with the select without needing an id. -->
 <label class="retention-setting">
   <span>{$t('notifications.retention.label')}</span>
   <select value={$notificationRetention} on:change={onChange}>

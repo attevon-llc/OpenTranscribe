@@ -5673,5 +5673,6 @@
   "supportAccess.selfApproval": "Vous ne pouvez pas approuver votre propre demande.",
   "supportAccess.notify.requested": "Nouvelle demande d'accès support de {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} a démarré un accès d'urgence à {{target}} jusqu'à {{time}}.",
-  "supportAccess.notify.review": "Examiner"
+  "supportAccess.notify.review": "Examiner",
+  "ui.rangeSlider.systemDefault": "Valeur par défaut du système : {{value}}"
 }

@@ -215,53 +215,6 @@
   margin: 0 0 1rem 0;
 }
 
-.tx-form .slider-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.tx-form .form-slider {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
-  outline: none;
-}
-
-.tx-form .form-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--primary-color);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.tx-form .form-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--primary-color);
-  cursor: pointer;
-  border: 2px solid white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.tx-form .slider-value {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-color);
-  font-family: 'Courier New', Courier, monospace;
-  min-width: 3rem;
-  text-align: right;
-}
-
 .tx-form .number-input-wide {
   width: 100px;
   text-align: center;

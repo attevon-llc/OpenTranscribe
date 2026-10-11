@@ -180,3 +180,9 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` hide
   (Account) are the two settings faces of support-access grants (issue #1122); both render only
   when `tenancyMode === 'multi'`, and `SettingsModal` yields Escape to nested `BaseModal`s so
   closing a break-glass dialog never closes Settings. Detail: `../supportAccess/CLAUDE.md`.
+- **Sliders: use `$components/ui/RangeSlider.svelte`, never a raw `<input type="range">`.** One
+  design (the Content Redaction toxicity threshold: label, live value badge, native slider, hint)
+  is shared by every settings slider; its CSS lives in `src/styles/range-slider.css`. Keep the
+  element `id` (e2e/unit selectors use it), put a translated `hint` and any `InfoTip` through the
+  `label-extra` slot, and pass `defaultValue` to show a "System default: X" line next to the
+  control. `ui/rangeSliderStructure.test.ts` fails the build on a raw range input.

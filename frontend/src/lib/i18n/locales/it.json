@@ -5673,5 +5673,6 @@
   "supportAccess.selfApproval": "Non puoi approvare la tua stessa richiesta.",
   "supportAccess.notify.requested": "Nuova richiesta di accesso di supporto da {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} ha avviato un accesso di emergenza a {{target}} fino alle {{time}}.",
-  "supportAccess.notify.review": "Verifica"
+  "supportAccess.notify.review": "Verifica",
+  "ui.rangeSlider.systemDefault": "Predefinito di sistema: {{value}}"
 }

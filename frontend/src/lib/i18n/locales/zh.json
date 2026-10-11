@@ -5673,5 +5673,6 @@
   "supportAccess.selfApproval": "您不能批准自己的请求。",
   "supportAccess.notify.requested": "{{grantee}} 提交了新的支持访问请求。",
   "supportAccess.notify.breakGlass": "{{grantee}} 已开始对 {{target}} 的紧急访问，持续到 {{time}}。",
-  "supportAccess.notify.review": "查看"
+  "supportAccess.notify.review": "查看",
+  "ui.rangeSlider.systemDefault": "系统默认值：{{value}}"
 }

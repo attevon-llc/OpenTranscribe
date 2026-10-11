@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import SettingsCard from './SettingsCard.svelte';
   import InfoTip from './InfoTip.svelte';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
 
   export let vadThreshold: number;
   export let vadMinSilenceMs: number;
@@ -19,23 +20,17 @@
   description={$t('settings.transcription.vadDesc')}
 >
   <div class="form-group">
-    <label for="vad-threshold" class="form-label">
-      {$t('settings.transcription.vadThreshold')}
-      <InfoTip inline>{$t('settings.transcription.vadThresholdTooltip')}</InfoTip>
-    </label>
-    <div class="slider-row">
-      <input
-        id="vad-threshold"
-        type="range"
-        min="0.1"
-        max="0.95"
-        step="0.05"
-        class="form-slider"
-        bind:value={vadThreshold}
-      />
-      <span class="slider-value">{vadThreshold.toFixed(2)}</span>
-    </div>
-    <p class="input-hint">{$t('settings.transcription.vadThresholdHint')}</p>
+    <RangeSlider
+      id="vad-threshold"
+      label={$t('settings.transcription.vadThreshold')}
+      hint={$t('settings.transcription.vadThresholdHint')}
+      min={0.1}
+      max={0.95}
+      step={0.05}
+      bind:value={vadThreshold}
+    >
+      <InfoTip slot="label-extra" inline>{$t('settings.transcription.vadThresholdTooltip')}</InfoTip>
+    </RangeSlider>
   </div>
 
   <div class="form-group">
@@ -140,23 +135,17 @@
   </div>
 
   <div class="form-group">
-    <label for="repetition-penalty" class="form-label">
-      {$t('settings.transcription.repetitionPenalty')}
-      <InfoTip inline>{$t('settings.transcription.repetitionPenaltyTooltip')}</InfoTip>
-    </label>
-    <div class="slider-row">
-      <input
-        id="repetition-penalty"
-        type="range"
-        min="1.0"
-        max="2.0"
-        step="0.05"
-        class="form-slider"
-        bind:value={repetitionPenalty}
-      />
-      <span class="slider-value">{repetitionPenalty.toFixed(2)}</span>
-    </div>
-    <p class="input-hint">{$t('settings.transcription.repetitionPenaltyHint')}</p>
+    <RangeSlider
+      id="repetition-penalty"
+      label={$t('settings.transcription.repetitionPenalty')}
+      hint={$t('settings.transcription.repetitionPenaltyHint')}
+      min={1.0}
+      max={2.0}
+      step={0.05}
+      bind:value={repetitionPenalty}
+    >
+      <InfoTip slot="label-extra" inline>{$t('settings.transcription.repetitionPenaltyTooltip')}</InfoTip>
+    </RangeSlider>
   </div>
 
   {#if systemDefaults}

@@ -7,6 +7,7 @@
   // Import theme styles
   import "../styles/theme.css";
   import "../styles/form-elements.css";
+  import "../styles/range-slider.css";
   import "../styles/tables.css";
   import "../styles/animations.css";
   import "../styles/search.css";

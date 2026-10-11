@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
   import {
     getRedactionSettings,
     updateRedactionSettings,
@@ -263,20 +264,15 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.toxicity')}</h3>
         <div class="form-group">
-          <label class="form-label" for="tox-threshold">
-            {$t('settings.contentRedaction.toxicityThreshold')}
-            <span class="value-badge">{settings.toxicity_threshold.toFixed(2)}</span>
-          </label>
-          <input
+          <RangeSlider
             id="tox-threshold"
-            class="range-input"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
+            label={$t('settings.contentRedaction.toxicityThreshold')}
+            min={0}
+            max={1}
+            step={0.05}
+            hint={$t('settings.contentRedaction.toxicityThresholdHelp')}
             bind:value={settings.toxicity_threshold}
           />
-          <p class="input-hint">{$t('settings.contentRedaction.toxicityThresholdHelp')}</p>
         </div>
       </div>
 
@@ -451,21 +447,6 @@
     box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
-  .input-hint {
-    margin: 0.5rem 0 0 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .value-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--primary-on-surface);
-    background: rgba(var(--primary-color-rgb), 0.12);
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-  }
-
   .perf-note {
     margin: 0.5rem 0 0 0;
     font-size: 0.75rem;
@@ -501,11 +482,6 @@
     background: var(--surface-hover, rgba(127, 127, 127, 0.15));
     border-radius: 3px;
     user-select: none;
-  }
-
-  .range-input {
-    width: 100%;
-    accent-color: var(--primary-color);
   }
 
   /* Chip multiselect */

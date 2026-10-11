@@ -5673,5 +5673,6 @@
   "supportAccess.selfApproval": "لا يمكنك الموافقة على طلبك الخاص.",
   "supportAccess.notify.requested": "طلب وصول دعم جديد من {{grantee}}.",
   "supportAccess.notify.breakGlass": "بدأ {{grantee}} وصولًا طارئًا إلى {{target}} حتى {{time}}.",
-  "supportAccess.notify.review": "مراجعة"
+  "supportAccess.notify.review": "مراجعة",
+  "ui.rangeSlider.systemDefault": "الإعداد الافتراضي للنظام: {{value}}"
 }

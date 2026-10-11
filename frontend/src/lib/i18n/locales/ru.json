@@ -5673,5 +5673,6 @@
   "supportAccess.selfApproval": "Вы не можете одобрить собственный запрос.",
   "supportAccess.notify.requested": "Новый запрос доступа поддержки от {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} начал(а) экстренный доступ к {{target}} до {{time}}.",
-  "supportAccess.notify.review": "Просмотреть"
+  "supportAccess.notify.review": "Просмотреть",
+  "ui.rangeSlider.systemDefault": "Системное значение по умолчанию: {{value}}"
 }

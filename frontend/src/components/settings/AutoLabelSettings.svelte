@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { llmStatusStore } from '$stores/llmStatus';
   import ProgressBar from '../ui/ProgressBar.svelte';
+  import RangeSlider from '../ui/RangeSlider.svelte';
 
   let autoTopicExtraction = true;
   let enabled = true;
@@ -240,23 +241,17 @@
 
       {#if enabled}
         <!-- Confidence Threshold -->
-        <div class="setting-row">
-          <div class="setting-info">
-            <label for="confidence-threshold" class="setting-label">{$t('autoLabel.thresholdLabel')}</label>
-            <span class="setting-help">{$t('autoLabel.thresholdHelp')}</span>
-          </div>
-          <div class="slider-container">
-            <input
-              type="range"
-              id="confidence-threshold"
-              min="0.5"
-              max="1.0"
-              step="0.05"
-              bind:value={confidenceThreshold}
-              class="threshold-slider"
-            />
-            <span class="threshold-value">{Math.round(confidenceThreshold * 100)}%</span>
-          </div>
+        <div class="setting-row setting-row--slider">
+          <RangeSlider
+            id="confidence-threshold"
+            label={$t('autoLabel.thresholdLabel')}
+            hint={$t('autoLabel.thresholdHelp')}
+            min={0.5}
+            max={1.0}
+            step={0.05}
+            format={(v) => `${Math.round(v * 100)}%`}
+            bind:value={confidenceThreshold}
+          />
         </div>
 
         <!-- Tags Toggle -->
@@ -461,50 +456,8 @@
     transform: translateX(20px);
   }
 
-  /* Slider */
-  .slider-container {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-shrink: 0;
-    margin-left: 1rem;
-  }
-
-  .threshold-slider {
-    width: 120px;
-    height: 4px;
-    -webkit-appearance: none;
-    appearance: none;
-    border-radius: 2px;
-    background: var(--border-color);
-    outline: none;
-  }
-
-  .threshold-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    cursor: pointer;
-  }
-
-  .threshold-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    cursor: pointer;
-    border: none;
-  }
-
-  .threshold-value {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--primary-on-surface);
-    min-width: 40px;
-    text-align: right;
+  .setting-row--slider {
+    display: block;
   }
 
   /* Save Section */
@@ -673,16 +626,6 @@
 
     .toggle-switch {
       margin-left: 0;
-    }
-
-    .slider-container {
-      margin-left: 0;
-      width: 100%;
-    }
-
-    .threshold-slider {
-      flex: 1;
-      width: auto;
     }
 
     .btn-save,

@@ -5673,5 +5673,6 @@
   "supportAccess.selfApproval": "自分自身の申請は承認できません。",
   "supportAccess.notify.requested": "{{grantee}} から新しいサポートアクセスの申請があります。",
   "supportAccess.notify.breakGlass": "{{grantee}} が {{target}} への緊急アクセスを {{time}} まで開始しました。",
-  "supportAccess.notify.review": "確認"
+  "supportAccess.notify.review": "確認",
+  "ui.rangeSlider.systemDefault": "システムの既定値: {{value}}"
 }

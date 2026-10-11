@@ -296,6 +296,17 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   (exposure = `MEDIA_URL_EXPIRE_SECONDS`). `presign_client()` logs ERROR **only** for a MinIO
   provisioning failure — never on S3 or when disabled, where it fired from every process (#1005).
 
+- **Orphaned objects are swept, not assumed gone (#1212).** A file's objects all live under
+  `user_<uid>/file_<fid>/` (original, thumbnails, `.playback.m4a`, derived/masked caches,
+  waveform). The app's delete paths remove them with the row, but a row removed out of band
+  (raw SQL, a restore or reset against a persisted bucket) strands them.
+  `tasks/storage_orphan_sweep_task.py` finds and removes them: dry run first, empty-Postgres
+  refusal, 10% ratio guard (`force`), per-file Postgres re-check immediately before deleting,
+  1 h grace period, and it ignores every key that is not that shape (`media/...`,
+  `user_<uid>/youtube_<id>/...`, exports, avatars, other buckets). A NEW key shape for
+  per-file objects must keep the `user_<uid>/file_<fid>/` prefix or the sweep cannot see it
+  (and a file's objects would outlive it unnoticed).
+
 ## LLM features (optional)
 
 `llm_service.py` is a **synchronous** client on purpose (Celery tasks; no asyncio conflicts).

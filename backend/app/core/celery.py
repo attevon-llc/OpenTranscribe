@@ -245,6 +245,7 @@ celery_app = Celery(
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
+        "app.tasks.storage_orphan_sweep_task",
         "app.tasks.search_indexing_task",
         "app.tasks.search_index_sweep_task",
         "app.tasks.search_reembed_task",
@@ -486,6 +487,7 @@ celery_app.conf.update(
         "search.reembed_degraded": {"queue": CeleryQueues.CPU},
         "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
+        "storage_orphan_sweep": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         # speaker_embedding_consistency_repair_batch is in GPU_PREFERRED_TASKS above.
         "process_speaker_update_background": {"queue": CeleryQueues.CPU},

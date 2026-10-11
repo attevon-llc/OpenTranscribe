@@ -175,7 +175,6 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/users/me/support-access/{grant_uuid}/approve": _SUPPORT_ACCESS_REASON,
     "/api/users/me/support-access/{grant_uuid}/deny": _SUPPORT_ACCESS_REASON,
     # --- admin maintenance / migration / repair triggers ---
-    "/api/admin/data-integrity/counts": _MAINTENANCE_OPS_REASON,
     "/api/admin/engine-settings/metrics": _MAINTENANCE_OPS_REASON,
     "/api/admin/gpu-profiles": _MAINTENANCE_OPS_REASON,
     "/api/admin/imohash-recompute/start": _MAINTENANCE_OPS_REASON,

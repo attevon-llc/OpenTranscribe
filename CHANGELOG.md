@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Attributes note that said turning detection off also stops AI name suggestions is gone: they
   are decoupled.
 
+- **Orphaned-data cleanup in the admin UI, and a storage sweep (#1212).** Storage objects whose
+  `media_file` row was removed outside the app (raw SQL cleanup, a database restore or reset
+  against a persisted object store) were never reclaimed. New admin routes
+  `GET /api/admin/data-integrity/storage/counts` (dry run), `GET .../storage/status` and
+  `POST .../storage?confirm=true[&force=true]` delete them as a background task, with the same
+  guards as the search-index reconcile: refused when PostgreSQL holds no files, a 10% ratio
+  guard that `force` overrides, a per-file PostgreSQL re-check right before deletion, and a
+  one-hour grace period for recent objects. Audited as `admin.data_integrity.storage_purge`
+  with counters only. *Settings -> Data Integrity* now shows orphaned search documents and
+  stored files (counts and bytes) and has a **Remove orphaned data** action behind a
+  confirmation dialog; a refused sweep is explained and can be overridden after a second
+  confirmation.
+
 - **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
   `multi`, `single`; default `auto`). New API under `/api/support-access`,
   `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,

@@ -438,6 +438,46 @@ candidate is re-checked against PostgreSQL after the index is read and immediate
 before the delete, and a sweep whose PostgreSQL side is empty is refused even with
 `force`. Index documents are derived data — a mistaken purge is repaired by a reindex.
 
+### Orphaned data panel and storage sweep
+
+The top of the Data Integrity section shows an **Orphaned data** panel: a read-only scan of
+what has been left behind for files that no longer exist, for both the **search index**
+(orphaned documents per index) and **stored media files** (files, objects and the space they
+take, with the first few file IDs). **Scan again** refreshes it.
+
+**Remove orphaned data** deletes what the scan found, after a confirmation that states exactly
+how many search documents and stored files (objects and size) will go. It is disabled, with
+the reason shown, when nothing is orphaned or when everything found is held back by a safety
+limit. If a limit refused the sweep, the panel explains why and offers **I understand, remove
+anyway**, which asks for a second, final confirmation before it sends `force=true`. An empty
+database is never overridable.
+
+Storage objects are orphaned when their `media_file` row is gone (a database restore or reset
+against a persisted object store, or rows removed with raw SQL). The app's own delete paths
+already remove a file's objects, so this only reclaims space after out-of-band removal. The
+same sweep is available through the API:
+
+1. `GET /api/admin/data-integrity/storage/counts` -- a dry run. It reports `orphan_files`,
+   `orphan_objects`, `orphan_bytes`, the first 200 `orphans` (file ID, owner ID, objects,
+   bytes) and `refused` (`ratio_guard` or `empty_valid_set`) when a real run would decline.
+2. `POST /api/admin/data-integrity/storage?confirm=true` -- the deletion. It runs as a
+   background task and is refused without `confirm=true`. `GET .../storage/status` reports
+   whether it is running and the result of the last run.
+3. `POST /api/admin/data-integrity/storage?confirm=true&force=true` -- overrides the ratio
+   guard only.
+
+Only keys of the shape `user_<id>/file_<id>/...` are considered: the original, thumbnails,
+the browser playback copy, derived and masked caches and the waveform. Bulk exports, avatars,
+`media/` objects, other buckets and everything belonging to a file that still exists are never
+touched. Safeguards, matching the index sweep: the sweep refuses when PostgreSQL holds no
+files at all (even with `force`), refuses to delete more than **10%** of the file objects in
+one run without `force` (above a floor of 25 objects), re-checks each file ID against
+PostgreSQL immediately before removing its objects, and skips any file with an object newer
+than one hour (so an upload in progress is safe). Each confirmed sweep is recorded in the audit
+log as `admin.data_integrity.storage_purge` (at request time and again on completion) with
+counters only, never object keys or error text. Deleted objects cannot be recovered; restore
+them from backup if a sweep removed something it should not have.
+
 ## Embedding Consistency
 
 The **Embedding Consistency** section ensures all speakers in the PostgreSQL database have corresponding embeddings in the OpenSearch speaker indices.

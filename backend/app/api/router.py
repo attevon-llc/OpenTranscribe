@@ -7,6 +7,7 @@ from .endpoints import admin
 from .endpoints import admin_approvals
 from .endpoints import admin_group_mappings
 from .endpoints import admin_scim_tokens
+from .endpoints import admin_storage_integrity
 from .endpoints import admin_timing
 from .endpoints import asr_settings
 from .endpoints import auth
@@ -145,6 +146,9 @@ include_router_with_consistency(
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
+include_router_with_consistency(
+    admin_storage_integrity.router, prefix="/admin", tags=["admin-storage-integrity"]
+)
 # Working the approval queue is user management, so it sits at the admin tier next
 # to /admin/users — unlike the switch that creates the queue, which is deployment
 # configuration and lives under /admin/auth-config at the super_admin tier.

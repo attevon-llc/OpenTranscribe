@@ -250,6 +250,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
+  orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,
+  merge and delete, profile delete, profile reassignment, batch profile assignment, a retry
+  reset and a reprocess all left the cluster centroids and profile embeddings that averaged
+  the voice in place (a retry never removed the voiceprints at all, and an emptied cluster's
+  centroid outlived its row). One shared cleanup now runs after each: the voiceprint is
+  erased and verified, every affected centroid and profile embedding is rebuilt from the
+  remaining members (or erased when it cannot be), an emptied cluster is deleted with its
+  centroid, promoted or not, and the file is re-indexed so no index plane names the removed
+  speaker. A file purge now also rebuilds the profiles its speakers belonged to. Deleting a
+  profile clears the profile's name from the speakers and cluster it was applied to. A
+  failure answers 503 with a fixed message instead of being logged and dropped.
+
 - **Tests no longer leak stores on failure (#1195).** Twenty-odd fixtures created an OpenSearch
   index, bucket, container or temp file and then did fallible work before the `try` that
   removes it; every pytest process left an `opentranscribe_test_*` tree in `/tmp`; the speaker

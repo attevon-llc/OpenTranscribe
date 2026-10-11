@@ -69,6 +69,7 @@ vi.mock('../../components/ui/CardGridSkeleton.svelte', () => ({ default: noopCom
 
 import Page from './+page.svelte';
 import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
+import { searchStore } from '$stores/search';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -153,7 +154,6 @@ describe('search/+page — sidebar (issue #1197)', () => {
         selectedCollectionId: null,
         dateRange: { from: null, to: null },
         durationRange: { min: null, max: null },
-        fileSizeRange: { min: null, max: null },
         selectedFileTypes: [],
         selectedStatuses: [],
         ownershipFilter: 'all',
@@ -169,11 +169,19 @@ describe('search/+page — sidebar (issue #1197)', () => {
   });
 });
 
-describe('FilterSidebar opt-out stays a prop (issue #1197)', () => {
-  it('FilterSidebar defaults to showing the search field for consumers that want it', async () => {
-    const FilterSidebar = (await import('$components/FilterSidebar.svelte')).default;
-    const { findByPlaceholderText } = render(FilterSidebar, { props: {} });
-    const input = await findByPlaceholderText('filter.searchPlaceholder');
-    expect(input).toHaveAttribute('type', 'text');
+describe('search/+page — no file-size filter (UX review #750 item 29)', () => {
+  it('never sends min_file_size/max_file_size, even if the store still holds a range', async () => {
+    // The control is gone, so nothing can set a range any more; a stale value
+    // injected straight into the store must not leak into the request either.
+    searchStore.setFilters({ fileSizeRange: { min: 5, max: 50 } } as never);
+    render(Page);
+    await settle();
+
+    const searchCalls = mockAxios.get.mock.calls.filter(([url]) => url === '/search');
+    expect(searchCalls.length).toBeGreaterThan(0);
+    for (const [, config] of searchCalls) {
+      expect(config.params).not.toHaveProperty('min_file_size');
+      expect(config.params).not.toHaveProperty('max_file_size');
+    }
   });
 });

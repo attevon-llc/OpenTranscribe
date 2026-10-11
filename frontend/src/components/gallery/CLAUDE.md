@@ -12,15 +12,26 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   count chip + select/selection tools (left) plus sort dropdown + view toggle
   (right). Row 2 is deliberately **unconditional** — never gated on `files.length`
   — see Gotchas.
-- `GalleryFilterPanel.svelte` — collapsible filter sidebar (wraps `FilterSidebar.svelte`,
-  rendered with `showSearchField={false}` since #747 moved filename/title search into the
-  toolbar above).
+- `GalleryFilterPanel.svelte` — collapsible filter sidebar (wraps `FilterSidebar.svelte`).
+  The sidebar has no filename/title search (#747 moved it to the toolbar above; the dead
+  `showSearchField` branch is deleted). Section order is settled (UX review item 26): Type,
+  Speakers, Duration, Date, Status, Tags, Collections, Language (only with >1 language),
+  Ownership. Ownership is ONE section: All/Mine/Shared chips plus the owners
+  `SearchableMultiSelect` (hidden on `/search` via `showOwnerFilter={false}`). There is **no
+  file-size filter** in the UI (owner decision 2026-10-11); `min_file_size`/`max_file_size`
+  stay on the backend API only, so don't re-add a `fileSizeRange` to the stores or the
+  `filter` event.
 - `GalleryGrid.svelte` — switches between `VirtualGrid`/`VirtualList`; empty/skeleton/loading
   states. Its empty state takes a `filtersActive` prop so a filtered-to-zero result set reads
   "no files match", not "your library is empty" (#747).
 - `VirtualGrid.svelte` / `VirtualList.svelte` — virtualized renderers (thumbnail cache, prefetch).
-- `GalleryPrimaryActions.svelte` — the row-1-right trio (Add media, Collections, Tags),
+- `GalleryPrimaryActions.svelte` — the row-1-right trio, in DOM order **Tags, Collections,
+  Add media** (Add media rightmost; UX review item 40, pinned by `GalleryPrimaryActions.test.ts`),
   normal mode only (reads `galleryStore`).
+- `VirtualList.svelte` header: title case, weight 500 (not uppercase 600); numeric columns
+  (duration, date, size, status) are right-aligned and every body cell is 0.875rem — pinned by
+  `VirtualListHeaderStyle.test.ts`, which reads the style source because jsdom cannot cascade
+  scoped CSS. The grid's speaker count is `gallery.speakerCountShort`, never a literal.
 - `GallerySelectionActions.svelte` — row-2-left: "Select items" in normal mode, expanding in
   place into the full select-all/process/organize/delete/cancel toolbar in selection mode
   (reads `galleryStore`). Split out of the old `GalleryActionButtons.svelte` by #747 so each

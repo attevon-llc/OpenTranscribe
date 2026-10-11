@@ -325,9 +325,7 @@
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: 500;
     color: var(--text-secondary);
     position: sticky;
     top: 0;
@@ -583,12 +581,12 @@
     justify-content: flex-end;
     min-width: 0;
     overflow: hidden;
-    font-size: 0.7rem;
+    font-size: 0.875rem;
   }
 
   /* The header cells share the body cells' column classes, so the body font sizes above
-     (0.875rem, 0.7rem for status) leaked into the labels and made the seven of them three
-     different sizes. Header labels always take the header's own size. */
+     leaked into the labels and made them different sizes. Header labels always take the
+     header's own size. */
   .file-list-header .list-cell {
     font-size: inherit;
   }

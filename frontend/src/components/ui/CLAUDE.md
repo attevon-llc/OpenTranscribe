@@ -23,7 +23,9 @@ primitive in the same spirit as this folder.
 - `SortDropdown.svelte` — the shared sort-field-and-direction control (gallery + search sort
   bars consolidated into one primitive, H2); takes a `sortOptions` prop (`SortOption[]`, with an
   optional `noDirection` entry for fixed-order fields like "relevance"), `ariaLabelKey`, and an
-  `align: 'left' | 'right'` prop for menu placement. Hand-rolls its own menu with
+  `align: 'left' | 'right'` prop for menu placement. The direction arrow points **down =
+  descending, up = ascending** (a `noDirection` option is always down); the glyph is drawn
+  pointing that way, not rotated by CSS, and the same semantics apply on `/search`. Hand-rolls its own menu with
   `$lib/actions/clickOutside` (there is no generic `Dropdown.svelte` primitive — see Gotchas).
 - `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).

@@ -13,7 +13,6 @@
   export let selectedCollectionId: string | null;
   export let dateRange: DateRange;
   export let durationRange: DurationRange;
-  export let fileSizeRange: { min: number | null; max: number | null };
   export let selectedFileTypes: string[];
   export let selectedStatuses: string[];
   export let ownershipFilter: 'all' | 'mine' | 'shared';
@@ -64,14 +63,12 @@
     <div class="filter-content">
       <FilterSidebar
         bind:this={filterSidebarRef}
-        showSearchField={false}
         searchQuery={searchQuery}
         selectedTags={selectedTags}
         selectedSpeakers={selectedSpeakers}
         selectedCollectionId={selectedCollectionId}
         dateRange={dateRange}
         durationRange={durationRange}
-        fileSizeRange={fileSizeRange}
         selectedFileTypes={selectedFileTypes}
         selectedStatuses={selectedStatuses}
         ownershipFilter={ownershipFilter}

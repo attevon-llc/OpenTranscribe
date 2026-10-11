@@ -50,7 +50,6 @@ export interface GalleryState {
   filterSelectedCollectionId: string | null;
   filterDateRange: { from: Date | null; to: Date | null };
   filterDurationRange: { min: number | null; max: number | null };
-  filterFileSizeRange: { min: number | null; max: number | null };
   filterSelectedFileTypes: string[];
   filterSelectedStatuses: string[];
   filterOwnershipFilter: 'all' | 'mine' | 'shared';
@@ -115,7 +114,6 @@ const initialState: GalleryState = {
   filterSelectedCollectionId: null,
   filterDateRange: { from: null, to: null },
   filterDurationRange: { min: null, max: null },
-  filterFileSizeRange: { min: null, max: null },
   filterSelectedFileTypes: [],
   filterSelectedStatuses: [],
   filterOwnershipFilter: 'all',
@@ -392,7 +390,6 @@ function createGalleryStore() {
       selectedCollectionId: string | null;
       dateRange: { from: Date | null; to: Date | null };
       durationRange: { min: number | null; max: number | null };
-      fileSizeRange: { min: number | null; max: number | null };
       selectedFileTypes: string[];
       selectedStatuses: string[];
       ownershipFilter: 'all' | 'mine' | 'shared';
@@ -408,7 +405,6 @@ function createGalleryStore() {
         filterSelectedCollectionId: filters.selectedCollectionId,
         filterDateRange: { ...filters.dateRange },
         filterDurationRange: { ...filters.durationRange },
-        filterFileSizeRange: { ...filters.fileSizeRange },
         filterSelectedFileTypes: [...filters.selectedFileTypes],
         filterSelectedStatuses: [...filters.selectedStatuses],
         filterOwnershipFilter: filters.ownershipFilter,
@@ -427,7 +423,6 @@ function createGalleryStore() {
         filterSelectedCollectionId: null,
         filterDateRange: { from: null, to: null },
         filterDurationRange: { min: null, max: null },
-        filterFileSizeRange: { min: null, max: null },
         filterSelectedFileTypes: [],
         filterSelectedStatuses: [],
         filterOwnershipFilter: 'all',

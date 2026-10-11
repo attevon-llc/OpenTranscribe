@@ -1,7 +1,7 @@
 /**
  * `FilterSidebar.svelte` owns the gallery's faceted-filter state and turns it
  * into a `filter` custom event carrying a plain object (`{ search, tags,
- * speaker, collectionId, language, dates, durationRange, fileSizeRange,
+ * speaker, collectionId, language, dates, durationRange,
  * fileTypes, statuses, ownership }`) — the PARENT route is what serializes
  * that into URL params (`+page.svelte`), not this component. So "emits both
  * in the resulting query/URL params" is tested here as "the dispatched
@@ -98,6 +98,7 @@ vi.mock('./CollectionsFilter.svelte', () => ({
 // Svelte 5 removed `component.$on(...)`, so dispatched events are only
 // observable through an `on:event` listener in a consumer's markup.
 import FilterSidebarTestHost from './FilterSidebarTestHost.svelte';
+import FilterSidebarHiddenOwnersHost from './FilterSidebarHiddenOwnersHost.svelte';
 
 function tag(name: string, usage_count = 5) {
   return { uuid: `tag-${name}`, name, usage_count };
@@ -491,7 +492,7 @@ describe('FilterSidebar — facet selection', () => {
 describe('FilterSidebar — owner filter (issue #966)', () => {
   function ownerSection(container: HTMLElement): HTMLElement {
     const heading = Array.from(container.querySelectorAll('h3')).find(
-      (h) => h.textContent?.trim() === 'filter.owners'
+      (h) => h.textContent?.trim() === 'filter.ownership'
     );
     if (!heading) throw new Error('owners filter-section heading not found');
     const section = heading.closest('.filter-section');
@@ -626,5 +627,92 @@ describe('FilterSidebar — reset', () => {
     // Source of truth is the button's reactive `selected` class, driven by
     // the component's own `selectedTags` array.
     await waitFor(() => expect(buttons[0].classList.contains('selected')).toBe(false));
+  });
+});
+
+/**
+ * Package A of the UX designer review (#750 items 26, 29, 30): section order
+ * follows the list columns, the file-size filter is gone from the UI, and
+ * ownership is ONE section holding both the Mine/Shared chips and the owner
+ * dropdown.
+ */
+describe('FilterSidebar — designer-review layout (#750)', () => {
+  const sectionHeadings = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.filter-section h3')).map((h) => h.textContent?.trim());
+
+  async function renderLoaded(languages: string[] = []) {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      if (url === '/files/metadata-filters')
+        return Promise.resolve({ data: { ...METADATA, languages } });
+      if (url === '/files/owners') return Promise.resolve({ data: [owner('u1', 'Alice')] });
+      return Promise.resolve({ data: {} });
+    });
+    const events: unknown[] = [];
+    const utils = render(FilterSidebarTestHost, {
+      props: { onFilter: (detail: unknown) => events.push(detail) },
+    });
+    await waitFor(() => expect(utils.container.querySelector('.duration-chip-list')).toBeTruthy());
+    await waitFor(() =>
+      expect(utils.container.querySelector('.multiselect-container')).toBeTruthy()
+    );
+    return { ...utils, events };
+  }
+
+  it('renders sections in the decided order', async () => {
+    const { container } = await renderLoaded(['en', 'es']);
+    expect(sectionHeadings(container)).toEqual([
+      'filter.fileType',
+      'filter.speakers',
+      'filter.duration',
+      'filter.dateRange',
+      'filter.processingStatus',
+      'filter.tags',
+      'filter.collections',
+      'filter.language',
+      'filter.ownership',
+    ]);
+  });
+
+  it('omits the language section for a single-language library', async () => {
+    const { container } = await renderLoaded(['en']);
+    expect(sectionHeadings(container)).not.toContain('filter.language');
+    expect(sectionHeadings(container).at(-1)).toBe('filter.ownership');
+  });
+
+  it('has no file-size section, slider or retry control', async () => {
+    const { container } = await renderLoaded();
+    expect(sectionHeadings(container)).not.toContain('filter.fileSize');
+    expect(container.querySelector('[data-testid="filesize-metadata-retry"]')).toBeNull();
+  });
+
+  it('emits no fileSizeRange from a chip click, a facet click or reset', async () => {
+    const { container, events } = await renderLoaded();
+    await fireEvent.click(container.querySelector('.duration-chip-list button') as HTMLElement);
+    await fireEvent.click(container.querySelector('.file-type-button') as HTMLElement);
+    await fireEvent.click(container.querySelector('.reset-button') as HTMLElement);
+    expect(events.length).toBeGreaterThan(0);
+    for (const detail of events) {
+      expect(detail).not.toHaveProperty('fileSizeRange');
+    }
+  });
+
+  it('ownership is one section holding the chips and the owners dropdown', async () => {
+    const { container } = await renderLoaded();
+    const headings = Array.from(container.querySelectorAll('.filter-section h3')).filter(
+      (h) => h.textContent?.trim() === 'filter.ownership'
+    );
+    expect(headings).toHaveLength(1);
+    expect(sectionHeadings(container)).not.toContain('filter.owners');
+    const section = headings[0].closest('.filter-section') as HTMLElement;
+    expect(section.querySelectorAll('.ownership-button')).toHaveLength(3);
+    expect(section.querySelector('.multiselect-container')).not.toBeNull();
+  });
+
+  it('keeps the Mine/Shared chips when the owner dropdown is hidden', async () => {
+    const { container } = render(FilterSidebarHiddenOwnersHost);
+    await waitFor(() => expect(container.querySelectorAll('.ownership-button')).toHaveLength(3));
+    const section = container.querySelector('.ownership-button')?.closest('.filter-section');
+    expect(section?.querySelector('.multiselect-container')).toBeNull();
   });
 });

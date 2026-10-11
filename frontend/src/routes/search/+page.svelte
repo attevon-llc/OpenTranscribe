@@ -49,7 +49,6 @@
   let filterSelectedCollectionId: string | null = null;
   let filterSelectedLanguage: string | null = null;
   let filterDurationRange: { min: number | null; max: number | null } = { min: null, max: null };
-  let filterFileSizeRange: { min: number | null; max: number | null } = { min: null, max: null };
   let filterSelectedFileTypes: string[] = [];
   let filterSelectedStatuses: string[] = [];
 
@@ -62,8 +61,7 @@
     filterSelectedCollectionId !== null ||
     filterSelectedLanguage !== null ||
     filterDateRange.from !== null ||
-    filterDurationRange.min !== null || filterDurationRange.max !== null ||
-    filterFileSizeRange.min !== null || filterFileSizeRange.max !== null;
+    filterDurationRange.min !== null || filterDurationRange.max !== null;
 
   // Sticky preview player state
   let previewData: { fileUuid: string; title: string; startTime: number; speaker: string; contentType: string } | null = null;
@@ -170,7 +168,6 @@
     filterSelectedCollectionId = $searchStore.selectedCollectionId;
     filterSelectedLanguage = $searchStore.selectedLanguage;
     filterDurationRange = { ...$searchStore.durationRange };
-    filterFileSizeRange = { ...$searchStore.fileSizeRange };
     if ($searchStore.dateFrom || $searchStore.dateTo) {
       filterDateRange = {
         from: $searchStore.dateFrom ? new Date($searchStore.dateFrom + 'T00:00:00') : null,
@@ -228,7 +225,7 @@
       mode: $searchStore.searchMode, sources: [...$searchStore.selectedSources].sort(), speakers: $searchStore.selectedSpeakers,
       tags: $searchStore.selectedTags, dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
       fileTypes: $searchStore.selectedFileTypes, collectionId: $searchStore.selectedCollectionId,
-      durationRange: $searchStore.durationRange, fileSizeRange: $searchStore.fileSizeRange,
+      durationRange: $searchStore.durationRange,
     });
   }
 
@@ -300,12 +297,6 @@
       }
       if ($searchStore.durationRange.max !== null) {
         apiParams.max_duration = $searchStore.durationRange.max;
-      }
-      if ($searchStore.fileSizeRange.min !== null) {
-        apiParams.min_file_size = $searchStore.fileSizeRange.min * 1024 * 1024; // MB to bytes
-      }
-      if ($searchStore.fileSizeRange.max !== null) {
-        apiParams.max_file_size = $searchStore.fileSizeRange.max * 1024 * 1024; // MB to bytes
       }
 
       const res = await axiosInstance.get('/search', {
@@ -428,9 +419,6 @@
     if (detail.durationRange !== undefined) {
       searchStore.setDurationRange(detail.durationRange);
     }
-    if (detail.fileSizeRange !== undefined) {
-      searchStore.setFileSizeRange(detail.fileSizeRange);
-    }
     if (detail.fileTypes !== undefined) {
       searchStore.setFileTypes(detail.fileTypes);
     }
@@ -452,7 +440,6 @@
     searchStore.setCollectionId(null);
     searchStore.setLanguage(null);
     searchStore.setDurationRange({ min: null, max: null });
-    searchStore.setFileSizeRange({ min: null, max: null });
     searchStore.setStatuses([]);
     filterSelectedTags = [];
     filterSelectedSpeakers = [];
@@ -460,7 +447,6 @@
     filterSelectedCollectionId = null;
     filterSelectedLanguage = null;
     filterDurationRange = { min: null, max: null };
-    filterFileSizeRange = { min: null, max: null };
     filterSelectedFileTypes = [];
     filterSelectedStatuses = [];
 
@@ -588,14 +574,12 @@
     {#if showFilters}
       <div class="filter-content">
         <FilterSidebar
-          showSearchField={false}
           bind:selectedTags={filterSelectedTags}
           bind:selectedSpeakers={filterSelectedSpeakers}
           bind:dateRange={filterDateRange}
           bind:selectedCollectionId={filterSelectedCollectionId}
           bind:selectedLanguage={filterSelectedLanguage}
           bind:durationRange={filterDurationRange}
-          bind:fileSizeRange={filterFileSizeRange}
           bind:selectedFileTypes={filterSelectedFileTypes}
           bind:selectedStatuses={filterSelectedStatuses}
           showOwnerFilter={false}

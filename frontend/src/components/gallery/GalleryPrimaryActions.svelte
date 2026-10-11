@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { galleryStore, galleryState } from '../../stores/gallery';
-  import { t } from '../../stores/locale';
+  import { galleryStore, galleryState } from '$stores/gallery';
+  import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
 
   // Normal-mode-only trio (issue #747): row 1 right of the two-row toolbar.
@@ -12,9 +12,24 @@
   function handleTagsClick() { galleryStore.triggerTags(); }
 </script>
 
-<!-- Upload and creating collections/tags are refused under any support grant. -->
+<!-- DOM order is Tags, Collections, Add media: Add media is the rightmost, primary action (UX review item 40).
+     Upload and creating collections/tags are refused under any support grant. -->
 {#if !$galleryState.isSelecting && !$supportSessionGate.active}
   <div class="gallery-primary-actions">
+    <button
+      class="action-btn tags-btn"
+      on:click={handleTagsClick}
+      title={$t('gallery.bulk.tagsTooltip')}
+    >
+      <span>{$t('nav.tags')}</span>
+    </button>
+    <button
+      class="action-btn collections-btn"
+      on:click={handleCollectionsClick}
+      title={$t('gallery.bulk.collectionsTooltip')}
+    >
+      <span>{$t('nav.collections')}</span>
+    </button>
     <button
       class="action-btn upload-btn"
       on:click={handleUploadClick}
@@ -26,20 +41,6 @@
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
       <span>{$t('nav.addMedia')}</span>
-    </button>
-    <button
-      class="action-btn collections-btn"
-      on:click={handleCollectionsClick}
-      title={$t('gallery.bulk.collectionsTooltip')}
-    >
-      <span>{$t('nav.collections')}</span>
-    </button>
-    <button
-      class="action-btn tags-btn"
-      on:click={handleTagsClick}
-      title={$t('gallery.bulk.tagsTooltip')}
-    >
-      <span>{$t('nav.tags')}</span>
     </button>
   </div>
 {/if}

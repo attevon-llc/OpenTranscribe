@@ -92,11 +92,6 @@ describe('page-resetting filter setters', () => {
       expected: { durationRange: { min: 10, max: 100 } },
     },
     {
-      name: 'setFileSizeRange',
-      apply: () => searchStore.setFileSizeRange({ min: 1, max: 2 }),
-      expected: { fileSizeRange: { min: 1, max: 2 } },
-    },
-    {
       name: 'setStatuses',
       apply: () => searchStore.setStatuses(['completed']),
       expected: { selectedStatuses: ['completed'] },

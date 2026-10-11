@@ -23,8 +23,8 @@
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
-  import ConfirmationModal from '../components/ConfirmationModal.svelte';
-  import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
@@ -63,7 +63,6 @@
       collectionId: string | null;  // UUID
       dates: DateRange;
       durationRange?: DurationRange;
-      fileSizeRange?: { min: number | null; max: number | null };
       fileTypes?: string[];
       statuses?: string[];
       ownership?: 'all' | 'mine' | 'shared';
@@ -72,15 +71,15 @@
   }
 
 
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { apiCache } from '$lib/apiCache';
 
   // Import components
-  import FileUploader from '../components/FileUploader.svelte';
+  import FileUploader from '$components/FileUploader.svelte';
   import { supportSessionGate } from '$stores/supportSession';
-  import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import CollectionsPanel from '$components/CollectionsPanel.svelte';
   import TagManagerModal from '$components/tags/TagManagerModal.svelte';
-  import UserFileStatus from '../components/UserFileStatus.svelte';
+  import UserFileStatus from '$components/UserFileStatus.svelte';
 
   // Media files state
   let files: MediaFile[] = [];
@@ -141,7 +140,6 @@
   let selectedSpeakers: string[] = [...$galleryState.filterSelectedSpeakers];
   let dateRange = { ...$galleryState.filterDateRange };
   let durationRange = { ...$galleryState.filterDurationRange };
-  let fileSizeRange = { ...$galleryState.filterFileSizeRange };
   let selectedFileTypes: string[] = [...$galleryState.filterSelectedFileTypes];
   let selectedStatuses: string[] = [...$galleryState.filterSelectedStatuses];
   let ownershipFilter: 'all' | 'mine' | 'shared' = $galleryState.filterOwnershipFilter;
@@ -160,7 +158,6 @@
     selectedStatuses.length > 0 ||
     dateRange.from !== null || dateRange.to !== null ||
     durationRange.min !== null || durationRange.max !== null ||
-    fileSizeRange.min !== null || fileSizeRange.max !== null ||
     ownershipFilter !== 'all';
 
   // Sort state — restore from gallery store
@@ -274,14 +271,6 @@
     }
     if (durationRange.max !== null) {
       params.append('max_duration', durationRange.max.toString());
-    }
-
-    // File size range
-    if (fileSizeRange.min !== null) {
-      params.append('min_file_size', fileSizeRange.min.toString());
-    }
-    if (fileSizeRange.max !== null) {
-      params.append('max_file_size', fileSizeRange.max.toString());
     }
 
     // File types
@@ -590,7 +579,7 @@
 
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, ownership, owners } = event.detail;
+    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileTypes, statuses, ownership, owners } = event.detail;
 
     searchQuery = search;
     selectedTags = tags;
@@ -600,7 +589,6 @@
 
     // Handle advanced filters if provided
     if (duration !== undefined) durationRange = duration;
-    if (fileSize !== undefined) fileSizeRange = fileSize;
     if (fileTypes !== undefined) selectedFileTypes = fileTypes;
     if (statuses !== undefined) selectedStatuses = statuses;
     if (ownership !== undefined) ownershipFilter = ownership;
@@ -669,7 +657,6 @@
     selectedCollectionId = null;
     dateRange = { from: null, to: null };
     durationRange = { min: null, max: null };
-    fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
     ownershipFilter = 'all';
@@ -1386,7 +1373,6 @@
       selectedCollectionId,
       dateRange,
       durationRange,
-      fileSizeRange,
       selectedFileTypes,
       selectedStatuses,
       ownershipFilter,
@@ -1530,7 +1516,6 @@
         {selectedCollectionId}
         {dateRange}
         {durationRange}
-        {fileSizeRange}
         {selectedFileTypes}
         {selectedStatuses}
         {ownershipFilter}

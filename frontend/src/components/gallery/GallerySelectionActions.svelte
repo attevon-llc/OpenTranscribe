@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../../stores/gallery';
-  import { chatStore } from '../../stores/chat';
-  import { toastStore } from '../../stores/toast';
+  import { galleryStore, galleryState, selectedCount, allFilesSelected } from '$stores/gallery';
+  import { chatStore } from '$stores/chat';
+  import { toastStore } from '$stores/toast';
   import { user as userStore } from '$stores/auth';
 
   // Same expression as SettingsModal.svelte:92 — do not invent a second admin
@@ -12,7 +12,7 @@
   /** Mirrors ChatScope.file_uuids max_length in backend/app/schemas/chat.py. */
   const CHAT_MAX_FILES = 100;
   import { goto } from '$app/navigation';
-  import { t } from '../../stores/locale';
+  import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
   import type { MediaFile } from '$lib/types/media';
 

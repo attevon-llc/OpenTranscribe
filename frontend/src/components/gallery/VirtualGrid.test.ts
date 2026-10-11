@@ -8,6 +8,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { MediaFile } from '$lib/types/media';
 
 const mockGalleryStore = vi.hoisted(() => ({
@@ -233,5 +235,27 @@ describe('ARIA grid structure (issue #967)', () => {
     );
     // the grid must have no direct gridcell children (aria-required-children)
     expect(grid.querySelectorAll(':scope > [role="gridcell"]')).toHaveLength(0);
+  });
+});
+
+describe('VirtualGrid speaker count label', () => {
+  it('renders the speaker count through the translated key, not a hardcoded English "spk"', async () => {
+    const { container } = render(VirtualGrid, {
+      props: {
+        items: [file('f0', { speaker_summary: { count: 3, primary_speakers: ['A', 'B', 'C'] } })],
+        scrollContainer: scrollContainerWithHeight(800),
+      },
+    });
+    setWrapperWidth(container, 900);
+    await tick();
+    await tick();
+    const meta = container.querySelector('.meta-line')?.textContent ?? '';
+    expect(meta).toContain('gallery.speakerCountShort');
+    expect(meta).not.toMatch(/\bspk\b/);
+  });
+
+  it('has no "spk" literal left in the component source', () => {
+    const source = readFileSync(resolve(__dirname, 'VirtualGrid.svelte'), 'utf8');
+    expect(source).not.toMatch(/\}\s*spk\b/);
   });
 });

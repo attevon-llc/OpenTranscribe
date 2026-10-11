@@ -1266,6 +1266,15 @@ Tests (red first):
 ### WP8 (#1230): docs-site architecture diagrams and pages describe what shipped. **M, ~1.5 days, LAST**
 
 Runs after WP1-WP7 are merged so it documents the shipped flow, not the plan.
+
+#### WP8 added scope (owner, 2026-10-11): deployment variants page
+The docs site must explain each variant and its options clearly: Full (GPU), CPU-only (full image, no GPU,
+`--cpu`/`FORCE_CPU_MODE`) and Lite (cloud-only image), with image names/tags/architectures taken from
+`./scripts/docker-build-push.sh list-platforms` (never hand-copied), which providers return speakers and their
+timing granularity, the billing/privacy note when audio leaves the machine, where voiceprints run, and the
+validity matrix generated from or checked against `pipeline_plan.py` so it cannot drift. Linked from install,
+configuration and speaker-detection pages and covered by WP8's drift check.
+
 - Specs (`docs-site/architecture-diagrams/specs/`, hand-authored Archify JSON, README there):
   `transcription-pipeline.workflow.json` (plan resolution at dispatch, inline vs post-stage
   diarization, voiceprint stage), `cloud-asr.workflow.json` (parallel_cloud with any diarizer,

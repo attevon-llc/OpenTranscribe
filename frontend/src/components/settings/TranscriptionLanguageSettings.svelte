@@ -213,7 +213,10 @@
 
         <div class="defaults-info">
           <span class="defaults-label">{$t('settings.transcription.defaults')}</span>
-          <span class="defaults-value">{$t('settings.transcription.languageDefaultsValue')}</span>
+          <span class="defaults-value">{$t('settings.transcription.languageDefaultsValue', {
+              source: $t('settings.transcription.defaultSourceAuto'),
+              translate: $t('settings.transcription.defaultTranslateOff')
+            })}</span>
         </div>
       </SettingsCard>
 
@@ -236,7 +239,9 @@
 
         <div class="defaults-info">
           <span class="defaults-label">{$t('settings.transcription.defaults')}</span>
-          <span class="defaults-value">{$t('settings.transcription.aiLanguageDefaultsValue')}</span>
+          <span class="defaults-value">{$t('settings.transcription.aiLanguageDefaultsValue', {
+              language: $t('settings.transcription.defaultSummaryLanguage')
+            })}</span>
         </div>
       </SettingsCard>
 

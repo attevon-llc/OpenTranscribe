@@ -257,17 +257,20 @@ class TestMergeOffloading:
         assert segment.speaker_id == target.id
         assert db_session.query(Speaker).filter(Speaker.id == source_id).first() is None
 
-        # Nothing heavy ran on the request path.
+        # Nothing heavy ran on the request path, except dropping the SOURCE from the
+        # profile it left: it is no longer a member, so its voice leaves that embedding
+        # before the response (#1214), not whenever the background task gets to it.
         for name in (
             "get_speaker_embedding",
             "add_speaker_embedding",
             "merge_speaker_embeddings",
-            "update_profile_embedding",
             "remove_speaker_from_profile_embedding",
             "refresh_analytics",
             "clear_derived_cache",
         ):
             no_opensearch[name].assert_not_called()
+        rebuilt = [c.args[1] for c in no_opensearch["update_profile_embedding"].call_args_list]
+        assert rebuilt == [source_profile.id], "only the source's profile is rebuilt inline"
 
         delay_mock.assert_called_once()
         kwargs = delay_mock.call_args.kwargs

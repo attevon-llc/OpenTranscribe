@@ -243,7 +243,22 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   switches (`/asr-settings/set-active`, `/clear-active`, first-config auto-activation, the
   promotion on delete) do not re-check the plan yet: they can leave a stored speaker choice
   that the plan now reports as an error, visible only on `GET /user-settings/pipeline` (WP3/WP6).
-
+- **A route that deletes a speaker or moves one out of a cluster/profile must use
+  `services/speaker_cleanup`** (issue #1214): `capture_speaker_impact` before the write,
+  `raise_if_incomplete(reconcile_speaker_impact(...))` after the commit. Hand-rolling
+  `remove_speaker_embedding` / `delete_cluster_embedding` / a profile recompute is how every
+  per-speaker path came to leave the removed voice inside a centroid or profile embedding. The routes covered:
+  `DELETE /speakers/{uuid}`, `POST /speakers/{uuid}/merge/{target}`,
+  `POST /speakers/{uuid}/verify`, `PUT /transcripts/segments/{uuid}/speaker` (orphan cleanup),
+  `DELETE /speaker-profiles/profiles/{uuid}`, and `/speaker-clusters` unassign, split, merge,
+  promote, batch-verify and `DELETE`. When the cleanup cannot finish they answer **503** with a
+  fixed message although the change committed — the status reports the privacy cleanup, not
+  the write. A route wrapping its body in `except Exception` must re-raise
+  `SpeakerCleanupIncompleteError` (as `verify_speaker_identification` and
+  `delete_speaker_profile` do) or it becomes a 500.
+- **`main.py`'s `OpenTranscribeError` handler maps by MRO**, so a subclass keeps its family's
+  status (`SpeakerCleanupIncompleteError` → `SearchIndexError` → 503). It matched the exact
+  type only before #1214, which turned every subclass into a 500.
 - **The upload failure boundary is the commit of the row with its `storage_path`** (issue #905).
   Before that commit — bad MIME, magic-byte mismatch, oversized, object never landed — delete the
   row; both `files/upload.py::process_file_upload` (legacy multipart) and

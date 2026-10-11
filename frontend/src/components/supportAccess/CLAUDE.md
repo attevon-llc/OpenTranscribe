@@ -50,6 +50,9 @@ reports `tenancy_mode === 'multi'`.
 
 - Components are legacy-syntax Svelte (`export let`, `createEventDispatcher`), so tests cannot use
   `$on`; assert on dispatched DOM effects or on the callback props.
+- Never interpolate a level (or any translated word) into a sentence template: one whole
+  sentence per case, chosen through a literal-key Record (`BREAK_GLASS_SUMMARY_KEYS`), because
+  most languages must inflect the word to fit the sentence (#1220).
 - Any new literal `t()` key must exist in all 12 locales; build dynamic labels through the
   literal-key Records in `$lib/i18n/keyMaps.ts` (a guard test forbids dynamically built keys).
 - Any new module-level state must be registered in (or exempted from) `clearUserState`, or

@@ -81,9 +81,18 @@ describe('BreakGlassModal', () => {
     open();
     await fillStepOne();
     await fireEvent.click(reviewBtn());
-    const summary = await screen.findByText(/supportAccess\.breakGlass\.confirmSummary/);
+    const summary = await screen.findByText(/supportAccess\.breakGlass\.confirmSummaryRead/);
     expect(summary.textContent).toContain('"target":"Acme"');
-    expect(summary.textContent).toContain('supportAccess.level.read');
+    expect(summary.textContent).not.toContain('"level"');
+  });
+
+  it('step 2 uses the whole write-level sentence when write access is chosen', async () => {
+    open();
+    await fillStepOne();
+    await fireEvent.click(screen.getByRole('radio', { name: 'supportAccess.level.write' }));
+    await fireEvent.click(reviewBtn());
+    const summary = await screen.findByText(/supportAccess\.breakGlass\.confirmSummaryWrite/);
+    expect(summary.textContent).not.toContain('confirmSummaryRead');
   });
 
   it('keeps the confirm button disabled until the exact name is typed (case matters)', async () => {

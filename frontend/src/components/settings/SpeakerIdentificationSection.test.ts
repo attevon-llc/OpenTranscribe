@@ -36,6 +36,7 @@ vi.mock('$lib/api/speakerAttributeSettings', () => ({
     detection_enabled: true,
     gender_detection_enabled: true,
     show_attributes_on_cards: true,
+    auto_llm_speaker_identification: true,
   }),
   updateSpeakerAttributeSettings: vi.fn(),
   resetSpeakerAttributeSettings: vi.fn(),

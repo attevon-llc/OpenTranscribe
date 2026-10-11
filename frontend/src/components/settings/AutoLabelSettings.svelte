@@ -4,8 +4,10 @@
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
+  import { llmStatusStore } from '$stores/llmStatus';
   import ProgressBar from '../ui/ProgressBar.svelte';
 
+  let autoTopicExtraction = true;
   let enabled = true;
   let confidenceThreshold = 0.75;
   let tagsEnabled = true;
@@ -22,13 +24,20 @@
   let hasChanges = false;
 
   // Original values for change tracking
+  let originalAutoTopicExtraction = true;
   let originalEnabled = true;
   let originalThreshold = 0.75;
   let originalTagsEnabled = true;
   let originalCollectionsEnabled = true;
   let originalBulkGroupingEnabled = true;
 
-  $: hasChanges = enabled !== originalEnabled ||
+  // Known only after the first status check; until then the switch is not disabled, so it
+  // does not flash greyed-out for users who do have a provider.
+  $: noProvider =
+    !$llmStatusStore.checking && $llmStatusStore.lastChecked !== null && !$llmStatusStore.available;
+
+  $: hasChanges = autoTopicExtraction !== originalAutoTopicExtraction ||
+    enabled !== originalEnabled ||
     confidenceThreshold !== originalThreshold ||
     tagsEnabled !== originalTagsEnabled ||
     collectionsEnabled !== originalCollectionsEnabled ||
@@ -46,12 +55,14 @@
       ]);
 
       const data = settingsRes.data;
+      autoTopicExtraction = data.auto_topic_extraction ?? true;
       enabled = data.enabled ?? true;
       confidenceThreshold = data.confidence_threshold ?? 0.75;
       tagsEnabled = data.tags_enabled ?? true;
       collectionsEnabled = data.collections_enabled ?? true;
       bulkGroupingEnabled = data.bulk_grouping_enabled ?? true;
 
+      originalAutoTopicExtraction = autoTopicExtraction;
       originalEnabled = enabled;
       originalThreshold = confidenceThreshold;
       originalTagsEnabled = tagsEnabled;
@@ -77,6 +88,7 @@
     saving = true;
     try {
       const response = await axiosInstance.put('/user-settings/auto-label', {
+        auto_topic_extraction: autoTopicExtraction,
         enabled,
         confidence_threshold: confidenceThreshold,
         tags_enabled: tagsEnabled,
@@ -85,6 +97,7 @@
       });
 
       const data = response.data;
+      originalAutoTopicExtraction = data.auto_topic_extraction ?? autoTopicExtraction;
       originalEnabled = data.enabled;
       originalThreshold = data.confidence_threshold;
       originalTagsEnabled = data.tags_enabled;
@@ -163,6 +176,7 @@
   }
 
   onMount(() => {
+    void llmStatusStore.initialize();
     loadSettings();
     window.addEventListener('auto-label-status', handleAutoLabelStatus as EventListener);
   });
@@ -190,6 +204,28 @@
     </div>
   {:else}
     <div class="settings-group">
+      <!-- Automatic AI suggestions after transcription (sends transcript text to the AI provider) -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="auto-topic-extraction" class="setting-label">{$t('autoLabel.autoSuggestLabel')}</label>
+          <span class="setting-help">{$t('autoLabel.autoSuggestHelp')}</span>
+          {#if noProvider}
+            <span class="setting-note" data-testid="auto-suggest-no-provider">
+              {$t('autoLabel.autoSuggestNoProvider')}
+            </span>
+          {/if}
+        </div>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            id="auto-topic-extraction"
+            bind:checked={autoTopicExtraction}
+            disabled={noProvider}
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <!-- Master Toggle -->
       <div class="setting-row">
         <div class="setting-info">
@@ -361,6 +397,12 @@
     line-height: 1.3;
   }
 
+  .setting-note {
+    font-size: 0.775rem;
+    color: var(--text-muted, var(--text-secondary));
+    line-height: 1.3;
+  }
+
   /* Toggle Switch */
   .toggle-switch {
     position: relative;
@@ -408,6 +450,11 @@
 
   .toggle-switch input:checked + .toggle-slider {
     background-color: var(--primary-color);
+  }
+
+  .toggle-switch input:disabled + .toggle-slider {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 
   .toggle-switch input:checked + .toggle-slider:before {

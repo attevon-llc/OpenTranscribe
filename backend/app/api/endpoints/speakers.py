@@ -34,6 +34,8 @@ from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
+from app.services.speaker_cleanup import carry_blacklist
+from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_status_service import SpeakerStatusService
@@ -1545,6 +1547,9 @@ def merge_speakers(
     # ...and the clusters/profile it belonged to, which the CASCADE is about to forget.
     # Its voiceprint stays until the background task has folded it into the target.
     source_impact = capture_speaker_impact(db, [source_speaker_id], removed=False, reindex=False)
+    # The source's voice now lives in the target, so a correction the user made on it
+    # (not this profile, not that speaker) must outlive the CASCADE that drops its rows.
+    carry_blacklist(db, int(source_speaker_id), int(target_speaker.id))
 
     # Delete the source speaker
     db.delete(source_speaker)
@@ -2244,6 +2249,8 @@ def _accept_speaker_profile_match(
         raise HTTPException(status_code=404, detail="Speaker profile not found")
 
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    # Accepting this profile for this one speaker overrides an earlier unassignment (#1233).
+    lift_profile_blacklist(db, int(speaker_id), int(profile_id))
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]

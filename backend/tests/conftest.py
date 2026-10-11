@@ -353,6 +353,9 @@ pytest_plugins = [
     # `speaker_os_seams`: recording stand-ins for every OpenSearch seam the shared speaker
     # cleanup (#1214) touches. Opt-in; nothing autouse.
     "fixtures.speaker_cleanup_seams",
+    # `speaker_assignment_seams`: the kNN reads the assignment paths make (cluster and
+    # profile matching, re-cluster embeddings), answered from the same recorders (#1233).
+    "fixtures.speaker_assignment_seams",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

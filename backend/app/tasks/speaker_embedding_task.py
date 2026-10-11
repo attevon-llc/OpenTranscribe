@@ -489,8 +489,14 @@ def update_speaker_embedding_on_reassignment(
                 update_speaker_segment_count(source_speaker_uuid, source_doc["segment_count"] - 1)
                 logger.info(f"Decremented source speaker {source_speaker_uuid} segment_count")
 
-        # Phase 4 — profile embedding refresh, in its own short session.
-        _update_affected_profiles(plan["affected_profile_ids"])
+        # Phase 4 — every aggregate averaging the shifted voiceprint, in its own session.
+        residual = _rebuild_affected_aggregates(plan)
+        if residual:
+            return {
+                "status": "partial",
+                "target_speaker_uuid": target_speaker_uuid,
+                "cleanup_residual_stages": sorted({str(r["stage"]) for r in residual}),
+            }
 
         logger.info(
             f"Successfully updated embeddings after segment {segment_uuid} "
@@ -548,15 +554,19 @@ def _load_reassignment_plan(
             logger.error(f"Media file not found for segment {segment_uuid}")
             return {"skip": {"status": "error", "reason": "media_file_not_found"}}
 
+        from app.services.speaker_cleanup import clusters_holding_speakers
+
         affected_profile_ids: set[int] = set()
         if target_speaker.profile_id:
             affected_profile_ids.add(int(target_speaker.profile_id))
+        affected_speaker_ids = {int(target_speaker.id)}
 
         source_speaker_exists = False
         if source_speaker_uuid:
             source_speaker = get_by_uuid(db, Speaker, source_speaker_uuid)
             if source_speaker:
                 source_speaker_exists = True
+                affected_speaker_ids.add(int(source_speaker.id))
                 if source_speaker.profile_id:
                     affected_profile_ids.add(int(source_speaker.profile_id))
 
@@ -583,6 +593,10 @@ def _load_reassignment_plan(
             },
             "source_speaker_exists": source_speaker_exists,
             "affected_profile_ids": affected_profile_ids,
+            # The target's voiceprint shifts below, and every centroid that averages it
+            # shifts with it (issue #1233); read here, while the rows are at hand.
+            "affected_cluster_uuids": clusters_holding_speakers(db, affected_speaker_ids),
+            "owner_id": int(target_speaker.user_id),
         }
 
 
@@ -621,21 +635,27 @@ def _extract_segment_embedding(plan: dict):
         )
 
 
-def _update_affected_profiles(profile_ids: set[int]) -> None:
-    """Refresh profile embeddings for the profiles a reassignment touched.
+def _rebuild_affected_aggregates(plan: dict) -> list[dict]:
+    """Rebuild every centroid and profile embedding that averages a shifted voiceprint.
 
-    Takes plain ids and opens its own short session rather than borrowing the
+    A reassignment moves the target's voiceprint (drift, not removal): its profile's
+    embedding and the centroid of every cluster holding it, or the source, still carry
+    the old vector until rebuilt (issue #1233). ``speaker_cleanup`` is the one rebuild
+    path, and it returns, rather than swallows, what it could not rebuild (it also logs
+    it at ERROR).
+
+    Takes plain data and opens its own short session rather than borrowing the
     caller's, so it cannot extend a transaction that spans slow work.
     """
-    from app.services.profile_embedding_service import ProfileEmbeddingService
+    from app.services.speaker_cleanup import SpeakerImpact
+    from app.services.speaker_cleanup import reconcile_speaker_impact
 
-    if not profile_ids:
-        return
-
+    impact = SpeakerImpact(
+        owner_ids={int(plan["owner_id"])},
+        cluster_uuids=set(plan["affected_cluster_uuids"]),
+        profile_ids=set(plan["affected_profile_ids"]),
+    )
+    if impact.is_empty():
+        return []
     with session_scope() as db:
-        for profile_id in profile_ids:
-            try:
-                ProfileEmbeddingService.update_profile_embedding(db, profile_id)
-                logger.info(f"Updated profile embedding for profile {profile_id}")
-            except Exception as e:
-                logger.warning(f"Failed to update profile embedding {profile_id}: {e}")
+        return reconcile_speaker_impact(db, impact)

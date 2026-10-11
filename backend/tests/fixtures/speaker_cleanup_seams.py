@@ -152,9 +152,36 @@ def speaker_os_seams(monkeypatch) -> dict[str, Any]:
     monkeypatch.setattr(fcs, "_erase_cluster_docs", eraser("clusters", "clusters"))
     monkeypatch.setattr(fcs, "_erase_profile_docs", eraser("profiles", "profiles"))
 
-    def reindex(*, file_id, file_uuid, user_id, priority=None):
-        rec["reindexed"].append(int(file_id))
-        return True
+    from app.services.search.reindex_dispatch import ReindexDispatch
 
+    rec["reindex_outcome"] = ReindexDispatch.QUEUED
+
+    def queue_reindex(*, file_id, file_uuid, user_id, priority=None):
+        rec["reindexed"].append(int(file_id))
+        return rec["reindex_outcome"]
+
+    def reindex(*, file_id, file_uuid, user_id, priority=None):
+        return queue_reindex(file_id=file_id, file_uuid=file_uuid, user_id=user_id) is (
+            ReindexDispatch.QUEUED
+        )
+
+    monkeypatch.setattr(
+        "app.services.search.reindex_dispatch.queue_transcript_reindex", queue_reindex
+    )
     monkeypatch.setattr("app.services.search.reindex_dispatch.dispatch_transcript_reindex", reindex)
+
+    # The relabelled speakers' own documents (#1233): recorded, keyed by speaker uuid.
+    rec["doc_profiles"] = {}
+    rec["doc_names"] = {}
+
+    def doc_profile(*, speaker_uuid, profile_id, profile_uuid, verified=False, display_name=None):
+        rec["doc_profiles"][str(speaker_uuid)] = profile_id
+        return {"result": "updated"}
+
+    def doc_name(speaker_uuid, display_name):
+        rec["doc_names"][str(speaker_uuid)] = display_name
+        return {"result": "updated"}
+
+    monkeypatch.setattr("app.services.opensearch_service.update_speaker_profile", doc_profile)
+    monkeypatch.setattr("app.services.opensearch_service.update_speaker_display_name", doc_name)
     return rec

@@ -525,7 +525,12 @@ def merge_clusters(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Merge source cluster into target cluster."""
+    """Merge source cluster into target cluster.
+
+    A source member the user unassigned from the target (or its profile, or one of its
+    members) is not moved; it stays in the source, which survives with it, and its UUID
+    is listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).
+    """
     if source_uuid == target_uuid:
         raise HTTPException(status_code=400, detail="Cannot merge cluster with itself")
 
@@ -541,6 +546,7 @@ def merge_clusters(
     return {
         "uuid": str(result.uuid),
         "member_count": int(result.member_count or 0),
+        "blocked_speaker_uuids": list(service.blocked_speaker_uuids),
         "message": "Clusters merged successfully",
     }
 

@@ -185,3 +185,51 @@ def test_a_profile_that_cannot_be_rebuilt_is_erased(db_session, normal_user, spe
     assert speaker_os_seams["erased_profiles"] == [profile_uuid]
     db_session.expire_all()
     assert db_session.get(SpeakerProfile, profile_id).embedding_count == 0
+
+
+class _ClaimStore:
+    """SET NX semantics for the reindex debounce claim; ``claimed`` pre-takes the key."""
+
+    def __init__(self, claimed: bool) -> None:
+        self.keys: set[str] = set()
+        self.claimed = claimed
+
+    def set(self, key, value, nx=False, ex=None):
+        if self.claimed or (nx and key in self.keys):
+            return None
+        self.keys.add(key)
+        return True
+
+    def delete(self, key) -> int:
+        self.keys.discard(key)
+        return 1
+
+
+@pytest.mark.parametrize("state", ["publish-fails", "already-pending"])
+def test_a_reindex_that_could_not_be_queued_is_a_residual(
+    db_session, normal_user, monkeypatch, state
+):
+    """Item 5 of #1233: the real dispatch path, its broker publish failing (or the debounce
+    window already holding the reindex). A failure is a residual; already-pending is not."""
+    from unittest.mock import MagicMock
+
+    media_file = make_file(db_session, normal_user)
+    db_session.commit()
+    task = MagicMock()
+    task.apply_async.side_effect = RuntimeError("broker unreachable")
+    monkeypatch.setattr(
+        "app.core.redis.get_redis", lambda: _ClaimStore(claimed=state == "already-pending")
+    )
+    monkeypatch.setattr("app.tasks.search_indexing_task.index_transcript_search_task", task)
+
+    residual = sc.reconcile_speaker_impact(
+        db_session,
+        sc.SpeakerImpact(owner_ids={normal_user.id}, reindex_file_ids={media_file.id}),
+    )
+
+    if state == "publish-fails":
+        assert [r["stage"] for r in residual] == [sc.STAGE_INDEX]
+        task.apply_async.assert_called_once()
+    else:
+        assert residual == []
+        task.apply_async.assert_not_called()

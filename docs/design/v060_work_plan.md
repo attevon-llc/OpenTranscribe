@@ -23,7 +23,7 @@ You can see the latest UI at http://10.10.10.20:5373 (login `admin@example.com` 
 | Work | Issue | State |
 |---|---|---|
 | Speaker delete leaves stale cluster voiceprint (privacy, must fix) | #1214 | Agent working in its own worktree. Audits every path that removes or moves a speaker, one shared cleanup, tests first |
-| Refuse pyannote.ai speaker detection with local transcription (today it is silently ignored) | #1223 (WP1) | Agent working in its own worktree |
+| Pipeline resolver, validity matrix and `GET /user-settings/pipeline` (WP2) | #1224 | Agent working in its own worktree. The stopgap (#1223) was cancelled; WP2 and WP3 merge together |
 
 ## 3. The pipeline plan (mix and match transcription and speaker detection)
 
@@ -41,8 +41,8 @@ Work packages, in order:
 
 | Step | Issue | What | Depends on |
 |---|---|---|---|
-| WP1 | #1223 | Interim fix: refuse pyannote.ai with local transcription | running now |
-| WP2 | #1224 | One resolver decides what runs where; `GET /user-settings/pipeline`; validation | WP1 |
+| WP1 | #1223 | Cancelled: no stopgap | |
+| WP2 | #1224 | One resolver decides what runs where; `GET /user-settings/pipeline`; validation | running now |
 | WP3 | #1225 | Post-transcription speaker detection stage, migration, voiceprint interface, fixes segment re-split | WP2 |
 | WP4 | #1226 | Any cloud vendor as speaker detector (adapter), one merge path | WP2 (parallel with WP6) |
 | WP6 | #1228 | Lite is cloud-only: hide and refuse local options, migrate settings, fix docs | WP3 |
@@ -50,7 +50,7 @@ Work packages, in order:
 | WP5 | #1227 | Settings "Processing pipeline" view, Local/Cloud chips, speakers-included badges, warnings (absorbs #1219) | WP7 |
 | WP8 | #1230 | Docs-site architecture diagrams and pages updated to the new flow, with a drift check | last |
 
-Translation files are edited by several packages, so they merge in this order: WP1, WP3, WP6, WP7, WP5.
+Translation files are edited by several packages, so they merge in this order: WP3, WP6, WP7, WP5.
 
 ## 4. Other open work on the milestone
 

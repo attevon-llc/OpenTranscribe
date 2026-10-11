@@ -907,7 +907,9 @@ precommit.sh run --all-files` + `--hook-stage pre-push`; `python3 scripts/audit-
 backend/tests` at 0 open findings; `cd frontend && npm run check:i18n` for locale edits; frontend
 changes opened in a browser (light, dark, `ar`) before reporting done.
 
-### WP1 (interim, smallest correct fix): refuse pyannote.ai with local transcription. **S, ~0.5 day**
+### WP1: CANCELLED by the owner (2026-10-11). No stopgap; WP2 and WP3 are built and merged together. (Original text kept below for context only; do not implement.)
+
+#### (cancelled) WP1 (interim, smallest correct fix): refuse pyannote.ai with local transcription. S, ~0.5 day
 
 Decision: **refuse/warn now, implement in WP3.** Implementing needs the post stage (WP3); a
 refusal is correct, tiny, and WP3 deletes it.
@@ -1294,20 +1296,20 @@ Runs after WP1-WP7 are merged so it documents the shipped flow, not the plan.
 ### G1. Order, parallelism, collisions
 
 ```
-WP1 ─► WP2 ─┬─► WP3 ─┬─► WP4 (local-ASR rows; parallel_cloud half may start after WP2) ─┐
+WP2 ─┬─► WP3 ─┬─► WP4 (local-ASR rows; parallel_cloud half may start after WP2) ─┐
             │        ├─► WP6 (lite cloud-only) ──────────────────────────────────────────┤
             │        └─► WP7 late hooks (diarization/post stage) ────────────────────────┤
             ├─► WP7 early hooks + column + UI (after WP2, parallel with WP3) ────────────┤
             └─► WP5 (UI on WP2's API; rebases after WP3, WP4, WP6) ──────────────────────┴─► WP8 (last)
 ```
 
-- WP1 first, alone (stopgap). WP2, then WP3 (consumes WP2's types).
+- WP1 is cancelled (no stopgap). WP2, then WP3 (consumes WP2's types); WP2 and WP3 merge together.
 - After WP3: WP4, WP6 and WP7-late in parallel worktrees. WP7-early (column, record_step, LLM and
   voiceprint hooks, UI) can start right after WP2.
 - WP5 is built against WP2's contract and merges after WP3/WP4/WP6 (it renders their options and
   lite rules). WP8 strictly last.
 - **Locale JSON collisions** (all 12 `frontend/src/lib/i18n/locales/*.json`): WP1, WP3, WP5, WP6,
-  WP7 (and WP8 only if it adds UI copy, it should not). Merge order: **WP1 -> WP3 -> WP6 -> WP7 ->
+  WP7 (and WP8 only if it adds UI copy, it should not). Merge order: **WP3 -> WP6 -> WP7 ->
   WP5**; never two of them with unmerged locale edits at the same time; each rebases and re-runs
   `npm run check:i18n` before merge.
 - Backend collisions: WP3/WP4/WP6 all edit `services/pipeline_plan.py`, `dispatch.py`,

@@ -18,8 +18,8 @@
  * that trap being reintroduced.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
-import { writable } from 'svelte/store';
+import { render, fireEvent } from '@testing-library/svelte';
+import { writable, get } from 'svelte/store';
 import type { Notification, NotificationType } from '../stores/websocket';
 
 vi.mock('../stores/auth', () => ({ token: writable(null) }));
@@ -70,6 +70,7 @@ vi.mock('../stores/websocket', () => ({
 }));
 
 import { showNotificationsPanel } from '../stores/notificationsPanel';
+import { clearedNotice, notificationRetention } from '../stores/notificationRetention';
 import NotificationsPanel from './NotificationsPanel.svelte';
 
 function baseNotification(overrides: Partial<Notification> = {}): Notification {
@@ -270,5 +271,56 @@ describe('sanity: the store subscription this file depends on is exercised', () 
 
     expect(container.querySelectorAll('.notification-item')).toHaveLength(2);
     expect(currentNotifications()).toHaveLength(2);
+  });
+});
+
+describe('retention controls (issue #1217)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    notificationRetention.set('read24h');
+    clearedNotice.reset();
+  });
+
+  it("offers the three choices, defaults to '24 hours after reading', and persists a change", async () => {
+    const { container } = render(NotificationsPanel);
+
+    const select = container.querySelector<HTMLSelectElement>('.retention-setting select');
+    expect(select?.value).toBe('read24h');
+    expect([...(select?.options ?? [])].map((o) => o.value)).toEqual([
+      'read24h',
+      'read7d',
+      'never',
+    ]);
+
+    await fireEvent.change(select!, { target: { value: 'never' } });
+
+    expect(get(notificationRetention)).toBe('never');
+    expect(localStorage.getItem('opentr:notificationRetention')).toBe('never');
+  });
+
+  it('says nothing when no older notifications were cleared', () => {
+    const { container } = render(NotificationsPanel);
+
+    expect(container.querySelector('.cleared-notice')?.textContent?.trim()).toBe('');
+    expect(container.querySelector('.cleared-notice')?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('announces how many were cleared, politely, and the dismiss control removes it', async () => {
+    clearedNotice.add(3);
+    showNotificationsPanel.set(false);
+    showNotificationsPanel.set(true);
+
+    const { container } = render(NotificationsPanel);
+
+    const notice = container.querySelector('.cleared-notice');
+    expect(notice?.textContent).toContain('notifications.clearedNotice');
+    expect(notice?.textContent).toContain('"count":3');
+
+    await fireEvent.click(notice!.querySelector('button')!);
+
+    expect(container.querySelector('.cleared-notice')?.textContent?.trim()).toBe('');
+    showNotificationsPanel.set(false);
+    showNotificationsPanel.set(true);
+    expect(get(clearedNotice)).toBe(0);
   });
 });

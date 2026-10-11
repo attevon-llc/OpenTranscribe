@@ -7,56 +7,63 @@ import { generateId } from '$lib/utils/ids';
 import { formatCompactDuration } from '$lib/utils/formatting';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
+import { pruneNotifications } from '$lib/notifications/retention';
+import { notificationRetention, clearedNotice } from '$stores/notificationRetention';
+import { showNotificationsPanel } from '$stores/notificationsPanel';
 
 // Define notification types
-export type NotificationType =
-  | 'transcription_status'
-  | 'transcript_ready'
-  | 'summarization_status'
-  | 'redaction_status'
-  | 'topic_extraction_status'
-  | 'auto_label_status'
-  | 'youtube_processing_status'
-  | 'playlist_processing_status'
-  | 'analytics_status'
-  | 'download_progress'
-  | 'audio_extraction_status'
-  | 'connection_established'
-  | 'echo'
-  | 'file_upload'
-  | 'file_created'
-  | 'file_updated'
-  | 'file_deleted'
-  | 'speaker_updated'
-  | 'speaker_processing_complete'
-  | 'speaker_rename_propagation'
-  | 'gpu_stats_update'
-  | 'reindex_progress'
-  | 'reindex_complete'
-  | 'reindex_stopped'
-  | 'migration_progress'
-  | 'migration_complete'
-  | 'migration_finalized'
-  | 'clustering_progress'
-  | 'clustering_complete'
-  | 'clustering_file_complete'
-  | 'attribute_migration_progress'
-  | 'attribute_migration_complete'
-  | 'data_integrity_progress'
-  | 'data_integrity_complete'
-  | 'embedding_consistency_progress'
-  | 'embedding_consistency_complete'
-  | 'cache_invalidate'
-  | 'collection_shared'
-  | 'collection_share_revoked'
-  | 'collection_share_updated'
-  | 'group_member_added'
-  | 'group_member_removed'
-  | 'enrichment_started'
-  | 'enrichment_task_complete'
-  | 'search_indexing_complete'
-  | 'file_takedown'
-  | 'file_takedown_released';
+// The runtime list is the source of truth so a test can prove the retention
+// map ($lib/notifications/retention) classifies every type.
+export const NOTIFICATION_TYPES = [
+  'transcription_status',
+  'transcript_ready',
+  'summarization_status',
+  'redaction_status',
+  'topic_extraction_status',
+  'auto_label_status',
+  'youtube_processing_status',
+  'playlist_processing_status',
+  'analytics_status',
+  'download_progress',
+  'audio_extraction_status',
+  'connection_established',
+  'echo',
+  'file_upload',
+  'file_created',
+  'file_updated',
+  'file_deleted',
+  'speaker_updated',
+  'speaker_processing_complete',
+  'speaker_rename_propagation',
+  'gpu_stats_update',
+  'reindex_progress',
+  'reindex_complete',
+  'reindex_stopped',
+  'migration_progress',
+  'migration_complete',
+  'migration_finalized',
+  'clustering_progress',
+  'clustering_complete',
+  'clustering_file_complete',
+  'attribute_migration_progress',
+  'attribute_migration_complete',
+  'data_integrity_progress',
+  'data_integrity_complete',
+  'embedding_consistency_progress',
+  'embedding_consistency_complete',
+  'cache_invalidate',
+  'collection_shared',
+  'collection_share_revoked',
+  'collection_share_updated',
+  'group_member_added',
+  'group_member_removed',
+  'enrichment_started',
+  'enrichment_task_complete',
+  'search_indexing_complete',
+  'file_takedown',
+  'file_takedown_released',
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 /**
  * Payload attached to a {@link Notification}. Carries the `data` object from the
@@ -98,6 +105,8 @@ export interface Notification {
   message: string;
   timestamp: Date;
   read: boolean;
+  // When it was marked read; the retention clock for read items (issue #1217).
+  readAt?: Date;
   data?: NotificationData;
   // Progressive notification fields
   progressId?: string; // Used to group progressive notifications
@@ -167,18 +176,41 @@ const ADMIN_COMPLETION_TYPES = new Set([
   'embedding_consistency_complete',
 ]);
 
+/**
+ * Apply the retention policy (issue #1217) to a list. Pure policy lives in
+ * `$lib/notifications/retention`; this only supplies the clock, the user's
+ * setting and the panel state, and tells the user later what was removed.
+ * While the panel is open it removes nothing, so rows never vanish mid-read.
+ */
+function retain(list: Notification[]): Notification[] {
+  const { kept, removedVisible } = pruneNotifications(list, {
+    now: Date.now(),
+    retention: get(notificationRetention),
+    panelOpen: get(showNotificationsPanel),
+  });
+  clearedNotice.add(removedVisible);
+  return kept;
+}
+
 // Load notifications from localStorage if available
 const loadNotificationsFromStorage = (): Notification[] => {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('notifications');
       if (stored) {
-        const parsed: Array<Notification & { timestamp: string }> = JSON.parse(stored);
-        // Convert timestamp strings back to Date objects
-        return parsed.map((n) => ({
-          ...n,
-          timestamp: new Date(n.timestamp),
-        }));
+        const parsed: Array<Notification & { timestamp: string; readAt?: string }> =
+          JSON.parse(stored);
+        // Convert timestamp strings back to Date objects. A read item saved before
+        // `readAt` existed starts its retention clock now rather than being
+        // judged against a read time nobody recorded.
+        const loadedAt = new Date();
+        return retain(
+          parsed.map((n) => ({
+            ...n,
+            timestamp: new Date(n.timestamp),
+            readAt: n.readAt ? new Date(n.readAt) : n.read ? loadedAt : undefined,
+          }))
+        );
       }
     } catch (error) {
       console.warn('Failed to load notifications from localStorage:', error);
@@ -759,6 +791,7 @@ function createWebSocketStore() {
                       status === 'not_configured' ||
                       (data.type === 'youtube_processing_status' && status === 'pending'),
                     read: false, // Mark as unread for updates
+                    readAt: undefined,
                     data: {
                       ...s.notifications[existingIndex].data,
                       ...data.data,
@@ -789,7 +822,7 @@ function createWebSocketStore() {
                       (data.type === 'youtube_processing_status' && status === 'pending'),
                   };
 
-                  s.notifications = [notification, ...s.notifications.slice(0, 99)];
+                  s.notifications = retain([notification, ...s.notifications]);
                 }
 
                 saveNotificationsToStorage(s.notifications);
@@ -843,7 +876,7 @@ function createWebSocketStore() {
 
               // Add notification (MediaLibrary will see it, but NotificationsPanel will filter it out)
               update((s: WebSocketState) => {
-                s.notifications = [notification, ...s.notifications.slice(0, 99)];
+                s.notifications = retain([notification, ...s.notifications]);
                 // Don't save silent notifications to localStorage to keep it clean
                 return s;
               });
@@ -865,7 +898,7 @@ function createWebSocketStore() {
 
               // Add notification
               update((s: WebSocketState) => {
-                s.notifications = [notification, ...s.notifications.slice(0, 99)]; // Keep max 100 notifications
+                s.notifications = retain([notification, ...s.notifications]);
                 saveNotificationsToStorage(s.notifications);
                 return s;
               });
@@ -943,6 +976,7 @@ function createWebSocketStore() {
         if (notification.status === 'processing' && !notification.dismissible) {
           // Mark as read but keep the notification
           state.notifications[index].read = true;
+          state.notifications[index].readAt = new Date();
           // Re-add as unread after a short delay (simulated by creating a duplicate)
           setTimeout(() => {
             update((s: WebSocketState) => {
@@ -951,6 +985,7 @@ function createWebSocketStore() {
               );
               if (stillExists) {
                 stillExists.read = false;
+                stillExists.readAt = undefined;
                 saveNotificationsToStorage(s.notifications);
               }
               return s;
@@ -959,8 +994,21 @@ function createWebSocketStore() {
         } else {
           // Regular dismissal for completed/error notifications
           state.notifications[index].read = true;
+          state.notifications[index].readAt = new Date();
         }
 
+        saveNotificationsToStorage(state.notifications);
+      }
+      return state;
+    });
+  };
+
+  // Apply retention now (on panel close, the moment deferred pruning is allowed)
+  const prune = () => {
+    update((state: WebSocketState) => {
+      const kept = retain(state.notifications);
+      if (kept.length !== state.notifications.length) {
+        state.notifications = kept;
         saveNotificationsToStorage(state.notifications);
       }
       return state;
@@ -970,9 +1018,12 @@ function createWebSocketStore() {
   // Mark all notifications as read
   const markAllAsRead = () => {
     update((state: WebSocketState) => {
+      const readAt = new Date();
       state.notifications = state.notifications.map((n: Notification) => ({
         ...n,
         read: true,
+        // Keep the original read time of items that were already read.
+        readAt: n.read && n.readAt ? n.readAt : readAt,
       }));
       saveNotificationsToStorage(state.notifications);
       return state;
@@ -983,6 +1034,7 @@ function createWebSocketStore() {
   const clearAll = () => {
     update((state: WebSocketState) => {
       state.notifications = [];
+      clearedNotice.reset();
       saveNotificationsToStorage(state.notifications);
       return state;
     });
@@ -1129,6 +1181,7 @@ function createWebSocketStore() {
           state.notifications[existingIndex] = {
             ...state.notifications[existingIndex],
             ...newNotification,
+            readAt: undefined,
             id: state.notifications[existingIndex].id, // Keep original ID
             timestamp: state.notifications[existingIndex].timestamp, // Keep original timestamp
           };
@@ -1138,11 +1191,11 @@ function createWebSocketStore() {
           // (issue #569's currency review), so a client-originated source (audio
           // extraction, download bridge) with a fresh `progressId` per item could
           // grow the list without bound.
-          state.notifications = [newNotification, ...state.notifications.slice(0, 99)];
+          state.notifications = retain([newNotification, ...state.notifications]);
         }
       } else {
         // Add new notification at the beginning
-        state.notifications = [newNotification, ...state.notifications.slice(0, 99)];
+        state.notifications = retain([newNotification, ...state.notifications]);
       }
 
       saveNotificationsToStorage(state.notifications);
@@ -1184,6 +1237,7 @@ function createWebSocketStore() {
                 id: generateId('ws'),
                 timestamp: new Date(),
                 read: false,
+                readAt: undefined,
               };
               s.notifications = [regenerated, ...s.notifications];
               saveNotificationsToStorage(s.notifications);
@@ -1303,7 +1357,7 @@ function createWebSocketStore() {
           if (existingIndex !== -1) {
             s.notifications[existingIndex] = notificationData;
           } else {
-            s.notifications = [notificationData, ...s.notifications.slice(0, 99)];
+            s.notifications = retain([notificationData, ...s.notifications]);
           }
 
           saveNotificationsToStorage(s.notifications);
@@ -1323,6 +1377,7 @@ function createWebSocketStore() {
     markAsRead,
     markAllAsRead,
     clearAll,
+    prune,
     removeNotification,
     addNotification,
     updateNotification,
@@ -1331,6 +1386,13 @@ function createWebSocketStore() {
 
 // Create the WebSocket store
 export const websocketStore = createWebSocketStore();
+
+// Retention is deferred while the panel is open; the close is the deferred moment.
+let panelWasOpen = false;
+showNotificationsPanel.subscribe((open) => {
+  if (panelWasOpen && !open) websocketStore.prune();
+  panelWasOpen = open;
+});
 
 // Derived store for unread notifications count (excluding silent notifications)
 export const unreadCount = derived(

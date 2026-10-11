@@ -11,6 +11,8 @@
   import { showNotificationsPanel } from '../stores/notificationsPanel';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
+  import ClearedNotice from './notifications/ClearedNotice.svelte';
+  import NotificationRetentionSetting from './notifications/NotificationRetentionSetting.svelte';
   import logoIcon from '../assets/logo-icon.png';
 
 
@@ -330,6 +332,8 @@
       </div>
     </div>
 
+    <ClearedNotice />
+
     <!-- Notifications List -->
     <div class="notifications-content">
       {#if $websocketStore.notifications.filter(n => !n.silent).length === 0}
@@ -511,6 +515,8 @@
         </div>
       {/if}
     </div>
+
+    <NotificationRetentionSetting />
   </div>
 {/if}
 

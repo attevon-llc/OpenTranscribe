@@ -167,6 +167,13 @@ export const ENRICHMENT_TASK_KEYS: Record<string, string> = {
   speaker_clustering: 'notifications.enrichment.speaker_clustering',
 };
 
+/** Notification "Keep notifications for" choices, keyed by RetentionSetting (#1217). */
+export const NOTIFICATION_RETENTION_KEYS: Record<string, string> = {
+  read24h: 'notifications.retention.read24h',
+  read7d: 'notifications.retention.read7d',
+  never: 'notifications.retention.never',
+};
+
 export const DURATION_CHIP_KEYS: Record<string, string> = {
   duration1to10: 'filter.duration1to10',
   duration11to30: 'filter.duration11to30',

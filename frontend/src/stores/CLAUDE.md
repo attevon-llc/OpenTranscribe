@@ -22,6 +22,8 @@ caches of API responses.
 - `websocket.ts` — real-time file/task status updates (large; split candidate).
 - `toast.ts` — `toastStore.success/error(...)` notifications.
 - `transcriptStore.ts` — transcript segments + processed cache (used by transcript views/analytics).
+- `notificationRetention.ts` — the "Keep notifications for" preference and the "N cleared" notice
+  count (#1217); policy lives in `$lib/notifications/retention.ts`.
 - `notificationsPanel.ts`, `downloads.ts`, `uploads.ts`, `recording.ts`, `gallery.ts`, `search.ts`,
   `sharing.ts`, `groups.ts`, `llmStatus.ts`, `network.ts`, `locale.ts`, `theme.js`,
   `audioPlaybackStore.ts`, `settingsModalStore.ts`.

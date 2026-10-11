@@ -146,6 +146,33 @@ def assign_speakers(
     return transcript_result
 
 
+def diarize_segments_to_frame(segments) -> DiarizeResult:
+    """A provider's speaker turns (``DiarizeSegment``-shaped) as the frame ``assign_speakers``
+    reads, so a cloud detector's turns reach the text through the same overlap rule as the
+    local engine's."""
+    return DiarizeResult(
+        start=np.array([float(s.start) for s in segments], dtype=np.float64),
+        end=np.array([float(s.end) for s in segments], dtype=np.float64),
+        speaker=np.array([str(s.speaker) for s in segments], dtype=object),
+    )
+
+
+def inherit_segment_speakers(transcript_result: dict) -> dict:
+    """Segment-level merge: every word takes its segment's speaker (plan merge ``segment``).
+
+    For a model whose text carries segment timing only, per-word times are not evidence of
+    who spoke, so a segment gets the speaker whose turns overlap it most (already decided by
+    :func:`assign_speakers`) and its words follow. ``finalize_segments`` then keeps each
+    segment whole: a speaker change inside a segment is not detected, which is exactly what
+    the plan's ``segment_timing_only`` warning says.
+    """
+    for segment in transcript_result.get("segments", []):
+        speaker = segment.get("speaker")
+        for word in segment.get("words") or []:
+            word["speaker"] = speaker
+    return transcript_result
+
+
 def _batch_assign(
     query_starts: np.ndarray,
     query_ends: np.ndarray,

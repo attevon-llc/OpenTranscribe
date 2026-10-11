@@ -18,6 +18,7 @@ from app.tasks.transcription import pipelines
 from app.transcription import config as tconfig
 from app.transcription.config import TranscriptionConfig
 from app.transcription.engine.config import EngineConfig
+from tests.unit._plan_contexts import plan_context
 
 USER_SETTINGS = {
     "min_speakers": 1,
@@ -145,7 +146,7 @@ def test_engine_paths_carry_the_files_settings_through_the_snapshot(
 ):
     seen = _capture_engine(monkeypatch)
     with pytest.raises(_StopError):
-        getattr(pipelines, builder)(ctx, "/scratch/a.wav", {})
+        getattr(pipelines, builder)(ctx, "/scratch/a.wav", {"pipeline_plan": plan_context()})
 
     # The GPU stage rebuilds its config from this snapshot, so this is what it decodes with.
     restored = EngineConfig.from_snapshot(seen[0].config_snapshot).transcription_config

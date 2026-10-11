@@ -1671,6 +1671,7 @@
   "errors.media.permissionError": "تم رفض الوصول إلى هذا المحتوى. قد يكون محميًا أو يتطلب تسجيل الدخول.",
   "errors.media.interrupted": "توقفت المعالجة بسبب مشكلة مؤقتة في الخادم ولم تكتمل رغم عدة محاولات تلقائية.",
   "errors.media.diarizationNotConfigured": "تم ضبط كشف المتحدثين على خدمة pyannote.ai السحابية، لكن لا يوجد مفتاح واجهة برمجة تطبيقات pyannote.ai محفوظ لحسابك. احفظ مفتاحًا في الإعدادات أو اختر خيارًا آخر لكشف المتحدثين، ثم أعد المحاولة.",
+  "errors.media.pipelineNotRunnable": "لا يمكن استخدام إعدادات النسخ وكشف المتحدثين معًا لهذا الملف. غيّرها في الإعدادات، ثم أعد المحاولة.",
   "errors.media.unclassified": "حدث خطأ غير معروف أثناء المعالجة.",
   "fileDetail.processingInProgress": "المعالجة جارية",
   "fileDetail.processingFile": "جارٍ معالجة الملف...",

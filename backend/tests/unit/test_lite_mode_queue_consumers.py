@@ -37,27 +37,9 @@ _LITE_COMPOSE = _REPO_ROOT / "docker-compose.lite.yml"
 
 # A route may legitimately name a queue lite does not staff ONLY when the task
 # cannot run in lite at all AND lite refuses it somewhere the caller can see.
-# Each entry needs that second half written down.
-_EXEMPT_FROM_LITE_CONSUMER_CHECK = {
-    "transcription.process_file": (
-        "Local WhisperX transcription. The lite image ships no local ASR and "
-        "services/asr/factory.py raises a named error for DEPLOYMENT_MODE=lite "
-        "before anything is dispatched, so this route is unreachable there. "
-        "Rerouting it to 'cpu' would replace that clear refusal with a different "
-        "failure on a worker that also cannot run it. This task name is itself a "
-        "dead route today (superseded by the 3-stage chain, legacy_task.py's own "
-        "docstring), so the refusal that actually matters is the live one in the "
-        "3-stage chain: transcription/dispatch.py's _resolve_gpu_queue() calls the "
-        "same factory guard synchronously, in the API/dispatch layer, before ANY "
-        "queue publish. That refusal reaching the caller correctly depends on "
-        "_resolve_gpu_queue() re-raising ASRConfigurationError rather than "
-        "swallowing it in its generic fallback except — before issue #865's "
-        "follow-up fix it did not, so a lite deployment with no cloud ASR "
-        "configured silently published into 'gpu' anyway, which lite scales to "
-        "zero replicas. See tests/unit/test_dispatch.py::TestResolveGpuQueue's "
-        "lite-deployment tests for the coverage of that guard."
-    ),
-}
+# Each entry needs that second half written down. Empty since issue #1225 deleted the
+# legacy single-task ``transcription.process_file`` route, the only entry it ever held.
+_EXEMPT_FROM_LITE_CONSUMER_CHECK: dict[str, str] = {}
 
 
 def _services(path: Path) -> dict[str, dict[str, Any]]:
@@ -181,6 +163,28 @@ def test_a_full_deployment_still_sends_the_family_to_the_gpu():
         assert celery_app.conf.task_routes[name]["queue"] == CeleryQueues.GPU, (
             f"{name} left the GPU queue in a full deployment"
         )
+
+
+@pytest.mark.parametrize("engine", ["pyannote_ai", "asr_config"])
+def test_a_cloud_speaker_detection_post_stage_lands_on_a_queue_lite_staffs(engine):
+    """``rediarize`` is published with an explicit queue (``post_stage_queue``), not via
+    ``task_routes``, so the route scan above cannot see it (issue #1225). A vendor detector
+    is the speaker-detection path lite actually offers, so its queue must be drained."""
+    from app.services.pipeline_plan import post_stage_queue
+
+    queue = post_stage_queue(engine, "lite")
+
+    assert queue == CeleryQueues.CLOUD_ASR
+    assert queue in _queues_with_a_consumer_in_lite()
+
+
+def test_a_local_post_stage_never_targets_the_gpu_queue_in_lite():
+    """Lite refuses a local post stage before dispatch (``local_diarization_unavailable``);
+    should one ever be published anyway, it must not wait forever on 'gpu'."""
+    from app.services.pipeline_plan import post_stage_queue
+
+    assert post_stage_queue("local", "lite") == CeleryQueues.CPU
+    assert post_stage_queue("local", "full") == CeleryQueues.GPU
 
 
 def test_the_lite_resolution_is_the_cpu_queue():

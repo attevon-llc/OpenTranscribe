@@ -1671,6 +1671,7 @@
   "errors.media.permissionError": "Access to this content was refused. It may be protected or require sign-in.",
   "errors.media.interrupted": "Processing was interrupted by a temporary server problem and still could not finish after several automatic retries.",
   "errors.media.diarizationNotConfigured": "Speaker detection is set to the pyannote.ai cloud service, but no pyannote.ai API key is saved for your account. Save a key in Settings or choose another speaker detection option, then retry.",
+  "errors.media.pipelineNotRunnable": "Your transcription and speaker detection settings cannot be used together for this file. Change them in Settings, then retry.",
   "errors.media.unclassified": "An unknown error occurred during processing.",
   "fileDetail.processingInProgress": "Processing in Progress",
   "fileDetail.processingFile": "Processing file...",

@@ -547,6 +547,7 @@
   "errors.media.permissionError": "L'accès à ce contenu a été refusé. Il est peut-être protégé ou nécessite une connexion.",
   "errors.media.interrupted": "Le traitement a été interrompu par un problème temporaire du serveur et n'a pas pu se terminer après plusieurs nouvelles tentatives automatiques.",
   "errors.media.diarizationNotConfigured": "La détection des locuteurs utilise le service cloud pyannote.ai, mais aucune clé API pyannote.ai n'est enregistrée pour votre compte. Enregistrez une clé dans les Paramètres ou choisissez une autre option de détection des locuteurs, puis réessayez.",
+  "errors.media.pipelineNotRunnable": "Vos paramètres de transcription et de détection des locuteurs ne peuvent pas être utilisés ensemble pour ce fichier. Modifiez-les dans les Paramètres, puis réessayez.",
   "errors.media.unclassified": "Une erreur inconnue s'est produite pendant le traitement.",
   "fileDetail.profileLinkedMessage": "\"{{displayName}}\" est actuellement lié au profil \"{{profileName}}\". Que souhaitez-vous faire ?",
   "fileDetail.reprocessTooltip": "Retraiter ce fichier avec l'IA de transcription",

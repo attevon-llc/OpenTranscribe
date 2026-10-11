@@ -360,6 +360,47 @@ def dispatch_task_by_name(
         logger.warning(f"Unknown stage '{stage}' for dispatch")
 
 
+def _dispatch_manual_rediarize(
+    file_uuid: str,
+    owner_id: int,
+    *,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    downstream_tasks: list[str] | None,
+) -> None:
+    """Re-run speaker detection with the owner's CURRENT choice (plan decision Q9).
+
+    The post stage runs the plan's detector: pyannote.ai on ``cloud-asr``, otherwise this
+    server's engine on ``gpu_preferred_queue()`` (a transcription vendor's own speakers, or
+    "off", cannot be re-run after the fact, so they mean this server). A choice that cannot
+    run (no pyannote.ai key, or no local engine on lite) fails the task with its fixed
+    sentence rather than silently running something else.
+    """
+    from app.db.session_utils import session_scope
+    from app.services.pipeline_plan import post_stage_engine
+    from app.services.pipeline_plan import post_stage_queue
+    from app.services.pipeline_plan_inputs import plan_for_user
+    from app.tasks.rediarize_task import rediarize_task
+
+    # The file OWNER's choice and credential: the task detects speakers with them.
+    with session_scope() as db:
+        plan = plan_for_user(db, owner_id)
+    engine = post_stage_engine(plan.diarization.engine)
+    rediarize_task.apply_async(
+        args=[file_uuid],
+        kwargs={
+            "min_speakers": min_speakers,
+            "max_speakers": max_speakers,
+            "num_speakers": num_speakers,
+            "downstream_tasks": downstream_tasks,
+            "engine": engine,
+            "diarizer_config_uuid": plan.diarization.config_uuid,
+        },
+        queue=post_stage_queue(engine),
+    )
+
+
 def dispatch_selective_tasks(
     file_uuid: str,
     stages: list[str],
@@ -370,6 +411,7 @@ def dispatch_selective_tasks(
     user_id: int | None = None,
     whisper_model: str | None = None,
     disable_diarization: bool = False,
+    owner_id: int | None = None,
 ) -> None:
     """Dispatch Celery tasks for selected pipeline stages.
 
@@ -383,6 +425,7 @@ def dispatch_selective_tasks(
         user_id: Owner user ID (passed to tasks that need it).
         whisper_model: Optional Whisper model override for transcription.
         disable_diarization: Skip diarization; honoured by the transcription stage only.
+        owner_id: The file owner, whose speaker-detection choice a re-diarize runs with.
     """
     import os
 
@@ -404,11 +447,12 @@ def dispatch_selective_tasks(
             disable_diarization=disable_diarization,
         )
     elif "rediarize" in stages:
-        from app.tasks.rediarize_task import rediarize_task
-
         other_stages = [s for s in stages if s != "rediarize"]
-        rediarize_task.delay(
+        if owner_id is None:
+            raise ValueError("re-diarizing needs the file owner's id")
+        _dispatch_manual_rediarize(
             file_uuid,
+            owner_id,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
@@ -561,6 +605,7 @@ def process_file_reprocess(
                 user_id=current_user.id,
                 whisper_model=whisper_model,
                 disable_diarization=disable_diarization,
+                owner_id=int(media_file.user_id),
             )
 
             logger.info(

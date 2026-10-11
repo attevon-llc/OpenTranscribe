@@ -400,15 +400,23 @@ def test_rediarize_always_dispatches_a_reindex_even_with_no_downstream_tasks_req
     with (
         patch(_DISPATCH) as dispatch_mock,
         patch.object(mod, "_prepare_audio", return_value=("/tmp/fake.wav", None)),  # noqa: S108 — stand-in path, never opened (the diarization stage is also stubbed)
-        patch.object(mod, "_run_diarization", return_value=(diarize_df, {"regions": []}, None)),
+        patch.object(
+            mod,
+            "_detect",
+            return_value=mod._Detection(
+                frame=diarize_df,
+                overlap_info={"regions": []},
+                native_embeddings=None,
+                provider="native",
+                model=None,
+            ),
+        ),
         patch("app.tasks.transcription.notifications.send_progress_notification"),
         patch("app.tasks.transcription.notifications.send_completion_notification"),
         patch(
             "app.tasks.speaker_attribute_task._is_speaker_attribute_detection_enabled",
             return_value=False,
         ),
-        patch("app.tasks.transcription.core._process_speaker_embeddings"),
-        patch("app.tasks.transcription.core._should_use_native_embeddings", return_value=False),
     ):
         mod.rediarize_task.apply(
             kwargs={
@@ -432,7 +440,13 @@ def test_rediarize_always_dispatches_a_reindex_even_with_no_downstream_tasks_req
             .filter(TranscriptSegment.media_file_id == media_file.id)
             .all()
         )
-        assert len(refreshed) == 2, "rediarize must have re-saved the segments for real"
+        # Both turns are SPEAKER_00, so the re-split (issue #1225: rediarize now runs
+        # finalize_segments like every other path) joins them into one segment. Two rows
+        # here would mean the segments were never re-saved.
+        assert len(refreshed) == 1, "rediarize must have re-saved the segments for real"
+        assert (refreshed[0].start_time, refreshed[0].end_time) == (0.0, 10.0)
+        assert "original wording" in refreshed[0].text
+        assert "second segment" in refreshed[0].text
 
     # Cleanup note: rediarize_task.apply() writes its own Task row via
     # create_task_record/update_task_status on the real engine — `real_db`'s

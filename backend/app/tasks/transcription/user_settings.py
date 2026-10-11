@@ -69,7 +69,6 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "transcription_repetition_penalty",
         "transcription_min_speakers",
         "transcription_max_speakers",
-        "transcription_diarization_source",
     ]
     user_settings = (
         db.query(models.UserSetting)
@@ -114,9 +113,6 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "max_speakers": int(
             settings_map.get("transcription_max_speakers", str(settings.MAX_SPEAKERS))
         ),
-        "diarization_source": settings_map.get("transcription_diarization_source", "provider"),
-        "disable_diarization": settings_map.get("transcription_diarization_source", "provider")
-        == "off",
     }
 
 

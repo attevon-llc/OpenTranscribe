@@ -93,6 +93,18 @@ ISSUE_MESSAGES: dict[str, str] = {
     "source_locked": "Your administrator manages speaker detection for this deployment.",
 }
 
+#: The codes the resolver reports with ``severity == "error"``: a run planned with one of
+#: them is refused at dispatch and its sentence is what the file stores.
+BLOCKING_CODES: tuple[str, ...] = (
+    "pyannote_key_missing",
+    "diarizer_config_missing",
+    "diarizer_config_no_speakers",
+    "local_asr_unavailable",
+    "local_diarization_unavailable",
+    "automatic_needs_speaker_provider",
+    "asr_no_timing_for_speakers",
+)
+
 
 @dataclass(frozen=True)
 class PlanIssue:
@@ -196,6 +208,31 @@ class PipelinePlan:
             speaker_id=SpeakerIdStep(**data["speaker_id"]),
             issues=tuple(PlanIssue(**i) for i in data["issues"]),
         )
+
+
+#: The detectors a post stage (``rediarize_task``) can run. ``asr`` cannot run after the
+#: fact (it would mean transcribing again), so a re-run of speaker detection for a file whose
+#: plan said ``asr`` or ``off`` uses this server's engine (decided Q9).
+PostStageEngine = Literal["local", "pyannote_ai", "asr_config"]
+
+
+def post_stage_engine(engine: str) -> PostStageEngine:
+    """The detector a post stage runs for a plan's diarization ``engine``."""
+    if engine == "pyannote_ai":
+        return "pyannote_ai"
+    if engine == "asr_config":
+        return "asr_config"
+    return "local"
+
+
+def post_stage_queue(engine: str, deployment_mode: str | None = None) -> str:
+    """Where a post stage runs: this server's engine prefers a GPU, a vendor is I/O only.
+
+    A cloud detector never holds a GPU slot while it waits on the vendor.
+    """
+    if post_stage_engine(engine) == "local":
+        return gpu_preferred_queue(deployment_mode)
+    return CeleryQueues.CLOUD_ASR
 
 
 def _local_hints(diarizer_backend: str) -> frozenset[SpeakerHint]:

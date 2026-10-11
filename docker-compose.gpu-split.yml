@@ -29,7 +29,7 @@
 # celery-worker-gpu-transcribe/-diarize in docker-compose.yml (issue #703
 # follow-up). Those two workers only ever run split-mode work, so the base file
 # hardcoding it there is correct and untouched. But dispatch.py's
-# _resolve_gpu_queue() (app/core/constants.gpu_split_enabled()) ALSO needs to see
+# _plan_for_dispatch() (app/core/constants.gpu_split_enabled()) ALSO needs to see
 # this var, and it runs in every container that can dispatch a transcription
 # pipeline — backend, celery-worker, celery-cpu-worker, celery-download-worker —
 # none of which has any other way to learn that --with-gpu-split was used

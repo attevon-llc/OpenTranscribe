@@ -131,8 +131,8 @@ class TestRetryReachesThePipelineWithTheFilesOwnRequest:
         media_file = _make_file(db_session, normal_user, file_status="error")
         retry(client, user_token_headers, media_file)
         stage = pipeline_stages[0]
-        assert stage["diarization_source"] is None
-        assert stage["disable_diarization"] is None
+        assert stage["pipeline_plan"]["diarization"]["source"] == "provider"
+        assert stage["pipeline_plan"]["diarization"]["engine"] != "off"
         assert stage["whisper_model"] is None
 
     def test_skipped_diarization_stays_skipped(
@@ -142,7 +142,7 @@ class TestRetryReachesThePipelineWithTheFilesOwnRequest:
             db_session, normal_user, file_status="error", requested_disable_diarization=True
         )
         retry(client, user_token_headers, media_file)
-        assert pipeline_stages[0]["diarization_source"] == "off"
+        assert pipeline_stages[0]["pipeline_plan"]["diarization"]["engine"] == "off"
 
     def test_a_run_that_already_had_diarization_off_stays_off(
         self, client, user_token_headers, normal_user, db_session, pipeline_stages, retry
@@ -151,4 +151,4 @@ class TestRetryReachesThePipelineWithTheFilesOwnRequest:
             db_session, normal_user, file_status="error", diarization_disabled=True
         )
         retry(client, user_token_headers, media_file)
-        assert pipeline_stages[0]["diarization_source"] == "off"
+        assert pipeline_stages[0]["pipeline_plan"]["diarization"]["engine"] == "off"

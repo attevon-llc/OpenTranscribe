@@ -25,6 +25,7 @@ from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import is_cancelled
+from .context import plan_of
 from .context import requeue_after_abort
 from .context import requeue_if_context_poisoned
 from .context import retry_on_diar_sidecar_unavailable
@@ -75,8 +76,7 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
     benchmark_timing.mark(task_id, "diarize_received")
     benchmark_timing.mark(task_id, "diarize_task_prerun")
 
-    diarization_source = preprocess_context.get("diarization_source", "provider")
-    disable_diarization = diarization_source == "off"
+    diarization_off = plan_of(preprocess_context).diarization.engine == "off"
 
     ctx = TranscriptionContext(
         task_id=task_id,
@@ -141,8 +141,7 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
             result = job_result.to_pipeline_dict()
             result.setdefault("asr_provider", "local")
             result.setdefault("asr_model", engine_config.transcription_config.model_name)
-            result["diarization_disabled"] = disable_diarization
-            result["diarization_source"] = diarization_source
+            result["diarization_disabled"] = diarization_off
 
             validation_error = _validate_transcription_result(result, ctx, task_id)
             if validation_error:

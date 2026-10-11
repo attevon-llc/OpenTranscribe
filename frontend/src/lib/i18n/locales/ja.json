@@ -1642,6 +1642,7 @@
   "errors.media.permissionError": "このコンテンツへのアクセスが拒否されました。保護されているか、サインインが必要な可能性があります。",
   "errors.media.interrupted": "サーバーの一時的な問題により処理が中断され、自動的に複数回再試行しても完了できませんでした。",
   "errors.media.diarizationNotConfigured": "話者検出がpyannote.aiクラウドサービスに設定されていますが、お使いのアカウントにpyannote.ai APIキーが保存されていません。設定でキーを保存するか、別の話者検出オプションを選んでから再試行してください。",
+  "errors.media.pipelineNotRunnable": "文字起こしと話者検出の設定をこのファイルで組み合わせて使用することはできません。設定で変更してから再試行してください。",
   "errors.media.unclassified": "処理中に不明なエラーが発生しました。",
   "fileDetail.processingInProgress": "処理中",
   "fileDetail.processingFile": "ファイルを処理中...",

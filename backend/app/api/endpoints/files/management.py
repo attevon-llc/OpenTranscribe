@@ -756,6 +756,7 @@ def _handle_reprocess_action(
             file_id=file_id,
             user_id=int(db_file.user_id),
             disable_diarization=disable_diarization,
+            owner_id=int(db_file.user_id),
         )
         message = f"Selective reprocessing started (stages: {', '.join(stages)})"
         return BulkActionResult(file_uuid=file_uuid, success=True, message=message)

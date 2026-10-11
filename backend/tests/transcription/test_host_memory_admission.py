@@ -29,6 +29,7 @@ from app.core.worker_shutdown import TranscriptionAbortedError
 from app.transcription import config as config_mod
 from app.transcription import host_memory_admission as ham
 from app.transcription.host_memory_admission import HostMemoryAdmissionTimeoutError
+from tests.unit._plan_contexts import plan_context
 
 
 @pytest.fixture(autouse=True)
@@ -315,7 +316,7 @@ def test_the_gpu_task_holds_a_slot_while_it_runs(host, db_session, normal_user, 
     ham.configure(configured=2)
     held_during_body: list[int] = []
 
-    def _body(user_id):
+    def _body(user_id, plan):
         held_during_body.append(_gate().in_use)
         raise _BodyReachedError
 
@@ -330,11 +331,11 @@ def test_the_gpu_task_holds_a_slot_while_it_runs(host, db_session, normal_user, 
         "storage_path": media_file.storage_path,
         "file_name": media_file.filename,
         "content_type": media_file.content_type,
-        "diarization_source": "provider",
+        "pipeline_plan": plan_context(),
     }
     with (
         patch.object(core_module, "update_task_status"),
-        patch.object(core_module, "_resolve_asr_provider_or_none", _body),
+        patch.object(core_module, "_cloud_asr_provider_or_none", _body),
         patch.object(core_module, "_finish_failed_or_aborted", _reraise),
         pytest.raises(_BodyReachedError),
     ):

@@ -586,6 +586,13 @@
     font-size: 0.7rem;
   }
 
+  /* The header cells share the body cells' column classes, so the body font sizes above
+     (0.875rem, 0.7rem for status) leaked into the labels and made the seven of them three
+     different sizes. Header labels always take the header's own size. */
+  .file-list-header .list-cell {
+    font-size: inherit;
+  }
+
   /* Hide speakers and size columns on tablets */
   @media (max-width: 1024px) {
     .list-cell-speakers,

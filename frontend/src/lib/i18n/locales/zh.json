@@ -2965,6 +2965,7 @@
   "gallery.columnType": "类型",
   "gallery.columnTitle": "标题",
   "gallery.columnSpeakers": "讲话人",
+  "gallery.speakerCountShort": "{{count}} 位讲话人",
   "gallery.columnDuration": "时长",
   "gallery.columnDate": "日期",
   "gallery.columnSize": "大小",

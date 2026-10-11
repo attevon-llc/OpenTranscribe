@@ -2964,6 +2964,7 @@
   "gallery.columnType": "Тип",
   "gallery.columnTitle": "Название",
   "gallery.columnSpeakers": "Спикеры",
+  "gallery.speakerCountShort": "{{count}} спик.",
   "gallery.columnDuration": "Длительность",
   "gallery.columnDate": "Дата",
   "gallery.columnSize": "Размер",

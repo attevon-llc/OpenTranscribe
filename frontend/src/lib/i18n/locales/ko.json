@@ -2997,6 +2997,7 @@
   "gallery.columnType": "유형",
   "gallery.columnTitle": "제목",
   "gallery.columnSpeakers": "화자",
+  "gallery.speakerCountShort": "화자 {{count}}명",
   "gallery.columnDuration": "재생 시간",
   "gallery.columnDate": "날짜",
   "gallery.columnSize": "크기",

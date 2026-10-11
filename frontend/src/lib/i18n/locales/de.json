@@ -2962,6 +2962,7 @@
   "gallery.columnType": "Typ",
   "gallery.columnTitle": "Titel",
   "gallery.columnSpeakers": "Sprecher",
+  "gallery.speakerCountShort": "{{count}} Spr.",
   "gallery.columnDuration": "Dauer",
   "gallery.columnDate": "Datum",
   "gallery.columnSize": "Größe",

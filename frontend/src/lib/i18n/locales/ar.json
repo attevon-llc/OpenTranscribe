@@ -2997,6 +2997,7 @@
   "gallery.columnType": "النوع",
   "gallery.columnTitle": "العنوان",
   "gallery.columnSpeakers": "المتحدثون",
+  "gallery.speakerCountShort": "{{count}} متحدث",
   "gallery.columnDuration": "المدة",
   "gallery.columnDate": "التاريخ",
   "gallery.columnSize": "الحجم",

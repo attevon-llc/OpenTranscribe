@@ -2997,6 +2997,7 @@
   "gallery.columnType": "Type",
   "gallery.columnTitle": "Titel",
   "gallery.columnSpeakers": "Sprekers",
+  "gallery.speakerCountShort": "{{count}} spr.",
   "gallery.columnDuration": "Duur",
   "gallery.columnDate": "Datum",
   "gallery.columnSize": "Grootte",

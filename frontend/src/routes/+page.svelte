@@ -23,8 +23,8 @@
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
-  import ConfirmationModal from '../components/ConfirmationModal.svelte';
-  import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
@@ -71,15 +71,15 @@
   }
 
 
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { apiCache } from '$lib/apiCache';
 
   // Import components
   import FileUploader from '$components/FileUploader.svelte';
   import { supportSessionGate } from '$stores/supportSession';
-  import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import CollectionsPanel from '$components/CollectionsPanel.svelte';
   import TagManagerModal from '$components/tags/TagManagerModal.svelte';
-  import UserFileStatus from '../components/UserFileStatus.svelte';
+  import UserFileStatus from '$components/UserFileStatus.svelte';
 
   // Media files state
   let files: MediaFile[] = [];

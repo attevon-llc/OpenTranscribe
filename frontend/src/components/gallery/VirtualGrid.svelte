@@ -322,7 +322,7 @@
                     {/if}
                     {#if file.speaker_summary && file.speaker_summary.count > 0}
                       <span class="meta-dot">&middot;</span>
-                      <span>{file.speaker_summary.count} spk</span>
+                      <span>{$t('gallery.speakerCountShort', { count: file.speaker_summary.count })}</span>
                     {/if}
                     <span class="status-slot">
                       <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11):

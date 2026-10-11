@@ -25,8 +25,13 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   states. Its empty state takes a `filtersActive` prop so a filtered-to-zero result set reads
   "no files match", not "your library is empty" (#747).
 - `VirtualGrid.svelte` / `VirtualList.svelte` — virtualized renderers (thumbnail cache, prefetch).
-- `GalleryPrimaryActions.svelte` — the row-1-right trio (Add media, Collections, Tags),
+- `GalleryPrimaryActions.svelte` — the row-1-right trio, in DOM order **Tags, Collections,
+  Add media** (Add media rightmost; UX review item 40, pinned by `GalleryPrimaryActions.test.ts`),
   normal mode only (reads `galleryStore`).
+- `VirtualList.svelte` header: title case, weight 500 (not uppercase 600); numeric columns
+  (duration, date, size, status) are right-aligned and every body cell is 0.875rem — pinned by
+  `VirtualListHeaderStyle.test.ts`, which reads the style source because jsdom cannot cascade
+  scoped CSS. The grid's speaker count is `gallery.speakerCountShort`, never a literal.
 - `GallerySelectionActions.svelte` — row-2-left: "Select items" in normal mode, expanding in
   place into the full select-all/process/organize/delete/cancel toolbar in selection mode
   (reads `galleryStore`). Split out of the old `GalleryActionButtons.svelte` by #747 so each

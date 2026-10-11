@@ -2966,6 +2966,7 @@
   "gallery.columnSize": "Taille",
   "gallery.columnStatus": "Statut",
   "gallery.columnSpeakers": "Intervenants",
+  "gallery.speakerCountShort": "{{count}} interv.",
   "settings.authentication.title": "Authentification",
   "settings.authentication.description": "Configurer les méthodes d'authentification",
   "settings.nav.requiresSuperAdmin": "Nécessite un super administrateur",

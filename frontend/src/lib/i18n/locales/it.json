@@ -2997,6 +2997,7 @@
   "gallery.columnType": "Tipo",
   "gallery.columnTitle": "Titolo",
   "gallery.columnSpeakers": "Parlanti",
+  "gallery.speakerCountShort": "{{count}} parl.",
   "gallery.columnDuration": "Durata",
   "gallery.columnDate": "Data",
   "gallery.columnSize": "Dimensione",

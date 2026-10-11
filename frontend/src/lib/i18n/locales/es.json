@@ -2966,6 +2966,7 @@
   "gallery.columnSize": "Tamaño",
   "gallery.columnStatus": "Estado",
   "gallery.columnSpeakers": "Hablantes",
+  "gallery.speakerCountShort": "{{count}} habl.",
   "settings.authentication.title": "Autenticación",
   "settings.authentication.description": "Configurar métodos de autenticación",
   "settings.nav.requiresSuperAdmin": "Requiere superadministrador",

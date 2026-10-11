@@ -2965,6 +2965,7 @@
   "gallery.columnType": "種類",
   "gallery.columnTitle": "タイトル",
   "gallery.columnSpeakers": "話者",
+  "gallery.speakerCountShort": "話者{{count}}名",
   "gallery.columnDuration": "再生時間",
   "gallery.columnDate": "日付",
   "gallery.columnSize": "サイズ",

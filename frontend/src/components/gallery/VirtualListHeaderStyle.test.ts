@@ -35,4 +35,25 @@ describe('gallery list header typography', () => {
       /\.list-cell-duration,\s*\n\s*\.list-cell-date,\s*\n\s*\.list-cell-size\s*\{[^}]*font-size:/
     );
   });
+
+  it('sets the header in title case at weight 500, not uppercase 600 (UX review item 17)', () => {
+    const body = ruleBody('.file-list-header');
+    expect(body).not.toBeNull();
+    expect(body).not.toMatch(/text-transform:\s*uppercase/);
+    expect(body).toMatch(/font-weight:\s*500\b/);
+  });
+
+  it('gives the status cell the same font size as the other body cells (item 18)', () => {
+    expect(ruleBody('.list-cell-status')).toMatch(/font-size:\s*0\.875rem/);
+    expect(style).toMatch(
+      /\.list-cell-duration,\s*\n\s*\.list-cell-date,\s*\n\s*\.list-cell-size\s*\{[^}]*font-size:\s*0\.875rem/
+    );
+  });
+
+  it('right-aligns the numeric columns (item 17)', () => {
+    expect(style).toMatch(
+      /\.list-cell-duration,\s*\n\s*\.list-cell-date,\s*\n\s*\.list-cell-size\s*\{[^}]*justify-content:\s*flex-end/
+    );
+    expect(ruleBody('.list-cell-status')).toMatch(/justify-content:\s*flex-end/);
+  });
 });

@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Задачи для всей библиотеки, которые повторно запускают анализ спикеров для уже имеющихся файлов.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Голосовые отпечатки спикеров",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Обновите или восстановите голосовые отпечатки, по которым один и тот же спикер узнаётся в разных файлах.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Этот раздел находится в: {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Открыть систему эмбеддингов спикеров",
   "settings.transcription.tabs.ariaLabel": "Настройки транскрипции",
   "settings.transcription.tabs.language": "Язык",

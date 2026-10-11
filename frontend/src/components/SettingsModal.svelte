@@ -504,6 +504,19 @@
     return createSettingsFuzzyIndex(items);
   }
 
+  // Any change of section (sidebar click, alias, search hit, in-panel jump link) must show where the
+  // user landed: a row far below the fold is otherwise invisible and the change reads as "nothing
+  // happened". One reactive hook covers every path instead of each caller scrolling.
+  $: void revealActiveNavItem(effectiveActiveSection);
+
+  async function revealActiveNavItem(_section: string) {
+    await tick();
+    const row = modalElement?.querySelector('.settings-sidebar .nav-item.active');
+    if (!row?.scrollIntoView) return;
+    const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    row.scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' });
+  }
+
   async function handleSettingsNavigate(
     event: CustomEvent<{ sectionId: SettingsSection; anchorText: string }>
   ) {

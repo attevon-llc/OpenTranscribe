@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "对您已有的文件重新运行说话人分析的全库任务。",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "说话人声纹",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "升级或修复用于跨文件识别同一说话人的声纹。",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "位于 {{settings}} > {{group}} > {{section}}。",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "打开说话人嵌入系统",
   "settings.transcription.tabs.ariaLabel": "转录设置",
   "settings.transcription.tabs.language": "语言",

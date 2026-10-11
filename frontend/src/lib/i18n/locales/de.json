@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Bibliotheksweite Aufgaben, die die Sprecheranalyse für vorhandene Dateien erneut ausführen.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Stimmabdrücke der Sprecher",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Stimmabdrücke aktualisieren oder reparieren, mit denen derselbe Sprecher dateiübergreifend wiedererkannt wird.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Zu finden unter {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Sprecher-Embedding-System öffnen",
   "settings.transcription.tabs.ariaLabel": "Transkriptionseinstellungen",
   "settings.transcription.tabs.language": "Sprache",

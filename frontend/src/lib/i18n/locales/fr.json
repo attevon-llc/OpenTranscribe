@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Tâches portant sur toute la bibliothèque qui relancent l'analyse des locuteurs sur vos fichiers existants.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Empreintes vocales des locuteurs",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Mettez à niveau ou réparez les empreintes vocales utilisées pour reconnaître un même locuteur d'un fichier à l'autre.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Cette option se trouve dans {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Ouvrir le système d'embeddings des locuteurs",
   "settings.transcription.tabs.ariaLabel": "Paramètres de transcription",
   "settings.transcription.tabs.language": "Langue",

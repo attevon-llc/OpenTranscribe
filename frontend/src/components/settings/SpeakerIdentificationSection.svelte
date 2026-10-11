@@ -162,6 +162,13 @@
             <div class="embedding-link-text">
               <strong>{$t('settings.speakerIdentification.maintenance.embeddingLinkTitle')}</strong>
               <p>{$t('settings.speakerIdentification.maintenance.embeddingLinkDesc')}</p>
+              <p class="embedding-link-path" data-testid="embedding-link-path">
+                {$t('settings.speakerIdentification.maintenance.embeddingLinkPath', {
+                  settings: $t('settings.title'),
+                  group: $t('settings.sections.system'),
+                  section: $t('settings.embeddingMigration.title')
+                })}
+              </p>
             </div>
             <button
               type="button"
@@ -209,6 +216,11 @@
     margin: 0.25rem 0 0;
     color: var(--text-secondary);
     font-size: 0.85rem;
+  }
+
+  .embedding-link-text .embedding-link-path {
+    font-size: 0.8rem;
+    font-style: italic;
   }
 
   @media (max-width: 600px) {

@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Tareas de toda la biblioteca que vuelven a ejecutar el análisis de hablantes en los archivos que ya tienes.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Huellas de voz de los hablantes",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Actualiza o repara las huellas de voz usadas para reconocer al mismo hablante entre archivos.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Se encuentra en {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Abrir Sistema de embeddings de hablantes",
   "settings.transcription.tabs.ariaLabel": "Configuración de transcripción",
   "settings.transcription.tabs.language": "Idioma",

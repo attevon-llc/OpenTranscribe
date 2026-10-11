@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Library-wide jobs that re-run speaker analysis on files you already have.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Speaker voiceprints",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Upgrade or repair the voiceprints used to recognise the same speaker across files.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "This lives under {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Open Speaker Embedding System",
   "settings.transcription.tabs.ariaLabel": "Transcription settings",
   "settings.transcription.tabs.language": "Language",

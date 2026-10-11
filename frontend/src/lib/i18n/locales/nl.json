@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Taken voor de hele bibliotheek die de sprekeranalyse opnieuw uitvoeren op bestanden die je al hebt.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Stemafdrukken van sprekers",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Upgrade of herstel de stemafdrukken waarmee dezelfde spreker over bestanden heen wordt herkend.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Dit vind je onder {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Sprekerembeddingsysteem openen",
   "settings.transcription.tabs.ariaLabel": "Transcriptie-instellingen",
   "settings.transcription.tabs.language": "Taal",

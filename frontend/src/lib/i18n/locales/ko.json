@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "이미 있는 파일에 대해 화자 분석을 다시 실행하는 라이브러리 전체 작업입니다.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "화자 음성 지문",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "파일 간에 같은 화자를 알아보는 데 쓰는 음성 지문을 업그레이드하거나 복구합니다.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "위치: {{settings}} > {{group}} > {{section}}",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "화자 임베딩 시스템 열기",
   "settings.transcription.tabs.ariaLabel": "전사 설정",
   "settings.transcription.tabs.language": "언어",

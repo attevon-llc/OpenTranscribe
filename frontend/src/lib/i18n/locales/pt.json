@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Tarefas de toda a biblioteca que executam novamente a análise de falantes nos arquivos que você já tem.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Impressões de voz dos falantes",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Atualize ou repare as impressões de voz usadas para reconhecer o mesmo falante entre arquivos.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Fica em {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Abrir Sistema de embeddings de falantes",
   "settings.transcription.tabs.ariaLabel": "Configurações de transcrição",
   "settings.transcription.tabs.language": "Idioma",

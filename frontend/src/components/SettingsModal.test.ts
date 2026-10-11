@@ -10,7 +10,7 @@
  * ~40 child settings panels themselves are out of scope here (each is/should be
  * tested independently, and Playwright already exercises this modal end to end).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -443,6 +443,64 @@ describe('Transcription and Speaker Identification sections', () => {
         navItem(container, 'settings.embeddingMigration.title')?.classList.contains('active')
       ).toBe(true)
     );
+  });
+
+  describe('revealing the active sidebar row', () => {
+    const scrolled: { row: Element | null; opts: ScrollIntoViewOptions | undefined }[] = [];
+
+    beforeEach(() => {
+      scrolled.length = 0;
+      Element.prototype.scrollIntoView = function (
+        this: Element,
+        opts?: boolean | ScrollIntoViewOptions
+      ) {
+        scrolled.push({ row: this, opts: opts as ScrollIntoViewOptions | undefined });
+      };
+    });
+
+    afterEach(() => {
+      // jsdom ships no scrollIntoView, so removing the stub restores the original state.
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      vi.unstubAllGlobals();
+    });
+
+    async function followMaintenanceLink(container: HTMLElement) {
+      await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+      const button = await waitFor(() => {
+        const el = container.querySelector('[data-testid="embedding-link-card"] button');
+        expect(el).not.toBeNull();
+        return el as HTMLElement;
+      });
+      await fireEvent.click(button);
+    }
+
+    it('scrolls the Speaker Embedding System row into view when the link card jumps there', async () => {
+      const { container } = await openAs('super_admin', 'speaker-identification');
+      scrolled.length = 0;
+      await followMaintenanceLink(container);
+
+      const embedding = navItem(container, 'settings.embeddingMigration.title');
+      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+      expect(embedding?.classList.contains('active')).toBe(true);
+      const call = scrolled.find((c) => c.row === embedding);
+      expect(call?.opts?.block).toBe('nearest');
+    });
+
+    it('does not animate the scroll when the user prefers reduced motion', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      const { container } = await openAs('super_admin', 'speaker-identification');
+      scrolled.length = 0;
+      await followMaintenanceLink(container);
+
+      const embedding = navItem(container, 'settings.embeddingMigration.title');
+      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+      expect(scrolled.find((c) => c.row === embedding)?.opts?.behavior).toBe('auto');
+    });
   });
 
   it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {

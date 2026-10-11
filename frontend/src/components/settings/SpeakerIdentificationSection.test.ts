@@ -94,6 +94,20 @@ describe('SpeakerIdentificationSection tabs by role', () => {
     expect(container.querySelector('[role="tablist"]')).toHaveClass('sticky');
   });
 
+  it('tells the user where the embedding system lives next to the link button', async () => {
+    const { container } = render(SpeakerIdentificationSection, {
+      props: { isAdmin: true, isSuperAdmin: true, initialTab: 'spk-maintenance' },
+    });
+    const card = await waitFor(() => {
+      const el = container.querySelector('[data-testid="embedding-link-card"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(card.querySelector('[data-testid="embedding-link-path"]')?.textContent).toContain(
+      'settings.speakerIdentification.maintenance.embeddingLinkPath'
+    );
+  });
+
   it('shows an admin the engine and maintenance tabs locked with the super-admin reason', () => {
     const { container } = render(SpeakerIdentificationSection, { props: { isAdmin: true } });
     expect(ids(container)).toEqual([

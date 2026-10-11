@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "すでにあるファイルに対して話者分析を再実行する、ライブラリ全体のジョブです。",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "話者の声紋",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "ファイル間で同じ話者を認識するために使う声紋をアップグレードまたは修復します。",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "場所：{{settings}} > {{group}} > {{section}}",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "話者埋め込みシステムを開く",
   "settings.transcription.tabs.ariaLabel": "文字起こし設定",
   "settings.transcription.tabs.language": "言語",

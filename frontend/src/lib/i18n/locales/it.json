@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "Operazioni sull'intera libreria che rieseguono l'analisi dei parlanti sui file già presenti.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "Impronte vocali dei parlanti",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "Aggiorna o ripara le impronte vocali usate per riconoscere lo stesso parlante tra i file.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "Si trova in {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "Apri il sistema di embedding dei parlanti",
   "settings.transcription.tabs.ariaLabel": "Impostazioni di trascrizione",
   "settings.transcription.tabs.language": "Lingua",

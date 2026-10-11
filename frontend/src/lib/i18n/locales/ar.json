@@ -4542,6 +4542,7 @@
   "settings.speakerIdentification.maintenance.desc": "مهام على مستوى المكتبة بأكملها تعيد تشغيل تحليل المتحدثين على الملفات الموجودة لديك.",
   "settings.speakerIdentification.maintenance.embeddingLinkTitle": "البصمات الصوتية للمتحدثين",
   "settings.speakerIdentification.maintenance.embeddingLinkDesc": "حدّث البصمات الصوتية المستخدمة للتعرف على المتحدث نفسه عبر الملفات أو أصلحها.",
+  "settings.speakerIdentification.maintenance.embeddingLinkPath": "يوجد ضمن {{settings}} > {{group}} > {{section}}.",
   "settings.speakerIdentification.maintenance.embeddingLinkButton": "فتح نظام تضمين المتحدثين",
   "settings.transcription.tabs.ariaLabel": "إعدادات التفريغ النصي",
   "settings.transcription.tabs.language": "اللغة",

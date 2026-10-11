@@ -51,6 +51,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 import redis
 import requests
@@ -331,6 +332,45 @@ def get_file_status(token: str, file_uuid: str) -> str:
     return 'unknown'
 
 
+#: Uploaded benchmark files are named ``bench-parallel-<hex8><ext>`` (registered in
+#: scripts/cleanup-test-data.py ``MEDIA_FILENAME_SPECS``). The corpus filename stays the
+#: label in every report; only the name the BACKEND sees changes, so a leftover upload can be
+#: told from a user's own recording that happens to share a corpus filename.
+BENCH_UPLOAD_PREFIX = 'bench-parallel-'
+
+#: uuids of files this run uploaded, deleted at the end unless --keep-uploads.
+_UPLOADED_UUIDS: list[str] = []
+
+
+def _upload_name(original: str) -> str:
+    return f'{BENCH_UPLOAD_PREFIX}{uuid4().hex[:8]}{Path(original).suffix.lower()}'
+
+
+def delete_uploaded_files(token: str, uuids: list[str]) -> int:
+    """Delete this run's uploads (API delete, ``/force`` when the file is mid-processing).
+
+    Returns how many could NOT be deleted so the caller can say so plainly.
+    """
+    failed = 0
+    headers = {'Authorization': f'Bearer {token}'}
+    for file_uuid in uuids:
+        try:
+            resp = requests.delete(
+                f'{BACKEND_URL}/api/files/{file_uuid}', headers=headers, timeout=60
+            )
+            if resp.status_code >= 400:
+                resp = requests.delete(
+                    f'{BACKEND_URL}/api/files/{file_uuid}/force', headers=headers, timeout=60
+                )
+            if resp.status_code >= 400 and resp.status_code != 404:
+                failed += 1
+                print(f'  CLEANUP FAILED for {file_uuid}: {resp.status_code}', file=sys.stderr)
+        except requests.RequestException as e:
+            failed += 1
+            print(f'  CLEANUP ERROR for {file_uuid}: {e}', file=sys.stderr)
+    return failed
+
+
 def upload_file(token: str, path: str) -> str:
     """Upload a fresh file via the real user flow (POST /api/files + X-File-Hash).
 
@@ -355,7 +395,7 @@ def upload_file(token: str, path: str) -> str:
             resp = requests.post(
                 f'{BACKEND_URL}/api/files',
                 headers={'Authorization': f'Bearer {token}', 'X-File-Hash': h.hexdigest()},
-                files={'file': (p.name, fh, content_type)},
+                files={'file': (_upload_name(p.name), fh, content_type)},
                 timeout=3600,
             )
         if resp.status_code >= 400:
@@ -365,7 +405,10 @@ def upload_file(token: str, path: str) -> str:
             )
             return ''
         j = resp.json()
-        return j.get('uuid') or j.get('id') or ''
+        new_uuid = j.get('uuid') or j.get('id') or ''
+        if new_uuid:
+            _UPLOADED_UUIDS.append(str(new_uuid))
+        return str(new_uuid)
     except requests.RequestException as e:
         print(f'  UPLOAD ERROR for {p.name}: {e}', file=sys.stderr)
         return ''
@@ -1398,6 +1441,12 @@ def main():
         'before each level. corpus.json UUIDs are ignored; fresh UUIDs come from the uploads.',
     )
     parser.add_argument(
+        '--keep-uploads',
+        action='store_true',
+        help='With --upload: do NOT delete the uploaded files when the run ends (default: '
+        'delete them, including after Ctrl-C or a failure).',
+    )
+    parser.add_argument(
         '--audio-dir',
         default='benchmark/test_audio',
         help='Directory holding the source audio files (matched by corpus filename) for '
@@ -1544,45 +1593,58 @@ def main():
     if args.sequential:
         batch_sizes = [1] * len(files)
 
-    # Run batches
-    all_batches: list[BatchResult] = []
-    file_offset = 0
-    for i, batch_size in enumerate(batch_sizes):
-        if i > 0:
-            print(f'\n  Cooling down {args.cooldown}s before next batch...')
-            time.sleep(args.cooldown)
+    try:
+        # Run batches
+        all_batches: list[BatchResult] = []
+        file_offset = 0
+        for i, batch_size in enumerate(batch_sizes):
+            if i > 0:
+                print(f'\n  Cooling down {args.cooldown}s before next batch...')
+                time.sleep(args.cooldown)
 
-        # In sequential mode, advance through the file list one at a time
-        if args.sequential:
-            batch_files = files[file_offset : file_offset + 1]
-            file_offset += 1
-            if not batch_files:
-                break
-        else:
-            batch_files = files
+            # In sequential mode, advance through the file list one at a time
+            if args.sequential:
+                batch_files = files[file_offset : file_offset + 1]
+                file_offset += 1
+                if not batch_files:
+                    break
+            else:
+                batch_files = files
 
-        batch_result = run_batch(
-            token,
-            r,
-            batch_files,
-            batch_size,
-            args.gpu_id,
-            upload_mode=args.upload,
-            audio_dir=args.audio_dir,
-            stats_containers=stats_containers,
+            batch_result = run_batch(
+                token,
+                r,
+                batch_files,
+                batch_size,
+                args.gpu_id,
+                upload_mode=args.upload,
+                audio_dir=args.audio_dir,
+                stats_containers=stats_containers,
+            )
+            all_batches.append(batch_result)
+
+        # Write reports
+        corpus_total_h = sum(f['duration'] for f in files) / 3600 if args.corpus_file else None
+        corpus_label = Path(args.corpus_file).name if args.corpus_file else None
+        write_reports(
+            all_batches,
+            output_dir,
+            corpus_total_audio_h=corpus_total_h,
+            corpus_name=corpus_label,
+            run_label=args.run_label,
         )
-        all_batches.append(batch_result)
-
-    # Write reports
-    corpus_total_h = sum(f['duration'] for f in files) / 3600 if args.corpus_file else None
-    corpus_label = Path(args.corpus_file).name if args.corpus_file else None
-    write_reports(
-        all_batches,
-        output_dir,
-        corpus_total_audio_h=corpus_total_h,
-        corpus_name=corpus_label,
-        run_label=args.run_label,
-    )
+    finally:
+        # Uploads exist whether or not the run finished: Ctrl-C and a failed batch leave
+        # them just as a clean run does. --keep-uploads opts out.
+        if args.upload and _UPLOADED_UUIDS and not args.keep_uploads:
+            print(f'\nDeleting {len(_UPLOADED_UUIDS)} uploaded benchmark file(s)...')
+            left = delete_uploaded_files(get_valid_token(), _UPLOADED_UUIDS)
+            if left:
+                print(
+                    f'  {left} upload(s) NOT deleted; scripts/cleanup-test-data.py sweeps '
+                    f'the {BENCH_UPLOAD_PREFIX}* shape.',
+                    file=sys.stderr,
+                )
 
     print(f'\nBenchmark complete at {_ts()}')
 

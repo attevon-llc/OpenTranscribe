@@ -84,6 +84,39 @@
         "title": "ASRProvider",
         "type": "string"
       },
+      "ASRSwitchResult": {
+        "description": "Response of the ASR-side switches (``set-active``, ``clear-active``), issue #1225.\n\n``pipeline_issues`` is the caller's pipeline AFTER the switch: warnings, and errors the\nswitch did not introduce (a switch that would introduce a diarization-step error is\nrefused with 409 ``{code, message}`` instead).",
+        "properties": {
+          "config_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Uuid"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pipeline_issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Pipeline Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message",
+          "pipeline_issues"
+        ],
+        "title": "ASRSwitchResult",
+        "type": "object"
+      },
       "ActivePromptResponse": {
         "description": "Schema for active prompt response",
         "properties": {
@@ -25514,7 +25547,7 @@
         ]
       },
       "post": {
-        "description": "Create a new ASR configuration. Auto-activates if this is the user's first config.",
+        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless that would make their stored speaker\ndetection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards.",
         "operationId": "create_asr_config_api_asr_settings_post",
         "requestBody": {
           "content": {
@@ -25581,14 +25614,14 @@
     },
     "/api/asr-settings/clear-active": {
       "post": {
-        "description": "Clear the active ASR configuration, reverting to local GPU default.",
+        "description": "Clear the active ASR configuration, reverting to the deployment default.\n\n409 ``{code, message}`` when that would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "clear_active_asr_config_api_asr_settings_clear_active_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Clear Active Asr Config Api Asr Settings Clear Active Post"
+                  "$ref": "#/components/schemas/ASRSwitchResult"
                 }
               }
             },
@@ -25608,7 +25641,7 @@
     },
     "/api/asr-settings/config/{config_uuid}": {
       "delete": {
-        "description": "Delete an ASR configuration. Auto-promotes another config if this was active.",
+        "description": "Delete an ASR configuration.\n\nIf it was active, the first remaining config that keeps the stored speaker detection\nchoice runnable is promoted (issue #1225); with none, the active pointer is cleared.\nDeletion itself is never refused: a stored choice the remaining state cannot run is\nreported by ``GET /user-settings/pipeline`` and refused per file by the pipeline.",
         "operationId": "delete_asr_config_api_asr_settings_config__config_uuid__delete",
         "parameters": [
           {
@@ -25958,7 +25991,7 @@
     },
     "/api/asr-settings/set-active": {
       "post": {
-        "description": "Set the active ASR configuration for the current user.",
+        "description": "Set the active ASR configuration for the current user.\n\n409 ``{code, message}`` when the switch would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "set_active_asr_config_api_asr_settings_set_active_post",
         "requestBody": {
           "content": {
@@ -25975,7 +26008,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Set Active Asr Config Api Asr Settings Set Active Post"
+                  "$ref": "#/components/schemas/ASRSwitchResult"
                 }
               }
             },

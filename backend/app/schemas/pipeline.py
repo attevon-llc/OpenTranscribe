@@ -59,3 +59,16 @@ class PipelineView(BaseModel):
     issues: list[PipelineIssueOut]
     deployment_mode: Literal["full", "lite"]
     diarization_source_locked: bool
+
+
+class ASRSwitchResult(BaseModel):
+    """Response of the ASR-side switches (``set-active``, ``clear-active``), issue #1225.
+
+    ``pipeline_issues`` is the caller's pipeline AFTER the switch: warnings, and errors the
+    switch did not introduce (a switch that would introduce a diarization-step error is
+    refused with 409 ``{code, message}`` instead).
+    """
+
+    message: str
+    config_uuid: str | None = None
+    pipeline_issues: list[PipelineIssueOut]

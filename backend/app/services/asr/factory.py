@@ -685,7 +685,17 @@ class ASRProviderFactory:
         usable ``ASR_PROVIDER`` env provider, else local with ``WHISPER_MODEL``. ``cfg``
         is the ``UserASRSettings`` row, or ``None`` for the env and local fallbacks.
         """
-        cfg = ASRProviderFactory._active_config_row(user_id, db)
+        return ASRProviderFactory.resolve_config(ASRProviderFactory._active_config_row(user_id, db))
+
+    @staticmethod
+    def resolve_config(
+        cfg: UserASRSettings | None,
+    ) -> tuple[str, str, UserASRSettings | None]:
+        """``(provider, model, cfg)`` for ``cfg`` as the active row (``None``: no row).
+
+        Lets a caller plan a switch before making it (``services/asr_switch_plan``) with
+        the same env / local fallback a job uses.
+        """
         if cfg is not None:
             return str(cfg.provider or "local"), str(cfg.model_name or ""), cfg
         env_provider = os.getenv("ASR_PROVIDER", "local").lower()

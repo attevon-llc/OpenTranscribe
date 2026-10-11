@@ -103,6 +103,7 @@ def load_plan_inputs(
     diarization_source: str | None = None,
     diarization_asr_config_uuid: object = _UNSET,
     gpu_split: bool | None = None,
+    active_asr_config: object = _UNSET,
 ) -> PlanInputs:
     """The inputs the user's next file would be planned with.
 
@@ -115,6 +116,8 @@ def load_plan_inputs(
         diarization_source: Plan as if this source were stored (the settings PUT).
         diarization_asr_config_uuid: Plan as if this diarizer config were stored.
         gpu_split: Whether the split GPU topology is live; ``None`` reads the request flag.
+        active_asr_config: Plan as if this ``UserASRSettings`` row (``None``: no row) were
+            the active transcription config (the ASR-side switches, issue #1225).
     """
     from app.core.config import settings
     from app.core.constants import gpu_split_enabled
@@ -124,7 +127,13 @@ def load_plan_inputs(
     from app.transcription.config import LIGHTWEIGHT_MODELS
     from app.transcription.config import TranscriptionConfig
 
-    provider, model, cfg = ASRProviderFactory.resolve_active_config(user_id, db)
+    if active_asr_config is _UNSET:
+        provider, model, cfg = ASRProviderFactory.resolve_active_config(user_id, db)
+    else:
+        from app.models.user_asr_settings import UserASRSettings
+
+        target = active_asr_config if isinstance(active_asr_config, UserASRSettings) else None
+        provider, model, cfg = ASRProviderFactory.resolve_config(target)
     caps = ASRProviderFactory.get_model_capabilities(provider, model)
 
     stored = _stored(db, user_id)

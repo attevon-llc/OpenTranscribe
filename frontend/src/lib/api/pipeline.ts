@@ -57,5 +57,9 @@ export interface PipelineView {
 /** How the caller's next recording would be processed, and what stands in its way. */
 export async function getPipelineView(): Promise<PipelineView> {
   const response = await axiosInstance.get('/user-settings/pipeline');
+  // A reply without the steps cannot be drawn; fail here once instead of in every consumer.
+  if (!Array.isArray(response.data?.steps) || !Array.isArray(response.data?.issues)) {
+    throw new Error('Malformed processing pipeline response');
+  }
   return response.data;
 }

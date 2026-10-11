@@ -9,6 +9,7 @@
  */
 import type { PipelineIssue } from '$lib/api/pipeline';
 import type { SettingsSection } from '$stores/settingsModalStore';
+import { PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
 import { getErrorStatus } from '$lib/utils/apiError';
 
 export const PIPELINE_ISSUE_CODES = [
@@ -35,9 +36,9 @@ export function isPipelineIssueCode(code: string): code is PipelineIssueCode {
   return KNOWN.has(code);
 }
 
-/** i18n key of the sentence for an issue code. */
-export function issueKey(code: string): string {
-  return `settings.pipeline.issue.${code}`;
+/** i18n key of the sentence for an issue code this build knows. */
+export function issueKey(code: PipelineIssueCode): string {
+  return PIPELINE_ISSUE_KEYS[code];
 }
 
 type FixSection = 'asr-provider' | 'speaker-identification' | 'llm-provider';

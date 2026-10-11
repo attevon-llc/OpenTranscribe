@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "مسار المعالجة",
   "settings.pipeline.description": "ما الذي يحدث للتسجيل خطوة بخطوة، وأين تُنفَّذ كل خطوة.",
   "settings.pipeline.loadFailed": "تعذّر تحميل مسار المعالجة.",
+  "settings.pipeline.retry": "حاول مرة أخرى",
   "settings.pipeline.audio": "تسجيلك",
   "settings.pipeline.step.transcription": "التفريغ النصي",
   "settings.pipeline.step.transcriptionPurpose": "يحوّل الكلام إلى نص مع الطوابع الزمنية.",

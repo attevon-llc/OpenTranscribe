@@ -72,6 +72,7 @@ import { user as mockUser } from '$stores/auth';
 import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
+import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 
 function setUser(role: 'user' | 'admin' | 'super_admin' | null) {
   (mockUser as unknown as { set: (value: { role: string } | null) => void }).set(
@@ -685,5 +686,56 @@ describe('section-switch data loading', () => {
     await fireEvent.click(statsItem);
 
     await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/system/stats'));
+  });
+});
+
+describe('Processing pipeline row (#1227)', () => {
+  const rowsOfTranscriptionGroup = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.sidebar-section'))
+      .find(
+        (group) =>
+          group.querySelector('.section-heading')?.textContent === 'settings.sections.transcription'
+      )
+      ?.querySelectorAll('.nav-item-label') ?? [];
+
+  it('is the first row of the Transcription group, above Transcription itself', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    const labels = Array.from(rowsOfTranscriptionGroup(container)).map(
+      (el) => el.textContent?.trim()
+    );
+    expect(labels[0]).toBe('settings.pipeline.title');
+    expect(labels).toContain('settings.transcription.title');
+  });
+
+  it('is absent when the deployment turns transcription preferences off', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'transcription.prefs': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.pipeline.title')).toBeNull();
+  });
+
+  it('opens the read-only view, which asks the server for the plan', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    mockAxios.get.mockClear();
+    mockAxios.get.mockImplementation(async (url: string) => ({
+      data: url === '/user-settings/pipeline' ? fullLocalView() : {},
+    }));
+
+    await fireEvent.click(navItem(container, 'settings.pipeline.title') as HTMLElement);
+
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/user-settings/pipeline'));
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-testid="pipeline-step"]')).toHaveLength(4)
+    );
   });
 });

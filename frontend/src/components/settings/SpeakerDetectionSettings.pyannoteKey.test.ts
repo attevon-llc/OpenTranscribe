@@ -27,6 +27,14 @@ vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/transcriptionSettings')>();
   return { ...actual, ...api };
 });
+const pipelineApi = vi.hoisted(() => ({ getPipelineView: vi.fn() }));
+vi.mock('$lib/api/pipeline', () => pipelineApi);
+const asrApi = vi.hoisted(() => ({
+  getSettings: vi.fn(),
+  getProviders: vi.fn(),
+  getProviderDisplayName: (p: string) => p,
+}));
+vi.mock('$lib/api/asrSettings', () => ({ ASRSettingsApi: asrApi }));
 const key = vi.hoisted(() => ({
   getPyannoteCredential: vi.fn(),
   savePyannoteCredential: vi.fn(),
@@ -36,6 +44,7 @@ const key = vi.hoisted(() => ({
 vi.mock('$lib/api/pyannoteCredential', () => key);
 
 import SpeakerDetectionSettings from './SpeakerDetectionSettings.svelte';
+import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 import { capabilities, resetCapabilities } from '$stores/capabilities';
 
 const SETTINGS = {
@@ -55,6 +64,14 @@ const STATUS = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pipelineApi.getPipelineView.mockResolvedValue(fullLocalView());
+  asrApi.getSettings.mockResolvedValue({
+    configurations: [],
+    shared_configurations: [],
+    active_configuration_uuid: undefined,
+    total: 0,
+  });
+  asrApi.getProviders.mockResolvedValue({ providers: [] });
   api.getTranscriptionSettings.mockResolvedValue({ ...SETTINGS });
   api.getTranscriptionSystemDefaults.mockResolvedValue({
     min_speakers: 1,
@@ -112,7 +129,7 @@ describe('pyannote.ai key form in Speaker Detection', () => {
     expect(key.getPyannoteCredential).not.toHaveBeenCalled();
   });
 
-  it('is absent when the deployment locks the detection source, which hides the select', async () => {
+  it('is absent when the deployment locks the detection source, which makes the select read-only', async () => {
     capabilities.set({
       edition: 'community',
       loaded: true,
@@ -121,7 +138,9 @@ describe('pyannote.ai key form in Speaker Detection', () => {
       maxUploadBytes: undefined,
     });
     const { container } = await renderLoaded();
-    expect(container.querySelector('#diarization-source')).toBeNull();
+    expect((container.querySelector('#diarization-source') as HTMLSelectElement).disabled).toBe(
+      true
+    );
     expect(form(container)).toBeNull();
   });
 
@@ -133,8 +152,13 @@ describe('pyannote.ai key form in Speaker Detection', () => {
     expect(form(container)?.querySelector('.btn-primary, .btn-secondary')).toBeNull();
   });
 
-  it('explains a 409 on save as "save a key first" instead of the generic failure', async () => {
-    api.updateTranscriptionSettings.mockRejectedValue({ response: { status: 409 } });
+  it('explains a pyannote_key_missing 409 as "save a key first" instead of the generic failure', async () => {
+    api.updateTranscriptionSettings.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { detail: { code: 'pyannote_key_missing', message: 'fixed sentence' } },
+      },
+    });
     const { container } = await renderLoaded();
     await fireEvent.change(container.querySelector('#diarization-source') as HTMLSelectElement, {
       target: { value: 'pyannote' },
@@ -148,7 +172,7 @@ describe('pyannote.ai key form in Speaker Detection', () => {
     );
   });
 
-  it('keeps the generic message for a 409 on any other source', async () => {
+  it('keeps the generic message for a 409 that carries no code, whatever the source', async () => {
     api.updateTranscriptionSettings.mockRejectedValue({ response: { status: 409 } });
     const { container } = await renderLoaded();
     await fireEvent.change(container.querySelector('#speaker-behavior') as HTMLSelectElement, {

@@ -12,10 +12,19 @@
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import type { DiarizationSource } from '$lib/api/transcriptionSettings';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
+  import { modelCapability } from '$lib/settings/asrCapabilities';
+  import { selectionNotices } from '$lib/settings/speakerSources';
+  import CapabilityBadges from './CapabilityBadges.svelte';
+  import IssueRow from './IssueRow.svelte';
 
   export let show = false;
   export let editingConfig: UserASRSettingsResponse | null = null;
   export let providers: ASRProviderInfo[] = [];
+  /** The user's speaker detection choice; decides which warnings the model earns. */
+  export let diarizationSource: DiarizationSource | null = null;
+  export let deploymentMode: 'full' | 'lite' = 'full';
 
   const dispatch = createEventDispatcher();
 
@@ -62,6 +71,24 @@
   $: availableModels = selectedProvider?.models || [];
 
   $: selectedModel = availableModels.find(m => m.id === formData.model_name) || null;
+
+  // What the chosen model returns (the provider's values until a model is picked), and what
+  // that means for the user's current speaker detection choice.
+  $: capability = formData.provider
+    ? modelCapability(providers, formData.provider, formData.model_name)
+    : null;
+  $: modelNotices = capability
+    ? selectionNotices(
+        diarizationSource ?? 'off',
+        { returnsSpeakers: capability.returnsSpeakers, timing: capability.timing },
+        deploymentMode
+      ).map((notice) => ({
+        ...notice,
+        messageKey: notice.code in PIPELINE_ISSUE_KEYS
+          ? PIPELINE_ISSUE_KEYS[notice.code as keyof typeof PIPELINE_ISSUE_KEYS]
+          : null
+      }))
+    : [];
 
   $: estimatedCostPerHour = selectedModel?.price_per_min_batch
     ? ASRSettingsApi.formatPricePerHour(selectedModel.price_per_min_batch)
@@ -282,6 +309,31 @@
                 class="form-input"
               />
             {/if}
+            {#if capability}
+              <div class="model-capabilities" data-testid="model-capabilities">
+                <CapabilityBadges
+                  returnsSpeakers={capability.returnsSpeakers}
+                  timing={capability.timing}
+                />
+              </div>
+              {#if capability.timing === 'none'}
+                <p class="field-hint" data-testid="model-no-timing-info">
+                  {$t('settings.asrProvider.timing.noneInfo')}
+                </p>
+              {/if}
+              {#if modelNotices.length > 0}
+                <ul class="model-notices" data-testid="model-notices">
+                  {#each modelNotices as notice (notice.code)}
+                    <IssueRow
+                      code={notice.code}
+                      severity={notice.severity}
+                      messageKey={notice.messageKey}
+                      rowTestId="model-notice"
+                    />
+                  {/each}
+                </ul>
+              {/if}
+            {/if}
             {#if estimatedCostPerHour}
               <p class="cost-hint">{$t('settings.asrProvider.estimatedCost')}: <strong>{estimatedCostPerHour}</strong></p>
             {/if}
@@ -397,6 +449,19 @@
 </BaseModal>
 
 <style>
+  .model-capabilities {
+    margin-top: 0.5rem;
+  }
+
+  .model-notices {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
   .modal-title {
     margin: 0;
     font-size: 1.25rem;

@@ -12,12 +12,14 @@ vi.mock('$stores/locale', () => ({
 vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
-vi.mock('$lib/api/asrSettings', () => ({
-  ASRSettingsApi: {
-    getStatus: vi.fn().mockResolvedValue({}),
-    getProviderDisplayName: (p: string) => p,
-  },
+const pipelineApi = vi.hoisted(() => ({ getPipelineView: vi.fn() }));
+vi.mock('$lib/api/pipeline', () => pipelineApi);
+const asrApi = vi.hoisted(() => ({
+  getSettings: vi.fn(),
+  getProviders: vi.fn(),
+  getProviderDisplayName: (p: string) => p,
 }));
+vi.mock('$lib/api/asrSettings', () => ({ ASRSettingsApi: asrApi }));
 
 const api = vi.hoisted(() => ({
   getTranscriptionSettings: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
 });
 
 import SpeakerDetectionSettings from './SpeakerDetectionSettings.svelte';
+import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 import { capabilities, resetCapabilities } from '$stores/capabilities';
 
 const SETTINGS = {
@@ -64,6 +67,14 @@ function lock(caps: Record<string, boolean>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pipelineApi.getPipelineView.mockResolvedValue(fullLocalView());
+  asrApi.getSettings.mockResolvedValue({
+    configurations: [],
+    shared_configurations: [],
+    active_configuration_uuid: undefined,
+    total: 0,
+  });
+  asrApi.getProviders.mockResolvedValue({ providers: [] });
   api.getTranscriptionSettings.mockResolvedValue({ ...SETTINGS });
   api.getTranscriptionSystemDefaults.mockResolvedValue({
     min_speakers: 1,
@@ -103,10 +114,12 @@ describe('SpeakerDetectionSettings deployment lock', () => {
     expect(await saveAfterBehaviorChange(container)).toHaveProperty('diarization_source');
   });
 
-  it('hides and does not send the detection source when locked', async () => {
+  it('shows the detection source read-only, says why, and does not send it when locked', async () => {
     lock({ 'transcription.diarization_source': false });
     const { container } = await renderLoaded();
-    expect(container.querySelector('#diarization-source')).toBeNull();
+    const select = container.querySelector('#diarization-source') as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(container.querySelector('[data-testid="source-locked-note"]')).not.toBeNull();
     const payload = await saveAfterBehaviorChange(container);
     expect(payload.speaker_prompt_behavior).toBe('use_defaults');
     expect(payload).not.toHaveProperty('diarization_source');

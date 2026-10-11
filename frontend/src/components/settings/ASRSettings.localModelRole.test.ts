@@ -22,9 +22,14 @@ vi.mock('$lib/api/asrSettings', () => ({
         language_support: 'english_optimized',
       },
     }),
+    getStatus: vi.fn().mockResolvedValue({ deployment_mode: 'full' }),
     setLocalModel: vi.fn(),
     restartGpuWorker: vi.fn(),
   },
+}));
+
+vi.mock('$lib/api/transcriptionSettings', () => ({
+  getTranscriptionSettings: vi.fn().mockResolvedValue({ diarization_source: 'provider' }),
 }));
 
 vi.mock('$stores/toast', () => ({

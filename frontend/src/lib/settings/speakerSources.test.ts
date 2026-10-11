@@ -123,6 +123,13 @@ describe('selectionNotices', () => {
     expect(codes('pyannote', textOnlyTimed, 'full')).toEqual(['segment_timing_only']);
   });
 
+  it('does not warn about segment timing when the model supplies its own speaker labels', () => {
+    const labelsAtSegmentLevel = { returnsSpeakers: true, timing: 'segment' as const };
+    expect(codes('provider', labelsAtSegmentLevel, 'full')).toEqual([]);
+    // ...but a speaker detector chosen separately still has to be merged into that text.
+    expect(codes('pyannote', labelsAtSegmentLevel, 'full')).toEqual(['segment_timing_only']);
+  });
+
   it('is quiet before the transcription model is known', () => {
     expect(codes('provider', null, 'full')).toEqual([]);
     expect(codes('local', null, 'lite')).toEqual(['local_diarization_unavailable']);

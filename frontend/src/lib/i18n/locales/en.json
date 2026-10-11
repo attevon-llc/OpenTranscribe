@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Processing pipeline",
   "settings.pipeline.description": "What happens to a recording, step by step, and where each step runs.",
   "settings.pipeline.loadFailed": "Could not load the processing pipeline.",
+  "settings.pipeline.retry": "Try again",
   "settings.pipeline.audio": "Your recording",
   "settings.pipeline.step.transcription": "Transcription",
   "settings.pipeline.step.transcriptionPurpose": "Turns speech into text with timestamps.",

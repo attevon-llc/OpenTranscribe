@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Chaîne de traitement",
   "settings.pipeline.description": "Ce qui arrive à un enregistrement, étape par étape, et où chaque étape s'exécute.",
   "settings.pipeline.loadFailed": "Impossible de charger la chaîne de traitement.",
+  "settings.pipeline.retry": "Réessayer",
   "settings.pipeline.audio": "Votre enregistrement",
   "settings.pipeline.step.transcription": "Transcription",
   "settings.pipeline.step.transcriptionPurpose": "Transforme la parole en texte avec des horodatages.",

@@ -12,6 +12,7 @@ import type {
   PipelineView,
   PipelineWhere,
 } from '$lib/api/pipeline';
+import { PIPELINE_ENGINE_KEYS } from '$lib/i18n/keyMaps';
 import type { SettingsSection } from '$stores/settingsModalStore';
 import { fixTargets, isPipelineIssueCode, issueKey } from './pipelineIssues';
 
@@ -70,8 +71,7 @@ const STEP_KEYS: Record<PipelineStepName, { title: string; purpose: string }> = 
 
 const SEVERITY_ORDER: Record<PipelineSeverity, number> = { error: 0, warning: 1, info: 2 };
 
-/** Engine ids that have a sentence of their own; the rest print the provider name. */
-const ENGINE_LABELS = new Set([
+const SELF_DESCRIBING_ENGINES: ReadonlySet<string> = new Set([
   'local_gpu',
   'local_cpu',
   'asr',
@@ -79,13 +79,17 @@ const ENGINE_LABELS = new Set([
   'embedding_stage',
 ]);
 
+/** A sentence for the engine ids that have one; the rest print the provider name. */
 function engineLabelKey(step: PipelineStep): string | null {
   if (!step.enabled) return null;
-  if (ENGINE_LABELS.has(step.engine)) return `settings.pipeline.engine.${step.engine}`;
+  if (SELF_DESCRIBING_ENGINES.has(step.engine)) {
+    return PIPELINE_ENGINE_KEYS[step.engine as keyof typeof PIPELINE_ENGINE_KEYS];
+  }
   if (step.engine === 'local') {
+    // The local engine is the administrator's choice, shown by name.
     return step.provider === 'native' || step.provider === 'pyannote'
-      ? `settings.pipeline.engine.${step.provider}`
-      : 'settings.pipeline.engine.local';
+      ? PIPELINE_ENGINE_KEYS[step.provider]
+      : PIPELINE_ENGINE_KEYS.local;
   }
   return null;
 }
@@ -103,12 +107,12 @@ function hintsKey(step: PipelineStep): string | null {
 }
 
 function issueViewModel(issue: PipelineIssue): IssueViewModel {
-  const known = isPipelineIssueCode(issue.code);
+  const messageKey = isPipelineIssueCode(issue.code) ? issueKey(issue.code) : null;
   return {
     code: issue.code,
     severity: issue.severity,
-    messageKey: known ? issueKey(issue.code) : null,
-    fallbackText: known ? null : issue.message,
+    messageKey,
+    fallbackText: messageKey === null ? issue.message : null,
     fixSections: fixTargets(issue),
   };
 }

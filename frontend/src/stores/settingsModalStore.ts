@@ -5,6 +5,7 @@ export type SettingsSection =
   | 'profile'
   | 'recording'
   | 'audio-extraction'
+  | 'processing-pipeline'
   | 'transcription'
   | 'speaker-identification'
   | 'organization-context'
@@ -63,6 +64,7 @@ const initialState: SettingsModalState = {
     profile: false,
     recording: false,
     'audio-extraction': false,
+    'processing-pipeline': false,
     transcription: false,
     'speaker-identification': false,
     'organization-context': false,

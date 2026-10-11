@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "처리 파이프라인",
   "settings.pipeline.description": "녹음에 어떤 처리가 순서대로 이루어지는지, 각 단계가 어디에서 실행되는지 보여줍니다.",
   "settings.pipeline.loadFailed": "처리 파이프라인을 불러오지 못했습니다.",
+  "settings.pipeline.retry": "다시 시도",
   "settings.pipeline.audio": "녹음",
   "settings.pipeline.step.transcription": "전사",
   "settings.pipeline.step.transcriptionPurpose": "음성을 타임스탬프가 있는 텍스트로 변환합니다.",

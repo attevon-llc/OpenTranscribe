@@ -103,9 +103,9 @@ describe('pipelineErrorCode', () => {
 
 describe('speakerSaveErrorKey', () => {
   it('asks for a key only when the server says the key is missing', () => {
-    expect(speakerSaveErrorKey(conflict({ code: 'pyannote_key_missing', message: 'm' }))).toBe(
-      'settings.speakerIdentification.pyannoteKey.requiredToSelect'
-    );
+    const key = speakerSaveErrorKey(conflict({ code: 'pyannote_key_missing', message: 'm' }));
+    expect(key).toBe('settings.speakerIdentification.pyannoteKey.requiredToSelect');
+    expect(hasKey(key as string)).toBe(true);
   });
 
   it('does not tell a user to save a key for any other refusal (the #1227 bug)', () => {

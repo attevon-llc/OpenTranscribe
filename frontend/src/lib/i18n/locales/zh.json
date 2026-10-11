@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "处理流程",
   "settings.pipeline.description": "录音依次经过哪些处理步骤，以及每一步在哪里运行。",
   "settings.pipeline.loadFailed": "无法加载处理流程。",
+  "settings.pipeline.retry": "重试",
   "settings.pipeline.audio": "您的录音",
   "settings.pipeline.step.transcription": "转录",
   "settings.pipeline.step.transcriptionPurpose": "将语音转换为带时间戳的文本。",

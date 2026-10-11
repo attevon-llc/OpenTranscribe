@@ -10,7 +10,6 @@ import {
   pyannoteCredentialView,
   pyannoteDeletedKey,
   pyannoteSaveErrorKey,
-  pyannoteSelectionErrorKey,
   pyannoteTestResultKey,
 } from './pyannoteCredential';
 
@@ -91,14 +90,6 @@ describe('error and result copy', () => {
     );
   });
 
-  it('recognises only the pyannote selection refusal', () => {
-    expect(pyannoteSelectionErrorKey(409, 'pyannote')).toBe(
-      'settings.speakerIdentification.pyannoteKey.requiredToSelect'
-    );
-    expect(pyannoteSelectionErrorKey(409, 'local')).toBeNull();
-    expect(pyannoteSelectionErrorKey(422, 'pyannote')).toBeNull();
-  });
-
   it('says when a delete reverted the source', () => {
     expect(pyannoteDeletedKey(true)).toBe(
       'settings.speakerIdentification.pyannoteKey.deletedReverted'
@@ -125,13 +116,12 @@ describe('every key the helpers return is translated in en', () => {
     ...codes.map(pyannoteTestResultKey),
     pyannoteSaveErrorKey(422),
     pyannoteSaveErrorKey(500),
-    pyannoteSelectionErrorKey(409, 'pyannote'),
     pyannoteDeletedKey(true),
     pyannoteDeletedKey(false),
   ].filter((key): key is string => key !== null);
 
   it('covers every badge, label, warning and message', () => {
-    expect(new Set(keys).size).toBe(18);
+    expect(new Set(keys).size).toBe(17);
   });
 
   it.each([...new Set(keys)])('%s renders text', (key) => {

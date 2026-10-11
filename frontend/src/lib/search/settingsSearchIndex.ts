@@ -78,6 +78,7 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   'llm-provider': ['settings.llmProvider', 'llm'],
   'organization-context': ['settings.orgContext'],
   'speaker-attributes': ['settings.speakerAttributes'],
+  'processing-pipeline': ['settings.pipeline'],
   transcription: ['settings.transcription'],
   'audio-extraction': ['settings.audioExtraction'],
   'media-sources': ['settings.mediaSources'],

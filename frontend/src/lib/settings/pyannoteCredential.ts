@@ -85,19 +85,6 @@ export function pyannoteSaveErrorKey(httpStatus: number | undefined): string {
   return `${KEY_PREFIX}.saveFailed`;
 }
 
-/**
- * Copy for `PUT /user-settings/transcription` refusing `diarization_source: 'pyannote'`
- * with 409 because no key is saved; null for any other failure.
- */
-export function pyannoteSelectionErrorKey(
-  httpStatus: number | undefined,
-  requestedSource: string
-): string | null {
-  return httpStatus === 409 && requestedSource === 'pyannote'
-    ? `${KEY_PREFIX}.requiredToSelect`
-    : null;
-}
-
 /** Message after a delete; says so when the source was switched back to the default. */
 export function pyannoteDeletedKey(sourceReverted: boolean): string {
   return `${KEY_PREFIX}.${sourceReverted ? 'deletedReverted' : 'deleted'}`;

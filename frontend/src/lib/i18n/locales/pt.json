@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Pipeline de processamento",
   "settings.pipeline.description": "O que acontece com uma gravação, passo a passo, e onde cada etapa é executada.",
   "settings.pipeline.loadFailed": "Não foi possível carregar o pipeline de processamento.",
+  "settings.pipeline.retry": "Tentar novamente",
   "settings.pipeline.audio": "Sua gravação",
   "settings.pipeline.step.transcription": "Transcrição",
   "settings.pipeline.step.transcriptionPurpose": "Converte a fala em texto com marcas de tempo.",

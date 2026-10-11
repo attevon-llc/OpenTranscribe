@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Verwerkingspijplijn",
   "settings.pipeline.description": "Wat er stap voor stap met een opname gebeurt en waar elke stap wordt uitgevoerd.",
   "settings.pipeline.loadFailed": "De verwerkingspijplijn kon niet worden geladen.",
+  "settings.pipeline.retry": "Opnieuw proberen",
   "settings.pipeline.audio": "Uw opname",
   "settings.pipeline.step.transcription": "Transcriptie",
   "settings.pipeline.step.transcriptionPurpose": "Zet spraak om in tekst met tijdstempels.",

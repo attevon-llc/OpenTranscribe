@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Flujo de procesamiento",
   "settings.pipeline.description": "Qué ocurre con una grabación, paso a paso, y dónde se ejecuta cada paso.",
   "settings.pipeline.loadFailed": "No se pudo cargar el flujo de procesamiento.",
+  "settings.pipeline.retry": "Reintentar",
   "settings.pipeline.audio": "Su grabación",
   "settings.pipeline.step.transcription": "Transcripción",
   "settings.pipeline.step.transcriptionPurpose": "Convierte la voz en texto con marcas de tiempo.",

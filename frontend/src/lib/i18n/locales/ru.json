@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Конвейер обработки",
   "settings.pipeline.description": "Что происходит с записью шаг за шагом и где выполняется каждый шаг.",
   "settings.pipeline.loadFailed": "Не удалось загрузить конвейер обработки.",
+  "settings.pipeline.retry": "Повторить",
   "settings.pipeline.audio": "Ваша запись",
   "settings.pipeline.step.transcription": "Транскрипция",
   "settings.pipeline.step.transcriptionPurpose": "Преобразует речь в текст с метками времени.",

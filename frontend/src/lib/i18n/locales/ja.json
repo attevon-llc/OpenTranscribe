@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "処理パイプライン",
   "settings.pipeline.description": "録音に対して行われる処理を手順ごとに示し、各手順がどこで実行されるかを表示します。",
   "settings.pipeline.loadFailed": "処理パイプラインを読み込めませんでした。",
+  "settings.pipeline.retry": "再試行",
   "settings.pipeline.audio": "録音",
   "settings.pipeline.step.transcription": "文字起こし",
   "settings.pipeline.step.transcriptionPurpose": "音声をタイムスタンプ付きのテキストに変換します。",

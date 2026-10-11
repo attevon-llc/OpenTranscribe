@@ -4582,6 +4582,7 @@
   "settings.pipeline.title": "Verarbeitungspipeline",
   "settings.pipeline.description": "Was mit einer Aufnahme Schritt für Schritt geschieht und wo jeder Schritt ausgeführt wird.",
   "settings.pipeline.loadFailed": "Die Verarbeitungspipeline konnte nicht geladen werden.",
+  "settings.pipeline.retry": "Erneut versuchen",
   "settings.pipeline.audio": "Ihre Aufnahme",
   "settings.pipeline.step.transcription": "Transkription",
   "settings.pipeline.step.transcriptionPurpose": "Wandelt Sprache in Text mit Zeitstempeln um.",

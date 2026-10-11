@@ -99,7 +99,9 @@ export function selectionNotices(
         : { code: 'automatic_uses_server', severity: 'info' }
     );
   }
-  if (facts?.timing === 'segment') {
+  // The model's own speaker labels need no merge, so its coarse timing costs nothing there.
+  const labelsFromModel = source === 'provider' && facts?.returnsSpeakers === true;
+  if (facts?.timing === 'segment' && !labelsFromModel) {
     notices.push({ code: 'segment_timing_only', severity: 'warning' });
   }
   return notices;

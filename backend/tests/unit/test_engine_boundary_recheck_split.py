@@ -23,6 +23,7 @@ from app.transcription.engine.job import RawInferenceResult
 from app.transcription.engine.job import RawTranscriptResult
 from app.transcription.engine.stages import _DiarizerOnlyStage
 from app.transcription.engine.stages import _FinalizeStage
+from tests.unit._plan_contexts import plan_context
 
 
 class _StopError(Exception):
@@ -94,7 +95,9 @@ def test_split_transcribe_stage_snapshot_carries_the_admin_db_values(db_session,
 
     with pytest.raises(_StopError):
         pipelines._run_transcribe_only_stage(
-            MagicMock(task_id="t", file_id=1, user_id=1), "/scratch/a.wav", {}
+            MagicMock(task_id="t", file_id=1, user_id=1),
+            "/scratch/a.wav",
+            {"pipeline_plan": plan_context()},
         )
 
     snapshot = split_stage_env[0].config_snapshot

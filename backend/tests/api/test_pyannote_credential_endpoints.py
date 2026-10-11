@@ -27,9 +27,6 @@ import pytest
 from fastapi import status
 
 from app.auth.audit import AuditEventType
-from app.core.capabilities import COMMUNITY_CAPABILITIES
-from app.core.capabilities import reset_capability_resolver
-from app.core.capabilities import set_capability_resolver
 from app.models import UserSetting
 from app.models.user_diarization_settings import UserDiarizationSettings
 
@@ -39,16 +36,6 @@ _TRANSCRIPTION = "/api/user-settings/transcription"
 # that a substring hit can only be a leak.
 _KEY = "fixture-key-aaaa-1111"
 _KEY_OTHER = "fixture-key-bbbb-2222"
-
-
-@pytest.fixture
-def caps_off():
-    def _install(*keys: str) -> None:
-        overrides = dict.fromkeys(keys, False)
-        set_capability_resolver(lambda _request: {**COMMUNITY_CAPABILITIES, **overrides})
-
-    yield _install
-    reset_capability_resolver()
 
 
 @pytest.fixture
@@ -244,7 +231,13 @@ class TestSelection:
             _TRANSCRIPTION, json={"diarization_source": "pyannote"}, headers=user_token_headers
         )
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "pyannote.ai API key" in response.json()["detail"]
+        assert response.json()["detail"] == {
+            "code": "pyannote_key_missing",
+            "message": (
+                "pyannote.ai speaker detection needs a pyannote.ai API key. Save your key "
+                "first, then choose this option."
+            ),
+        }
         assert _source(db_session, normal_user) is None
 
     def test_selecting_pyannote_with_a_key_is_accepted(

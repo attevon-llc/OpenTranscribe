@@ -15,6 +15,7 @@ from datetime import UTC
 from typing import Any
 from typing import Literal
 from typing import cast
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Body
@@ -608,35 +609,59 @@ def _upsert_user_setting(
         db.add(new_setting)
 
 
-PYANNOTE_KEY_REQUIRED_DETAIL = (
-    "pyannote.ai speaker detection needs a pyannote.ai API key. Save your key first, then "
-    "choose this option."
-)
+def _refuse_unusable_speaker_selection(
+    request: Request, db: Session, user_id: int, update_data: dict[str, Any]
+) -> None:
+    """409 a NEW speaker-detection choice the pipeline plan cannot run (issue #1224).
 
-
-def _require_pyannote_key_for_new_selection(db: Session, user_id: int, source: str) -> None:
-    """Refuse switching TO the pyannote.ai source when no key is stored (issue #1204).
+    The plan is resolved on the would-be state (stored settings with this update applied),
+    so every rule lives in ``services/pipeline_plan`` and none is restated here. The
+    response carries the stable ``code`` and its fixed sentence, never exception text.
 
     Only a change is refused: the settings form re-sends every field on save, and a
-    selection stored before #1204 must not make the user's other settings unsaveable. That
-    case is reported per file by the transcription pipeline instead.
+    selection stored earlier (e.g. pyannote.ai before #1204 required a key) must not make
+    the user's other settings unsaveable. A stored selection's problems are reported by
+    ``GET /user-settings/pipeline`` and per file by the pipeline instead.
     """
-    from app.services.diarization.factory import PYANNOTE_PROVIDER
-    from app.services.diarization.factory import has_pyannote_credential
+    from app.services.pipeline_plan_inputs import DIARIZER_CONFIG_KEY
+    from app.services.pipeline_plan_inputs import SOURCE_KEY
+    from app.services.pipeline_plan_inputs import plan_for_user
 
-    if source != PYANNOTE_PROVIDER:
-        return
-    stored = (
-        db.query(models.UserSetting.setting_value)
+    stored = {
+        str(key): str(value)
+        for key, value in db.query(models.UserSetting.setting_key, models.UserSetting.setting_value)
         .filter(
             models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "transcription_diarization_source",
+            models.UserSetting.setting_key.in_([SOURCE_KEY, DIARIZER_CONFIG_KEY]),
         )
-        .scalar()
+        .all()
+        if value
+    }
+    stored_source = stored.get(SOURCE_KEY, DEFAULT_DIARIZATION_SOURCE)
+    source = str(update_data.get("diarization_source", stored_source))
+    config_uuid = (
+        str(update_data["diarization_asr_config_uuid"])
+        if update_data.get("diarization_asr_config_uuid") is not None
+        else stored.get(DIARIZER_CONFIG_KEY)
     )
-    if stored == PYANNOTE_PROVIDER or has_pyannote_credential(user_id, db):
+    changed = source != stored_source or (
+        source == "asr_config" and config_uuid != stored.get(DIARIZER_CONFIG_KEY)
+    )
+    if not changed:
         return
-    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PYANNOTE_KEY_REQUIRED_DETAIL)
+    plan = plan_for_user(
+        db,
+        user_id,
+        request=request,
+        diarization_source=source,
+        diarization_asr_config_uuid=config_uuid,
+    )
+    refused = [issue for issue in plan.blocking() if issue.step == "diarization"]
+    if refused:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": refused[0].code, "message": refused[0].message},
+        )
 
 
 @router.get("/transcription", response_model=TranscriptionSettings)
@@ -679,6 +704,7 @@ def get_transcription_settings(
                     "transcription_hallucination_silence_threshold",
                     "transcription_repetition_penalty",
                     "transcription_diarization_source",
+                    "transcription_diarization_asr_config_uuid",
                 ]
             ),
         )
@@ -758,7 +784,20 @@ def get_transcription_settings(
         diarization_source=settings_map.get(
             "transcription_diarization_source", DEFAULT_DIARIZATION_SOURCE
         ),
+        diarization_asr_config_uuid=_stored_uuid(
+            settings_map.get("transcription_diarization_asr_config_uuid")
+        ),
     )
+
+
+def _stored_uuid(value: str | None) -> UUID | None:
+    """A stored UUID setting, or ``None`` when unset or unreadable (never a 500)."""
+    if not value:
+        return None
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
 
 
 @router.put("/transcription", response_model=TranscriptionSettings)
@@ -852,22 +891,20 @@ def update_transcription_settings(
         ),
         "repetition_penalty": ("transcription_repetition_penalty", None),
         "diarization_source": ("transcription_diarization_source", None),
+        "diarization_asr_config_uuid": ("transcription_diarization_asr_config_uuid", str),
     }
 
-    # Validate diarization_source value
     diarization_src = update_data.get("diarization_source")
-    if diarization_src is not None:
-        from app.core.constants import VALID_DIARIZATION_SOURCES
-
-        if diarization_src not in VALID_DIARIZATION_SOURCES:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Invalid diarization_source: '{diarization_src}'. "
-                    f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
-                ),
-            )
-        _require_pyannote_key_for_new_selection(db, current_user.id, diarization_src)
+    if diarization_src is not None and diarization_src not in VALID_DIARIZATION_SOURCES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Invalid diarization_source: '{diarization_src}'. "
+                f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
+            ),
+        )
+    if update_data.keys() & {"diarization_source", "diarization_asr_config_uuid"}:
+        _refuse_unusable_speaker_selection(request, db, current_user.id, update_data)
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():

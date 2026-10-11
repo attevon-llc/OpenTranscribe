@@ -379,7 +379,9 @@ deprecated alias for `anthropic`).
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.
-- **"Is an LLM configured?" has ONE answer: `LLMService.is_configured_for_user(db, user_id)`.**
+- **"Is an LLM configured?" has ONE answer: `LLMService.is_configured_for_user(db, user_id)`**
+  (a thin wrapper over `describe_for_user`, which also returns `(provider, model, base_url)` for
+  the pipeline view's AI-features step).
   DB-only, no network, and built from the same helpers the factories use
   (`_resolve_user_llm_settings`, `_resolve_system_provider`, `_endpoint_resolves`), so it is
   true exactly when `create_from_settings` would return a service. Never re-derive it as
@@ -589,6 +591,32 @@ file is dispatched, and a retry/recovery replays them (`reuse_requested_options`
 `dispatch_transcription_pipeline` still accepts `source_language`/`translate_to_english`, but no
 endpoint sets them, so language and translation always come from the user's prefs. Adding them
 to the upload/reprocess requests is a separate decision.
+
+## Pipeline composition: `pipeline_plan.py` is the one decision point (#1224)
+
+Transcription and speaker detection are chosen independently, each local or cloud.
+`pipeline_plan.resolve_pipeline_plan(PlanInputs) -> PipelinePlan` is a **pure** function
+(constants only, no DB) that decides, for every combination of transcription engine
+(`local_gpu` / `local_cpu` / `cloud`), stored speaker-detection source, deployment (full /
+lite) and the model's timestamp granularity: which detector runs (`asr` / `local` /
+`pyannote_ai` / `asr_config` / `off`), how (`inline_asr`, `inline_local`, `parallel_cloud`,
+`post_stage_local`, `post_stage_cloud`), where, on which queue, how turns are merged
+(`word` / `segment`), and the voiceprint step (always this server: `inline_native` after the
+local engine, otherwise `embedding_stage` on `cpu`). Problems are `PlanIssue`s with a stable
+`code` (also the i18n suffix `settings.pipeline.issue.<code>`) and a fixed sentence in
+`ISSUE_MESSAGES`; only `severity == "error"` blocks. `pipeline_plan_inputs.load_plan_inputs`
+gathers the inputs (active ASR via `ASRProviderFactory.resolve_active_config`, the #1109 lock,
+the pyannote.ai key, the catalog capabilities); `plan_for_user` composes the two.
+
+Owner decisions it encodes (do not re-open): lite has no local transcription and no local
+speaker detection; Automatic with a text-only model detects speakers on this server (full only);
+**no forced alignment / wav2vec2** — a model with `timing == "none"` is refused for every speaker
+detector (`asr_no_timing_for_speakers`); voiceprints are never taken from a vendor. Every cell is
+pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). Consumers: the settings
+PUT (409 on a NEW selection with a diarization-step error), the ASR-side switches
+(`services/asr_switch_plan`, same rule), `GET /user-settings/pipeline`, and every pipeline
+stage (#1225: dispatch resolves it once and carries it in the chain context; what each cell
+then does is pinned by `tests/unit/test_pipeline_execution_matrix.py`).
 
 ## Media URL ingestion (yt-dlp)
 

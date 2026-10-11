@@ -87,8 +87,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 
 **This is a self-hosted app; the non-UI API is a feature.** Homelab users, cron scripts, CI and
 AI agents drive it directly, so "no SPA call site" is not evidence an endpoint is dead.
-`tests/unit/test_route_has_a_caller.py` xfails **78 of 374** routes for having no frontend
-caller; the sections below say what those 78 are *for*, so the xfail list reads as intent.
+`tests/unit/test_route_has_a_caller.py` xfails **80 of 413** routes for having no frontend
+caller (measured 2026-10-11; re-derive with that test rather than trusting the number); the
+sections below say what they are *for*, so the xfail list reads as intent. Backend-first
+routes whose UI is planned (support access #1122, the pipeline view #1224) carry their own
+reason there.
 
 The detector keys on path literals in `frontend/src`, which gives it two blind spots — check
 both before believing it:
@@ -228,6 +231,21 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 ## Gotchas
 
+- **Speaker-detection choices are validated by the pipeline plan, never re-derived here
+  (#1224).** `GET /user-settings/pipeline` (`endpoints/pipeline_settings.py`, capability
+  `transcription.prefs`, read-only, DB reads only) returns the four steps of the caller's next
+  file from `services/pipeline_plan`. `PUT /user-settings/transcription` resolves the plan on
+  the would-be state and answers **409 with `detail: {"code", "message"}`** (stable code + the
+  fixed sentence from `pipeline_plan.ISSUE_MESSAGES`, never exception text) for a NEW
+  `diarization_source` / `diarization_asr_config_uuid` that produces a diarization-step
+  error; re-saving an unchanged stored value is never refused. An endpoint that changes what
+  the plan depends on must ask the plan, not add a `source == "..."` check. The ASR-side
+  switches ask it too (#1225, `services/asr_switch_plan`): `set-active` / `clear-active`
+  answer the same 409 for an error the switch would INTRODUCE and otherwise return
+  `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
+  break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
+  the first remaining config that keeps the choice runnable, else clears. A #1109-locked
+  source is never refused. Lite's transcription-step 409s are WP6's (`REFUSED_STEPS`).
 - **A route that deletes a speaker or moves one out of a cluster/profile must use
   `services/speaker_cleanup`** (issue #1214): `capture_speaker_impact` before the write,
   `raise_if_incomplete(reconcile_speaker_impact(...))` after the commit. Hand-rolling

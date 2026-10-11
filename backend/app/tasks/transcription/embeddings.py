@@ -38,8 +38,6 @@ def _wait_for_migration_lock_to_clear() -> None:
     this is a no-op, matching MigrationLockService's own fail-open behavior
     for lock state (a lock that cannot be observed cannot be waited on).
     """
-    import time
-
     from app.services.migration_lock_service import migration_lock
 
     if not migration_lock.is_active():
@@ -64,91 +62,6 @@ def _wait_for_migration_lock_to_clear() -> None:
 
 
 @stage_timing.stage("speaker_embedding")
-def _process_speaker_embeddings(
-    ctx: TranscriptionContext, audio_file_path: str, processed_segments: list, speaker_mapping: dict
-) -> None:
-    """Extract speaker embeddings and match profiles using warm cached model."""
-    import time
-
-    from app.services.speaker_embedding_service import get_cached_embedding_service
-    from app.utils.hardware_detection import detect_hardware
-
-    total_start = time.perf_counter()
-
-    # Force GPU synchronization before embedding extraction
-    sync_start = time.perf_counter()
-    hardware_config = detect_hardware()
-    hardware_config.optimize_memory_usage()
-    logger.info(f"TIMING: GPU sync completed in {time.perf_counter() - sync_start:.3f}s")
-
-    # Real pause point for a running v4 migration (issue #657, defect 4).
-    _wait_for_migration_lock_to_clear()
-
-    # Use cached embedding service (warm model, avoids 40-60s cold start)
-    cache_start = time.perf_counter()
-    embedding_service = get_cached_embedding_service()
-    cache_elapsed = time.perf_counter() - cache_start
-    logger.info(
-        f"TIMING: get_cached_embedding_service completed in {cache_elapsed:.3f}s - "
-        f"mode: {embedding_service.mode} ({embedding_service.model_name})"
-    )
-
-    # Audio slicing + model inference, deliberately OUTSIDE any session. When
-    # this ran inside ``session_scope`` the whole extraction (up to 5 ffmpeg
-    # slices per speaker plus inference on each) sat inside one Postgres
-    # transaction, holding ACCESS SHARE and pinning the vacuum horizon for its
-    # entire duration.
-    extract_start = time.perf_counter()
-    raw_embeddings = embedding_service.extract_embeddings_for_segments(
-        audio_file_path, processed_segments, speaker_mapping
-    )
-    # ``aggregate_embeddings`` mean-pools + L2-normalizes, exactly what
-    # ``process_speaker_segments`` did internally before matching.
-    aggregated_embeddings = {
-        speaker_id: embedding_service.aggregate_embeddings(embeddings)
-        for speaker_id, embeddings in raw_embeddings.items()
-        if embeddings
-    }
-    logger.info(
-        f"TIMING: extract_embeddings_for_segments completed in "
-        f"{time.perf_counter() - extract_start:.3f}s (no DB session held)"
-    )
-
-    matching_start = time.perf_counter()
-    with session_scope() as db:
-        # Compute accessible profiles for cross-user matching via shared collections
-        from app.services.permission_service import PermissionService
-
-        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(
-            db, ctx.user_id, ctx.file_id
-        )
-
-        # ``embedding_service=None``: the embeddings arrive already aggregated
-        # and normalized, which is the only thing the matching service used it
-        # for on this path.
-        matching_service = SpeakerMatchingService(db, embedding_service=None)
-        logger.info(f"Starting speaker matching for {len(speaker_mapping)} speakers")
-        speaker_results = matching_service.process_speaker_embeddings_native(
-            media_file_id=ctx.file_id,
-            user_id=ctx.user_id,
-            native_embeddings=aggregated_embeddings,
-            accessible_profile_ids=accessible_ids,
-        )
-        matching_elapsed = time.perf_counter() - matching_start
-        logger.info(
-            f"TIMING: speaker profile matching completed in {matching_elapsed:.3f}s - "
-            f"got {len(speaker_results) if speaker_results else 0} results"
-        )
-        update_task_status(db, ctx.task_id, "in_progress", progress=0.82)
-
-    total_elapsed = time.perf_counter() - total_start
-    logger.info(
-        f"TIMING: _process_speaker_embeddings TOTAL completed in {total_elapsed:.3f}s - "
-        f"{len(speaker_results) if speaker_results else 0} speakers processed"
-    )
-
-
-@stage_timing.stage("speaker_embedding")
 def _process_speaker_embeddings_native(
     ctx: TranscriptionContext,
     native_embeddings: dict,
@@ -167,7 +80,6 @@ def _process_speaker_embeddings_native(
         processed_segments: Processed transcript segments.
         speaker_mapping: Mapping of speaker labels to database IDs.
     """
-    import time
 
     import numpy as np
 
@@ -541,39 +453,3 @@ def _should_use_native_embeddings(result: dict) -> bool:
             "Falling back to traditional path."
         )
         return False
-
-
-def _run_speaker_embeddings_with_retry(
-    ctx: TranscriptionContext,
-    result: dict,
-    audio_file_path: str,
-    processed_segments: list,
-    speaker_mapping: dict,
-) -> None:
-    """Run speaker embedding processing with up to 2 retries on failure."""
-    use_native = _should_use_native_embeddings(result)
-    max_retries = 2
-    for attempt in range(max_retries + 1):
-        try:
-            if use_native:
-                logger.info(
-                    "Using native speaker embeddings (PyAnnote centroids, no separate model)"
-                )
-                _process_speaker_embeddings_native(
-                    ctx,
-                    result["native_speaker_embeddings"],
-                    processed_segments,
-                    speaker_mapping,
-                )
-            else:
-                logger.info("Using traditional SpeakerEmbeddingService for speaker embeddings")
-                _process_speaker_embeddings(
-                    ctx, audio_file_path, processed_segments, speaker_mapping
-                )
-            break  # Success
-        except Exception as e:
-            if attempt < max_retries:
-                logger.warning(f"Speaker embedding attempt {attempt + 1} failed: {e}, retrying...")
-                time.sleep(1)
-            else:
-                logger.error(f"Speaker embedding failed after {max_retries + 1} attempts: {e}")

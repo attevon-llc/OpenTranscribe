@@ -1,4 +1,4 @@
-"""Factory for creating diarization provider instances."""
+"""Build the speaker detector a pipeline plan names."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.services.error_categorization_service import DIARIZATION_NOT_CONFIGURED_MESSAGE
+from app.services.error_categorization_service import DIARIZER_CONFIG_UNUSABLE_MESSAGE
 
 from .base import DiarizationProvider
 
@@ -15,9 +16,6 @@ if TYPE_CHECKING:
     from app.models.user_diarization_settings import UserDiarizationSettings
 
 logger = logging.getLogger(__name__)
-
-VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
-DEFAULT_DIARIZATION_SOURCE = "provider"
 
 #: The ``user_diarization_settings`` identity of a user's pyannote.ai credential: one row
 #: per user (issue #1204), written only by ``api/endpoints/diarization_settings.py``.
@@ -35,6 +33,21 @@ class DiarizationNotConfiguredError(RuntimeError):
     """
 
     MESSAGE = DIARIZATION_NOT_CONFIGURED_MESSAGE
+
+    def __init__(self) -> None:
+        super().__init__(self.MESSAGE)
+
+
+class DiarizerConfigUnusableError(RuntimeError):
+    """The speaker detector a run was planned with cannot be built.
+
+    Raised for ``asr_config`` (another saved ASR configuration's speaker detection), whose
+    adapter is not part of this change, and for an engine name no plan produces. ``str()``
+    is the fixed sentence registered in ``ErrorCategorizationService`` (reason
+    ``pipeline_not_runnable``, permanent retry category ``CONFIGURATION_REQUIRED``).
+    """
+
+    MESSAGE = DIARIZER_CONFIG_UNUSABLE_MESSAGE
 
     def __init__(self) -> None:
         super().__init__(self.MESSAGE)
@@ -62,99 +75,51 @@ def has_pyannote_credential(user_id: int, db: Session) -> bool:
 
 
 class DiarizationProviderFactory:
-    """Create diarization provider instances based on user settings."""
+    """Turn a plan's speaker-detection engine into a provider.
+
+    ``services/pipeline_plan.py`` decides WHICH detector runs; nothing here re-derives that
+    from a stored source. Building reads the database (a stored key) and returns a plain
+    provider object, so the caller can close its session before the provider does any slow
+    or network work.
+    """
 
     @staticmethod
-    def create_for_source(
-        source: str,
-        api_key: str | None = None,
-        model_name: str | None = None,
-    ) -> DiarizationProvider | None:
-        """Create a diarization provider for the given source.
+    def create_for_engine(
+        engine: str,
+        user_id: int,
+        db: Session,
+        *,
+        config_uuid: str | None = None,
+    ) -> DiarizationProvider:
+        """The detector for a post-stage ``engine`` (``pipeline_plan.post_stage_engine``).
 
         Args:
-            source: One of ``VALID_DIARIZATION_SOURCES``.
-            api_key: API key for cloud providers (pyannote).
-            model_name: Model identifier for cloud providers.
-
-        Returns:
-            A ``DiarizationProvider`` instance, or ``None`` when the source is
-            ``"provider"`` (use ASR provider's built-in diarization), ``"off"``
-            (diarization disabled), or ``"local"`` (run on our own GPU — resolved by
-            ``rediarize_task`` calling ``ModelManager.get_diarizer()`` directly, never
-            through this factory; see the class-level note on ``VALID_DIARIZATION_SOURCES``
-            usage in ``app/services/diarization/CLAUDE.md``).
+            engine: ``local`` (this server's engine, chosen by the admin as
+                ``engine.diarizer_backend``), ``pyannote_ai`` (the user's pyannote.ai key)
+                or ``asr_config``.
+            user_id: Whose credential to use.
+            db: An open session (reads only).
+            config_uuid: The ASR configuration named as the detector (``asr_config``).
 
         Raises:
-            ValueError: If *source* is unknown or a required API key is missing.
+            DiarizationNotConfiguredError: ``pyannote_ai`` and the user has no usable key
+                (none stored, or one that no longer decrypts; issue #1204).
+            DiarizerConfigUnusableError: ``asr_config`` (its adapter is not built yet), or
+                an engine no plan produces.
         """
-        if source in ("provider", "off", "local"):
-            return None
+        if engine == "local":
+            from .local_provider import LocalDiarizationProvider
 
-        if source == "pyannote":
-            from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+            return LocalDiarizationProvider()
 
-            from .pyannote_provider import PyAnnoteCloudDiarizationProvider
-
-            if not api_key:
-                raise ValueError("pyannote.ai diarization requires an API key")
-            provider: DiarizationProvider = PyAnnoteCloudDiarizationProvider(
-                api_key=api_key,
-                model_name=model_name or PYANNOTE_DEFAULT_DIARIZATION_MODEL,
-            )
-            return provider
-
-        raise ValueError(f"Unknown diarization source: {source}")
-
-    @staticmethod
-    def create_for_user(user_id: int, db: Session) -> DiarizationProvider | None:
-        """Create diarization provider from user's persisted settings.
-
-        Args:
-            user_id: The user whose settings to load.
-            db: An active SQLAlchemy ``Session``.
-
-        Returns:
-            A ``DiarizationProvider`` instance, or ``None`` when diarization_source
-            is ``"provider"``, ``"off"``, or ``"local"`` (the ``local`` source runs on our
-            own GPU via ``rediarize_task`` -> ``ModelManager.get_diarizer()`` directly,
-            never through this factory — issue #672).
-
-        Raises:
-            DiarizationNotConfiguredError: The source is ``"pyannote"`` and the user has no
-                stored key, or the stored key no longer decrypts (issue #1204). This used to
-                return ``None``, which the cloud pipeline turned into a transcript with no
-                speakers and a log line nobody saw.
-        """
-        from app.models import UserSetting
-
-        # Read diarization source setting
-        source_setting = (
-            db.query(UserSetting)
-            .filter(
-                UserSetting.user_id == user_id,
-                UserSetting.setting_key == "transcription_diarization_source",
-            )
-            .first()
-        )
-        source = source_setting.setting_value if source_setting else DEFAULT_DIARIZATION_SOURCE
-        from app.core.locked_settings import locked_transcription_fields
-
-        if "diarization_source" in locked_transcription_fields():
-            # The deployment owns the diarization source (issue #1109).
-            source = DEFAULT_DIARIZATION_SOURCE
-
-        if source in ("provider", "off", "local"):
-            return None
-
-        if source == "pyannote":
+        if engine == "pyannote_ai":
             from app.utils.encryption import decrypt_api_key
 
             config = get_pyannote_credential(user_id, db)
             api_key = decrypt_api_key(str(config.api_key)) if config and config.api_key else None
             if not api_key:
                 logger.warning(
-                    "User %d chose pyannote.ai diarization but has no usable stored key",
+                    "User %d is planned for pyannote.ai speaker detection but has no usable key",
                     user_id,
                 )
                 raise DiarizationNotConfiguredError()
@@ -162,11 +127,15 @@ class DiarizationProviderFactory:
             from .pyannote_provider import PyAnnoteCloudDiarizationProvider
             from .pyannote_provider import current_pyannote_model
 
-            provider: DiarizationProvider = PyAnnoteCloudDiarizationProvider(
+            return PyAnnoteCloudDiarizationProvider(
                 api_key=api_key,
                 model_name=current_pyannote_model(config.model_name if config else None),
             )
-            return provider
 
-        logger.warning("Unknown diarization source '%s' for user %d", source, user_id)
-        return None
+        logger.warning(
+            "No speaker detector can be built for engine %r (user %d, config %s)",
+            engine,
+            user_id,
+            config_uuid,
+        )
+        raise DiarizerConfigUnusableError()

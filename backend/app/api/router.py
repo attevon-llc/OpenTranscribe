@@ -29,6 +29,7 @@ from .endpoints import llm_status
 from .endpoints import media_collections
 from .endpoints import media_mirror_settings
 from .endpoints import org_admin
+from .endpoints import pipeline_settings
 from .endpoints import prompts
 from .endpoints import redaction_settings
 from .endpoints import search
@@ -264,6 +265,14 @@ include_router_with_consistency(
     prefix="/user-settings",
     tags=["diarization-settings"],
     capability="asr.user_providers",
+)
+# Read-only view of how the caller's next file is processed (issue #1224); hidden with the
+# rest of the transcription preferences.
+include_router_with_consistency(
+    pipeline_settings.router,
+    prefix="/user-settings",
+    tags=["pipeline-settings"],
+    capability="transcription.prefs",
 )
 include_router_with_consistency(
     redaction_settings.user_router, prefix="/user-settings", tags=["redaction-settings"]

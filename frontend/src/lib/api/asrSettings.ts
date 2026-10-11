@@ -124,6 +124,33 @@ export interface UserASRSettingsResponse {
   updated_at: string;
 }
 
+/** One issue of the caller's pipeline plan (`PipelineIssueOut`, issue #1224). */
+export interface PipelineIssue {
+  /** Stable code; i18n key `settings.pipeline.issue.<code>` */
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+  step: 'transcription' | 'diarization' | 'speaker_id' | 'llm';
+  /** The fixed English sentence for the code */
+  message: string;
+}
+
+/**
+ * `set-active` / `clear-active` (issue #1225). A switch that would make the stored
+ * speaker detection choice unrunnable is refused with 409 `detail: {code, message}`;
+ * otherwise `pipeline_issues` describes the pipeline after the switch.
+ */
+export interface ASRSwitchResult {
+  message: string;
+  config_uuid: string | null;
+  pipeline_issues: PipelineIssue[];
+}
+
+/** `POST /asr-settings`: a first config is auto-activated only when it keeps speaker detection runnable. */
+export interface ASRConfigCreateResult extends UserASRSettingsResponse {
+  auto_activated: boolean;
+  pipeline_issues: PipelineIssue[];
+}
+
 export interface ASRSettingsList {
   configurations: UserASRSettingsResponse[];
   shared_configurations: UserASRSettingsResponse[];
@@ -340,7 +367,7 @@ export class ASRSettingsApi {
   /**
    * Create a new ASR configuration
    */
-  static async createConfig(data: UserASRSettingsCreate): Promise<UserASRSettingsResponse> {
+  static async createConfig(data: UserASRSettingsCreate): Promise<ASRConfigCreateResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}`, data);
     return response.data;
   }
@@ -375,7 +402,7 @@ export class ASRSettingsApi {
   /**
    * Set a specific configuration as active
    */
-  static async setActive(uuid: string): Promise<{ message: string; config_uuid: string }> {
+  static async setActive(uuid: string): Promise<ASRSwitchResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
       config_uuid: uuid,
     });
@@ -386,7 +413,7 @@ export class ASRSettingsApi {
    * Clear the active configuration, reverting to local GPU default.
    * Does NOT delete any saved configs — they remain available for re-activation.
    */
-  static async clearActive(): Promise<{ message: string }> {
+  static async clearActive(): Promise<ASRSwitchResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/clear-active`);
     return response.data;
   }

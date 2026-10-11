@@ -31,10 +31,16 @@ from app.api.deps_context import get_current_context
 # pins the deployment's ASR engine/model.
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.pipeline_settings import plan_issues_out
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
+from app.schemas.asr_settings import ASRModelCapabilities
 from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
+from app.schemas.pipeline import ASRSwitchResult
+from app.services.asr_switch_plan import SwitchOutcome
+from app.services.asr_switch_plan import assess_asr_switch
+from app.services.pipeline_plan_inputs import plan_for_user
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
@@ -200,6 +206,19 @@ def _set_active_asr_configuration(db: Session, user_id: int, config_id: int) -> 
             )
         )
     db.commit()
+
+
+def _refuse_if_introduced(outcome: SwitchOutcome) -> None:
+    """409 ``{code, message}`` for a speaker-detection error the switch would introduce.
+
+    Same shape and rule as ``PUT /user-settings/transcription``: the stable code and its
+    fixed sentence, never exception text (``services/asr_switch_plan``).
+    """
+    if outcome.refusal is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": outcome.refusal.code, "message": outcome.refusal.message},
+        )
 
 
 def _get_active_asr_config_id(db: Session, user_id: int) -> int | None:
@@ -420,7 +439,11 @@ def get_asr_status(
         "active_model": active_model,
         "active_config_uuid": active_config_uuid_str,
         "is_cloud_provider": is_cloud_provider,
-        "active_model_capabilities": model_capabilities,
+        # Validated through the typed schema so a catalog entry missing a capability
+        # field fails here rather than reaching the SPA as an absent key.
+        "active_model_capabilities": ASRModelCapabilities.model_validate(
+            model_capabilities
+        ).model_dump(),
     }
 
 
@@ -510,11 +533,17 @@ def get_asr_config_api_key(
 
 @router.post("", status_code=201)
 def create_asr_config(
+    request: Request,
     settings_in: schemas.UserASRSettingsCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
-    """Create a new ASR configuration. Auto-activates if this is the user's first config."""
+    """Create a new ASR configuration.
+
+    The user's first config is auto-activated unless that would make their stored speaker
+    detection choice unrunnable (issue #1225); ``auto_activated`` says which, and
+    ``pipeline_issues`` describes the pipeline in effect afterwards.
+    """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     # Duplicate name check
@@ -576,11 +605,26 @@ def create_asr_config(
     db.commit()
     db.refresh(config)
 
-    # Auto-activate if this is the user's first config (no pre-existing configs).
+    # Auto-activate the user's first config, unless it would break their speaker detection
+    # choice: a silent switch into an error combination is what #1225 rules out.
+    auto_activated = False
     if not has_existing:
-        _set_active_asr_configuration(db, current_user.id, config.id)
+        outcome = assess_asr_switch(db, current_user.id, config, request=request)
+        if outcome.refusal is None:
+            _set_active_asr_configuration(db, current_user.id, config.id)
+            auto_activated = True
+        else:
+            logger.info(
+                "Not auto-activating ASR config %s for user %d: %s",
+                config.uuid,
+                current_user.id,
+                outcome.refusal.code,
+            )
 
-    return _config_to_dict(config)
+    result = _config_to_dict(config)
+    result["auto_activated"] = auto_activated
+    result["pipeline_issues"] = plan_issues_out(plan_for_user(db, current_user.id, request=request))
+    return result
 
 
 @router.put("/config/{config_uuid}")
@@ -697,34 +741,49 @@ def update_asr_config(  # noqa: C901
     return _config_to_dict(config)
 
 
-@router.post("/set-active")
+@router.post("/set-active", response_model=ASRSwitchResult)
 def set_active_asr_config(
+    request: Request,
     body: schemas.SetActiveASRConfigRequest,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-) -> Any:
-    """Set the active ASR configuration for the current user."""
+) -> ASRSwitchResult:
+    """Set the active ASR configuration for the current user.
+
+    409 ``{code, message}`` when the switch would make the stored speaker detection choice
+    unrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.
+    """
     current_user = ctx.user
     config_uuid = body.resolved_uuid()
     if not config_uuid:
         raise HTTPException(status_code=400, detail="config_uuid (or uuid) is required")
 
     config = _get_config_or_404(db, config_uuid, current_user.id, shared_in=ctx)
+    outcome = assess_asr_switch(db, current_user.id, config, request=request)
+    _refuse_if_introduced(outcome)
     _set_active_asr_configuration(db, current_user.id, config.id)
 
-    return {
-        "message": "Active ASR configuration updated",
-        "config_uuid": str(config.uuid),
-    }
+    return ASRSwitchResult(
+        message="Active ASR configuration updated",
+        config_uuid=str(config.uuid),
+        pipeline_issues=plan_issues_out(outcome.plan),
+    )
 
 
 @router.delete("/config/{config_uuid}", status_code=204)
 def delete_asr_config(
+    request: Request,
     config_uuid: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> None:
-    """Delete an ASR configuration. Auto-promotes another config if this was active."""
+    """Delete an ASR configuration.
+
+    If it was active, the first remaining config that keeps the stored speaker detection
+    choice runnable is promoted (issue #1225); with none, the active pointer is cleared.
+    Deletion itself is never refused: a stored choice the remaining state cannot run is
+    reported by ``GET /user-settings/pipeline`` and refused per file by the pipeline.
+    """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
@@ -741,29 +800,48 @@ def delete_asr_config(
     db.commit()
 
     if was_active:
-        # Promote another config if available
-        another = (
+        candidates = (
             db.query(UserASRSettings)
             .filter(
                 UserASRSettings.user_id == current_user.id,
                 UserASRSettings.id != config_id,
             )
-            .first()
+            .order_by(UserASRSettings.id)
+            .all()
         )
-        if another:
-            _set_active_asr_configuration(db, current_user.id, another.id)
+        promoted = next(
+            (
+                candidate
+                for candidate in candidates
+                if assess_asr_switch(db, current_user.id, candidate, request=request).refusal
+                is None
+            ),
+            None,
+        )
+        if promoted is not None:
+            _set_active_asr_configuration(db, current_user.id, promoted.id)
         else:
             _clear_active_asr_setting(db, current_user.id)
 
 
-@router.post("/clear-active")
+@router.post("/clear-active", response_model=ASRSwitchResult)
 def clear_active_asr_config(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """Clear the active ASR configuration, reverting to local GPU default."""
+) -> ASRSwitchResult:
+    """Clear the active ASR configuration, reverting to the deployment default.
+
+    409 ``{code, message}`` when that would make the stored speaker detection choice
+    unrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.
+    """
+    outcome = assess_asr_switch(db, current_user.id, None, request=request)
+    _refuse_if_introduced(outcome)
     _clear_active_asr_setting(db, current_user.id)
-    return {"message": "Reverted to local ASR default"}
+    return ASRSwitchResult(
+        message="Reverted to local ASR default",
+        pipeline_issues=plan_issues_out(outcome.plan),
+    )
 
 
 @router.delete("/all", status_code=204)

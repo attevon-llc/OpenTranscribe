@@ -1,19 +1,34 @@
-"""Celery task for re-diarization without re-transcription.
+"""The post stage: speaker detection for a transcript that is already saved.
 
-Re-runs PyAnnote speaker diarization on existing audio and reassigns
-speakers to existing transcript segments using word-level timestamps.
-Preserves the original transcript text and word timings.
+One task, parametrised by the engine the pipeline plan names (``services/pipeline_plan``,
+plan C4), serving every combination where speakers are detected AFTER transcription:
 
-Runs on the GPU queue (requires PyAnnote diarization model).
+* ``post_stage_local`` — this server's engine (diar-native, PyAnnote fallback) after a cloud
+  text-only transcription, a per-file CPU model, or Automatic + a text-only timed model;
+  routed to ``gpu_preferred_queue()``.
+* ``post_stage_cloud`` — pyannote.ai after local Whisper or a CPU model; routed to
+  ``cloud-asr`` so no GPU slot is held while the vendor works.
+* a user's manual "Re-diarize" (``files/reprocess.py``), with the engine of their current
+  choice.
+
+Then the turns are merged into the stored words (per word, or per segment for a
+segment-timed model), segments are re-split at speaker changes by ``finalize_segments`` (the
+single chokepoint every path goes through), and the voiceprint stage runs exactly once.
 """
+
+from __future__ import annotations
 
 import logging
 import os
 import tempfile
 import time
+from dataclasses import dataclass
+from typing import Any
 
+from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -25,19 +40,27 @@ from app.services.minio_service import download_temp_audio
 from app.services.minio_service import temp_audio_exists
 from app.tasks.transcription.user_settings import SpeakerRange
 from app.tasks.transcription.user_settings import resolve_speaker_range_for_user
+from app.utils import benchmark_timing
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
 logger = logging.getLogger(__name__)
 
+#: Recorded on the post stage's task row when a cloud speaker detector fails: the transcript
+#: is kept and the file completes without speakers (a vendor outage must not fail a file
+#: whose transcription succeeded). Fixed text, never the vendor's error.
+CLOUD_DIARIZATION_FAILED_MESSAGE = (
+    "The cloud speaker detection service did not return a result, so this transcript has no "
+    "speakers. Use Re-diarize to try again."
+)
+
 
 def _resolve_asr_provider(db, file_id: int) -> str:
     """Resolve the ASR provider that produced this transcript, for metering.
 
     Reads ``FilePipelineTiming.asr_provider`` (recorded by the transcription
-    pipeline). A rediarize only runs for cloud-ASR files, so the provider is
-    normally a cloud-ASR name; falls back to "local" when not recorded.
+    pipeline); falls back to "local" when not recorded.
     """
     try:
         from app.models.pipeline_timing import FilePipelineTiming
@@ -60,14 +83,8 @@ def _load_segments_as_transcript(file_id: int) -> dict:
     Reconstructs the dict format expected by assign_speakers:
     {"segments": [{"text": ..., "start": ..., "end": ..., "words": [...]}]}
 
-    Args:
-        file_id: Internal media file ID.
-
-    Returns:
-        Dict with "segments" key matching the transcription pipeline output format.
-
     Raises:
-        ValueError: If no segments found or segments lack word timestamps.
+        ValueError: If no segments found.
     """
     with session_scope() as db:
         segments = (
@@ -84,14 +101,6 @@ def _load_segments_as_transcript(file_id: int) -> dict:
         if not segments:
             raise ValueError(f"No transcript segments found for file {file_id}")
 
-        # Check that at least some segments have word-level timestamps
-        has_words = any(seg.words for seg in segments)
-        if not has_words:
-            logger.warning(
-                f"File {file_id} has no word-level timestamps; "
-                "speaker assignment will use segment-level overlap only"
-            )
-
         result_segments = []
         for seg in segments:
             segment_dict: dict = {
@@ -99,7 +108,6 @@ def _load_segments_as_transcript(file_id: int) -> dict:
                 "start": seg.start_time,
                 "end": seg.end_time,
             }
-
             # Preserve word-level timestamps for fine-grained speaker assignment
             if seg.words:
                 segment_dict["words"] = [
@@ -112,7 +120,6 @@ def _load_segments_as_transcript(file_id: int) -> dict:
                     for w in seg.words
                     if "start" in w and "end" in w
                 ]
-
             result_segments.append(segment_dict)
 
     return {"segments": result_segments}
@@ -129,15 +136,12 @@ def _prepare_audio(
     Returns ``(audio_file_path, temp_dir_to_clean)``. ``temp_dir_to_clean`` is ``None`` when
     ``audio_file_path`` is the scratch-volume WAV itself (issue #661 E2) — the caller must NOT
     rmtree that directory, since it is ``pipeline_scratch``'s ``<file_uuid>/`` namespace, still
-    needed by other consumers (speaker_embedding, postprocess) and cleaned up on its own
-    lifetime by ``scratch_volume.cleanup`` elsewhere. It is non-``None`` (and must be rmtree'd
-    by the caller) for every other path: the legacy MinIO-temp download and the from-scratch
-    reconvert-from-original fallback, both of which allocate a throwaway ``tempfile.mkdtemp``.
+    needed by other consumers and cleaned up on its own lifetime by ``scratch_volume.cleanup``.
+    It is non-``None`` (and must be rmtree'd by the caller) for every other path.
 
-    Prefers, in order: (1) the scratch-volume WAV already staged by the main pipeline — read
-    directly, no copy, since diarize() can now open a path anywhere under the pipeline_scratch
-    root (issue #661 E2 phase 1.3's containment fix); (2) the preprocessed MinIO-temp WAV; (3)
-    downloading the original from MinIO and re-running the FFmpeg conversion.
+    Prefers, in order: (1) the scratch-volume WAV already staged by the main pipeline, read
+    directly; (2) the preprocessed MinIO-temp WAV; (3) downloading the original from MinIO and
+    re-running the FFmpeg conversion.
     """
     from app.tasks.transcription.audio_processor import get_audio_file_extension
     from app.tasks.transcription.audio_processor import prepare_audio_for_transcription
@@ -173,38 +177,255 @@ def _prepare_audio(
     return audio_file_path, temp_dir
 
 
-def _run_diarization(
+@dataclass
+class _Detection:
+    """What a speaker detector produced, as plain data the merge and save phases read."""
+
+    frame: Any  # transcription.diarize_result.DiarizeResult (start/end/speaker arrays)
+    overlap_info: dict
+    native_embeddings: dict | None  # per-speaker vectors when the local engine made them
+    provider: str | None
+    model: str | None
+
+
+class _CloudDetectionFailedError(Exception):
+    """A configured cloud detector failed at the vendor (non-fatal for the transcript)."""
+
+
+def _start(file_uuid: str, task_id: str, engine: str) -> dict:
+    """Read phase: the file's plain metadata, the task row, PROCESSING.
+
+    Raises:
+        PipelinePlanRefusedError: ``engine == "local"`` on a lite deployment, which has no
+            local speaker detection (defence in depth behind the plan and the API).
+    """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    if engine == "local" and str(settings.DEPLOYMENT_MODE).lower() == "lite":
+        from app.core.exceptions import PipelinePlanRefusedError
+        from app.services.pipeline_plan import ISSUE_MESSAGES
+
+        code = "local_diarization_unavailable"
+        raise PipelinePlanRefusedError(code, ISSUE_MESSAGES[code])
+
+    with session_scope() as db:
+        media_file = get_file_by_uuid(db, file_uuid)
+        file_id, user_id = int(media_file.id), int(media_file.user_id)
+        meta: dict[str, Any] = {
+            "file_id": file_id,
+            "user_id": user_id,
+            "storage_path": str(media_file.storage_path),
+            "content_type": str(media_file.content_type),
+            "filename": str(media_file.filename),
+        }
+        create_task_record(db, task_id, user_id, file_id, "rediarize")
+        update_task_status(db, task_id, "in_progress", progress=0.05)
+        update_media_file_status(db, file_id, FileStatus.PROCESSING)
+    return meta
+
+
+def _build_detector(engine: str, user_id: int, config_uuid: str | None):
+    """The plan's speaker detector, built in a short read-only session (no HTTP inside).
+
+    Raises:
+        DiarizationNotConfiguredError: pyannote.ai with no usable key (fatal, fixed sentence).
+        DiarizerConfigUnusableError: an engine that cannot be built (fatal, fixed sentence).
+    """
+    from app.services.diarization.factory import DiarizationProviderFactory
+
+    with session_scope() as db:
+        return DiarizationProviderFactory.create_for_engine(
+            engine, user_id, db, config_uuid=config_uuid
+        )
+
+
+def _detect(
+    engine: str,
+    detector,
     audio_file_path: str,
     speaker_range: SpeakerRange,
-    wav_path: str | None = None,
-):
-    """Run diarization (native sidecar or in-process PyAnnote fallback) on audio.
+    sidecar_wav_path: str | None,
+) -> _Detection:
+    """Run the detector with NO session open.
 
-    ``wav_path``, when given, is a path the native sidecar can open directly (issue #661) —
-    threaded through ``engine.stages._run_diarize`` so a ``NativeSpeakerDiarizer`` gets it and
-    a plain ``SpeakerDiarizer`` (PyAnnote) never sees the extra kwarg it doesn't accept.
-
-    Returns:
-        Tuple of (diarize_df, overlap_info, native_embeddings).
+    Raises:
+        _CloudDetectionFailedError: a cloud detector failed at the vendor.
     """
-    from app.transcription.audio import load_audio
-    from app.transcription.config import TranscriptionConfig
-    from app.transcription.engine.stages import _run_diarize
-    from app.transcription.model_manager import ModelManager
+    from app.services.diarization.types import DiarizeConfig
+    from app.transcription.speaker_assigner import diarize_segments_to_frame
 
-    config = TranscriptionConfig.from_environment(
+    config = DiarizeConfig(
         min_speakers=speaker_range.min_speakers,
         max_speakers=speaker_range.max_speakers,
         num_speakers=speaker_range.num_speakers,
-        hf_token=settings.HUGGINGFACE_TOKEN,
+        sidecar_wav_path=sidecar_wav_path,
+    )
+    if engine == "local":
+        result = detector.diarize(audio_file_path, config)
+        return _Detection(
+            frame=result.metadata["diarize_df"],
+            overlap_info=result.metadata.get("overlap_info") or {},
+            native_embeddings=result.metadata.get("native_embeddings"),
+            provider=result.provider_name or None,
+            model=result.model_name or None,
+        )
+    try:
+        result = detector.diarize(audio_file_path, config)
+    except Exception as exc:
+        # The vendor's text never leaves this log line (no exception text on the wire).
+        logger.warning(
+            "Cloud speaker detection (%s) failed: %s", engine, type(exc).__name__, exc_info=True
+        )
+        raise _CloudDetectionFailedError() from exc
+    return _Detection(
+        frame=diarize_segments_to_frame(result.segments),
+        overlap_info={},
+        native_embeddings=None,
+        provider=result.provider_name or None,
+        model=result.model_name or None,
     )
 
-    audio = load_audio(audio_file_path)
-    manager = ModelManager.get_instance()
-    diarizer = manager.get_diarizer(config)
-    diarize_df, overlap_info, native_embeddings = _run_diarize(diarizer, audio, wav_path)
 
-    return diarize_df, overlap_info, native_embeddings
+def _merge_turns(detection: _Detection, transcript: dict, merge: str) -> list[dict]:
+    """Assign the turns to the stored text, then re-split segments at speaker changes.
+
+    ``merge`` is the plan's granularity (C7): ``word`` assigns every word by overlap;
+    ``segment`` gives each segment its dominant speaker and its words follow. Then
+    ``finalize_segments`` (boundary smoothing, re-segment at word-speaker boundaries, merge
+    same-speaker neighbours), the chokepoint every transcription path routes through.
+    """
+    from app.transcription.boundary_resolver import BoundarySmoothingConfig
+    from app.transcription.speaker_assigner import assign_speakers
+    from app.transcription.speaker_assigner import inherit_segment_speakers
+    from app.utils.segment_postprocess import finalize_segments
+
+    result = assign_speakers(detection.frame, transcript)
+    if merge == "segment":
+        result = inherit_segment_speakers(result)
+    with session_scope() as db:
+        smoothing_cfg = BoundarySmoothingConfig.from_db_env(db)
+    return finalize_segments(result["segments"], smoothing_cfg)
+
+
+def _save(meta: dict, task_id: str, segments: list[dict], detection: _Detection):
+    """Write phase: speakers, segments and the detector that actually ran."""
+    from app.tasks.transcription.speaker_processor import create_speaker_mapping
+    from app.tasks.transcription.speaker_processor import extract_unique_speakers
+    from app.tasks.transcription.speaker_processor import mark_overlapping_segments
+    from app.tasks.transcription.speaker_processor import process_segments_with_speakers
+    from app.tasks.transcription.storage import save_transcript_segments
+
+    file_id, user_id = meta["file_id"], meta["user_id"]
+    unique_speakers = extract_unique_speakers(segments)
+    with session_scope() as db:
+        speaker_mapping = create_speaker_mapping(db, user_id, file_id, unique_speakers)
+        update_task_status(db, task_id, "in_progress", progress=0.75)
+
+    processed = process_segments_with_speakers(segments, speaker_mapping)
+    overlap_regions = detection.overlap_info.get("regions", [])
+    if os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true" and overlap_regions:
+        processed = mark_overlapping_segments(processed, overlap_regions)
+
+    with session_scope() as db:
+        save_transcript_segments(db, file_id, processed)
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        if media_file is not None:
+            media_file.diarization_disabled = False
+            media_file.diarization_provider = detection.provider
+            media_file.diarization_model = detection.model
+        update_task_status(db, task_id, "in_progress", progress=0.85)
+    return processed, speaker_mapping, unique_speakers
+
+
+def _voiceprint_stage(
+    meta: dict,
+    file_uuid: str,
+    task_id: str,
+    detection: _Detection,
+    processed: list[dict],
+    speaker_mapping: dict,
+    pipeline_task_id: str | None,
+) -> bool:
+    """Run the voiceprint stage exactly once. Returns True when it was dispatched (it then
+    owns the temp WAV and cleans it up itself).
+
+    Free when this server's engine already produced usable per-speaker vectors (matched
+    inline, as the inline pipeline does); otherwise the CPU embedding stage computes them
+    through the one extractor interface. It never meters or closes the run: this post
+    stage is the run's terminus.
+    """
+    from app.tasks.transcription.context import TranscriptionContext
+    from app.tasks.transcription.embeddings import _process_speaker_embeddings_native
+    from app.tasks.transcription.embeddings import _should_use_native_embeddings
+    from app.tasks.transcription.embeddings import _store_native_centroids_in_v4_staging
+
+    native = detection.native_embeddings
+    ctx = TranscriptionContext(
+        task_id=task_id,
+        file_id=meta["file_id"],
+        file_uuid=file_uuid,
+        user_id=meta["user_id"],
+        file_path=meta["storage_path"],
+        file_name=meta["filename"],
+        content_type=meta["content_type"],
+    )
+    if native and _should_use_native_embeddings({"native_speaker_embeddings": native}):
+        with stage_timing.stage("speaker_embedding", task_id=task_id, file_id=meta["file_id"]):
+            _process_speaker_embeddings_native(ctx, native, processed, speaker_mapping)
+        return False
+
+    if native:
+        # A v3 (512-d) index cannot take the 256-d centroids; keep them staged for the
+        # migration, and let the embedding stage produce vectors in the index's space.
+        try:
+            _store_native_centroids_in_v4_staging(ctx, native, speaker_mapping)
+        except Exception as e:
+            logger.warning(f"v4 staging error during rediarize (non-fatal): {e}")
+
+    from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
+
+    extract_speaker_embeddings_task.apply_async(
+        args=[file_uuid],
+        kwargs={"pipeline_task_id": pipeline_task_id, "closes_pipeline": False},
+        queue=CeleryQueues.CPU,
+    )
+    return True
+
+
+def _finish(
+    meta: dict,
+    task_id: str,
+    pipeline_completion: bool,
+    pipeline_task_id: str | None,
+    note: str | None = None,
+) -> None:
+    """Complete the post stage (and, for a pipeline run, meter it: the one terminus)."""
+    file_id = meta["file_id"]
+    with session_scope() as db:
+        update_task_status(
+            db, task_id, "completed", progress=1.0, completed=True, error_message=note
+        )
+        update_media_file_status(db, file_id, FileStatus.COMPLETED)
+        # Metering: a post stage that completes a fresh pipeline run is that run's ONLY
+        # terminus (finalize_transcription deliberately does not meter when it dispatches
+        # one, and the voiceprint stage it dispatches never meters). A user's manual
+        # re-diarization (pipeline_completion=False) never meters: the transcript was
+        # already billed. run_id is the pipeline's id: the reservation and the idempotency
+        # key were taken under it at dispatch.
+        if pipeline_completion:
+            from app.tasks.transcription.postprocess import _fire_completion_metering
+
+            _fire_completion_metering(
+                db,
+                file_id=file_id,
+                run_id=pipeline_task_id or task_id,
+                provider=_resolve_asr_provider(db, file_id),
+                success=True,
+            )
+
+    from app.tasks.transcription.notifications import send_completion_notification
+
+    send_completion_notification(meta["user_id"], file_id)
 
 
 def _dispatch_downstream(
@@ -224,8 +445,63 @@ def _dispatch_downstream(
             logger.warning(f"Failed to dispatch downstream task '{stage}' for {file_uuid}: {e}")
 
 
+def _after_speakers_changed(meta: dict, file_uuid: str, downstream_tasks: list[str] | None) -> None:
+    """Speaker attributes → LLM speaker ID, the unconditional reindex, then the rest."""
+    file_id, user_id = meta["file_id"], meta["user_id"]
+    try:
+        from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
+
+        dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
+    except Exception as e:
+        logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+
+    # Rediarization reassigns which speaker every segment belongs to, which changes both the
+    # chunk plane and the full-document index — so it reindexes UNCONDITIONALLY (#666).
+    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+    dispatch_transcript_reindex(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
+
+    # speaker_llm is chained from the attribute task; search_indexing is covered (debounced)
+    # by the reindex above, and dispatching the full task again would race it.
+    if downstream_tasks:
+        filtered = [s for s in downstream_tasks if s not in ("speaker_llm", "search_indexing")]
+        if filtered:
+            _dispatch_downstream(filtered, file_uuid, file_id=file_id, user_id=user_id)
+
+
+def _record_failure(file_uuid: str, task_id: str, error: Exception) -> str:
+    """Fail the file with the classified fixed sentence (raw text to the log only, #959)."""
+    from app.services.error_categorization_service import ErrorCategorizationService
+    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    failure = ErrorCategorizationService.classify_failure(str(error))
+    error_msg = failure.user_message
+    try:
+        with session_scope() as db:
+            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+            try:
+                media_file = get_file_by_uuid(db, file_uuid)
+                update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
+                media_file.last_error_message = error_msg
+                media_file.error_category = failure.retry_category.value
+                db.commit()
+                # A failure after the segment save leaves committed speaker changes with no
+                # reindex; the dispatch is idempotent/debounced, so fire it on any failure.
+                dispatch_transcript_reindex(
+                    file_id=int(media_file.id),
+                    file_uuid=file_uuid,
+                    user_id=int(media_file.user_id),
+                )
+            except Exception as file_err:
+                logger.warning(f"Could not update file error status: {file_err}")
+    except Exception as update_err:
+        logger.error(f"Error updating task status after rediarize failure: {update_err}")
+    return error_msg
+
+
 @celery_app.task(bind=True, name="rediarize", priority=GPUPriority.USER_REDIARIZ)
-def rediarize_task(  # noqa: C901
+def rediarize_task(
     self,
     file_uuid: str,
     min_speakers: int | None = None,
@@ -234,328 +510,141 @@ def rediarize_task(  # noqa: C901
     downstream_tasks: list[str] | None = None,
     pipeline_completion: bool = False,
     pipeline_task_id: str | None = None,
+    engine: str = "local",
+    merge: str | None = None,
+    diarizer_config_uuid: str | None = None,
 ):
-    """Re-run speaker diarization on an existing transcript without re-transcribing.
-
-    Loads the original audio from MinIO and existing transcript segments from the
-    database, runs PyAnnote diarization, and reassigns speakers using word-level
-    timestamp overlap. Preserves all transcript text and word timings.
+    """Detect speakers for an existing transcript without re-transcribing.
 
     Args:
-        file_uuid: UUID of the MediaFile to rediarize.
-        min_speakers: Minimum speakers for diarization (None = the user's saved range).
-        max_speakers: Maximum speakers for diarization (None = the user's saved range).
-        num_speakers: Fixed speaker count for diarization (None = the env default).
-        downstream_tasks: Optional list of downstream stage names to dispatch.
-            Valid values: 'analytics', 'speaker_llm', 'summarization',
-            'topic_extraction', 'search_indexing'.
-        pipeline_completion: True ONLY when this rediarize is the completion
-            terminus of a fresh transcription pipeline run (cloud ASR + local
-            diarization) — that's the sole case that fires the metering hook.
-            User-triggered re-diarization of an already-billed transcript must
-            leave this False or every rerun would meter a full transcription.
-        pipeline_task_id: The originating pipeline's task id. Metering MUST use
-            it as the run_id: the quota reservation was taken under the
-            pipeline id at dispatch, and the idempotency key must be stable
-            across pipeline replays (this task's own Celery id is not — a
-            redelivered finalize would double-meter under a fresh key).
+        file_uuid: UUID of the MediaFile.
+        min_speakers: Minimum speakers (None = the user's saved range).
+        max_speakers: Maximum speakers (None = the user's saved range).
+        num_speakers: Fixed speaker count (None = the env default).
+        downstream_tasks: Optional downstream stage names to dispatch afterwards.
+        pipeline_completion: True ONLY when this is the completion terminus of a fresh
+            transcription run (the plan's ``post_stage_*``) — the sole case that meters.
+        pipeline_task_id: The originating pipeline's task id, the metering run_id.
+        engine: The plan's post-stage engine (``pipeline_plan.post_stage_engine``):
+            ``local``, ``pyannote_ai`` or ``asr_config``.
+        merge: The plan's merge granularity (``word`` | ``segment``); ``None`` (a manual
+            re-run) derives it from the stored transcript: word times present -> ``word``.
+        diarizer_config_uuid: The ASR configuration named as the detector (``asr_config``).
     """
     import shutil
 
-    from app.utils.uuid_helpers import get_file_by_uuid
-
     task_id = self.request.id
     temp_dir = None
+    voiceprint_owns_audio = False
+    timing_id = pipeline_task_id or task_id
 
     try:
-        # Resolve file metadata
-        with session_scope() as db:
-            media_file = get_file_by_uuid(db, file_uuid)
-            file_id = int(media_file.id)
-            user_id = int(media_file.user_id)
-            storage_path = str(media_file.storage_path)
-            content_type = str(media_file.content_type)
-            filename = str(media_file.filename)
-
-        logger.info(f"Starting rediarization for file {file_uuid} (id={file_id})")
-
-        # Create task record and set processing status
-        with session_scope() as db:
-            create_task_record(db, task_id, user_id, file_id, "rediarize")
-            update_task_status(db, task_id, "in_progress", progress=0.05)
-            update_media_file_status(db, file_id, FileStatus.PROCESSING)
-
-        # Send processing notification
+        meta = _start(file_uuid, task_id, engine)
+        file_id, user_id = meta["file_id"], meta["user_id"]
+        logger.info(
+            "Starting post-stage speaker detection for file %s (engine=%s)", file_uuid, engine
+        )
         from app.tasks.transcription.notifications import send_progress_notification
 
-        send_progress_notification(user_id, file_id, 0.05, "Starting re-diarization")
-
-        # Step 1: Load existing transcript segments
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.10)
-
+        send_progress_notification(user_id, file_id, 0.05, "Starting speaker detection")
         transcript = _load_segments_as_transcript(file_id)
-        logger.info(f"Loaded {len(transcript['segments'])} existing segments for file {file_id}")
+        if merge is None:
+            has_words = any(seg.get("words") for seg in transcript["segments"])
+            merge = "word" if has_words else "segment"
+        if merge == "segment":
+            logger.warning(
+                "Speakers for file %s are assigned per segment (segment_timing_only): a "
+                "speaker change inside a segment is not detected",
+                file_id,
+            )
 
-        # Step 2: Download and prepare audio (prefers the preprocessed WAV
-        # staged in scratch / MinIO temp — Phase 2 PR #4).
-        send_progress_notification(user_id, file_id, 0.15, "Downloading audio")
+        send_progress_notification(user_id, file_id, 0.15, "Preparing audio")
         audio_file_path, temp_dir = _prepare_audio(
-            storage_path, content_type, filename, file_uuid=file_uuid
+            meta["storage_path"], meta["content_type"], meta["filename"], file_uuid=file_uuid
         )
-
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.25)
-
-        # Step 3: Run diarization
-        send_progress_notification(user_id, file_id, 0.30, "Running speaker diarization")
-        step_start = time.perf_counter()
-
-        # A blank field means "my saved range", not the env default (issue #1198).
         speaker_range = resolve_speaker_range_for_user(
             user_id, min_speakers, max_speakers, num_speakers
         )
-        diarize_df, overlap_info, native_embeddings = _run_diarization(
-            audio_file_path,
-            speaker_range,
-            wav_path=audio_file_path if temp_dir is None else None,
-        )
+        detector = _build_detector(engine, user_id, diarizer_config_uuid)
 
-        import numpy as np
-
-        logger.info(
-            f"TIMING: diarization completed in {time.perf_counter() - step_start:.3f}s - "
-            f"{int(np.unique(diarize_df.speaker).size)} speakers, {len(diarize_df)} rows"
-        )
-
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.60)
-
-        # Step 4: Reassign speakers using WhisperX speaker assignment
-        send_progress_notification(user_id, file_id, 0.60, "Reassigning speakers")
-        from app.transcription.speaker_assigner import assign_speakers
-
-        result = assign_speakers(diarize_df, transcript)
-
-        # Step 5: Process speakers and update DB
-        send_progress_notification(user_id, file_id, 0.70, "Updating speaker database")
-        from app.tasks.transcription.speaker_processor import create_speaker_mapping
-        from app.tasks.transcription.speaker_processor import extract_unique_speakers
-        from app.tasks.transcription.speaker_processor import process_segments_with_speakers
-
-        unique_speakers = extract_unique_speakers(result["segments"])
-
-        with session_scope() as db:
-            speaker_mapping = create_speaker_mapping(db, user_id, file_id, unique_speakers)
-            update_task_status(db, task_id, "in_progress", progress=0.75)
-
-        processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
-
-        # Mark overlapping segments if overlap info available
-        enable_overlap = os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true"
-        overlap_regions = overlap_info.get("regions", [])
-        if enable_overlap and overlap_regions:
-            from app.tasks.transcription.speaker_processor import mark_overlapping_segments
-
-            processed_segments = mark_overlapping_segments(processed_segments, overlap_regions)
-
-        # Step 6: Save updated segments to database
-        send_progress_notification(user_id, file_id, 0.80, "Saving updated transcript")
-        from app.tasks.transcription.storage import save_transcript_segments
-
-        with session_scope() as db:
-            save_transcript_segments(db, file_id, processed_segments)
-            update_task_status(db, task_id, "in_progress", progress=0.85)
-
-        # Step 7: Process speaker embeddings (native centroids or traditional)
-        send_progress_notification(user_id, file_id, 0.85, "Processing speaker embeddings")
-        from app.tasks.transcription.core import TranscriptionContext
-        from app.tasks.transcription.core import _should_use_native_embeddings
-        from app.tasks.transcription.core import _store_native_centroids_in_v4_staging
-
-        # Build a lightweight context for embedding functions
-        ctx = TranscriptionContext(
-            task_id=task_id,
-            file_id=file_id,
-            file_uuid=file_uuid,
-            user_id=user_id,
-            file_path=storage_path,
-            file_name=filename,
-            content_type=content_type,
-        )
-
-        # Build a pseudo-result for _should_use_native_embeddings
-        embedding_result = {}
-        if native_embeddings:
-            embedding_result["native_speaker_embeddings"] = native_embeddings
-
-        use_native = _should_use_native_embeddings(embedding_result)
+        send_progress_notification(user_id, file_id, 0.30, "Running speaker detection")
+        step_start = time.perf_counter()
+        benchmark_timing.mark(timing_id, "diarize_request_sent")
         try:
-            if use_native and native_embeddings:
-                from app.tasks.transcription.core import _process_speaker_embeddings_native
-
-                _process_speaker_embeddings_native(
-                    ctx, native_embeddings, processed_segments, speaker_mapping
+            with stage_timing.stage("diarization", task_id=task_id, file_id=file_id):
+                detection = _detect(
+                    engine,
+                    detector,
+                    audio_file_path,
+                    speaker_range,
+                    audio_file_path if temp_dir is None else None,
                 )
-            elif not use_native:
-                from app.tasks.transcription.core import _process_speaker_embeddings
+        except _CloudDetectionFailedError:
+            # Non-fatal: the transcript stands, without speakers, with the reason recorded.
+            _finish(
+                meta,
+                task_id,
+                pipeline_completion,
+                pipeline_task_id,
+                note=CLOUD_DIARIZATION_FAILED_MESSAGE,
+            )
+            return {"status": "completed_without_speakers", "file_id": file_id}
+        finally:
+            benchmark_timing.mark(timing_id, "diarize_joined")
+        logger.info(
+            "TIMING: post-stage speaker detection (%s) completed in %.3fs - %d turns",
+            engine,
+            time.perf_counter() - step_start,
+            len(detection.frame),
+        )
 
-                _process_speaker_embeddings(
-                    ctx, audio_file_path, processed_segments, speaker_mapping
-                )
-        except Exception as e:
-            logger.warning(f"Error processing speaker embeddings during rediarize: {e}")
+        send_progress_notification(user_id, file_id, 0.60, "Assigning speakers")
+        with stage_timing.stage("speaker_assignment", task_id=task_id, file_id=file_id):
+            segments = _merge_turns(detection, transcript, merge)
+        send_progress_notification(user_id, file_id, 0.70, "Saving updated transcript")
+        with stage_timing.stage("finalize", task_id=task_id, file_id=file_id):
+            processed, speaker_mapping, unique_speakers = _save(meta, task_id, segments, detection)
 
-        # Store v4 centroids if available
-        if native_embeddings and not use_native:
-            try:
-                _store_native_centroids_in_v4_staging(ctx, native_embeddings, speaker_mapping)
-            except Exception as e:
-                logger.warning(f"v4 staging error during rediarize (non-fatal): {e}")
+        send_progress_notification(user_id, file_id, 0.85, "Processing speaker voiceprints")
+        voiceprint_owns_audio = _voiceprint_stage(
+            meta, file_uuid, task_id, detection, processed, speaker_mapping, pipeline_task_id
+        )
 
-        # Step 8: Finalize — clear diarization_disabled since we just ran diarization
-        send_progress_notification(user_id, file_id, 0.95, "Finalizing re-diarization")
-        with session_scope() as db:
-            from app.db.session_utils import get_refreshed_object
-
-            media_file_obj = get_refreshed_object(db, MediaFile, file_id)
-            if media_file_obj and hasattr(media_file_obj, "diarization_disabled"):
-                media_file_obj.diarization_disabled = False
-            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            update_media_file_status(db, file_id, FileStatus.COMPLETED)
-
-            # Cloud-edition seam: when this rediarize is the completion terminus
-            # for a fresh cloud-ASR + local-diarization pipeline run, fire the
-            # metering hook here (the finalize_transcription branch that
-            # dispatched us does NOT meter, to avoid double-counting). run_id is
-            # this Celery task id (stable across retries — acks_late).
-            # User-triggered re-diarization (pipeline_completion=False) never
-            # meters: the transcript was already billed by its original run.
-            if pipeline_completion:
-                from app.tasks.transcription.postprocess import _fire_completion_metering
-
-                _fire_completion_metering(
-                    db,
-                    file_id=file_id,
-                    # Reservation + idempotency were keyed on the pipeline id at
-                    # dispatch — meter under the same id (own id only as a
-                    # legacy fallback).
-                    run_id=pipeline_task_id or task_id,
-                    provider=_resolve_asr_provider(db, file_id),
-                    success=True,
-                )
-
-        # Send completion notification
-        from app.tasks.transcription.notifications import send_completion_notification
-
-        send_completion_notification(user_id, file_id)
-
+        _finish(meta, task_id, pipeline_completion, pipeline_task_id)
         logger.info(
             f"Rediarization completed for file {file_uuid} - "
-            f"{len(processed_segments)} segments, "
-            f"{len(unique_speakers)} speakers"
+            f"{len(processed)} segments, {len(unique_speakers)} speakers"
         )
-
-        # Step 9: Dispatch speaker attribute detection (gender/age) → chains to LLM speaker ID.
-        # This mirrors the transcription pipeline flow: attributes are detected first,
-        # then identify_speakers_llm_task is chained automatically by the attribute task.
-        try:
-            from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
-
-            dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
-        except Exception as e:
-            logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
-
-        # Rediarization always reassigns which speaker every segment belongs
-        # to, which changes both the chunk plane's speaker snapshot/turn
-        # grouping and the full-document index — so it needs a re-index
-        # UNCONDITIONALLY, not only when a caller happened to also request
-        # the 'search_indexing' stage (issue #666). A rediarize-only run
-        # (e.g. from the reprocess UI with just "Re-diarize" checked) used to
-        # dispatch nothing at all, leaving search/RAG attributing every
-        # segment to its pre-rediarize speaker indefinitely.
-        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
-
-        dispatch_transcript_reindex(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
-
-        # Step 10: Dispatch remaining downstream tasks.
-        # Remove speaker_llm — it's chained from detect_speaker_attributes_task
-        # to ensure gender/age context is available for LLM identification.
-        # Remove search_indexing — the reindex above already (debounced)
-        # covers it, and dispatching the non-debounced full task again here
-        # would race it and duplicate the work.
-        if downstream_tasks:
-            filtered = [s for s in downstream_tasks if s not in ("speaker_llm", "search_indexing")]
-            if filtered:
-                _dispatch_downstream(filtered, file_uuid, file_id=file_id, user_id=user_id)
-
+        _after_speakers_changed(meta, file_uuid, downstream_tasks)
         return {
             "status": "success",
             "file_id": file_id,
-            "segments": len(processed_segments),
+            "segments": len(processed),
             "speakers": len(unique_speakers),
+            "merge": merge,
         }
 
     except Exception as e:
         logger.error(f"Rediarization failed for file {file_uuid}: {e}")
-        # Classified once from the raw exception; only the fixed sentence is stored (#959).
-        from app.services.error_categorization_service import ErrorCategorizationService
-
-        failure = ErrorCategorizationService.classify_failure(str(e))
-        error_msg = failure.user_message
-
-        try:
-            with session_scope() as db:
-                update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
-                # Resolve file_id if we have it
-                try:
-                    from app.utils.uuid_helpers import get_file_by_uuid
-
-                    media_file = get_file_by_uuid(db, file_uuid)
-                    update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
-                    media_file.last_error_message = error_msg
-                    media_file.error_category = failure.retry_category.value
-                    db.commit()
-
-                    # A failure anywhere from Step 6 (segments saved) onward
-                    # leaves already-committed speaker/segment changes in
-                    # Postgres with no corresponding reindex — the happy-path
-                    # dispatch above never runs. Dispatch is idempotent/
-                    # debounced (`reindex_dispatch.dispatch_transcript_reindex`),
-                    # so firing it unconditionally on any failure, once the
-                    # file is resolved, is cheap insurance rather than a
-                    # signal that something was actually saved.
-                    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
-
-                    dispatch_transcript_reindex(
-                        file_id=int(media_file.id),
-                        file_uuid=file_uuid,
-                        user_id=int(media_file.user_id),
-                    )
-                except Exception as file_err:
-                    logger.warning(f"Could not update file error status: {file_err}")
-        except Exception as update_err:
-            logger.error(f"Error updating task status after rediarize failure: {update_err}")
-
-        return {"status": "error", "message": error_msg}
+        return {"status": "error", "message": _record_failure(file_uuid, task_id, e)}
 
     finally:
-        # Clean up temp directory
         if temp_dir and os.path.isdir(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
             except Exception as cleanup_err:
                 logger.warning(f"Failed to clean up temp dir {temp_dir}: {cleanup_err}")
 
-        # We were the deferred consumer of the preprocessed WAV
-        # (cloud-ASR → local rediarize path); clean it up now that we're
-        # done so the scratch/MinIO temp doesn't leak.
-        try:
-            cleanup_temp_audio(file_uuid)
-        except Exception as cleanup_err:
-            logger.debug(f"Temp audio cleanup after rediarize failed: {cleanup_err}")
+        # We were the deferred consumer of the preprocessed WAV — unless the voiceprint
+        # stage we dispatched now owns it (it cleans up itself).
+        if not voiceprint_owns_audio:
+            try:
+                cleanup_temp_audio(file_uuid)
+            except Exception as cleanup_err:
+                logger.debug(f"Temp audio cleanup after rediarize failed: {cleanup_err}")
 
-        # Free intermediate CUDA tensors for follow-on tasks
-        from app.tasks.migration_pipeline import cleanup_gpu_memory
+        if engine == "local":
+            # Free intermediate CUDA tensors for follow-on tasks
+            from app.tasks.migration_pipeline import cleanup_gpu_memory
 
-        cleanup_gpu_memory()
+            cleanup_gpu_memory()

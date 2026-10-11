@@ -140,8 +140,8 @@ def trigger_automatic_summarization(
         # runs first, then chains to LLM speaker ID to ensure gender/age context is
         # available. No direct dispatch needed here — would cause double dispatch.
 
-        # Note: search_indexing is dispatched in _process_transcription_result (always
-        # runs during transcription). No need to dispatch it here to avoid double dispatch.
+        # Note: search_indexing is dispatched by the postprocess stage (always runs
+        # during transcription). No need to dispatch it here to avoid double dispatch.
 
         # Look up collection default prompt for this file
         collection_prompt_uuid = _get_collection_prompt_uuid(file_id)

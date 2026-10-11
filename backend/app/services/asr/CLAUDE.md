@@ -17,8 +17,24 @@ deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
   they are module-level precisely so neither hierarchy needs an instance of the other's ABC (#299).
 - `types.py` — normalized DTOs: `ASRConfig` in, `ASRResult`/`ASRSegment`/`ASRWord` out. Plain
   dataclasses, not Pydantic.
-- `factory.py` (843 lines) — `ASR_PROVIDER_CATALOG` (the admin UI's whole provider/model/price table,
+- `factory.py` — `ASR_PROVIDER_CATALOG` (the admin UI's whole provider/model/price table,
   incl. per-model `supports_translation` and `status: tested|experimental`) + `ASRProviderFactory`.
+  Every provider entry (and a model entry where it differs) also carries the two capabilities
+  the pipeline plan (`services/pipeline_plan.py`, #1224) is built on, each **pinned to the
+  provider module's code, never to vendor docs**:
+  - `speaker_count_hints` — which of min/max/num the module actually sends.
+    `tests/unit/test_asr_catalog_speaker_hints.py` derives the set from the module source.
+  - `timestamp_granularity` — `word` | `segment` | `none`.
+    `tests/unit/test_asr_catalog_timestamp_granularity.py` feeds each parser a fixture response
+    and fails when the parsed result cannot honour the declared value. OpenAI is `none` at
+    provider level (`gpt-4o-transcribe`/`-mini` are asked for `json`, which has no times) with
+    `whisper-1` and `-diarize` overriding to `segment`; Azure is `segment` until a live
+    response proves `NBest[0].Words` is filled (word times are never requested).
+  `get_model_capabilities` returns both plus `supports_diarization` (model wins over provider,
+  so OpenAI's `-diarize` model is the only OpenAI entry that returns speakers); that dict is what
+  `/asr-settings/status.active_model_capabilities` carries (typed by `ASRModelCapabilities`). A
+  new provider needs both fields, or `get_model_capabilities` fails closed to "no speakers, no
+  timing" and the plan refuses speaker detection for it.
 - `local_provider.py` — a **stub**: `transcribe()` raises `NotImplementedError`. Local transcription
   runs through `app/transcription/`; this class exists for `validate_connection()` and so
   `provider_name == "local"` can be the routing signal.
@@ -39,11 +55,23 @@ confined to the factory. Call sites branch only on `provider_name != "local"`, n
 ## Selection & failure
 
 - `create_for_user(user_id, db)`: `UserSetting["active_asr_config_id"]` → `UserASRSettings` row (own
-  **or `is_shared`**) → `ASR_PROVIDER` env → `LocalASRProvider`. **Cloud ASR config is per-user**; the
+  **or `is_shared`**) → `ASR_PROVIDER` env → `LocalASRProvider`. The "which row" half is
+  `resolve_active_config(user_id, db) -> (provider, model, cfg | None)`: no provider built,
+  nothing decrypted. `create_for_user`, `get_active_model_capabilities` and the pipeline plan's
+  `load_plan_inputs` all resolve through it (they were three copies of the lookup). The env
+  fallback's model per provider lives in one table, `_ENV_MODEL`, read by both `_from_env` and
+  `resolve_active_config`. **Cloud ASR config is per-user**; the
   local model is admin-pinned globally via the `SystemSettings` key **`asr.local_model`**
   (`transcription/config.py:_resolve_model_name` — worker-pinned → DB → `WHISPER_MODEL` → `large-v3-turbo`).
-- `tasks/transcription/dispatch.py:_resolve_gpu_queue` routes non-local providers to the **`cloud-asr`**
-  queue (service `celery-cloud-asr-worker`, concurrency 16) so network-bound jobs never block the GPU.
+- The pipeline plan's transcription step routes non-local providers to the **`cloud-asr`**
+  queue (service `celery-cloud-asr-worker`, concurrency 16) so network-bound jobs never block the
+  GPU; `tasks/transcription/dispatch.py:_plan_for_dispatch` resolves it once per run.
+- `resolve_config(cfg)` is the same env / local fallback for ANY row (or `None`): it lets
+  `services/asr_switch_plan` plan a switch before making it. Every ASR-side switch
+  (`set-active`, `clear-active`, first-config auto-activation, the promotion on delete)
+  goes through `assess_asr_switch` and refuses (409 `{code, message}`) only a diarization-step
+  error the switch introduces (#1225); `REFUSED_STEPS` is where lite's transcription-step
+  refusal (WP6) belongs.
 - **Failure is asymmetric on purpose** (`tasks/transcription/core.py:2076-2103`): errors *constructing*
   the provider fall back to local; errors from `transcribe()` propagate and the file is marked FAILED
   rather than silently re-running on GPU. Providers wrap failures in `RuntimeError`, which is **not** in

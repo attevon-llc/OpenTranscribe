@@ -207,7 +207,13 @@ def test_transcription_system_defaults_expose_the_valid_option_sets(client, user
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert data["valid_speaker_prompt_behaviors"] == ["always_prompt", "use_defaults", "use_custom"]
-    assert data["valid_diarization_sources"] == ["provider", "local", "pyannote", "off"]
+    assert data["valid_diarization_sources"] == [
+        "provider",
+        "local",
+        "pyannote",
+        "asr_config",
+        "off",
+    ]
     assert data["diarization_source_default"] == "provider"
     assert data["garbage_cleanup_enabled"] is True
     assert data["garbage_cleanup_threshold"] == 50

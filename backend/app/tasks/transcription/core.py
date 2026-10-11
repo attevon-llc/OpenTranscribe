@@ -9,7 +9,7 @@ import are re-exported below.
 Where the rest of the pipeline now lives: :mod:`context`,
 :mod:`user_settings`, :mod:`pipelines`, :mod:`cloud_asr`,
 :mod:`embeddings`, :mod:`finalize`, :mod:`background`, :mod:`downstream`,
-:mod:`legacy_task`, :mod:`diarize_task`, :mod:`cpu_task`.
+:mod:`diarize_task`, :mod:`cpu_task`.
 """
 
 import contextlib
@@ -47,18 +47,17 @@ from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import is_cancelled
+from .context import plan_of
 from .context import requeue_after_abort
 from .context import requeue_if_context_poisoned
 from .context import retry_transcribe_gpu_exception
 from .cpu_task import transcribe_cpu_task
 from .diarize_task import diarize_gpu_task
 from .downstream import trigger_automatic_summarization
-from .embeddings import _process_speaker_embeddings
 from .embeddings import _process_speaker_embeddings_native
 from .embeddings import _should_use_native_embeddings
 from .embeddings import _store_native_centroids_in_v4_staging
 from .finalize import _process_and_save_critical
-from .legacy_task import transcribe_audio_task
 from .notifications import send_progress_notification
 from .pipelines import _run_engine_pipeline
 from .pipelines import _run_transcribe_only_stage
@@ -76,12 +75,10 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "TranscriptionContext",
     "_get_user_transcription_settings",
-    "_process_speaker_embeddings",
     "_process_speaker_embeddings_native",
     "_should_use_native_embeddings",
     "_store_native_centroids_in_v4_staging",
     "diarize_gpu_task",
-    "transcribe_audio_task",
     "transcribe_cpu_task",
     "transcribe_gpu_task",
     "trigger_automatic_summarization",
@@ -219,7 +216,7 @@ def _dispatch_gpu_split_diarize_chain(
     Issue #705: the diarize leg's queue is resolved by :func:`_resolve_gpu_diarize_queue`,
     which verifies a live consumer on ``CeleryQueues.GPU_DIARIZE`` and falls back to the
     always-staffed ``CeleryQueues.GPU`` queue otherwise — the same fail-closed shape as the
-    transcribe leg's ``dispatch.py::_resolve_gpu_queue`` (issue #703). The consumer check
+    transcribe leg's ``dispatch.py::_plan_for_dispatch`` (issue #703). The consumer check
     runs AFTER the dedup claim above on purpose: this call only fires once per
     ``transcribe_gpu_task`` execution (the claim already prevented a duplicate), so there is
     no double-check-then-burn-the-claim hazard — a "no consumer" result here still dispatches
@@ -265,27 +262,30 @@ def _running_at_retry_priority() -> bool:
         return False
 
 
-def _resolve_asr_provider_or_none(user_id: int):
-    """Resolve the user's ASR provider, or ``None`` on a config-loading failure.
+def _cloud_asr_provider_or_none(user_id: int, plan):
+    """The cloud ASR provider the plan transcribes with, or ``None`` for local Whisper.
 
-    ``None`` signals the caller to fall through to the local WhisperX pipeline — the
+    ``None`` for a ``local_gpu`` plan, and also when a cloud provider cannot be
+    *constructed*: the caller then falls through to the local WhisperX pipeline — the
     documented "asymmetric failure" behaviour (errors *constructing* a provider fall back
     to local; errors from ``transcribe()`` itself propagate and fail the file).
 
-    ``ASRConfigurationError`` is different: it is a deliberate refusal to silently resolve
-    to a local provider this deployment (e.g. ``DEPLOYMENT_MODE=lite``) cannot run, so it
-    is re-raised rather than swallowed — falling through here would still hit the local
-    pipeline and fail later with a confusing ``ModuleNotFoundError``.
+    ``ASRConfigurationError`` is different: it is a deliberate refusal (e.g. a blocked
+    Gladia ``base_url``, or a local provider on ``DEPLOYMENT_MODE=lite``), so it is
+    re-raised rather than swallowed.
     """
+    if plan.transcription.engine != "cloud":
+        return None
     from app.services.asr.factory import ASRProviderFactory
 
     try:
         with session_scope() as db:
-            return ASRProviderFactory.create_for_user(user_id, db)
+            provider = ASRProviderFactory.create_for_user(user_id, db)
     except ASRConfigurationError:
         raise
     except Exception:
         return None
+    return provider if provider.provider_name != "local" else None
 
 
 def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) -> None:
@@ -463,16 +463,14 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.22)
 
-            # ── Check for cloud ASR provider (needed in both code paths) ──────────
-            provider = _resolve_asr_provider_or_none(user_id)
-
-            # Read diarization settings (needed in both code paths)
-            diarization_source = preprocess_context.get("diarization_source", "provider")
-            disable_diarization = diarization_source == "off"
+            # What runs is the plan dispatch computed (issue #1225), never a setting re-read.
+            plan = plan_of(preprocess_context)
+            diarization_off = plan.diarization.engine == "off"
+            provider = _cloud_asr_provider_or_none(user_id, plan)
             with session_scope() as db:
                 media_file = get_refreshed_object(db, MediaFile, file_id)
                 if media_file:
-                    media_file.diarization_disabled = disable_diarization
+                    media_file.diarization_disabled = diarization_off
                     db.commit()
 
             whisper_model = preprocess_context.get("whisper_model")
@@ -484,9 +482,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # this path for local ASR.
             local_wav_path = preprocess_context.get("local_wav_path", "")
             has_shared_wav = (
-                bool(local_wav_path)
-                and os.path.exists(local_wav_path)
-                and (provider is None or provider.provider_name == "local")
+                bool(local_wav_path) and os.path.exists(local_wav_path) and provider is None
             )
 
             if has_shared_wav:
@@ -505,8 +501,10 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                 # gpu-transcribe queue and the result is forwarded to diarize_gpu_task
                 # on the gpu-diarize queue.  The current task returns the serialized
                 # RawTranscriptResult so Celery records it; the finalize chain runs
-                # after diarize_gpu_task completes.
-                if gpu_split_enabled():
+                # after diarize_gpu_task completes. Only for inline speaker detection: a
+                # post stage (pyannote.ai, or this server after CPU/cloud transcription)
+                # runs after the transcript is saved, never in the diarize worker.
+                if gpu_split_enabled() and plan.diarization.execution in ("inline_local", "none"):
                     transcript_data = _run_transcribe_only_stage(
                         ctx, local_wav_path, preprocess_context
                     )
@@ -529,10 +527,8 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
                 result = _run_engine_pipeline(ctx, local_wav_path, preprocess_context)
 
-                # Annotate result with diarization flags for downstream
                 if isinstance(result, dict):
-                    result["diarization_disabled"] = disable_diarization
-                    result["diarization_source"] = diarization_source
+                    result["diarization_disabled"] = diarization_off
 
                 # Validate result
                 validation_error = _validate_transcription_result(result, ctx, task_id)
@@ -584,7 +580,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
                 send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
 
-                if provider is not None and provider.provider_name != "local":
+                if provider is not None:
                     # Per-task model override is only for local ASR
                     if whisper_model:
                         logger.info(
@@ -599,7 +595,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                             preprocess_context.get("max_speakers"),
                             preprocess_context.get("num_speakers"),
                             provider=provider,
-                            diarization_source=diarization_source,
+                            plan=plan,
                         )
                 else:
                     result = _run_transcription_pipeline(
@@ -610,14 +606,12 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                         preprocess_context.get("num_speakers"),
                         source_language=preprocess_context.get("source_language"),
                         translate_to_english=preprocess_context.get("translate_to_english"),
-                        disable_diarization=disable_diarization,
+                        enable_diarization=plan.diarization.execution == "inline_local",
                         whisper_model=whisper_model,
                     )
 
-                # Annotate result with diarization flags for downstream
                 if isinstance(result, dict):
-                    result["diarization_disabled"] = disable_diarization
-                    result["diarization_source"] = diarization_source
+                    result["diarization_disabled"] = diarization_off
 
                 # Validate result
                 validation_error = _validate_transcription_result(result, ctx, task_id)

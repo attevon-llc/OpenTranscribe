@@ -5627,5 +5627,6 @@
   "supportAccess.selfApproval": "Você não pode aprovar o seu próprio pedido.",
   "supportAccess.notify.requested": "Novo pedido de acesso de suporte de {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} iniciou um acesso de emergência a {{target}} até às {{time}}.",
-  "supportAccess.notify.review": "Revisar"
+  "supportAccess.notify.review": "Revisar",
+  "ui.rangeSlider.systemDefault": "Padrão do sistema: {{value}}"
 }

@@ -5627,5 +5627,6 @@
   "supportAccess.selfApproval": "Sie können Ihre eigene Anfrage nicht genehmigen.",
   "supportAccess.notify.requested": "Neue Support-Zugriffsanfrage von {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} hat bis {{time}} einen Break-Glass-Zugriff auf {{target}} gestartet.",
-  "supportAccess.notify.review": "Prüfen"
+  "supportAccess.notify.review": "Prüfen",
+  "ui.rangeSlider.systemDefault": "Systemstandard: {{value}}"
 }

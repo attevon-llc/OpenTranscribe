@@ -33,6 +33,17 @@ primitive in the same spirit as this folder.
 - `SearchBar.svelte` — the shared search-input shell (icon, clear button, debounce).
 - `ConnectionStatusBanner.svelte` — global banner for WebSocket/API connectivity loss.
 - `ExpandableSection.svelte` — accessible collapsible (`aria-expanded`/`aria-controls`, chevron, slide).
+- `RangeSlider.svelte` — the ONE slider. Label + live value badge + native `<input type="range">`
+  - hint (+ optional muted "System default: X" via `defaultValue`). Props: `id label value(bind)
+min max step disabled hint decimals unit format valueText defaultValue class`; extra attributes
+    (`data-testid`, `aria-*`, `dir`) land on the native input; `on:input`/`on:change` forward the
+    native events. **Contract: every slider uses `ui/RangeSlider`; its styling lives in
+    `src/styles/range-slider.css`** (tokens `--slider-*`, `.range-input`). Raw `type="range"` in a
+    template, or `::-webkit-slider-thumb`/`::-moz-range-thumb` rules outside that stylesheet and the
+    two Plyr player files, fail `rangeSliderStructure.test.ts` (allowlist entries need a written
+    reason). The look is the native slider tinted with `accent-color` on purpose: fill, thumb,
+    keyboard and RTL direction come from the browser. The gallery's dual-thumb filter sliders
+    (`svelte-range-slider-pips` in `FilterSidebar.svelte`) are intentionally separate (owner decision).
 - `Spinner.svelte`, `ProgressBar.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
   `CardGridSkeleton.svelte`, `EmptyState.svelte`, `TagInput.svelte`.
 

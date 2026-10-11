@@ -5627,5 +5627,6 @@
   "supportAccess.selfApproval": "You cannot approve your own request.",
   "supportAccess.notify.requested": "New support-access request from {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} started break-glass access to {{target}} until {{time}}.",
-  "supportAccess.notify.review": "Review"
+  "supportAccess.notify.review": "Review",
+  "ui.rangeSlider.systemDefault": "System default: {{value}}"
 }

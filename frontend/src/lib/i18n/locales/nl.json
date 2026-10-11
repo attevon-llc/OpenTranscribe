@@ -5627,5 +5627,6 @@
   "supportAccess.selfApproval": "U kunt uw eigen verzoek niet goedkeuren.",
   "supportAccess.notify.requested": "Nieuw verzoek om ondersteuningstoegang van {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} heeft tot {{time}} noodtoegang tot {{target}} gestart.",
-  "supportAccess.notify.review": "Bekijken"
+  "supportAccess.notify.review": "Bekijken",
+  "ui.rangeSlider.systemDefault": "Systeemstandaard: {{value}}"
 }

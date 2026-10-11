@@ -5627,5 +5627,6 @@
   "supportAccess.selfApproval": "본인의 요청은 승인할 수 없습니다.",
   "supportAccess.notify.requested": "{{grantee}}의 새 지원 액세스 요청이 있습니다.",
   "supportAccess.notify.breakGlass": "{{grantee}}님이 {{target}}에 대한 긴급 액세스를 {{time}}까지 시작했습니다.",
-  "supportAccess.notify.review": "검토"
+  "supportAccess.notify.review": "검토",
+  "ui.rangeSlider.systemDefault": "시스템 기본값: {{value}}"
 }

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One shared slider (`ui/RangeSlider`) and one slider stylesheet (`styles/range-slider.css`).**
+  Every slider in Settings (toxicity threshold, forced-toxicity threshold, auto-label confidence,
+  speech-detection sensitivity, repetition penalty) and the two chat generation controls now use the
+  design of the Content Redaction toxicity slider: label, live value badge, filled native slider and
+  hint, with a visible keyboard focus ring and a disabled state. The design lives in `--slider-*`
+  custom properties that the audio player progress and volume bars also read, replacing about 40
+  repeated values in `VideoPlayer` and `PlyrMiniPlayer` with no visual change. Structural tests fail
+  on a raw `type="range"` input or on thumb rules declared outside the shared stylesheet. The
+  gallery's dual-thumb file-size and duration sliders keep their own style.
+
 - **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
   `multi`, `single`; default `auto`). New API under `/api/support-access`,
   `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,

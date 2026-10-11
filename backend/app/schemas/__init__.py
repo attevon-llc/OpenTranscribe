@@ -4,6 +4,7 @@ Pydantic schemas for OpenTranscribe API.
 This package contains validation schemas for request/response models.
 """
 
+from .asr_settings import ASRConfigDeleted
 from .asr_settings import ASRConnectionTestRequest
 from .asr_settings import ASRConnectionTestResult
 from .asr_settings import ASRProvider
@@ -179,6 +180,7 @@ __all__ = [
     "UserASRSettingsResponse",
     "ASRSettingsList",
     "ASRStatusResponse",
+    "ASRConfigDeleted",
     "ASRProviderCatalog",
     "CustomVocabularyCreate",
     "CustomVocabularyUpdate",

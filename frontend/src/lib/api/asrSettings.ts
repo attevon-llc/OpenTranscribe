@@ -223,6 +223,12 @@ interface RawASRProvider {
   models?: RawASRModel[];
 }
 
+/** Mirrors backend `schemas.asr_settings.ASRConfigDeleted`. */
+export interface ASRConfigDeleted {
+  deleted: boolean;
+  diarizer_source_reverted: boolean;
+}
+
 export class ASRSettingsApi {
   private static readonly BASE_PATH = '/asr-settings';
 
@@ -357,19 +363,21 @@ export class ASRSettingsApi {
   }
 
   /**
-   * Delete a specific ASR configuration
-   * Backend returns 204 No Content on success.
+   * Delete a specific ASR configuration.
+   * `diarizer_source_reverted` is true when the caller's speaker detection named this
+   * configuration and was reset to the default (#1226).
    */
-  static async deleteConfig(uuid: string): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+  static async deleteConfig(uuid: string): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+    return response.data;
   }
 
   /**
-   * Delete all user ASR configurations (revert to local GPU default)
-   * Backend returns 204 No Content on success.
+   * Delete all user ASR configurations (revert to local GPU default).
    */
-  static async deleteAll(): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/all`);
+  static async deleteAll(): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/all`);
+    return response.data;
   }
 
   /**

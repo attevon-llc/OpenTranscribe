@@ -7,6 +7,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
@@ -333,3 +334,16 @@ class ASRStatusResponse(BaseModel):
     active_config_uuid: UUID | None = None
     is_cloud_provider: bool = False
     active_model_capabilities: ASRModelCapabilities | None = None
+
+
+class ASRConfigDeleted(BaseModel):
+    """Result of deleting one or all ASR configurations."""
+
+    deleted: bool = True
+    diarizer_source_reverted: bool = Field(
+        False,
+        description=(
+            "The caller's speaker detection was set to a deleted configuration "
+            "(source asr_config) and has been reset to the default (#1226)."
+        ),
+    )

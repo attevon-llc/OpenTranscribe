@@ -1,6 +1,24 @@
 {
   "components": {
     "schemas": {
+      "ASRConfigDeleted": {
+        "description": "Result of deleting one or all ASR configurations.",
+        "properties": {
+          "deleted": {
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "diarizer_source_reverted": {
+            "default": false,
+            "description": "The caller's speaker detection was set to a deleted configuration (source asr_config) and has been reset to the default (#1226).",
+            "title": "Diarizer Source Reverted",
+            "type": "boolean"
+          }
+        },
+        "title": "ASRConfigDeleted",
+        "type": "object"
+      },
       "ASRConnectionTestRequest": {
         "properties": {
           "access_key_id": {
@@ -25561,10 +25579,17 @@
     },
     "/api/asr-settings/all": {
       "delete": {
-        "description": "Delete all ASR configurations for the current user (reverts to system default).",
+        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete.",
         "operationId": "delete_all_asr_configs_api_asr_settings_all_delete",
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ASRConfigDeleted"
+                }
+              }
+            },
             "description": "Successful Response"
           }
         },
@@ -25608,7 +25633,7 @@
     },
     "/api/asr-settings/config/{config_uuid}": {
       "delete": {
-        "description": "Delete an ASR configuration. Auto-promotes another config if this was active.",
+        "description": "Delete an ASR configuration. Auto-promotes another config if this was active.\n\nA speaker-detection choice naming this configuration (source ``asr_config``) is reset\nto the default for every user who held it; ``diarizer_source_reverted`` says whether\nthe caller's was.",
         "operationId": "delete_asr_config_api_asr_settings_config__config_uuid__delete",
         "parameters": [
           {
@@ -25623,7 +25648,14 @@
           }
         ],
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ASRConfigDeleted"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {

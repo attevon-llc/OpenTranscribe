@@ -949,7 +949,17 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             # Delete existing transcript segments
             db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
 
-            # Delete existing speakers
+            # Delete existing speakers. What they belonged to is read first: the
+            # CASCADE forgets which clusters and profiles averaged their voices in,
+            # and their voiceprints were never removed here at all (issue #1214).
+            from app.services.speaker_cleanup import capture_speaker_impact
+
+            speaker_impact = capture_speaker_impact(
+                db,
+                [int(r[0]) for r in db.query(Speaker.id).filter(Speaker.media_file_id == file_id)],
+                removed=True,
+                reindex=False,
+            )
             db.query(Speaker).filter(Speaker.media_file_id == file_id).delete()
 
             # Delete existing analytics
@@ -964,6 +974,11 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             media_file.summary_status = "pending"
 
             db.commit()
+
+            # A residual is logged at ERROR by the shared cleanup; the retry proceeds.
+            from app.services.speaker_cleanup import reconcile_speaker_impact
+
+            reconcile_speaker_impact(db, speaker_impact)
 
             # Prune the OpenSearch summary plane to match the cleared column
             # (issue #963) — a transcription retry may never reach a fresh

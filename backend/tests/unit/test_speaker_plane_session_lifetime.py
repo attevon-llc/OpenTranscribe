@@ -385,7 +385,7 @@ def merge_task_env(db_session, monkeypatch):
     monkeypatch.setattr(spk, "_update_opensearch_speaker_merge", _index_merge)
     monkeypatch.setattr(
         spk,
-        "_update_profile_embeddings_after_merge",
+        "_reconcile_speakers_after_merge",
         lambda db, *a: tracker.observe("profile_embeddings"),
     )
     monkeypatch.setattr(
@@ -593,7 +593,9 @@ def retroactive_env(db_session, monkeypatch):
     monkeypatch.setattr(
         su,
         "_update_profile_embedding",
-        lambda db, speaker_id, profile_id: tracker.observe("profile_embedding_write"),
+        lambda db, speaker_id, old_profile_id, profile_id: tracker.observe(
+            "profile_embedding_write"
+        ),
     )
     monkeypatch.setattr(su, "_send_bulk_update_notification", lambda *a: None)
 

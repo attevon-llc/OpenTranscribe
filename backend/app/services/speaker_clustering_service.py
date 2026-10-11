@@ -32,6 +32,10 @@ from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.speaker_cleanup import SpeakerImpact
+from app.services.speaker_cleanup import clusters_holding_speakers
+from app.services.speaker_cleanup import raise_if_incomplete
+from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -1127,6 +1131,9 @@ class SpeakerClusteringService:
     ) -> SpeakerCluster | None:
         """Merge source cluster into target. All members move to target.
 
+        The emptied source is deleted with its centroid and the target's centroid is
+        rebuilt from its new member set by ``speaker_cleanup`` after the move commits.
+
         Args:
             source_uuid: UUID of the cluster to dissolve.
             target_uuid: UUID of the cluster to absorb members.
@@ -1135,6 +1142,10 @@ class SpeakerClusteringService:
 
         Returns:
             The target cluster after merge, or None on error.
+
+        Raises:
+            SpeakerCleanupIncompleteError: The merge committed, but a centroid could be
+                neither rebuilt nor erased.
         """
         try:
             # Lock both clusters in consistent UUID order to prevent deadlocks
@@ -1196,32 +1207,23 @@ class SpeakerClusteringService:
                 if speaker:
                     speaker.cluster_id = target.id  # type: ignore[assignment]
 
-            # Update target count
-            target.member_count = (  # type: ignore[assignment]
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == target.id)
-                .count()
-            )
-
-            # Remove source cluster centroid from OpenSearch
-            try:
-                from app.services.opensearch_service import delete_cluster_embedding
-
-                delete_cluster_embedding(str(source.uuid))
-            except Exception as e:
-                logger.warning("Could not delete source cluster embedding: %s", e)
-
-            self.db.delete(source)
-            self._update_cluster_centroid(target, user_id)
             self.db.commit()
-
-            logger.info("Merged cluster %s into %s", source_uuid, target_uuid)
-            return target  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error("Error merging clusters: %s", e)
             self.db.rollback()
             return None
+
+        # The source is empty now: the shared cleanup deletes it with its centroid and
+        # rebuilds the target's from the merged membership.
+        raise_if_incomplete(
+            reconcile_speaker_impact(
+                self.db,
+                SpeakerImpact(owner_ids={user_id}, cluster_uuids={source_uuid, target_uuid}),
+            )
+        )
+        logger.info("Merged cluster %s into %s", source_uuid, target_uuid)
+        return target  # type: ignore[no-any-return]
 
     def split_cluster(
         self,
@@ -1241,6 +1243,10 @@ class SpeakerClusteringService:
 
         Returns:
             The newly created cluster, or None on error.
+
+        Raises:
+            SpeakerCleanupIncompleteError: The split committed, but a centroid could be
+                neither rebuilt nor erased.
         """
         try:
             source = (
@@ -1300,41 +1306,25 @@ class SpeakerClusteringService:
                 self.db.add(member)
                 speaker.cluster_id = new_cluster.id  # type: ignore[assignment]
 
-            # Update counts
             new_cluster.member_count = len(speakers_to_move)  # type: ignore[assignment]
-            source.member_count = (  # type: ignore[assignment]
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == source.id)
-                .count()
-            )
-
-            # Update centroids
-            self._update_cluster_centroid(source, user_id)
-            self._update_cluster_centroid(new_cluster, user_id)
-
-            # Delete source if empty (fresh count to avoid stale ORM attribute)
-            remaining = (
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == source.id)
-                .count()
-            )
-            if remaining == 0:
-                try:
-                    from app.services.opensearch_service import delete_cluster_embedding
-
-                    delete_cluster_embedding(str(source.uuid))
-                except Exception:
-                    logger.debug("Failed to remove cluster embedding from OpenSearch")
-                self.db.delete(source)
-
+            new_cluster_uuid = str(new_cluster.uuid)
             self.db.commit()
-            logger.info("Split %d speakers from cluster %s", len(speakers_to_move), cluster_uuid)
-            return new_cluster
 
         except Exception as e:
             logger.error("Error splitting cluster: %s", e)
             self.db.rollback()
             return None
+
+        # Both centroids change: the source loses the moved voices (and is deleted with
+        # its centroid if nobody is left), the new cluster is built from them.
+        raise_if_incomplete(
+            reconcile_speaker_impact(
+                self.db,
+                SpeakerImpact(owner_ids={user_id}, cluster_uuids={cluster_uuid, new_cluster_uuid}),
+            )
+        )
+        logger.info("Split %d speakers from cluster %s", len(speakers_to_move), cluster_uuid)
+        return new_cluster
 
     def promote_cluster_to_profile(
         self,
@@ -1360,6 +1350,10 @@ class SpeakerClusteringService:
 
         Returns:
             The created SpeakerProfile, or None on error.
+
+        Raises:
+            SpeakerCleanupIncompleteError: The promotion committed, but a profile embedding or
+                the cluster centroid could be neither rebuilt nor erased.
         """
         try:
             cluster = self._scoped_cluster_query(cluster_uuid, user_id, organization_id).first()
@@ -1431,6 +1425,15 @@ class SpeakerClusteringService:
             if not cluster.label:
                 cluster.label = name  # type: ignore[assignment]
 
+            # A member already linked elsewhere leaves that profile, whose embedding
+            # still averages its voice until it is rebuilt (issue #1214).
+            touched = SpeakerImpact(
+                owner_ids={user_id},
+                cluster_uuids={str(cluster.uuid)},
+                profile_ids={int(profile.id)}
+                | {int(s.profile_id) for s in speakers_by_id.values() if s.profile_id},
+            )
+
             for member in members:
                 speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker:
@@ -1445,26 +1448,25 @@ class SpeakerClusteringService:
                     speaker.display_name = name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
 
-            # Update profile embedding
-            from app.services.profile_embedding_service import ProfileEmbeddingService
-
             self.db.commit()
             self._rename_tracker.flush(self.db)
-            ProfileEmbeddingService.update_profile_embedding(self.db, int(profile.id))
-
-            logger.info(
-                "Promoted cluster %s to profile '%s' (%d speakers)",
-                cluster_uuid,
-                name,
-                len(members),
-            )
-            return profile
 
         except Exception as e:
             logger.error("Error promoting cluster to profile: %s", e)
             self.db.rollback()
             self._rename_tracker.discard()
             return None
+
+        # The new profile's embedding, every former profile's, and the cluster centroid
+        # (profile-linked members weigh double in it) — one shared cleanup.
+        raise_if_incomplete(reconcile_speaker_impact(self.db, touched))
+        logger.info(
+            "Promoted cluster %s to profile '%s' (%d speakers)",
+            cluster_uuid,
+            name,
+            len(members),
+        )
+        return profile
 
     # ------------------------------------------------------------------
     # Outlier analysis and constraint-based unassignment
@@ -1613,7 +1615,18 @@ class SpeakerClusteringService:
         *,
         organization_id: OrgScope = UNSCOPED,
     ) -> dict:
-        """Unassign speakers from a cluster, optionally blacklisting them."""
+        """Unassign speakers from a cluster, optionally blacklisting them.
+
+        The cluster's centroid is rebuilt from the members that stay, and a cluster left
+        with none is deleted with its centroid (``speaker_cleanup``). A member of a
+        promoted cluster keeps its profile link: unassigning from the grouping is not
+        unlinking from the identity.
+
+        Raises:
+            ValueError: The cluster or the speakers were not found.
+            SpeakerCleanupIncompleteError: The unassignment committed, but the centroid could
+                be neither rebuilt nor erased.
+        """
         from app.models.media import SpeakerCannotLink
         from app.models.media import SpeakerProfileBlacklist
 
@@ -1695,17 +1708,16 @@ class SpeakerClusteringService:
                                     )
                                 )
 
-        # Update cluster member_count
         cluster.member_count = len(remaining_member_ids)
-
-        # Delete cluster if empty
-        if cluster.member_count == 0:
-            self.db.delete(cluster)
-        else:
-            # Recompute centroid
-            self._update_cluster_centroid(cluster, user_id)
-
+        cluster_uuid_str = str(cluster.uuid)
         self.db.commit()
+
+        # The removed voices leave the centroid; an emptied cluster goes with its centroid.
+        raise_if_incomplete(
+            reconcile_speaker_impact(
+                self.db, SpeakerImpact(owner_ids={user_id}, cluster_uuids={cluster_uuid_str})
+            )
+        )
 
         return {
             "unassigned_count": len(speakers_to_remove),
@@ -1863,6 +1875,9 @@ class SpeakerClusteringService:
         )
         speakers_by_uuid = {str(s.uuid): s for s, _ in speaker_rows}
         file_org_by_uuid = {str(s.uuid): org for s, org in speaker_rows}
+        # "assign" moves speakers into ``profile`` and out of any profile they had.
+        assigned: set[int] = set()
+        touched = SpeakerImpact(owner_ids={user_id})
 
         for suuid in speaker_uuids:
             try:
@@ -1897,6 +1912,9 @@ class SpeakerClusteringService:
                         failed += 1
 
                 elif action == "assign" and profile:
+                    assigned.add(int(speaker.id))
+                    if speaker.profile_id:
+                        touched.profile_ids.add(int(speaker.profile_id))
                     speaker.profile_id = profile.id  # type: ignore[assignment]
                     self._rename_tracker.record(
                         int(speaker.media_file_id), indexed_as, str(profile.name)
@@ -1951,6 +1969,12 @@ class SpeakerClusteringService:
             }
 
         self._rename_tracker.flush(self.db)
+        if assigned and profile is not None:
+            # The target profile gains the voices and each former profile loses them; the
+            # speakers' clusters re-weight them (profile-linked members count double).
+            touched.profile_ids.add(int(profile.id))
+            touched.cluster_uuids = clusters_holding_speakers(self.db, assigned)
+            raise_if_incomplete(reconcile_speaker_impact(self.db, touched))
         return {"updated_count": updated, "failed_count": failed, "errors": errors}
 
     # ------------------------------------------------------------------

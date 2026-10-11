@@ -14,8 +14,25 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.platform_bypass import PlatformBypass
+from app.services.speaker_cleanup import SpeakerImpact
+from app.services.speaker_cleanup import capture_speaker_impact
+from app.services.speaker_cleanup import reconcile_speaker_impact
 
 logger = logging.getLogger(__name__)
+
+
+def _capture_file_speakers(db: Session, media_file_id: int) -> SpeakerImpact:
+    """What deleting a file's speakers for a re-run leaves stale (issue #1214).
+
+    The re-run indexes the file again itself, so no reindex is requested here.
+    """
+    from app.models.media import Speaker
+
+    speaker_ids = [
+        int(row[0]) for row in db.query(Speaker.id).filter(Speaker.media_file_id == media_file_id)
+    ]
+    return capture_speaker_impact(db, speaker_ids, removed=True, reindex=False)
+
 
 #: Stages whose rework needs the ORIGINAL MEDIA, and which delete what they are
 #: about to regenerate: ``transcription`` re-runs ASR (clearing segments,
@@ -92,11 +109,9 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         for segment in existing_segments:
             db.delete(segment)
 
-        # Clear any existing speaker data (extract UUIDs first, then bulk delete)
-        speaker_uuids_to_clean = [
-            str(r[0])
-            for r in db.query(Speaker.uuid).filter(Speaker.media_file_id == media_file.id).all()
-        ]
+        # Clear any existing speaker data. What the speakers belonged to is read first:
+        # the bulk delete's CASCADE forgets which clusters and profiles averaged them in.
+        speaker_impact = _capture_file_speakers(db, int(media_file.id))
         db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
             synchronize_session=False
         )
@@ -120,19 +135,9 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
 
         logger.info(f"Cleared existing transcription data for file {media_file.id}")
 
-        # Remove deleted speakers from all OpenSearch speaker indices (non-fatal)
-        if speaker_uuids_to_clean:
-            try:
-                from app.services.opensearch_service import remove_speaker_embedding
-
-                for uuid in speaker_uuids_to_clean:
-                    remove_speaker_embedding(uuid)
-                logger.info(
-                    f"Removed {len(speaker_uuids_to_clean)} speaker embeddings "
-                    f"from OpenSearch for reprocessed file {media_file.id}"
-                )
-            except Exception as os_err:
-                logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
+        # Voiceprints, clusters, profiles: the shared speaker cleanup (issue #1214). A
+        # residual is logged at ERROR there; the reprocess the user asked for goes ahead.
+        reconcile_speaker_impact(db, speaker_impact)
 
     except Exception as e:
         logger.exception(f"Error clearing transcription data for file {media_file.id}: {e}")
@@ -200,6 +205,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
     # Only the "speaker_llm" branch below writes to it — declared here so the
     # `except` path can safely `discard()` regardless of which branch ran.
     tracker = SpeakerRenameTracker()
+    rediarize_impact: SpeakerImpact | None = None
 
     try:
         if "transcription" in stages:
@@ -214,22 +220,10 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
                 TranscriptSegment.media_file_id == media_file.id
             ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
 
-            speaker_uuids_to_clean = [
-                str(r[0])
-                for r in db.query(Speaker.uuid).filter(Speaker.media_file_id == media_file.id).all()
-            ]
+            rediarize_impact = _capture_file_speakers(db, int(media_file.id))
             db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
                 synchronize_session=False
             )
-            # Remove deleted speakers from OpenSearch (non-fatal)
-            if speaker_uuids_to_clean:
-                try:
-                    from app.services.opensearch_service import remove_speaker_embedding
-
-                    for uuid in speaker_uuids_to_clean:
-                        remove_speaker_embedding(uuid)
-                except Exception as os_err:
-                    logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
             # Also clear analytics since speaker stats change
             existing_analytics = (
                 db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
@@ -281,6 +275,9 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
 
         db.commit()
         tracker.flush(db)
+        if rediarize_impact is not None:
+            # After the commit, never before: a rolled-back clear must keep its voices.
+            reconcile_speaker_impact(db, rediarize_impact)
 
         if "summarization" in stages:
             # Prune the OpenSearch summary plane to match the now-cleared

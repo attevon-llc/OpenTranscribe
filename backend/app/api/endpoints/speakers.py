@@ -32,6 +32,10 @@ from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
+from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
+from app.services.speaker_cleanup import capture_speaker_impact
+from app.services.speaker_cleanup import raise_if_incomplete
+from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
@@ -1400,7 +1404,7 @@ def verify_speaker_identification(
 
         return result
 
-    except HTTPException:
+    except (HTTPException, SpeakerCleanupIncompleteError):
         raise
     except Exception as e:
         logger.exception(f"Error verifying speaker: {e}")
@@ -1484,14 +1488,13 @@ def merge_speakers(
     same tenant, and must be in the same file or have the same owner — a merge
     moves the source's transcript segments onto the target.
 
-    Postgres is updated synchronously so the response is authoritative. Everything
-    downstream — averaging the two voiceprints in OpenSearch, deleting the source
-    document, recomputing both profiles' consolidated embeddings, clearing the MinIO
-    video cache and refreshing analytics for both files — is handed to
-    ``process_speaker_merge_background`` (issue #284 A2.6). Inline, that was roughly
-    2 + N OpenSearch round trips (N = members of the target profile), a numpy mean,
-    a MinIO listing per affected file and two analytics recomputations, all before
-    the merge could answer.
+    Postgres is updated synchronously so the response is authoritative, and so are the
+    clusters and profile the SOURCE belonged to: it is no longer their member, so
+    ``speaker_cleanup`` rebuilds (or deletes, if emptied) them before the response
+    (issue #1214). Everything downstream of the target — averaging the two voiceprints
+    in OpenSearch, deleting the source document, rebuilding the target's clusters and
+    profile, clearing the MinIO video cache and refreshing analytics for both files — is
+    handed to ``process_speaker_merge_background`` (issue #284 A2.6).
     """
     from app.tasks.speaker_merge_task import process_speaker_merge_background
 
@@ -1539,10 +1542,19 @@ def merge_speakers(
 
     # Capture the source identity before the row disappears
     source_speaker_uuid = str(source_speaker.uuid)
+    # ...and the clusters/profile it belonged to, which the CASCADE is about to forget.
+    # Its voiceprint stays until the background task has folded it into the target.
+    source_impact = capture_speaker_impact(db, [source_speaker_id], removed=False, reindex=False)
 
     # Delete the source speaker
     db.delete(source_speaker)
     db.commit()
+
+    # The source is no longer a member: its clusters and profile drop it NOW, not when the
+    # background task gets to it (issue #1214). The target side waits for the averaged
+    # voiceprint and is rebuilt by process_speaker_merge_background. A failure is raised
+    # only after the rest of the merge has been dispatched.
+    source_residual = reconcile_speaker_impact(db, source_impact)
     db.refresh(target_speaker)
 
     # Hand the OpenSearch / MinIO / analytics work to the background worker
@@ -1586,6 +1598,8 @@ def merge_speakers(
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
+    raise_if_incomplete(source_residual)
+
     # Add computed status fields
     SpeakerStatusService.add_computed_status(target_speaker)
 
@@ -1624,65 +1638,30 @@ def _handle_profile_embedding_updates(
     speaker_id: int,
     old_profile_id: int | None,
     new_profile_id: int | None,
-    was_auto_labeled: bool,
     display_name_changed: bool,
-) -> None:
-    """Handle profile embedding updates when speaker assignments change."""
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
+) -> list[dict[str, Any]]:
+    """Rebuild the profiles (and clusters) a speaker's profile change touched.
 
-        # Case 1: Speaker was auto-labeled and user corrected it (removed from old profile)
-        if (
-            was_auto_labeled
-            and display_name_changed
-            and old_profile_id
-            and old_profile_id != new_profile_id
-        ):
-            success = ProfileEmbeddingService.remove_speaker_from_profile_embedding(
-                db, speaker_id, old_profile_id
-            )
-            if success:
-                logger.info(
-                    f"Removed speaker {speaker_id} from old profile {old_profile_id} after user correction"
-                )
-            else:
-                logger.warning(
-                    f"Failed to remove speaker {speaker_id} from old profile {old_profile_id}"
-                )
+    A speaker moving from one profile to another, or out of one, leaves the old
+    profile's embedding averaging its voice; it used to be rebuilt only when the speaker
+    had been auto-labeled, so a manual move left the voice in the old profile (issue
+    #1214). Both sides are now rebuilt by ``speaker_cleanup``, as are the speaker's
+    clusters, whose centroids weigh profile-linked members double. A rename within the
+    same profile still refreshes that profile (its document carries the name).
 
-        # Case 2: Speaker was assigned to a new profile
-        if new_profile_id and new_profile_id != old_profile_id:
-            success = ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                db, speaker_id, new_profile_id
-            )
-            if success:
-                logger.info(f"Added speaker {speaker_id} to new profile {new_profile_id}")
-            else:
-                logger.warning(
-                    f"Failed to add speaker {speaker_id} to new profile {new_profile_id}"
-                )
+    Returns:
+        The cleanup's residuals; empty when every aggregate was rebuilt or erased.
+    """
+    from app.services.speaker_cleanup import SpeakerImpact
 
-        # Case 3: Speaker was removed from a profile (unassigned)
-        elif old_profile_id and new_profile_id is None:
-            success = ProfileEmbeddingService.remove_speaker_from_profile_embedding(
-                db, speaker_id, old_profile_id
-            )
-            if success:
-                logger.info(
-                    f"Removed speaker {speaker_id} from profile {old_profile_id} after unassignment"
-                )
-
-        # Case 4: Speaker display name changed but same profile - recalculate to ensure accuracy
-        elif display_name_changed and new_profile_id and new_profile_id == old_profile_id:
-            success = ProfileEmbeddingService.update_profile_embedding(db, new_profile_id)
-            if success:
-                logger.info(
-                    f"Updated profile {new_profile_id} embedding after speaker {speaker_id} name change"
-                )
-
-    except Exception as e:
-        logger.exception(f"Error updating profile embeddings for speaker {speaker_id}: {e}")
-        # Don't fail the operation if embedding update fails
+    if old_profile_id == new_profile_id:
+        if not (display_name_changed and new_profile_id):
+            return []
+        impact = SpeakerImpact(profile_ids={new_profile_id})
+    else:
+        impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
+        impact.profile_ids |= {p for p in (old_profile_id, new_profile_id) if p}
+    return reconcile_speaker_impact(db, impact)
 
 
 def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> None:
@@ -2220,12 +2199,14 @@ def delete_speaker(
     attribution for everyone the file is shared with.
 
     This removes the per-file speaker, not the cross-media ``SpeakerProfile`` it may
-    be assigned to; the profile and its other occurrences survive. Two follow-up
-    steps are deliberately non-fatal and only logged if they fail — pruning the
-    voiceprint from every OpenSearch speaker index, and invalidating the speaker and
-    file caches — so a degraded search or cache backend cannot block the delete that
-    Postgres has already committed. A stale voiceprint left behind can still surface
-    in similarity results until it is cleaned up.
+    be assigned to; the profile and its other occurrences survive. After the row
+    delete commits, ``speaker_cleanup`` removes every copy of the voice (issue #1214):
+    the speaker's voiceprint from every speaker index (verified), its clusters'
+    centroids rebuilt from the remaining members (an emptied cluster is deleted with
+    its centroid), its profile's embedding rebuilt from the remaining members, and the
+    file re-indexed so no index plane still names the speaker. An aggregate that can be
+    neither rebuilt nor erased answers 503 with a fixed message — the delete itself has
+    committed — and is logged at ERROR for repair.
     """
     speaker = require_speaker_access(
         db,
@@ -2237,29 +2218,13 @@ def delete_speaker(
         bypass=ctx.bypass,
     )
 
-    # Capture UUID before DB delete
-    uuid_to_clean = str(speaker.uuid)
+    # Read before the delete: the CASCADE forgets which clusters averaged this voice.
+    impact = capture_speaker_impact(db, [int(speaker.id)], removed=True, reindex=True)
 
-    # Delete the speaker
     db.delete(speaker)
     db.commit()
 
-    # Remove from all OpenSearch speaker indices (non-fatal)
-    try:
-        from app.services.opensearch_service import remove_speaker_embedding
-
-        remove_speaker_embedding(uuid_to_clean)
-    except Exception as e:
-        logger.warning(f"Failed to remove speaker {uuid_to_clean} from OpenSearch: {e}")
-
-    # Invalidate caches
-    try:
-        from app.services.redis_cache_service import redis_cache
-
-        redis_cache.invalidate_speakers(current_user.id)
-        redis_cache.invalidate_user_files(current_user.id)
-    except Exception as e:
-        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+    raise_if_incomplete(reconcile_speaker_impact(db, impact))
 
 
 # --- Helper functions for verify_speaker_identification ---
@@ -2278,26 +2243,16 @@ def _accept_speaker_profile_match(
     if not profile:
         raise HTTPException(status_code=404, detail="Speaker profile not found")
 
+    old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
     db.commit()
 
-    # Update the profile's consolidated embedding
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
-
-        success = ProfileEmbeddingService.add_speaker_to_profile_embedding(
-            db, speaker_id, profile_id
-        )
-        if success:
-            logger.info(f"Updated profile {profile_id} embedding after adding speaker {speaker_id}")
-        else:
-            logger.warning(
-                f"Failed to update profile {profile_id} embedding for speaker {speaker_id}"
-            )
-    except Exception as e:
-        logger.exception(f"Error updating profile embedding: {e}")
+    # The new profile gains the voice; a profile the speaker leaves loses it (#1214).
+    raise_if_incomplete(
+        _handle_profile_embedding_updates(db, speaker_id, old_profile_id, profile_id, False)
+    )
 
     return {
         "status": "accepted",
@@ -2357,24 +2312,10 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
                 f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
             )
 
-    # Update the old profile's embedding if speaker was previously assigned
-    if old_profile_id:
-        try:
-            from app.services.profile_embedding_service import ProfileEmbeddingService
-
-            success = ProfileEmbeddingService.remove_speaker_from_profile_embedding(
-                db, speaker_id, old_profile_id
-            )
-            if success:
-                logger.info(
-                    f"Updated profile {old_profile_id} embedding after removing speaker {speaker_id}"
-                )
-            else:
-                logger.warning(
-                    f"Failed to update profile {old_profile_id} embedding after removing speaker {speaker_id}"
-                )
-        except Exception as e:
-            logger.exception(f"Error updating profile embedding after rejection: {e}")
+    # The profile the speaker leaves must stop averaging its voice (issue #1214).
+    raise_if_incomplete(
+        _handle_profile_embedding_updates(db, speaker_id, old_profile_id, None, False)
+    )
 
     return {
         "status": "rejected",
@@ -2412,28 +2353,18 @@ def _create_new_speaker_profile(
     db.add(new_profile)
     db.flush()
 
+    old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     # Assign speaker to new profile - use setattr for proper type handling
     speaker.profile_id = new_profile.id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
     db.commit()
 
-    # Update the new profile's consolidated embedding
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
-
-        success = ProfileEmbeddingService.add_speaker_to_profile_embedding(
-            db, speaker_id, new_profile.id
+    # The new profile gains the voice; a profile the speaker leaves loses it (#1214).
+    raise_if_incomplete(
+        _handle_profile_embedding_updates(
+            db, speaker_id, old_profile_id, int(new_profile.id), False
         )
-        if success:
-            logger.info(
-                f"Updated new profile {new_profile.id} embedding after adding speaker {speaker_id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to update new profile {new_profile.id} embedding for speaker {speaker_id}"
-            )
-    except Exception as e:
-        logger.exception(f"Error updating new profile embedding: {e}")
+    )
 
     return {
         "status": "created_and_assigned",
@@ -2612,34 +2543,22 @@ def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) 
         logger.exception(f"Error refreshing analytics after speaker merge: {e}")
 
 
-def _update_profile_embeddings_after_merge(
-    db: Session,
-    source_profile_id: int | None,
-    target_profile_id: int | None,
-    source_speaker_id: int,
-) -> None:
-    """Update profile embeddings affected by speaker merge."""
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
+def _reconcile_speakers_after_merge(
+    db: Session, source_speaker_uuid: str, target_speaker_id: int
+) -> list[dict[str, Any]]:
+    """Finish a merge's aggregates once the target holds the averaged voiceprint.
 
-        # Update source profile embedding if it exists
-        if (
-            source_profile_id
-            and source_profile_id != target_profile_id
-            and ProfileEmbeddingService.remove_speaker_from_profile_embedding(
-                db, source_speaker_id, source_profile_id
-            )
-        ):
-            logger.info(f"Updated source profile {source_profile_id} embedding after speaker merge")
+    The source's own clusters and profile were rebuilt by the endpoint; what is left is
+    the TARGET side — its clusters and profile now average a different voiceprint — and
+    proof that the source's voiceprint document, deleted by
+    ``_update_opensearch_speaker_merge``, is gone. One ``speaker_cleanup`` pass.
 
-        # Update target profile embedding if it exists
-        if target_profile_id and ProfileEmbeddingService.update_profile_embedding(
-            db, target_profile_id
-        ):
-            logger.info(f"Updated target profile {target_profile_id} embedding after speaker merge")
-
-    except Exception as e:
-        logger.exception(f"Error updating profile embeddings after speaker merge: {e}")
+    Returns:
+        The cleanup's residuals; empty when every aggregate was rebuilt or erased.
+    """
+    impact = capture_speaker_impact(db, [target_speaker_id], removed=False, reindex=False)
+    impact.erase_speaker_uuids.add(source_speaker_uuid)
+    return reconcile_speaker_impact(db, impact)
 
 
 # --- Helper functions for get_speaker_cross_media_occurrences ---

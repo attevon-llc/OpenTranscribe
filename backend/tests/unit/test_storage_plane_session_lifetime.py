@@ -386,7 +386,7 @@ def purge_env(db_session, monkeypatch):
 
     monkeypatch.setattr(fcs, "delete_file_storage_artifacts", _storage)
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", _opensearch)
-    monkeypatch.setattr(fcs, "_cleanup_empty_clusters", lambda db, owner_id: None)
+    monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
     tracker.captured = captured  # type: ignore[attr-defined]
     return tracker
 

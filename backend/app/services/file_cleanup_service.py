@@ -10,6 +10,7 @@ from dataclasses import field
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -19,6 +20,9 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.utils.task_utils import check_for_stuck_files
 from app.utils.task_utils import recover_stuck_file
+
+if TYPE_CHECKING:
+    from app.services.speaker_cleanup import SpeakerImpact
 
 logger = logging.getLogger(__name__)
 
@@ -513,13 +517,12 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
     """Delete the account's speaker-profile embeddings (biometric data).
 
     Sibling of :func:`_erase_speaker_docs` for :class:`SpeakerProfile` rows (issue
-    #715) — used only by :func:`purge_account_external_copies`, after the account's
-    rows have already committed, so a failure here is not retryable and must be
-    reported rather than swallowed. ``remove_profile_embedding`` sweeps its own main +
-    v4-staging indices and swallows its own errors (returns ``False`` for both
-    "absent" and "failed"), so — unlike the speaker case — there is no independent
-    survivor count to verify against; the best this can report is whether the call
-    itself raised.
+    #715) — used by :func:`purge_account_external_copies` after the account's rows have
+    committed, and by ``speaker_cleanup`` when a profile is deleted or its embedding can
+    no longer be rebuilt (issue #1214). ``remove_profile_embedding`` sweeps its own main +
+    v4-staging indices and swallows its own errors (returns ``False`` for both "absent"
+    and "failed"), so, as for voiceprints, a survivor count over every speaker index is
+    what proves the ``profile_<uuid>`` documents are gone.
     """
     if not profile_uuids:
         return
@@ -531,6 +534,29 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
             remove_profile_embedding(profile_uuid)
         except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
             fail("profiles", e)
+
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
+
+    # A mid-migration profile can sit in an index ``remove_profile_embedding`` does not
+    # address (the legacy v3 or its backup), so every speaker index is swept by id.
+    # ``conflicts="proceed"``: the by-id delete above is realtime but the sweep's scroll
+    # reads a searcher, which can still list the document it just deleted; the 409 that
+    # produces means "already gone", the end state. The survivor count is the proof.
+    query = {"ids": {"values": [f"profile_{u}" for u in profile_uuids]}}
+    for idx in speaker_embedding_indices():
+        try:
+            client = _opensearch_client()
+            if client is None:
+                raise RuntimeError("OpenSearch client unavailable")
+            if client.indices.exists(index=idx):
+                client.delete_by_query(
+                    index=idx, body={"query": query}, refresh=True, conflicts="proceed"
+                )
+            left = _count_surviving(idx, query)
+            if left:
+                fail("profiles", f"{left} profile embedding doc(s) survive in {idx}")
+        except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+            fail("profiles", f"could not verify {idx}: {e}")
 
 
 def _erase_cluster_docs(cluster_uuids: list[str], fail: Callable[[str, object], None]) -> None:
@@ -703,120 +729,46 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
     return all_deleted
 
 
-def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
-    """Remove non-promoted speaker clusters left empty after a file's speakers are deleted.
-
-    CASCADE removes cluster-membership rows but not the (now empty) cluster itself, so
-    we check actual remaining members via a NOT EXISTS subquery. Best-effort.
-    """
-    try:
-        from sqlalchemy import exists
-
-        from app.models.media import SpeakerCluster
-        from app.models.media import SpeakerClusterMember
-
-        has_members = (
-            exists()
-            .where(SpeakerClusterMember.cluster_id == SpeakerCluster.id)
-            .correlate(SpeakerCluster)
-        )
-        empty_clusters = (
-            db.query(SpeakerCluster)
-            .filter(
-                SpeakerCluster.user_id == owner_id,
-                ~has_members,
-                SpeakerCluster.promoted_to_profile_id.is_(None),
-            )
-            .all()
-        )
-        if not empty_clusters:
-            return
-        for cluster in empty_clusters:
-            with contextlib.suppress(Exception):
-                from app.services.opensearch_service import delete_cluster_embedding
-
-                delete_cluster_embedding(str(cluster.uuid))
-            db.delete(cluster)
-        db.commit()
-        logger.info(f"Cleaned up {len(empty_clusters)} empty cluster(s) after file deletion")
-    except Exception as e:
-        db.rollback()
-        logger.warning(f"Failed to clean up empty clusters: {e}")
-
-
 def _refresh_surviving_centroids(
     db: Session, owner_id: int, plan: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """Rebuild the centroid of every cluster that lost a member to this purge but kept others.
+    """Bring every cluster and profile the purged file's speakers belonged to in line.
 
-    A centroid is the mean of its members' voiceprints, so after the file's speakers are
-    gone a surviving cluster's ``cluster_<uuid>`` document still averages in the deleted
-    voiceprint. Each is recomputed from the REMAINING members' stored voiceprints through
-    ``SpeakerClusteringService._update_cluster_centroid`` (the path merge/split use), which
-    also refreshes ``quality_score``/``min_similarity``; ``member_count`` is re-derived here.
-
-    Runs after the row delete committed and :func:`_cleanup_empty_clusters` ran, so only
-    clusters that still exist are visited, scoped to the file owner's own clusters. When a
-    centroid cannot be rebuilt, or no member is left to rebuild it from (an emptied cluster
-    kept alive by a profile promotion), the stale document is erased instead — an absent
-    centroid is rebuilt by the next recluster, a stale one is a copy of the deleted voice.
-    Only a document that may still exist is returned as a residual.
+    A centroid is the mean of its members' voiceprints and a profile embedding the mean
+    of its linked speakers', so after the file's speakers are gone both still average in
+    the deleted voices (issue #1211; profiles since #1214). This hands the clusters and
+    profiles read into the plan BEFORE the row delete to
+    ``speaker_cleanup.reconcile_speaker_impact`` — the one implementation every speaker
+    removal path shares: an emptied cluster (promoted or not) is deleted with its
+    centroid, any other is recomputed from its remaining members, a profile's embedding
+    is recomputed from its remaining members, and whatever cannot be rebuilt is erased
+    rather than left stale. Scoped to the file owner's own clusters.
 
     Returns:
-        One ``{"stage": "clusters", "file_uuid", "error"}`` dict per centroid that may
-        still carry the deleted file's contribution. Never raises.
+        One ``{"stage", "file_uuid", "error"}`` dict per centroid or profile embedding
+        that may still carry the deleted file's contribution. Never raises.
     """
+    from app.services.speaker_cleanup import SpeakerImpact
+    from app.services.speaker_cleanup import reconcile_speaker_impact
+
     file_uuid = plan["file_uuid"]
     residual: list[dict[str, Any]] = []
-
-    def _fail(stage: str, err: object) -> None:
-        logger.warning(f"Centroid refresh incomplete for file {file_uuid} at '{stage}': {err}")
-        residual.append({"stage": stage, "file_uuid": file_uuid, "error": str(err)})
-
     if plan.get("cluster_read_failed"):
-        _fail("clusters", "could not enumerate the file's clusters")
-    cluster_uuids = list(plan.get("cluster_uuids") or [])
-    if not cluster_uuids:
-        return residual
-
-    to_erase: list[str] = []
-    try:
-        from sqlalchemy import func
-
-        from app.models.media import SpeakerCluster
-        from app.models.media import SpeakerClusterMember
-        from app.services.speaker_clustering_service import CentroidRecomputeError
-        from app.services.speaker_clustering_service import SpeakerClusteringService
-
-        survivors = (
-            db.query(SpeakerCluster)
-            .filter(SpeakerCluster.uuid.in_(cluster_uuids), SpeakerCluster.user_id == owner_id)
-            .all()
+        residual.append(
+            {
+                "stage": "clusters",
+                "file_uuid": file_uuid,
+                "error": "could not enumerate the file's clusters",
+            }
         )
-        service = SpeakerClusteringService(db)
-        for cluster in survivors:
-            remaining = int(
-                db.query(func.count(SpeakerClusterMember.id))
-                .filter(SpeakerClusterMember.cluster_id == cluster.id)
-                .scalar()
-                or 0
-            )
-            cluster.member_count = remaining  # type: ignore[assignment]
-            if remaining == 0:
-                to_erase.append(str(cluster.uuid))
-                continue
-            try:
-                service._update_cluster_centroid(cluster, owner_id, strict=True)
-            except CentroidRecomputeError as e:
-                logger.warning(f"Centroid of cluster {cluster.uuid} not rebuildable ({e}); erasing")
-                to_erase.append(str(cluster.uuid))
-        db.commit()
-    except Exception as e:  # noqa: BLE001 — reported, never swallowed
-        db.rollback()
-        _fail("clusters", f"could not refresh surviving centroids: {e}")
-        return residual
-
-    _erase_cluster_docs(to_erase, _fail)
+    impact = SpeakerImpact(
+        owner_ids={int(owner_id)},
+        cluster_uuids=set(plan.get("cluster_uuids") or []),
+        profile_ids=set(plan.get("profile_ids") or []),
+    )
+    for entry in reconcile_speaker_impact(db, impact):
+        logger.warning(f"Centroid refresh incomplete for file {file_uuid}: {entry}")
+        residual.append({**entry, "file_uuid": file_uuid})
     return residual
 
 
@@ -887,7 +839,9 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     Returns:
         ``file_id``, ``file_uuid``, ``owner_id``, ``filename``,
         ``storage_path``, ``thumbnail_path``, ``playback_path``, ``speaker_uuids`` and — when the
-        speaker enumeration itself failed — ``speaker_read_error``.
+        speaker enumeration itself failed — ``speaker_read_error``; plus the
+        ``cluster_uuids`` and ``profile_ids`` the file's speakers belong to (or
+        ``cluster_read_failed``), read here because the CASCADE erases that record.
     """
     plan: dict[str, Any] = {
         "file_id": int(file.id),
@@ -900,6 +854,7 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
         "speaker_uuids": [],
         "speaker_read_error": None,
         "cluster_uuids": [],
+        "profile_ids": [],
         "cluster_read_failed": False,
     }
     try:
@@ -907,7 +862,9 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — a failed load is itself a miss
         plan["speaker_read_error"] = str(e)
     try:
-        plan["cluster_uuids"] = _clusters_holding_file_speakers(db, file)
+        impact = _speaker_impact_of_file(db, file)
+        plan["cluster_uuids"] = sorted(impact.cluster_uuids)
+        plan["profile_ids"] = sorted(impact.profile_ids)
     except Exception:  # noqa: BLE001 — a failed load is itself a miss
         logger.warning(
             "Could not enumerate the clusters holding file %s's speakers",
@@ -918,26 +875,21 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     return plan
 
 
-def _clusters_holding_file_speakers(db: Session, file: MediaFile) -> list[str]:
-    """UUIDs of the owner's clusters that count one of this file's speakers as a member.
+def _speaker_impact_of_file(db: Session, file: MediaFile) -> "SpeakerImpact":
+    """The clusters and profiles that count one of this file's speakers as a member.
 
     Must be read BEFORE the row delete: ``ON DELETE CASCADE`` removes the membership rows
-    with the speakers, after which nothing records which centroids averaged them in.
-    Column-only query, so no ORM instance escapes the plan.
+    with the speakers, after which nothing records which centroids and profile embeddings
+    averaged them in. Read by ``speaker_cleanup.capture_speaker_impact``, the same capture
+    every per-speaker removal path uses; column-only, so no ORM instance escapes the plan.
     """
     from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.services.speaker_cleanup import capture_speaker_impact
 
-    rows = (
-        db.query(SpeakerCluster.uuid)
-        .join(SpeakerClusterMember, SpeakerClusterMember.cluster_id == SpeakerCluster.id)
-        .join(Speaker, Speaker.id == SpeakerClusterMember.speaker_id)
-        .filter(Speaker.media_file_id == file.id, SpeakerCluster.user_id == file.user_id)
-        .distinct()
-        .all()
-    )
-    return [str(row[0]) for row in rows]
+    speaker_ids = [
+        int(row[0]) for row in db.query(Speaker.id).filter(Speaker.media_file_id == file.id)
+    ]
+    return capture_speaker_impact(db, speaker_ids, removed=False, reindex=False)
 
 
 def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1182,10 +1134,13 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     3. Database row (CASCADE removes child rows), plus every chat citation quoting the
        file (:func:`scrub_chat_citations` — no foreign key reaches those).
     4. Redis caches for the owner.
-    5. Empty non-promoted speaker clusters orphaned by the CASCADE; clusters that lost
-       a member but kept others get their centroid recomputed from the remaining members.
+    5. Speaker clusters and profiles the file's speakers belonged to
+       (``speaker_cleanup``): a cluster the CASCADE emptied is deleted with its centroid,
+       any other cluster and every such profile has its embedding recomputed from the
+       remaining members, and an aggregate that cannot be rebuilt is erased.
 
-    SpeakerProfile records and their profile embeddings are intentionally preserved.
+    SpeakerProfile records are intentionally preserved; their embeddings no longer
+    average in the deleted file's voices.
 
     **A file under an active legal hold is REFUSED before step 1.** The hold is
     the source of truth that keeps DMCA/litigation evidence alive (the S3 object
@@ -1265,7 +1220,6 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
         except Exception as cache_err:
             logger.debug(f"purge_media_file: cache invalidation failed (non-critical): {cache_err}")
 
-        _cleanup_empty_clusters(db, owner_id)
         residual.extend(_refresh_surviving_centroids(db, owner_id, plan))
 
         return {

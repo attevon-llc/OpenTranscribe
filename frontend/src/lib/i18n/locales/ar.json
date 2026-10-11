@@ -1402,7 +1402,7 @@
   "auth.resetPassword": "إعادة تعيين كلمة المرور",
   "auth.resetPasswordDescription": "أدخل كلمة المرور الجديدة أدناه.",
   "auth.passwordResetSuccess": "تمت إعادة تعيين كلمة المرور بنجاح.",
-  "auth.resetPasswordFailed": "Failed to reset password. The link may have expired.",
+  "auth.resetPasswordFailed": "فشلت إعادة تعيين كلمة المرور. ربما انتهت صلاحية الرابط.",
   "auth.invalidResetLink": "رابط إعادة التعيين غير صالح أو مفقود. يرجى طلب رابط جديد.",
   "auth.requestNewLink": "طلب رابط جديد",
   "auth.newPassword": "كلمة المرور الجديدة",

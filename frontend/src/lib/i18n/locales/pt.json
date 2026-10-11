@@ -1968,6 +1968,8 @@
   "uploader.tags": "Tags",
   "uploader.selectCollection": "Pesquisar ou criar coleção...",
   "uploader.createNewCollection": "Criar coleção",
+  "uploader.selectTagsPlaceholder": "Selecionar tags existentes...",
+  "uploader.selectCollectionsPlaceholder": "Selecionar coleções existentes...",
   "uploader.collectionCreated": "Coleção criada com sucesso",
   "uploader.collectionAlreadyExists": "Já existe uma coleção com esse nome",
   "uploader.createCollectionFailed": "Falha ao criar coleção",

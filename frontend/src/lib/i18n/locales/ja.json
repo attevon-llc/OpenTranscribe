@@ -1968,6 +1968,8 @@
   "uploader.tags": "タグ",
   "uploader.selectCollection": "コレクションを検索または作成...",
   "uploader.createNewCollection": "コレクションを作成",
+  "uploader.selectTagsPlaceholder": "既存のタグを選択...",
+  "uploader.selectCollectionsPlaceholder": "既存のコレクションを選択...",
   "uploader.collectionCreated": "コレクションが正常に作成されました",
   "uploader.collectionAlreadyExists": "同名のコレクションが既に存在します",
   "uploader.createCollectionFailed": "コレクションの作成に失敗しました",

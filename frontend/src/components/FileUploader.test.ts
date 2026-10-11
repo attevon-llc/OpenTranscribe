@@ -584,3 +584,30 @@ describe('deployment-locked controls (capabilities)', () => {
     expect(mockGetAudioExtractionSettings).not.toHaveBeenCalled();
   });
 });
+
+describe('the forward button before the Review step (UX review item 9)', () => {
+  it('reads "Review" on the step directly before Review, and "Next" earlier', async () => {
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
+    await selectFile(container, file({ size: 1024 }));
+
+    const next = () => container.querySelector('.nav-next') as HTMLElement | null;
+    const items = () => Array.from(container.querySelectorAll('.step-item'));
+    const label = () => next()?.textContent?.trim();
+
+    // Step 1 (media): more steps follow, so the button is still "Next".
+    expect(label()).toBe('uploader.next');
+
+    // Walk forward until the Review step is the very next one.
+    for (let i = 0; i < 8 && label() !== 'uploader.stepReview' && next(); i++) {
+      await fireEvent.click(next() as HTMLElement);
+      await tick();
+    }
+
+    expect(label()).toBe('uploader.stepReview');
+    expect(items()[items().length - 2].classList.contains('active')).toBe(true);
+    // "Review with defaults" would be a second button doing exactly what the
+    // forward button now does (item 8 removed the same duplication for Skip).
+    expect(container.querySelector('.nav-review-defaults')).toBeNull();
+  });
+});

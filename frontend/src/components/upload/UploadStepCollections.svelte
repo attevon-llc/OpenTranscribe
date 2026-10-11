@@ -4,6 +4,8 @@
   import { getErrorStatus } from '$lib/utils/apiError';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
+  import SearchableMultiSelect from '$components/SearchableMultiSelect.svelte';
+  import CollectionFormModal, { type PromptOption } from '$components/collections/CollectionFormModal.svelte';
   import './upload-shared.css';
 
   export let selectedCollections: Array<{uuid: string; name: string}> = [];
@@ -16,42 +18,55 @@
     clearPrevious: void;
   }>();
 
-  let filterQuery = '';
+  let showCreateModal = false;
   let newName = '';
+  let newDescription = '';
+  let newPromptId: string | null = null;
+  let availablePrompts: PromptOption[] = [];
+  let loadingPrompts = false;
   let creating = false;
 
-  $: filteredCollections = availableCollections.filter(c =>
-    c.name.toLowerCase().includes(filterQuery.toLowerCase())
-  );
+  /** The same dropdown the filter sidebar uses (UX review item 4). */
+  $: options = availableCollections.map((c) => ({
+    id: c.uuid,
+    name: c.name,
+    count: c.media_count,
+  }));
+  $: selectedUuids = selectedCollections.map((c) => c.uuid);
 
-  /**
-   * Reactive so the checkboxes actually follow the selection.
-   *
-   * `checked={isSelected(uuid)}` names a FUNCTION, and Svelte tracks the
-   * variables an expression references — not what the function closes over. So
-   * `selectedCollections` was never a dependency of that binding and the
-   * checkbox kept its stale state when a chip was removed: deselected as a chip,
-   * still ticked in the list. Referencing `selectedUuids` makes the dependency
-   * explicit.
-   */
-  $: selectedUuids = new Set(selectedCollections.map((c) => c.uuid));
-
-  function isSelected(uuid: string): boolean {
-    return selectedCollections.some(c => c.uuid === uuid);
+  function handleSelect(e: CustomEvent<{ id: string | number }>) {
+    const found = availableCollections.find((c) => c.uuid === e.detail.id);
+    if (!found || selectedUuids.includes(found.uuid)) return;
+    selectedCollections = [...selectedCollections, { uuid: found.uuid, name: found.name }];
+    dispatch('collectionsChange', { collections: selectedCollections });
   }
 
-  function toggleCollection(collection: {uuid: string; name: string}) {
-    if (isSelected(collection.uuid)) {
-      selectedCollections = selectedCollections.filter(c => c.uuid !== collection.uuid);
-    } else {
-      selectedCollections = [...selectedCollections, collection];
-    }
-    dispatch('collectionsChange', { collections: selectedCollections });
+  function handleDeselect(e: CustomEvent<{ id: string | number }>) {
+    removeCollection(String(e.detail.id));
   }
 
   function removeCollection(uuid: string) {
     selectedCollections = selectedCollections.filter(c => c.uuid !== uuid);
     dispatch('collectionsChange', { collections: selectedCollections });
+  }
+
+  // Same prompt list and system-default preselection as the gallery's Collections panel,
+  // since this opens that panel's own create modal.
+  async function openCreateModal() {
+    showCreateModal = true;
+    if (availablePrompts.length > 0) return;
+    loadingPrompts = true;
+    try {
+      const response = await axiosInstance.get('/prompts');
+      availablePrompts = response.data.prompts || [];
+      const systemDefault = availablePrompts.find((p) => p.is_system_default);
+      if (systemDefault && newPromptId === null) newPromptId = systemDefault.uuid;
+    } catch (err: unknown) {
+      // Non-critical: the modal's prompt dropdown is simply empty.
+      console.error('Error fetching prompts:', err);
+    } finally {
+      loadingPrompts = false;
+    }
   }
 
   async function createCollection() {
@@ -60,13 +75,19 @@
 
     creating = true;
     try {
-      const response = await axiosInstance.post('/collections', { name });
+      const response = await axiosInstance.post('/collections', {
+        name,
+        description: newDescription.trim() || null,
+        default_prompt_id: newPromptId || null,
+      });
       const col = response.data;
       availableCollections = [...availableCollections, { uuid: col.uuid, name: col.name }];
       dispatch('collectionsListUpdated', { collections: availableCollections });
       selectedCollections = [...selectedCollections, { uuid: col.uuid, name: col.name }];
       dispatch('collectionsChange', { collections: selectedCollections });
       newName = '';
+      newDescription = '';
+      showCreateModal = false;
       toastStore.success($t('uploader.collectionCreated'));
     } catch (err: unknown) {
       if (getErrorStatus(err) === 409) {
@@ -76,14 +97,6 @@
       }
     } finally {
       creating = false;
-    }
-  }
-
-  function handleCreateKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      createCollection();
     }
   }
 </script>
@@ -112,55 +125,22 @@
     </div>
   {/if}
 
-  <!-- Filter (only show if there are enough collections) -->
-  {#if availableCollections.length > 6}
-    <input
-      type="text"
-      class="item-filter"
-      placeholder={$t('upload.filterCollections')}
-      bind:value={filterQuery}
+  {#if availableCollections.length > 0}
+    <SearchableMultiSelect
+      {options}
+      selectedIds={selectedUuids}
+      placeholder={$t('uploader.selectCollectionsPlaceholder')}
+      maxHeight="220px"
+      showCounts={true}
+      on:select={handleSelect}
+      on:deselect={handleDeselect}
     />
-  {/if}
-
-  <!-- Collection list -->
-  {#if filteredCollections.length > 0}
-    <div class="item-list">
-      {#each filteredCollections as collection}
-        <label class="item-row">
-          <input
-            type="checkbox"
-            checked={selectedUuids.has(collection.uuid)}
-            on:change={() => toggleCollection(collection)}
-          />
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-          </svg>
-          <span class="item-name">{collection.name}</span>
-        </label>
-      {/each}
-    </div>
-  {:else if filterQuery}
-    <p class="empty-text">{$t('upload.noCollectionsMatch', { query: filterQuery })}</p>
   {:else}
     <p class="empty-text">{$t('upload.noCollectionsYet')}</p>
   {/if}
 
-  <!-- Create new -->
   <div class="create-row">
-    <input
-      type="text"
-      class="create-input"
-      placeholder={$t('uploader.selectCollection')}
-      bind:value={newName}
-      on:keydown={handleCreateKeydown}
-      disabled={creating}
-    />
-    <button
-      type="button"
-      class="create-btn"
-      on:click={createCollection}
-      disabled={!newName.trim() || creating}
-    >
+    <button type="button" class="create-btn" on:click={openCreateModal}>
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -169,3 +149,25 @@
     </button>
   </div>
 </div>
+
+<!-- Backdrop click deliberately does not close it (the modal only closes via X / Escape), the
+     same as in the gallery, so a stray click cannot discard a half-typed name. -->
+{#if showCreateModal}
+  <CollectionFormModal
+    idPrefix="collection"
+    titleId="create-collection-title"
+    title={$t('collectionsPanel.createNewCollection')}
+    intro={$t('collectionsPanel.createIntro')}
+    namePlaceholder={$t('collectionsPanel.namePlaceholder')}
+    submitLabel={$t('collectionsPanel.createCollection')}
+    busyLabel={$t('collectionsPanel.creating')}
+    bind:name={newName}
+    bind:description={newDescription}
+    bind:promptId={newPromptId}
+    busy={creating}
+    {loadingPrompts}
+    {availablePrompts}
+    on:submit={createCollection}
+    on:close={() => (showCreateModal = false)}
+  />
+{/if}

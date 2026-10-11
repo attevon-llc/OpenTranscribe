@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import SearchableMultiSelect from '$components/SearchableMultiSelect.svelte';
   import './upload-shared.css';
 
   export let selectedTags: string[] = [];
@@ -12,32 +13,29 @@
     clearPrevious: void;
   }>();
 
-  let filterQuery = '';
   let newTagName = '';
 
-  $: filteredTags = availableTags.filter(tag =>
-    tag.name.toLowerCase().includes(filterQuery.toLowerCase())
-  );
-
   /**
-   * Reactive so the checkboxes actually follow the selection — see the same note
-   * in UploadStepCollections. `checked={isSelected(name)}` named a function, so
-   * Svelte never tracked `selectedTags` as a dependency and the checkbox kept a
-   * stale state after a chip was removed.
+   * The same dropdown the filter sidebar uses (UX review item 4). Tags created in this
+   * step are not in `availableTags` yet, so they are appended so they stay listed (and
+   * deselectable) rather than only appearing as chips.
    */
-  $: selectedTagNames = new Set(selectedTags);
+  $: options = [
+    ...availableTags.map((tag) => ({ id: tag.name, name: tag.name, count: tag.usage_count })),
+    ...selectedTags
+      .filter((name) => !availableTags.some((tag) => tag.name === name))
+      .map((name) => ({ id: name, name, count: 0 })),
+  ];
 
-  function isSelected(name: string): boolean {
-    return selectedTags.includes(name);
+  function handleSelect(e: CustomEvent<{ id: string | number }>) {
+    const name = String(e.detail.id);
+    if (selectedTags.includes(name)) return;
+    selectedTags = [...selectedTags, name];
+    dispatch('tagsChange', { tags: selectedTags });
   }
 
-  function toggleTag(name: string) {
-    if (isSelected(name)) {
-      selectedTags = selectedTags.filter(t => t !== name);
-    } else {
-      selectedTags = [...selectedTags, name];
-    }
-    dispatch('tagsChange', { tags: selectedTags });
+  function handleDeselect(e: CustomEvent<{ id: string | number }>) {
+    removeTag(String(e.detail.id));
   }
 
   function createTag() {
@@ -86,39 +84,16 @@
     </div>
   {/if}
 
-  <!-- Filter (only show if there are enough tags) -->
-  {#if availableTags.length > 6}
-    <input
-      type="text"
-      class="item-filter"
-      placeholder={$t('upload.filterTags')}
-      bind:value={filterQuery}
+  {#if availableTags.length > 0 || selectedTags.length > 0}
+    <SearchableMultiSelect
+      {options}
+      selectedIds={selectedTags}
+      placeholder={$t('uploader.selectTagsPlaceholder')}
+      maxHeight="220px"
+      showCounts={true}
+      on:select={handleSelect}
+      on:deselect={handleDeselect}
     />
-  {/if}
-
-  <!-- Tag list -->
-  {#if filteredTags.length > 0}
-    <div class="item-list">
-      {#each filteredTags as tag}
-        <label class="item-row">
-          <input
-            type="checkbox"
-            checked={selectedTagNames.has(tag.name)}
-            on:change={() => toggleTag(tag.name)}
-          />
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-            <line x1="7" y1="7" x2="7.01" y2="7"></line>
-          </svg>
-          <span class="item-name">{tag.name}</span>
-          {#if tag.usage_count > 0}
-            <span class="item-count">({tag.usage_count})</span>
-          {/if}
-        </label>
-      {/each}
-    </div>
-  {:else if filterQuery}
-    <p class="empty-text">{$t('upload.noTagsMatch', { query: filterQuery })}</p>
   {:else}
     <p class="empty-text">{$t('upload.noTagsYet')}</p>
   {/if}

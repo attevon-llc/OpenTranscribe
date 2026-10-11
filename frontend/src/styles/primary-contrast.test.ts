@@ -247,3 +247,61 @@ describe('error fill carrying white text (speakers inbox badge)', () => {
     });
   }
 });
+
+describe('upload tray header counts clear AA on the primary-blue header (UX review item 12)', () => {
+  const tray = fs.readFileSync(
+    path.resolve(__dirname, '../components/UploadManager.svelte'),
+    'utf8'
+  );
+
+  /** Body of the rule whose (possibly comma-grouped) selector list names `selector`. */
+  function rule(selector: string): string {
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    for (const m of tray.matchAll(re)) {
+      const names = m[1].split(',').map((s) => s.trim().split('\n').pop()!.trim());
+      if (names.includes(selector)) return m[2];
+    }
+    throw new Error(`${selector} rule not found in UploadManager.svelte`);
+  }
+
+  /** Resolves a literal colour or `var(--token)` to RGB under one theme. */
+  function resolveColour(value: string, selector: string): [number, number, number] {
+    const v = value.trim();
+    const viaVar = v.match(/^var\((--[\w-]+)/);
+    if (viaVar) return hexToRgb(token(selector, viaVar[1]));
+    if (v === 'white') return WHITE;
+    const hex = v.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    if (!hex) throw new Error(`cannot resolve colour: ${value}`);
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1];
+    return hexToRgb(h);
+  }
+
+  const headerBg = rule('.panel-header').match(/background:\s*([^;]+);/)![1];
+  const headerFg = rule('.panel-header').match(/\bcolor:\s*([^;]+);/)![1];
+
+  for (const [label, selector] of [
+    ['light', ':root'],
+    ['dark', "[data-theme='dark']"],
+  ] as const) {
+    for (const cls of ['.stat-active', '.stat-queued', '.stat-completed']) {
+      it(`${label}: ${cls} text clears ${AA_NORMAL_TEXT}:1 on its background`, () => {
+        const body = rule(cls);
+        const fg = body.match(/\bcolor:\s*([^;]+);/)?.[1] ?? headerFg;
+        const bg = body.match(/background:\s*([^;]+);/)?.[1] ?? headerBg;
+        const ratio = contrast(resolveColour(fg, selector), resolveColour(bg, selector));
+        expect(ratio).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+      });
+    }
+  }
+
+  it('the active count is the boldest of the three', () => {
+    expect(rule('.stat-active')).toMatch(/font-weight:\s*(6|7|8|9)00/);
+  });
+
+  it('control: the previous amber / grey / green literals fail on the header blue', () => {
+    const header = hexToRgb(token(':root', '--primary-color'));
+    for (const hex of ['#fbbf24', '#d1d5db', '#86efac']) {
+      expect(contrast(hexToRgb(hex), header)).toBeLessThan(AA_NORMAL_TEXT);
+    }
+  });
+});

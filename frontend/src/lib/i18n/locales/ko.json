@@ -1997,6 +1997,8 @@
   "uploader.tags": "태그",
   "uploader.selectCollection": "컬렉션 검색 또는 생성...",
   "uploader.createNewCollection": "컬렉션 만들기",
+  "uploader.selectTagsPlaceholder": "기존 태그 선택...",
+  "uploader.selectCollectionsPlaceholder": "기존 컬렉션 선택...",
   "uploader.collectionCreated": "컬렉션이 생성되었습니다",
   "uploader.collectionAlreadyExists": "해당 이름의 컬렉션이 이미 존재합니다",
   "uploader.createCollectionFailed": "컬렉션 생성에 실패했습니다",

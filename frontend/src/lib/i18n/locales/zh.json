@@ -1968,6 +1968,8 @@
   "uploader.tags": "标签",
   "uploader.selectCollection": "搜索或创建集合...",
   "uploader.createNewCollection": "创建集合",
+  "uploader.selectTagsPlaceholder": "选择现有标签...",
+  "uploader.selectCollectionsPlaceholder": "选择现有集合...",
   "uploader.collectionCreated": "集合创建成功",
   "uploader.collectionAlreadyExists": "已存在同名集合",
   "uploader.createCollectionFailed": "创建集合失败",

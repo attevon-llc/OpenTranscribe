@@ -11,6 +11,7 @@
   import { showNotificationsPanel } from '../stores/notificationsPanel';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
+  import logoIcon from '../assets/logo-icon.png';
 
 
   // Subscribe to the showNotificationsPanel store
@@ -102,6 +103,7 @@
    */
   type IconName =
     | 'bell'
+    | 'logo'
     | 'file-text'
     | 'tag'
     | 'folder'
@@ -116,7 +118,9 @@
     | 'shield';
 
   const ICON_BY_TYPE: Partial<Record<NotificationType, IconName>> = {
-    transcription_status: 'file-text',
+    // Transcription is the app's core job (voice to document), so it carries
+    // the product mark rather than the generic document glyph.
+    transcription_status: 'logo',
     summarization_status: 'file-text',
     // Topics have no incumbent glyph of their own (TopicsList.svelte renders
     // none), so adopting the tag glyph for both creates the parity the
@@ -347,7 +351,9 @@
 
               <!-- Icon -->
               <div class="notification-icon">
-                {#if iconName === 'file-text'}
+                {#if iconName === 'logo'}
+                  <img src={logoIcon} alt="" width="16" height="16" class="notification-logo" />
+                {:else if iconName === 'file-text'}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
@@ -736,6 +742,12 @@
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     margin-top: 2px;
+  }
+
+  .notification-logo {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
   }
 
   .notification-item.status-success .notification-icon {

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Transcription notifications carry the OpenTranscribe logo (UX review item 14).** The
+  notifications panel showed a generic document glyph for `transcription_status`; it now shows the
+  product mark (`assets/logo-icon.png`, decorative `alt=""`), with the tag glyph already shared by
+  topic and auto-label notifications and the folder glyph by collection notifications.
+
 - **Per-user switches for the automatic AI suggestions (#1148).** After a transcription the app
   automatically asked the configured AI provider for speaker names and for tag/collection
   suggestions, with no way to stop either. *Settings -> Speaker Identification -> Voice

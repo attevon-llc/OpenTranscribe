@@ -103,7 +103,6 @@ const BELL_PATH = 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9';
 
 describe('icon coverage — every mapped type renders its own glyph, not the bell fallback', () => {
   const cases: Array<[NotificationType, string]> = [
-    ['transcription_status', 'file-text'],
     ['topic_extraction_status', 'tag'],
     ['auto_label_status', 'tag'],
     ['redaction_status', 'eye-off'],
@@ -123,6 +122,43 @@ describe('icon coverage — every mapped type renders its own glyph, not the bel
 
     const icon = container.querySelector('.notification-icon svg');
     expect(icon?.innerHTML).not.toContain(BELL_PATH);
+  });
+
+  it('transcription_status renders the OpenTranscribe logo, not a generic glyph (item 14)', () => {
+    setNotifications([baseNotification({ id: 'tx', type: 'transcription_status' })]);
+
+    const { container } = render(NotificationsPanel);
+
+    const img = container.querySelector('.notification-icon img');
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute('src')).toContain('logo-icon');
+    // Decorative: the notification title carries the meaning.
+    expect(img?.getAttribute('alt')).toBe('');
+    expect(container.querySelector('.notification-icon svg')).toBeNull();
+  });
+
+  it('summarization_status keeps the file-text glyph (only transcription gets the logo)', () => {
+    setNotifications([baseNotification({ id: 'sm', type: 'summarization_status' })]);
+
+    const { container } = render(NotificationsPanel);
+
+    expect(container.querySelector('.notification-icon img')).toBeNull();
+    expect(container.querySelector('.notification-icon svg path')?.getAttribute('d')).toContain(
+      'M14 2H6a2'
+    );
+  });
+
+  it('topic and tag notifications share one glyph, and collections use the folder glyph (item 14)', () => {
+    const glyph = (type: NotificationType) => {
+      setNotifications([baseNotification({ id: type, type })]);
+      const { container, unmount } = render(NotificationsPanel);
+      const html = container.querySelector('.notification-icon svg')?.innerHTML;
+      unmount();
+      return html;
+    };
+    expect(glyph('topic_extraction_status')).toBe(glyph('auto_label_status'));
+    expect(glyph('topic_extraction_status')).toContain('M20.59 13.41');
+    expect(glyph('collection_shared')).toContain('M22 19a2 2 0 0 1-2 2H4');
   });
 
   it('an unmapped type falls back to the bell on purpose (not a bug — most union members have no icon yet)', () => {

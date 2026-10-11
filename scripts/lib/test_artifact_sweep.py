@@ -144,6 +144,12 @@ TEST_BUCKET_SPECS: list[ArtifactSpec] = [
         'unit/test_erasure_journal_object_storage.py',
     ),
     _spec('watch-e2e', rf'e2e-watch-{_H8}', TIER_A, 'backend/scripts/e2e_watch_sources.py'),
+    _spec(
+        'orphan-sweep',
+        rf'e2e-orphan-sweep-{_H12}',
+        TIER_A,
+        'integration/test_orphan_sweep_storage.py',
+    ),
 ]
 
 

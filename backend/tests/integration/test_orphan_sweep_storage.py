@@ -62,17 +62,20 @@ def bucket(monkeypatch) -> Iterator[str]:
     from app.services.minio_service import minio_client
 
     name = f"e2e-orphan-sweep-{uuid_pkg.uuid4().hex[:12]}"
-    minio_client.make_bucket(name)
     monkeypatch.setattr(settings, "MEDIA_BUCKET_NAME", name)
     try:
+        minio_client.make_bucket(name)
         yield name
     finally:
-        names = [
-            DeleteObject(o.object_name) for o in minio_client.list_objects(name, recursive=True)
-        ]
-        if names:
-            list(minio_client.remove_objects(name, names))
-        minio_client.remove_bucket(name)
+        # make_bucket may have failed after the server created it, so the cleanup keys on the
+        # bucket existing, not on the fixture having reached the yield.
+        if minio_client.bucket_exists(name):
+            names = [
+                DeleteObject(o.object_name) for o in minio_client.list_objects(name, recursive=True)
+            ]
+            if names:
+                list(minio_client.remove_objects(name, names))
+            minio_client.remove_bucket(name)
 
 
 @pytest.fixture

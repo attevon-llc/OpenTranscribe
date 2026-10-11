@@ -103,6 +103,7 @@ def test_auto_label_defaults(client, user_token_headers):
         "tags_enabled": True,
         "collections_enabled": True,
         "bulk_grouping_enabled": True,
+        "auto_topic_extraction": True,
     }
 
 
@@ -115,6 +116,7 @@ def test_auto_label_round_trip(client, user_token_headers):
             "tags_enabled": False,
             "collections_enabled": True,
             "bulk_grouping_enabled": False,
+            "auto_topic_extraction": False,
         },
         headers=user_token_headers,
     )
@@ -128,6 +130,7 @@ def test_auto_label_round_trip(client, user_token_headers):
         "tags_enabled": False,
         "collections_enabled": True,
         "bulk_grouping_enabled": False,
+        "auto_topic_extraction": False,
     }
 
 

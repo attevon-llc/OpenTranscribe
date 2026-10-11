@@ -63,6 +63,12 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "admin migration control-plane event (stopped/running), no MediaFile identity",
     ),
+    "tasks/storage_orphan_sweep_task.py::storage_orphan_sweep_task": (
+        1,
+        "admin data-integrity completion event for the storage orphan sweep (#1212); it "
+        "describes objects whose media_file row no longer exists, so it carries no MediaFile "
+        "identity to check for quarantine",
+    ),
     "api/endpoints/embedding_migration.py::stop_migration": (
         1,
         "admin migration control-plane event, no MediaFile identity",

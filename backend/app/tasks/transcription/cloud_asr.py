@@ -91,17 +91,18 @@ def _run_parallel_cloud_asr_and_diarization(
     from app.services.diarization.types import DiarizeConfig
 
     # Resolved BEFORE either leg starts. A pyannote selection with no usable key raises
-    # DiarizationNotConfiguredError here (issue #1204), so the file fails visibly without
-    # the user being billed for a cloud ASR run.
+    # DiarizationNotConfiguredError here (issue #1204), and an asr_config selection whose
+    # configuration is gone or returns no speakers raises DiarizerConfigUnusableError (#1226),
+    # so the file fails visibly without the user being billed for a cloud ASR run.
     with session_scope() as db:
         diarize_provider = DiarizationProviderFactory.create_for_user(ctx.user_id, db)
 
     if diarize_provider is None:
-        # The stored source is no longer pyannote: the user changed it after this file was
-        # dispatched, or the deployment locked it (#1109). Honour what the settings say now,
-        # which is the ASR provider's own speaker detection.
+        # The stored source no longer names a separate detector: the user changed it after
+        # this file was dispatched, the deployment locked it (#1109), or the asr_config it
+        # names is the transcription provider itself. Use the ASR provider's own speakers.
         logger.info(
-            "Diarization source for user %d is no longer pyannote; using %s's own diarization",
+            "No separate speaker detector for user %d; using %s's own diarization",
             ctx.user_id,
             asr_provider.provider_name,
         )
@@ -288,7 +289,7 @@ def _run_cloud_asr_pipeline(
 
     # Parallel cloud execution: ASR + a cloud speaker detector simultaneously
     diarize_result = None
-    if diarization_source == "pyannote":
+    if diarization_source in ("pyannote", "asr_config"):
         asr_result, diarize_result = _run_parallel_cloud_asr_and_diarization(
             ctx,
             audio_file_path,

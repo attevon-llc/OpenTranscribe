@@ -80,6 +80,7 @@ class UserErrorReason(StrEnum):
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
     DIARIZATION_NOT_CONFIGURED = "diarization_not_configured"
+    DIARIZER_CONFIG_UNUSABLE = "diarizer_config_unusable"
     UNCLASSIFIED = "unclassified"
 
 
@@ -136,10 +137,26 @@ DIARIZATION_NOT_CONFIGURED_MESSAGE = (
     "is saved for your account."
 )
 
+#: Raised when speaker detection is set to another saved provider's speaker detection
+#: (``asr_config``, #1226) and that configuration cannot be used: deleted, no longer shared,
+#: its credentials no longer decrypt, or its model returns no speakers.
+#: Must not contain any substring the retry classifier treats as transient.
+DIARIZER_CONFIG_UNUSABLE_MESSAGE = (
+    "Speaker detection is set to another provider's speaker detection, but that provider "
+    "configuration no longer exists, is no longer shared with you, or does not return speakers."
+)
+
+#: Raised (and logged) when a cloud speaker-detection vendor fails. Every pipeline path
+#: treats that as non-fatal today (the transcript is kept without speakers); the sentence
+#: exists so the exception's text is fixed wherever it travels, never the vendor's message.
+DIARIZATION_PROVIDER_FAILED_MESSAGE = (
+    "The speaker detection provider could not detect speakers in this file."
+)
+
 #: User-facing reasons caused by the user's own settings, not the input or the
 #: infrastructure: permanent for the automatic retry paths.
 CONFIGURATION_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
-    {UserErrorReason.DIARIZATION_NOT_CONFIGURED}
+    {UserErrorReason.DIARIZATION_NOT_CONFIGURED, UserErrorReason.DIARIZER_CONFIG_UNUSABLE}
 )
 
 
@@ -408,6 +425,18 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
+    def _handle_diarizer_config_unusable() -> tuple[UserErrorReason, str, list[str]]:
+        """Handle another provider's speaker detection that can no longer be used (#1226)."""
+        return (
+            UserErrorReason.DIARIZER_CONFIG_UNUSABLE,
+            DIARIZER_CONFIG_UNUSABLE_MESSAGE,
+            [
+                "Choose another speaker detection option in Settings under Speaker Identification",
+                'Then use the "Retry" button to process this file again',
+            ],
+        )
+
+    @staticmethod
     def _handle_generic_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle generic processing errors."""
         return (
@@ -579,6 +608,7 @@ _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str
     ErrorCategorizationService._handle_permission_error,
     ErrorCategorizationService._handle_interrupted_error,
     ErrorCategorizationService._handle_diarization_not_configured,
+    ErrorCategorizationService._handle_diarizer_config_unusable,
     ErrorCategorizationService._handle_generic_error,
 )
 

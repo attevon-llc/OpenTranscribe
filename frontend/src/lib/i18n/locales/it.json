@@ -1671,6 +1671,7 @@
   "errors.media.permissionError": "L'accesso a questo contenuto è stato rifiutato. Potrebbe essere protetto o richiedere l'accesso.",
   "errors.media.interrupted": "L'elaborazione è stata interrotta da un problema temporaneo del server e non è stato possibile completarla dopo diversi tentativi automatici.",
   "errors.media.diarizationNotConfigured": "Il rilevamento dei parlanti è impostato sul servizio cloud pyannote.ai, ma per il tuo account non è salvata alcuna chiave API pyannote.ai. Salva una chiave nelle Impostazioni o scegli un'altra opzione di rilevamento dei parlanti, poi riprova.",
+  "errors.media.diarizerConfigUnusable": "Il rilevamento dei parlanti è impostato sul rilevamento dei parlanti di un altro fornitore, ma quella configurazione del fornitore non esiste più, non è più condivisa con te oppure non restituisce i parlanti. Scegli un'altra opzione di rilevamento dei parlanti nelle Impostazioni, poi riprova.",
   "errors.media.unclassified": "Si è verificato un errore sconosciuto durante l'elaborazione.",
   "fileDetail.processingInProgress": "Elaborazione in corso",
   "fileDetail.processingFile": "Elaborazione del file in corso...",

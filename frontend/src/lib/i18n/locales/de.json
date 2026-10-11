@@ -547,6 +547,7 @@
   "errors.media.permissionError": "Der Zugriff auf diesen Inhalt wurde verweigert. Er ist möglicherweise geschützt oder erfordert eine Anmeldung.",
   "errors.media.interrupted": "Die Verarbeitung wurde durch ein vorübergehendes Serverproblem unterbrochen und konnte auch nach mehreren automatischen Wiederholungen nicht abgeschlossen werden.",
   "errors.media.diarizationNotConfigured": "Die Sprechererkennung ist auf den pyannote.ai-Clouddienst eingestellt, aber für Ihr Konto ist kein pyannote.ai-API-Schlüssel gespeichert. Speichern Sie einen Schlüssel in den Einstellungen oder wählen Sie eine andere Sprechererkennung und versuchen Sie es dann erneut.",
+  "errors.media.diarizerConfigUnusable": "Die Sprechererkennung ist auf die Sprechererkennung eines anderen Anbieters eingestellt, aber diese Anbieterkonfiguration existiert nicht mehr, wird nicht mehr mit Ihnen geteilt oder liefert keine Sprecher. Wählen Sie in den Einstellungen eine andere Sprechererkennung und versuchen Sie es dann erneut.",
   "errors.media.unclassified": "Bei der Verarbeitung ist ein unbekannter Fehler aufgetreten.",
   "fileDetail.profileLinkedMessage": "\"{{displayName}}\" ist derzeit mit dem Profil \"{{profileName}}\" verknüpft",
   "fileDetail.reprocessTooltip": "Diese Datei mit der Transkriptions-KI neu verarbeiten",

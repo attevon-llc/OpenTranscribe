@@ -70,6 +70,7 @@ export type MediaErrorReason =
   | 'permission_error'
   | 'interrupted'
   | 'diarization_not_configured'
+  | 'diarizer_config_unusable'
   | 'unclassified';
 
 export interface MediaFile {

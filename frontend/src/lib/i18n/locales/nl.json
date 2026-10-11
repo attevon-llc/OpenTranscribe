@@ -1671,6 +1671,7 @@
   "errors.media.permissionError": "Toegang tot deze inhoud is geweigerd. De inhoud is mogelijk beveiligd of vereist aanmelding.",
   "errors.media.interrupted": "De verwerking is onderbroken door een tijdelijk serverprobleem en kon na meerdere automatische pogingen niet worden voltooid.",
   "errors.media.diarizationNotConfigured": "Sprekerherkenning staat ingesteld op de pyannote.ai-clouddienst, maar voor uw account is geen pyannote.ai API-sleutel opgeslagen. Sla een sleutel op in Instellingen of kies een andere optie voor sprekerherkenning en probeer het daarna opnieuw.",
+  "errors.media.diarizerConfigUnusable": "Sprekerherkenning staat ingesteld op de sprekerherkenning van een andere provider, maar die providerconfiguratie bestaat niet meer, wordt niet meer met u gedeeld of levert geen sprekers op. Kies in Instellingen een andere optie voor sprekerherkenning en probeer het daarna opnieuw.",
   "errors.media.unclassified": "Er is een onbekende fout opgetreden tijdens de verwerking.",
   "fileDetail.processingInProgress": "Verwerking bezig",
   "fileDetail.processingFile": "Bestand verwerken...",

@@ -10,7 +10,6 @@ provider is built and nothing is decrypted or contacted.
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import TYPE_CHECKING
 
 from fastapi import Request
@@ -53,33 +52,13 @@ def _diarizer_config(
 ) -> DiarizerConfigInfo | None:
     """The saved ASR configuration named as the speaker detector, if the user may use it.
 
-    Own or shared within a common tenant (re-checked on every read, like the active ASR
-    config). Using another provider as a diarizer needs the per-user cloud-provider
-    capability; without it the config is treated as unavailable.
+    The lookup (own or shared, ``asr.user_providers`` capability) is the diarization
+    factory's ``get_diarizer_asr_config``, the same one the job path builds the adapter from.
     """
-    if not config_uuid:
-        return None
-    try:
-        parsed = uuid.UUID(config_uuid)
-    except ValueError:
-        logger.warning("Malformed diarizer config pointer for user %d", user_id)
-        return None
-    from app.core.capabilities import capability_enabled
-
-    if not capability_enabled("asr.user_providers", request):
-        return None
-    from app.models.user_asr_settings import UserASRSettings
     from app.services.asr.factory import ASRProviderFactory
-    from app.utils.tenant_sharing import shared_usable_by
+    from app.services.diarization.factory import get_diarizer_asr_config
 
-    cfg = (
-        db.query(UserASRSettings.provider, UserASRSettings.model_name, UserASRSettings.uuid)
-        .filter(
-            UserASRSettings.uuid == parsed,
-            shared_usable_by(UserASRSettings.user_id, UserASRSettings.is_shared, user_id),
-        )
-        .first()
-    )
+    cfg = get_diarizer_asr_config(db, user_id, config_uuid, request)
     if cfg is None:
         return None
     provider, model = str(cfg.provider or "local"), str(cfg.model_name or "")

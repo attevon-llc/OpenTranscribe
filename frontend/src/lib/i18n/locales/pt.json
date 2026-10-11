@@ -1642,6 +1642,7 @@
   "errors.media.permissionError": "O acesso a este conteúdo foi negado. Ele pode estar protegido ou exigir login.",
   "errors.media.interrupted": "O processamento foi interrompido por um problema temporário do servidor e, mesmo após várias tentativas automáticas, não pôde ser concluído.",
   "errors.media.diarizationNotConfigured": "A detecção de falantes está definida para o serviço em nuvem pyannote.ai, mas não há nenhuma chave de API do pyannote.ai salva na sua conta. Salve uma chave em Configurações ou escolha outra opção de detecção de falantes e tente novamente.",
+  "errors.media.diarizerConfigUnusable": "A detecção de falantes está definida para usar a detecção de falantes de outro provedor, mas essa configuração de provedor não existe mais, não é mais compartilhada com você ou não retorna falantes. Escolha outra opção de detecção de falantes em Configurações e tente novamente.",
   "errors.media.unclassified": "Ocorreu um erro desconhecido durante o processamento.",
   "fileDetail.processingInProgress": "Processamento em Andamento",
   "fileDetail.processingFile": "Processando arquivo...",

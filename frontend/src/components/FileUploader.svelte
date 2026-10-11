@@ -113,6 +113,10 @@
   $: currentStep = activeSteps[currentStepIndex];
   $: isFirstStep = currentStepIndex === 0;
   $: isLastStep = currentStepIndex === activeSteps.length - 1;
+  // The forward button names its destination when that destination is Review, and the
+  // "Review with defaults" jump is hidden there: it would be a second button doing the
+  // same thing, the duplication item 8 already removed for Skip.
+  $: nextIsReview = currentStepIndex === activeSteps.length - 2;
   $: if (currentStepIndex > maxStepReached) maxStepReached = currentStepIndex;
 
   // ── Tab & Media State ──
@@ -1042,7 +1046,7 @@
     </div>
 
     <div class="nav-right">
-      {#if !isFirstStep && !isLastStep && mediaReady}
+      {#if !isFirstStep && !isLastStep && !nextIsReview && mediaReady}
         <button
           type="button"
           class="nav-btn nav-review-defaults"
@@ -1074,7 +1078,7 @@
           disabled={(currentStep?.id === 'media' && !mediaReady) || hasValidationError}
           title={hasValidationError ? $t('uploader.minMaxValidationError') : ''}
         >
-          {$t('uploader.next')}
+          {nextIsReview ? $t('uploader.stepReview') : $t('uploader.next')}
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"></line>
             <polyline points="12 5 19 12 12 19"></polyline>

@@ -126,6 +126,10 @@ const EXEMPT: Record<string, string> = {
 
   // ── Pure UI state with no user data ──
   'lib/scrollLock': 'A nesting counter for overflow:hidden. Reset per navigation by afterNavigate.',
+  'stores/notificationRetention':
+    'The retention choice is a browser UI preference (like theme/locale) and is kept on ' +
+    'purpose: it holds no user data. The only per-session value, the cleared-notice count, ' +
+    'is reset by websocketStore.clearAll(), which clearUserState already calls.',
   'stores/toast': 'toastCounter is a monotonic id source; toastStore.clear() IS registered.',
   'stores/recording':
     'The module-level `toastStore` binding is an imported reference, not state; the recording ' +

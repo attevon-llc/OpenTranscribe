@@ -390,14 +390,27 @@ describe('websocket message dispatch', () => {
     expect(get(unreadCount)).toBe(1);
   });
 
-  it('caps the notification list at 100', () => {
+  it('caps the clearable notification list at 100', () => {
+    const socket = openSocket();
+
+    for (let i = 0; i < 120; i += 1) {
+      socket.deliver({
+        type: 'file_upload',
+        data: { file_id: `f${i}`, message: 'done' },
+      });
+    }
+
+    expect(notifications()).toHaveLength(100);
+  });
+
+  it('never caps away actionable notices (issue #1217): 120 takedowns all survive', () => {
     const socket = openSocket();
 
     for (let i = 0; i < 120; i += 1) {
       socket.deliver({ type: 'file_takedown', data: { file_id: `f${i}`, filename: 'a.mp4' } });
     }
 
-    expect(notifications()).toHaveLength(100);
+    expect(notifications()).toHaveLength(120);
   });
 
   it('caps the list at 100 for addNotification too (issue #569 — the WS-delivered paths capped, this client-originated one did not)', () => {

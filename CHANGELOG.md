@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Notification auto-clear, as an inbox retention policy (#1217, UX review item 15).**
+  Notifications used to persist until dismissed. A pure prune pass (`$lib/notifications/retention`,
+  injected clock, no timers) now runs on app load, when a notification is added, and when the
+  panel closes — never while it is open, so rows do not vanish mid-read. Read, successful,
+  informational items are removed 24 h after they were marked read; unread ones after 14 days;
+  the list is capped at 100, dropping the oldest read informational rows first, then the oldest
+  unread ones. Errors, warnings, in-flight items, actionable/system notices (shares, takedowns,
+  reindex, migration, group changes) and any unclassified type are never removed. Every
+  notification type is classified in one map with a test that fails on an unclassified type. A
+  **Keep notifications for** control in the panel footer offers 24 hours after reading (default),
+  7 days after reading, or Never auto-clear (the 100 cap still applies to routine successful
+  items); the panel says how many were cleared the next time it is opened. All 12 locales.
+
 - **Transcription notifications carry the OpenTranscribe logo (UX review item 14).** The
   notifications panel showed a generic document glyph for `transcription_status`; it now shows the
   product mark (`assets/logo-icon.png`, decorative `alt=""`), with the tag glyph already shared by

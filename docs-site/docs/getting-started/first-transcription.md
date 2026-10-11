@@ -120,6 +120,16 @@ flowchart LR
 
 ![Notifications panel showing transcription progress](/img/screenshots/workflow/notifications-multiple.png)
 
+**How long notifications are kept:** the panel is an inbox, so nothing disappears while you are
+looking at it. Old, successful notifications are cleared when the app loads, when a new one
+arrives, or just after you close the panel. Errors, warnings, work still in progress, and notices
+that may need your attention (shares, takedowns, re-indexing, migrations) are never cleared
+automatically. A successful notification is removed 24 hours after you read it, or after 14 days
+if you never opened it. At most 100 are kept. Use **Keep notifications for** at the bottom of the
+panel to choose *24 hours after reading* (default), *7 days after reading*, or *Never auto-clear*;
+the 100 limit still applies to routine successful notices. If anything was cleared, the panel
+tells you how many the next time you open it. The setting is stored in your browser.
+
 **Processing Time Estimates:**
 
 | Duration | GPU (RTX 3080) | CPU (8-core) |

@@ -24,8 +24,22 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   icon name and **each name needs a render branch** (an unmapped name silently shows the bell;
   `NotificationsPanel.test.ts` asserts coverage). `transcription_status` is the `logo` icon, an
   `<img>` of `assets/logo-icon.png` (the only non-SVG entry, so tests query `.notification-icon img`);
-  topic/auto-label share the tag glyph and collection notifications use the folder glyph. Auto-clear
-  is deliberately NOT built; it needs a written policy first.
+  topic/auto-label share the tag glyph and collection notifications use the folder glyph.
+  **Retention (issue #1217):** the list is an inbox, pruned — never animated away. The policy is a
+  pure function in `$lib/notifications/retention.ts` (injected `now`, no timers); `websocket.ts`
+  runs it on load, on add and on panel close, and it is a no-op while the panel is open. Never
+  removed: errors/warnings (`status`/`data.status` anything but completed), in-flight items,
+  `persistent` types, unread items under 14 days. `RETENTION_BY_TYPE` classifies every
+  `NotificationType` (compile-time `Record` + a test against `NOTIFICATION_TYPES`); an unknown
+  wire type is never clearable, so a new type is NOT auto-clearable until someone classifies it.
+  `readAt` (set by `markAsRead`/`markAllAsRead`, cleared when a progress update re-marks a row
+  unread) is the clock for read items. The "Keep notifications for" select
+  (`notifications/NotificationRetentionSetting.svelte`) persists to
+  `localStorage['opentr:notificationRetention']`, a UI preference that `clearUserState` keeps. The
+  "N older notifications cleared" note (`notifications/ClearedNotice.svelte`) reads
+  `clearedNotice`, whose count is fixed at panel open and acknowledged at close **in the store**:
+  `NotificationsPanel` is mounted twice (`+layout.svelte` and `Navbar.svelte`), so component state
+  or a DOM `id` would be duplicated — the setting uses an implicit `<label>` for that reason.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`.
   Each subfolder holds the presentational children split out of one oversized coordinator.

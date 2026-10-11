@@ -37,7 +37,8 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   — never a second store of record; see `search/CLAUDE.md`'s "Index v6" section.)
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
-  `metadata_speaker_extractor.py`.
+  `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
+  cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.
@@ -174,6 +175,66 @@ Two judgement calls worth not re-litigating blindly:
   signal ("does the member have org rows again?") is indistinguishable from the member
   legitimately uploading to that tenant the next day, and acting on it would destroy
   data nobody asked to erase. They are counted as `org_member_manual_review` instead.
+
+## Removing a voice: `speaker_cleanup.py` is the only implementation (issue #1214)
+
+A speaker's voice is copied into more than its own voiceprint document: every cluster it
+belongs to stores a `cluster_<uuid>` centroid (a weighted mean of the members' voiceprints,
+profile-linked members counting double), its profile stores a `profile_<uuid>` embedding (a
+mean of the members'), and the transcript index planes carry its label. Deleting the speaker
+row, or moving it out of a cluster or profile, changes none of those by itself — and the
+`ON DELETE CASCADE` on `speaker_cluster_member` erases the only record of which centroids
+averaged it in. #1211 fixed this for the file purge alone; every per-speaker path kept the
+removed voice inside some aggregate.
+
+Every path now does the same two calls around its own write:
+
+```python
+impact = capture_speaker_impact(db, [speaker_id], removed=True, reindex=True)  # BEFORE
+db.delete(speaker); db.commit()
+raise_if_incomplete(reconcile_speaker_impact(db, impact))                     # AFTER commit
+```
+
+Callers: `speakers.py` (delete, merge, verify accept/reject/create, profile moves in the
+update task), `transcript_segments.py` (orphan cleanup), `speaker_update.py` (auto-profile
+and retroactive matching), `speaker_profiles.py` (profile delete), `speaker_clusters.py`
+(cluster delete), `speaker_clustering_service` (unassign, split, merge, promote, batch
+assign), `files/reprocess.py` (transcription and rediarize clears), `task_utils.reset_file_for_retry`,
+`speaker_merge_task` (the target half) and `file_cleanup_service.purge_media_file`.
+
+The rules it applies are the product's existing ones, written once:
+
+| After the change | Result |
+|---|---|
+| The removed speaker's own voiceprint | erased from every speaker index, verified by a survivor count |
+| A cluster with 0 members left | row deleted and centroid erased, **promoted or not** (`batch_recluster` rebuilds promoted clusters from profiles; an empty one was listed with nobody in it) |
+| A cluster with 1 member | kept, centroid = that member (upload-time singletons are how matching works; `list_clusters` hides them, Re-cluster All only rebuilds groups of 2+) |
+| Any other cluster | `member_count` and centroid recomputed, `_update_cluster_centroid(strict=True)` |
+| A profile that lost or gained a member | embedding recomputed, `update_profile_embedding(strict=True)` |
+| A centroid or profile embedding that cannot be rebuilt | **erased** (absent is rebuilt later; stale is a copy of the removed voice) |
+| A file whose segments lost their speaker | `dispatch_transcript_reindex` — chunk, digest and summary rosters rebuilt from Postgres |
+
+- **Failures are returned, never swallowed.** `reconcile_speaker_impact` never raises and
+  logs every residual at ERROR; request paths call `raise_if_incomplete`, which raises
+  `SpeakerCleanupIncompleteError` (a `SearchIndexError`, so `main.py` answers **503** with the
+  fixed `CLEANUP_INCOMPLETE_MESSAGE` — no driver text). Background and bulk paths (merge
+  task, update task, retry, reprocess) keep going and report `status: partial` or the log.
+  The change itself has committed either way; the 503 says the cleanup did not finish.
+- **Capture BEFORE the write, reconcile AFTER the commit.** After the delete, Postgres can no
+  longer say which clusters held the speaker; before the commit, a rollback would leave the
+  aggregates rebuilt for a change that never happened.
+- **A merge is split in two on purpose.** The endpoint rebuilds the SOURCE's clusters and
+  profile synchronously but does not erase its voiceprint — `process_speaker_merge_background`
+  reads it to average into the target, then `_reconcile_speakers_after_merge` rebuilds the
+  target's side and verifies the source document is gone.
+- **Deleting a profile restores labels.** A linked speaker carries the profile's name as its
+  display name (`speaker_profile_rename`'s invariant), so members whose display name *is*
+  the profile's name get it cleared and the chunk plane is told through
+  `SpeakerRenameTracker`; a name the user set to something else survives. A cluster labelled
+  with the profile's name loses the label.
+- **Unassigning from a promoted cluster does NOT unlink the profile.** That is unchanged and
+  deliberate in this fix: the grouping and the identity are separate decisions, and whether
+  a blacklisting unassign should also unlink the profile is an open product question.
 
 ## Speaker embeddings: two backends, one model (issue #571)
 

@@ -190,7 +190,7 @@ def test_a_failed_cluster_enumeration_is_reported_not_swallowed(
     def boom(db, file):
         raise RuntimeError("cluster table unreadable")
 
-    monkeypatch.setattr(fcs, "_clusters_holding_file_speakers", boom)
+    monkeypatch.setattr(fcs, "_speaker_impact_of_file", boom)
 
     result = fcs.purge_media_file(db_session, fa)
 
@@ -201,22 +201,28 @@ def test_a_failed_cluster_enumeration_is_reported_not_swallowed(
     assert "cluster table unreadable" in caplog.text
 
 
-def test_a_promoted_cluster_left_with_no_members_has_its_centroid_erased(
+def test_a_promoted_cluster_left_with_no_members_is_deleted_with_its_centroid(
     db_session, normal_user, os_seams
 ):
+    """Issue #1214: an emptied promoted cluster is deleted too, not kept listed and empty.
+
+    ``batch_recluster`` recreates promoted clusters from profiles, so nothing depends on
+    an empty one; the profile itself survives with its ``source_cluster_id`` cleared.
+    """
     fa, _fb, sa, _sb = _two_files(db_session, normal_user, os_seams)
     profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="P")
     db_session.add(profile)
     db_session.flush()
     cluster = _cluster(db_session, normal_user, sa, promoted_to=profile.id)
-    cluster_uuid, cluster_id = str(cluster.uuid), cluster.id
+    cluster_uuid, cluster_id, profile_id = str(cluster.uuid), cluster.id, profile.id
 
     fcs.purge_media_file(db_session, fa)
 
     assert os_seams["erased"] == [cluster_uuid]
     assert os_seams["stored"] == {}
     db_session.expire_all()
-    assert db_session.get(SpeakerCluster, cluster_id).member_count == 0
+    assert db_session.get(SpeakerCluster, cluster_id) is None
+    assert db_session.get(SpeakerProfile, profile_id) is not None
 
 
 def test_another_users_cluster_is_never_touched(
@@ -230,12 +236,14 @@ def test_another_users_cluster_is_never_touched(
     theirs = _cluster(db_session, other_user, so)
 
     # Even if a stale plan named the other user's cluster, the owner scope must exclude it.
-    real = fcs._clusters_holding_file_speakers
-    monkeypatch.setattr(
-        fcs,
-        "_clusters_holding_file_speakers",
-        lambda db, file: [*real(db, file), str(theirs.uuid)],
-    )
+    real = fcs._speaker_impact_of_file
+
+    def stale(db, file):
+        impact = real(db, file)
+        impact.cluster_uuids.add(str(theirs.uuid))
+        return impact
+
+    monkeypatch.setattr(fcs, "_speaker_impact_of_file", stale)
 
     result = fcs.purge_media_file(db_session, fa)
 

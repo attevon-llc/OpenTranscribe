@@ -1137,7 +1137,8 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         EmailDeliveryError: 503,
         ASRConfigurationError: 503,
     }
-    status = status_map.get(type(exc), 500)
+    # Walk the MRO so a subclass (speaker_cleanup's SearchIndexError) keeps its family's code.
+    status = next((status_map[c] for c in type(exc).__mro__ if c in status_map), 500)
     return JSONResponse(
         status_code=status,
         content={"detail": exc.message},

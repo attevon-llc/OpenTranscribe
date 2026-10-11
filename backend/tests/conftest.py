@@ -350,6 +350,9 @@ pytest_plugins = [
     # `support_world`: two organizations, an org admin, a platform admin and a super_admin with
     # real tokens, for the support-access grant suites (#1122). Opt-in; nothing autouse.
     "fixtures.support_world",
+    # `speaker_os_seams`: recording stand-ins for every OpenSearch seam the shared speaker
+    # cleanup (#1214) touches. Opt-in; nothing autouse.
+    "fixtures.speaker_cleanup_seams",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

@@ -35,6 +35,7 @@
   </div>
   <p>{$t('settings.engineSettings.intro.routing')}</p>
   <p>{$t('settings.engineSettings.intro.override')}</p>
+  <p class="admin-detail">{$t('settings.engineSettings.intro.overrideAdmin')}</p>
   <p>{$t('settings.engineSettings.intro.requireSidecar')}</p>
 </div>
 
@@ -51,6 +52,11 @@
 
   .engine-intro p {
     margin: 0.5rem 0 0;
+  }
+
+  .engine-intro p.admin-detail {
+    font-size: 0.8rem;
+    color: var(--text-muted, var(--text-secondary));
   }
 
   .intro-head {

@@ -72,7 +72,7 @@ describe('EngineSettings sidecar status chip', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    for (const key of ['routing', 'override', 'requireSidecar']) {
+    for (const key of ['routing', 'override', 'overrideAdmin', 'requireSidecar']) {
       expect(intro.textContent).toContain(`settings.engineSettings.intro.${key}`);
     }
     const backendSelect = container.querySelector('#diarizer-backend') as HTMLElement;

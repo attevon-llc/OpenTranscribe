@@ -21,6 +21,7 @@ import uuid
 
 import pytest
 import requests
+from conftest import E2E_STORAGE_STATE_PREFIX
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
@@ -172,19 +173,21 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
 
 @pytest.fixture(scope="module")
 def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
-    context = browser.new_context(
-        viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
-    )
-    page = context.new_page()
-    _form_login_with_retry(page, base_url)
-    fd, state_file = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    context.storage_state(path=state_file)
-    page.close()
-    context.close()
-    yield state_file
-    if os.path.exists(state_file):
-        os.unlink(state_file)
+    fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
+    try:
+        os.close(fd)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
+        )
+        page = context.new_page()
+        _form_login_with_retry(page, base_url)
+        context.storage_state(path=state_file)
+        page.close()
+        context.close()
+        yield state_file
+    finally:
+        if os.path.exists(state_file):
+            os.unlink(state_file)
 
 
 @pytest.fixture

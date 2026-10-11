@@ -145,6 +145,10 @@ def pytest_configure(config: pytest.Config) -> None:
 TEST_ADMIN_EMAIL = "admin@example.com"
 TEST_ADMIN_PASSWORD = "password"
 
+# Playwright storage-state files hold live auth cookies. Every one is created with
+# this prefix so the test-artifact sweep can find any a crashed run left in /tmp.
+E2E_STORAGE_STATE_PREFIX = "ot-e2e-storage-"
+
 
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
@@ -528,41 +532,44 @@ def shared_auth_state(browser, base_url: str):
     """
     import tempfile
 
-    context = browser.new_context(
-        viewport={"width": 1920, "height": 1080},
-        ignore_https_errors=True,
-    )
-    page = context.new_page()
-    page.goto(base_url)
-    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
-    page.fill("#email", TEST_ADMIN_EMAIL)
-    page.fill("#password", TEST_ADMIN_PASSWORD)
-    page.click("button[type=submit]")
-    page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
-
-    fd, state_file = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    context.storage_state(path=state_file)
-    page.close()
-    context.close()
-
-    yield state_file
-
-    # Log the session out before discarding its storage state (issue #632) —
-    # otherwise the one login this fixture exists to make cheap still leaves a
-    # session behind on every run. Reload the saved cookies into a fresh
-    # throwaway context rather than reusing the one already closed above.
+    # The state file holds live auth cookies: create it first and unlink it in a
+    # finally, so a login that fails before the yield cannot strand it in /tmp.
+    fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
     try:
-        logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
-        try:
-            logout_context.request.post(f"{base_url}/api/auth/logout")
-        finally:
-            logout_context.close()
-    except Exception as exc:  # pragma: no cover - best-effort teardown
-        warnings.warn(f"shared_auth_state teardown: logout call failed: {exc}", stacklevel=2)
+        os.close(fd)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        page.goto(base_url)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
+        page.fill("#email", TEST_ADMIN_EMAIL)
+        page.fill("#password", TEST_ADMIN_PASSWORD)
+        page.click("button[type=submit]")
+        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
 
-    if os.path.exists(state_file):
-        os.unlink(state_file)
+        context.storage_state(path=state_file)
+        page.close()
+        context.close()
+
+        yield state_file
+
+        # Log the session out before discarding its storage state (issue #632) —
+        # otherwise the one login this fixture exists to make cheap still leaves a
+        # session behind on every run. Reload the saved cookies into a fresh
+        # throwaway context rather than reusing the one already closed above.
+        try:
+            logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+            try:
+                logout_context.request.post(f"{base_url}/api/auth/logout")
+            finally:
+                logout_context.close()
+        except Exception as exc:  # pragma: no cover - best-effort teardown
+            warnings.warn(f"shared_auth_state teardown: logout call failed: {exc}", stacklevel=2)
+    finally:
+        if os.path.exists(state_file):
+            os.unlink(state_file)
 
 
 @pytest.fixture
@@ -785,9 +792,20 @@ def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
             pass
         time.sleep(5)
     try:
-        requests.delete(f"{backend_url}/api/files/{file_uuid}/force", headers=headers, timeout=30)
-    except requests.RequestException:
-        pass
+        resp = requests.delete(
+            f"{backend_url}/api/files/{file_uuid}/force", headers=headers, timeout=30
+        )
+        if resp.status_code in (200, 204, 404):
+            return
+        outcome = f"force DELETE -> {resp.status_code} {resp.text[:200]}"
+    except requests.RequestException as exc:
+        outcome = f"force DELETE raised {exc!r}"
+    # Never raise from teardown (it would mask the test's own failure), but never stay
+    # silent either: an unchecked /force is how a leaked upload goes unnoticed.
+    warnings.warn(
+        f"delete_media_file: test upload {file_uuid} is LEFT in the library: {outcome}",
+        stacklevel=2,
+    )
 
 
 @pytest.fixture
@@ -1004,44 +1022,47 @@ def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
     """
     import tempfile
 
-    context = browser.new_context(
-        viewport={"width": 1920, "height": 1080},
-        ignore_https_errors=True,
-    )
-    page = context.new_page()
-    page.goto(base_url)
-    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
-    page.fill("#email", second_user["email"])
-    page.fill("#password", second_user["password"])
-    page.click("button[type=submit]")
+    fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
     try:
-        page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
-    except Exception:
-        page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
-
-    fd, state_file = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    context.storage_state(path=state_file)
-    page.close()
-    context.close()
-
-    yield state_file
-
-    # Same reasoning as shared_auth_state's teardown (issue #632); runs before
-    # second_user's own teardown deletes the account (fixture finalizers run in
-    # reverse dependency order), so the logout call still has a live account to
-    # act on.
-    try:
-        logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+        os.close(fd)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        page.goto(base_url)
+        page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
+        page.fill("#email", second_user["email"])
+        page.fill("#password", second_user["password"])
+        page.click("button[type=submit]")
         try:
-            logout_context.request.post(f"{base_url}/api/auth/logout")
-        finally:
-            logout_context.close()
-    except Exception as exc:  # pragma: no cover - best-effort teardown
-        warnings.warn(f"second_user_auth_state teardown: logout call failed: {exc}", stacklevel=2)
+            page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
+        except Exception:
+            page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
 
-    if os.path.exists(state_file):
-        os.unlink(state_file)
+        context.storage_state(path=state_file)
+        page.close()
+        context.close()
+
+        yield state_file
+
+        # Same reasoning as shared_auth_state's teardown (issue #632); runs before
+        # second_user's own teardown deletes the account (fixture finalizers run in
+        # reverse dependency order), so the logout call still has a live account to
+        # act on.
+        try:
+            logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+            try:
+                logout_context.request.post(f"{base_url}/api/auth/logout")
+            finally:
+                logout_context.close()
+        except Exception as exc:  # pragma: no cover - best-effort teardown
+            warnings.warn(
+                f"second_user_auth_state teardown: logout call failed: {exc}", stacklevel=2
+            )
+    finally:
+        if os.path.exists(state_file):
+            os.unlink(state_file)
 
 
 @pytest.fixture

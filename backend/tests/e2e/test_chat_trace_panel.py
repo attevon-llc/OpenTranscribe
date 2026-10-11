@@ -143,20 +143,22 @@ def llm_config(api_session: requests.Session, backend_url: str) -> Iterator[str]
     # This mutates the SHARED e2e account's active-config pointer, which the
     # dev-data-hygiene rule (never persist changes to shared dev data) covers
     # just as much as a created row does — captured before activating, restored
-    # in the finally below.
-    status = api_session.get(f"{backend_url}/api/llm-settings/status", timeout=30)
-    assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
-    prior_active = status.json().get("active_configuration")
-    prior_active_uuid = prior_active["uuid"] if prior_active else None
-
-    activate = api_session.post(
-        f"{backend_url}/api/llm-settings/set-active",
-        json={"configuration_id": uuid},
-        timeout=30,
-    )
-    assert activate.ok, f"Could not activate provider: {activate.status_code} {activate.text}"
-
+    # in the finally below. The status read and the activation are INSIDE that try, so a
+    # failure in either still deletes the config and restores the prior pointer.
+    prior_active_uuid = None
     try:
+        status = api_session.get(f"{backend_url}/api/llm-settings/status", timeout=30)
+        assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
+        prior_active = status.json().get("active_configuration")
+        prior_active_uuid = prior_active["uuid"] if prior_active else None
+
+        activate = api_session.post(
+            f"{backend_url}/api/llm-settings/set-active",
+            json={"configuration_id": uuid},
+            timeout=30,
+        )
+        assert activate.ok, f"Could not activate provider: {activate.status_code} {activate.text}"
+
         yield uuid
     finally:
         # In a `finally`, not on the happy path: the assertion most likely to

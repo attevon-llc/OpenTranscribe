@@ -36,7 +36,9 @@ ML_SENTINEL = "ml_commons index unreachable at /var/lib/opensearch/ml_cache"
 # --------------------------------------------------------------------------- #
 
 
-def test_backup_status_never_leaks_pg_dump_stderr(db_session, admin_user, monkeypatch, caplog):
+def test_backup_status_never_leaks_pg_dump_stderr(
+    db_session, admin_user, monkeypatch, caplog, tmp_path
+):
     from app.api.endpoints import backup_settings
     from app.services import backup_service
 
@@ -51,9 +53,7 @@ def test_backup_status_never_leaks_pg_dump_stderr(db_session, admin_user, monkey
     cfg = {**cfg, "encrypt": False, "include_opensearch": False}
     # destination_status() must report writable; the coded default under
     # DEFAULT_BACKUP_DESTINATION is not guaranteed to exist in this sandbox.
-    import tempfile
-
-    cfg["destination"] = tempfile.mkdtemp(prefix="ot-backup-status-test-")
+    cfg["destination"] = str(tmp_path)
 
     with caplog.at_level(logging.ERROR):
         result = backup_service._perform_backup_local(cfg, db_session)

@@ -518,9 +518,14 @@ def _matching_service(db):
 def test_profile_propagation_honours_the_blacklist(
     db_session, normal_user, speaker_os_seams, monkeypatch
 ):
-    trio = _trio(db_session, normal_user, speaker_os_seams, c_display="Robert")
+    trio = _trio(db_session, normal_user, speaker_os_seams)
     _unassign_c(db_session, normal_user, trio)
-    d = _voiced(db_session, normal_user, speaker_os_seams, VD, display="Danny")
+    # Propagation reaches only a speaker NAMED as the profile but not linked to it (a
+    # look-alike named anything else keeps its own identity). C carries the profile's
+    # name again, written after the unassign by any path, so only the blacklist can
+    # stop it.
+    db_session.get(Speaker, trio["c"].id).display_name = NAME
+    d = _voiced(db_session, normal_user, speaker_os_seams, VD, display=NAME)
     db_session.commit()
     svc = _matching_service(db_session)
     monkeypatch.setattr(

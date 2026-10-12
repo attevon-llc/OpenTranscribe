@@ -35,9 +35,12 @@ from app.services.permission_service import org_scope_pred
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import blacklisted_profile_ids
 from app.services.speaker_cleanup import blocked_profile_names
+from app.services.speaker_cleanup import blocking_profile_ids_named
 from app.services.speaker_cleanup import clusters_holding_speakers
 from app.services.speaker_cleanup import detach_from_cluster
+from app.services.speaker_cleanup import identity_conflicts_with_cluster
 from app.services.speaker_cleanup import join_cluster_identity
+from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_cleanup import speaker_blocked_from_cluster
@@ -216,8 +219,10 @@ class SpeakerClusteringService:
                     if not cluster:
                         continue
 
-                    # Check constraints before assigning
-                    if speaker_blocked_from_cluster(self.db, speaker_id, cluster):
+                    # A correction forbids it, or the speaker is already somebody else.
+                    if speaker_blocked_from_cluster(
+                        self.db, speaker_id, cluster
+                    ) or identity_conflicts_with_cluster(self.db, speaker, cluster):
                         logger.debug(
                             "Speaker %s blocked from cluster %s by constraint",
                             speaker_id,
@@ -937,8 +942,10 @@ class SpeakerClusteringService:
                             matched_cluster = profile_cluster_map.get(match["cluster_uuid"])
                             if not matched_cluster:
                                 continue
-                            # Check constraints before assigning singleton
-                            if speaker_blocked_from_cluster(self.db, int(spk.id), matched_cluster):
+                            # A correction forbids it, or the speaker is someone else.
+                            if speaker_blocked_from_cluster(
+                                self.db, int(spk.id), matched_cluster
+                            ) or identity_conflicts_with_cluster(self.db, spk, matched_cluster):
                                 logger.debug(
                                     "Singleton %s blocked from cluster %s by constraint",
                                     spk.id,
@@ -1256,17 +1263,28 @@ class SpeakerClusteringService:
 
             # A member the user unassigned from the target (or from its profile, or from
             # one of its members) is not moved: it stays in the source, which then
-            # survives with it (issue #1233). Decided before anything moves, so the
-            # target's membership is the one the user looked at.
+            # survives with it (issue #1233). So is a member that is already somebody
+            # other than the target's person, unless that somebody is the source's own
+            # profile — merging two named clusters says the two names are one person.
+            # Decided before anything moves, so the target's membership is the one the
+            # user looked at.
+            source_profile_id = source.promoted_to_profile_id
+
+            def _stays_behind(speaker: Speaker) -> bool:
+                if speaker_blocked_from_cluster(self.db, int(speaker.id), target):
+                    return True
+                if source_profile_id is not None and speaker.profile_id == source_profile_id:
+                    return False
+                return identity_conflicts_with_cluster(self.db, speaker, target)
+
             self.blocked_speaker_uuids = [
                 str(speakers_by_id[int(m.speaker_id)].uuid)
                 for m in source_members
                 if int(m.speaker_id) in speakers_by_id
-                and speaker_blocked_from_cluster(self.db, int(m.speaker_id), target)
+                and _stays_behind(speakers_by_id[int(m.speaker_id)])
             ]
             blocked = set(self.blocked_speaker_uuids)
             moved: list[Speaker] = []
-            source_profile_id = source.promoted_to_profile_id
             for member in source_members:
                 speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker is not None and str(speaker.uuid) in blocked:
@@ -1870,11 +1888,19 @@ class SpeakerClusteringService:
         display_name: str | None = None,
         *,
         organization_id: OrgScope = UNSCOPED,
+        override_unassignment: bool = False,
     ) -> dict[str, Any]:
         """Batch verify/name multiple speakers.
 
         ``organization_id`` confines the profile and the speakers to one tenant;
         a speaker is only assigned to a profile of its own file's tenant.
+
+        A bulk action honours every correction the user recorded (an unassignment, a
+        rejection): the corrected speaker is refused, listed in ``blocked_speaker_uuids``
+        and explained in ``errors``, and the rest of the batch proceeds (issue #1233).
+        ``override_unassignment`` is the one explicit way past it, and only for ONE
+        speaker — the Inbox's per-speaker action — so a correction is never lifted by a
+        batch the user did not look at speaker by speaker.
 
         Args:
             speaker_uuids: List of speaker UUIDs to verify.
@@ -1882,13 +1908,20 @@ class SpeakerClusteringService:
             action: "accept" (apply suggestion), "assign" (assign to profile), "name" (set display_name), "skip" (mark as reviewed/skipped).
             profile_uuid: Profile UUID (for "assign" action).
             display_name: Display name (for "name" action).
+            override_unassignment: Lift the correction that blocks this one speaker.
 
         Returns:
-            Summary dict with updated_count, failed_count, errors.
+            Summary dict with updated_count, failed_count, errors, blocked_speaker_uuids.
+
+        Raises:
+            ValueError: ``override_unassignment`` with other than exactly one speaker.
         """
+        if override_unassignment and len(speaker_uuids) != 1:
+            raise ValueError("An unassignment can only be overridden for one speaker at a time")
         updated = 0
         failed = 0
         errors: list[str] = []
+        blocked_uuids: list[str] = []
 
         profile = None
         if action == "assign" and profile_uuid:
@@ -1943,34 +1976,42 @@ class SpeakerClusteringService:
                 # tracker groups by new name rather than assuming one per batch.
                 indexed_as = canonical_speaker_label_for_row(speaker)
 
-                if action == "accept":
-                    if speaker.suggested_name and str(speaker.suggested_name).casefold() in (
-                        refused_names.get(int(speaker.id), set())
-                    ):
-                        errors.append(
-                            f"Speaker {suuid} was unassigned from that identity; "
-                            "name it individually to override"
-                        )
-                        failed += 1
-                    elif speaker.suggested_name:
-                        self._rename_tracker.record(
-                            int(speaker.media_file_id), indexed_as, str(speaker.suggested_name)
-                        )
-                        speaker.display_name = speaker.suggested_name  # type: ignore[assignment]
-                        speaker.verified = True  # type: ignore[assignment]
-                        updated += 1
-                    else:
-                        errors.append(f"Speaker {suuid} has no suggestion to accept")
-                        failed += 1
+                if action in ("accept", "name") and (
+                    name := speaker.suggested_name if action == "accept" else display_name
+                ):
+                    if str(name).casefold() in refused_names.get(int(speaker.id), set()):
+                        if not override_unassignment:
+                            blocked_uuids.append(str(suuid))
+                            errors.append(
+                                f"Speaker {suuid} was unassigned from that identity; "
+                                "name it individually to override"
+                            )
+                            failed += 1
+                            continue
+                        for blocking in blocking_profile_ids_named(
+                            self.db, int(speaker.id), str(name)
+                        ):
+                            lift_profile_blacklist(self.db, int(speaker.id), blocking)
+                    self._rename_tracker.record(int(speaker.media_file_id), indexed_as, str(name))
+                    speaker.display_name = str(name)  # type: ignore[assignment]
+                    speaker.verified = True  # type: ignore[assignment]
+                    updated += 1
+
+                elif action == "accept":
+                    errors.append(f"Speaker {suuid} has no suggestion to accept")
+                    failed += 1
 
                 elif action == "assign" and profile:
                     if speaker_blocked_from_profile(self.db, int(speaker.id), int(profile.id)):
-                        errors.append(
-                            f"Speaker {suuid} was unassigned from this profile; "
-                            "assign it individually to override"
-                        )
-                        failed += 1
-                        continue
+                        if not override_unassignment:
+                            blocked_uuids.append(str(suuid))
+                            errors.append(
+                                f"Speaker {suuid} was unassigned from this profile; "
+                                "assign it individually to override"
+                            )
+                            failed += 1
+                            continue
+                        lift_profile_blacklist(self.db, int(speaker.id), int(profile.id))
                     assigned.add(int(speaker.id))
                     if speaker.profile_id:
                         touched.profile_ids.add(int(speaker.profile_id))
@@ -1979,14 +2020,6 @@ class SpeakerClusteringService:
                         int(speaker.media_file_id), indexed_as, str(profile.name)
                     )
                     speaker.display_name = profile.name  # type: ignore[assignment]
-                    speaker.verified = True  # type: ignore[assignment]
-                    updated += 1
-
-                elif action == "name" and display_name:
-                    self._rename_tracker.record(
-                        int(speaker.media_file_id), indexed_as, display_name
-                    )
-                    speaker.display_name = display_name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
                     updated += 1
 
@@ -2025,16 +2058,25 @@ class SpeakerClusteringService:
                 "updated_count": 0,
                 "failed_count": len(speaker_uuids),
                 "errors": [f"Commit failed ({type(e).__name__})"],
+                "blocked_speaker_uuids": [],
             }
 
         self._rename_tracker.flush(self.db)
         if assigned and profile is not None:
             # The target profile gains the voices and each former profile loses them; the
-            # speakers' clusters re-weight them (profile-linked members count double).
+            # speakers' clusters re-weight them (profile-linked members count double) or,
+            # when promoted to another profile, release them; their own documents carry
+            # the new profile.
             touched.profile_ids.add(int(profile.id))
             touched.cluster_uuids = clusters_holding_speakers(self.db, assigned)
+            touched.relabel_speaker_ids |= assigned
             raise_if_incomplete(reconcile_speaker_impact(self.db, touched))
-        return {"updated_count": updated, "failed_count": failed, "errors": errors}
+        return {
+            "updated_count": updated,
+            "failed_count": failed,
+            "errors": errors,
+            "blocked_speaker_uuids": blocked_uuids,
+        }
 
     # ------------------------------------------------------------------
     # Cluster listing / detail

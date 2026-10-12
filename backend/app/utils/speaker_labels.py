@@ -42,6 +42,21 @@ UNKNOWN_SPEAKER_LABEL = "Unknown Speaker"
 #: full reindex is known to have retired every pre-unification document.
 UNKNOWN_SPEAKER_LABELS: frozenset[str] = frozenset({UNKNOWN_SPEAKER_LABEL, "Unknown"})
 
+#: A ``display_name`` matching this is a **diarization placeholder**, not a human-assigned
+#: identity — as are ``NULL`` and ``""``. The distinction is deliberate and shared with the
+#: frontend's speaker plane: a placeholder is scoped to **one file**, so ``SPEAKER_00`` in
+#: recording A and ``SPEAKER_00`` in recording B are different people and must never be
+#: treated as one cross-file identity. Anything else is a name a human assigned.
+PLACEHOLDER_SPEAKER_NAME_PATTERN = r"^SPEAKER_\d+$"
+
+
+def is_assigned_speaker_name(value: object) -> bool:
+    """Whether a ``display_name`` names somebody, rather than being empty or a placeholder."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    return re.match(PLACEHOLDER_SPEAKER_NAME_PATTERN, value.strip()) is None
+
+
 #: The confidence a suggestion needs before it is shown at all. Matches the value both
 #: prior implementations used (``get_speaker_name``'s ``0.75`` literal and
 #: ``SpeakerStatusService.HIGH_CONFIDENCE_THRESHOLD``) — not a new number, just named once.

@@ -28,7 +28,8 @@ def speaker_assignment_seams(
 ) -> dict[str, Any]:
     """Extend ``speaker_os_seams`` with the reads the assignment paths make.
 
-    Adds ``rec["segment_counts"]`` (voiceprint document segment counts) and
+    Adds ``rec["segment_counts"]`` (voiceprint document segment counts),
+    ``rec["doc_orgs"]`` (the tenant each voiceprint write stamped) and
     ``rec["deleted_centroids"]`` (re-cluster's wholesale centroid deletes).
     """
     from app.models.media import Speaker
@@ -113,9 +114,13 @@ def speaker_assignment_seams(
             return None
         return {"embedding": voice, "segment_count": rec["segment_counts"].get(speaker_uuid, 1)}
 
+    rec["doc_orgs"] = {}
+
     def add_speaker_embedding(*, speaker_uuid, embedding, segment_count=1, **kwargs):
         rec["voiceprints"][str(speaker_uuid)] = list(embedding)
         rec["segment_counts"][str(speaker_uuid)] = segment_count
+        # The real write replaces the whole document, tenant stamp included.
+        rec["doc_orgs"][str(speaker_uuid)] = kwargs.get("organization_id")
         return True
 
     monkeypatch.setattr(

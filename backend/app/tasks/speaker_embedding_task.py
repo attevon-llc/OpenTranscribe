@@ -419,7 +419,6 @@ def update_speaker_embedding_on_reassignment(
 
     from app.services.opensearch_service import add_speaker_embedding
     from app.services.opensearch_service import get_speaker_document
-    from app.services.opensearch_service import update_speaker_segment_count
 
     try:
         # Phase 1 — read (DB only, short). Returns plain data; the ORM objects
@@ -481,14 +480,26 @@ def update_speaker_embedding_on_reassignment(
             media_file_id=target["media_file_id"],
             segment_count=segment_count,
             display_name=target["display_name"],
+            # The write replaces the whole document: without the file's tenant an org
+            # speaker's voiceprint would come back unstamped, i.e. personal.
+            organization_id=plan["organization_id"],
         )
 
-        # Update source speaker segment_count (if it still exists)
+        # The segment is no longer the source's (issue #1233): its voice leaves the source's
+        # voiceprint by the exact inverse of the weighted add above, so the source's
+        # clusters and profile stop averaging audio the user moved to someone else.
         if source_speaker_uuid and plan["source_speaker_exists"]:
             source_doc = get_speaker_document(source_speaker_uuid)
             if source_doc and source_doc["segment_count"] > 1:
-                update_speaker_segment_count(source_speaker_uuid, source_doc["segment_count"] - 1)
-                logger.info(f"Decremented source speaker {source_speaker_uuid} segment_count")
+                _remove_segment_from_voiceprint(
+                    source_speaker_uuid,
+                    plan["source_speaker"],
+                    source_doc,
+                    new_embedding,
+                    user_id,
+                    organization_id=plan["organization_id"],
+                )
+                logger.info(f"Removed the moved segment from speaker {source_speaker_uuid}")
 
         # Phase 4 — every aggregate averaging the shifted voiceprint, in its own session.
         residual = _rebuild_affected_aggregates(plan)
@@ -509,6 +520,50 @@ def update_speaker_embedding_on_reassignment(
         logger.error(f"Error updating speaker embedding on reassignment: {type(e).__name__}: {e}")
         logger.error("Full traceback:", exc_info=True)
         return {"status": "error", "message": str(e)}
+
+
+def _remove_segment_from_voiceprint(
+    speaker_uuid: str,
+    source: dict,
+    document: dict,
+    segment_embedding,
+    user_id: int,
+    *,
+    organization_id: int | None,
+) -> None:
+    """Take one segment's embedding back out of a voiceprint: ``(old * n - e) / (n - 1)``.
+
+    The inverse of the weighted add the target receives, under the same model (the stored
+    vector is the mean of ``segment_count`` segment embeddings). A result too close to
+    zero means the voiceprint was little more than that segment; it is left unchanged and
+    only the count moves, rather than storing noise as a voice.
+    """
+    import numpy as np
+
+    from app.services.opensearch_service import add_speaker_embedding
+    from app.services.opensearch_service import update_speaker_segment_count
+
+    count = int(document["segment_count"])
+    remaining = (np.array(document["embedding"]) * count - np.array(segment_embedding)) / (
+        count - 1
+    )
+    norm = float(np.linalg.norm(remaining))
+    if norm < 1e-6:
+        update_speaker_segment_count(speaker_uuid, count - 1)
+        return
+    add_speaker_embedding(
+        speaker_id=source["id"],
+        speaker_uuid=speaker_uuid,
+        user_id=user_id,
+        name=source["name"],
+        embedding=(remaining / norm).tolist(),
+        profile_id=source["profile_id"],
+        profile_uuid=source["profile_uuid"],
+        media_file_id=source["media_file_id"],
+        segment_count=count - 1,
+        display_name=source["display_name"],
+        organization_id=organization_id,
+    )
 
 
 def _load_reassignment_plan(
@@ -563,6 +618,7 @@ def _load_reassignment_plan(
         affected_speaker_ids = {int(target_speaker.id)}
 
         source_speaker_exists = False
+        source: dict | None = None
         if source_speaker_uuid:
             source_speaker = get_by_uuid(db, Speaker, source_speaker_uuid)
             if source_speaker:
@@ -570,6 +626,20 @@ def _load_reassignment_plan(
                 affected_speaker_ids.add(int(source_speaker.id))
                 if source_speaker.profile_id:
                     affected_profile_ids.add(int(source_speaker.profile_id))
+                source = {
+                    "id": int(source_speaker.id),
+                    "name": str(source_speaker.name),
+                    "profile_id": (
+                        int(source_speaker.profile_id) if source_speaker.profile_id else None
+                    ),
+                    "profile_uuid": (
+                        str(source_speaker.profile.uuid) if source_speaker.profile else None
+                    ),
+                    "media_file_id": int(source_speaker.media_file_id),
+                    "display_name": (
+                        str(source_speaker.display_name) if source_speaker.display_name else None
+                    ),
+                }
 
         return {
             "duration": duration,
@@ -593,11 +663,16 @@ def _load_reassignment_plan(
                 ),
             },
             "source_speaker_exists": source_speaker_exists,
+            "source_speaker": source,
             "affected_profile_ids": affected_profile_ids,
             # The target's voiceprint shifts below, and every centroid that averages it
             # shifts with it (issue #1233); read here, while the rows are at hand.
             "affected_cluster_uuids": clusters_holding_speakers(db, affected_speaker_ids),
             "owner_id": int(target_speaker.user_id),
+            # Both speakers are of the segment's file, so of its tenant.
+            "organization_id": (
+                int(media_file.organization_id) if media_file.organization_id is not None else None
+            ),
         }
 
 

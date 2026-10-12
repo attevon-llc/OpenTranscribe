@@ -1503,6 +1503,12 @@
             ],
             "title": "Display Name"
           },
+          "override_unassignment": {
+            "default": false,
+            "description": "Lift the user's earlier unassignment or rejection that blocks this speaker. Only with exactly one speaker; a batch is refused (422). Without it, a blocked speaker is skipped and listed in blocked_speaker_uuids.",
+            "title": "Override Unassignment",
+            "type": "boolean"
+          },
           "profile_uuid": {
             "anyOf": [
               {
@@ -38257,7 +38263,7 @@
     },
     "/api/speaker-clusters/batch-verify": {
       "post": {
-        "description": "Batch verify multiple speakers.",
+        "description": "Batch verify multiple speakers.\n\nA speaker the user unassigned from (or rejected) the identity being applied is\nskipped and listed in ``blocked_speaker_uuids`` (issue #1233). ``override_unassignment``\nlifts that correction, for exactly one speaker; with more it is a 422.",
         "operationId": "batch_verify_api_speaker_clusters_batch_verify_post",
         "requestBody": {
           "content": {

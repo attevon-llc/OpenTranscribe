@@ -76,6 +76,20 @@ def _has_unusable_pyannote_source(conn, tables: list[str]) -> bool:
     return bool(conn.execute(detect, {"env_local": module.env_asr_is_local()}).scalar())
 
 
+def _has_lite_local_source_with_speakers(conn, tables: list[str]) -> bool:
+    """v436's data marker: on lite, a stored "this server" choice Automatic would keep.
+
+    Always False on the full image, where the revision is a no-op. The predicate is read
+    from the revision itself, so detection and the rewrite cannot drift apart.
+    """
+    if not {"user_setting", "user_asr_settings"} <= set(tables):
+        return False
+    module = _revision_module("v436_lite_local_speaker_detection_to_automatic")
+    if not module.deployment_is_lite():
+        return False
+    return bool(conn.execute(text(module.DETECT_SQL)).scalar())
+
+
 def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     """Detect the schema version of an existing untracked database.
 
@@ -593,6 +607,10 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # with no key under local transcription is stamped v433 and re-runs the reset.
     has_unusable_pyannote_source = _has_unusable_pyannote_source(conn, tables)
 
+    # v436: data-only and lite-only (issue #1228). Keyed on the ABSENCE of a lite user's
+    # stored "this server" choice that Automatic would keep, like v434.
+    has_lite_local_source = _has_lite_local_source_with_speakers(conn, tables)
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -650,8 +668,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
-    # v434: same schema as v433, with no unusable pyannote.ai choice left. The newest
-    # revision on this chain, so this is the top of the ladder.
+    # v436: same as v434, with no lite "this server" choice left that Automatic would keep.
+    # The newest revision on this chain, so this is the top of the ladder.
+    if matches_v433 and not has_unusable_pyannote_source and not has_lite_local_source:
+        return "v436_lite_local_speaker_detection_to_automatic"
+    # v434: same schema as v433, with no unusable pyannote.ai choice left.
     if matches_v433 and not has_unusable_pyannote_source:
         return "v434_reset_unusable_pyannote_source"
     # v433: same as v432 plus the requested per-file transcription options.

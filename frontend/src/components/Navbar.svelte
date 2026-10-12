@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import { user, logout, fetchUserInfo } from "../stores/auth";
+  import { user, logout } from "../stores/auth";
   import { onMount, onDestroy } from "svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
@@ -271,12 +271,6 @@
   // Setup and cleanup event listeners
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
-
-    // Refresh user data to ensure we have the latest profile information
-    // This ensures the navbar always shows the most up-to-date user info
-    fetchUserInfo().catch(err => {
-      console.error('Error refreshing user data in Navbar:', err);
-    });
 
     // Cloud edition: prime the usage/billing stores so the navbar badge +
     // upgrade CTA render. Best-effort — failures leave the badge hidden.

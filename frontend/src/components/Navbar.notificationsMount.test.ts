@@ -81,6 +81,18 @@ beforeEach(() => {
   showNotificationsPanel.set(false);
 });
 
+describe('the navbar does not re-fetch a user the session probe / login already loaded', () => {
+  it('mounting issues no GET /auth/me', async () => {
+    const { fetchUserInfo } = await import('$stores/auth');
+    vi.mocked(fetchUserInfo).mockClear();
+
+    const { container } = render(Navbar);
+
+    expect(container.querySelector('.notifications-btn')).toBeTruthy(); // control: navbar rendered
+    expect(fetchUserInfo).not.toHaveBeenCalled();
+  });
+});
+
 describe('the notifications panel is mounted once', () => {
   it('the navbar alone renders no panel even while the open flag is set', async () => {
     const { container } = render(Navbar);

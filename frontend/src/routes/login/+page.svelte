@@ -348,7 +348,6 @@
     const result = await loginWithExternalAuth();
     if (result.success) {
       loginSuccess = true;
-      import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
       setTimeout(() => goto('/', { replaceState: true }), 600);
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
@@ -467,9 +466,6 @@
         loginSuccess = true;
         loading = false;
 
-        // Prefetch dashboard data while showing success state
-        import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
-
         // Brief delay so the success state is visible before navigation
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
@@ -569,7 +565,6 @@
     forcedNewPassword = "";
     forcedConfirmPassword = "";
     toastStore.success($t('auth.forcedChange.success'));
-    import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
     // Navigate immediately rather than through the usual 600 ms "signing in"
     // flourish: the hold has already dropped, so the shell would render its
     // redirect placeholder over this page for the whole delay.
@@ -675,7 +670,6 @@
     password = "";
     await recordBannerConsent();
     loginSuccess = true;
-    import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
     setTimeout(() => goto('/', { replaceState: true }), 600);
   }
 
@@ -716,7 +710,6 @@
 
       bannerConsentPending = false;
       loginSuccess = true;
-      import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
       setTimeout(() => goto('/', { replaceState: true }), 600);
       return;
     }

@@ -241,6 +241,18 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   the write. A route wrapping its body in `except Exception` must re-raise
   `SpeakerCleanupIncompleteError` (as `verify_speaker_identification` and
   `delete_speaker_profile` do) or it becomes a 500.
+- **A route that ASSIGNS a speaker to a cluster or profile must honour the blacklist an
+  unassign recorded** (issue #1233; rule and per-path table in
+  `app/services/CLAUDE.md` → "Unassigning"). `POST /speaker-clusters/{uuid}/unassign` now
+  also unlinks the cluster's promoted profile and records cannot-link + profile blacklist
+  rows; `/split` is the same unassignment. Bulk routes REFUSE a blocked speaker and say so
+  (`/batch-verify` per-speaker `errors`, `/{source}/merge/{target}`'s new
+  `blocked_speaker_uuids`); single-speaker explicit routes (`/speaker-profiles/speakers/{uuid}/assign-profile`,
+  `/speakers/{uuid}/verify?action=accept`, a typed display name) LIFT it via
+  `speaker_cleanup.lift_profile_blacklist`. `POST /speakers/{uuid}/merge/{target}` carries
+  the source's rows to the target (`carry_blacklist`) before the CASCADE drops them. Use the
+  `speaker_cleanup` helpers; a second blacklist check is how the old one-direction cannot-link
+  check came to exist beside a profile-only one.
 - **`main.py`'s `OpenTranscribeError` handler maps by MRO**, so a subclass keeps its family's
   status (`SpeakerCleanupIncompleteError` → `SearchIndexError` → 503). It matched the exact
   type only before #1214, which turned every subclass into a 500.

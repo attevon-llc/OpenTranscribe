@@ -268,6 +268,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Unassigning a speaker is a correction nothing silently undoes (#1233).** Unassigning a
+  speaker from a cluster now means that section is no longer that person: it also leaves the
+  cluster's promoted profile (a name that came from the profile is cleared, a name the user
+  typed is kept), and the blacklist is recorded both against every remaining member and
+  against the profile, while the cluster and profile stay for everyone else with their centroid
+  and embedding rebuilt. Splitting speakers out of a cluster does the same. Every path that can
+  assign a speaker honours that blacklist: upload-time clustering, Re-cluster All (which also
+  takes back a profile link the user had already unassigned under the old rule), voice matching
+  after a label, profile propagation, re-matching, cluster merge (a blocked member stays put and
+  is reported) and Inbox batch Assign/Accept (refused with a per-speaker error); a speaker merge
+  carries the source's corrections to the target. Naming one speaker explicitly lifts its own
+  correction. Every assignment path now leaves membership, `member_count`, the centroid and the
+  profile embedding consistent: joining a profile's cluster updates the profile embedding,
+  Re-cluster All's profile matching links the profile it joins, a cluster a speaker is dropped
+  from is rebuilt, a segment reassignment rebuilds the clusters its drifted voiceprint belongs
+  to, and the profile embedding built after labelling a speaker now includes that speaker. A
+  transcript reindex that cannot be queued after a speaker change is reported instead of only
+  logged, and a failed queue attempt no longer blocks the next one for the debounce window.
+
 - **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
   orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,
   merge and delete, profile delete, profile reassignment, batch profile assignment, a retry

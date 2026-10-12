@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--purge` for the eval corpus injector (#1222).** `python -m app.scripts.corpus_injection
+  --corpus C --user U [--seed S] --purge --yes` removes what a previous injection wrote for that
+  one (corpus, seed, owner) namespace through the same destroyer every delete path uses, so
+  OpenSearch chunks, speaker embeddings and clusters go with the rows. A file is selected only
+  when its uuid matches the one the injector derives, `--dry-run` lists, and a bare `--purge`
+  refuses. `scripts/cleanup-test-data.py` now also sweeps files stamped with a registered test
+  seed. The synthetic and search-quality fixtures tear down through it.
+
 - **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
   About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,
   local auth, SCIM tokens) had been copied from English into seven locales because `check:i18n`
@@ -339,6 +347,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   saved the new speakers without `finalize_segments`, so a segment spanning two speakers kept
   one label. It now goes through the same boundary smoothing, re-segmentation and merge as
   every other transcription path.
+
+- **Test leftovers from the #1195 pass (#1222).** The PKI e2e leg stops its prod stack from one
+  EXIT trap, so Ctrl-C or a failed start no longer leaves it on the stock ports. Standalone
+  `benchmark_parallel.py --upload` sends `bench-parallel-<hex8>` names (registered with the sweep)
+  and deletes its uploads. The Dockerfile `TARGETARCH` build test labels and removes its image. The
+  LDAP/Keycloak e2e fixtures stop an overlay only when they started it. Redis db 15 is confirmed
+  to be used by nothing else.
+
+- **The notifications panel is mounted once (#1222).** `Navbar.svelte` mounted a second copy while
+  it was open, so the panel's markup, click-outside listener and scroll lock doubled. The layout
+  mount stays.
+
+- **Licence, NOTICE and repair-ETA copy are whole sentences (#1222).** The About dialog glued the
+  licence and NOTICE links onto a sentence with `*Suffix` keys, and the embedding-repair ETA was
+  a "— ETA" tail after the percentage; neither could be translated for a language with a different
+  word order. Each is one string with a `{{license}}` / `{{notice}}` placeholder (rendered by
+  `$lib/i18n/slots`) or its own element, in all 12 locales (provisional translations pending a
+  native review).
+
+- **Dropped accents restored in the Spanish, French, Portuguese and German copy (#1222).** The
+  reprocess, Bedrock, speaker-attribute and uploader strings had lost their diacritics
+  ("transcripcion", "Parametres", "nao", "Uberprufen"). `lib/i18n/accents.test.ts` now fails on
+  the words that are never valid unaccented. Italian and Dutch were scanned and are clean.
 
 - **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
   orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,

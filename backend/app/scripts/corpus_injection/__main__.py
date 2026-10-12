@@ -71,6 +71,18 @@ def build_parser() -> argparse.ArgumentParser:
         "spent closing gold sets for [multi_file,aggregation]",
     )
     parser.add_argument("--force", action="store_true", help="Rewrite rows even if unchanged")
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Instead of injecting, DELETE what a previous run injected for --corpus/--seed/--user "
+        "(files, segments, OpenSearch chunks, speakers, via the product's canonical destroy). "
+        "Needs --yes; --dry-run lists the files. Reads no corpus data.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm a --purge (an empty --seed is the canonical corpus)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Parse and report, write nothing")
     parser.add_argument(
         "--allow-live-stack",
@@ -92,6 +104,39 @@ def _resolve_user(db, email: str) -> int:  # noqa: ANN001 — Session, imported 
     return int(user.id)
 
 
+def _run_purge(args: argparse.Namespace) -> int:
+    """``--purge``: remove one (corpus, seed) namespace for one owner. Exit 1 on residue."""
+    if not args.dry_run and not args.yes:
+        logger.error(
+            "--purge deletes data. Re-run with --dry-run to list it, or --yes to delete "
+            "corpus=%s seed=%r for %s.",
+            args.corpus,
+            args.seed,
+            args.user,
+        )
+        return 2
+
+    from sqlalchemy.orm import Session
+
+    from app.db.base import engine
+    from app.scripts.corpus_injection.purge import purge_injected
+
+    target = describe_target()
+    logger.info("Target: postgres=%s opensearch=%s", target["postgres"], target["opensearch"])
+    with Session(engine) as db:
+        user_id = _resolve_user(db, args.user)
+        report = purge_injected(db, user_id, args.corpus, args.seed, dry_run=args.dry_run)
+    if args.dry_run:
+        logger.info("Dry run: %d injected file(s) would be purged.", len(report.matched))
+        for file_uuid in report.matched:
+            logger.info("  %s", file_uuid)
+        return 0
+    logger.info("Purged %d of %d injected file(s).", len(report.deleted), len(report.matched))
+    for failure in report.failed:
+        logger.error("NOT cleanly purged: %s", failure)
+    return 0 if report.clean else 1
+
+
 def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read top to bottom
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -104,6 +149,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     except LiveStackRefusedError as exc:
         logger.error("%s", exc)
         return 2
+
+    if args.purge:
+        return _run_purge(args)
 
     # Imports below must follow bootstrap(): app.core.config reads os.environ
     # at import time.

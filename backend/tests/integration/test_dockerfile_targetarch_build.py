@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -97,12 +98,58 @@ FROM base-${TARGETARCH} AS chosen
 """
 
 
-def _build(tmp_path: Path, dockerfile_text: str) -> subprocess.CompletedProcess[str]:
+@pytest.fixture
+def build_run_label():
+    """A per-test label value; every image the test builds carries it, and only those go.
+
+    A successful ``docker build`` leaves an untagged image behind, which is not removed by
+    anything and is not ours to find by name. Labelling the build and removing by that
+    label (plus the sweep's ``ot-test-artifact`` marker) scopes the cleanup to exactly this
+    test's output: never ``docker image prune``, never a bare image name, and the shared
+    ``alpine`` base layer other tests and stacks use is left alone.
+    """
+    run_label = uuid.uuid4().hex[:12]
+    try:
+        yield run_label
+    finally:
+        listed = subprocess.run(
+            ["docker", "images", "--all", "-q", "--filter", f"label=ot-test-build={run_label}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        image_ids = sorted(set(listed.stdout.split()))
+        if image_ids:
+            subprocess.run(
+                ["docker", "rmi", "--force", *image_ids],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+
+
+def _build(
+    tmp_path: Path, dockerfile_text: str, run_label: str
+) -> subprocess.CompletedProcess[str]:
     (tmp_path / "Dockerfile").write_text(dockerfile_text, encoding="utf-8")
     return subprocess.run(
-        # --platform pinned so the test asserts the same thing on an arm64 host; only the
-        # amd64 stage is exercised, and both stages are the same tiny image anyway.
-        ["docker", "build", "--platform", "linux/amd64", "-f", str(tmp_path / "Dockerfile"), "."],
+        [
+            "docker",
+            "build",
+            # --platform pinned so the test asserts the same thing on an arm64 host; only the
+            # amd64 stage is exercised, and both stages are the same tiny image anyway.
+            "--platform",
+            "linux/amd64",
+            "--label",
+            "ot-test-artifact=1",
+            "--label",
+            f"ot-test-build={run_label}",
+            "-f",
+            str(tmp_path / "Dockerfile"),
+            ".",
+        ],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -113,9 +160,9 @@ def _build(tmp_path: Path, dockerfile_text: str) -> subprocess.CompletedProcess[
 
 @pytestmark_docker
 @pytest.mark.integration
-def test_the_shadowing_form_really_does_fail_to_build(tmp_path: Path):
+def test_the_shadowing_form_really_does_fail_to_build(tmp_path: Path, build_run_label: str):
     """The must-fire control. Without it, the fix below could be passing for another reason."""
-    result = _build(tmp_path, _BROKEN)
+    result = _build(tmp_path, _BROKEN, build_run_label)
     assert result.returncode != 0, (
         "a global `ARG TARGETARCH` no longer breaks stage selection — BuildKit's behaviour "
         "changed, and this whole module (plus the warnings in both Dockerfiles) should be "
@@ -128,9 +175,19 @@ def test_the_shadowing_form_really_does_fail_to_build(tmp_path: Path):
 
 @pytestmark_docker
 @pytest.mark.integration
-def test_the_form_the_dockerfiles_now_use_builds(tmp_path: Path):
-    result = _build(tmp_path, _FIXED)
+def test_the_form_the_dockerfiles_now_use_builds(tmp_path: Path, build_run_label: str):
+    result = _build(tmp_path, _FIXED, build_run_label)
     assert result.returncode == 0, (
         "omitting the global ARG does not resolve TARGETARCH on this docker/BuildKit "
         f"version, so the Dockerfiles' current form would not build:\n{result.stderr}"
     )
+    # The cleanup in `build_run_label` removes by this label; if the build stopped carrying
+    # it, the finally would silently clean nothing and the image would dangle again.
+    labelled = subprocess.run(
+        ["docker", "images", "--all", "-q", "--filter", f"label=ot-test-build={build_run_label}"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert labelled.stdout.split(), "the built image does not carry the cleanup label"

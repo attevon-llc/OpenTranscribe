@@ -275,7 +275,24 @@ MEDIA_FILENAME_SPECS: list[MediaFilenameSpec] = [
         r'diar-native-%',
         re.compile(r'^diar-native-[a-z0-9]+(-[a-z0-9]+)*-\d+\.wav$'),
     ),
+    # scripts/benchmark_parallel.py --upload (issue #1222): standalone runs used to upload the
+    # corpus's REAL filenames, which no sweep can tell from a user's own recordings.
+    MediaFilenameSpec(
+        'bench-parallel',
+        r'bench-parallel-%',
+        re.compile(r'^bench-parallel-[0-9a-f]{8}\.[A-Za-z0-9]+$'),
+    ),
 ]
+
+#: Namespace seeds the TEST suites pass to ``corpus_injection.injector.inject_meeting``. The
+#: injected file's name (``<corpus>__<meeting>.transcript``) is the corpus's, not ours, so these
+#: files are recognised by the ``rag_eval.seed`` the injector stamps on them instead. FULL
+#: match with the uuid4 uniquifier: the canonical (empty) seed and any operator-chosen seed
+#: (``run1``, ``rag403``) are real eval corpora and are never a candidate. Producers:
+#: ``integration/test_corpus_injection{,_synthetic_e2e,_purge}.py`` (``pytest-<hex12>``,
+#: ``pytest-synth-<hex10>``), ``fixtures/search_corpus_stack.py`` (``pytest-searchqual-<hex10>``)
+#: and ``e2e/owned_corpus.py`` (``e2e-owned-<hex10>``).
+INJECTED_TEST_SEED_SHAPE = re.compile(r'(pytest(-synth|-searchqual)?|e2e-owned)-[0-9a-f]{10,12}')
 
 #: name/title-prefix + <8hex> shape, one entry per non-media resource type.
 NAME_PREFIX_SPECS: dict[str, tuple[str, str]] = {
@@ -368,6 +385,33 @@ def find_media_by_filename(conn: Any, cutoff: int) -> list[Candidate]:
             if spec.shape.match(filename):
                 found.append(Candidate('media_file', str(row.uuid), filename, row.email))
     return found
+
+
+def find_injected_test_media(conn: Any, cutoff: int) -> list[Candidate]:
+    """Files ``app.scripts.corpus_injection`` wrote under a registered TEST seed.
+
+    Deleted through ``DELETE /api/files/{uuid}`` like every other media candidate, which ends
+    in ``purge_media_file`` -- the same destroyer ``python -m app.scripts.corpus_injection
+    --purge`` uses -- so the OpenSearch chunks and speaker rows go with the file.
+    """
+    rows = conn.execute(
+        text(
+            """
+            SELECT m.uuid, m.filename, u.email,
+                   m.metadata_important->'rag_eval'->>'seed' AS seed
+            FROM media_file m
+            JOIN "user" u ON u.id = m.user_id
+            WHERE m.metadata_important->'rag_eval'->>'injected' = 'true'
+              AND m.upload_time < to_timestamp(:cutoff)
+            """
+        ),
+        {'cutoff': cutoff},
+    ).fetchall()
+    return [
+        Candidate('media_file', str(row.uuid), f'{row.filename} [seed {row.seed}]', row.email)
+        for row in rows
+        if row.seed and INJECTED_TEST_SEED_SHAPE.fullmatch(row.seed)
+    ]
 
 
 def find_media_by_tier_a_owner(
@@ -871,6 +915,7 @@ def _sweep_records(args: argparse.Namespace, cutoff: int, report: dict[str, Any]
     exit_code = 0
     with engine.connect() as conn:
         media_candidates = find_media_by_filename(conn, cutoff)
+        media_candidates += find_injected_test_media(conn, cutoff)
         media_candidates += find_media_by_tier_a_owner(
             conn, cutoff, cleanup_users.ORPHAN_PATTERNS_UNAMBIGUOUS
         )

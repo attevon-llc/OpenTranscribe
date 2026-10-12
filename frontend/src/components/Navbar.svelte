@@ -3,7 +3,6 @@
   import { page } from "$app/stores";
   import { user, logout, fetchUserInfo } from "../stores/auth";
   import { onMount, onDestroy } from "svelte";
-  import NotificationsPanel from "./NotificationsPanel.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
   import UserDropdown from "$components/navbar/UserDropdown.svelte";
@@ -600,10 +599,8 @@
   <div class="mobile-overlay" on:click={closeMobileMenu}></div>
 {/if}
 
-<!-- Add the NotificationsPanel component -->
-{#if showNotifs}
-  <NotificationsPanel />
-{/if}
+<!-- The notifications panel is mounted once, by routes/+layout.svelte. A second mount here
+     rendered a duplicate panel (and a second scroll lock) while the panel was open. -->
 
 <!-- About Modal -->
 {#if AboutModal}

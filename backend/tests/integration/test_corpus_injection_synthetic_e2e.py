@@ -31,12 +31,12 @@ from sqlalchemy import func
 from sqlalchemy import select
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.scripts.corpus_injection import ids
 from app.scripts.corpus_injection.adapters.synthetic import SyntheticAdapter
 from app.scripts.corpus_injection.injector import dispatch_indexing
 from app.scripts.corpus_injection.injector import inject_meeting
+from app.scripts.corpus_injection.purge import purge_injected
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -109,7 +109,6 @@ def injected(session, owner_id, opensearch, adapter):
     failing assertion mid-test still cleans up the shared eval stack.
     """
     from app.core.config import settings
-    from app.services.search.indexing_service import TranscriptIndexingService
 
     records = {}
     turns_by_file = {}
@@ -131,17 +130,8 @@ def injected(session, owner_id, opensearch, adapter):
         # delete_by_query refreshes *after* it runs, so freshly indexed chunks are
         # otherwise invisible to the delete and survive as orphans.
         opensearch.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
-        indexer = TranscriptIndexingService()
-        for record in records.values():
-            media_file = session.get(MediaFile, record.media_file_id)
-            if media_file is not None:
-                session.query(TranscriptSegment).filter(
-                    TranscriptSegment.media_file_id == media_file.id
-                ).delete()
-                session.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete()
-                session.delete(media_file)
-                session.commit()
-            indexer.delete_transcript_chunks(record.file_uuid)
+        report = purge_injected(session, owner_id, CORPUS, SEED)
+        assert report.clean, f"injected corpus not cleanly purged: {report.failed}"
 
 
 def _fetch_chunks(client, file_uuids):

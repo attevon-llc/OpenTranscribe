@@ -85,7 +85,7 @@
         "type": "string"
       },
       "ASRSwitchResult": {
-        "description": "Response of the ASR-side switches (``set-active``, ``clear-active``), issue #1225.\n\n``pipeline_issues`` is the caller's pipeline AFTER the switch: warnings, and errors the\nswitch did not introduce (a switch that would introduce a diarization-step error is\nrefused with 409 ``{code, message}`` instead).",
+        "description": "Response of the ASR-side switches (``set-active``, ``clear-active``, issue #1225) and of\ndeleting a config (``DELETE /asr-settings/config/{uuid}``, issue #1236).\n\n``pipeline_issues`` is the caller's pipeline AFTER the change: warnings, and errors the\nchange did not introduce (a switch that would introduce a diarization-step error, or on\nlite any switch onto local transcription, #1228, is refused with 409 ``{code, message}``\ninstead). ``config_uuid`` is the config active afterwards (``null``: none).",
         "properties": {
           "config_uuid": {
             "anyOf": [
@@ -22409,7 +22409,7 @@
     },
     "/api/admin/engine-settings/update": {
       "post": {
-        "description": "Write one or more engine settings to the DB. Only provided (non-None) fields are saved.",
+        "description": "Write one or more engine settings to the DB. Only provided (non-None) fields are saved.\n\nLite has no local transcription or speaker detection engine (#1228): choosing one is\n409 ``local_asr_unavailable`` / ``local_diarization_unavailable``. Boundary smoothing\nstays editable there; it applies to any diarized transcript.",
         "operationId": "update_engine_settings_api_admin_engine_settings_update_post",
         "requestBody": {
           "content": {
@@ -25547,7 +25547,7 @@
         ]
       },
       "post": {
-        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless that would make their stored speaker\ndetection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards.",
+        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless that would make their stored speaker\ndetection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards. On lite a ``local``\nconfig is refused (409 ``local_asr_unavailable``, #1228): it could never transcribe.",
         "operationId": "create_asr_config_api_asr_settings_post",
         "requestBody": {
           "content": {
@@ -25641,7 +25641,7 @@
     },
     "/api/asr-settings/config/{config_uuid}": {
       "delete": {
-        "description": "Delete an ASR configuration.\n\nIf it was active, the first remaining config that keeps the stored speaker detection\nchoice runnable is promoted (issue #1225); with none, the active pointer is cleared.\nDeletion itself is never refused: a stored choice the remaining state cannot run is\nreported by ``GET /user-settings/pipeline`` and refused per file by the pipeline.",
+        "description": "Delete an ASR configuration and report the pipeline it leaves (issue #1236).\n\nIf it was active, ``choose_after_active_delete`` picks what becomes active: the first\nremaining config that keeps the stored speaker detection choice runnable (#1225), else\nthe cleared pointer. On lite, where clearing means local Whisper, a remaining config\nthat can transcribe is kept instead, and with none the delete is refused (409\n``local_asr_unavailable``, #1228). Otherwise deletion is never refused: a stored choice\nthe remaining state cannot run comes back in ``pipeline_issues`` (as for\n``set-active``), with ``config_uuid`` naming the config now active (``null``: none).",
         "operationId": "delete_asr_config_api_asr_settings_config__config_uuid__delete",
         "parameters": [
           {
@@ -25656,7 +25656,14 @@
           }
         ],
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ASRSwitchResult"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -25728,7 +25735,7 @@
         ]
       },
       "put": {
-        "description": "Update an existing ASR configuration.",
+        "description": "Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).",
         "operationId": "update_asr_config_api_asr_settings_config__config_uuid__put",
         "parameters": [
           {
@@ -25863,7 +25870,7 @@
     },
     "/api/asr-settings/local-model/restart": {
       "post": {
-        "description": "Gracefully restart the GPU Celery worker to apply a new model (admin only).\n\nSends a warm shutdown signal via Celery's control API.  The worker finishes\nany in-progress tasks before exiting.  Docker ``restart: always`` brings\nthe container back automatically, and the ``worker_ready`` signal handler\npreloads the new model from the database.",
+        "description": "Gracefully restart the GPU Celery worker to apply a new model (admin only).\n\nSends a warm shutdown signal via Celery's control API.  The worker finishes\nany in-progress tasks before exiting.  Docker ``restart: always`` brings\nthe container back automatically, and the ``worker_ready`` signal handler\npreloads the new model from the database. Lite runs no GPU worker: 409\n``local_asr_unavailable`` (#1228) instead of a shutdown broadcast to every worker.",
         "operationId": "restart_gpu_worker_api_asr_settings_local_model_restart_post",
         "responses": {
           "200": {
@@ -25890,7 +25897,7 @@
     },
     "/api/asr-settings/local-model/set": {
       "post": {
-        "description": "Set the active local Whisper model (admin only).\n\nStores the model name in SystemSettings so the GPU worker uses it on\nnext startup.  Does NOT restart the worker — call ``/local-model/restart``\nseparately to apply with graceful drain.",
+        "description": "Set the active local Whisper model (admin only).\n\nStores the model name in SystemSettings so the GPU worker uses it on\nnext startup.  Does NOT restart the worker — call ``/local-model/restart``\nseparately to apply with graceful drain. Lite has no local Whisper: 409\n``local_asr_unavailable`` (#1228).",
         "operationId": "set_active_local_model_api_asr_settings_local_model_set_post",
         "requestBody": {
           "content": {

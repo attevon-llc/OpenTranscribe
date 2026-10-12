@@ -244,8 +244,23 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   answer the same 409 for an error the switch would INTRODUCE and otherwise return
   `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
   break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
-  the first remaining config that keeps the choice runnable, else clears. A #1109-locked
-  source is never refused. Lite's transcription-step 409s are WP6's (`REFUSED_STEPS`).
+  the first remaining config that keeps the choice runnable, else clears, and answers the
+  switch shape too (`config_uuid` + `pipeline_issues`, #1236). A #1109-locked source is never
+  refused on the diarization step.
+- **Lite is cloud-only for transcription and speaker detection (#1228): every local option is
+  a 409 with the plan's `{code, message}`**, from `utils/lite_mode.py` (`refuse_on_lite`,
+  `plan_refusal`) or the plan itself. `local_asr_unavailable`: an ASR switch onto local
+  Whisper (`set-active` a local config, `clear-active`, deleting the last config that can
+  transcribe), creating/updating a `local` config, `/asr-settings/local-model/{set,restart}`
+  (restart used to broadcast a shutdown to EVERY worker on lite), engine-settings
+  `transcriber_backend`, and any per-file `whisper_model` (`utils/whisper_model_choice`, the
+  one chokepoint upload/URL/reprocess share). `local_diarization_unavailable`: the settings
+  PUT for "this server", engine-settings `diarizer_backend`/`diarizer_require_sidecar`, and a
+  manual re-detection whose plan resolves to this server's engine (Automatic included).
+  `GET /transcription/system-defaults` omits `local` on lite. Reprocess (single and bulk)
+  refuses an unrunnable plan BEFORE deleting the transcript or clearing speakers
+  (`files/reprocess.refuse_unrunnable_rerun`). Pinned row by row, each with a full-image
+  control, in `tests/api/test_lite_settings_refusals.py`.
 - **A route that deletes a speaker or moves one out of a cluster/profile must use
   `services/speaker_cleanup`** (issue #1214): `capture_speaker_impact` before the write,
   `raise_if_incomplete(reconcile_speaker_impact(...))` after the commit. Hand-rolling

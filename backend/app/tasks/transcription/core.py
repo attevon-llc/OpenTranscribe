@@ -26,7 +26,6 @@ from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
 from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import gpu_split_enabled
-from app.core.exceptions import ASRConfigurationError
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
@@ -262,30 +261,57 @@ def _running_at_retry_priority() -> bool:
         return False
 
 
+class CloudASRUnusableError(RuntimeError):
+    """The cloud transcription provider a run was planned with cannot be built (#1236).
+
+    ``str()`` is the fixed sentence registered in ``ErrorCategorizationService`` (reason
+    ``pipeline_not_runnable``, permanent retry category ``CONFIGURATION_REQUIRED``); the
+    underlying exception goes to the ERROR log only.
+    """
+
+    def __init__(self) -> None:
+        from app.services.error_categorization_service import CLOUD_ASR_UNUSABLE_MESSAGE
+
+        super().__init__(CLOUD_ASR_UNUSABLE_MESSAGE)
+
+
 def _cloud_asr_provider_or_none(user_id: int, plan):
-    """The cloud ASR provider the plan transcribes with, or ``None`` for local Whisper.
+    """The cloud ASR provider the plan transcribes with; ``None`` only for a local plan.
 
-    ``None`` for a ``local_gpu`` plan, and also when a cloud provider cannot be
-    *constructed*: the caller then falls through to the local WhisperX pipeline — the
-    documented "asymmetric failure" behaviour (errors *constructing* a provider fall back
-    to local; errors from ``transcribe()`` itself propagate and fail the file).
+    A cloud plan whose provider cannot be built FAILS the run (#1236). It used to fall
+    back to local Whisper: ``create_for_user`` degrades a config it cannot load (a key
+    that no longer decrypts, a refused endpoint, a removed row) to the env default or to
+    local, and this function then returned ``None`` for "local", so the file was
+    transcribed on this server against the user's choice, or (lite) failed deep inside the
+    engine. Now any construction failure, or a provider other than the one the plan names,
+    raises :class:`CloudASRUnusableError`. Errors from ``transcribe()`` itself still
+    propagate unchanged.
 
-    ``ASRConfigurationError`` is different: it is a deliberate refusal (e.g. a blocked
-    Gladia ``base_url``, or a local provider on ``DEPLOYMENT_MODE=lite``), so it is
-    re-raised rather than swallowed.
+    Raises:
+        CloudASRUnusableError: the plan's cloud provider cannot be built.
     """
     if plan.transcription.engine != "cloud":
         return None
     from app.services.asr.factory import ASRProviderFactory
 
+    expected = plan.transcription.provider
     try:
         with session_scope() as db:
             provider = ASRProviderFactory.create_for_user(user_id, db)
-    except ASRConfigurationError:
-        raise
-    except Exception:
-        return None
-    return provider if provider.provider_name != "local" else None
+    except Exception as exc:
+        logger.error(
+            "Cloud ASR provider %r could not be built for user %d: %s", expected, user_id, exc
+        )
+        raise CloudASRUnusableError() from exc
+    if provider.provider_name != expected:
+        logger.error(
+            "Cloud ASR provider %r could not be built for user %d (resolved %r instead)",
+            expected,
+            user_id,
+            provider.provider_name,
+        )
+        raise CloudASRUnusableError()
+    return provider
 
 
 def _log_shared_wav_fallback_reason(local_wav_path: str | None, file_id: int) -> None:

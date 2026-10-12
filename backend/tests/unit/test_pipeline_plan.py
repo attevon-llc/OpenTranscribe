@@ -139,33 +139,33 @@ FULL = {
 }
 
 LITE = {
-    ("local_gpu", "provider"): ("local", "inline_local", "server", {LOCAL_ASR}),
-    ("local_gpu", "local"): ("local", "inline_local", "server", {LOCAL_ASR}),
+    ("local_gpu", "provider"): ("local", "none", "server", {LOCAL_ASR}),
+    ("local_gpu", "local"): ("local", "none", "server", {LOCAL_ASR, LOCAL_DIAR}),
     ("local_gpu", "pyannote"): ("pyannote_ai", "post_stage_cloud", "cloud", {LOCAL_ASR}),
     ("local_gpu", "asr_config"): ("asr_config", "post_stage_cloud", "cloud", {LOCAL_ASR}),
     ("local_gpu", "off"): ("off", "none", None, {LOCAL_ASR}),
-    ("local_cpu", "provider"): ("local", "post_stage_local", "server", {LOCAL_ASR}),
-    ("local_cpu", "local"): ("local", "post_stage_local", "server", {LOCAL_ASR}),
+    ("local_cpu", "provider"): ("local", "none", "server", {LOCAL_ASR}),
+    ("local_cpu", "local"): ("local", "none", "server", {LOCAL_ASR, LOCAL_DIAR}),
     ("local_cpu", "pyannote"): ("pyannote_ai", "post_stage_cloud", "cloud", {LOCAL_ASR}),
     ("local_cpu", "asr_config"): ("asr_config", "post_stage_cloud", "cloud", {LOCAL_ASR}),
     ("local_cpu", "off"): ("off", "none", None, {LOCAL_ASR}),
     ("cloud_speakers", "provider"): ("asr", "inline_asr", "cloud", set()),
-    ("cloud_speakers", "local"): ("local", "post_stage_local", "server", {LOCAL_DIAR}),
+    ("cloud_speakers", "local"): ("local", "none", "server", {LOCAL_DIAR}),
     ("cloud_speakers", "pyannote"): ("pyannote_ai", "parallel_cloud", "cloud", set()),
     ("cloud_speakers", "asr_config"): ("asr_config", "parallel_cloud", "cloud", set()),
     ("cloud_speakers", "off"): ("off", "none", None, set()),
-    ("cloud_text_word", "provider"): ("local", "post_stage_local", "server", {AUTO_LITE}),
-    ("cloud_text_word", "local"): ("local", "post_stage_local", "server", {LOCAL_DIAR}),
+    ("cloud_text_word", "provider"): ("local", "none", "server", {AUTO_LITE}),
+    ("cloud_text_word", "local"): ("local", "none", "server", {LOCAL_DIAR}),
     ("cloud_text_word", "pyannote"): ("pyannote_ai", "parallel_cloud", "cloud", set()),
     ("cloud_text_word", "asr_config"): ("asr_config", "parallel_cloud", "cloud", set()),
     ("cloud_text_word", "off"): ("off", "none", None, set()),
-    ("cloud_text_segment", "provider"): ("local", "post_stage_local", "server", {AUTO_LITE}),
-    ("cloud_text_segment", "local"): ("local", "post_stage_local", "server", {LOCAL_DIAR}),
+    ("cloud_text_segment", "provider"): ("local", "none", "server", {AUTO_LITE}),
+    ("cloud_text_segment", "local"): ("local", "none", "server", {LOCAL_DIAR}),
     ("cloud_text_segment", "pyannote"): ("pyannote_ai", "parallel_cloud", "cloud", set()),
     ("cloud_text_segment", "asr_config"): ("asr_config", "parallel_cloud", "cloud", set()),
     ("cloud_text_segment", "off"): ("off", "none", None, set()),
-    ("cloud_no_timing", "provider"): ("local", "post_stage_local", "server", {AUTO_LITE, NO_TIME}),
-    ("cloud_no_timing", "local"): ("local", "post_stage_local", "server", {LOCAL_DIAR, NO_TIME}),
+    ("cloud_no_timing", "provider"): ("local", "none", "server", {AUTO_LITE, NO_TIME}),
+    ("cloud_no_timing", "local"): ("local", "none", "server", {LOCAL_DIAR, NO_TIME}),
     ("cloud_no_timing", "pyannote"): ("pyannote_ai", "parallel_cloud", "cloud", {NO_TIME}),
     ("cloud_no_timing", "asr_config"): ("asr_config", "parallel_cloud", "cloud", {NO_TIME}),
     ("cloud_no_timing", "off"): ("off", "none", None, set()),
@@ -351,11 +351,38 @@ def test_gpu_split_only_for_inline_local_diarization():
     assert post.diarization.queue == CeleryQueues.CLOUD_ASR
 
 
-def test_post_stage_local_queue_follows_the_deployment():
+def test_lite_plans_no_local_speaker_detection_anywhere():
+    """#1228: lite's old rediarize-on-CPU route is gone. Full keeps the local post stage
+    (the control); on lite no cell plans a local execution or a queue for it."""
     full = resolve_pipeline_plan(_inputs("cloud_speakers", "local"))
-    assert full.diarization.queue == CeleryQueues.GPU
-    lite = resolve_pipeline_plan(_inputs("cloud_speakers", "local", "lite"))
-    assert lite.diarization.queue == CeleryQueues.CPU
+    assert (full.diarization.execution, full.diarization.queue) == (
+        "post_stage_local",
+        CeleryQueues.GPU,
+    )
+
+    local_cells = 0
+    for asr in ASR:
+        for source in SOURCES:
+            plan = resolve_pipeline_plan(_inputs(asr, source, "lite"))
+            assert plan.diarization.execution not in ("inline_local", "post_stage_local")
+            if plan.diarization.engine == "local":
+                local_cells += 1
+                assert plan.diarization.queue is None
+                assert plan.blocking(), (asr, source)
+    assert local_cells, "no lite cell asked for this server: the sweep proves nothing"
+
+
+def test_post_stage_queue_refuses_this_servers_engine_on_lite():
+    from app.core.exceptions import PipelinePlanRefusedError
+    from app.services.pipeline_plan import post_stage_queue
+
+    assert post_stage_queue("local", "full") == CeleryQueues.GPU
+    assert post_stage_queue("pyannote_ai", "lite") == CeleryQueues.CLOUD_ASR
+    assert post_stage_queue("asr_config", "lite") == CeleryQueues.CLOUD_ASR
+    with pytest.raises(PipelinePlanRefusedError) as refused:
+        post_stage_queue("local", "lite")
+    assert refused.value.code == "local_diarization_unavailable"
+    assert str(refused.value) == ISSUE_MESSAGES["local_diarization_unavailable"]
 
 
 # --- voiceprints: always on this server, after every detector --------------------------
@@ -367,7 +394,8 @@ def test_voiceprints_run_on_this_server_after_every_detector(mode, asr, source):
     plan = resolve_pipeline_plan(_inputs(asr, source, mode))
     step = plan.speaker_id
     assert step.where == "server"
-    if source == "off":
+    if plan.diarization.execution == "none":
+        # Off, or (lite) a local choice nothing runs for: no turns, so no voiceprints.
         assert (step.runs, step.execution, step.queue) == (False, "none", None)
     elif plan.diarization.execution == "inline_local":
         assert (step.runs, step.execution, step.queue) == (True, "inline_native", None)

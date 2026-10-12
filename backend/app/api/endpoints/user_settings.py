@@ -92,6 +92,7 @@ from app.services.auto_llm_settings import SPEAKER_ID_SYSTEM_KEY
 from app.services.auto_llm_settings import SPEAKER_ID_USER_KEY
 from app.services.auto_llm_settings import resolve_auto_llm_flags
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+from app.utils.lite_mode import is_lite_deployment
 from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
@@ -1015,7 +1016,12 @@ def get_transcription_system_defaults(
         hallucination_silence_threshold=DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
         repetition_penalty=DEFAULT_REPETITION_PENALTY,
         diarization_source_default=DEFAULT_DIARIZATION_SOURCE,
-        valid_diarization_sources=list(VALID_DIARIZATION_SOURCES),
+        # Lite has no local speaker detection (#1228): never offer "this server" there.
+        valid_diarization_sources=[
+            source
+            for source in VALID_DIARIZATION_SOURCES
+            if not (source == "local" and is_lite_deployment())
+        ],
     )
 
 

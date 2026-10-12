@@ -5,7 +5,8 @@ plan C4), serving every combination where speakers are detected AFTER transcript
 
 * ``post_stage_local`` — this server's engine (diar-native, PyAnnote fallback) after a cloud
   text-only transcription, a per-file CPU model, or Automatic + a text-only timed model;
-  routed to ``gpu_preferred_queue()``.
+  routed to ``gpu_preferred_queue()``. Full image only: lite has no local speaker detection
+  (#1228), so the plan never produces it there and this task refuses it at the top.
 * ``post_stage_cloud`` — pyannote.ai after local Whisper or a CPU model; routed to
   ``cloud-asr`` so no GPU slot is held while the vendor works.
 * a user's manual "Re-diarize" (``files/reprocess.py``), with the engine of their current

@@ -176,6 +176,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Lite is cloud-only for transcription and speaker detection (#1228).** A lite
+  (`--lite`, no GPU) deployment no longer detects speakers on this server: lite's
+  rediarize-on-CPU path is removed. Speakers come from a transcription provider that returns
+  them, or from pyannote.ai; voiceprints for cross-file speaker identification are still
+  computed on this server's CPU. Every local option is refused with a stable code and a fixed
+  message instead of failing later: choosing "this server" for speaker detection
+  (`local_diarization_unavailable`), Automatic with a text-only model
+  (`automatic_needs_speaker_provider`), switching to, creating or keeping only a local
+  transcription config, clearing the active cloud config, a per-file Whisper model, the
+  admin's local-model and local-engine settings (`local_asr_unavailable`). The transcription
+  settings no longer offer "this server" on lite.
+  - Lite users who had "this server" with a cloud model that returns speakers are moved to
+    Automatic by migration `v436_lite_local_speaker_detection_to_automatic`, so they keep
+    getting speakers (from their transcription provider). Others keep their choice and see
+    what to change in Settings; their files are refused with that message until they do.
+  - No transcript, speaker or voiceprint changes: files diarized on lite's CPU before this
+    keep their speakers. The migration is data-only, idempotent, a no-op on the full image,
+    and its downgrade is a no-op.
+- **Deleting an ASR configuration returns the pipeline it leaves (#1236).**
+  `DELETE /api/asr-settings/config/{uuid}` answers 200 with `config_uuid` (the config now
+  active) and `pipeline_issues`, like `set-active`, instead of a bare 204.
+- **Re-processing refuses a run that cannot run before deleting anything.** A transcription
+  re-run or a speaker re-detection whose pipeline is refused (for example a lite deployment
+  with "this server" chosen) now answers 409 while the transcript and speakers are intact,
+  instead of deleting them and then failing.
 - **Billing: users with a pyannote.ai key and local transcription are now billed by
   pyannote.ai (#1225).** Choosing pyannote.ai with the built-in model used to run this server's
   detector without saying so. It now does what it says, so every file such a user transcribes
@@ -343,6 +368,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A cloud transcription provider that cannot be started no longer falls back to local
+  Whisper (#1236).** A saved key that no longer decrypts, a refused endpoint or a removed
+  config used to send the file to this server's Whisper against the user's choice (or, on
+  lite, fail with an internal error). The file now fails with a clear message telling the user
+  to check the provider's settings.
+- **Segment-timed models beside a cloud speaker detector get the right speaker per segment
+  (#1236).** With `whisper-1` or Azure transcribing and pyannote.ai detecting speakers, a
+  segment took the speaker at its midpoint: a short interjection in the middle of a long
+  segment won it, and a pause there left it with no speaker. It now takes the speaker who
+  talks most in it.
+- **On lite, the GPU-worker restart no longer signals every worker.** With no GPU worker to
+  find, `POST /asr-settings/local-model/restart` fell through to a shutdown broadcast to all
+  workers; on lite it is now refused.
 - **Re-detecting speakers re-splits segments at speaker changes (#1225).** `rediarize_task`
   saved the new speakers without `finalize_segments`, so a segment spanning two speakers kept
   one label. It now goes through the same boundary smoothing, re-segmentation and merge as

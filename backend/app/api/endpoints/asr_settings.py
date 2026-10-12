@@ -44,6 +44,7 @@ from app.services.pipeline_plan_inputs import plan_for_user
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
+from app.utils.lite_mode import refuse_on_lite
 from app.utils.tenant_sharing import owner_in_tenant
 from app.utils.tenant_sharing import shared_visible_in_tenant
 
@@ -542,9 +543,13 @@ def create_asr_config(
 
     The user's first config is auto-activated unless that would make their stored speaker
     detection choice unrunnable (issue #1225); ``auto_activated`` says which, and
-    ``pipeline_issues`` describes the pipeline in effect afterwards.
+    ``pipeline_issues`` describes the pipeline in effect afterwards. On lite a ``local``
+    config is refused (409 ``local_asr_unavailable``, #1228): it could never transcribe.
     """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+
+    if settings_in.provider.value == "local":
+        refuse_on_lite("local_asr_unavailable")
 
     # Duplicate name check
     existing = (
@@ -634,8 +639,11 @@ def update_asr_config(  # noqa: C901
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
-    """Update an existing ASR configuration."""
+    """Update an existing ASR configuration (on lite, never into a ``local`` one, #1228)."""
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+
+    if settings_in.provider is not None and settings_in.provider.value == "local":
+        refuse_on_lite("local_asr_unavailable")
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
 
@@ -770,58 +778,71 @@ def set_active_asr_config(
     )
 
 
-@router.delete("/config/{config_uuid}", status_code=204)
+@router.delete("/config/{config_uuid}", response_model=ASRSwitchResult)
 def delete_asr_config(
     request: Request,
     config_uuid: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
-) -> None:
-    """Delete an ASR configuration.
+) -> ASRSwitchResult:
+    """Delete an ASR configuration and report the pipeline it leaves (issue #1236).
 
-    If it was active, the first remaining config that keeps the stored speaker detection
-    choice runnable is promoted (issue #1225); with none, the active pointer is cleared.
-    Deletion itself is never refused: a stored choice the remaining state cannot run is
-    reported by ``GET /user-settings/pipeline`` and refused per file by the pipeline.
+    If it was active, ``choose_after_active_delete`` picks what becomes active: the first
+    remaining config that keeps the stored speaker detection choice runnable (#1225), else
+    the cleared pointer. On lite, where clearing means local Whisper, a remaining config
+    that can transcribe is kept instead, and with none the delete is refused (409
+    ``local_asr_unavailable``, #1228). Otherwise deletion is never refused: a stored choice
+    the remaining state cannot run comes back in ``pipeline_issues`` (as for
+    ``set-active``), with ``config_uuid`` naming the config now active (``null``: none).
     """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.services.asr_switch_plan import active_delete_refusal
+    from app.services.asr_switch_plan import choose_after_active_delete
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
+    active_config_id = _get_active_asr_config_id(db, current_user.id)
+    was_active = active_config_id == config.id
+    config_id = config.id
+    candidates = (
+        db.query(UserASRSettings)
+        .filter(UserASRSettings.user_id == current_user.id, UserASRSettings.id != config_id)
+        .order_by(UserASRSettings.id)
+        .all()
+        if was_active
+        else []
+    )
+    if was_active:
+        refusal = active_delete_refusal(db, current_user.id, candidates, request=request)
+        if refusal is not None:
+            raise HTTPException(
+                status_code=409, detail={"code": refusal.code, "message": refusal.message}
+            )
 
     # Clean up other users who had this shared config active (preserve owner's for auto-promote)
     if config.is_shared:
         _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
 
-    active_config_id = _get_active_asr_config_id(db, current_user.id)
-    was_active = active_config_id == config.id
-
-    config_id = config.id
     db.delete(config)
     db.commit()
 
+    promoted = None
     if was_active:
-        candidates = (
-            db.query(UserASRSettings)
-            .filter(
-                UserASRSettings.user_id == current_user.id,
-                UserASRSettings.id != config_id,
-            )
-            .order_by(UserASRSettings.id)
-            .all()
-        )
-        promoted = next(
-            (
-                candidate
-                for candidate in candidates
-                if assess_asr_switch(db, current_user.id, candidate, request=request).refusal
-                is None
-            ),
-            None,
-        )
+        promoted = choose_after_active_delete(db, current_user.id, candidates, request=request)
         if promoted is not None:
             _set_active_asr_configuration(db, current_user.id, promoted.id)
         else:
             _clear_active_asr_setting(db, current_user.id)
+    active_uuid = None
+    if promoted is not None:
+        active_uuid = str(promoted.uuid)
+    elif not was_active and active_config_id is not None:
+        still_active = db.query(UserASRSettings.uuid).filter_by(id=active_config_id).scalar()
+        active_uuid = str(still_active) if still_active is not None else None
+    return ASRSwitchResult(
+        message="ASR configuration deleted",
+        config_uuid=active_uuid,
+        pipeline_issues=plan_issues_out(plan_for_user(db, current_user.id, request=request)),
+    )
 
 
 @router.post("/clear-active", response_model=ASRSwitchResult)
@@ -1040,8 +1061,10 @@ def set_active_local_model(
 
     Stores the model name in SystemSettings so the GPU worker uses it on
     next startup.  Does NOT restart the worker — call ``/local-model/restart``
-    separately to apply with graceful drain.
+    separately to apply with graceful drain. Lite has no local Whisper: 409
+    ``local_asr_unavailable`` (#1228).
     """
+    refuse_on_lite("local_asr_unavailable")
     model_name = body.model_name.strip()
     if not model_name:
         raise HTTPException(status_code=400, detail="model_name is required")
@@ -1114,8 +1137,10 @@ def restart_gpu_worker(
     Sends a warm shutdown signal via Celery's control API.  The worker finishes
     any in-progress tasks before exiting.  Docker ``restart: always`` brings
     the container back automatically, and the ``worker_ready`` signal handler
-    preloads the new model from the database.
+    preloads the new model from the database. Lite runs no GPU worker: 409
+    ``local_asr_unavailable`` (#1228) instead of a shutdown broadcast to every worker.
     """
+    refuse_on_lite("local_asr_unavailable")
     from app.core.celery import celery_app
     from app.models.system_settings import SystemSettings
 

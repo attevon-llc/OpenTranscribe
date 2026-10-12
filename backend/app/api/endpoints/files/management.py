@@ -731,6 +731,26 @@ def _handle_reprocess_action(
             error="MEDIA_UNAVAILABLE",
         )
 
+    # The single-file endpoint's pipeline-plan refusal (#1228), before anything is cleared.
+    from app.api.endpoints.files.reprocess import refuse_unrunnable_rerun
+
+    try:
+        refuse_unrunnable_rerun(
+            db,
+            int(db_file.user_id),
+            stages,
+            whisper_model=None,
+            disable_diarization=disable_diarization,
+        )
+    except HTTPException as refused:
+        detail: dict[str, object] = refused.detail if isinstance(refused.detail, dict) else {}
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=str(detail.get("message", "")),
+            error=str(detail.get("code", "")),
+        )
+
     if stages:
         # Selective reprocessing
         from app.api.endpoints.files.reprocess import clear_selective_data

@@ -3372,6 +3372,8 @@
   "speakers.merge.cannotSelf": "Não é possível mesclar um grupo consigo mesmo",
   "speakers.merge.success": "Grupos mesclados com sucesso",
   "speakers.merge.error": "Falha ao mesclar grupos",
+  "speakers.merge.someLeftBehind_one": "Mesclado. {{count}} falante não foi movido: você o havia desatribuído ou dado outro nome",
+  "speakers.merge.someLeftBehind_other": "Mesclado. {{count}} falantes não foram movidos: você os havia desatribuído ou dado outro nome",
   "speakers.split.selectMembers": "Selecione membros para separar",
   "speakers.split.selectMembersBanner": "Selecione os membros para separar em um novo grupo",
   "speakers.split.confirm": "Separar {{count}} membros",

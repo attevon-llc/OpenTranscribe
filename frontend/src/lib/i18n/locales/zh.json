@@ -3372,6 +3372,8 @@
   "speakers.merge.cannotSelf": "无法将分组与自身合并",
   "speakers.merge.success": "分组合并成功",
   "speakers.merge.error": "合并分组失败",
+  "speakers.merge.someLeftBehind_one": "已合并。{{count}} 位说话者未被移动（您之前已取消分配或为其指定了其他名称）",
+  "speakers.merge.someLeftBehind_other": "已合并。{{count}} 位说话者未被移动（您之前已取消分配或为其指定了其他名称）",
   "speakers.split.selectMembers": "选择要拆分的成员",
   "speakers.split.selectMembersBanner": "选择要拆分到新分组的成员",
   "speakers.split.confirm": "拆分 {{count}} 个成员",

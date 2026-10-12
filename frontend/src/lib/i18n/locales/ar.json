@@ -3403,6 +3403,8 @@
   "speakers.merge.cannotSelf": "لا يمكن دمج مجموعة صوتية مع نفسها",
   "speakers.merge.success": "تم دمج المجموعات الصوتية بنجاح",
   "speakers.merge.error": "فشل دمج المجموعات الصوتية",
+  "speakers.merge.someLeftBehind_one": "تم الدمج. لم يُنقل {{count}} متحدث: سبق أن ألغيت تعيينه أو سمّيته باسم آخر",
+  "speakers.merge.someLeftBehind_other": "تم الدمج. لم يُنقل {{count}} من المتحدثين: سبق أن ألغيت تعيينهم أو سمّيتهم بأسماء أخرى",
   "speakers.split.selectMembers": "حدد الأعضاء لتقسيمهم إلى مجموعة صوتية جديدة",
   "speakers.split.selectMembersBanner": "حدد الأعضاء لتقسيمهم إلى مجموعة صوتية جديدة",
   "speakers.split.confirm": "تقسيم {{count}} عضو",

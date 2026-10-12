@@ -3374,6 +3374,8 @@
   "speakers.merge.cannotSelf": "Impossible de fusionner un groupe avec lui-même",
   "speakers.merge.success": "Groupes fusionnés avec succès",
   "speakers.merge.error": "Échec de la fusion des groupes",
+  "speakers.merge.someLeftBehind_one": "Fusion effectuée. {{count}} locuteur n'a pas été déplacé : vous l'aviez désassigné ou nommé autrement",
+  "speakers.merge.someLeftBehind_other": "Fusion effectuée. {{count}} locuteurs n'ont pas été déplacés : vous les aviez désassignés ou nommés autrement",
   "speakers.merge.selectTargetWithName": "Sélectionner le cluster cible à fusionner avec {{name}}",
   "speakers.split.selectMembers": "Sélectionnez les membres à séparer",
   "speakers.split.selectMembersBanner": "Sélectionnez les membres à séparer dans un nouveau groupe",

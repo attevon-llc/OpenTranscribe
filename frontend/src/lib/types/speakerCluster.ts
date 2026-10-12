@@ -90,12 +90,16 @@ export interface BatchVerifyRequest {
   action: 'accept' | 'assign' | 'name' | 'skip';
   profile_uuid?: string;
   display_name?: string;
+  /** Lift the user's earlier unassignment for this ONE speaker (422 with more). */
+  override_unassignment?: boolean;
 }
 
 export interface BatchVerifyResponse {
   updated_count: number;
   failed_count: number;
   errors: string[];
+  /** Speakers skipped because the user earlier unassigned/rejected that identity. */
+  blocked_speaker_uuids: string[];
 }
 
 export interface ReclusterResponse {

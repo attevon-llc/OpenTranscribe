@@ -3403,6 +3403,8 @@
   "speakers.merge.cannotSelf": "Cannot merge a cluster with itself",
   "speakers.merge.success": "Clusters merged successfully",
   "speakers.merge.error": "Failed to merge clusters",
+  "speakers.merge.someLeftBehind_one": "Merged. {{count}} speaker was kept out: you had unassigned it or named it differently",
+  "speakers.merge.someLeftBehind_other": "Merged. {{count}} speakers were kept out: you had unassigned them or named them differently",
   "speakers.split.selectMembers": "Select members to split into a new cluster",
   "speakers.split.selectMembersBanner": "Select the members to split into a new cluster",
   "speakers.split.confirm": "Split {{count}} members",

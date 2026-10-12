@@ -3371,6 +3371,8 @@
   "speakers.merge.cannotSelf": "Невозможно объединить кластер с самим собой",
   "speakers.merge.success": "Кластеры успешно объединены",
   "speakers.merge.error": "Не удалось объединить кластеры",
+  "speakers.merge.someLeftBehind_one": "Объединено. {{count}} спикер не перенесён: вы ранее отвязали его или дали ему другое имя",
+  "speakers.merge.someLeftBehind_other": "Объединено. Не перенесено спикеров: {{count}} — вы ранее отвязали их или дали им другие имена",
   "speakers.split.selectMembers": "Выберите участников для выделения в новый кластер",
   "speakers.split.selectMembersBanner": "Выберите участников для выделения в новый кластер",
   "speakers.split.confirm": "Разделить {{count}} участников",

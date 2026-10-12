@@ -3374,6 +3374,8 @@
   "speakers.merge.cannotSelf": "Eine Gruppe kann nicht mit sich selbst zusammengeführt werden",
   "speakers.merge.success": "Gruppen erfolgreich zusammengeführt",
   "speakers.merge.error": "Fehler beim Zusammenführen der Gruppen",
+  "speakers.merge.someLeftBehind_one": "Zusammengeführt. {{count}} Sprecher wurde nicht übernommen: Sie hatten ihn entfernt oder anders benannt",
+  "speakers.merge.someLeftBehind_other": "Zusammengeführt. {{count}} Sprecher wurden nicht übernommen: Sie hatten sie entfernt oder anders benannt",
   "speakers.merge.selectTargetWithName": "Ziel-Cluster zum Zusammenführen mit {{name}} auswählen",
   "speakers.split.selectMembers": "Wählen Sie Mitglieder zum Aufteilen",
   "speakers.split.selectMembersBanner": "Mitglieder zum Aufteilen in eine neue Gruppe auswählen",

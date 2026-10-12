@@ -3403,6 +3403,8 @@
   "speakers.merge.cannotSelf": "Een cluster kan niet met zichzelf worden samengevoegd",
   "speakers.merge.success": "Clusters succesvol samengevoegd",
   "speakers.merge.error": "Samenvoegen van clusters mislukt",
+  "speakers.merge.someLeftBehind_one": "Samengevoegd. {{count}} spreker is niet verplaatst: u had deze losgekoppeld of anders genoemd",
+  "speakers.merge.someLeftBehind_other": "Samengevoegd. {{count}} sprekers zijn niet verplaatst: u had ze losgekoppeld of anders genoemd",
   "speakers.split.selectMembers": "Selecteer leden om naar een nieuw cluster te splitsen",
   "speakers.split.selectMembersBanner": "Selecteer de leden om naar een nieuw cluster te splitsen",
   "speakers.split.confirm": "{{count}} leden splitsen",

@@ -59,6 +59,7 @@ def _resolve_reindex_speaker_name(row: Any) -> str:
         display_name=row.display_name,
         suggested_name=row.suggested_name,
         confidence=row.confidence,
+        suggestion_source=getattr(row, "suggestion_source", None),
     )
 
 
@@ -158,6 +159,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
                 Speaker.profile_id,
                 Speaker.suggested_name,
                 Speaker.confidence,
+                Speaker.suggestion_source,
             )
             .filter(Speaker.id.in_(speaker_ids))
             .all()

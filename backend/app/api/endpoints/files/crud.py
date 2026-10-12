@@ -432,6 +432,7 @@ def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
         display_name=speaker.display_name,
         suggested_name=speaker.suggested_name,
         confidence=speaker.confidence,
+        suggestion_source=speaker.suggestion_source,
     )
 
 

@@ -277,20 +277,22 @@ def _store_speaker_predictions(
     Opens its **own** short session: the caller has just returned from the LLM
     provider and deliberately holds none.
 
-    A ≥0.75-confidence prediction here moves the CANONICAL label
-    (``canonical_speaker_label``) with no ``display_name`` write at all — this
-    was one of five writers with zero chunk-plane dispatch (issue #605): a clean
-    ingest indexes chunks under the raw diarizer label, this task's suggestion
-    then lands after (``enrich_and_dispatch`` dispatches indexing before speaker
-    ID), and nothing reconciled the two. Every prediction is recorded on a
-    tracker keyed by this ONE file, then flushed once after the explicit commit
-    below — predictions in the same call commonly target different speakers
-    with different names, which is exactly the case ``SpeakerRenameTracker``
-    groups by new name at flush time.
+    An LLM prediction is ONLY a suggestion (owner decision 2026-10-12): it is
+    stored with ``suggestion_source="llm_analysis"``, which
+    ``canonical_speaker_label`` never promotes to the speaker's name, so it does
+    not move the chunk-plane label however confident it is. The human verifies
+    it in the suggestion UI, and that write sets ``display_name``. For the same
+    reason a speaker already carrying a voiceprint-match suggestion is skipped:
+    overwriting it with a guess would replace evidence about the voice (which
+    IS the canonical label) with a suggestion (which is not). Every prediction is
+    still recorded on a tracker keyed by this ONE file and flushed after the
+    explicit commit, so the label is reconciled if the rule above ever changes
+    what a write moves.
     """
     from app.services.speaker_cleanup import blocked_profile_names
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
     from app.utils.speaker_labels import canonical_speaker_label_for_row
+    from app.utils.speaker_labels import is_embedding_suggestion_source
 
     tracker = SpeakerRenameTracker()
     with session_scope() as db:
@@ -314,6 +316,13 @@ def _store_speaker_predictions(
                 speaker
                 and str(predicted_name or "").casefold()
                 in blocked_profile_names(db, [int(speaker.id)])[int(speaker.id)]
+            ):
+                continue
+
+            if (
+                speaker
+                and speaker.suggested_name
+                and is_embedding_suggestion_source(speaker.suggestion_source)
             ):
                 continue
 

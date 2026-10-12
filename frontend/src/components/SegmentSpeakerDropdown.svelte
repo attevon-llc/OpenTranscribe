@@ -49,10 +49,10 @@
   //
   // Deliberately NOT part of this chain: `speaker.resolved_display_name` and
   // `segment.resolved_speaker_name`. Both are `canonical_speaker_label(...)`, which
-  // returns `suggested_name` once confidence >= 0.75 — i.e. they intentionally
-  // collapse "confirmed" and "guessed" into one string. Rendering either one here
-  // would put an unverified LLM guess in the name slot, which is exactly what the
-  // repo rule "LLM speaker-ID suggestions are never auto-applied" forbids (#741).
+  // returns a voiceprint-matched `suggested_name` (>= 0.75) as well as a typed one,
+  // so they cover "confirmed" and "matched by voice" in one string. An LLM guess
+  // never reaches them, but this chain is the one that shows a human-confirmed
+  // name only, so it stays on `display_name` (#741).
   $: confirmedName = (wireSpeaker?.display_name ?? '').trim();
   $: speakerNumberLabel = wireSpeaker?.name || segment.speaker_label || '';
   $: triggerLabel = translateSpeakerLabel(

@@ -306,6 +306,7 @@ class FormattingService:
                 display_name=segment_dict["speaker"].get("display_name"),
                 suggested_name=segment_dict["speaker"].get("suggested_name"),
                 confidence=segment_dict["speaker"].get("confidence"),
+                suggestion_source=segment_dict["speaker"].get("suggestion_source"),
             )
             segment_dict["resolved_speaker_name"] = resolved_name
         elif speaker_mapping and segment_dict.get("speaker_id"):
@@ -393,6 +394,7 @@ class FormattingService:
             display_name=speaker.display_name,
             suggested_name=getattr(speaker, "suggested_name", None),
             confidence=getattr(speaker, "confidence", None),
+            suggestion_source=getattr(speaker, "suggestion_source", None),
         )
 
     @staticmethod

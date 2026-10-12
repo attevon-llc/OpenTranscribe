@@ -37,12 +37,20 @@ def test_a_display_name_wins_even_when_unverified():
 
 
 def test_a_confident_suggestion_is_used_when_there_is_no_display_name():
-    assert canonical_speaker_label("SPEAKER_00", suggested_name="Bob", confidence=0.9) == "Bob"
+    assert (
+        canonical_speaker_label(
+            "SPEAKER_00", suggested_name="Bob", confidence=0.9, suggestion_source="voice_match"
+        )
+        == "Bob"
+    )
 
 
 def test_a_suggestion_below_threshold_is_ignored():
     assert (
-        canonical_speaker_label("SPEAKER_00", suggested_name="Bob", confidence=0.5) == "SPEAKER_00"
+        canonical_speaker_label(
+            "SPEAKER_00", suggested_name="Bob", confidence=0.5, suggestion_source="voice_match"
+        )
+        == "SPEAKER_00"
     )
 
 
@@ -60,13 +68,23 @@ def test_a_suggestion_below_threshold_with_no_raw_name_is_unidentified():
 def test_a_suggestion_exactly_at_threshold_is_used():
     """The comparison is ``>=``, not ``>`` — pin the boundary itself rather than
     only its interior on each side."""
-    assert canonical_speaker_label("SPEAKER_00", suggested_name="Bob", confidence=0.75) == "Bob"
+    assert (
+        canonical_speaker_label(
+            "SPEAKER_00", suggested_name="Bob", confidence=0.75, suggestion_source="voice_match"
+        )
+        == "Bob"
+    )
 
 
 def test_a_suggestion_just_below_threshold_is_ignored():
     """The other side of the boundary, one float ULP-scale step under it."""
     assert (
-        canonical_speaker_label("SPEAKER_00", suggested_name="Bob", confidence=0.7499999)
+        canonical_speaker_label(
+            "SPEAKER_00",
+            suggested_name="Bob",
+            confidence=0.7499999,
+            suggestion_source="voice_match",
+        )
         == "SPEAKER_00"
     )
 
@@ -137,7 +155,13 @@ def test_a_real_name_is_not_in_the_unknown_set():
 
 
 def _speaker(**kwargs):
-    defaults = dict(name="SPEAKER_00", display_name=None, suggested_name=None, confidence=None)
+    defaults = dict(
+        name="SPEAKER_00",
+        display_name=None,
+        suggested_name=None,
+        confidence=None,
+        suggestion_source=None,
+    )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 
@@ -155,6 +179,7 @@ def test_get_speaker_name_delegates_to_the_canonical_helper():
         display_name=speaker.display_name,
         suggested_name=speaker.suggested_name,
         confidence=speaker.confidence,
+        suggestion_source=speaker.suggestion_source,
     )
     assert get_speaker_name(segment) == "Dana"
 
@@ -165,14 +190,18 @@ def test_get_speaker_name_returns_the_canonical_unknown_label_when_there_is_no_s
 
 def test_get_speaker_name_no_longer_decorates_a_confident_suggestion():
     """Regression: this used to return ``"Marcus (suggested)"``."""
-    speaker = _speaker(name="SPEAKER_01", suggested_name="Marcus", confidence=0.9)
+    speaker = _speaker(
+        name="SPEAKER_01", suggested_name="Marcus", confidence=0.9, suggestion_source="voice_match"
+    )
     assert get_speaker_name(_segment(speaker)) == "Marcus"
 
 
 def test_speaker_status_service_resolved_display_name_delegates_to_the_canonical_helper():
     """Regression: ``_resolve_display_name`` used to ignore suggestions entirely, so the
     same speaker could read differently here than in ``get_speaker_name``."""
-    speaker = _speaker(name="SPEAKER_02", suggested_name="Priya", confidence=0.9)
+    speaker = _speaker(
+        name="SPEAKER_02", suggested_name="Priya", confidence=0.9, suggestion_source="voice_match"
+    )
 
     resolved = SpeakerStatusService._resolve_display_name(speaker)
 
@@ -184,7 +213,10 @@ def test_speaker_status_service_resolved_display_name_delegates_to_the_canonical
 
 
 class _StatsSpeaker:
-    def __init__(self, name, display_name=None, suggested_name=None, confidence=None):
+    def __init__(
+        self, name, display_name=None, suggested_name=None, confidence=None, suggestion_source=None
+    ):
+        self.suggestion_source = suggestion_source
         self.name = name
         self.display_name = display_name
         self.suggested_name = suggested_name
@@ -269,7 +301,11 @@ def test_files_crud_and_formatting_service_agree_with_get_speaker_name():
     # `Any`, same as every other `_speaker(...)` call in this file) — a
     # concrete stub class would fail mypy's `Speaker`-typed parameters.
     speaker = _speaker(
-        name="SPEAKER_01", display_name=None, suggested_name="Marcus", confidence=0.9
+        name="SPEAKER_01",
+        display_name=None,
+        suggested_name="Marcus",
+        confidence=0.9,
+        suggestion_source="profile_match",
     )
     resolved = get_speaker_name(_segment(speaker))
     assert resolved == "Marcus"
@@ -306,7 +342,9 @@ def test_a_drifted_plane_would_be_caught_by_the_agreement_tests_above(monkeypatc
 
     monkeypatch.setattr(sit, "resolve_chunk_speaker_name", _old_ad_hoc_resolution)
 
-    speaker = _StatsSpeaker("SPEAKER_00", suggested_name="Marcus", confidence=0.9)
+    speaker = _StatsSpeaker(
+        "SPEAKER_00", suggested_name="Marcus", confidence=0.9, suggestion_source="voice_match"
+    )
     resolved = get_speaker_name(_StatsSegment("hi", 0.0, 1.0, speaker))
 
     assert resolved == "Marcus"

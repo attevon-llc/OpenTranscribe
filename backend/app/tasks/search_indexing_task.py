@@ -50,6 +50,7 @@ def resolve_chunk_speaker_name(speaker: Any) -> str:
         display_name=speaker.display_name,
         suggested_name=speaker.suggested_name,
         confidence=speaker.confidence,
+        suggestion_source=getattr(speaker, "suggestion_source", None),
     )
 
 

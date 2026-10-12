@@ -14463,6 +14463,17 @@
             ],
             "title": "Suggested Name"
           },
+          "suggestion_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion Source"
+          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",

@@ -2,7 +2,8 @@
 
 Staging showed a speaker labelled "Unknown (not Robert)": the model's way of saying it could
 not tell, stored verbatim as ``suggested_name`` and, at >= 0.75 confidence, promoted to the
-canonical label by every index and export writer.
+canonical label by every index and export writer (before the label rule
+stopped promoting LLM suggestions at all; the gate stays for voiceprint names).
 """
 
 from __future__ import annotations
@@ -64,10 +65,20 @@ def test_a_stored_non_name_suggestion_never_becomes_the_canonical_label():
     from app.utils.speaker_labels import canonical_speaker_label
 
     assert (
-        canonical_speaker_label("SPEAKER_01", suggested_name="Unknown (not Robert)", confidence=0.9)
+        canonical_speaker_label(
+            "SPEAKER_01",
+            suggested_name="Unknown (not Robert)",
+            confidence=0.9,
+            suggestion_source="voice_match",
+        )
         == "SPEAKER_01"
     )
     assert (
-        canonical_speaker_label("SPEAKER_01", suggested_name="Robert Whitfield", confidence=0.9)
+        canonical_speaker_label(
+            "SPEAKER_01",
+            suggested_name="Robert Whitfield",
+            confidence=0.9,
+            suggestion_source="voice_match",
+        )
         == "Robert Whitfield"
     )

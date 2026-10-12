@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **An AI-suggested speaker name is never the speaker's name until you accept it.** A speaker's
+  name in search, chat, summaries and exports now comes only from a name you typed or verified,
+  or from a voice match to a profile or promoted cluster at 75% similarity or more. The AI
+  speaker-identification result used to become the name on its own once its confidence reached
+  75%, so a guess could be indexed and cited as a person nobody had checked. It is still stored
+  and offered in the speaker editor and suggestion lists with its confidence, and accepting it
+  sets the name. The speaker API's segment speaker now carries `suggestion_source` so the UI can
+  tell the two apart. **Existing libraries correct themselves:** the next search-index
+  maintenance passes (startup, then every 6 hours, 100 files each) re-index every completed
+  file whose speaker label came from an AI suggestion; no manual reindex is needed. Legacy
+  suggestions with no recorded source are treated as AI suggestions.
+
 ### Added
 
 - **Each file shows how it was processed (#1229).** The file page has a new collapsible

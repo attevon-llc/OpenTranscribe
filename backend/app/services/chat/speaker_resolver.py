@@ -46,6 +46,7 @@ from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import and_
+from sqlalchemy import case
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -56,6 +57,7 @@ from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.search.chunking_service import _NO_SPACE_CHAR_RE
+from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label
 
@@ -294,6 +296,7 @@ def _group_speaker_rows(rows: Any) -> dict[str, dict[str, Any]]:
             display_name=row.display_name,
             suggested_name=row.suggested_name,
             confidence=row.confidence,
+            suggestion_source=getattr(row, "suggestion_source", None),
         )
         if label in UNKNOWN_SPEAKER_LABELS:
             continue
@@ -445,6 +448,7 @@ def build_candidate_roster(
         Speaker.display_name,
         Speaker.suggested_name,
         Speaker.confidence,
+        Speaker.suggestion_source,
         Speaker.profile_id,
         Speaker.media_file_id,
     ).join(MediaFile, MediaFile.id == Speaker.media_file_id)
@@ -455,7 +459,17 @@ def build_candidate_roster(
     if file_uuids is not None:
         base_query = base_query.filter(MediaFile.uuid.in_(file_uuids))
 
-    columns = (Speaker.name, Speaker.display_name, Speaker.suggested_name)
+    # A suggested name is a candidate-bearing column only when a voiceprint match produced it:
+    # an LLM suggestion is not the speaker's name, so "who said X" must not find a speaker
+    # through it (the label it would then resolve to is the placeholder).
+    voiceprint_suggested_name = case(
+        (
+            Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
+            Speaker.suggested_name,
+        ),
+        else_=None,
+    )
+    columns = (Speaker.name, Speaker.display_name, voiceprint_suggested_name)
     all_rows: list[Any] = []
     seen_row_keys: set[tuple[Any, ...]] = set()
     for cand in norm_candidates:
@@ -475,7 +489,13 @@ def build_candidate_roster(
                 decline_reason=SpeakerResolutionDeclineReason.ROSTER_TOO_LARGE,
             )
         for row in rows:
-            key = (row.name, row.display_name, row.suggested_name, row.media_file_id)
+            key = (
+                row.name,
+                row.display_name,
+                row.suggested_name,
+                getattr(row, "suggestion_source", None),
+                row.media_file_id,
+            )
             if key not in seen_row_keys:
                 seen_row_keys.add(key)
                 all_rows.append(row)

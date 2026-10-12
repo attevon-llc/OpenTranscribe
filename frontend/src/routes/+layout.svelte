@@ -15,7 +15,7 @@
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
-  import { capabilities, loadCapabilities } from "$stores/capabilities";
+  import { capabilities } from "$stores/capabilities";
   import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
@@ -36,8 +36,8 @@
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
-  import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
+  import SessionCheckScreen from "../components/SessionCheckScreen.svelte";
 
   // Heavy, conditionally shown components are loaded with a dynamic import so every visitor
   // (the login page included) doesn't download them before first paint. Each one is fetched
@@ -116,6 +116,12 @@
   // Classification banner state
   let bannerEnabled = false;
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
+  // Needed only on deployments that enable the banner, so it is fetched when that is known
+  // rather than shipped to every visitor with the layout.
+  let ClassificationBanner: Component<any> | null = null;
+  $: if (bannerEnabled && $isAuthenticated && !ClassificationBanner) {
+    void import("$lib/components/ClassificationBanner.svelte").then((m) => (ClassificationBanner = m.default));
+  }
 
   /**
    * Handle bfcache (back-forward cache) restoration.
@@ -161,9 +167,8 @@
       // Initialize network connectivity monitoring
       networkStore.initialize();
 
-      // Edition capabilities (cloud hides platform/self-host surfaces).
-      // Fail-open: errors leave community defaults (everything visible).
-      void loadCapabilities();
+      // Edition capabilities are loaded by initAuth() once it knows there is a session (and by
+      // each login path for the new user) — a parallel fetch here duplicated both.
 
       // Locale, auth methods (banner settings) and the session check are independent, so
       // they run concurrently instead of as three serial round trips.
@@ -247,8 +252,8 @@
   {@const isPublicPath = PUBLIC_PATHS.includes($page.url.pathname)}
 
   <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->
-  {#if bannerEnabled && $isAuthenticated}
-    <ClassificationBanner
+  {#if bannerEnabled && $isAuthenticated && ClassificationBanner}
+    <svelte:component this={ClassificationBanner}
       classification={bannerClassification}
       position="top"
     />
@@ -310,22 +315,15 @@
         Show loading screen while the redirect is in flight to prevent
         Flash of Authenticated Content (FOAC) / protected content leakage.
       -->
-      <div class="loading-app">
-        <div class="loading-brand">
-          <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
-          <div class="loading-bar"><div class="loading-bar-fill"></div></div>
-        </div>
-      </div>
+      <SessionCheckScreen />
     {/if}
   </div>
 {:else}
-  <!-- Initial auth verification still in progress — block all rendering -->
-  <div class="loading-app">
-    <div class="loading-brand">
-      <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
-      <div class="loading-bar"><div class="loading-bar-fill"></div></div>
-    </div>
-  </div>
+  <!-- Initial auth verification still in progress. A protected route gets the app frame as a
+       skeleton (no account data, none of the real app's selectors); /login gets the brand mark.
+       The real app and the login form still render only once authReady, so nothing
+       authenticated can reach a logged-out visitor. -->
+  <SessionCheckScreen shell={!PUBLIC_PATHS.includes($page.url.pathname)} />
 {/if}
 
 <style>
@@ -397,57 +395,5 @@
     .content {
       --content-padding: 2rem;
     }
-  }
-
-  .loading-app {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    min-height: 100dvh;
-    background-color: var(--bg-primary, #f8fafc);
-  }
-
-  .loading-brand {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1.5rem;
-  }
-
-  .loading-logo {
-    border-radius: 16px;
-    animation: loading-pulse 1.8s ease-in-out infinite;
-  }
-
-  .loading-bar {
-    width: 120px;
-    height: 3px;
-    background: var(--border-color, #e2e8f0);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .loading-bar-fill {
-    width: 40%;
-    height: 100%;
-    background: var(--primary-color, var(--primary-color));
-    border-radius: 3px;
-    animation: loading-slide 1.2s ease-in-out infinite;
-  }
-
-  @keyframes loading-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-  }
-
-  @keyframes loading-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(350%); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .loading-logo { animation: none; }
-    .loading-bar-fill { animation: none; width: 100%; }
   }
 </style>

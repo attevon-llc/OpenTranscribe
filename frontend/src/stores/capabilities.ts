@@ -90,15 +90,41 @@ export function isCapabilityEnabled(state: CapabilitiesState, key: string): bool
  * Resetting to `loaded: false` (not `loaded: true`) is deliberate: consumers that
  * wait for `loaded` must wait for the NEXT user's fetch, not read the fail-open
  * empty map as an authoritative answer.
+ *
+ * It also orphans any fetch still in flight: that answer was scoped to the session being
+ * torn down and must not land in the next one (see `loadCapabilities`).
  */
 export function resetCapabilities(): void {
+  generation++;
+  inFlight = null;
   capabilities.set({ ...COMMUNITY_DEFAULTS, capabilities: {}, audience: {} });
 }
 
-/** Fetch once at app bootstrap; safe to call again (e.g. after login). */
-export async function loadCapabilities(): Promise<void> {
+// Bumped by `resetCapabilities()`. A response is applied only if the generation it was
+// requested under is still current, so a logout (or a login that wipes state) while a fetch is
+// in flight cannot write the previous session's tier-scoped map into the next one.
+let generation = 0;
+let inFlight: Promise<void> | null = null;
+
+/**
+ * Fetch the capability map. Concurrent callers share ONE request (login and a session restore
+ * can overlap); a call after it settles fetches again, because the map is scoped to the
+ * signed-in user and a fresh login must re-read it.
+ */
+export function loadCapabilities(): Promise<void> {
+  if (!inFlight) {
+    const request: Promise<void> = fetchCapabilities(generation).finally(() => {
+      if (inFlight === request) inFlight = null;
+    });
+    inFlight = request;
+  }
+  return inFlight;
+}
+
+async function fetchCapabilities(requestedUnder: number): Promise<void> {
   try {
     const response = await axiosInstance.get('/system/capabilities');
+    if (requestedUnder !== generation) return;
     const rawMaxUpload: unknown = response.data?.max_upload_bytes;
     capabilities.set({
       edition: response.data?.edition === 'cloud' ? 'cloud' : 'community',
@@ -116,6 +142,7 @@ export async function loadCapabilities(): Promise<void> {
           : undefined,
     });
   } catch {
+    if (requestedUnder !== generation) return;
     // Fail-open for feature visibility (community defaults, everything shown), but NOT
     // for the upload ceiling: `maxUploadBytes` stays `undefined` so
     // `$lib/utils/uploadLimits` falls back to its own coded default rather than reading

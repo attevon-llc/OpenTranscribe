@@ -50,6 +50,10 @@ const EXEMPT: Record<string, string> = {
     'Caches the deployment-wide password policy (GET /auth/password-policy, served to ' +
     'unauthenticated visitors on the register page). It is identical for every user, so ' +
     'the previous user cannot leak anything through it.',
+  'lib/auth/sessionProbe':
+    'The only module-level state is `wake`, the resolver of the pending retry-backoff timer ' +
+    'for the session probe, and the `unreachable` flag. Neither holds a user or a response: ' +
+    'the probe runs before any session exists and the flag is cleared by the next answer.',
   'lib/prefetch':
     'inflight / failedCache only hold file UUIDs and timestamps, and every prefetch request ' +
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +

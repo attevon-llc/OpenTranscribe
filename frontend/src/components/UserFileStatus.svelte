@@ -104,7 +104,11 @@
   });
 
   // Refetch tasks when filters change (reset to page 1)
-  $: if (filtersReady && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
+  // Only a change since the last fetch refetches: `filtersReady` flips true right AFTER the first
+  // fetch, and the block used to re-run on that flip and request the identical page again.
+  $: tasksFilterKey = [taskFilter, taskTypeFilter, taskAgeFilter, taskDateFrom, taskDateTo].join('|');
+  let fetchedFilterKey: string | null = null;
+  $: if (filtersReady && tasksFilterKey !== fetchedFilterKey) {
     taskPage = 1;
     fetchTasks(true);
   }
@@ -145,6 +149,7 @@
       tasksLoading = true;
     }
     tasksError = null;
+    fetchedFilterKey = tasksFilterKey;
 
     try {
       // Build query parameters for backend filtering + pagination

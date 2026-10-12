@@ -1,8 +1,8 @@
 /**
- * Prefetch service for hover-based and post-login data preloading.
+ * Prefetch service for hover-based data preloading.
  *
  * Provides debounced hover prefetch for gallery/search cards,
- * post-login dashboard data prefetch, and search next-page prefetch.
+ * and search next-page prefetch.
  */
 
 import axiosInstance from '$lib/axios';
@@ -73,27 +73,6 @@ export function cancelPrefetch(): void {
     clearTimeout(pendingTimer);
     pendingTimer = null;
   }
-}
-
-/**
- * Prefetch dashboard data (file list + user settings) after login.
- * Fires in parallel, fails silently.
- */
-export function prefetchDashboardData(): void {
-  // Prefetch the first page of files
-  const filesKey = cacheKey.files(1, '');
-  apiCache
-    .getOrFetch(filesKey, () => axiosInstance.get('/files').then((r) => r.data), CacheTTL.FILES)
-    .catch(() => {});
-
-  // Prefetch collections
-  apiCache
-    .getOrFetch(
-      cacheKey.collections(),
-      () => axiosInstance.get('/collections').then((r) => r.data),
-      CacheTTL.COLLECTIONS
-    )
-    .catch(() => {});
 }
 
 /**

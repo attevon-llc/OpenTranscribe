@@ -21,9 +21,11 @@ vi.mock('$lib/axios', async () => {
 });
 
 import { AuthConfigApi, AUTH_CONFIG_AUDIT_MAX_LIMIT } from './authConfig';
+import { getAuthMethods, invalidateAuthMethods } from '$stores/auth';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidateAuthMethods();
   mockInstance.get.mockResolvedValue({ data: {} });
   mockInstance.post.mockResolvedValue({ data: {} });
   mockInstance.put.mockResolvedValue({ data: {} });
@@ -58,6 +60,19 @@ describe('updateCategory', () => {
     const [path, body] = mockInstance.put.mock.calls[0];
     expect(path).toBe('/admin/auth-config/oidc');
     expect(body).toEqual({ oidc_enabled: true });
+  });
+
+  it('drops the shared /auth/methods answer so the next reader sees the edit', async () => {
+    const methodsCalls = () =>
+      mockInstance.get.mock.calls.filter(([path]) => path === '/auth/methods').length;
+    await getAuthMethods();
+    await getAuthMethods();
+    expect(methodsCalls()).toBe(1); // control: the answer IS shared
+
+    await AuthConfigApi.updateCategory('oidc', { oidc_enabled: true });
+    await getAuthMethods();
+
+    expect(methodsCalls()).toBe(2);
   });
 });
 

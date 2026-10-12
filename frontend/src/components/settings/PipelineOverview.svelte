@@ -244,7 +244,8 @@
     gap: 0.5rem;
   }
 
-  .step-card.off {
+  /* A step that does not run is dimmed, but its problem and its link are not. */
+  .step-card.off > :not(.issues):not(.step-foot) {
     opacity: 0.6;
   }
 

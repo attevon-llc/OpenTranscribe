@@ -12,7 +12,7 @@ import type {
   PipelineView,
   PipelineWhere,
 } from '$lib/api/pipeline';
-import { PIPELINE_ENGINE_KEYS } from '$lib/i18n/keyMaps';
+import { PIPELINE_ENGINE_KEYS } from '$lib/settings/pipelineKeys';
 import type { SettingsSection } from '$stores/settingsModalStore';
 import { fixTargets, isPipelineIssueCode, issueKey } from './pipelineIssues';
 

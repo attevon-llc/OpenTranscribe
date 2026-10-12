@@ -15,7 +15,7 @@
   import { getPipelineView, type PipelineView } from '$lib/api/pipeline';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { diarizerChoices, type DiarizerChoice } from '$lib/settings/asrCapabilities';
-  import { PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { speakerSaveErrorKey } from '$lib/settings/pipelineIssues';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';

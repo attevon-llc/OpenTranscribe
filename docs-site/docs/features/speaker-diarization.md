@@ -295,14 +295,24 @@ OpenTranscribe's independent diarization provider architecture allows routing di
 
 A per-user setting — **Settings → Speaker Identification → Speaker Detection** (`transcription_diarization_source`,
 backed by `UserDiarizationSettings`) — decides where a file's speaker labels actually come
-from. It takes four values:
+from. It takes five values:
 
 | Value | Behavior |
 |---|---|
 | **`provider`** (default) | No separate diarization pass runs — OpenTranscribe uses the speaker labels the ASR provider itself returned with the transcript. This is what matters when you're transcribing with a **cloud ASR provider**: it stays out of the way and accepts that provider's own diarization rather than layering PyAnnote on top of it. |
 | **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above, running in parallel with transcription and merged into the result afterward. |
 | **`local`** | Diarization runs through OpenTranscribe's own on-box PyAnnote pipeline described earlier on this page, via a reprocessing pass rather than the provider integration above. |
+| **`asr_config`** | Another saved cloud transcription provider (chosen with `diarization_asr_config_uuid`) supplies only the speaker labels; its text is discarded. That provider bills a full transcription of every recording and receives the audio, so the settings card says so. It needs the capability that lets users bring their own provider keys, and only models that return speakers are offered. |
 | **`off`** | No diarization at all — the transcript is produced without speaker labels. |
+
+**Settings → Processing pipeline** is a read-only page that shows, for the recording you would upload next,
+the four steps (transcription, speaker detection, speaker identification, AI features), where each one runs
+(this server or a named cloud vendor), whether audio leaves the server, and why a combination cannot run. It
+reads the same plan the pipeline executes, so it cannot disagree with it, and every problem links to the one
+settings tab that fixes it. The Speaker Detection card and the transcription provider list use the same
+vocabulary: *Speakers included* or *Text only* (does the model label who spoke) and *Word timing*,
+*Segment timing* or *No timing* (how finely it times its text; speakers cannot be added to text with no
+timestamps).
 
 An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
 error rather than silently falling back to local diarization — unlike ASR provider selection,

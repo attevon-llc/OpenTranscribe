@@ -22,7 +22,9 @@ call these functions, not `axios` directly.
   (admin) and exports `isAlreadyDecided`, the 409 "somebody else decided this first" test that
   callers must surface rather than swallow. `pyannoteCredential.ts` covers
   `/user-settings/diarization/pyannote` (#1204): the key is write-only, so a form must never
-  pre-fill it; view rules live in `$lib/settings/pyannoteCredential.ts`.
+  pre-fill it; view rules live in `$lib/settings/pyannoteCredential.ts`. `pipeline.ts` covers
+  `GET /user-settings/pipeline` (#1227), the server-resolved plan behind Settings > Processing pipeline;
+  `getPipelineView` rejects a reply without `steps`/`issues` so no consumer has to.
 
 ## Conventions / patterns
 

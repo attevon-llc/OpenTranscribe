@@ -13,7 +13,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
-  import { PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { modelCapability } from '$lib/settings/asrCapabilities';
   import { selectionNotices } from '$lib/settings/speakerSources';
   import CapabilityBadges from './CapabilityBadges.svelte';
@@ -455,7 +455,7 @@
 
   .model-notices {
     list-style: none;
-    margin: 0.5rem 0 0;
+    margin: 0.5rem 0 1rem;
     padding: 0;
     display: flex;
     flex-direction: column;

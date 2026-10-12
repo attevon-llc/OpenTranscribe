@@ -9,7 +9,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { PipelineSeverity } from '$lib/api/pipeline';
-  import { PIPELINE_SEVERITY_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_SEVERITY_KEYS } from '$lib/settings/pipelineKeys';
   import { fixLinkKey } from '$lib/settings/pipelineIssues';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';

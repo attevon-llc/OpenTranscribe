@@ -16,7 +16,7 @@
   import type { PipelineView } from '$lib/api/pipeline';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
   import type { DiarizerChoice } from '$lib/settings/asrCapabilities';
-  import { PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { fixTargets, isPipelineIssueCode } from '$lib/settings/pipelineIssues';
   import {
     selectionNotices,

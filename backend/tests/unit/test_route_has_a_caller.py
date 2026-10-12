@@ -163,16 +163,7 @@ _SUPPORT_ACCESS_REASON = (
     "Strict xfail so the entry is deleted the moment the SPA calls the route."
 )
 
-_PIPELINE_VIEW_REASON = (
-    "Issue #1224 (WP2 of docs/design/v060_pipeline_composition_plan.md): the read-only "
-    "pipeline view ships before its UI; WP5 builds frontend/src/lib/api/pipeline.ts and the "
-    "Settings > Processing pipeline section against this contract. Strict xfail so the entry "
-    "is deleted the moment the SPA calls the route."
-)
-
 _NOT_YET_VERIFIED: dict[str, str] = {
-    # --- processing-pipeline view (#1224): backend lands first, WP5's UI follows ---
-    "/api/user-settings/pipeline": _PIPELINE_VIEW_REASON,
     # --- support-access grants (#1122): backend lands first, the SPA follows ---
     "/api/support-access/grants/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
     "/api/org-admin/support-access": _SUPPORT_ACCESS_REASON,

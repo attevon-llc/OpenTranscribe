@@ -9,7 +9,7 @@
  */
 import type { PipelineIssue } from '$lib/api/pipeline';
 import type { SettingsSection } from '$stores/settingsModalStore';
-import { PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
+import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
 import { getErrorStatus } from '$lib/utils/apiError';
 
 export const PIPELINE_ISSUE_CODES = [

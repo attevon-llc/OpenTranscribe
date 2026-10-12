@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ASR_TEST_STATUS_KEYS, PIPELINE_ISSUE_KEYS } from '$lib/i18n/keyMaps';
+  import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { onMount } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import Spinner from '../ui/Spinner.svelte';

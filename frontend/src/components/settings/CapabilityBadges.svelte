@@ -9,7 +9,7 @@
 <script lang="ts">
   import Badge from '$components/ui/Badge.svelte';
   import type { TimestampGranularity } from '$lib/api/asrSettings';
-  import { TIMING_KEYS } from '$lib/i18n/keyMaps';
+  import { TIMING_KEYS } from '$lib/settings/pipelineKeys';
   import { t } from '$stores/locale';
 
   /** Null hides the speakers pill (steps where it does not apply). */

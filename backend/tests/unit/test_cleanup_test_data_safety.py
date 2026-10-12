@@ -97,11 +97,15 @@ def _find_ungated_delete_dispatch(source: str) -> list[str]:
                 self.generic_visit(node)
 
         def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
-            is_dispatch_call = (
-                isinstance(node.func, ast.Name) and node.func.id == "_delete_candidates"
-            ) or (isinstance(node.func, ast.Attribute) and node.func.attr == "_delete_candidates")
-            if is_dispatch_call and self.guard_depth == 0:
-                violations.append(f"line {node.lineno}: ungated _delete_candidates(...) call")
+            name = (
+                node.func.id
+                if isinstance(node.func, ast.Name)
+                else node.func.attr
+                if isinstance(node.func, ast.Attribute)
+                else ""
+            )
+            if name in {"_delete_candidates", "_delete_owners"} and self.guard_depth == 0:
+                violations.append(f"line {node.lineno}: ungated {name}(...) call")
             self.generic_visit(node)
 
     _Visitor().visit(tree)
@@ -126,6 +130,9 @@ def test_the_ungated_delete_dispatch_detector_actually_fires() -> None:
         "        _delete_candidates(api, resource, candidates)\n"
     )
     assert _find_ungated_delete_dispatch(guarded) == []
+
+    # The owner-delete dispatch (issue #1237) cascades a whole account, so it is gated too.
+    assert _find_ungated_delete_dispatch("def f(api, o):\n    _delete_owners(api, o)\n") != []
 
 
 # ---------------------------------------------------------------------------------------------

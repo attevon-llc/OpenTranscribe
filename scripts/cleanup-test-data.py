@@ -522,10 +522,26 @@ class ApiSession:
         with contextlib.suppress(requests.RequestException):
             self.session.post(f'{self.backend_url}/api/auth/logout', timeout=15)
 
+    def delete_user(self, user_uuid: str, email: str) -> bool:
+        """``DELETE /api/admin/users/{uuid}``: the account and everything it owns (cascade +
+        storage purge). The only way to remove a row the admin is not authorised on."""
+        assert self.session is not None
+        url = f'{self.backend_url}/api/admin/users/{user_uuid}'
+        try:
+            resp = self.session.delete(url, timeout=120)
+        except requests.RequestException as exc:
+            print(f'  FAILED  DELETE user {email} ({user_uuid}): {exc}')
+            return False
+        if resp.status_code in (200, 204, 404):
+            return True
+        print(f'  FAILED  DELETE user {email} ({user_uuid}): {describe_failure(resp)}')
+        return False
+
     def delete_media_file(self, file_uuid: str) -> bool:
         """Mirrors ``e2e/conftest.py``'s ``delete_media_file``: wait out an
         ``active_task_id``, DELETE, fall back to ``/force`` on persistent 409."""
         assert self.session is not None
+        last = 'no response'
         deadline = time.time() + 90
         while time.time() < deadline:
             try:
@@ -542,16 +558,21 @@ class ApiSession:
                 resp = self.session.delete(f'{self.backend_url}/api/files/{file_uuid}', timeout=30)
                 if resp.status_code in (200, 204, 404):
                     return True
-            except requests.RequestException:
-                pass
+                last = describe_failure(resp)
+            except requests.RequestException as exc:
+                last = str(exc)
             time.sleep(5)
         try:
             resp = self.session.delete(
                 f'{self.backend_url}/api/files/{file_uuid}/force', timeout=30
             )
-            return resp.status_code in (200, 204, 404)
-        except requests.RequestException:
-            return False
+            if resp.status_code in (200, 204, 404):
+                return True
+            last = describe_failure(resp)
+        except requests.RequestException as exc:
+            last = str(exc)
+        print(f'  FAILED  DELETE media_file {file_uuid}: {last}')
+        return False
 
     def delete_simple(self, resource: str, resource_uuid: str) -> bool:
         assert self.session is not None
@@ -560,9 +581,13 @@ class ApiSession:
         url = f'{self.backend_url}{path_template.format(uuid=resource_uuid)}'
         try:
             resp = self.session.delete(url, timeout=30)
-            return resp.status_code in (200, 204, 404)
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            print(f'  FAILED  DELETE {resource} {resource_uuid}: {exc}')
             return False
+        if resp.status_code in (200, 204, 404):
+            return True
+        print(f'  FAILED  DELETE {resource} {resource_uuid}: {describe_failure(resp)}')
+        return False
 
     def delete_tags(self, tag_uuids: list[str]) -> bool:
         assert self.session is not None
@@ -572,9 +597,86 @@ class ApiSession:
                 params=[('tag_uuids', u) for u in tag_uuids],
                 timeout=30,
             )
-            return resp.ok
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            print(f'  FAILED  DELETE {len(tag_uuids)} tag(s): {exc}')
             return False
+        if not resp.ok:
+            print(f'  FAILED  DELETE {len(tag_uuids)} tag(s): {describe_failure(resp)}')
+        return bool(resp.ok)
+
+
+def describe_failure(resp: Any) -> str:
+    """``HTTP <status> <reason>: <detail>`` for a failed delete, bounded in length.
+
+    The backend's ``detail`` is the reason an operator needs ("Not authorized to access this
+    profile"); a non-JSON body falls back to its first 200 characters.
+    """
+    reason = getattr(resp, 'reason', '') or ''
+    head = f'HTTP {resp.status_code}' + (f' {reason}' if reason else '')
+    try:
+        body = resp.json()
+        detail = body.get('detail') if isinstance(body, dict) else None
+    except ValueError:
+        detail = None
+    if detail is None:
+        detail = (getattr(resp, 'text', '') or '').strip()[:200]
+    return f'{head}: {str(detail)[:200]}' if detail else head
+
+
+# ---------------------------------------------------------------------------------------------
+# Owner deletion (issue #1237)
+# ---------------------------------------------------------------------------------------------
+
+
+def owner_patterns(users_module: ModuleType, *, include_tier_b: bool) -> list[str]:
+    """Registered test-user email patterns whose accounts may be deleted: Tier A always,
+    the review tier only under the full ``--execute``."""
+    return list(
+        users_module.ORPHAN_PATTERNS if include_tier_b else users_module.ORPHAN_PATTERNS_UNAMBIGUOUS
+    )
+
+
+def find_deletable_test_owners(conn: Any, cutoff: int, patterns: list[str]) -> dict[str, str]:
+    """``{email: uuid}`` of registered test users created before the liveness cutoff.
+
+    The admin is not authorised on another user's rows (a speaker profile is a 403), so the
+    only delete that reaches them is the owner's own, which cascades. An account is only a
+    candidate here when its email FULLY matches a registered test shape, it predates every
+    live run, and it is not one of ``cleanup-test-users.py``'s keep-list accounts.
+    """
+    if not patterns:
+        return {}
+    users_module = _load_cleanup_users_module()
+    where = ' OR '.join(f"u.email LIKE '{p}' ESCAPE '\\'" for p in patterns)
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT u.uuid, u.email
+            FROM "user" u
+            WHERE ({where})
+              AND u.created_at < to_timestamp(:cutoff)
+            """
+        ),
+        {'cutoff': cutoff},
+    ).fetchall()
+    return {
+        row.email: str(row.uuid)
+        for row in rows
+        if row.email not in users_module.KEEP_EMAILS
+        and not row.email.startswith(users_module.KEEP_PREFIXES)
+    }
+
+
+def owners_to_delete(
+    candidates_by_resource: dict[str, list[Candidate]], deletable: dict[str, str]
+) -> dict[str, str]:
+    """The ``{email: uuid}`` owners that at least one candidate row belongs to."""
+    return {
+        cand.owner_email: deletable[cand.owner_email]
+        for candidates in candidates_by_resource.values()
+        for cand in candidates
+        if cand.owner_email in deletable
+    }
 
 
 # ---------------------------------------------------------------------------------------------
@@ -582,10 +684,27 @@ class ApiSession:
 # ---------------------------------------------------------------------------------------------
 
 
+def _delete_owners(api: ApiSession, owners: dict[str, str]) -> dict[str, bool]:
+    """Delete registered test-user accounts (cascading their rows). ``{email: succeeded}``.
+
+    Like ``_delete_candidates``, reached only through the ``effective_execute`` guard.
+    """
+    outcome: dict[str, bool] = {}
+    for email, user_uuid in owners.items():
+        outcome[email] = api.delete_user(user_uuid, email)
+    return outcome
+
+
 def _delete_candidates(
-    api: ApiSession, resource: str, candidates: list[Candidate]
+    api: ApiSession,
+    resource: str,
+    candidates: list[Candidate],
+    owner_outcome: dict[str, bool],
 ) -> tuple[int, bool]:
     """Issue the real deletes for one resource type. Returns ``(deleted_count, any_failed)``.
+
+    A candidate whose owner was handled by ``_delete_owners`` is not deleted individually: the
+    owner delete removed it (counted deleted) or failed (counted failed, already reported).
 
     The ONLY place in this module that calls ``api.delete_media_file`` /
     ``api.delete_simple`` / ``api.delete_tags`` — callers must reach this function
@@ -593,9 +712,16 @@ def _delete_candidates(
     """
     deleted = 0
     any_failed = False
+    for cand in candidates:
+        if cand.owner_email in owner_outcome:
+            if owner_outcome[cand.owner_email]:
+                deleted += 1
+            else:
+                any_failed = True
+    candidates = [c for c in candidates if c.owner_email not in owner_outcome]
     if resource == 'tag':
         if candidates and api.delete_tags([c.uuid for c in candidates]):
-            deleted = len(candidates)
+            deleted += len(candidates)
         elif candidates:
             any_failed = True
     elif resource == 'media_file':
@@ -929,8 +1055,12 @@ def _sweep_records(args: argparse.Namespace, cutoff: int, report: dict[str, Any]
         media_candidates = deduped_media
 
         named = find_named_resources(conn, cutoff)
+        deletable_owners = find_deletable_test_owners(
+            conn, cutoff, owner_patterns(cleanup_users, include_tier_b=bool(args.execute))
+        )
 
     all_candidates: dict[str, list[Candidate]] = {'media_file': media_candidates, **named}
+    owners = owners_to_delete(all_candidates, deletable_owners)
 
     api = ApiSession(backend_url)
     api_available = api.login()
@@ -939,18 +1069,33 @@ def _sweep_records(args: argparse.Namespace, cutoff: int, report: dict[str, Any]
         print('        speaker-profile/conversation deletion this run (DB-only planes still run)')
         exit_code = 1
 
+    owner_outcome: dict[str, bool] = {}
+    print(f'\nregistered test owners: {len(owners)} account(s) to delete with their rows')
+    for email in owners:
+        verb = 'DELETE' if (effective_execute and api_available) else 'WOULD DELETE'
+        print(f'  {verb}  user {email}  (rows the admin cannot delete individually)')
+    report['resources']['test_owners'] = {'count': len(owners), 'deleted': 0}
+    # Same guard as the per-record deletes below (test_cleanup_test_data_safety.py's AST scan).
+    if effective_execute and api_available and owners:
+        owner_outcome = _delete_owners(api, owners)
+        report['resources']['test_owners']['deleted'] = sum(owner_outcome.values())
+        if not all(owner_outcome.values()):
+            exit_code = 1
+        print(f'  Deleted {sum(owner_outcome.values())}/{len(owners)} owner account(s)')
+
     for resource, candidates in all_candidates.items():
         print(f'\n{resource}: {len(candidates)} Tier A candidate(s)')
         report['resources'][resource] = {'count': len(candidates), 'deleted': 0}
         for cand in candidates:
             verb = 'DELETE' if (effective_execute and api_available) else 'WOULD DELETE'
-            print(f'  {verb}  {cand.label}  (owner={cand.owner_email})')
+            via = ' via owner' if cand.owner_email in owners else ''
+            print(f'  {verb}{via}  {cand.label}  (owner={cand.owner_email})')
 
         # Every actual API delete call lives behind THIS guard, and only this guard —
         # see test_cleanup_test_data_safety.py's AST scan, which fails a build the
         # moment a delete call appears anywhere it cannot reach.
         if effective_execute and api_available:
-            deleted, resource_failed = _delete_candidates(api, resource, candidates)
+            deleted, resource_failed = _delete_candidates(api, resource, candidates, owner_outcome)
             if resource_failed:
                 exit_code = 1
             report['resources'][resource]['deleted'] = deleted

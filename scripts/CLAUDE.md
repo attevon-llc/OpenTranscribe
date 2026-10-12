@@ -1040,6 +1040,15 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
     `purge_media_file`, the same destroyer as `python -m app.scripts.corpus_injection --purge`
     (`inject-eval-corpus.sh ... --purge --dry-run|--yes`). An operator's corpus is removed with
     that command, never by the sweep.
+  - **Rows owned by another test user (#1237)**: every record delete runs as the admin, who is
+    403 on someone else's speaker profile, so a leaked `delres-e2e-<hex8>@example.com` account's
+    rows could never go and kept the account `BLOCKED`. A candidate whose owner FULLY matches a
+    registered test-user shape (`cleanup-test-users.py`'s `ORPHAN_PATTERNS_UNAMBIGUOUS`; the
+    review tier only under `--execute`), predates the liveness cutoff and is not in its keep-list
+    is now removed by deleting the owner via `DELETE /api/admin/users/{uuid}` (cascade + storage
+    purge) before the per-record deletes. Every failed delete prints `HTTP <status> <reason>:
+    <detail>`. `_delete_owners` sits behind the same `effective_execute` guard as
+    `_delete_candidates` (AST-scanned).
   - **Stack scoping**: the store planes exit 2 when the EXPORTED `POSTGRES_PORT`/
     `OPENSEARCH_PORT`/`MINIO_PORT` resolve to different stacks (base + one `--port-offset`),
     which is the "exported one port, forgot another" accident. `.env`/default values are one

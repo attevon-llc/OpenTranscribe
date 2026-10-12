@@ -5,13 +5,13 @@
     "title": "OpenTranscribe — Speaker Clustering & Naming",
     "quality_profile": "showcase",
     "views": [
-      { "id": "auto-match", "label": "Automatic matching", "focus": ["voiceprint", "match", "assigned"], "note": "A new speaker's voiceprint is compared against every known profile before anything reaches a human." },
+      { "id": "auto-match", "label": "Automatic matching", "focus": ["voiceprint", "match", "assigned"], "note": "Every new voiceprint, whoever detected the speakers, is compared against known profiles before anything reaches a human." },
       { "id": "clustering", "label": "Unmatched -> cluster", "focus": ["match", "cluster", "review"], "note": "Speakers with no confident match group into clusters across files, waiting for a human to name them." },
-      { "id": "promote", "label": "Cluster -> named profile", "focus": ["review", "profile"], "note": "Merge, split, or promote — a cluster becomes a durable, reusable SpeakerProfile only when a person confirms it." }
+      { "id": "corrections", "label": "Corrections stick", "focus": ["review", "profile", "match"], "note": "Unassigning blacklists the speaker from that cluster and profile; every later assignment path honours it." }
     ]
   },
   "lanes": [
-    { "id": "embed", "label": "Embedding" },
+    { "id": "embed", "label": "Embedding (this server)" },
     { "id": "match", "label": "Matching" },
     { "id": "cluster", "label": "Clustering" },
     { "id": "user", "label": "Human Review" }
@@ -22,11 +22,11 @@
   ],
   "mainPath": ["voiceprint", "match", "cluster", "review", "profile"],
   "nodes": [
-    { "id": "voiceprint", "lane": "embed", "col": 0, "type": "backend", "label": "Voiceprint", "sublabel": "new speaker embedding", "width": 132 },
+    { "id": "voiceprint", "lane": "embed", "col": 0, "type": "backend", "label": "Voiceprint", "sublabel": "after any detector", "width": 132 },
     { "id": "match", "lane": "match", "col": 1, "type": "database", "label": "Match", "sublabel": "cosine vs known profiles", "width": 132 },
-    { "id": "assigned", "lane": "match", "col": 2, "type": "backend", "label": "Auto-assign", "sublabel": "above threshold", "width": 132 },
+    { "id": "assigned", "lane": "match", "col": 2, "type": "backend", "label": "Auto-assign", "sublabel": "above threshold", "tag": "unless blocked", "width": 132 },
     { "id": "cluster", "lane": "cluster", "col": 2, "type": "backend", "label": "Cluster", "sublabel": "no match — group across files", "width": 132 },
-    { "id": "review", "lane": "user", "col": 3, "type": "external", "label": "Review", "sublabel": "merge / split / verify", "width": 132 },
+    { "id": "review", "lane": "user", "col": 3, "type": "external", "label": "Review", "sublabel": "merge / split / unassign", "width": 132 },
     { "id": "profile", "lane": "cluster", "col": 4, "type": "database", "label": "Profile", "sublabel": "named, reusable SpeakerProfile", "width": 132 }
   ],
   "edges": [
@@ -38,8 +38,8 @@
     { "id": "profile-match", "from": "profile", "to": "match", "label": "feeds future matches", "variant": "dashed", "fromSide": "top", "toSide": "top" }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Threshold gates automation", "items": ["Confident matches auto-assign to an existing profile — no human needed", "Everything below threshold becomes an unverified speaker, never guessed"] },
-    { "dot": "rose", "title": "Clustering is cross-file", "items": ["find_or_create_cluster groups similar unverified speakers across the whole library, not per-file", "batch_recluster can re-run this after embeddings change (e.g. a model upgrade)"] },
-    { "dot": "emerald", "title": "Promotion is the only way to a name", "items": ["merge_clusters / split_cluster let a reviewer correct grouping mistakes first", "promote_cluster_to_profile is the one step that creates a durable, reusable identity"] }
+    { "dot": "cyan", "title": "One voiceprint stage", "items": ["Native vectors from this server's engine, or services/voiceprint_extractor.py on the cpu queue after a vendor, pyannote.ai or a post stage", "Vendor voiceprints are never used; v0.8.0 swaps the extractor for a Rust one behind the same interface (#1231)"] },
+    { "dot": "rose", "title": "Removing a voice is one implementation", "items": ["services/speaker_cleanup.py: capture impact before the write, reconcile clusters, centroids and profile embeddings after the commit", "Unassign (detach_from_cluster): leaves the cluster and its profile, blacklisted by default; the cluster and profile stay for everyone else"] },
+    { "dot": "emerald", "title": "Naming and corrections", "items": ["promote_cluster_to_profile creates the durable identity; merge_clusters / split_cluster fix grouping first", "Every assignment path skips a blacklisted speaker; only naming one speaker explicitly lifts its blacklist"] }
   ]
 }

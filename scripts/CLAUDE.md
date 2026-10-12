@@ -18,6 +18,14 @@ this file is for.
   before committing, or CI fails. The venv is 3.12, CI is 3.13 — verified byte-identical output
   at current pins. `info.version` is normalized to a fixed sentinel so a release version bump
   alone never causes drift.
+- **Docs generated from code** (issue #1230) — `generate-pipeline-docs.py --write|--check`
+  (backend venv; imports `app`) writes the Deployment variants page's three partials under
+  `docs-site/docs/installation/_generated/` from `docker-build-push.sh list-platforms`,
+  `security-scan.sh list-repos`, the ASR catalog and `resolve_pipeline_plan`; CI's backend job
+  runs `--check`. `check-architecture-diagram-drift.py` (stdlib, `--selftest`) compares each
+  `/architecture` render's `spec-sha256` stamp, written by `generate-architecture-diagrams.sh`,
+  with its spec; it is a pre-commit hook. Both are pinned by unit tests; see
+  `docs-site/CLAUDE.md`.
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
   `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
   `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a

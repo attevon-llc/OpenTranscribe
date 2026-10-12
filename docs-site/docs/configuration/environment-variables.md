@@ -102,6 +102,22 @@ USE_NATIVE_SPEAKER_EMBEDDINGS=true
 MODEL_CACHE_DIR=./models
 ```
 
+### Whether speakers are detected: a user setting, not `ENABLE_DIARIZATION`
+
+Whether speakers are detected, and where, is chosen per user in **Settings → Speaker
+Identification → Speaker detection** (Automatic by default, or this server, the pyannote.ai
+cloud service, or Off), and can be skipped per file through the upload API
+(`disable_diarization`). Every run is planned from that choice.
+No environment variable turns speaker detection off for a deployment.
+
+`ENABLE_DIARIZATION` (`.env.example` ships `true`) is still read when the engine
+configuration is built, but every transcription run then overrides it with the run's plan, so
+it has no effect on whether speakers are detected. Its only remaining visible effect is the
+"Diarization" line of the CPU-only advisory in Settings → System Statistics, which reports the
+variable's value. The CPU installer (`setup-opentranscribe.sh` on a host with no GPU, or with
+`--cpu`) still writes `ENABLE_DIARIZATION=false`; that does **not** stop speaker detection. To
+run without it, choose **Off** in Settings (or skip speaker detection for a file).
+
 ### Speaker Detection Use Cases
 
 | Event Type | Speakers | Recommended MAX_SPEAKERS | Notes |
@@ -120,9 +136,14 @@ first task.
 
 ## Native Diarization Engine (diar-native)
 
-`ENGINE_DIARIZER_BACKEND` selects which diarizer serves `local` (on-box) diarization —
-`native` (the coded default) routes to the `diar-native` sidecar, `pyannote` routes to the
-in-process PyAnnote fork. This is a **different axis** from `ASR_PROVIDER`/diarization-source
+`ENGINE_DIARIZER_BACKEND` selects which engine detects speakers when they are detected on
+this server — `native` (the coded default) routes to the `diar-native` sidecar, `pyannote`
+routes to the in-process PyAnnote fork. It is an admin setting: the `engine.diarizer_backend`
+database setting wins over the variable, users see the engine read-only and choose only
+*where* speakers are detected. With `native`, a sidecar that is not running or fails falls back
+to in-process PyAnnote. The minimum/maximum speaker count is honoured only by the `pyannote`
+engine; the native engine counts speakers itself and ignores the hints. On a lite deployment
+neither engine is used for speaker detection. This is a **different axis** from `ASR_PROVIDER`/diarization-source
 above: it only decides which *engine* runs once diarization is already happening locally. See
 [Speaker Diarization → Native Diarization Engine](../features/speaker-diarization.md#native-diarization-engine-new-in-v050)
 for what the sidecar does and how its weights get provisioned; this section is only the
@@ -424,8 +445,31 @@ CLOUD_ASR_CONCURRENCY=16           # Concurrency for cloud-asr worker (default 1
 
 ### Deployment Mode
 
+`DEPLOYMENT_MODE=lite` marks a lite (cloud-only) deployment. `docker-compose.lite.yml` sets it
+on every backend service, and the installer writes it to `.env` when run with `--lite`. With it
+set:
+
+- Transcription on this server is refused; choose a cloud provider. A `local` ASR
+  configuration cannot be created or switched to.
+- Speaker detection on this server is refused. Speakers come from a cloud transcription model
+  that returns them, from the pyannote.ai cloud service, or from another saved provider
+  configuration. With a text-only model, "Automatic" is refused instead of falling back to this
+  server.
+- Voiceprints for cross-file speaker matching are still computed on this server's CPU.
+
+Leave it at `full` for the full image, where local transcription and on-server speaker
+detection are available alongside cloud providers. Which image each variant runs, and what it
+can do, is on [Deployment Variants](../installation/deployment-variants.md).
+
+`FORCE_CPU_MODE=true` keeps a full install off the GPU even when one is present: `opentr.sh`
+and `opentranscribe.sh` skip GPU detection and the GPU overlays, and Settings → System
+Statistics shows the CPU-only advisory. The installer writes it when run with `--cpu` (or
+`OPENTRANSCRIBE_FORCE_CPU=1`). It does not turn speaker detection off; see
+[Whether speakers are detected](#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
+
 ```bash
-DEPLOYMENT_MODE=full  # full (local GPU + optional cloud) or lite (cloud-only, no GPU, ~2GB image)
+DEPLOYMENT_MODE=full  # full (local GPU + optional cloud) or lite (cloud-only, no GPU)
+FORCE_CPU_MODE=false  # true = never use the GPU, even when one is present
 # BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest
 # ^ leave commented out: docker-compose.lite.yml derives it from OT_IMAGE_TAG when unset,
 # which is what lets `update --version` / `--rollback` pin/upgrade/roll back a lite install.
@@ -1083,8 +1127,16 @@ stored encrypted in the database. The variables below are only the
 provisioned install. They were removed from `.env.example` for that reason.
 :::
 
-`ASR_PROVIDER` selects the default engine: `local` (the bundled WhisperX, needs a
-GPU) or one of the cloud providers below.
+`ASR_PROVIDER` selects the default engine: `local` (the bundled WhisperX on this server;
+fastest on a GPU, also runs on CPU, and refused on a lite deployment) or one of the cloud
+providers below.
+
+:::note[The OpenAI default model returns no timestamps]
+`OPENAI_ASR_MODEL` defaults to `gpt-4o-transcribe`, which returns text with no timestamps, so
+speaker detection is refused with it (choose Off for speaker detection, or use `whisper-1` or
+`gpt-4o-transcribe-diarize`). Which models return speakers and timestamps:
+[Deployment Variants](../installation/deployment-variants.md#which-cloud-providers-return-speakers).
+:::
 
 | Provider | `ASR_PROVIDER` | Variables |
 |---|---|---|

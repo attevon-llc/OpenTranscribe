@@ -41,11 +41,17 @@ class SpeakerTurn:
 
 @dataclass(frozen=True)
 class Voiceprints:
-    """Per-speaker vectors (label -> L2-normalised floats), their width and model."""
+    """Per-speaker vectors (label -> L2-normalised floats), their width and model.
+
+    ``backend`` names the runtime that computed them (``native`` sidecar or in-process
+    ``pyannote``), for the file's provenance record; ``None`` when an implementation
+    cannot say.
+    """
 
     vectors: dict[str, list[float]]
     dims: int
     model: str
+    backend: str | None = None
 
 
 class VoiceprintExtractor(Protocol):
@@ -80,8 +86,12 @@ class WeSpeakerVoiceprintExtractor:
                 for i, embeddings in raw.items()
                 if embeddings
             }
+            # ``backend`` is read AFTER extraction: a sidecar lost mid-run flips it.
             return Voiceprints(
-                vectors=vectors, dims=service.get_embedding_dimension(), model=service.model_name
+                vectors=vectors,
+                dims=service.get_embedding_dimension(),
+                model=service.model_name,
+                backend=getattr(service, "backend", None),
             )
         finally:
             service.cleanup()

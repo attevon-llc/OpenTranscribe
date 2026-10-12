@@ -106,6 +106,12 @@ more often).
   actually ran, not a hardcoded name. It is the local post stage's detector.
 - `pyannote_provider.py` — pyannote.ai cloud diarization (`precision-3`; `precision-2` is retired and mapped to it). Distinct from
   `../asr/pyannote_provider.py`, which hits the *STT-orchestration* endpoint. Don't confuse them.
+- **Provider ids say which engine RAN (#1229).** pyannote.ai reports `provider_name ==
+  "pyannote.ai"` (`pipeline_plan.PYANNOTE_AI`); it used to say `pyannote`, the local in-process
+  engine's id, so a cloud run was stored and displayed as the local engine. `local_provider`
+  reports the served engine (`diarizer.last_provider`: `native` | `pyannote`), not `local`.
+  These ids land in `media_file.diarization_provider` and in the per-file provenance
+  (`services/file_provenance.py`), which maps each to where it ran.
 
 ## How it connects
 

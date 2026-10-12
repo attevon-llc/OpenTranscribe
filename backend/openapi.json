@@ -9054,6 +9054,14 @@
             ],
             "title": "Preview Url"
           },
+          "processing_steps": {
+            "description": "One display-ready row per processing step, in processing order",
+            "items": {
+              "$ref": "#/components/schemas/ProcessingStepOut"
+            },
+            "title": "Processing Steps",
+            "type": "array"
+          },
           "quarantine_reason": {
             "anyOf": [
               {
@@ -11515,6 +11523,119 @@
           "content_type"
         ],
         "title": "PrepareUploadRequest",
+        "type": "object"
+      },
+      "ProcessingStepOut": {
+        "description": "One step of how a file was processed, ready to render.",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable provider id",
+            "title": "Provider"
+          },
+          "provider_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name",
+            "title": "Provider Display"
+          },
+          "recorded": {
+            "description": "full: recorded by the step; legacy: read from older columns; none",
+            "enum": [
+              "full",
+              "legacy",
+              "none"
+            ],
+            "title": "Recorded",
+            "type": "string"
+          },
+          "status": {
+            "description": "done: the step ran (see provider/model/where); off: skipped by choice; not_run: recorded run, this step has not completed; not_recorded: the file was processed before this was tracked",
+            "enum": [
+              "done",
+              "off",
+              "not_run",
+              "not_recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "enum": [
+              "transcription",
+              "diarization",
+              "voiceprints",
+              "summary",
+              "topics",
+              "speaker_names"
+            ],
+            "title": "Step",
+            "type": "string"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "word",
+                  "segment",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transcription only: timestamp granularity of the text",
+            "title": "Timing"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "enum": [
+                  "server",
+                  "cloud"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the step ran; null when not known or not run",
+            "title": "Where"
+          }
+        },
+        "required": [
+          "step",
+          "status",
+          "recorded"
+        ],
+        "title": "ProcessingStepOut",
         "type": "object"
       },
       "ProjectCreate": {

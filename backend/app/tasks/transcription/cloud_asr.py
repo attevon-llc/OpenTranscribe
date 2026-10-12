@@ -4,6 +4,7 @@ import contextlib
 import logging
 
 from app.db.session_utils import session_scope
+from app.services.file_provenance import inline_speakers_by
 from app.services.pipeline_plan import PipelinePlan
 from app.utils.task_utils import update_task_status
 
@@ -333,12 +334,14 @@ def _run_cloud_asr_pipeline(
         if diarize_result is not None
         else {}
     )
+    # A vendor that returned its own speakers (inline_asr) is the detector: record its id.
+    inline = inline_speakers_by(asr_result, config.enable_diarization)
 
     return {
         "segments": raw_segments,
         "language": asr_result.language,
         "asr_provider": asr_result.provider_name,
         "asr_model": asr_result.model_name,
-        "diarization_provider": diar_meta.get("diarization_provider"),
-        "diarization_model": diar_meta.get("diarization_model"),
+        "diarization_provider": diar_meta.get("diarization_provider") or inline.get("provider"),
+        "diarization_model": diar_meta.get("diarization_model") or inline.get("model"),
     }

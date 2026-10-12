@@ -680,6 +680,35 @@ transcription-step error), `GET /user-settings/pipeline`, and every pipeline
 stage (#1225: dispatch resolves it once and carries it in the chain context; what each cell
 then does is pinned by `tests/unit/test_pipeline_execution_matrix.py`).
 
+## Per-file processing provenance (#1229): one writer, one reader
+
+`media_file.processing_provenance` (JSONB, `v437`, `{"v": 1, "steps": {<step>: {...}}}`, shape
+in `schemas/processing_provenance.py`) records, per step, which provider/model completed it and
+where it ran. Steps: `transcription`, `diarization`, `voiceprints`, `summary`, `topics`,
+`speaker_names`.
+
+- **Write ONLY through `file_provenance.record_stage(db, file_id, stage, **facts)`.** It is one
+  `UPDATE ... jsonb_set` statement (never read-modify-write: the LLM tasks finish concurrently
+  for one file; `tests/unit/test_file_provenance_record.py` holds a row lock to prove it) inside
+  a savepoint, and it logs and swallows a DB error so provenance can never fail the stage write
+  it rides in. Unknown fact names raise `TypeError` (`base_url`, `api_key` are refused by
+  construction); a URL-shaped value is dropped. `new_run=True` (the transcript save) starts a
+  fresh document, so an earlier run's voiceprints/summary never describe a new transcript.
+- The `*_facts` helpers (`transcription_facts`, `diarization_facts`, `voiceprint_facts`,
+  `llm_facts`, `inline_speakers_by`) turn what a stage knows into canonical facts so call sites
+  stay one line. `llm_facts` calls `llm_guard.is_local_provider`, which can resolve a hostname:
+  call it in the no-session phase, never inside a write session.
+- Speaker-detection ids are canonical: `native` / `pyannote` = the local engines (server),
+  `pyannote.ai` = the cloud service, a transcription vendor id = that vendor's own speakers.
+  A legacy `pyannote` cannot be told apart from pyannote.ai, so the reader gives it no location.
+- **Read ONLY through `file_provenance_view.build_processing_steps(media_file)`**, served as
+  `processing_steps` on `MediaFileDetail` and `GET /my-files/{uuid}/status`. Display names are
+  proper nouns, pre-formatted here. `NULL` = processed before recording began: rows are
+  composed from the older columns with `recorded="legacy"` and anything they cannot say is
+  `not_recorded`; a document with a `transcription` entry means a missing step is `not_run`.
+- The scalar columns (`asr_provider`, `diarization_provider`, ...) stay the queryable index and
+  are still written where they were; `record_diarization` updates them for a post stage.
+
 ## Media URL ingestion (yt-dlp)
 
 `media_download_service.py`. 1800+ platforms, no extra config — yt-dlp and a Deno runtime ship

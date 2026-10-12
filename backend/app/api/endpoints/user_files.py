@@ -31,6 +31,7 @@ from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
 from app.services.takedown_service import exclude_quarantined
 from app.services.task_recovery_service import task_recovery_service
@@ -348,6 +349,10 @@ def get_file_detailed_status(
                 ),
                 "diarization_model": media_file.diarization_model,
                 "embedding_mode": media_file.embedding_mode,
+                # How each step was processed (issue #1229); same rows as the file detail.
+                "processing_steps": [
+                    step.model_dump() for step in build_processing_steps(media_file)
+                ],
             },
             "task_summary": task_summary,
             "task_details": task_details,

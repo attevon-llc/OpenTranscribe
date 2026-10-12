@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each file shows how it was processed (#1229).** The file page has a new collapsible
+  **Processing** section beside File details, and the file status details list the same rows:
+  for transcription, speaker detection, voiceprints, summary, topics and speaker-name
+  suggestions, which provider and model completed the step and whether it ran on this server
+  or in the cloud (plus the transcript's timing granularity). Recorded per step in one new
+  column, `media_file.processing_provenance` (Alembic `v437`), written by a single atomic
+  statement so steps finishing together cannot overwrite each other; it never holds a URL, key
+  or configuration id. `GET /api/files/{uuid}` and `GET /api/my-files/{uuid}/status` carry it
+  as `processing_steps`, display-ready. Files processed before this show what was recorded at
+  the time and **Not recorded** for the rest, never a guess. The pyannote.ai speaker-detection
+  service now records itself as `pyannote.ai` (it used to record `pyannote`, the local engine's
+  id, so a cloud run displayed as the local engine), and a cloud transcription provider that
+  returned its own speakers is now recorded as the speaker detector. The old models row under
+  File details (with its untranslated "Whisper:" label) is replaced by the new section.
 - **Another provider's speaker detection, with any transcription (#1226).** Speaker detection
   can be set to a saved ASR configuration (source `asr_config`, from #1224): that provider is
   asked to transcribe with its speaker labels on, its speaker turns are kept and its text is

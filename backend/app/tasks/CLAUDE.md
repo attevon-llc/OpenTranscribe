@@ -208,6 +208,24 @@ indexing → WebSocket notification.
 
 ## Conventions / patterns
 
+- **A stage that completes a processing step records it, in its own write session** (#1229):
+  `services/file_provenance.record_stage(db, file_id, "<step>", **facts)` (or one of its
+  `record_*` wrappers). Current call sites: `transcription/storage.update_media_file_transcription_status`
+  (`record_transcription_run`: new run + transcription + inline/parallel speaker detection,
+  with the plan's engine/execution/merge passed down from `finalize._process_and_save_critical`),
+  `rediarize_task._save` (`record_diarization`, same session as the re-split segments, with the
+  plan's engine so a vendor's own id is never read as this server's engine),
+  `transcription/postprocess._process_native_embeddings` and
+  `transcription/embeddings._process_speaker_embeddings_native` (`record_inline_voiceprints`),
+  `speaker_embedding_task._match_and_finalize_embeddings` (`voiceprints`, facts from the
+  extractor's `Voiceprints`, incl. its `backend`),
+  `summarization._persist_summary`, `TopicExtractionService._persist_extraction`,
+  `speaker_identification_task._store_speaker_predictions` (the LLM facts are resolved in the
+  no-session phase and handed to the write). A new or replacement stage must keep the call;
+  `tests/unit/test_file_provenance_hooks.py` runs each site for real and
+  `test_pipeline_execution_matrix.py::test_every_stage_of_a_run_records_what_it_ran` runs the
+  chain per executable plan cell.
+
 - **Any WebSocket event naming a `MediaFile` must go through
   `app/utils/websocket_notify.py:send_ws_event_for_file`, never the raw `send_ws_event`**
   (issue #908). `send_ws_event` has no notion of quarantine at all — a filename, title, or

@@ -17,6 +17,8 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import record_stage
+from app.services.file_provenance import voiceprint_facts
 from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
@@ -191,6 +193,7 @@ def _extract_aggregated_embeddings(file_uuid: str, task_id: str, inputs: dict) -
         audio_file_path = _stage_audio_for_embeddings(file_uuid, inputs, temp_dir)
         _set_task_progress(task_id, 0.4)
         voiceprints = get_voiceprint_extractor().extract(audio_file_path, turns)
+    inputs["voiceprint_facts"] = voiceprint_facts(voiceprints)
     logger.info(
         "Voiceprints for file %s: %d speakers, %d-d (%s)",
         inputs["file_id"],
@@ -245,6 +248,8 @@ def _match_and_finalize_embeddings(
             f"Speaker matching completed: {len(speaker_results) if speaker_results else 0} results"
         )
 
+        if aggregated_embeddings and inputs.get("voiceprint_facts"):
+            record_stage(db, file_id, "voiceprints", **inputs["voiceprint_facts"])
         update_task_status(db, task_id, "in_progress", progress=0.9)
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 

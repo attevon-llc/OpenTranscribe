@@ -610,6 +610,12 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # v436: data-only and lite-only (issue #1228). Keyed on the ABSENCE of a lite user's
     # stored "this server" choice that Automatic would keep, like v434.
     has_lite_local_source = _has_lite_local_source_with_speakers(conn, tables)
+    # v437: per-file processing provenance (issue #1229). Single-marker revision: the
+    # column IS the fingerprint.
+    has_processing_provenance = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'processing_provenance')"
+    )
 
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
@@ -668,8 +674,17 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
+    # v437: same as v436 plus the processing provenance column. The newest revision on
+    # this chain, so this is the top of the ladder. The data-only arms below it do not
+    # require the column, so a database without it is stamped v436 or lower and re-runs it.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+    ):
+        return "v437_add_media_processing_provenance"
     # v436: same as v434, with no lite "this server" choice left that Automatic would keep.
-    # The newest revision on this chain, so this is the top of the ladder.
     if matches_v433 and not has_unusable_pyannote_source and not has_lite_local_source:
         return "v436_lite_local_speaker_detection_to_automatic"
     # v434: same schema as v433, with no unusable pyannote.ai choice left.

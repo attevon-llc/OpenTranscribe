@@ -33,8 +33,8 @@ from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
-from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import record_diarization
 from app.services.minio_service import cleanup_temp_audio
 from app.services.minio_service import download_file
 from app.services.minio_service import download_temp_audio
@@ -307,8 +307,17 @@ def _merge_turns(detection: _Detection, transcript: dict, merge: str) -> list[di
     return finalize_segments(result["segments"], smoothing_cfg)
 
 
-def _save(meta: dict, task_id: str, segments: list[dict], detection: _Detection):
-    """Write phase: speakers, segments and the detector that actually ran."""
+def _save(
+    meta: dict,
+    task_id: str,
+    segments: list[dict],
+    detection: _Detection,
+    *,
+    engine: str,
+    merge: str,
+):
+    """Write phase: speakers, segments and the detector that actually ran (columns and
+    the provenance record, in the same session as the segments)."""
     from app.tasks.transcription.speaker_processor import create_speaker_mapping
     from app.tasks.transcription.speaker_processor import extract_unique_speakers
     from app.tasks.transcription.speaker_processor import mark_overlapping_segments
@@ -328,11 +337,15 @@ def _save(meta: dict, task_id: str, segments: list[dict], detection: _Detection)
 
     with session_scope() as db:
         save_transcript_segments(db, file_id, processed)
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if media_file is not None:
-            media_file.diarization_disabled = False
-            media_file.diarization_provider = detection.provider
-            media_file.diarization_model = detection.model
+        record_diarization(
+            db,
+            file_id,
+            detection.provider,
+            detection.model,
+            engine=engine,
+            execution="post_stage_local" if engine == "local" else "post_stage_cloud",
+            merge=merge,
+        )
         update_task_status(db, task_id, "in_progress", progress=0.85)
     return processed, speaker_mapping, unique_speakers
 
@@ -603,7 +616,9 @@ def rediarize_task(
             segments = _merge_turns(detection, transcript, merge)
         send_progress_notification(user_id, file_id, 0.70, "Saving updated transcript")
         with stage_timing.stage("finalize", task_id=task_id, file_id=file_id):
-            processed, speaker_mapping, unique_speakers = _save(meta, task_id, segments, detection)
+            processed, speaker_mapping, unique_speakers = _save(
+                meta, task_id, segments, detection, engine=engine, merge=merge
+            )
 
         send_progress_notification(user_id, file_id, 0.85, "Processing speaker voiceprints")
         voiceprint_owns_audio = _voiceprint_stage(

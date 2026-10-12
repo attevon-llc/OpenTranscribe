@@ -13,6 +13,7 @@ from app.db.session_utils import session_scope
 from app.utils.task_utils import update_task_status
 
 from .context import TranscriptionContext
+from .context import plan_of
 from .embeddings import _should_use_native_embeddings
 from .notifications import send_progress_notification
 from .notifications import send_transcript_ready_notification
@@ -205,6 +206,10 @@ def _process_and_save_critical(
     except Exception:
         embedding_mode = None
 
+    # How the plan ran speaker detection, for the provenance record (#1229). A post stage
+    # records its own when it runs; this covers the inline / parallel cells.
+    diar_plan = plan_of(preprocess_context).diarization
+
     with session_scope() as db:
         save_transcript_segments(db, ctx.file_id, processed_segments)
         update_media_file_transcription_status(
@@ -219,6 +224,9 @@ def _process_and_save_critical(
             asr_provider=result.get("asr_provider"),
             asr_model=result.get("asr_model"),
             diarization_disabled=diarization_disabled,
+            diarization_engine=diar_plan.engine,
+            diarization_execution=diar_plan.execution,
+            diarization_merge=diar_plan.merge,
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
 

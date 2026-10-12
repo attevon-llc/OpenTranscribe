@@ -53,6 +53,16 @@ _COMPOSE_FILE = _BACKEND.parent / "docker-compose.yml"
 _DB_USER = "postgres"
 V434 = "v434_reset_unusable_pyannote_source"
 V436 = "v436_lite_local_speaker_detection_to_automatic"
+
+
+def _at_or_after_v436(revision: str | None) -> bool:
+    """``head`` is past v436 once a later revision lands (v437 added a schema column)."""
+    from tests.unit._migration_detection import _chain_order
+
+    order = _chain_order()
+    return revision is not None and order.index(revision) >= order.index(V436)
+
+
 _SOURCE = "transcription_diarization_source"
 
 
@@ -312,8 +322,8 @@ def test_lite_upgrade_down_and_up_again(throwaway_pg, monkeypatch):
         after = _sources(engine, ids)
         assert after == {label: case[2] for label, case in CASES.items()}
         assert _untouched_data(engine) == data_before
-        assert _version(engine) == V436
-        assert _detected(engine, "lite", monkeypatch) == V436
+        assert _at_or_after_v436(_version(engine))
+        assert _at_or_after_v436(_detected(engine, "lite", monkeypatch))
 
         _alembic(pg, db, "lite", "downgrade", V434)
         assert _version(engine) == V434
@@ -340,7 +350,7 @@ def test_the_full_image_upgrade_changes_nothing(throwaway_pg, monkeypatch):
 
         assert _sources(engine, ids) == before
         assert _untouched_data(engine) == data_before
-        assert _version(engine) == V436
-        assert _detected(engine, "full", monkeypatch) == V436
+        assert _at_or_after_v436(_version(engine))
+        assert _at_or_after_v436(_detected(engine, "full", monkeypatch))
     finally:
         engine.dispose()

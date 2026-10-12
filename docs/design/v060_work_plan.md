@@ -1,81 +1,54 @@
 # v0.6.0 work plan: what is done, what is running, what is next
 
-Last updated 2026-10-11. Branch `feat/v0.6.0-frontend-ux`, pull request #1191.
+Last updated 2026-10-12. Branch `feat/v0.6.0-frontend-ux`, pull request #1191.
 Rule for this milestone: everything lands in v0.6.0, done properly, before the v0.7.0 demo.
 The merge to master waits until the AWS agent says go (merge commit, no squash).
 
-You can see the latest UI at http://10.10.10.20:5373 (login `admin@example.com` / `password`).
+Latest UI for review: http://10.10.10.20:5373 (login `admin@example.com` / `password`). The
+review stack (`otfresh-v060`) runs the merged code at database version v437, with the mock LLM
+and mock ASR overlays up.
 
 ## 1. Done and merged into the branch
 
 | Area | What | Issues |
 |---|---|---|
-| UI review | Filter sidebar (no file size, new order, one Ownership section), gallery toolbar order and icons, list headers, sort arrow, upload modal and progress tray, notification logo, notification auto-clear policy | #747, #749, #750, #751, #753, #754, #757, #1217 |
-| Settings | Transcription and Speaker ID re-layout, sticky tabs, provider card, sidecar status, search, shared slider, Privacy & Redaction under AI & Chat | #861 and the settings review |
+| UI review | Filter sidebar (no file size, new order, one Ownership section), gallery toolbar order and icons, list headers, sort arrow, upload modal and tray, notification logo, notification auto-clear policy | #747, #749, #750, #751, #753, #754, #757, #1217 |
+| Settings | Transcription and Speaker ID re-layout, sticky tabs, provider card, sidecar status, search, shared slider, Privacy and Redaction under AI and Chat | #861 and the settings review |
 | Speakers | Cluster list fix, pyannote.ai key, ignored settings, per-file options | #1192, #1198 to #1205, #1208 |
-| Data safety | Deletion leaves no residue, orphan storage sweep and Data Integrity button, test cleanup tooling | #1195, #1211, #1212 |
+| Speaker data safety | One shared cleanup for every path that removes or moves a speaker; unassign unlinks the profile and blacklists; every assignment path honours the blacklist | #1214, #1233 |
+| Data safety | Deletion leaves no residue, orphan storage sweep and Data Integrity button, test cleanup tooling, test leftovers | #1195, #1211, #1212, #1222 |
 | AI switches | Turn off automatic AI speaker names and automatic topics | #1148 |
-| Translations | All 11 languages reviewed by a native-level reviewer agent | #1193 |
-| CI | 12 failing backend tests reconciled | |
+| Translations | All 12 languages reviewed twice, admin strings translated, guard tests against English left over and dropped accents | #1193, #1220, #1234 |
+| Pipeline | One resolver decides what runs where; `GET /user-settings/pipeline`; post-transcription speaker detection stage; any cloud vendor as speaker detector; one merge path; cloud-only lite; per-file provenance | #1224, #1225, #1226, #1228, #1229, #1236 (items 1 to 3) |
+| CI | Backend and commit-hook failures reconciled; accessibility allowlist ratcheted | |
 
-## 2. Running right now
+## 2. Running now
 
 | Work | Issue | State |
 |---|---|---|
-| Speaker delete leaves stale cluster voiceprint (privacy, must fix) | #1214 | Agent working in its own worktree. Audits every path that removes or moves a speaker, one shared cleanup, tests first |
-| Pipeline resolver, validity matrix and `GET /user-settings/pipeline` (WP2) | #1224 | Agent working in its own worktree. The stopgap (#1223) was cancelled; WP2 and WP3 merge together |
+| Settings "Processing pipeline" view, speakers-included badges, warnings, reaction to config deletion and non-activation | #1227 (also closes #1219) | Agent integrating with the merged code |
+| Docs: architecture diagrams, deployment variants page, drift check | #1230 | Agent building |
 
-## 3. The pipeline plan (mix and match transcription and speaker detection)
+## 3. Next, in order
 
-Full plan: `docs/design/v060_pipeline_composition_plan.md`.
+1. Merge #1227 and #1230 when they report.
+2. Mock-provider end-to-end run on the review stack (mock ASR and mock LLM are up): real upload, speakers, provenance section, summary.
+3. Final gate: full backend suite, frontend suite, full end-to-end, accessibility in light and dark, openapi check, bundle budget, CI green on the final head.
+4. Re-capture visual baselines once; walk the UI with the owner at port 5373 (light, dark, Arabic).
+5. Close #1218 and #1221 with evidence; update the PR's `Closes` lines.
+6. Tidy: merged worktrees, scratch trees, stray processes (ask before deleting).
+7. Merge to master when the AWS agent says go.
 
-Decisions you made:
-- Transcription and speaker detection are chosen independently, each local or cloud.
-- Lite is fully cloud-only. The only local work on lite is voiceprinting.
-- Voiceprints are always extracted locally. Cloud vendors return no usable embeddings. Lite voiceprinting moves to Rust in v0.8.0 (#1231); in 0.6.0 it sits behind one narrow interface so Rust can replace it.
-- No wav2vec2 and no forced alignment. Models with no timestamps (`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`) are refused for speaker detection.
-- Other vendors can act as the speaker detector, with a clear billing and privacy note.
-- The local engine stays an admin choice.
+## 4. Decisions made (do not re-open)
 
-Work packages, in order:
+- Transcription and speaker detection are independent, each local or cloud. No forced alignment and no wav2vec2; models with no timestamps are refused for speaker detection.
+- Lite is cloud-only for transcription and speaker detection; voiceprints stay local on CPU, behind one interface so the Rust version (#1231, v0.8.0) replaces it unchanged.
+- The local speaker detection engine is an admin choice, read-only to users.
+- Unassigning a speaker means that section is no longer that person: unlink from the profile (a typed name stays), blacklist, cluster and profile remain for others.
+- Notification auto-clear: read successes after 24 hours, unread after 14 days, errors and actionable items never, cap of 100; a setting with a Never option.
 
-| Step | Issue | What | Depends on |
-|---|---|---|---|
-| WP1 | #1223 | Cancelled: no stopgap | |
-| WP2 | #1224 | One resolver decides what runs where; `GET /user-settings/pipeline`; validation | running now |
-| WP3 | #1225 | Post-transcription speaker detection stage, migration, voiceprint interface, fixes segment re-split | WP2 |
-| WP4 | #1226 | Any cloud vendor as speaker detector (adapter), one merge path | WP2 (parallel with WP6) |
-| WP6 | #1228 | Lite is cloud-only: hide and refuse local options, migrate settings, fix docs | WP3 |
-| WP7 | #1229 | Per-file provenance: which provider and model did each step, shown on file details and file status | WP3 |
-| WP5 | #1227 | Settings "Processing pipeline" view, Local/Cloud chips, speakers-included badges, warnings (absorbs #1219) | WP7 |
-| WP8 | #1230 | Docs-site architecture diagrams and pages updated to the new flow, with a drift check | last |
+## 5. Open items for the owner
 
-Translation files are edited by several packages, so they merge in this order: WP3, WP6, WP7, WP5.
-
-## 4. Other open work on the milestone
-
-| Issue | What | Waiting on |
-|---|---|---|
-| #1220 | Fix the English wording the translators flagged, then re-review those strings | nothing |
-| #1222 | Leftovers from the test cleanup work (PKI trap, eval purge, benchmark prefixes, db 15 guard) | your db 15 decision |
-| #1221 | Final verification: backend gate, accessibility (light and dark), end-to-end tests, visual baselines, UI walkthrough, cleanup | everything above |
-| #1218 | File detail page and toolbar check, then close | quick check |
-| #748 | Left open: its file detail header part is covered by #1218 | |
-| #753 | Closed by #1217 when the PR merges | |
-| #1219 | Closed by #1227 | |
-
-## 5. Waiting on you
-
-- Delete the raw notes file in the main checkout root: `! rm /mnt/nvm/repos/transcribe-app/ux-ui-eng-notes.md`
-- Remove old scratch trees: `! rm -rf /tmp/redcheck* /tmp/delres-head-* /tmp/ot-redcheck.*`
-- Decide: can the test that uses Redis database 15 clear its own leftover keys at setup, or should the old skip-if-busy guard come back? (#1222)
-- Confirm the lite voiceprint plan (CPU embedding in 0.6.0, Rust in 0.8.0) is what you want.
-- When it is time: say when the AWS agent is done so the PR can merge.
-
-## 6. Finish line
-
-1. Merge each finished agent branch into `feat/v0.6.0-frontend-ux`, one at a time.
-2. After each merge: frontend tests, backend suite on the isolated stack, push, CI green.
-3. Run #1221: full verification, walk the UI with you at port 5373, re-capture visual baselines once.
-4. Update the PR description so every finished issue has its own `Closes` line.
-5. Wait for the AWS agent, then merge with a merge commit and confirm each issue closed.
+- Five product decisions from #1233 to confirm (blacklist off still unlinks; bulk actions refuse a blocked speaker while explicit naming lifts it; split counts as unassign; Re-cluster auto-labels at 0.75 or higher; being blocked from any profile speaker blocks the profile).
+- The file detail header and the gallery toolbar rows against the designer's mockup (#1218), if you want the mockup comparison.
+- The walkthrough, at the end.

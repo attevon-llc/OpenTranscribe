@@ -907,6 +907,11 @@ Checked and **not** a gap:
 - **D5. Retention of `support_access_use` and of grant `reason` text** after a GDPR erasure.
   Default: retain ids-only use rows (they hold no content) and the grant row with `reason`. Legal
   should confirm that keeping the reason text is acceptable.
+  *Implemented as the default (v432):* every grant foreign key is `SET NULL`, the use log carries
+  ids with no foreign key to a tenant or an owner, and nothing is purged on erasure. Legal
+  confirmation of retaining the free-text `reason` is still outstanding and does not block the
+  release; if legal declines, the follow-up is to overwrite `reason` with a fixed placeholder (it
+  is `NOT NULL` with a 10-character floor) in the erasure paths, a change that touches no schema.
 - **D6. Step-up authentication for break-glass.** There is no re-auth primitive for local
   accounts today (only the external `externalReauthenticate` seam, `auth/constants.py:54`).
   Recommended for FedRAMP-style deployments; out of scope for v1 unless required.

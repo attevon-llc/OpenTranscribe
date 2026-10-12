@@ -612,9 +612,13 @@ Owner decisions it encodes (do not re-open): lite has no local transcription and
 speaker detection; Automatic with a text-only model detects speakers on this server (full only);
 **no forced alignment / wav2vec2** — a model with `timing == "none"` is refused for every speaker
 detector (`asr_no_timing_for_speakers`); voiceprints are never taken from a vendor. Every cell is
-pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). Consumers: the settings
+pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). On lite a local
+detector is never planned to run: the cell keeps `engine: local` and its blocking issue but
+plans `execution: none` (no queue, no voiceprint step), and "this server" is refused even when
+transcription is local too (#1228). Consumers: the settings
 PUT (409 on a NEW selection with a diarization-step error), the ASR-side switches
-(`services/asr_switch_plan`, same rule), `GET /user-settings/pipeline`, and every pipeline
+(`services/asr_switch_plan`: diarization-step errors the switch introduces, and every
+transcription-step error), `GET /user-settings/pipeline`, and every pipeline
 stage (#1225: dispatch resolves it once and carries it in the chain context; what each cell
 then does is pinned by `tests/unit/test_pipeline_execution_matrix.py`).
 

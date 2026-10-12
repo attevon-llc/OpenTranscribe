@@ -57,12 +57,14 @@ No, but **highly recommended** for practical use. CPU-only processing is very sl
 
 ### Can I use Apple Silicon (M1/M2/M3)?
 
-Yes, with the `--lite` (CPU-only) image — but **not** with MPS acceleration. Docker
+Yes, with the `--lite` image — but **not** with MPS acceleration. Docker
 Desktop on macOS has no Metal/GPU passthrough into the Linux VM the container runs
 in, so every container on Apple Silicon is CPU-only regardless of the host chip's
-MPS capability. Expect CPU-class timings, not GPU-class ones — see the CPU figures
-above. (An MPS code path exists in the diarization engine, but it is unreachable in
-every containerized deployment; see `backend/app/transcription/CLAUDE.md`.)
+MPS capability. Lite is cloud-only for transcription and speaker detection: configure a
+cloud transcription provider (and pyannote.ai, or a provider that returns speakers, for
+speaker detection); only voiceprints are computed on the Mac's CPU. (An MPS code path
+exists in the diarization engine, but it is unreachable in every containerized
+deployment; see `backend/app/transcription/CLAUDE.md`.)
 
 ### What GPUs are supported?
 
@@ -288,7 +290,7 @@ Yes! OpenTranscribe supports **User Groups** and **Collection Sharing**. Admins 
 
 ### Can I use cloud speech-to-text instead of local Whisper?
 
-Yes! OpenTranscribe supports **multi-provider cloud ASR** in addition to local WhisperX. You can configure cloud speech-to-text providers for an API-lite deployment that doesn't require a GPU. This is useful for lighter-weight setups where you prefer cloud processing over local hardware.
+Yes! OpenTranscribe supports **multi-provider cloud ASR** in addition to local WhisperX. A lite deployment needs no GPU and is cloud-only: transcription and speaker detection both use cloud providers you configure, while voiceprints are still computed on your server.
 
 ### Can I reprocess just the speaker diarization without re-transcribing?
 

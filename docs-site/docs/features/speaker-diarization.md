@@ -301,7 +301,7 @@ from. It takes four values:
 |---|---|
 | **`provider`** (default, "Automatic") | With the built-in model (including the tiny/base CPU models), speakers are detected on this server. With a **cloud ASR provider** that returns speakers, its labels are used as-is. With a cloud model that returns **text only**, this server detects speakers right after the transcript is saved (full deployments only; a model with no timestamps at all cannot be combined with speaker detection). |
 | **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above: beside cloud transcription, or right after the built-in model's transcript is saved. |
-| **`local`** | Diarization runs on this server, whichever model transcribes: inside the GPU stage for the built-in model, or as a separate pass after a cloud or CPU transcript is saved. |
+| **`local`** | Diarization runs on this server, whichever model transcribes: inside the GPU stage for the built-in model, or as a separate pass after a cloud or CPU transcript is saved. Not available on a lite deployment, which has no local speaker detection: choose pyannote.ai or a transcription provider that returns speakers there. |
 | **`off`** | No diarization at all — the transcript is produced without speaker labels. |
 
 Speaker detection that runs after the transcript is saved assigns speakers per word when the
@@ -312,8 +312,9 @@ and any problem with the combination you chose; saving a combination that cannot
 and so is switching the transcription provider into one.
 
 An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
-error rather than silently falling back to local diarization — unlike ASR provider selection,
-which does degrade to a local model automatically.
+error rather than silently falling back to local diarization. The same holds for transcription:
+a file planned for a cloud provider that cannot be started (for example a saved key that no
+longer works) fails with a clear message instead of being transcribed on this server.
 
 ### Native Diarization Engine (New in v0.5.0)
 

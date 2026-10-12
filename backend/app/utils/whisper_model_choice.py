@@ -23,10 +23,20 @@ def deployment_model_name() -> str:
 def require_servable_whisper_model(model: str | None) -> str | None:
     """Return ``model`` if the pipeline can run it, else raise a 422.
 
-    ``None`` (use the deployment's model) and the lightweight models always pass. Call it
-    on the value that survives ``effective_whisper_model``: when the deployment has locked
-    model choice the client's value is already discarded and there is nothing to reject.
+    ``None`` (use the deployment's model) and, on the full image, the lightweight models
+    always pass. Call it on the value that survives ``effective_whisper_model``: when the
+    deployment has locked model choice the client's value is already discarded and there is
+    nothing to reject.
+
+    Lite transcribes in the cloud only (#1228): ANY per-file Whisper model is a local
+    transcription it cannot run, so it is refused here (409 ``local_asr_unavailable``),
+    before an upload is dispatched or a reprocess deletes anything, instead of reaching the
+    ``cpu-transcribe`` worker that has no faster-whisper.
     """
+    if model:
+        from app.utils.lite_mode import refuse_on_lite
+
+        refuse_on_lite("local_asr_unavailable")
     if not model or model in LIGHTWEIGHT_MODELS:
         return model
     from app.services.asr.model_discovery import resolve_loadable_model_name

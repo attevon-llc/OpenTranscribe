@@ -310,7 +310,9 @@
               {processedFiles}/{totalFiles}
               ({Math.round((processedFiles / totalFiles) * 100)}%)
               {#if etaSeconds != null && etaSeconds > 0}
-                {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
+                <span class="progress-eta">
+                  {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
+                </span>
               {/if}
             </span>
           </div>
@@ -532,6 +534,12 @@
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--primary-on-surface);
+  }
+
+  .progress-eta {
+    margin-inline-start: 0.5rem;
+    font-weight: 400;
+    color: var(--text-secondary);
   }
 
   .progress-bar-container {

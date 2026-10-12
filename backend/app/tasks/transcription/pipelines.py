@@ -13,6 +13,7 @@ from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils.task_utils import update_task_status
 
 from .context import TranscriptionContext
+from .context import plan_of
 from .notifications import send_progress_notification
 from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
@@ -103,10 +104,14 @@ def _run_transcription_pipeline(
     num_speakers: int | None,
     source_language: str | None = None,
     translate_to_english: bool | None = None,
-    disable_diarization: bool = False,
+    enable_diarization: bool = False,
     whisper_model: str | None = None,
 ) -> dict:
-    """Run the unified transcription pipeline."""
+    """Run the unified transcription pipeline.
+
+    ``enable_diarization`` is the plan's ``execution == "inline_local"``: the local engine
+    detects speakers here only when the plan says so; a post stage does it otherwise.
+    """
     from app.transcription import TranscriptionConfig
     from app.transcription import TranscriptionPipeline
 
@@ -138,7 +143,7 @@ def _run_transcription_pipeline(
         vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
-        enable_diarization=not disable_diarization,
+        enable_diarization=enable_diarization,
         vocabulary=_load_file_vocabulary(ctx),
     )
 
@@ -180,7 +185,7 @@ def _run_transcription_pipeline(
         audio_file_path, progress_callback=progress_callback, task_id=ctx.task_id
     )
     # Annotate the raw WhisperX result with provider/model metadata so that
-    # _process_transcription_result can persist it to media_file.asr_provider /
+    # _process_and_save_critical can persist it to media_file.asr_provider /
     # media_file.asr_model.  Without this the local pipeline leaves those columns NULL.
     if isinstance(raw_result, dict):
         raw_result.setdefault("asr_provider", "local")
@@ -221,7 +226,7 @@ def _run_engine_pipeline(
     num_speakers = preprocess_context.get("num_speakers")
     source_language = preprocess_context.get("source_language")
     translate_to_english = preprocess_context.get("translate_to_english")
-    disable_diarization = preprocess_context.get("diarization_source") == "off"
+    enable_diarization = plan_of(preprocess_context).diarization.execution == "inline_local"
     whisper_model = preprocess_context.get("whisper_model")
 
     source_language, translate_to_english = _resolve_language_settings(
@@ -253,7 +258,7 @@ def _run_engine_pipeline(
         vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
-        enable_diarization=not disable_diarization,
+        enable_diarization=enable_diarization,
         vocabulary=_load_file_vocabulary(ctx),
     )
 
@@ -350,7 +355,7 @@ def _run_transcribe_only_stage(
     num_speakers = preprocess_context.get("num_speakers")
     source_language = preprocess_context.get("source_language")
     translate_to_english = preprocess_context.get("translate_to_english")
-    disable_diarization = preprocess_context.get("diarization_source") == "off"
+    enable_diarization = plan_of(preprocess_context).diarization.execution == "inline_local"
     whisper_model = preprocess_context.get("whisper_model")
 
     source_language, translate_to_english = _resolve_language_settings(
@@ -374,7 +379,7 @@ def _run_transcribe_only_stage(
         vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
-        enable_diarization=not disable_diarization,
+        enable_diarization=enable_diarization,
         vocabulary=_load_file_vocabulary(ctx),
     )
 

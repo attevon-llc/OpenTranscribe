@@ -127,6 +127,9 @@ def update_media_file_transcription_status(
     asr_provider: str | None = None,
     asr_model: str | None = None,
     diarization_disabled: bool = False,
+    diarization_engine: str | None = None,
+    diarization_execution: str | None = None,
+    diarization_merge: str | None = None,
 ) -> None:
     """
     Update media file with transcription completion metadata.
@@ -144,6 +147,10 @@ def update_media_file_transcription_status(
         embedding_mode: Speaker embedding mode ("v3" or "v4")
         asr_provider: Name of the ASR provider that ran the transcription (e.g. "deepgram")
         asr_model: Model name used by the ASR provider (e.g. "nova-3")
+        diarization_engine: The plan's speaker detector, for the provenance record.
+        diarization_execution: How the plan ran it (``inline_local`` / ``inline_asr`` /
+            ``parallel_cloud``; a post stage records its own).
+        diarization_merge: The plan's merge granularity (``word`` / ``segment``).
     """
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
@@ -226,6 +233,9 @@ def update_media_file_transcription_status(
         diarization_provider=diarization_provider,
         diarization_model=diarization_model,
         diarization_disabled=diarization_disabled,
+        diarization_engine=diarization_engine,
+        diarization_execution=diarization_execution,
+        diarization_merge=diarization_merge,
     )
     db.commit()
     logger.info(f"Updated media file {file_id} transcription status")

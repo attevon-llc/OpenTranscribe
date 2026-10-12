@@ -62,6 +62,10 @@ def _display(step: StepName, provider: str | None, engine: str | None) -> str | 
         return _LLM_DISPLAY.get(provider)
     if step != "voiceprints" and engine in ("asr", "cloud"):
         return _vendor_display(provider) or provider
+    if provider == "local" and step != "transcription":
+        # The local speaker engine could not say which one served (``local`` fallback id):
+        # the model and "this server" say what is known; "Whisper" would be wrong here.
+        return None
     return _ENGINE_DISPLAY.get(provider) or _vendor_display(provider) or provider
 
 

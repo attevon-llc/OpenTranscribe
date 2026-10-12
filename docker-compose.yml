@@ -936,7 +936,7 @@ services:
   # must be added via an overlay file (see docker-compose.gpu.yml pattern).
   #
   # celery-worker-gpu-transcribe only receives work because
-  # transcription/dispatch.py:_resolve_gpu_queue() routes the initial GPU stage
+  # transcription/dispatch.py:_plan_for_dispatch() routes the initial GPU stage
   # to the 'gpu-transcribe' queue when app.core.constants.gpu_split_enabled()
   # is true. Before issue #703's fix, nothing ever published to that queue —
   # this worker held its GPU reservation and sat idle under --with-gpu-split.

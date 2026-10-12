@@ -75,8 +75,10 @@ so keep heavy imports lazy.
   Read the rule below before adding any `cuda:N` / `get_device_properties(N)` call anywhere.
 - `text_preprocessing.py` — **topics/collections extraction ONLY**; never use it for
   summarization or speaker ID (it strips the grammar those need).
-- `segment_dedup.py`, `segment_postprocess.py`, `diarization_merge.py`, `diarization_metrics.py`
-  — pipeline math; see `backend/app/transcription/CLAUDE.md`.
+- `segment_dedup.py`, `segment_postprocess.py`, `diarization_metrics.py`
+  — pipeline math; see `backend/app/transcription/CLAUDE.md`. Speaker turns reach text through
+  ONE merge, `transcription/speaker_assigner.assign_speakers` (word or segment granularity);
+  the cloud-only midpoint merge `diarization_merge.py` was deleted in #1226.
 - `benchmark_timing.py` / `vram_profiler.py` / `nvml_monitor.py` — instrumentation gated on
   `ENABLE_BENCHMARK_TIMING` / `ENABLE_VRAM_PROFILING`, so production pays zero overhead.
 

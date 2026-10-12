@@ -16,7 +16,7 @@ const mockInstance = vi.hoisted(() => ({
 }));
 vi.mock('../axios', () => ({ default: mockInstance }));
 
-import { ASRSettingsApi, CustomVocabularyApi } from './asrSettings';
+import { ASRSettingsApi, CustomVocabularyApi, type ASRConfigDeleted } from './asrSettings';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -176,5 +176,42 @@ describe('CustomVocabularyApi.getVocabulary', () => {
     expect(mockInstance.get).toHaveBeenCalledWith('/custom-vocabulary', {
       params: { active_only: false },
     });
+  });
+});
+
+// Issue #1236: the delete answers with the pipeline it leaves (it used to be a bare 204,
+// discarded here), so the settings UI can say when speaker detection is no longer runnable.
+describe('ASRSettingsApi.deleteConfig', () => {
+  it('returns the active config and pipeline issues the delete leaves', async () => {
+    const body: ASRConfigDeleted = {
+      message: 'ASR configuration deleted',
+      config_uuid: null,
+      deleted: true,
+      diarizer_source_reverted: true,
+      pipeline_issues: [
+        {
+          code: 'pyannote_key_missing',
+          severity: 'error',
+          step: 'diarization',
+          message: 'pyannote.ai speaker detection needs a pyannote.ai API key.',
+        },
+      ],
+    };
+    mockInstance.delete.mockResolvedValue({ data: body });
+
+    const result = await ASRSettingsApi.deleteConfig('cfg-uuid');
+
+    expect(mockInstance.delete).toHaveBeenCalledWith('/asr-settings/config/cfg-uuid');
+    expect(result).toEqual(body);
+    expect(result.pipeline_issues[0].code).toBe('pyannote_key_missing');
+  });
+
+  it('propagates a lite refusal (409) to the caller instead of swallowing it', async () => {
+    const refusal = {
+      response: { status: 409, data: { detail: { code: 'local_asr_unavailable', message: 'x' } } },
+    };
+    mockInstance.delete.mockRejectedValue(refusal);
+
+    await expect(ASRSettingsApi.deleteConfig('cfg-uuid')).rejects.toBe(refusal);
   });
 });

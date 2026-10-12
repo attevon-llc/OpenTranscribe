@@ -339,29 +339,36 @@ class TestTaskTimeSettingLocks:
     def test_locked_values_fall_back_to_defaults(self, db_session, normal_user, caps_off):
         from app.core.constants import DEFAULT_REPETITION_PENALTY
         from app.core.constants import DEFAULT_VAD_THRESHOLD
+        from app.services.pipeline_plan_inputs import load_plan_inputs
         from app.tasks.transcription.user_settings import _get_user_transcription_settings
 
         _store_user_settings(db_session, normal_user, self._STORED)
         caps_off("transcription.diarization_source", "transcription.advanced")
 
         resolved = _get_user_transcription_settings(db_session, normal_user.id)
+        # The speaker-detection source is read by the pipeline plan, never by the task
+        # settings dict (issue #1225); the lock applies there.
+        plan_inputs = load_plan_inputs(db_session, normal_user.id)
 
-        assert resolved["diarization_source"] == "provider"
-        assert resolved["disable_diarization"] is False
+        assert "diarization_source" not in resolved
+        assert plan_inputs.diarization_source == "provider"
+        assert plan_inputs.source_locked is True
         assert resolved["vad_threshold"] == DEFAULT_VAD_THRESHOLD
         assert resolved["repetition_penalty"] == DEFAULT_REPETITION_PENALTY
         # Not a locked field: still the user's own value.
         assert resolved["min_speakers"] == 2
 
     def test_stored_values_apply_by_default(self, db_session, normal_user):
+        from app.services.pipeline_plan_inputs import load_plan_inputs
         from app.tasks.transcription.user_settings import _get_user_transcription_settings
 
         _store_user_settings(db_session, normal_user, self._STORED)
 
         resolved = _get_user_transcription_settings(db_session, normal_user.id)
+        plan_inputs = load_plan_inputs(db_session, normal_user.id)
 
-        assert resolved["diarization_source"] == "off"
-        assert resolved["disable_diarization"] is True
+        assert plan_inputs.diarization_source == "off"
+        assert plan_inputs.source_locked is False
         assert resolved["vad_threshold"] == 0.9
         assert resolved["repetition_penalty"] == 1.8
         assert resolved["hallucination_silence_threshold"] == 4.0

@@ -7,6 +7,8 @@ trees), including when a run fails or is interrupted. One tool sweeps what an in
 did leave: `scripts/cleanup-test-data.py`, run unattended by `./opentr.sh test-cleanup`.
 
 Audited 2026-10-11 on branch `chore/v060-test-hygiene` (from `feat/v0.6.0-frontend-ux`).
+Follow-up of 2026-10-11 (issue #1222, branch `chore/1222-test-hygiene-leftovers`) closed the
+rows that were OPEN here; each is marked `FIXED (#1222)` below and summarised in "Follow-up".
 Evidence that started it, on the isolated `otfresh-v060` stack: 120 empty
 `test_summary_api_<hex>` indexes from killed pytest workers, a leaked speaker profile
 `E2E Propagated 794e5669`, a scratch database `ot_perfile_test`, and on the host 7,358
@@ -32,11 +34,11 @@ a LEAK if it left something behind on failure or interruption before this branch
 
 | area | rows | LEAK | of which FIXED | SWEPT only (killed-run backstop) | OPEN | PASS / KEEP |
 |---|---|---|---|---|---|---|
-| backend/tests | 39 | 36 | 28 | 6 | 2 | 3 |
+| backend/tests | 39 | 36 | 30 | 6 | 0 | 3 |
 | gate / e2e / dev-loop scripts | 10 | 9 | 9 | 0 | 0 | 1 |
-| release + rehearsal harness | 10 | 9 | 7 | 1 | 1 | 1 |
-| benchmark / eval / seed / ad hoc | 10 | 8 | 5 | 1 | 2 | 2 |
-| **total** | **69** | **62** | **49** | **8** | **5** | **7** |
+| release + rehearsal harness | 10 | 9 | 8 | 1 | 0 | 1 |
+| benchmark / eval / seed / ad hoc | 10 | 8 | 7 | 1 | 0 | 2 |
+| **total** | **69** | **62** | **54** | **8** | **0** | **7** |
 
 ## 1. backend/tests
 
@@ -55,7 +57,7 @@ a LEAK if it left something behind on failure or interruption before this branch
 | `test_knn_probe_live.py`, `test_orphan_reconcile_opensearch.py`, `test_deletion_residue_live.py`, `unit/test_speaker_id_fields.py`, `test_reindex_on_mutation_666.py` | `knn_probe_live_test_*`, `delres-*`, `test_speaker_id_fields_*`, `test_reindex666_*` | correct | SWEPT |
 | `integration/deletion_seed.py` | docs in the REAL transcripts/chunks/speaker indexes | `teardown_seed` in finally | PASS (orphans are Tier C: data-integrity reconcile) |
 | `fixtures/search_corpus_stack.py` | chunks in real `transcript_chunks` | setup failure orphaned chunks | FIXED |
-| `integration/test_corpus_injection_synthetic_e2e.py` | rows + chunks on the targeted stack | injection before yield, no try | FIXED (teardown still raw ORM, not `purge_media_file`: OPEN, see below) |
+| `integration/test_corpus_injection_synthetic_e2e.py` | rows + chunks on the targeted stack | injection before yield, no try | FIXED; FIXED (#1222): teardown is `corpus_injection.purge.purge_injected`, i.e. `purge_media_file`, so chunks and speaker embeddings go too |
 
 ### MinIO
 
@@ -76,8 +78,8 @@ a LEAK if it left something behind on failure or interruption before this branch
 | `test_scheduled_backup_restore_roundtrip.py`, `test_voiceprint_backup_roundtrip.py` | `ot-restore600-*`, `ot-vp658-*` containers + networks | unlabelled, creates before try | FIXED; Tier B |
 | `unit/test_migration_progress_service.py`, `unit/test_backup_tasks.py` | `ot-test-redis-*-<hex10>` | client-side timeout + retry could leave a running container | FIXED (`docker_ops.remove_container` in finally) |
 | `unit/test_opentr_stop_container_scoping.py` | `*-pytest-<hex32>` compose projects | post-yield | PASS; sweep lists by project label, Tier B |
-| `integration/test_dockerfile_targetarch_build.py` | dangling build images | none | OPEN: image cache policy, not test data |
-| `e2e/test_ldap_oidc.py` | LLDAP/Keycloak overlays it starts | none | OPEN by design: shared overlay infrastructure; `run-dev-tests.sh` owns overlay teardown |
+| `integration/test_dockerfile_targetarch_build.py` | image built by the passing-form test | none | FIXED (#1222): the build carries `ot-test-artifact=1` plus a per-test `ot-test-build=<hex12>` label and a `finally` removes images by that label (never a bare name, never a prune). The pre-fix leak was one deduplicated dangling image (same ID every run, so the host's dangling count did not grow); the labelled image is distinct and is now removed. A SIGKILL between build and `finally` still leaves one labelled image: no sweep plane lists images, so it is removed by hand with `docker rmi` on the label |
+| `e2e/test_ldap_oidc.py` | LLDAP/Keycloak overlays it starts | none | FIXED (#1222), decision below: stopped/removed only when THIS fixture started them (`e2e/idp_overlay.py`) |
 
 ### Postgres (live commits) and Redis
 
@@ -90,7 +92,7 @@ a LEAK if it left something behind on failure or interruption before this branch
 | `e2e/owned_corpus.py` | `e2e-owned-<hex8>` | readback asserts before try | FIXED |
 | `e2e/test_full_pipeline_smoke.py`, two diar-native live suites | `pipeline-smoke-<hex8>.wav`, `diar-native-*-<pid>.wav` | one unchecked DELETE | FIXED (`delete_media_file` / `live_file_cleanup.delete_uploaded_file`) + SWEPT |
 | `e2e/test_chat_trace_panel.py`, `test_full_pipeline_smoke.py` `llm_config` | active LLM pointer | activation outside try | FIXED |
-| `integration/test_celery_queue_depth_live.py`, `test_orphaned_delivery_recovery_live.py` | Redis db15 fixed keys | post-yield only; leftover disabled the sibling module | FIXED (delete at setup too; shared `xdist_group`) |
+| `integration/test_celery_queue_depth_live.py`, `test_orphaned_delivery_recovery_live.py` | Redis db15 fixed keys | post-yield only; leftover disabled the sibling module | FIXED (delete at setup too; shared `xdist_group`). #1222 confirmed the decision: nothing else uses db 15 (see below) |
 | 21 savepoint-based suites (api/unit speaker, profile, cluster) | rows | rolled back | PASS |
 
 ### /tmp
@@ -132,7 +134,7 @@ a LEAK if it left something behind on failure or interruption before this branch
 | `gpu-scale-smoke.sh` | uploads named `sample_short.wav`; plain DELETE only | 409 on a processing file left it; unsweepable name | FIXED (`gpu-scale-smoke-<i>-<pid>.wav`, `/force` fallback) |
 | `test-fedramp.sh` | `fedramp-test-<ts>@example.com` account | never deleted, no pattern | FIXED (`fedramp-e2e-`, registered; legacy shape Tier B) |
 | rehearsal stacks, stock volumes, release images, `.release/` | | | KEEP (by design; `--cleanup`) |
-| `pki/run-pki-e2e-leg.sh` | PKI prod stack | stopped only on success | OPEN: needs a run on the PKI leg to verify the trap |
+| `pki/run-pki-e2e-leg.sh` | PKI prod stack | stopped only as the script's last line | FIXED, verified with limits (#1222): one EXIT trap armed before `start`, INT/TERM converted to exit 130/143; proven by a stub harness, NOT by a PKI run (see below) |
 
 ## 4. Benchmark, eval, seed and ad hoc
 
@@ -145,8 +147,8 @@ a LEAK if it left something behind on failure or interruption before this branch
 | red-first trees (`/tmp/redcheck*`, 4.1 GB) | ad hoc | no shape | FIXED (recipe uses `mktemp -t ot-redcheck.XXXXXX`, swept) |
 | scratch database `ot_perfile_test` | hand-made | | SWEPT (Tier B: confirm) |
 | `seed-fresh-deployment.sh`, `--seed-benchmark` corpus | fixture media | | KEEP (never swept; not a registered shape) |
-| `benchmark_parallel.py --upload` standalone | uploads with corpus names | | OPEN: real corpus filenames cannot be told apart from user data; use `run_benchmark.py` (otbench stack) |
-| `inject-eval-corpus.sh` | `<corpus>__<meeting>.transcript` | no purge command | OPEN: needs a `--purge --seed` mode in `app/scripts/corpus_injection` (product code) |
+| `benchmark_parallel.py --upload` standalone | uploads with corpus names | | FIXED (#1222): uploads are named `bench-parallel-<hex8><ext>` (registered, Tier A), and the run deletes them in a `finally` unless `--keep-uploads` |
+| `inject-eval-corpus.sh` | `<corpus>__<meeting>.transcript` | no purge command | FIXED (#1222): `--purge [--seed S] --yes` removes one (corpus, seed, owner) namespace through `purge_media_file`; test-seeded namespaces are also swept (see below) |
 | `benchmark/results/`, `docs/engine-benchmark-results/` | results | | KEEP (retention is a separate decision) |
 
 ## Not fixable here, and why
@@ -181,3 +183,15 @@ a LEAK if it left something behind on failure or interruption before this branch
 Every plane: liveness cutoff from `.testruns` (now written by every pytest controller too), a
 grace window, `--min-age-minutes`, a re-check at the point of deletion, and a refusal (exit 2)
 when the exported store ports point at different stacks.
+
+## Follow-up: issue #1222 (2026-10-11)
+
+| item | status | what was done / what could not be verified |
+|---|---|---|
+| `run-pki-e2e-leg.sh` cleanup trap | FIXED, verified with limits | The stop was the script's last statement, so Ctrl-C/TERM after `opentr.sh start` (and any abort before that line) left the prod+nginx+PKI stack on the stock ports. It is now one EXIT trap armed before `start` (also covers a half-finished start), with INT/TERM turned into an exit so the trap runs. `unit/test_pki_leg_teardown.py` runs the REAL script in a throwaway repo layout against stub `opentr.sh`/`setup-test-pki.sh`/python/`docker`/`curl`: pass, failing pytest (gate code kept), failed start, SIGINT and SIGTERM mid-pytest (130/143, one stop), `--keep-stack`, setup failure (no stack touched). Red against the old script: both signal cases. **Not verified:** a run against a real PKI stack (a ~10 minute prod build), so nothing proves that a bare `./opentr.sh stop` removes the PKI overlay's containers; the stop command is unchanged from before. |
+| eval corpus injector `--purge` | FIXED | `backend/app/scripts/corpus_injection/purge.py`. Selection is `(owner, rag_eval.injected, corpus, seed)` AND the file uuid must equal `ids.file_uuid(corpus, meeting_id, seed)` recomputed from the stamped block, so a row that merely carries a copied metadata block is never selected. Each file goes through `purge_media_file`; a refusal (legal hold) or residual store error is reported and exits 1. `--purge` needs `--yes` (an empty `--seed` is the canonical corpus), `--dry-run` lists. `inject-eval-corpus.sh` passes it through and skips the settle check. The synthetic e2e and search-quality fixtures now tear down through it. **The sweep uses it by the same destroyer, not by shelling out to the CLI:** `cleanup-test-data.py` finds files stamped with a registered TEST seed (`INJECTED_TEST_SEED_SHAPE`: `pytest-<hex12>`, `pytest-synth-<hex10>`, `pytest-searchqual-<hex10>`, `e2e-owned-<hex10>`) and deletes them over `DELETE /api/files/{uuid}`, which ends in `purge_media_file`. The canonical (empty) seed and any operator seed (`rag403`, `run1`) are never candidates. Tests: `integration/test_corpus_injection_purge.py` (real stack: selection, dry run, CLI refusal/execution, lookalike and other-seed survival) and the isolated-DB sweep test. |
+| `benchmark_parallel.py --upload` | FIXED | Registered in `cleanup-test-data.py` `MEDIA_FILENAME_SPECS` (`bench-parallel-<hex8>.<ext>`) and pinned by `unit/test_cleanup_test_data_injected_and_bench.py`. `scripts/lib/test_artifact_sweep.py` is the STORE-level registry (indexes, buckets, databases, tmp, docker) and has no media-filename concept, so nothing was added there. The run also deletes its own uploads (`--keep-uploads` opts out). |
+| dangling build images | FIXED | See the Docker table row. |
+| LDAP/Keycloak overlays | FIXED, decision | **Leave them if the stack already had them; take them down when the test started them.** Reason: `run-dev-tests.sh` and `./opentr.sh start dev --with-ldap-test` own those overlays for the whole run and other suites (`test_auth_buttons`) depend on them, so a fixture that stopped them would break the next module; but an overlay the test itself brought up (port closed beforehand) is the test's to remove, or it outlives the run for nobody. `e2e/idp_overlay.py`: port already open -> no docker command at all; port closed and no container existed -> `compose -f <file> down` (no `-v`: a named volume may predate the run); port closed but a stopped container existed -> `stop` only, so a container the test did not create is never removed. Pinned by `unit/test_idp_overlay_lifecycle.py`. **Not verified:** a live cold start of the real overlays (the Keycloak start alone is ~10 minutes). |
+| Redis db 15 | CONFIRMED | Nothing else uses db 15. Product code is db 0 (Celery broker/results) and db 1 (`redis_cache_service`, YouTube limiter); `docker-compose.yml` pins the broker URL to `/0`; a search of `backend/app`, `scripts/`, the compose files and `backend/tests` finds `15` only in the two modules (`test_celery_queue_depth_live.py`, `test_orphaned_delivery_recovery_live.py`, one shared `xdist_group`). Clearing their own keys at setup is therefore safe and the skip-if-busy guard stays removed. |
+| speaker rename relabels other files / empty promoted cluster (#1222 items 6, 7) | NOT in this branch | App-level speaker work, owned by the speaker-cleanup lane. |

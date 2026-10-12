@@ -1,4 +1,4 @@
-"""v435 migration + detection-arm consistency (per-file processing provenance, issue #1229).
+"""v437 migration + detection-arm consistency (per-file processing provenance, issue #1229).
 
 Like the other ``test_v43x`` suites this **executes** the revision's SQL rather than grepping
 its source, and executes it twice, because the startup runner stamps untracked databases by
@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
-REVISION = "v435_add_media_processing_provenance"
+REVISION = "v437_add_media_processing_provenance"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 
 
@@ -33,7 +33,7 @@ def _columns(conn) -> dict[str, tuple[str, bool]]:
     }
 
 
-def test_v435_revision_chain():
+def test_v437_revision_chain():
     from alembic.script import ScriptDirectory
 
     from app.db.migrations import get_alembic_config
@@ -44,7 +44,7 @@ def test_v435_revision_chain():
     rev = scripts.get_revision(REVISION)
     heads = set(scripts.get_heads())
 
-    assert rev.down_revision == "v433_add_requested_transcription_options"
+    assert rev.down_revision == "v436_lite_local_speaker_detection_to_automatic"
     assert len(heads) == 1, "two heads mean two branches both claimed a revision number"
     assert REVISION in heads or any(r.down_revision == REVISION for r in scripts.walk_revisions())
 
@@ -80,7 +80,7 @@ def test_downgrade_and_upgrade_are_idempotent_and_keep_other_columns(db_session)
         db_session.rollback()
 
 
-def test_detection_arm_returns_v435_or_later_on_current_schema(db_session):
+def test_detection_arm_returns_v437_or_later_on_current_schema(db_session):
     from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
@@ -99,6 +99,9 @@ def test_detection_stamps_lower_without_the_marker_column(db_session):
     finally:
         db_session.rollback()
 
-    assert detected == "v433_add_requested_transcription_options"
+    # v433/v434/v436 share one schema and differ only in data, so where in that range the
+    # ladder lands depends on the rows; what matters is that it is below this revision.
+    assert detected is not None, "the ladder no longer recognizes the pre-v437 schema"
     order = _chain_order()
+    assert order.index("v433_add_requested_transcription_options") <= order.index(detected)
     assert order.index(detected) < order.index(REVISION)

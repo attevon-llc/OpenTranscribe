@@ -88,6 +88,23 @@ def _make_file_with_two_speakers(db, user):
     return media_file
 
 
+class _FakeLocalEngine:
+    """This server's engine at its seam: the frame it hands back is the thing under test."""
+
+    def __init__(self, frame):
+        self._frame = frame
+
+    def diarize(self, audio_path, config, progress_callback=None):
+        from app.services.diarization.types import DiarizeResult
+
+        return DiarizeResult(
+            segments=[],
+            num_speakers=1,
+            provider_name="native",
+            metadata={"diarize_df": self._frame, "overlap_info": {"regions": []}},
+        )
+
+
 def test_rediarize_completes_when_the_diarizer_returns_a_dataframe(db_session):
     """The exact shape measured in production: a diarization result whose ``.start``/
     ``.end``/``.speaker`` are pandas Series (not numpy arrays). Before the fix this made
@@ -118,19 +135,13 @@ def test_rediarize_completes_when_the_diarizer_returns_a_dataframe(db_session):
         # would not affect it. Patch the name where the task actually looks it up.
         patch.object(mod, "session_scope", _test_session_scope),
         patch.object(mod, "_prepare_audio", return_value=("/tmp/fake.wav", None)),  # noqa: S108
-        patch.object(
-            mod,
-            "_run_diarization",
-            return_value=(diarize_df, {"regions": []}, None, ("native", "community-1")),
-        ),
+        patch.object(mod, "_build_detector", return_value=_FakeLocalEngine(diarize_df)),
         patch("app.tasks.transcription.notifications.send_progress_notification"),
         patch("app.tasks.transcription.notifications.send_completion_notification"),
         patch(
             "app.tasks.speaker_attribute_task._is_speaker_attribute_detection_enabled",
             return_value=False,
         ),
-        patch("app.tasks.transcription.core._process_speaker_embeddings"),
-        patch("app.tasks.transcription.core._should_use_native_embeddings", return_value=False),
     ):
         result = mod.rediarize_task.apply(
             kwargs={"file_uuid": file_uuid, "downstream_tasks": None}
@@ -140,5 +151,7 @@ def test_rediarize_completes_when_the_diarizer_returns_a_dataframe(db_session):
         f"rediarize must complete, not report an error payload while Celery calls the "
         f"task itself successful: got {result!r}"
     )
-    assert result["segments"] == 2
+    # Both stored segments now belong to one speaker, so the post stage's
+    # ``finalize_segments`` (issue #1225) merges them into one.
+    assert result["segments"] == 1
     assert result["speakers"] == 1

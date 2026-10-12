@@ -1,8 +1,9 @@
 """``speaker_count_hints`` in the ASR catalog says what each provider module SENDS (#1224).
 
 The catalog is the pipeline plan's source for "does this engine use your speaker range".
-A value copied from vendor docs is exactly the error to prevent (AssemblyAI documents
-min/max but the module sends only ``speakers_expected``), so the expected set is derived
+A value copied from vendor docs is exactly the error to prevent (AssemblyAI documented
+min/max for months while the module sent only ``speakers_expected``; #1226 wired the range
+through the installed SDK's ``SpeakerOptions``), so the expected set is derived
 from the provider module itself: every ``<config>.min_speakers`` / ``max_speakers`` /
 ``num_speakers`` the module reads. Several vendors' request builders sit behind SDK
 clients that cannot be driven without a network double per vendor; the two that can be
@@ -83,14 +84,35 @@ def test_pyannote_job_body_carries_the_hints_the_scan_found(tmp_path):
     assert sent == {"numSpeakers", "minSpeakers", "maxSpeakers"}
 
 
-def test_assemblyai_sends_only_the_expected_count(tmp_path):
+def test_assemblyai_sends_the_count_or_else_the_range(tmp_path):
     from tests.unit.test_assemblyai_provider import _fake_transcript
     from tests.unit.test_assemblyai_provider import _fake_utterance
     from tests.unit.test_assemblyai_provider import _run_transcribe
 
     transcript = _fake_transcript(utterances=[_fake_utterance("hi", 0, 500, "A")])
-    config = ASRConfig(min_speakers=2, max_speakers=7, num_speakers=4, vocabulary=None)
-    _result, call_kwargs = _run_transcribe(tmp_path, config, transcript)
+    counted = ASRConfig(min_speakers=2, max_speakers=7, num_speakers=4, vocabulary=None)
+    _result, call_kwargs = _run_transcribe(tmp_path / "count", counted, transcript)
     sdk_config = call_kwargs["config"]
     assert sdk_config.speakers_expected == 4
-    assert frozenset(ASR_PROVIDER_CATALOG["assemblyai"]["speaker_count_hints"]) == {"num"}
+    assert sdk_config.speaker_options is None
+
+    ranged = ASRConfig(min_speakers=2, max_speakers=7, vocabulary=None)
+    _result, call_kwargs = _run_transcribe(tmp_path / "range", ranged, transcript)
+    sdk_config = call_kwargs["config"]
+    assert sdk_config.speakers_expected is None
+    assert sdk_config.speaker_options.min_speakers_expected == 2
+    assert sdk_config.speaker_options.max_speakers_expected == 7
+    assert frozenset(ASR_PROVIDER_CATALOG["assemblyai"]["speaker_count_hints"]) == {
+        "min",
+        "max",
+        "num",
+    }
+
+
+def test_assemblyai_sends_no_range_when_speakers_are_off(tmp_path):
+    from tests.unit.test_assemblyai_provider import _fake_transcript
+    from tests.unit.test_assemblyai_provider import _run_transcribe
+
+    config = ASRConfig(min_speakers=2, max_speakers=7, enable_diarization=False, vocabulary=None)
+    _result, call_kwargs = _run_transcribe(tmp_path, config, _fake_transcript(text="hi"))
+    assert call_kwargs["config"].speaker_options is None

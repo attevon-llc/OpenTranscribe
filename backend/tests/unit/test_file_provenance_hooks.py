@@ -5,14 +5,14 @@ seams: the model, the LLM provider, audio staging, notifications and the session
 (pointed at the test session, which the stage would otherwise open on its own). The
 assertion is always the stored document, never a mock call.
 
-Call sites covered (WP3 replaces some of these stages and must keep or move the call):
+Call sites covered:
 
 | Step | Stage | Call |
 |---|---|---|
 | transcription + speakers | ``transcription/storage.update_media_file_transcription_status`` | ``record_transcription_run`` |
-| speakers (post stage) | ``rediarize_task`` step 6 | ``record_diarization`` |
+| speakers (post stage) | ``rediarize_task._save`` | ``record_diarization`` (plan engine, execution, merge) |
 | voiceprints (inline) | ``transcription/postprocess._process_native_embeddings``, ``transcription/embeddings._process_speaker_embeddings_native`` | ``record_inline_voiceprints`` |
-| voiceprints (extracted) | ``transcription/embeddings._process_speaker_embeddings``, ``speaker_embedding_task._match_and_finalize_embeddings`` | ``record_stage(..., "voiceprints")`` |
+| voiceprints (extracted) | ``speaker_embedding_task`` (facts from the extractor's ``Voiceprints``) | ``record_stage(..., "voiceprints")`` |
 | summary | ``summarization._persist_summary`` | ``record_stage(..., "summary")`` |
 | topics | ``TopicExtractionService._persist_extraction`` | ``record_stage(..., "topics")`` |
 | speaker names | ``speaker_identification_task._store_speaker_predictions`` | ``record_stage(..., "speaker_names")`` |
@@ -100,8 +100,8 @@ def voiceprint_seams(monkeypatch, scope_of):
 
 @pytest.fixture
 def rediarize_seams(monkeypatch, scope_of):
-    """The post stage's seams: session factory, notifications, the attribute/LLM chain it
-    dispatches, and the voiceprint pass (covered by its own tests below)."""
+    """The post stage's seams: session factory, notifications and the attribute/LLM chain it
+    dispatches. Its voiceprint stage dispatch is a Celery publish (patched suite-wide)."""
     from app.tasks import rediarize_task
 
     monkeypatch.setattr(rediarize_task, "session_scope", scope_of)
@@ -109,10 +109,6 @@ def rediarize_seams(monkeypatch, scope_of):
         monkeypatch.setattr(f"app.tasks.transcription.notifications.{name}", lambda *a, **k: None)
     monkeypatch.setattr(
         "app.tasks.speaker_attribute_task._is_speaker_attribute_detection_enabled", lambda: False
-    )
-    monkeypatch.setattr("app.tasks.transcription.core._process_speaker_embeddings", MagicMock())
-    monkeypatch.setattr(
-        "app.tasks.transcription.core._should_use_native_embeddings", lambda *a, **k: False
     )
 
 
@@ -166,13 +162,18 @@ def test_saving_a_cloud_transcript_records_both_steps_and_starts_a_new_run(db_se
         asr_model="gpt-4o-transcribe-diarize",
         diarization_provider="openai",
         diarization_model="gpt-4o-transcribe-diarize",
+        diarization_engine="asr",
+        diarization_execution="inline_asr",
+        diarization_merge="segment",
     )
 
     steps = _steps(db_session, media.id)
     assert set(steps) == {"transcription", "diarization"}, "the old run's summary survived"
     assert steps["transcription"]["where"] == "cloud"
     assert steps["transcription"]["timing"] == "segment"
-    assert (steps["diarization"]["engine"], steps["diarization"]["where"]) == ("asr", "cloud")
+    diarization = steps["diarization"]
+    assert (diarization["engine"], diarization["where"]) == ("asr", "cloud")
+    assert (diarization["execution"], diarization["merge"]) == ("inline_asr", "segment")
 
 
 def test_saving_a_local_transcript_with_speakers_skipped_records_off(db_session, media):
@@ -200,7 +201,41 @@ def test_saving_a_local_transcript_with_speakers_skipped_records_off(db_session,
 # ------------------------------------------------------------------ speaker detection post stage
 
 
-def test_rediarize_records_the_engine_that_served(db_session, media, rediarize_seams):
+class _FakeDetector:
+    """A detector at its seam: the plan's engine is built, and reports what served."""
+
+    def __init__(self, provider: str, model: str, *, local: bool):
+        self._provider, self._model, self._local = provider, model, local
+
+    def diarize(self, audio_path, config, progress_callback=None):
+        from app.services.diarization.types import DiarizeResult
+        from app.services.diarization.types import DiarizeSegment
+
+        frame = pd.DataFrame([{"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00"}])
+        return DiarizeResult(
+            segments=[] if self._local else [DiarizeSegment(0.0, 5.0, "SPEAKER_00")],
+            num_speakers=1,
+            provider_name=self._provider,
+            model_name=self._model,
+            metadata={"diarize_df": frame, "overlap_info": {"regions": []}} if self._local else {},
+        )
+
+
+@pytest.mark.parametrize(
+    ("engine", "provider", "expected"),
+    [
+        # The local in-process engine, even after a cloud transcription.
+        ("local", "pyannote", ("local", "server", "post_stage_local")),
+        ("pyannote_ai", "pyannote.ai", ("pyannote_ai", "cloud", "post_stage_cloud")),
+        # A vendor named as the detector keeps its own id; the pyannote.ai STT service
+        # reports ``pyannote``, the local engine's spelling, and is still the cloud vendor.
+        ("asr_config", "pyannote", ("asr", "cloud", "post_stage_cloud")),
+        ("asr_config", "gladia", ("asr", "cloud", "post_stage_cloud")),
+    ],
+)
+def test_the_post_stage_records_the_engine_that_served(
+    db_session, media, rediarize_seams, engine, provider, expected
+):
     from app.tasks import rediarize_task as mod
 
     labels = _speakers(db_session, media, labels=("SPEAKER_00",))
@@ -216,24 +251,23 @@ def test_rediarize_records_the_engine_that_served(db_session, media, rediarize_s
     media.asr_provider = "deepgram"
     media.status = "completed"
     db_session.commit()
-    diarize_df = pd.DataFrame([{"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00"}])
+    detector = _FakeDetector(provider, "m-1", local=engine == "local")
 
     with (
         patch.object(mod, "_prepare_audio", return_value=("fake.wav", None)),
-        patch.object(
-            mod,
-            "_run_diarization",
-            return_value=(diarize_df, {"regions": []}, None, ("pyannote", "community-1")),
-        ),
+        patch.object(mod, "_build_detector", return_value=detector),
     ):
-        result = mod.rediarize_task.apply(kwargs={"file_uuid": str(media.uuid)}).result
+        result = mod.rediarize_task.apply(
+            kwargs={"file_uuid": str(media.uuid), "engine": engine, "merge": "segment"}
+        ).result
 
     assert result["status"] == "success", result
     db_session.refresh(media)
-    assert (media.diarization_provider, media.diarization_model) == ("pyannote", "community-1")
+    assert (media.diarization_provider, media.diarization_model) == (provider, "m-1")
     diarization = _steps(db_session, media.id)["diarization"]
-    # The local in-process engine, even after a cloud transcription.
-    assert (diarization["engine"], diarization["where"]) == ("local", "server")
+    assert diarization["provider"] == provider
+    assert (diarization["engine"], diarization["where"], diarization["execution"]) == expected
+    assert diarization["merge"] == "segment"
 
 
 # ------------------------------------------------------------------ voiceprints
@@ -283,44 +317,22 @@ def test_rediarize_inline_voiceprints_are_recorded(db_session, media, voiceprint
     assert (voiceprints["provider"], voiceprints["execution"]) == ("pyannote", "inline_native")
 
 
-def _embedding_service(backend: str = "native") -> MagicMock:
-    service = MagicMock()
-    service.backend = backend
-    service.model_name = WESPEAKER
-    service.mode = "v4"
-    service.aggregate_embeddings.side_effect = lambda vectors: vectors[0]
-    return service
-
-
-def test_an_extracted_voiceprint_pass_records_its_backend(db_session, media, voiceprint_seams):
-    from app.tasks.transcription import embeddings
-
-    labels = _speakers(db_session, media)
-    service = _embedding_service(backend="pyannote")
-    service.extract_embeddings_for_segments.return_value = {
-        speaker_id: [np.ones(256)] for speaker_id in labels.values()
-    }
-
-    with patch(
-        "app.services.speaker_embedding_service.get_cached_embedding_service",
-        return_value=service,
-    ):
-        embeddings._process_speaker_embeddings(_ctx(media), "a.wav", [], labels)
-
-    voiceprints = _steps(db_session, media.id)["voiceprints"]
-    assert (voiceprints["provider"], voiceprints["model"]) == ("pyannote", WESPEAKER)
-    assert (voiceprints["dims"], voiceprints["execution"]) == (256, "embedding_stage")
-
-
-def test_the_cpu_embedding_stage_records_its_backend(db_session, media, voiceprint_seams):
+def test_the_cpu_embedding_stage_records_the_extractor_that_ran(
+    db_session, media, voiceprint_seams
+):
     from app.tasks import speaker_embedding_task as mod
 
     labels = _speakers(db_session, media)
-    service = _embedding_service(backend="native")
-    service.extract_embeddings_for_segments.return_value = {
-        speaker_id: [np.ones(256)] for speaker_id in labels.values()
-    }
-    inputs = {"file_id": media.id, "user_id": media.user_id, "processed_segments": [{"x": 1}]}
+    service = MagicMock()
+    service.backend = "native"
+    service.model_name = WESPEAKER
+    service.get_embedding_dimension.return_value = 256
+    service.extract_embeddings_for_segments.return_value = {0: [np.ones(256)], 1: [np.ones(256)]}
+    service.aggregate_embeddings.side_effect = lambda vectors: vectors[0]
+    segments = [
+        {"speaker_id": speaker_id, "start": 0.0, "end": 1.0} for speaker_id in labels.values()
+    ]
+    inputs = {"file_id": media.id, "user_id": media.user_id, "processed_segments": segments}
 
     with (
         patch.object(mod, "_stage_audio_for_embeddings", return_value="a.wav"),
@@ -329,11 +341,12 @@ def test_the_cpu_embedding_stage_records_its_backend(db_session, media, voicepri
             "app.services.speaker_embedding_service.SpeakerEmbeddingService", return_value=service
         ),
     ):
-        aggregated = mod._extract_aggregated_embeddings(str(media.uuid), "t", inputs, labels)
-        mod._match_and_finalize_embeddings(inputs, "t", aggregated, labels, None)
+        aggregated = mod._extract_aggregated_embeddings(str(media.uuid), "t", inputs)
+        mod._match_and_finalize_embeddings(inputs, "t", aggregated, None, False)
 
     voiceprints = _steps(db_session, media.id)["voiceprints"]
-    assert (voiceprints["provider"], voiceprints["where"]) == ("native", "server")
+    assert (voiceprints["provider"], voiceprints["model"]) == ("native", WESPEAKER)
+    assert (voiceprints["dims"], voiceprints["where"]) == (256, "server")
     assert voiceprints["execution"] == "embedding_stage"
 
 

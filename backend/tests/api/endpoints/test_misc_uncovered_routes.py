@@ -219,7 +219,11 @@ def test_clearing_the_active_asr_config_deletes_the_setting_row(
     response = client.post(CLEAR_ACTIVE_ASR, headers=user_token_headers)
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"message": "Reverted to local ASR default"}
+    body = response.json()
+    assert body["message"] == "Reverted to local ASR default"
+    assert body["config_uuid"] is None
+    # The pipeline in effect afterwards (issue #1225): local Whisper, local speakers.
+    assert isinstance(body["pipeline_issues"], list)
     assert _active_asr_rows(db_session, normal_user) == []
 
 

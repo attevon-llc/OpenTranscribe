@@ -15,12 +15,10 @@ Shared utilities:
 - notifications.py: WebSocket notification utilities
 """
 
-from .core import transcribe_audio_task
 from .dispatch import dispatch_batch_transcription
 from .dispatch import dispatch_transcription_pipeline
 
 __all__ = [
-    "transcribe_audio_task",
     "dispatch_transcription_pipeline",
     "dispatch_batch_transcription",
 ]

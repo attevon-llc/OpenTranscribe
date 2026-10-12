@@ -39,6 +39,23 @@ The rules it applies, each the product's existing one rather than a new one:
   stale one is a copy of the removed voice.
 * The files whose segments lost their speaker are re-indexed, which rebuilds the chunk,
   digest and summary planes' speaker roster from Postgres.
+
+It is also the ONE implementation of the unassign rule and of the blacklist every
+assignment path honours (issue #1233), at the bottom of this module:
+
+* :func:`detach_from_cluster` — unassigning a speaker from a cluster means that section is
+  no longer that person: it leaves the cluster, leaves the cluster's promoted profile
+  (:func:`unlink_from_profile`: a name that came from the profile is cleared, a name the
+  user typed stays) and, when blacklisting, is recorded as cannot-link against every
+  remaining member and as blacklisted from the profile (:func:`record_unassignment`).
+  The cluster and profile remain for everyone else.
+* :func:`speaker_blocked_from_cluster` / :func:`speaker_blocked_from_profile` — the check
+  every automatic assignment path makes before it links a speaker.
+* :func:`join_cluster_identity` — joining a promoted cluster links its profile and takes
+  its name, the one way every path propagates a cluster's identity.
+* :func:`lift_profile_blacklist` — a user who explicitly names one speaker as that
+  profile again overrides their own earlier correction; only explicit single-speaker
+  actions call it.
 """
 
 from __future__ import annotations
@@ -48,11 +65,17 @@ from collections.abc import Callable
 from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SearchIndexError
+
+if TYPE_CHECKING:
+    from app.models.media import Speaker
+    from app.models.media import SpeakerCluster
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +120,8 @@ class SpeakerImpact:
         cluster_uuids: Clusters that held, or now hold, a speaker that moved.
         profile_ids: Profiles whose membership (or a member's weight) changed.
         reindex_file_ids: Files whose transcript index planes name a speaker that left.
+        relabel_speaker_ids: Speakers whose profile link or label changed, so their own
+            voiceprint document's ``profile_id``/``display_name`` must be rewritten.
     """
 
     owner_ids: set[int] = field(default_factory=set)
@@ -105,6 +130,7 @@ class SpeakerImpact:
     cluster_uuids: set[str] = field(default_factory=set)
     profile_ids: set[int] = field(default_factory=set)
     reindex_file_ids: set[int] = field(default_factory=set)
+    relabel_speaker_ids: set[int] = field(default_factory=set)
 
     def __or__(self, other: SpeakerImpact) -> SpeakerImpact:
         return SpeakerImpact(
@@ -114,6 +140,18 @@ class SpeakerImpact:
             cluster_uuids=self.cluster_uuids | other.cluster_uuids,
             profile_ids=self.profile_ids | other.profile_ids,
             reindex_file_ids=self.reindex_file_ids | other.reindex_file_ids,
+            relabel_speaker_ids=self.relabel_speaker_ids | other.relabel_speaker_ids,
+        )
+
+    def is_empty(self) -> bool:
+        """Nothing for :func:`reconcile_speaker_impact` to rebuild, erase or resync."""
+        return not (
+            self.erase_speaker_uuids
+            or self.erase_profile_uuids
+            or self.cluster_uuids
+            or self.profile_ids
+            or self.reindex_file_ids
+            or self.relabel_speaker_ids
         )
 
 
@@ -215,6 +253,7 @@ def reconcile_speaker_impact(db: Session, impact: SpeakerImpact) -> list[dict[st
     _refresh_clusters(db, impact, _fail)
     _refresh_profiles(db, impact, _fail)
     _reindex_files(db, impact, _fail)
+    _resync_speaker_docs(db, impact.relabel_speaker_ids)
     _invalidate_caches(impact)
 
     if residual:
@@ -323,15 +362,17 @@ def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
 def _reindex_files(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
     """Rebuild the index planes of every file whose segments lost their speaker.
 
-    The same debounced dispatch every #666 path uses. ``dispatch_transcript_reindex``
-    never raises and logs a failed dispatch with its traceback itself (it cannot tell its
-    caller a failure from "already queued"); a failure to even find the files is a
-    residual here, because nothing else would ever rebuild a roster that is merely stale.
+    The same debounced dispatch every #666 path uses. ``queue_transcript_reindex`` tells
+    a failed dispatch apart from one already pending in the debounce window (issue
+    #1233): the first is a residual — nothing else would ever rebuild a roster that is
+    merely stale — the second is the reindex this change needs, already queued. Failing
+    to even find the files is a residual for the same reason.
     """
     if not impact.reindex_file_ids:
         return
     from app.models.media import MediaFile
-    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+    from app.services.search.reindex_dispatch import ReindexDispatch
+    from app.services.search.reindex_dispatch import queue_transcript_reindex
 
     try:
         rows = (
@@ -346,7 +387,11 @@ def _reindex_files(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
         fail(STAGE_INDEX, "could not queue the transcript reindex")
         return
     for file_id, file_uuid, user_id in rows:
-        dispatch_transcript_reindex(file_id=int(file_id), file_uuid=str(file_uuid), user_id=user_id)
+        outcome = queue_transcript_reindex(
+            file_id=int(file_id), file_uuid=str(file_uuid), user_id=user_id
+        )
+        if outcome is ReindexDispatch.FAILED:
+            fail(STAGE_INDEX, "could not queue the transcript reindex")
 
 
 def _invalidate_caches(impact: SpeakerImpact) -> None:
@@ -358,3 +403,438 @@ def _invalidate_caches(impact: SpeakerImpact) -> None:
             redis_cache.invalidate_user_files(owner_id)
         except Exception as e:  # caches expire on their own TTL
             logger.debug(f"Speaker cleanup: cache invalidation failed (non-critical): {e}")
+
+
+def _resync_speaker_docs(db: Session, speaker_ids: set[int]) -> None:
+    """Write the relabelled speakers' Postgres identity onto their own voiceprint documents.
+
+    A voiceprint document carries ``profile_id``/``display_name`` beside the vector, and a
+    profile kNN suggestion reads the profile from it. Both writers log their own failures
+    and a speaker with no indexed voiceprint has nothing to update, so this is not a
+    residual: the label it repairs is metadata, the voice itself is untouched.
+    """
+    if not speaker_ids:
+        return
+    from app.models.media import Speaker
+    from app.models.media import SpeakerProfile
+    from app.services.opensearch_service import update_speaker_display_name
+    from app.services.opensearch_service import update_speaker_profile
+
+    try:
+        rows = (
+            db.query(
+                Speaker.uuid,
+                Speaker.profile_id,
+                SpeakerProfile.uuid,
+                Speaker.verified,
+                Speaker.display_name,
+            )
+            .outerjoin(SpeakerProfile, SpeakerProfile.id == Speaker.profile_id)
+            .filter(Speaker.id.in_(sorted(speaker_ids)))
+            .all()
+        )
+        db.commit()
+    except Exception:  # logged; the document keeps its old label until the next speaker sync
+        db.rollback()
+        logger.exception("Could not read the relabelled speakers to resync their documents")
+        return
+    for speaker_uuid, profile_id, profile_uuid, verified, display_name in rows:
+        update_speaker_profile(
+            speaker_uuid=str(speaker_uuid),
+            profile_id=int(profile_id) if profile_id is not None else None,
+            profile_uuid=str(profile_uuid) if profile_uuid is not None else None,
+            verified=bool(verified),
+        )
+        update_speaker_display_name(str(speaker_uuid), display_name)
+
+
+# --------------------------------------------------------------------------------------
+# The unassign rule and the blacklist every assignment path honours (issue #1233)
+# --------------------------------------------------------------------------------------
+
+#: ``reason`` written on the constraint rows a user's unassignment records.
+REASON_UNASSIGNED = "unassigned_by_user"
+#: ``reason`` written on the rows a speaker merge copies from the source to the target.
+REASON_MERGED = "inherited_by_merge"
+
+
+def blacklisted_profile_ids(db: Session, speaker_ids: Iterable[int]) -> dict[int, set[int]]:
+    """For each speaker, the profiles it was unassigned from (``speaker_profile_blacklist``)."""
+    from app.models.media import SpeakerProfileBlacklist
+
+    ids = sorted({int(i) for i in speaker_ids})
+    out: dict[int, set[int]] = {i: set() for i in ids}
+    if not ids:
+        return out
+    rows = (
+        db.query(SpeakerProfileBlacklist.speaker_id, SpeakerProfileBlacklist.profile_id)
+        .filter(SpeakerProfileBlacklist.speaker_id.in_(ids))
+        .all()
+    )
+    for speaker_id, profile_id in rows:
+        out[int(speaker_id)].add(int(profile_id))
+    return out
+
+
+def cannot_link_partners(db: Session, speaker_ids: Iterable[int]) -> dict[int, set[int]]:
+    """For each speaker, every speaker it must never share a cluster with.
+
+    Symmetric whichever direction a row was written in: unassign writes both, but a
+    one-directional row (older data, a hand edit) must still keep the pair apart.
+    """
+    from sqlalchemy import or_
+
+    from app.models.media import SpeakerCannotLink
+
+    ids = sorted({int(i) for i in speaker_ids})
+    out: dict[int, set[int]] = {i: set() for i in ids}
+    if not ids:
+        return out
+    rows = (
+        db.query(SpeakerCannotLink.speaker_id, SpeakerCannotLink.cannot_link_speaker_id)
+        .filter(
+            or_(
+                SpeakerCannotLink.speaker_id.in_(ids),
+                SpeakerCannotLink.cannot_link_speaker_id.in_(ids),
+            )
+        )
+        .all()
+    )
+    for a, b in rows:
+        if int(a) in out:
+            out[int(a)].add(int(b))
+        if int(b) in out:
+            out[int(b)].add(int(a))
+    return out
+
+
+def blocked_profile_names(db: Session, speaker_ids: Iterable[int]) -> dict[int, set[str]]:
+    """For each speaker, the casefolded names of every profile it is blocked from.
+
+    For the paths that assign by NAME rather than by profile id (accepting a suggestion,
+    a voice-match suggestion copied from another speaker's label): the profiles it was
+    unassigned from, and the profiles its cannot-link partners are linked to.
+    """
+    from app.models.media import Speaker
+    from app.models.media import SpeakerProfile
+
+    ids = sorted({int(i) for i in speaker_ids})
+    out: dict[int, set[str]] = {i: set() for i in ids}
+    if not ids:
+        return out
+    blocked = blacklisted_profile_ids(db, ids)
+    partners = cannot_link_partners(db, ids)
+    partner_ids = sorted(set().union(*partners.values()))
+    partner_profile: dict[int, int] = {}
+    if partner_ids:
+        partner_profile = {
+            int(sid): int(pid)
+            for sid, pid in db.query(Speaker.id, Speaker.profile_id)
+            .filter(Speaker.id.in_(partner_ids), Speaker.profile_id.isnot(None))
+            .all()
+            if pid is not None
+        }
+    wanted = set().union(*blocked.values()) | set(partner_profile.values())
+    names: dict[int, str] = {}
+    if wanted:
+        names = {
+            int(pid): str(name)
+            for pid, name in db.query(SpeakerProfile.id, SpeakerProfile.name)
+            .filter(SpeakerProfile.id.in_(sorted(wanted)))
+            .all()
+        }
+    for sid in ids:
+        profile_ids = blocked[sid] | {
+            partner_profile[p] for p in partners[sid] if p in partner_profile
+        }
+        out[sid] = {names[p].casefold() for p in profile_ids if p in names}
+    return out
+
+
+def speaker_blocked_from_profile(db: Session, speaker_id: int, profile_id: int | None) -> bool:
+    """Whether a correction forbids linking this speaker to this profile.
+
+    Blocked when the speaker was unassigned from the profile, or when it is cannot-link
+    with a speaker currently linked to it: "not the same person as Y" while Y is Bob
+    means "not Bob".
+    """
+    if profile_id is None:
+        return False
+    from app.models.media import Speaker
+
+    sid = int(speaker_id)
+    if int(profile_id) in blacklisted_profile_ids(db, [sid])[sid]:
+        return True
+    partners = cannot_link_partners(db, [sid])[sid]
+    if not partners:
+        return False
+    linked = (
+        db.query(Speaker.id)
+        .filter(Speaker.id.in_(sorted(partners)), Speaker.profile_id == int(profile_id))
+        .first()
+    )
+    return linked is not None
+
+
+def speaker_blocked_from_cluster(db: Session, speaker_id: int, cluster: SpeakerCluster) -> bool:
+    """Whether a correction forbids this speaker from joining this cluster.
+
+    Blocked by the promoted profile (:func:`speaker_blocked_from_profile`) or by a
+    cannot-link with any current member, read from both membership representations.
+    Queries the rows rather than ``cluster.members``, which a caller that has just
+    flushed new members may hold stale.
+    """
+    from sqlalchemy import or_
+
+    from app.models.media import Speaker
+    from app.models.media import SpeakerClusterMember
+
+    if cluster.promoted_to_profile_id is not None and speaker_blocked_from_profile(
+        db, speaker_id, int(cluster.promoted_to_profile_id)
+    ):
+        return True
+    partners = cannot_link_partners(db, [int(speaker_id)])[int(speaker_id)]
+    if not partners:
+        return False
+    member_of = (
+        db.query(SpeakerClusterMember.speaker_id)
+        .filter(SpeakerClusterMember.cluster_id == cluster.id)
+        .scalar_subquery()
+    )
+    conflict = (
+        db.query(Speaker.id)
+        .filter(
+            Speaker.id.in_(sorted(partners)),
+            or_(Speaker.id.in_(member_of), Speaker.cluster_id == cluster.id),
+        )
+        .first()
+    )
+    return conflict is not None
+
+
+def record_unassignment(
+    db: Session,
+    speaker_ids: Iterable[int],
+    *,
+    against_speaker_ids: Iterable[int],
+    profile_id: int | None,
+    reason: str = REASON_UNASSIGNED,
+) -> None:
+    """Record that these speakers are neither the others nor the profile. Idempotent.
+
+    Cannot-link rows in both directions against every speaker in ``against_speaker_ids``,
+    and a profile blacklist row when ``profile_id`` is set. Adds to the session; the
+    caller commits with its own change.
+    """
+    from app.models.media import SpeakerCannotLink
+    from app.models.media import SpeakerProfileBlacklist
+
+    removed = sorted({int(i) for i in speaker_ids})
+    others = sorted({int(i) for i in against_speaker_ids} - set(removed))
+    if not removed:
+        return
+    if others:
+        existing = set(
+            db.query(SpeakerCannotLink.speaker_id, SpeakerCannotLink.cannot_link_speaker_id)
+            .filter(
+                SpeakerCannotLink.speaker_id.in_(removed + others),
+                SpeakerCannotLink.cannot_link_speaker_id.in_(removed + others),
+            )
+            .all()
+        )
+        pairs = {(int(a), int(b)) for a, b in existing}
+        for s in removed:
+            for o in others:
+                for a, b in ((s, o), (o, s)):
+                    if (a, b) not in pairs:
+                        pairs.add((a, b))
+                        db.add(
+                            SpeakerCannotLink(speaker_id=a, cannot_link_speaker_id=b, reason=reason)
+                        )
+    if profile_id is not None:
+        blocked = blacklisted_profile_ids(db, removed)
+        for s in removed:
+            if int(profile_id) not in blocked[s]:
+                db.add(SpeakerProfileBlacklist(speaker_id=s, profile_id=profile_id, reason=reason))
+    db.flush()
+
+
+def lift_profile_blacklist(db: Session, speaker_id: int, profile_id: int) -> None:
+    """The user explicitly named this one speaker as this profile: drop the correction.
+
+    Removes its blacklist row for the profile and its cannot-link rows with the speakers
+    linked to the profile. Only explicit single-speaker actions call this (typing the
+    name, assigning or accepting that profile for that speaker); every automatic and
+    bulk path honours the blacklist instead. Adds to the session; the caller commits.
+    """
+    from sqlalchemy import and_
+    from sqlalchemy import or_
+
+    from app.models.media import Speaker
+    from app.models.media import SpeakerCannotLink
+    from app.models.media import SpeakerProfileBlacklist
+
+    sid, pid = int(speaker_id), int(profile_id)
+    db.query(SpeakerProfileBlacklist).filter(
+        SpeakerProfileBlacklist.speaker_id == sid, SpeakerProfileBlacklist.profile_id == pid
+    ).delete(synchronize_session=False)
+    members = [
+        int(r[0])
+        for r in db.query(Speaker.id).filter(Speaker.profile_id == pid, Speaker.id != sid).all()
+    ]
+    if members:
+        db.query(SpeakerCannotLink).filter(
+            or_(
+                and_(
+                    SpeakerCannotLink.speaker_id == sid,
+                    SpeakerCannotLink.cannot_link_speaker_id.in_(members),
+                ),
+                and_(
+                    SpeakerCannotLink.speaker_id.in_(members),
+                    SpeakerCannotLink.cannot_link_speaker_id == sid,
+                ),
+            )
+        ).delete(synchronize_session=False)
+    db.flush()
+
+
+def carry_blacklist(db: Session, source_id: int, target_id: int) -> None:
+    """A merge folds the source's voice into the target, so its corrections come along.
+
+    Without this the merged-away section, which the user said is not Bob, would sit in a
+    target nothing forbids from becoming Bob. A profile the target is already linked to
+    is not copied: the user merged into it, which is the explicit statement.
+    """
+    from app.models.media import Speaker
+
+    src, tgt = int(source_id), int(target_id)
+    target_profile = db.query(Speaker.profile_id).filter(Speaker.id == tgt).scalar()
+    for profile_id in sorted(blacklisted_profile_ids(db, [src])[src]):
+        if target_profile is None or int(target_profile) != profile_id:
+            record_unassignment(
+                db, [tgt], against_speaker_ids=[], profile_id=profile_id, reason=REASON_MERGED
+            )
+    partners = cannot_link_partners(db, [src])[src] - {tgt}
+    if partners:
+        record_unassignment(
+            db, [tgt], against_speaker_ids=partners, profile_id=None, reason=REASON_MERGED
+        )
+
+
+def unlink_from_profile(
+    db: Session,
+    speakers: Iterable[Speaker],
+    profile_id: int,
+    tracker: SpeakerRenameTracker,
+) -> set[int]:
+    """Take a profile's identity back from these speakers. Returns the ids it unlinked.
+
+    The rule the profile delete established: the link goes, ``verified`` goes, and a
+    display name or suggestion that IS the profile's name goes with it (it came from the
+    profile), while a name the user set to something else survives. The chunk plane is
+    told through ``tracker``, which the caller flushes after its commit. A speaker linked
+    to a different profile is not touched.
+    """
+    from app.models.media import SpeakerProfile
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
+
+    name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
+    unlinked: set[int] = set()
+    for speaker in speakers:
+        if speaker.profile_id is None or int(speaker.profile_id) != int(profile_id):
+            continue
+        indexed_as = canonical_speaker_label_for_row(speaker)
+        speaker.profile_id = None  # type: ignore[assignment]
+        speaker.verified = False  # type: ignore[assignment]
+        if name is not None and speaker.display_name == name:
+            speaker.display_name = None  # type: ignore[assignment]
+        if name is not None and speaker.suggested_name == name:
+            speaker.suggested_name = None  # type: ignore[assignment]
+            speaker.confidence = None  # type: ignore[assignment]
+        tracker.record(
+            int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker)
+        )
+        unlinked.add(int(speaker.id))
+    return unlinked
+
+
+def join_cluster_identity(
+    db: Session, speaker: Speaker, cluster: SpeakerCluster, tracker: SpeakerRenameTracker
+) -> set[int]:
+    """Joining a promoted cluster links its profile and takes its name.
+
+    The one way every assignment path propagates a cluster's identity. Refuses (returns
+    an empty set, writes nothing) when the speaker is blocked from the profile.
+
+    Returns:
+        The profiles whose membership changed (the new one and any it left), for the
+        caller's :class:`SpeakerImpact`; empty when nothing changed.
+    """
+    from app.models.media import SpeakerProfile
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
+
+    profile_id = cluster.promoted_to_profile_id
+    if profile_id is None or speaker_blocked_from_profile(db, int(speaker.id), int(profile_id)):
+        return set()
+    name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
+    if name is None:
+        return set()
+    old = int(speaker.profile_id) if speaker.profile_id is not None else None
+    indexed_as = canonical_speaker_label_for_row(speaker)
+    speaker.profile_id = int(profile_id)  # type: ignore[assignment]
+    speaker.display_name = name  # type: ignore[assignment]
+    speaker.verified = True  # type: ignore[assignment]
+    tracker.record(int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker))
+    return {p for p in (old, int(profile_id)) if p is not None}
+
+
+def detach_from_cluster(
+    db: Session,
+    cluster: SpeakerCluster,
+    speakers: list[Speaker],
+    *,
+    blacklist: bool,
+    tracker: SpeakerRenameTracker,
+) -> SpeakerImpact:
+    """Unassign speakers from a cluster: that section is no longer that person.
+
+    Removes both membership representations, unlinks the cluster's promoted profile
+    (:func:`unlink_from_profile`) and, when ``blacklist`` is set, records the speakers
+    as cannot-link against every remaining member and as blacklisted from the profile.
+    The cluster and its profile remain for the other members; the caller commits, flushes
+    ``tracker`` and hands the returned impact to :func:`reconcile_speaker_impact`, which
+    rebuilds the centroid and the profile embedding (an emptied cluster is deleted).
+    """
+    from app.models.media import SpeakerClusterMember
+
+    remove_ids = sorted({int(s.id) for s in speakers})
+    remaining = [
+        int(r[0])
+        for r in db.query(SpeakerClusterMember.speaker_id)
+        .filter(
+            SpeakerClusterMember.cluster_id == cluster.id,
+            SpeakerClusterMember.speaker_id.notin_(remove_ids),
+        )
+        .all()
+    ]
+    impact = SpeakerImpact(owner_ids={int(cluster.user_id)}, cluster_uuids={str(cluster.uuid)})
+    db.query(SpeakerClusterMember).filter(
+        SpeakerClusterMember.cluster_id == cluster.id,
+        SpeakerClusterMember.speaker_id.in_(remove_ids),
+    ).delete(synchronize_session="fetch")
+    for speaker in speakers:
+        if speaker.cluster_id is not None and int(speaker.cluster_id) == int(cluster.id):
+            speaker.cluster_id = None  # type: ignore[assignment]
+
+    profile_id = (
+        int(cluster.promoted_to_profile_id) if cluster.promoted_to_profile_id is not None else None
+    )
+    if profile_id is not None:
+        unlinked = unlink_from_profile(db, speakers, profile_id, tracker)
+        if unlinked:
+            impact.profile_ids.add(profile_id)
+            impact.relabel_speaker_ids |= unlinked
+    if blacklist:
+        record_unassignment(db, remove_ids, against_speaker_ids=remaining, profile_id=profile_id)
+    cluster.member_count = len(remaining)  # type: ignore[assignment]
+    return impact

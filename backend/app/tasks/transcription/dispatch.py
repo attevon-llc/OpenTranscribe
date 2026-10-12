@@ -27,12 +27,12 @@ from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import gpu_split_enabled
-from app.core.exceptions import ASRConfigurationError
+from app.core.exceptions import PipelinePlanRefusedError
 from app.core.task_liveness import mark_queued
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.transcription.config import LIGHTWEIGHT_MODELS
+from app.services.pipeline_plan import PipelinePlan
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -101,59 +101,68 @@ def _gpu_transcribe_consumer_present() -> bool:
     return present
 
 
-def _resolve_gpu_queue(user_id: int, db) -> str:
-    """Resolve the correct queue based on the user's active ASR provider.
+def _plan_for_dispatch(
+    db, media_file: MediaFile, *, whisper_model: str | None, skip_diarization: bool
+) -> PipelinePlan:
+    """The file's pipeline plan, or a refusal recorded on the file (issue #1225).
 
-    Returns 'cloud-asr' for cloud providers. For local ASR, returns
-    'gpu-transcribe' when this deployment ASKS for the gpu-split topology
-    (:func:`gpu_split_enabled`) AND a worker is verified to actually be consuming
-    that queue (:func:`_gpu_transcribe_consumer_present`) — celery-worker-gpu-transcribe
-    picks it up, runs the transcribe-only stage, and forwards to diarize_gpu_task on
-    'gpu-diarize' (transcription/core.py). Otherwise returns the shared 'gpu'
-    queue, which celery-worker always staffs regardless of split mode.
+    Computed ONCE per run, here, and carried to every stage in the task context. The plan
+    names the transcription queue (``cloud-asr`` for a vendor, ``cpu-transcribe`` for a
+    per-file lightweight model, ``gpu``/``gpu-transcribe`` for local Whisper) and every
+    later step. A plan with a blocking issue is refused exactly like the #865 refusal it
+    generalises: the file is marked ERROR with the issue's fixed sentence (classified as a
+    permanent configuration failure, so nothing retries it) and no task record is created.
 
-    Issue #703: before this branch existed, nothing ever published to
-    'gpu-transcribe', so celery-worker-gpu-transcribe held a GPU reservation
-    and did no work under --with-gpu-split.
-
-    Regression fixed here: ``ENGINE_GPU_SPLIT`` is an ordinary ``.env`` knob that
-    reaches every container via ``env_file`` independent of which Compose overlay is
-    loaded, so ``gpu_split_enabled()`` alone can be True with no consumer running
-    (operator sets the flag directly without ``--with-gpu-split``). Routing on it
-    alone black-holes every transcription into a queue nothing drains. The
-    consumer-presence check is the corroboration that keeps the failure direction
-    "no split" rather than "queued forever".
+    Raises:
+        PipelinePlanRefusedError: The plan has a blocking issue.
     """
-    try:
-        from app.services.asr.factory import ASRProviderFactory
+    from app.services.error_categorization_service import ErrorCategorizationService
+    from app.services.pipeline_plan_inputs import plan_for_user
 
-        provider = ASRProviderFactory.create_for_user(user_id, db)
-        if provider.provider_name != "local":
-            logger.info(
-                f"Resolved ASR queue 'cloud-asr' for user {user_id} "
-                f"(provider: {provider.provider_name})"
-            )
-            return CeleryQueues.CLOUD_ASR
-    except ASRConfigurationError:
-        # A deliberate refusal (e.g. a lite deployment with no cloud ASR
-        # configured) — never silently fall back to 'gpu', which lite scales
-        # to zero replicas (issue #865). Let it propagate to the caller.
-        raise
-    except Exception as e:
-        logger.warning(
-            f"ASR provider resolution failed for user {user_id}, defaulting to 'gpu': {e}"
+    def _plan(gpu_split: bool) -> PipelinePlan:
+        return plan_for_user(
+            db,
+            int(media_file.user_id),
+            whisper_model=whisper_model,
+            disable_diarization=skip_diarization,
+            gpu_split=gpu_split,
         )
 
-    if gpu_split_enabled():
-        if _gpu_transcribe_consumer_present():
-            return CeleryQueues.GPU_TRANSCRIBE
+    plan = _plan(gpu_split_enabled())
+    if plan.transcription.queue == CeleryQueues.GPU_TRANSCRIBE and (
+        not _gpu_transcribe_consumer_present()
+    ):
+        # ``ENGINE_GPU_SPLIT`` is an ordinary ``.env`` knob that reaches every container
+        # whichever overlay is loaded, so it can be on with no celery-worker-gpu-transcribe
+        # running; routing on it alone black-holes every transcription (issue #703). The
+        # broker is asked only for a run the split would actually take.
         logger.warning(
             f"ENGINE_GPU_SPLIT is set but no worker is consuming "
             f"'{CeleryQueues.GPU_TRANSCRIBE}' — routing to '{CeleryQueues.GPU}' instead "
             f"of a queue nothing would drain. Start the stack with --with-gpu-split, "
             f"or unset ENGINE_GPU_SPLIT if split topology isn't intended here."
         )
-    return CeleryQueues.GPU
+        plan = _plan(False)
+    blocking = plan.blocking()
+    if blocking:
+        issue = blocking[0]
+        failure = ErrorCategorizationService.classify_failure(issue.message)
+        logger.warning(
+            "Refusing to dispatch file %s: pipeline plan issue %s", media_file.uuid, issue.code
+        )
+        media_file.last_error_message = failure.user_message
+        media_file.error_category = failure.retry_category.value
+        update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
+        raise PipelinePlanRefusedError(issue.code, issue.message)
+    logger.info(
+        "Pipeline plan for file %s: transcription=%s on %s, speakers=%s (%s)",
+        media_file.uuid,
+        plan.transcription.engine,
+        plan.transcription.queue,
+        plan.diarization.engine,
+        plan.diarization.execution,
+    )
+    return plan
 
 
 def stage_priorities(*, retry: bool) -> tuple[int, int]:
@@ -273,9 +282,7 @@ def dispatch_transcription_pipeline(
     downstream_tasks: list[str] | None = None,
     source_language: str | None = None,
     translate_to_english: bool | None = None,
-    gpu_queue: str | None = None,
     disable_diarization: bool | None = None,
-    diarization_source: str | None = None,
     whisper_model: str | None = None,
     task_id: str | None = None,
     retry: bool = False,
@@ -296,9 +303,9 @@ def dispatch_transcription_pipeline(
         downstream_tasks: Optional list of post-transcription stages to run.
         source_language: Override source language (None = auto-detect).
         translate_to_english: Override translation setting.
-        gpu_queue: Queue for GPU task. None = auto-resolve from user's ASR
-            provider ('gpu' for local, 'cloud-asr' for cloud providers).
-        whisper_model: Optional per-task Whisper model override (local ASR only).
+        disable_diarization: The per-file "skip speaker detection" (``None`` = not asked).
+        whisper_model: Optional per-task Whisper model override (local ASR only); a
+            lightweight one transcribes on the CPU (full image only).
         task_id: Optional pre-generated application task_id. When provided
             (e.g., from the HTTP upload handler) it is reused so HTTP-phase
             benchmark markers share the ``benchmark:{task_id}`` Redis hash
@@ -313,8 +320,6 @@ def dispatch_transcription_pipeline(
             file's stored request (``requested_options``). False for a fresh request: the
             options passed, ``None`` included, become the file's stored request.
     """
-    from .core import transcribe_cpu_task
-    from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
     from .preprocess import preprocess_for_transcription
 
@@ -338,47 +343,30 @@ def dispatch_transcription_pipeline(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             disable_diarization=disable_diarization,
-            diarization_source=diarization_source,
         )
         whisper_model = options.whisper_model
         min_speakers = options.min_speakers
         max_speakers = options.max_speakers
         num_speakers = options.num_speakers
-        disable_diarization = options.disable_diarization
-        diarization_source = options.diarization_source
-        use_cpu = whisper_model in LIGHTWEIGHT_MODELS
 
         # Pre-dispatch gate (duration ceiling + before-dispatch hooks). A refusal
         # propagates BEFORE the task record is created, so a blocked job leaves no
         # trace and nothing dispatches.
         _run_pre_dispatch_gate(db, media_file, file_uuid, task_id)
 
-        # Auto-resolve queue from user's ASR provider if not specified
-        if not use_cpu and gpu_queue is None:
-            try:
-                gpu_queue = _resolve_gpu_queue(user_id, db)
-            except ASRConfigurationError as e:
-                # A deliberate refusal to route into a queue nothing drains
-                # (issue #865) — mark the file ERROR instead of leaving it
-                # PROCESSING forever, and never create a task record for it.
-                media_file.last_error_message = e.message
-                update_media_file_status(db, file_id, FileStatus.ERROR)
-                raise
+        plan = _plan_for_dispatch(
+            db,
+            media_file,
+            whisper_model=whisper_model,
+            skip_diarization=options.skip_diarization,
+        )
 
         create_task_record(db, task_id, user_id, file_id, "transcription")
         update_media_file_status(db, file_id, FileStatus.PROCESSING)
         update_task_status(db, task_id, "in_progress", progress=0.0)
 
     cpu_priority, gpu_priority = stage_priorities(retry=retry)
-
-    # Build the 3-stage chain — route lightweight models to CPU
-    if use_cpu:
-        logger.info(f"Routing file {file_uuid} to CPU transcription (model={whisper_model})")
-        transcribe_task = transcribe_cpu_task.s().set(
-            queue=CeleryQueues.CPU_TRANSCRIBE, priority=cpu_priority
-        )
-    else:
-        transcribe_task = transcribe_gpu_task.s().set(queue=gpu_queue, priority=gpu_priority)
+    transcribe_task = _transcribe_stage(plan, cpu_priority, gpu_priority)
 
     first_stage_options: dict = {"queue": CeleryQueues.CPU, "priority": cpu_priority}
     if countdown:
@@ -388,14 +376,13 @@ def dispatch_transcription_pipeline(
         preprocess_for_transcription.s(
             file_uuid=file_uuid,
             task_id=task_id,
+            pipeline_plan=plan.to_context(),
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             downstream_tasks=downstream_tasks,
             source_language=source_language,
             translate_to_english=translate_to_english,
-            disable_diarization=True if use_cpu else disable_diarization,
-            diarization_source="off" if use_cpu else diarization_source,
             whisper_model=whisper_model,
         ).set(**first_stage_options),
         transcribe_task,
@@ -426,39 +413,51 @@ def dispatch_transcription_pipeline(
         _mark_dispatch_failed(file_uuid, task_id, f"Could not queue transcription: {e}")
         raise
 
-    route = "cpu-transcribe" if use_cpu else gpu_queue
     logger.info(
         f"Dispatched transcription pipeline for file {file_uuid} (task_id={task_id}, "
-        f"route={route}{', retry' if retry else ''})"
+        f"route={plan.transcription.queue}{', retry' if retry else ''})"
     )
 
     return task_id
 
 
+def _transcribe_stage(plan: PipelinePlan, cpu_priority: int, gpu_priority: int):
+    """The chain's transcription link, on the queue the plan names.
+
+    A per-file lightweight model (``local_cpu``) runs ``transcription.cpu_transcribe`` on
+    ``cpu-transcribe``; everything else runs ``transcription.gpu_transcribe`` on ``gpu``,
+    ``gpu-transcribe`` (split topology, inline speaker detection only) or ``cloud-asr``.
+    """
+    from .core import transcribe_cpu_task
+    from .core import transcribe_gpu_task
+
+    queue = plan.transcription.queue
+    if plan.transcription.engine == "local_cpu":
+        logger.info(f"Routing to CPU transcription (model={plan.transcription.model})")
+        return transcribe_cpu_task.s().set(queue=queue, priority=cpu_priority)
+    return transcribe_gpu_task.s().set(queue=queue, priority=gpu_priority)
+
+
 def dispatch_batch_transcription(
     file_uuids: list[str],
-    gpu_queue: str | None = None,
     user_id: int | None = None,
     **kwargs,
 ) -> dict:
     """Dispatch transcription chains for a batch of files using Celery group.
 
-    Each file gets its own chain within a Celery group. The CPU queue
-    (concurrency=8) preprocesses multiple files in parallel, keeping audio
-    ready for the GPU. The GPU processes files one at a time (concurrency=1)
-    with zero idle time.
+    Each file gets its own chain within a Celery group, planned exactly like a single
+    dispatch (its own pipeline plan, its own refusal). The CPU queue (concurrency=8)
+    preprocesses multiple files in parallel, keeping audio ready for the GPU.
 
     Returns dict with batch_id and task_ids for tracking.
     """
-    from .core import transcribe_cpu_task
-    from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
     from .preprocess import preprocess_for_transcription
 
     task_ids = []
     chains = []
-    batch_whisper_model = kwargs.get("whisper_model")
-    use_cpu = batch_whisper_model in LIGHTWEIGHT_MODELS
+    batch_kwargs = dict(kwargs)
+    skip_diarization = bool(batch_kwargs.pop("disable_diarization", None))
 
     for file_uuid in file_uuids:
         try:
@@ -481,45 +480,27 @@ def dispatch_batch_transcription(
                     logger.warning(f"Dispatch of {file_uuid} refused by a hook: {e.detail}")
                     continue
 
-                resolved_queue = gpu_queue
-                if not use_cpu and resolved_queue is None:
-                    try:
-                        resolved_queue = _resolve_gpu_queue(owner_id, db)
-                    except ASRConfigurationError as e:
-                        # Same refusal as the single-file path (issue #865):
-                        # mark this file ERROR and skip it, but let the rest
-                        # of the batch continue — the outer `except Exception`
-                        # below only logs, so this must fully handle the file
-                        # (status + no task record) before re-raising out of it.
-                        media_file.last_error_message = e.message
-                        update_media_file_status(db, file_id, FileStatus.ERROR)
-                        raise
+                # A blocking plan marks THIS file ERROR (no task record) and raises; the
+                # outer `except Exception` only logs, so the rest of the batch continues.
+                plan = _plan_for_dispatch(
+                    db,
+                    media_file,
+                    whisper_model=batch_kwargs.get("whisper_model"),
+                    skip_diarization=skip_diarization,
+                )
 
                 create_task_record(db, task_id, owner_id, file_id, "transcription")
                 update_media_file_status(db, file_id, FileStatus.PROCESSING)
                 update_task_status(db, task_id, "in_progress", progress=0.0)
 
-            # Force disable_diarization for CPU path
-            batch_kwargs = dict(kwargs)
-            if use_cpu:
-                batch_kwargs["disable_diarization"] = True
-
-            if use_cpu:
-                transcribe_task = transcribe_cpu_task.s().set(
-                    queue=CeleryQueues.CPU_TRANSCRIBE, priority=CPUPriority.PIPELINE_CRITICAL
-                )
-            else:
-                transcribe_task = transcribe_gpu_task.s().set(
-                    queue=resolved_queue, priority=GPUPriority.USER_IMPORT
-                )
-
             pipeline = chain(
                 preprocess_for_transcription.s(
                     file_uuid=file_uuid,
                     task_id=task_id,
+                    pipeline_plan=plan.to_context(),
                     **batch_kwargs,
                 ).set(queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL),
-                transcribe_task,
+                _transcribe_stage(plan, CPUPriority.PIPELINE_CRITICAL, GPUPriority.USER_IMPORT),
                 finalize_transcription.s().set(
                     queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
                 ),

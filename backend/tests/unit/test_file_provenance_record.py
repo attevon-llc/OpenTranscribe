@@ -7,7 +7,7 @@ Postgres reports them blocked on that lock, then commits. A writer that read the
 before writing (read-modify-write) computes its update from the stale NULL and erases the
 first step; the single ``jsonb_set`` statement is re-evaluated against the committed row.
 
-These tests need the ``processing_provenance`` column, i.e. a database migrated to v435.
+These tests need the ``processing_provenance`` column, i.e. a database migrated to v437.
 """
 
 from __future__ import annotations

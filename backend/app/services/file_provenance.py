@@ -29,10 +29,11 @@ from app.services.pipeline_plan import PYANNOTE_AI
 
 logger = logging.getLogger(__name__)
 
-#: Canonical provider ids for speaker detection. The two local engines report themselves;
-#: the pyannote.ai cloud service reports ``pyannote.ai`` (it used to say ``pyannote``,
-#: indistinguishable from the local engine).
-LOCAL_DIARIZATION_ENGINES = frozenset({"native", "pyannote"})
+#: Canonical provider ids for speaker detection. The two local engines report themselves
+#: (``local`` when the local provider could not say which one served); the pyannote.ai
+#: cloud service reports ``pyannote.ai`` (it used to say ``pyannote``, indistinguishable
+#: from the local engine).
+LOCAL_DIARIZATION_ENGINES = frozenset({"native", "pyannote", "local"})
 
 _FACT_KEYS = frozenset(ProvenanceEntry.model_fields) - {"completed_at"}
 
@@ -139,17 +140,36 @@ def transcription_facts(asr_provider: str | None, asr_model: str | None) -> dict
     }
 
 
+#: The plan's speaker-detection engines (``pipeline_plan``) and where each runs. A vendor
+#: named as the detector (``asr_config``) and a vendor's inline speakers (``asr``) are the
+#: same fact for the reader: that vendor's own speakers, in the cloud.
+_PLAN_ENGINE_FACTS: dict[str, tuple[str, str]] = {
+    "local": ("server", "local"),
+    "pyannote_ai": ("cloud", "pyannote_ai"),
+    "asr_config": ("cloud", "asr"),
+    "asr": ("cloud", "asr"),
+}
+
+
 def diarization_facts(
-    provider: str | None, model: str | None, *, asr_provider: str | None = None
+    provider: str | None,
+    model: str | None,
+    *,
+    asr_provider: str | None = None,
+    engine: str | None = None,
 ) -> dict[str, Any]:
     """Facts for the speaker-detection step from the engine that actually served it.
 
-    ``asr_provider`` disambiguates the one collision left in the ids: a cloud transcription
-    provider that returned its own speakers reports its own id, which for the pyannote.ai
-    STT service is ``pyannote``, the same spelling as the local in-process engine.
+    ``engine`` is the plan's detector (``local`` / ``pyannote_ai`` / ``asr_config``) when the
+    caller knows it, and wins over the id: a vendor named as the detector reports its own id,
+    which for the pyannote.ai STT service is ``pyannote``, the local engine's spelling.
+    Without it, ``asr_provider`` disambiguates the same collision for inline speakers.
     """
     if provider is None:
         return {"model": model}
+    if engine in _PLAN_ENGINE_FACTS:
+        where, kind = _PLAN_ENGINE_FACTS[engine]
+        return {"provider": provider, "model": model, "where": where, "engine": kind}
     if asr_provider not in (None, "local") and provider == asr_provider:
         return {"provider": provider, "model": model, "where": "cloud", "engine": "asr"}
     if provider in LOCAL_DIARIZATION_ENGINES:
@@ -179,11 +199,16 @@ def record_transcription_run(
     diarization_provider: str | None,
     diarization_model: str | None,
     diarization_disabled: bool,
+    diarization_engine: str | None = None,
+    diarization_execution: str | None = None,
+    diarization_merge: str | None = None,
 ) -> None:
     """A transcript was saved: start a new run with its transcription and speaker steps.
 
     Speaker detection is recorded only when it is known: switched off, or an engine
-    reported itself. A post stage that diarizes later records it then.
+    reported itself. A post stage that diarizes later records it then. The
+    ``diarization_*`` plan facts say how it ran; the plan's engine also settles which
+    detector an id names (see :func:`diarization_facts`).
     """
     record_stage(
         db, file_id, "transcription", new_run=True, **transcription_facts(asr_provider, asr_model)
@@ -195,12 +220,38 @@ def record_transcription_run(
             db,
             file_id,
             "diarization",
-            **diarization_facts(diarization_provider, diarization_model, asr_provider=asr_provider),
+            execution=diarization_execution,
+            merge=diarization_merge,
+            **diarization_facts(
+                diarization_provider,
+                diarization_model,
+                asr_provider=asr_provider,
+                engine=diarization_engine,
+            ),
         )
 
 
-def record_diarization(db: Session, file_id: int, provider: str | None, model: str | None) -> None:
-    """A post stage (re-)detected speakers: update the speaker columns and the record."""
+def record_diarization(
+    db: Session,
+    file_id: int,
+    provider: str | None,
+    model: str | None,
+    *,
+    engine: str | None = None,
+    execution: str | None = None,
+    merge: str | None = None,
+) -> None:
+    """A post stage (re-)detected speakers: update the speaker columns and the record.
+
+    Args:
+        db: The post stage's write session (the one that saves the re-split segments).
+        file_id: ``media_file.id``.
+        provider: The detector's own id, read off its result (what actually ran).
+        model: The detector's model, likewise.
+        engine: The plan's detector (``local`` / ``pyannote_ai`` / ``asr_config``).
+        execution: How it ran (``post_stage_local`` / ``post_stage_cloud``).
+        merge: The granularity the turns were merged into the text at.
+    """
     from app.models.media import MediaFile
 
     media_file = db.get(MediaFile, file_id)
@@ -210,29 +261,26 @@ def record_diarization(db: Session, file_id: int, provider: str | None, model: s
     media_file.diarization_model = model
     media_file.diarization_disabled = False
     if provider is not None:
-        # No ``asr_provider``: a post stage is a separate detector by definition, so a
-        # local ``pyannote`` here is the engine even after the pyannote.ai STT service.
-        record_stage(db, file_id, "diarization", **diarization_facts(provider, model))
+        record_stage(
+            db,
+            file_id,
+            "diarization",
+            execution=execution,
+            merge=merge,
+            **diarization_facts(provider, model, engine=engine),
+        )
 
 
-def voiceprint_facts(embedding_service: Any) -> dict[str, Any]:
-    """Facts for a voiceprint pass run by a ``SpeakerEmbeddingService``.
+def voiceprint_facts(voiceprints: Any) -> dict[str, Any]:
+    """Facts for an embedding-stage pass, from the extractor's ``Voiceprints`` result.
 
-    Read AFTER extraction: a sidecar lost mid-run flips ``backend`` to ``pyannote``.
-    Never raises: an attribute the service does not carry is recorded as unknown, because
-    a provenance gap must not fail the voiceprint stage it describes.
+    Never raises: a field the result does not carry is recorded as unknown, because a
+    provenance gap must not fail the voiceprint stage it describes.
     """
-    from app.services.embedding_mode_service import MODE_V3
-    from app.services.embedding_mode_service import MODE_V4
-    from app.services.embedding_mode_service import EmbeddingModeService
-
-    mode = getattr(embedding_service, "mode", None)
     return {
-        "provider": getattr(embedding_service, "backend", None),
-        "model": getattr(embedding_service, "model_name", None),
-        "dims": EmbeddingModeService.get_embedding_dimension(mode)
-        if mode in (MODE_V3, MODE_V4)
-        else None,
+        "provider": getattr(voiceprints, "backend", None),
+        "model": getattr(voiceprints, "model", None),
+        "dims": getattr(voiceprints, "dims", None),
         "where": "server",
         "execution": "embedding_stage",
     }

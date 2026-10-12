@@ -20,19 +20,19 @@ NULL means "processed before this was recorded". There is no backfill on purpose
 existing columns cannot say where a step ran, and the read side composes what they do
 say, marked as legacy, rather than guessing the rest.
 
-Revision ID: v435_add_media_processing_provenance
-Revises: v433_add_requested_transcription_options
+Revision ID: v437_add_media_processing_provenance
+Revises: v436_lite_local_speaker_detection_to_automatic
 Create Date: 2026-10-11
 
-Numbering: v434 is taken by the WP3 data migration on its own branch; whichever merges
-second renumbers (``backend/alembic/CLAUDE.md``).
+Numbering: first written as v435 beside the WP3 branch's v434; renumbered to v437 to follow
+v436 when the branches merged (``backend/alembic/CLAUDE.md``).
 """
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "v435_add_media_processing_provenance"
-down_revision = "v433_add_requested_transcription_options"
+revision = "v437_add_media_processing_provenance"
+down_revision = "v436_lite_local_speaker_detection_to_automatic"
 branch_labels = None
 depends_on = None
 

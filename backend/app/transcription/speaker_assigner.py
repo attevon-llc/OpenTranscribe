@@ -13,6 +13,9 @@ Algorithm:
 
 import logging
 import time
+from collections.abc import Iterable
+from typing import Literal
+from typing import Protocol
 
 import numpy as np
 
@@ -23,10 +26,34 @@ logger = logging.getLogger(__name__)
 # Process words in chunks to bound memory: (CHUNK × n_diarize) float32 matrix
 _CHUNK_SIZE = 5000
 
+#: How speaker turns reach the text (plan C7): ``word`` assigns each timed word by overlap;
+#: ``segment`` assigns each segment by overlap and its words inherit that speaker, for a
+#: transcription model whose word times are absent or not trusted.
+MergeGranularity = Literal["word", "segment"]
+
+
+class SpeakerTurn(Protocol):
+    """A diarizer's speaker turn (``services.diarization.types.DiarizeSegment`` shape)."""
+
+    start: float
+    end: float
+    speaker: str
+
+
+def diarize_segments_to_frame(turns: Iterable[SpeakerTurn]) -> DiarizeResult:
+    """Speaker turns from any diarization provider as the frame :func:`assign_speakers` reads."""
+    rows = [(float(t.start), float(t.end), str(t.speaker)) for t in turns]
+    return DiarizeResult(
+        start=np.array([r[0] for r in rows], dtype=np.float64),
+        end=np.array([r[1] for r in rows], dtype=np.float64),
+        speaker=np.array([r[2] for r in rows], dtype=object),
+    )
+
 
 def assign_speakers(
     diarize_df: DiarizeResult,
     transcript_result: dict,
+    granularity: MergeGranularity = "word",
 ) -> dict:
     """Assign speaker labels to transcript segments and words.
 
@@ -34,9 +61,16 @@ def assign_speakers(
     computes overlap with diarization intervals via matrix operations, and
     assigns the dominant speaker per word and segment.
 
+    The one merge of speaker turns into text, for every engine (local diarizer, pyannote.ai,
+    another vendor's speakers). A word or segment that overlaps no turn takes the speaker of
+    the turn whose midpoint is nearest.
+
     Args:
         diarize_df: DiarizeResult with start/end/speaker numpy arrays.
         transcript_result: Dict with "segments" key containing transcript segments.
+        granularity: ``word`` (default) labels each timed word by its own overlap;
+            ``segment`` labels each segment by overlap and gives its words the segment's
+            speaker, so a speaker change inside a segment is not detected.
 
     Returns:
         Updated transcript_result with speaker assignments on segments and words.
@@ -92,6 +126,18 @@ def assign_speakers(
             mids = (d_starts + d_ends) / 2
             nearest_idx = np.argmin(np.abs(mids - seg_mid))
             seg["speaker"] = str(d_speaker_labels[nearest_idx])
+
+    if granularity == "segment":
+        for seg in segments:
+            for word in seg.get("words", []):
+                word["speaker"] = seg["speaker"]
+        logger.info(
+            "Segment-level speaker assignment: %d segments, %d diarization intervals in %.3fs",
+            len(segments),
+            n_diarize,
+            time.perf_counter() - step_start,
+        )
+        return transcript_result
 
     # --- Assign speakers to words (vectorized batch) ---
     # Collect all words with timestamps into flat arrays

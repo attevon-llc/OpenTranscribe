@@ -168,59 +168,59 @@ def _stage_audio_for_embeddings(file_uuid: str, inputs: dict, temp_dir: str) -> 
     return prepare_audio_for_transcription(temp_file_path, inputs["content_type"], temp_dir)
 
 
-def _extract_aggregated_embeddings(
-    file_uuid: str, task_id: str, inputs: dict, speaker_mapping: dict[str, int]
-) -> dict:
-    """Phase 2 — audio download, ffmpeg conversion and embedding inference.
+def _extract_aggregated_embeddings(file_uuid: str, task_id: str, inputs: dict) -> dict:
+    """Phase 2 — audio staging and the voiceprint extractor. **No DB session is open.**
 
-    **No DB session is open for any of this.** Returns one aggregated,
-    L2-normalized embedding per speaker DB id, so the matching phase needs
-    neither the audio nor the model.
+    Goes through the voiceprint stage's one interface
+    (``services/voiceprint_extractor``): audio path + speaker turns in, one L2-normalised
+    vector per speaker out. Turns are keyed by the speaker's DB id, so the result maps
+    straight back onto this file's speakers whatever produced the turns.
     """
     import tempfile
 
-    from app.services.speaker_embedding_service import SpeakerEmbeddingService
-    from app.utils.hardware_detection import detect_hardware
+    from app.services.voiceprint_extractor import SpeakerTurn
+    from app.services.voiceprint_extractor import get_voiceprint_extractor
+    from app.tasks.transcription.embeddings import _wait_for_migration_lock_to_clear
 
-    hardware_config = detect_hardware()
-    hardware_config.optimize_memory_usage()
-    logger.info("GPU memory synchronized before speaker embedding extraction")
-
-    embedding_service = SpeakerEmbeddingService()
+    turns = [
+        SpeakerTurn(speaker=str(seg["speaker_id"]), start=seg["start"], end=seg["end"])
+        for seg in inputs["processed_segments"]
+        if seg["speaker_id"] is not None
+    ]
+    # Real pause point for a running v4 migration, which shares the warm model (#657).
+    _wait_for_migration_lock_to_clear()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        audio_file_path = _stage_audio_for_embeddings(file_uuid, inputs, temp_dir)
+        _set_task_progress(task_id, 0.4)
+        voiceprints = get_voiceprint_extractor().extract(audio_file_path, turns)
+    inputs["voiceprint_facts"] = voiceprint_facts(voiceprints)
     logger.info(
-        f"Using speaker embedding mode: {embedding_service.mode} ({embedding_service.model_name})"
+        "Voiceprints for file %s: %d speakers, %d-d (%s)",
+        inputs["file_id"],
+        len(voiceprints.vectors),
+        voiceprints.dims,
+        voiceprints.model,
     )
-    try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            audio_file_path = _stage_audio_for_embeddings(file_uuid, inputs, temp_dir)
-            _set_task_progress(task_id, 0.4)
-            raw_embeddings = embedding_service.extract_embeddings_for_segments(
-                audio_file_path, inputs["processed_segments"], speaker_mapping
-            )
-        inputs["voiceprint_facts"] = voiceprint_facts(embedding_service)
-        # ``aggregate_embeddings`` mean-pools and L2-normalizes; feeding the
-        # result back through the matching service is a no-op re-normalization,
-        # so this is the same vector ``process_speaker_segments`` would have
-        # matched on.
-        return {
-            speaker_id: embedding_service.aggregate_embeddings(embeddings)
-            for speaker_id, embeddings in raw_embeddings.items()
-            if embeddings
-        }
-    finally:
-        # Free VRAM before the matching phase reopens a DB session.
-        embedding_service.cleanup()
-        hardware_config.optimize_memory_usage()
+    import numpy as np
+
+    return {int(label): np.asarray(vector) for label, vector in voiceprints.vectors.items()}
 
 
 def _match_and_finalize_embeddings(
     inputs: dict,
     task_id: str,
     aggregated_embeddings: dict,
-    speaker_mapping: dict[str, int],
     pipeline_task_id: str | None,
+    closes_pipeline: bool,
 ) -> int:
-    """Phase 3 — profile matching and task completion, in a short write session."""
+    """Phase 3 — profile matching and task completion, in a short write session.
+
+    ``closes_pipeline`` says whether this stage is the run's completion terminus. It is
+    when ``finalize_transcription`` deferred completion here (``inline_asr`` /
+    ``parallel_cloud``): the parent transcription task is completed and metered exactly
+    once, here. It is not after a post stage: ``rediarize_task`` already completed and
+    metered the run, so this stage only matches.
+    """
     from app.services.permission_service import PermissionService
     from app.services.speaker_matching_service import SpeakerMatchingService
     from app.utils.task_utils import update_task_status
@@ -236,7 +236,7 @@ def _match_and_finalize_embeddings(
         # use for it on this path is that aggregation.
         matching_service = SpeakerMatchingService(db, embedding_service=None)
         logger.info(
-            f"Starting speaker matching for {len(speaker_mapping)} speakers in file {file_id}"
+            f"Starting speaker matching for {len(aggregated_embeddings)} speakers in file {file_id}"
         )
         speaker_results = matching_service.process_speaker_embeddings_native(
             media_file_id=file_id,
@@ -253,84 +253,85 @@ def _match_and_finalize_embeddings(
         update_task_status(db, task_id, "in_progress", progress=0.9)
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
-        # Also mark the parent transcription task as completed if it was
-        # left at in_progress by postprocess (cloud ASR path).
-        from app.models.media import Task as TaskModel
-
-        parent_task = (
-            db.query(TaskModel)
-            .filter(
-                TaskModel.media_file_id == file_id,
-                TaskModel.task_type == "transcription",
-                TaskModel.status == "in_progress",
-            )
-            .first()
-        )
-        if parent_task:
-            parent_task.status = "completed"
-            parent_task.progress = 1.0
-            parent_task.completed = True
-            db.commit()
-
-            # Cloud-edition seam: a still-in_progress parent transcription
-            # task means finalize_transcription deferred completion to us
-            # (the cloud-ASR + provider-diarization path) — so THIS task is
-            # that run's completion terminus and must fire metering exactly
-            # once. The monolithic core.py path and the local-ASR path mark
-            # the parent completed themselves and meter inline, leaving no
-            # in_progress parent here, so this block (and its metering) is
-            # correctly skipped for them. run_id is the stable app-level
-            # pipeline task_id threaded in by finalize_transcription (NOT
-            # this task's transient celery request id), matching how
-            # finalize_transcription/rediarize pass run_id=task_id.
-            from app.tasks.rediarize_task import _resolve_asr_provider
-            from app.tasks.transcription.postprocess import _fire_completion_metering
-
-            _fire_completion_metering(
-                db,
-                file_id=file_id,
-                run_id=pipeline_task_id or task_id,
-                provider=_resolve_asr_provider(db, file_id),
-                success=True,
-            )
+        if closes_pipeline:
+            _complete_and_meter_parent(db, file_id, task_id, pipeline_task_id)
 
     return len(speaker_results) if speaker_results else 0
+
+
+def _complete_and_meter_parent(db, file_id: int, task_id: str, pipeline_task_id: str | None):
+    """Complete the parent transcription task this stage was delegated, and meter it once.
+
+    A still-in_progress parent means ``finalize_transcription`` deferred completion to us,
+    so THIS task is that run's completion terminus. ``run_id`` is the stable app-level
+    pipeline task id threaded in by ``finalize_transcription`` (never this task's transient
+    celery request id), matching how ``finalize_transcription``/``rediarize_task`` meter.
+    """
+    from app.models.media import Task as TaskModel
+
+    parent_task = (
+        db.query(TaskModel)
+        .filter(
+            TaskModel.media_file_id == file_id,
+            TaskModel.task_type == "transcription",
+            TaskModel.status == "in_progress",
+        )
+        .first()
+    )
+    if not parent_task:
+        return
+    parent_task.status = "completed"
+    parent_task.progress = 1.0
+    parent_task.completed = True
+    db.commit()
+
+    from app.tasks.rediarize_task import _resolve_asr_provider
+    from app.tasks.transcription.postprocess import _fire_completion_metering
+
+    _fire_completion_metering(
+        db,
+        file_id=file_id,
+        run_id=pipeline_task_id or task_id,
+        provider=_resolve_asr_provider(db, file_id),
+        success=True,
+    )
 
 
 @celery_app.task(bind=True, name="extract_speaker_embeddings", priority=GPUPriority.NEAR_REALTIME)
 def extract_speaker_embeddings_task(
     self,
     file_uuid: str,
-    speaker_mapping: dict[str, int],
     pipeline_task_id: str | None = None,
+    closes_pipeline: bool = True,
 ):
-    """
-    Extract speaker embeddings asynchronously after transcription completes.
+    """The voiceprint stage: per-speaker vectors for a saved transcript, then matching.
 
-    Runs in three phases, and the split is load-bearing. Previously the whole
-    body sat inside a single ``session_scope``: it SELECTed every
-    ``transcript_segment`` row for the file (full entities, plus a lazy
-    ``seg.speaker`` load per row), then downloaded the media from MinIO, ran an
-    ffmpeg conversion and loaded/ran the embedding model — all with that
-    transaction still open. On a large file that is tens of minutes of Postgres
-    backend sitting ``idle in transaction`` holding ACCESS SHARE on
-    ``transcript_segment``: it queues every ``ALTER TABLE`` (i.e. any Alembic
-    upgrade) behind it, pins the vacuum horizon on the largest table in the
-    product, and consumes a pool connection for the duration.
+    Runs after ANY speaker detection that did not already hand back vectors (a cloud
+    transcription vendor, pyannote.ai, or this server's engine when it returned none), on
+    the ``cpu`` queue. The vectors come from the one extractor interface
+    (``services/voiceprint_extractor``); matching, storage and clustering do not know which
+    implementation produced them.
 
-    Now: (1) a short read session returning plain data, (2) audio + model work
-    with **no** session held, (3) a short write session for profile matching and
-    task completion.
+    Runs in three phases, and the split is load-bearing. Previously the whole body sat
+    inside a single ``session_scope``: on a large file that was tens of minutes of Postgres
+    backend sitting ``idle in transaction`` holding ACCESS SHARE on ``transcript_segment``
+    (queueing every Alembic upgrade, pinning the vacuum horizon, holding a pool
+    connection). Now: (1) a short read session returning plain data, (2) audio + model work
+    with **no** session held, (3) a short write session for matching and task completion.
 
     Args:
-        file_uuid: UUID of the MediaFile
-        speaker_mapping: Mapping of speaker labels to database IDs
+        file_uuid: UUID of the MediaFile.
+        pipeline_task_id: The transcription run this stage belongs to (timing markers, and
+            the task it closes when ``closes_pipeline``).
+        closes_pipeline: Whether this stage is the run's completion terminus (completes and
+            meters the parent task). False after a post stage, which already did both.
     """
     from app.services.minio_service import cleanup_temp_audio
     from app.utils.task_utils import update_task_status
 
     task_id = self.request.id
     benchmark_timing.mark(pipeline_task_id, "speaker_upsert_start")
+    close_id = pipeline_task_id if closes_pipeline else None
 
     try:
         # Phase 1 — read (DB only, short).
@@ -340,19 +341,17 @@ def extract_speaker_embeddings_task(
             logger.warning(f"No transcript segments found for file {inputs['file_id']}")
             with session_scope() as db:
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            _close_pipeline_task(pipeline_task_id)
+            _close_pipeline_task(close_id)
             return {"status": "skipped", "message": "No segments to process"}
 
         _set_task_progress(task_id, 0.2)
 
-        # Phase 2 — audio + model. NO DB session is held here.
-        aggregated_embeddings = _extract_aggregated_embeddings(
-            file_uuid, task_id, inputs, speaker_mapping
-        )
+        # Phase 2 — audio + extractor. NO DB session is held here.
+        aggregated_embeddings = _extract_aggregated_embeddings(file_uuid, task_id, inputs)
 
         # Phase 3 — write (DB only, short).
         speakers_processed = _match_and_finalize_embeddings(
-            inputs, task_id, aggregated_embeddings, speaker_mapping, pipeline_task_id
+            inputs, task_id, aggregated_embeddings, pipeline_task_id, closes_pipeline
         )
 
         # Send completion notification so frontend updates with speaker labels
@@ -360,9 +359,6 @@ def extract_speaker_embeddings_task(
             from app.tasks.transcription.notifications import send_completion_notification
 
             send_completion_notification(inputs["user_id"], inputs["file_id"])
-            logger.info(
-                f"Sent completion notification for cloud-transcribed file {inputs['file_id']}"
-            )
         except Exception as notify_err:
             logger.warning(f"Failed to send completion notification: {notify_err}")
 
@@ -373,7 +369,7 @@ def extract_speaker_embeddings_task(
             cleanup_temp_audio(file_uuid)
         except Exception as cleanup_err:
             logger.debug(f"Temp audio cleanup after embedding extraction failed: {cleanup_err}")
-        _close_pipeline_task(pipeline_task_id)
+        _close_pipeline_task(close_id)
         return {
             "status": "success",
             "file_id": inputs["file_id"],
@@ -390,7 +386,7 @@ def extract_speaker_embeddings_task(
             cleanup_temp_audio(file_uuid)
         except Exception as cleanup_err:
             logger.debug(f"Temp audio cleanup after embedding error failed: {cleanup_err}")
-        _close_pipeline_task(pipeline_task_id, error=str(e))
+        _close_pipeline_task(close_id, error=str(e))
         return {"status": "error", "message": str(e)}
 
 
@@ -494,8 +490,14 @@ def update_speaker_embedding_on_reassignment(
                 update_speaker_segment_count(source_speaker_uuid, source_doc["segment_count"] - 1)
                 logger.info(f"Decremented source speaker {source_speaker_uuid} segment_count")
 
-        # Phase 4 — profile embedding refresh, in its own short session.
-        _update_affected_profiles(plan["affected_profile_ids"])
+        # Phase 4 — every aggregate averaging the shifted voiceprint, in its own session.
+        residual = _rebuild_affected_aggregates(plan)
+        if residual:
+            return {
+                "status": "partial",
+                "target_speaker_uuid": target_speaker_uuid,
+                "cleanup_residual_stages": sorted({str(r["stage"]) for r in residual}),
+            }
 
         logger.info(
             f"Successfully updated embeddings after segment {segment_uuid} "
@@ -553,15 +555,19 @@ def _load_reassignment_plan(
             logger.error(f"Media file not found for segment {segment_uuid}")
             return {"skip": {"status": "error", "reason": "media_file_not_found"}}
 
+        from app.services.speaker_cleanup import clusters_holding_speakers
+
         affected_profile_ids: set[int] = set()
         if target_speaker.profile_id:
             affected_profile_ids.add(int(target_speaker.profile_id))
+        affected_speaker_ids = {int(target_speaker.id)}
 
         source_speaker_exists = False
         if source_speaker_uuid:
             source_speaker = get_by_uuid(db, Speaker, source_speaker_uuid)
             if source_speaker:
                 source_speaker_exists = True
+                affected_speaker_ids.add(int(source_speaker.id))
                 if source_speaker.profile_id:
                     affected_profile_ids.add(int(source_speaker.profile_id))
 
@@ -588,6 +594,10 @@ def _load_reassignment_plan(
             },
             "source_speaker_exists": source_speaker_exists,
             "affected_profile_ids": affected_profile_ids,
+            # The target's voiceprint shifts below, and every centroid that averages it
+            # shifts with it (issue #1233); read here, while the rows are at hand.
+            "affected_cluster_uuids": clusters_holding_speakers(db, affected_speaker_ids),
+            "owner_id": int(target_speaker.user_id),
         }
 
 
@@ -626,21 +636,27 @@ def _extract_segment_embedding(plan: dict):
         )
 
 
-def _update_affected_profiles(profile_ids: set[int]) -> None:
-    """Refresh profile embeddings for the profiles a reassignment touched.
+def _rebuild_affected_aggregates(plan: dict) -> list[dict]:
+    """Rebuild every centroid and profile embedding that averages a shifted voiceprint.
 
-    Takes plain ids and opens its own short session rather than borrowing the
+    A reassignment moves the target's voiceprint (drift, not removal): its profile's
+    embedding and the centroid of every cluster holding it, or the source, still carry
+    the old vector until rebuilt (issue #1233). ``speaker_cleanup`` is the one rebuild
+    path, and it returns, rather than swallows, what it could not rebuild (it also logs
+    it at ERROR).
+
+    Takes plain data and opens its own short session rather than borrowing the
     caller's, so it cannot extend a transaction that spans slow work.
     """
-    from app.services.profile_embedding_service import ProfileEmbeddingService
+    from app.services.speaker_cleanup import SpeakerImpact
+    from app.services.speaker_cleanup import reconcile_speaker_impact
 
-    if not profile_ids:
-        return
-
+    impact = SpeakerImpact(
+        owner_ids={int(plan["owner_id"])},
+        cluster_uuids=set(plan["affected_cluster_uuids"]),
+        profile_ids=set(plan["affected_profile_ids"]),
+    )
+    if impact.is_empty():
+        return []
     with session_scope() as db:
-        for profile_id in profile_ids:
-            try:
-                ProfileEmbeddingService.update_profile_embedding(db, profile_id)
-                logger.info(f"Updated profile embedding for profile {profile_id}")
-            except Exception as e:
-                logger.warning(f"Failed to update profile embedding {profile_id}: {e}")
+        return reconcile_speaker_impact(db, impact)

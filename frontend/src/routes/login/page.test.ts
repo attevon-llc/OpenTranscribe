@@ -33,7 +33,7 @@
  *   email field instead — a malformed identifier, not a rejected one).
  * - On `result.success`, the page sets `loginSuccess = true` (which swaps the
  *   whole page for a "signing in..." transition — see the `{#if
- *   loginSuccess}` block) and, after a 600ms delay, calls
+ *   loginSuccess}` block) and, after a 250ms delay, calls
  *   `goto('/', { replaceState: true })`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -94,7 +94,7 @@ vi.mock('$components/LoginBanner.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/mfa/MfaEnrollment.svelte', () => ({ default: noopComponent() }));
 
 import Page from './+page.svelte';
-import { gotoCalls } from '../../test-mocks/app-navigation';
+import { gotoCalls, preloadCodeCalls } from '../../test-mocks/app-navigation';
 
 function authMethods(overrides: Partial<AuthMethods> = {}): AuthMethods {
   return {
@@ -128,6 +128,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   gotoCalls.length = 0;
+  preloadCodeCalls.length = 0;
   mockGetAuthMethods.mockResolvedValue(authMethods());
   // The OIDC-callback preamble keys off `?code=&state=` and remembers handled
   // states in sessionStorage; a leftover URL or key would silently reroute an
@@ -209,8 +210,13 @@ describe('login/+page — credential submission', () => {
     await waitFor(() => expect(container.querySelector('.login-success-fullpage')).not.toBeNull());
     expect(gotoCalls).toEqual([]);
 
-    // ...then redirects home after the documented 600ms delay.
-    await vi.advanceTimersByTimeAsync(600);
+    // ...the gallery code was already requested while the credentials were being verified...
+    expect(preloadCodeCalls).toEqual(['/']);
+
+    // ...then redirects home after the short transition beat (not the old 600 ms).
+    await vi.advanceTimersByTimeAsync(249);
+    expect(gotoCalls).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
     expect(gotoCalls).toEqual(['/']);
   });
 });

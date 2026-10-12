@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, preloadCode } from '$app/navigation';
   import { page } from '$app/stores';
   import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
@@ -38,6 +38,10 @@
   let showPassword = false;
   let successMessage = "";
   let loginSuccess = false;
+  // How long the "signing in" screen shows before navigating home. It was 600 ms, which sat on
+  // top of the login round trip for every sign-in; the gallery code is now preloaded while the
+  // credentials are being verified, so a short beat is all the transition needs.
+  const SIGNED_IN_REDIRECT_DELAY_MS = 250;
 
   // MFA state. `mfaToken` is a short-lived half-token: memory only, never
   // localStorage/sessionStorage, and cleared on every exit from the MFA steps.
@@ -204,7 +208,7 @@
 
           if (result.success) {
             loginSuccess = true;
-            setTimeout(() => goto('/', { replaceState: true }), 600);
+            setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
             return;
           } else {
             // Only show error if it's not a state-related issue (likely double-request)
@@ -348,7 +352,7 @@
     const result = await loginWithExternalAuth();
     if (result.success) {
       loginSuccess = true;
-      setTimeout(() => goto('/', { replaceState: true }), 600);
+      setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
     }
@@ -417,6 +421,10 @@
 
     loading = true;
 
+    // Fetch the gallery's route code while the credentials are verified, so the navigation
+    // that follows a successful sign-in is not also a code download.
+    void preloadCode('/').catch(() => {});
+
     try {
       // Call the login function from our auth store
       const result = await login(email.trim(), password);
@@ -467,7 +475,7 @@
         loading = false;
 
         // Brief delay so the success state is visible before navigation
-        setTimeout(() => goto('/', { replaceState: true }), 600);
+        setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
         if (result.status === 429) retryCountdown.start(result.retry_after);
@@ -565,7 +573,7 @@
     forcedNewPassword = "";
     forcedConfirmPassword = "";
     toastStore.success($t('auth.forcedChange.success'));
-    // Navigate immediately rather than through the usual 600 ms "signing in"
+    // Navigate immediately rather than through the usual "signing in"
     // flourish: the hold has already dropped, so the shell would render its
     // redirect placeholder over this page for the whole delay.
     goto('/', { replaceState: true });
@@ -617,7 +625,7 @@
     if (result.success) {
       await recordBannerConsent();
       loginSuccess = true;
-      setTimeout(() => goto('/', { replaceState: true }), 600);
+      setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
     }
@@ -638,7 +646,7 @@
       if (result.success) {
         await recordBannerConsent();
         loginSuccess = true;
-        setTimeout(() => goto('/', { replaceState: true }), 600);
+        setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
       } else {
         toastStore.error(result.message || $t('auth.mfaVerificationFailed'));
         mfaCode = "";
@@ -670,7 +678,7 @@
     password = "";
     await recordBannerConsent();
     loginSuccess = true;
-    setTimeout(() => goto('/', { replaceState: true }), 600);
+    setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
   }
 
   // Half-token spent/expired, or the user backed out — drop it and show the
@@ -710,7 +718,7 @@
 
       bannerConsentPending = false;
       loginSuccess = true;
-      setTimeout(() => goto('/', { replaceState: true }), 600);
+      setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
       return;
     }
 

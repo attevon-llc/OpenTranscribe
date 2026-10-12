@@ -478,6 +478,51 @@ def test_lite_refuses_a_transcription_re_run_before_deleting_the_transcript(
     assert _speaker_count(db_session, transcribed_file) == 1
 
 
+@pytest.mark.parametrize("deployment", ["lite", "full"])
+def test_bulk_re_detection_reports_the_lite_refusal_per_file_before_clearing_speakers(
+    client,
+    user_token_headers,
+    db_session,
+    transcribed_file,
+    world,
+    pipeline_env,
+    monkeypatch,
+    deployment,
+):
+    """The gallery's bulk action makes the single-file refusal per file: on lite the result
+    carries the plan's code and fixed sentence and the speakers stay; the full image re-runs."""
+    from app.api.endpoints.files import management
+
+    monkeypatch.setattr(management, "transcript_is_regenerable", lambda db, media_file: True)
+    if deployment == "lite":
+        pipeline_env("lite")
+    world.add_asr_config("deepgram", "nova-3", active=True)
+    world.store("transcription_diarization_source", "local")
+
+    response = client.post(
+        "/api/files/management/bulk-action",
+        json={
+            "file_uuids": [str(transcribed_file.uuid)],
+            "action": "reprocess",
+            "stages": ["rediarize"],
+        },
+        headers=user_token_headers,
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    (result,) = response.json()
+    if deployment == "lite":
+        assert (result["success"], result["error"], result["message"]) == (
+            False,
+            LOCAL_DIAR,
+            ISSUE_MESSAGES[LOCAL_DIAR],
+        )
+        assert _speaker_count(db_session, transcribed_file) == 1
+    else:
+        assert (result["success"], result["error"]) == (True, None)
+        assert _speaker_count(db_session, transcribed_file) == 0
+
+
 def test_lite_manual_re_detection_with_pyannote_ai_is_published_on_cloud_asr(
     db_session, normal_user, world, pipeline_env, store_pyannote_key, monkeypatch
 ):

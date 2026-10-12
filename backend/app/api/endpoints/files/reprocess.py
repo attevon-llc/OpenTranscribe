@@ -403,26 +403,25 @@ def _dispatch_manual_rediarize(
     )
 
 
-def refuse_unrunnable_rerun(
+def unrunnable_rerun_code(
     db: Session,
     owner_id: int,
     stages: list[str] | None,
     *,
     whisper_model: str | None,
     disable_diarization: bool,
-) -> None:
-    """409 ``{code, message}`` BEFORE any destructive write when the re-run cannot run.
+) -> str | None:
+    """The pipeline-plan code that refuses this re-run, or ``None`` when it can run.
 
     A transcription re-run deletes the transcript and then dispatches; a blocking pipeline
     plan used to surface only after that delete. A manual re-detection clears the speakers
     first; on lite (no local speaker detection, #1228) a choice that resolves to this
     server's engine (``local``, or Automatic, which cannot re-run a vendor's speakers after
-    the fact, plan Q9) can never run there. Both are now refused while the data is intact.
+    the fact, plan Q9) can never run there. Both are refused while the data is intact.
     """
     from app.services.pipeline_plan import post_stage_engine
     from app.services.pipeline_plan_inputs import plan_for_user
     from app.utils.lite_mode import is_lite_deployment
-    from app.utils.lite_mode import plan_refusal
 
     if not stages or "transcription" in stages:
         plan = plan_for_user(
@@ -432,12 +431,34 @@ def refuse_unrunnable_rerun(
             disable_diarization=True if disable_diarization else None,
         )
         blocking = plan.blocking()
-        if blocking:
-            raise plan_refusal(blocking[0].code)
-    elif "rediarize" in stages and is_lite_deployment():
+        return blocking[0].code if blocking else None
+    if "rediarize" in stages and is_lite_deployment():
         plan = plan_for_user(db, owner_id)
         if post_stage_engine(plan.diarization.engine) == "local":
-            raise plan_refusal("local_diarization_unavailable")
+            return "local_diarization_unavailable"
+    return None
+
+
+def refuse_unrunnable_rerun(
+    db: Session,
+    owner_id: int,
+    stages: list[str] | None,
+    *,
+    whisper_model: str | None,
+    disable_diarization: bool,
+) -> None:
+    """409 ``{code, message}`` BEFORE any destructive write when the re-run cannot run."""
+    from app.utils.lite_mode import plan_refusal
+
+    code = unrunnable_rerun_code(
+        db,
+        owner_id,
+        stages,
+        whisper_model=whisper_model,
+        disable_diarization=disable_diarization,
+    )
+    if code is not None:
+        raise plan_refusal(code)
 
 
 def dispatch_selective_tasks(

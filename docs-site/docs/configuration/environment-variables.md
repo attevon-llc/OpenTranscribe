@@ -110,13 +110,12 @@ cloud service, or Off), and can be skipped per file through the upload API
 (`disable_diarization`). Every run is planned from that choice.
 No environment variable turns speaker detection off for a deployment.
 
-`ENABLE_DIARIZATION` (`.env.example` ships `true`) is still read when the engine
-configuration is built, but every transcription run then overrides it with the run's plan, so
-it has no effect on whether speakers are detected. Its only remaining visible effect is the
-"Diarization" line of the CPU-only advisory in Settings → System Statistics, which reports the
-variable's value. The CPU installer (`setup-opentranscribe.sh` on a host with no GPU, or with
-`--cpu`) still writes `ENABLE_DIARIZATION=false`; that does **not** stop speaker detection. To
-run without it, choose **Off** in Settings (or skip speaker detection for a file).
+There used to be an `ENABLE_DIARIZATION` variable. It is no longer read or written: every
+transcription run takes its speaker-detection setting from the run's plan, so the variable
+controlled nothing. The installer no longer writes it, `.env.example` no longer lists it, and
+Settings → System Statistics no longer reports it. A leftover `ENABLE_DIARIZATION` line in an
+existing `.env` is ignored and can be deleted. To run without speaker detection, choose **Off**
+in Settings (or skip speaker detection for a file).
 
 ### Speaker Detection Use Cases
 

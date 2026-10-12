@@ -348,7 +348,7 @@ Automatic detection and repair of inconsistent speaker embeddings:
 
 Choose **Off (one speaker for the whole recording)** under **Settings → Speaker Identification → Speaker Detection** to skip speaker detection on your uploads. The transcript is still produced; every segment is assigned to one speaker, and speaker profiles and cross-file matching do not run for those files. Use it for dictation, voicemail or single-speaker recordings.
 
-The upload API also accepts a per-file `disable_diarization` flag; the upload dialog does not offer a per-file switch. The server-wide `ENABLE_DIARIZATION` variable no longer turns speaker detection off: the choice in Settings decides.
+The upload API also accepts a per-file `disable_diarization` flag; the upload dialog does not offer a per-file switch. There is no server-wide variable for this (the old `ENABLE_DIARIZATION` is gone): the choice in Settings decides.
 
 ### pyannote.ai Cloud Diarization (New in v0.4.0)
 

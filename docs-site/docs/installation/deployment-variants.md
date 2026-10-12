@@ -55,14 +55,13 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 
 `--cpu` (or `OPENTRANSCRIBE_FORCE_CPU=1`) writes `FORCE_CPU_MODE=true` to `.env`, and
 `opentranscribe.sh` then never loads the GPU overlays, even if an NVIDIA runtime appears later.
-On a CPU host the installer recommends the small `base` Whisper model and writes
-`ENABLE_DIARIZATION=false`.
+On a CPU host the installer recommends the small `base` Whisper model.
 
-:::caution Speaker detection is not switched off by `ENABLE_DIARIZATION`
-In this release each file's speaker detection follows the user's **Speaker detection** setting,
-not `ENABLE_DIARIZATION`. On a CPU-only host, speaker detection on this server runs on the CPU
-and is slow. To skip it, set **Speaker detection** to **Off** in Settings. See
-[environment variables](../configuration/environment-variables.md) for what the variable does.
+:::caution Speaker detection is not switched off by CPU mode
+Each file's speaker detection follows the user's **Speaker detection** setting. On a CPU-only
+host, speaker detection on this server runs on the CPU and is slow. To skip it, set **Speaker
+detection** to **Off** in Settings. The old `ENABLE_DIARIZATION` variable is gone; see
+[environment variables](../configuration/environment-variables.md).
 :::
 
 ### Lite (cloud-only)

@@ -221,3 +221,22 @@ def test_a_failed_write_does_not_poison_the_stage_transaction(db_session, monkey
     )
     with pytest.raises(ProgrammingError):
         db_session.execute(text("UPDATE no_such_table SET x = 1"))
+
+
+def test_the_post_stage_can_record_how_it_ran(db_session):
+    """The facts the plan-driven post stage (WP3) knows: execution and merge granularity."""
+    file_id = _make_file(db_session)
+    assert record_stage(
+        db_session,
+        file_id,
+        "diarization",
+        provider="pyannote.ai",
+        model="precision-3",
+        where="cloud",
+        engine="pyannote_ai",
+        execution="post_stage_cloud",
+        merge="segment",
+    )
+    entry = _document(db_session, file_id)["steps"]["diarization"]
+    assert (entry["execution"], entry["merge"]) == ("post_stage_cloud", "segment")
+    assert not record_stage(db_session, file_id, "diarization", merge="sentence")

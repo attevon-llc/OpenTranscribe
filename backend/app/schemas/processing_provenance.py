@@ -46,6 +46,8 @@ class ProvenanceEntry(BaseModel):
     engine: str | None = Field(default=None, max_length=32)
     execution: str | None = Field(default=None, max_length=32)
     timing: Timing | None = None
+    #: Speaker detection: the granularity speaker turns were merged into the text at.
+    merge: Timing | None = None
     dims: int | None = Field(default=None, ge=1, le=8192)
     completed_at: datetime | None = None
 

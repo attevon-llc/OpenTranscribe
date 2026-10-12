@@ -757,3 +757,40 @@ describe('Processing pipeline row (#1227)', () => {
     );
   });
 });
+
+describe('opening the modal fetches each thing once', () => {
+  // The modal is mounted already open (the layout imports it on demand), so BOTH the onMount
+  // loaders and the "just opened" block ran and each endpoint was requested twice.
+  const callsTo = (path: string) => mockAxios.get.mock.calls.filter(([url]) => url === path).length;
+
+  it('requests the statistics bundle once when the statistics section is the landing section', async () => {
+    setUser('admin');
+    settingsModalStore.open('system-statistics');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+    await waitFor(() => expect(callsTo('/system/stats')).toBeGreaterThan(0));
+
+    expect(callsTo('/system/stats')).toBe(1);
+    expect(callsTo('/search/reindex/status')).toBe(1);
+    expect(callsTo('/search/index-health')).toBe(1);
+  });
+
+  it('requests the pending-approval count once for an admin', async () => {
+    setUser('admin');
+    settingsModalStore.open('system-statistics');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(mockUserApprovalsApi.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later section switch still refetches (single-flight is not a cache)', async () => {
+    setUser('admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+    mockAxios.get.mockClear();
+
+    await fireEvent.click(navItem(container, 'settings.statistics.title') as HTMLElement);
+    await waitFor(() => expect(callsTo('/system/stats')).toBe(1));
+  });
+});

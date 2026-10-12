@@ -553,20 +553,9 @@
     // Load recording settings
     loadRecordingSettings();
 
-    // Load statistics for any user
-    if (activeSection === 'system-statistics') {
-      loadStats();
-    }
-
-    // Load admin data if admin
-    if (isAdmin) {
-      // The count drives the sidebar badge, so it is fetched regardless of which
-      // section is open.
-      loadPendingApprovalCount();
-      if (activeSection === 'admin-users') {
-        loadAdminUsers();
-      }
-    }
+    // Section data and the admin badge count are NOT loaded here: this component mounts already
+    // open (the layout imports it on demand), so the "just opened" block below runs on init and
+    // owns those loads. Loading them in both places requested every endpoint twice.
 
     // Add escape key listener
     document.addEventListener('keydown', handleKeyDown);

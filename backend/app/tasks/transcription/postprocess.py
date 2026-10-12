@@ -20,16 +20,17 @@ from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
-from app.core.constants import gpu_preferred_queue
 from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import clear_run_markers
 from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
+from app.services.file_provenance import record_inline_voiceprints
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 from app.utils.task_utils import update_task_status_with_duration
 from app.utils.websocket_notify import send_ws_event_for_file
 
+from .context import plan_of
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
 from .run_ownership import SUPERSEDED
@@ -204,135 +205,56 @@ def _finalize(gpu_result: dict) -> dict:
     downstream_tasks = gpu_result.get("downstream_tasks")
 
     post_start = time.perf_counter()
-    # When we dispatch a GPU-side task that still needs the preprocessed
-    # WAV (cloud ASR → speaker embedding, or cloud ASR → local rediarize)
-    # we MUST NOT clean up the temp audio here — those downstream tasks
-    # will clean it up themselves once they finish. Phase 2 PR #4 relies
-    # on this for the cloud-ASR embedding path to read from scratch.
+    # When we dispatch a stage that still needs the preprocessed WAV (the
+    # speaker-detection post stage, or the voiceprint stage) we MUST NOT clean up
+    # the temp audio here — those tasks clean it up themselves once they finish.
+    # Phase 2 PR #4 relies on this for the embedding stage to read from scratch.
     defer_temp_cleanup = False
 
     try:
-        diarization_disabled = gpu_result.get("diarization_disabled", False)
-        diarization_source = gpu_result.get("diarization_source", "provider")
-        is_cloud_asr = asr_provider and asr_provider != "local"
-        needs_local_diarization = (
-            is_cloud_asr and diarization_source == "local" and not diarization_disabled
-        )
-
+        plan = plan_of(gpu_result)
         # Speaker matching must complete before marking "completed" so the
         # frontend shows matched profile names, not generic "Speaker 1" labels.
-        if needs_local_diarization:
-            # Cloud ASR + local diarization: dispatch rediarize_task to GPU
-            # The rediarize task handles everything: diarization, speaker assignment,
-            # embedding extraction, and downstream task dispatch.
-            send_progress_notification(user_id, file_id, 0.85, "Queuing local speaker diarization")
-            try:
-                from app.tasks.rediarize_task import rediarize_task
-
-                from .user_settings import resolve_speaker_range_for_user
-
-                speaker_range = resolve_speaker_range_for_user(
-                    user_id,
-                    gpu_result.get("min_speakers"),
-                    gpu_result.get("max_speakers"),
-                    gpu_result.get("num_speakers"),
+        # ``handed_off`` names the stage that now owns the run's completion (and its
+        # metering): exactly one terminus per run.
+        handed_off: str | None = None
+        if plan.diarization.execution in ("post_stage_local", "post_stage_cloud"):
+            handed_off = "post_stage" if _dispatch_post_stage(gpu_result, plan) else None
+        elif plan.speaker_id.execution == "embedding_stage":
+            handed_off = "voiceprint_stage" if _dispatch_embedding_stage(gpu_result) else None
+        elif plan.speaker_id.execution == "inline_native":
+            # This server's engine diarized inside the GPU stage and handed back the
+            # per-speaker vectors: match them here, nothing to dispatch.
+            send_progress_notification(user_id, file_id, 0.80, "Processing speaker identification")
+            if use_native and native_embeddings:
+                _process_native_embeddings(
+                    file_id, user_id, task_id, native_embeddings, speaker_mapping
                 )
-                rediarize_task.apply_async(
-                    kwargs={
-                        "file_uuid": str(file_uuid),
-                        "min_speakers": speaker_range.min_speakers,
-                        "max_speakers": speaker_range.max_speakers,
-                        "num_speakers": speaker_range.num_speakers,
-                        "downstream_tasks": downstream_tasks,
-                        # This rediarize completes a fresh billable pipeline run —
-                        # it is the metering terminus (we deliberately don't meter
-                        # here to avoid double-counting), and it meters under THIS
-                        # pipeline's id so the reservation taken at dispatch is
-                        # released and replays dedup on a stable key.
-                        "pipeline_completion": True,
-                        "pipeline_task_id": task_id,
-                    },
-                    # Resolved at CALL time, not pinned to 'gpu' (issue #865): this
-                    # is the cloud-ASR-plus-local-diarization branch, which is
-                    # exactly the shape a lite deployment runs — and lite has no
-                    # 'gpu' consumer, so the pin published this into a dead queue
-                    # while the pipeline reported progress and waited forever.
-                    queue=gpu_preferred_queue(),
-                )
-                # rediarize consumes the temp WAV on the GPU worker; keep
-                # the file around until that task finishes its own cleanup.
-                defer_temp_cleanup = True
-                logger.info(f"Dispatched local rediarization for cloud-transcribed file {file_id}")
-            except Exception as e:
-                logger.warning(f"Failed to dispatch rediarization: {e}")
-        elif not diarization_disabled:
-            if is_cloud_asr:
-                # Cloud ASR with provider diarization: dispatch CPU embedding extraction.
-                # This is embedding extraction from already-known segments — no GPU
-                # diarization pass — so it belongs on the CPU queue, which lite mode
-                # (docker-compose.lite.yml) actually runs a worker for (issue #584;
-                # the GPU queue has zero consumers there).
-                send_progress_notification(
-                    user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
-                )
-                try:
-                    from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
-
-                    extract_speaker_embeddings_task.apply_async(
-                        args=[str(file_uuid), speaker_mapping],
-                        kwargs={"pipeline_task_id": task_id},
-                        queue=CeleryQueues.CPU,
-                    )
-                    # Embedding task reads the preprocessed WAV; defer
-                    # cleanup until it finishes (it cleans up itself).
-                    defer_temp_cleanup = True
-                    logger.info(
-                        f"Dispatched speaker embedding extraction to CPU queue for "
-                        f"cloud-transcribed file {file_id}"
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to dispatch speaker embedding task: {e}")
-            else:
-                # Local ASR: process embeddings inline
-                send_progress_notification(
-                    user_id, file_id, 0.80, "Processing speaker identification"
-                )
-
-                if use_native and native_embeddings:
-                    _process_native_embeddings(
-                        file_id, user_id, task_id, native_embeddings, speaker_mapping
-                    )
-
-                # Store v4 centroids if applicable
-                if native_embeddings and not use_native:
-                    _store_v4_centroids(
-                        file_id, file_uuid, user_id, native_embeddings, speaker_mapping
-                    )
+            if native_embeddings and not use_native:
+                _store_v4_centroids(file_id, file_uuid, user_id, native_embeddings, speaker_mapping)
         else:
             logger.info(f"Skipping speaker embeddings for file {file_id} (diarization disabled)")
+        defer_temp_cleanup = handed_off is not None
 
-        if needs_local_diarization:
-            # Cloud ASR + local diarization: mark transcription completed (text is usable),
-            # rediarize_task will send its own completion notification after GPU diarization
+        if handed_off == "post_stage":
+            # The text is usable now; the post stage sends its own completion notification
+            # and is the run's metering terminus (never here: no double count).
             send_progress_notification(
-                user_id, file_id, 0.90, "Transcription complete, diarizing on GPU..."
+                user_id, file_id, 0.90, "Transcription complete, detecting speakers..."
             )
             with session_scope() as db:
                 _task, task_duration_seconds = update_task_status_with_duration(
                     db, task_id, "completed", progress=1.0, completed=True
                 )
             send_completion_notification(user_id, file_id, duration_seconds=task_duration_seconds)
-        elif is_cloud_asr and not diarization_disabled:
-            # Cloud ASR with provider diarization: embedding task runs async on GPU
+        elif handed_off == "voiceprint_stage":
+            # The voiceprint stage completes, notifies and meters the run.
             send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.90)
-            # Completion notification will be sent by extract_speaker_embeddings_task
         else:
-            # Local ASR or diarization disabled: embeddings already done — mark completed.
-            # This is the single-task terminus for the local pipeline, so fire the
-            # metering hook here (the cloud-ASR + local-diarization path meters from
-            # rediarize_task instead, to avoid double-counting the same run).
+            # Nothing handed off (inline speakers, none, or a hand-off that could not be
+            # queued): everything is done — this is the run's single metering terminus.
             send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
             with session_scope() as db:
                 _task, task_duration_seconds = update_task_status_with_duration(
@@ -404,6 +326,82 @@ def _finalize(gpu_result: dict) -> dict:
         "file_id": file_id,
         "segment_count": gpu_result.get("segment_count", 0),
     }
+
+
+def _dispatch_post_stage(gpu_result: dict, plan) -> bool:
+    """Queue the plan's post stage (speaker detection after the transcript is saved).
+
+    ``rediarize_task`` with the plan's engine and merge granularity, on the plan's queue:
+    ``cloud-asr`` for a cloud detector (no GPU slot held while the vendor works),
+    ``gpu_preferred_queue()`` for this server's engine. It is the run's completion and
+    metering terminus. Returns True when queued: it then owns the temp WAV.
+    """
+    from app.services.pipeline_plan import post_stage_engine
+    from app.tasks.rediarize_task import rediarize_task
+
+    from .user_settings import resolve_speaker_range_for_user
+
+    file_id, user_id = gpu_result["file_id"], gpu_result["user_id"]
+    send_progress_notification(user_id, file_id, 0.85, "Queuing speaker detection")
+    issues = [issue.code for issue in plan.issues if issue.severity == "warning"]
+    try:
+        speaker_range = resolve_speaker_range_for_user(
+            user_id,
+            gpu_result.get("min_speakers"),
+            gpu_result.get("max_speakers"),
+            gpu_result.get("num_speakers"),
+        )
+        rediarize_task.apply_async(
+            kwargs={
+                "file_uuid": str(gpu_result["file_uuid"]),
+                "min_speakers": speaker_range.min_speakers,
+                "max_speakers": speaker_range.max_speakers,
+                "num_speakers": speaker_range.num_speakers,
+                "downstream_tasks": gpu_result.get("downstream_tasks"),
+                "pipeline_completion": True,
+                "pipeline_task_id": gpu_result["task_id"],
+                "engine": post_stage_engine(plan.diarization.engine),
+                "merge": plan.diarization.merge,
+                "diarizer_config_uuid": plan.diarization.config_uuid,
+            },
+            queue=plan.diarization.queue,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to dispatch the speaker-detection post stage: {e}")
+        return False
+    logger.info(
+        "Dispatched %s speaker detection (%s) for file %s on %s; plan warnings: %s",
+        plan.diarization.engine,
+        plan.diarization.execution,
+        file_id,
+        plan.diarization.queue,
+        issues or "none",
+    )
+    return True
+
+
+def _dispatch_embedding_stage(gpu_result: dict) -> bool:
+    """Queue the voiceprint stage on ``cpu`` for speakers that came without vectors.
+
+    A cloud transcription that returned speakers (``inline_asr``) or a cloud detector run
+    beside it (``parallel_cloud``). It completes, notifies and meters the run. Returns True
+    when queued: it then owns the temp WAV.
+    """
+    from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
+
+    file_id, user_id = gpu_result["file_id"], gpu_result["user_id"]
+    send_progress_notification(user_id, file_id, 0.80, "Dispatching speaker embedding extraction")
+    try:
+        extract_speaker_embeddings_task.apply_async(
+            args=[str(gpu_result["file_uuid"])],
+            kwargs={"pipeline_task_id": gpu_result["task_id"]},
+            queue=CeleryQueues.CPU,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+        return False
+    logger.info(f"Dispatched the voiceprint stage to the CPU queue for file {file_id}")
+    return True
 
 
 def _fire_completion_metering(
@@ -621,6 +619,7 @@ def _process_native_embeddings(
             native_embeddings=db_embeddings,
             accessible_profile_ids=accessible_ids,
         )
+        record_inline_voiceprints(db, file_id, next(iter(db_embeddings.values())).shape[0])
         update_task_status(db, task_id, "in_progress", progress=0.85)
 
     logger.info(

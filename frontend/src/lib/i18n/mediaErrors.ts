@@ -20,6 +20,7 @@ const MEDIA_ERROR_REASON_I18N_KEY: Record<MediaErrorReason, string> = {
   permission_error: 'errors.media.permissionError',
   interrupted: 'errors.media.interrupted',
   diarization_not_configured: 'errors.media.diarizationNotConfigured',
+  pipeline_not_runnable: 'errors.media.pipelineNotRunnable',
   unclassified: 'errors.media.unclassified',
 };
 

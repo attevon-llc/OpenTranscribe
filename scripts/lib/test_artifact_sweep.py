@@ -252,9 +252,11 @@ TEST_DOCKER_LABELS = frozenset({'ot-test-artifact=1', 'ot-throwaway-pg=1'})
 TEST_CONTAINER_SPECS: list[ArtifactSpec] = [
     _spec(
         'throwaway-postgres',
-        rf'ot-(shared-throwaway-pg|cleanup-data-test|cleanup-test|restore600-netpg)-{_H12}',
+        rf'ot-(shared-throwaway-pg|cleanup-data-test|cleanup-test|restore600-netpg'
+        rf'|migration-tcp)-{_H12}',
         TIER_B,
-        'integration/conftest.py, test_cleanup_test_*_isolated*.py, scheduled backup roundtrip',
+        'integration/conftest.py, test_cleanup_test_*_isolated*.py, scheduled backup '
+        'roundtrip, test_v436_lite_settings_migration.py',
     ),
     _spec('throwaway-opensearch', rf'ot-vp658-os-{_H12}', TIER_B, 'voiceprint backup roundtrip'),
     _spec(

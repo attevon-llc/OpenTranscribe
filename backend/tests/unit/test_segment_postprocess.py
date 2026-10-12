@@ -27,6 +27,23 @@ class TestResegmentBySpeaker:
         assert len(result) == 1
         assert result[0] is seg  # unchanged, same object
 
+    def test_a_segment_takes_the_speaker_all_its_words_agree_on(self):
+        """A vendor segment padded with silence can be labelled by interval overlap with a
+        speaker who says none of its words (#1226/#1236): the words decide, not the pad."""
+        seg = {
+            "start": 0.0,
+            "end": 10.0,
+            "text": "hi there",
+            "speaker": "SPEAKER_00",
+            "words": [
+                {"word": "hi", "start": 0.0, "end": 1.0, "speaker": "SPEAKER_01"},
+                {"word": " there", "start": 1.0, "end": 2.0, "speaker": "SPEAKER_01"},
+            ],
+        }
+        result = resegment_by_speaker([seg])
+        assert [(r["speaker"], r["text"]) for r in result] == [("SPEAKER_01", "hi there")]
+        assert seg["speaker"] == "SPEAKER_00", "the input segment is not mutated"
+
     def test_no_words_passthrough(self):
         seg = {"start": 0.0, "end": 2.0, "text": "hello", "speaker": "SPEAKER_00"}
         result = resegment_by_speaker([seg])

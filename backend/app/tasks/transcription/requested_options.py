@@ -24,8 +24,10 @@ class DispatchOptions:
     min_speakers: int | None
     max_speakers: int | None
     num_speakers: int | None
-    disable_diarization: bool | None
-    diarization_source: str | None
+    #: The per-file "skip speaker detection". The pipeline plan turns it into ``off``; it is
+    #: never turned into a source here, which is what ``disable_diarization=False`` once did
+    #: (it became ``provider`` and silently dropped a ``local`` or ``pyannote`` choice).
+    skip_diarization: bool
 
 
 def store_requested_options(
@@ -58,20 +60,16 @@ def resolve_dispatch_options(
     max_speakers: int | None,
     num_speakers: int | None,
     disable_diarization: bool | None,
-    diarization_source: str | None,
 ) -> DispatchOptions:
     """Merge a dispatch's arguments with the file's stored request, and store the result.
 
     An explicit argument always wins. With ``reuse_requested_options`` every argument left
     ``None`` is read back from the row (a re-run, or an upload whose ``/complete`` did not
     repeat what ``/prepare`` recorded); without it ``None`` stays ``None`` and so replaces an
-    older request. A stored "diarization skipped" becomes ``diarization_source="off"``; it is
-    never rewritten to ``provider``, which is what ``disable_diarization=False`` used to mean
-    and which silently dropped a ``local`` or ``pyannote`` choice.
+    older request. A stored "diarization skipped" is replayed as ``skip_diarization``; an
+    unset one leaves the user's speaker-detection choice to the pipeline plan.
     """
     requested_off = disable_diarization
-    if requested_off is None and diarization_source is not None:
-        requested_off = diarization_source == "off"
 
     if reuse_requested_options:
         from app.core.locked_settings import effective_whisper_model
@@ -98,21 +96,12 @@ def resolve_dispatch_options(
     )
 
     # Not only a request but a fact: a file that already ran with diarization off re-runs so.
-    if (
+    skip = bool(requested_off) or (
         reuse_requested_options
         and disable_diarization is None
-        and diarization_source is None
-        and (requested_off or media_file.diarization_disabled)
-    ):
-        diarization_source = "off"
-    return DispatchOptions(
-        whisper_model,
-        min_speakers,
-        max_speakers,
-        num_speakers,
-        disable_diarization,
-        diarization_source,
+        and bool(media_file.diarization_disabled)
     )
+    return DispatchOptions(whisper_model, min_speakers, max_speakers, num_speakers, skip)
 
 
 def apply_requested_options(media_file: MediaFile, options: dict | None) -> None:

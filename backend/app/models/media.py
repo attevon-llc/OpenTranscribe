@@ -314,6 +314,12 @@ class MediaFile(Base):
     diarization_disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )  # True when user explicitly skipped diarization
+    # Per-step provider/model/where record (issue #1229), {"v": 1, "steps": {...}}. Written
+    # only by services/file_provenance.record_stage (one atomic jsonb_set); NULL = processed
+    # before recording began. Deferred: the gallery loads this row whole and never reads it.
+    processing_provenance: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, deferred=True
+    )
 
     # Upload batch tracking
     upload_batch_id: Mapped[int | None] = mapped_column(

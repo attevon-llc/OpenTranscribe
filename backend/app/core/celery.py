@@ -126,8 +126,8 @@ from app.core.task_config import task_recovery_config  # noqa: E402
 # Named as a set so the family and its routing rule live in ONE place;
 # `tests/unit/test_lite_mode_queue_consumers.py` reads it and asserts that in lite
 # every routed queue actually has a live consumer, which no per-line route could be
-# checked for. `transcription.process_file` is deliberately NOT here — see
-# gpu_preferred_queue()'s docstring for why a task that REQUIRES a GPU must stay put.
+# checked for. Local transcription is deliberately NOT here — see
+# gpu_preferred_queue()'s docstring for why work that REQUIRES a GPU must stay put.
 GPU_PREFERRED_TASKS: tuple[str, ...] = (
     "rediarize",
     "update_speaker_embedding_on_reassignment",
@@ -439,9 +439,6 @@ celery_app.conf.update(
         "retry_on_timeout": False,
     },
     task_routes={
-        # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
-        # See priority comment above for priority scheme
-        "transcription.process_file": {"queue": CeleryQueues.GPU},
         # Pipeline chain tasks (3-stage: CPU preprocess → GPU transcribe → CPU postprocess)
         # NOTE: "transcription.gpu_transcribe" is intentionally NOT listed here so
         # dispatch.py can route it to either "gpu" or "cloud-asr" at call time.

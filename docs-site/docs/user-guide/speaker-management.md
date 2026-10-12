@@ -112,6 +112,29 @@ had given a speaker a different name yourself. If the search service is unavaila
 cleanup cannot finish, the app reports an error (the change itself is saved) and logs it for
 repair.
 
+### What unassigning a speaker means
+
+Unassigning a speaker from a cluster tells OpenTranscribe that this section is **not that
+person**:
+
+- The speaker leaves the cluster. If the cluster has been promoted to a named profile, the
+  speaker also leaves that profile, and the name it got from the profile is removed. A name
+  you typed yourself is kept.
+- With **blacklist** on (the default), the correction is remembered: the speaker is marked as
+  "not the same person" as each speaker still in the cluster, and as "not this profile".
+- The cluster and the profile stay for everyone else. Their stored voice average is rebuilt
+  from the speakers that remain.
+
+Nothing automatic puts a corrected speaker back: upload-time matching, **Re-cluster All**,
+voice matching after you label someone, profile suggestions and merges all skip it. A bulk
+**Assign** or **Accept** in the Inbox refuses it and lists it as an error, and merging a cluster
+into the one the speaker was removed from leaves that speaker where it was. Splitting speakers
+out of a cluster is treated the same way as unassigning them.
+
+To undo a correction, name that one speaker yourself: type the profile's name on it, assign it
+to the profile, or accept the profile for it. That clears the "not this profile" mark for that
+speaker.
+
 ![Speaker management clusters view with identified speakers across all files](/img/screenshots/speakers/speaker-management-clusters.png)
 
 ### Gender Classification

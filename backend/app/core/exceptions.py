@@ -58,6 +58,20 @@ class ASRConfigurationError(OpenTranscribeError):
     """
 
 
+class PipelinePlanRefusedError(ASRConfigurationError):
+    """A file's pipeline plan has a blocking issue, so it is not dispatched (issue #1225).
+
+    ``code`` is the plan's stable issue code and ``message`` its fixed sentence
+    (``services/pipeline_plan.ISSUE_MESSAGES``), never exception text. A subclass of
+    :class:`ASRConfigurationError` so every caller that already turns a deliberate dispatch
+    refusal into a clean error (503 on the API, file ERROR in a batch) handles it unchanged.
+    """
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
 class EmailDeliveryError(OpenTranscribeError):
     """A transactional email could not be handed to a mail transport.
 

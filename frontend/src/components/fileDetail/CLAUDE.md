@@ -18,6 +18,13 @@ Presentational children extracted from the file-detail route `src/routes/files/[
   transcript column while redaction is pending.
 - `SpeakerProfileConfirmModal.svelte` — update-globally / create-new confirmation for a renamed
   speaker. Emits `updateProfile`, `createNewProfile`, `cancel`.
+- `ProcessingSection.svelte` — the collapsible "Processing" section rendered right after
+  `MetadataDisplay` (#1229): how the file was processed, one row per step, via the shared
+  `$components/ProcessingProvenance.svelte`. Props: `steps` (the page's
+  `file.processing_steps`), `expanded`. Renders nothing when the payload has no rows. It
+  replaced the models row that used to sit inside `MetadataDisplay` (hardcoded "Whisper:"
+  label, and every non-`native` engine shown as PyAnnote); the backend's
+  `processing_steps` is display-ready, so derive nothing here.
 
 ## Conventions / patterns
 
@@ -43,8 +50,8 @@ Presentational children extracted from the file-detail route `src/routes/files/[
   renders directly on the page now), then either `SpeakerEditorPanel` (while editing speakers)
   or `TagsSection`/`CollectionsSection` (otherwise), then `AnalyticsSection` (always visible,
   including while editing speakers — it's the speaker context being labelled against), then
-  `MetadataDisplay` (also moved — was in `.file-header` above the grid, now the last item in
-  this column, hidden while editing speakers). `CommentSection` moved to the bottom of the
+  `MetadataDisplay` (also moved — was in `.file-header` above the grid, hidden while editing
+  speakers), then `ProcessingSection` (#1229, the last item in this column, hidden with it). `CommentSection` moved to the bottom of the
   RIGHT (`.transcript-column`) column, below `RedactionControls`. The page owns
   `isEditingSpeakers` directly (`TranscriptActionsBar`'s `toggleSpeakerEditor` event flips it
   inline) — there is no longer a prop-forwarding hop through `TranscriptDisplay`.

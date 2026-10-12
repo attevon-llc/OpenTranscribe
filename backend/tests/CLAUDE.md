@@ -379,6 +379,23 @@ Three layers, each needed:
    `.testruns/` (`tests/testrun_marker.py`, via `conftest.py`), so a concurrent sweep never
    removes a store a running test is using, even a bare `pytest` run from another worktree.
 
+Four more rules from issue #1222:
+
+- **Corpus-injected files tear down through `purge_injected`**, not raw ORM deletes (those
+  orphan the OpenSearch chunks and speaker embeddings). Mint the seed as `pytest-<hex>`,
+  `pytest-synth-<hex10>`, `pytest-searchqual-<hex10>` or `e2e-owned-<hex10>`:
+  `INJECTED_TEST_SEED_SHAPE` in `cleanup-test-data.py` is how a killed run's files are found, and
+  `unit/test_cleanup_test_data_injected_and_bench.py` fails on an unregistered `seed = f"..."`.
+- **An overlay the stack already runs is not the test's to stop** (`e2e/idp_overlay.py`): a
+  fixture that starts LLDAP/Keycloak records whether it did, and teardown stops or removes only
+  those (`unit/test_idp_overlay_lifecycle.py`).
+- **A docker build in a test labels its image** (`ot-test-artifact=1` plus a per-test
+  `ot-test-build=<hex>`) and removes images by that label in a `finally`: never by bare name,
+  never a prune.
+- **Test a bash cleanup trap by running the real script in a throwaway layout** with stub
+  `docker`/`opentr.sh` on PATH (`unit/test_pki_leg_teardown.py`); a trap you only read is not a
+  trap you have seen fire.
+
 **The sweep** — `scripts/cleanup-test-data.py` (dry run by default; `--execute-unambiguous`
 Tier A; `--execute` adds Tier B; `--planes` selects; `--min-age-minutes N`). Rows go through the
 app's own DELETE endpoints; store planes re-check each name at the point of deletion and refuse
@@ -462,6 +479,16 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   and `live` (`DELETION_RESIDUE_BACKEND_URL`, else `E2E_BACKEND_URL`, else :5174 — it must
   share the Postgres named by `POSTGRES_PORT`, and refuses a mixed stack). The GDPR legs leave
   id-only `erasure_ledger` rows behind by design (the ledger outlives what it records).
+  ⚠️ **`live` measures the code the backend at that URL serves**, which on an isolated
+  `--fresh` stack is whatever checkout started it — not your branch. To run the live legs
+  against a branch, serve that checkout's app on a free port with the suite's own environment
+  (`TESTING=True`, so no startup task runs) and point `DELETION_RESIDUE_BACKEND_URL` at it;
+  Celery work it publishes is still consumed by the stack's workers, which run the stack's
+  code. `teardown_seed` attempts every step whatever an earlier one did and raises
+  `TeardownIncompleteError` listing every failure (#1233) — a transient
+  `search_context_missing` used to abort it and leak the `e2e-delres-*` rows of every later
+  step. `test_delete_of_a_requeued_file_leaves_no_residue[live]` races the stack's own
+  workers, which move a seeded PENDING file on before the precondition reads it.
 - **`integration/test_orphan_sweep_storage.py` proves the storage orphan sweep (#1212) on a
   THROWAWAY bucket**, never the real media bucket: a fixture makes `e2e-orphan-sweep-<hex>`,
   points `settings.MEDIA_BUCKET_NAME` at it, and empties and removes it in `finally`. The

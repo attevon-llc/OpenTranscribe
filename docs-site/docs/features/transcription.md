@@ -312,7 +312,7 @@ Cloud providers have vendor-specific quirks that are easy to trip over:
 - **AssemblyAI** — model selection is sent as a `speech_models` list, and only `universal-3-pro` and `universal-2` are currently accepted by the API.
 - **Google Cloud Speech and Azure** — `validate_connection()` makes no network call for either provider, so a bad credential still "validates" successfully; you only find out it's wrong when a real transcription job fails.
 
-**API-Lite Mode**: Cloud providers require no GPU — the backend runs on CPU-only hardware while offloading transcription to cloud APIs. The API-Lite Docker image is ~2 GB vs 8.9 GB for the full image, making it practical for organizations without GPU hardware. Cloud-transcribed files still get local speaker embedding extraction (CPU-friendly WeSpeaker model) so cross-file speaker matching works identically across local and cloud-transcribed files.
+**Lite mode (cloud only)**: Cloud providers require no GPU — the lite deployment runs on CPU-only hardware and does transcription and speaker detection with cloud providers only (no local Whisper and no local speaker detection). Speakers come from a transcription provider that returns them or from pyannote.ai. Voiceprints are still computed locally on the CPU (the same WeSpeaker model), so cross-file speaker matching works identically across local and cloud-transcribed files.
 
 ### Supported Formats
 

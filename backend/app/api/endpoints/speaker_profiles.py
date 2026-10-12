@@ -805,9 +805,10 @@ def delete_speaker_profile(
 
     A linked speaker carries the profile's name as its display name (the invariant
     ``services/speaker_profile_rename`` documents), so unlinking alone left every member
-    still labelled as the deleted identity. Members whose display name IS the profile's
-    name get it cleared (their label falls back to the suggestion or diarizer label, and
-    the chunk plane is told), and a cluster named after the profile loses that label.
+    still labelled as the deleted identity. ``speaker_cleanup.unlink_from_profile`` — the
+    same rule a cluster unassign applies (#1233) — clears a display name or suggestion
+    that IS the profile's name (the label falls back to the diarizer label, and the chunk
+    plane is told), and a cluster named after the profile loses that label.
     The profile's embedding is erased and verified, and every cluster that held a member
     or was promoted to the profile is rebuilt by ``speaker_cleanup`` — an emptied
     promoted cluster is deleted with its centroid instead of being left listed with
@@ -818,8 +819,8 @@ def delete_speaker_profile(
     from app.services.speaker_cleanup import capture_speaker_impact
     from app.services.speaker_cleanup import raise_if_incomplete
     from app.services.speaker_cleanup import reconcile_speaker_impact
+    from app.services.speaker_cleanup import unlink_from_profile
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
-    from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     tracker = SpeakerRenameTracker()
     try:
@@ -845,15 +846,8 @@ def delete_speaker_profile(
             if cluster.label == profile_name:
                 cluster.label = None  # type: ignore[assignment]
 
-        for speaker in speakers:
-            indexed_as = canonical_speaker_label_for_row(speaker)
-            speaker.profile_id = None  # type: ignore[assignment]
-            speaker.verified = False  # type: ignore[assignment]
-            if speaker.display_name == profile_name:
-                speaker.display_name = None  # type: ignore[assignment]
-            tracker.record(
-                int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker)
-            )
+        # The one unlink rule, shared with a cluster unassign (#1233).
+        impact.relabel_speaker_ids |= unlink_from_profile(db, speakers, int(profile_id), tracker)
 
         # Delete avatar from MinIO if exists
         if profile.avatar_path:

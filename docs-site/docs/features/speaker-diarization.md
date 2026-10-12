@@ -288,8 +288,8 @@ OpenTranscribe's independent diarization provider architecture allows routing di
 
 - **pyannote.ai**: The cloud service from the creators of PyAnnote, offering the same algorithms without requiring a local GPU for diarization
 - Each user saves their own pyannote.ai API key in Settings → Speaker Identification → Speaker Detection (shown when users may bring their own provider keys), then chooses *pyannote.ai cloud service* as the speaker-detection source. The key is stored encrypted and is never shown again
-- When pyannote.ai is selected, speaker diarization is sent to the cloud API while transcription remains local
-- Falls back to local diarization if the cloud service is unavailable
+- When pyannote.ai is selected, speaker diarization is sent to the cloud API, whichever model transcribes. With the built-in (local) model it runs right after the transcript is saved; with a cloud provider it runs beside transcription. pyannote.ai bills your key for every file it processes
+- If the cloud service fails, the transcript is kept without speakers and the reason is recorded on the file's speaker-detection task. There is no silent fallback to local diarization; re-detect speakers from the file's menu once the service is back
 
 ### Diarization Source
 
@@ -299,24 +299,30 @@ from. It takes five values:
 
 | Value | Behavior |
 |---|---|
-| **`provider`** (default) | No separate diarization pass runs — OpenTranscribe uses the speaker labels the ASR provider itself returned with the transcript. This is what matters when you're transcribing with a **cloud ASR provider**: it stays out of the way and accepts that provider's own diarization rather than layering PyAnnote on top of it. |
-| **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above, running in parallel with transcription and merged into the result afterward. |
-| **`local`** | Diarization runs through OpenTranscribe's own on-box PyAnnote pipeline described earlier on this page, via a reprocessing pass rather than the provider integration above. |
+| **`provider`** (default, "Automatic") | With the built-in model (including the tiny/base CPU models), speakers are detected on this server. With a **cloud ASR provider** that returns speakers, its labels are used as-is. With a cloud model that returns **text only**, this server detects speakers right after the transcript is saved (full deployments only; a model with no timestamps at all cannot be combined with speaker detection). |
+| **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above: beside cloud transcription, or right after the built-in model's transcript is saved. |
+| **`local`** | Diarization runs on this server, whichever model transcribes: inside the GPU stage for the built-in model, or as a separate pass after a cloud or CPU transcript is saved. Not available on a lite deployment, which has no local speaker detection: choose pyannote.ai or a transcription provider that returns speakers there. |
 | **`asr_config`** | Another saved cloud transcription provider (chosen with `diarization_asr_config_uuid`) supplies only the speaker labels; its text is discarded. That provider bills a full transcription of every recording and receives the audio, so the settings card says so. It needs the capability that lets users bring their own provider keys, and only models that return speakers are offered. |
 | **`off`** | No diarization at all — the transcript is produced without speaker labels. |
 
-**Settings → Processing pipeline** is a read-only page that shows, for the recording you would upload next,
-the four steps (transcription, speaker detection, speaker identification, AI features), where each one runs
-(this server or a named cloud vendor), whether audio leaves the server, and why a combination cannot run. It
-reads the same plan the pipeline executes, so it cannot disagree with it, and every problem links to the one
-settings tab that fixes it. The Speaker Detection card and the transcription provider list use the same
-vocabulary: *Speakers included* or *Text only* (does the model label who spoke) and *Word timing*,
-*Segment timing* or *No timing* (how finely it times its text; speakers cannot be added to text with no
-timestamps).
+Speaker detection that runs after the transcript is saved assigns speakers per word when the
+model returns word timestamps, and per segment otherwise (a speaker change inside a segment is
+then not detected; the pipeline view reports this as a warning). Voiceprints are always computed
+on this server. `GET /api/user-settings/pipeline` returns how your next file will be processed
+and any problem with the combination you chose; saving a combination that cannot run is refused,
+and so is switching the transcription provider into one.
+
+**Settings → Processing pipeline** shows that same plan as a read-only page: the four steps (transcription,
+speaker detection, speaker identification, AI features), where each runs (this server or a named cloud
+vendor), whether audio leaves the server, and every problem with a link to the tab that fixes it. The
+Speaker Detection card and the provider list use the same vocabulary: *Speakers included* or *Text only*,
+*Word timing*, *Segment timing* or *No timing* (speakers cannot be added to text with no timestamps), and
+*Speakers via adapter (extra billing)* for a provider used only for its speaker labels.
 
 An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
-error rather than silently falling back to local diarization — unlike ASR provider selection,
-which does degrade to a local model automatically.
+error rather than silently falling back to local diarization. The same holds for transcription:
+a file planned for a cloud provider that cannot be started (for example a saved key that no
+longer works) fails with a clear message instead of being transcribed on this server.
 
 ### Native Diarization Engine (New in v0.5.0)
 

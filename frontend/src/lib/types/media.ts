@@ -70,6 +70,7 @@ export type MediaErrorReason =
   | 'permission_error'
   | 'interrupted'
   | 'diarization_not_configured'
+  | 'pipeline_not_runnable'
   | 'unclassified';
 
 export interface MediaFile {
@@ -150,6 +151,23 @@ export interface MediaFile {
 }
 
 /**
+ * One row of how a file was processed (#1229), mirroring `schemas/processing_provenance.py:
+ * ProcessingStepOut`. Display-ready: `provider_display` is pre-formatted by the backend and
+ * nothing here is computed client-side. Served on `GET /files/{uuid}` and inside
+ * `GET /my-files/{uuid}/status`'s `file`.
+ */
+export interface ProcessingStep {
+  step: 'transcription' | 'diarization' | 'voiceprints' | 'summary' | 'topics' | 'speaker_names';
+  status: 'done' | 'off' | 'not_run' | 'not_recorded';
+  recorded: 'full' | 'legacy' | 'none';
+  provider: string | null;
+  provider_display: string | null;
+  model: string | null;
+  where: 'server' | 'cloud' | null;
+  timing: 'word' | 'segment' | 'none' | null;
+}
+
+/**
  * What `GET /files/{uuid}` actually returns — `MediaFile` plus everything the
  * detail page needs and the gallery list does not.
  *
@@ -194,6 +212,8 @@ export interface MediaFileDetail extends MediaFile {
    */
   diarization_provider?: string | null;
   embedding_mode?: string;
+  /** How each step was processed (#1229); rendered by `ProcessingProvenance`. */
+  processing_steps?: ProcessingStep[];
 
   // Source / delivery
   source_url?: string;

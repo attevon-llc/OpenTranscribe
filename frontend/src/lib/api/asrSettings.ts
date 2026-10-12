@@ -135,6 +135,35 @@ export interface UserASRSettingsResponse {
   updated_at: string;
 }
 
+/** One issue of the caller's pipeline plan (`PipelineIssueOut`, issue #1224). */
+export interface PipelineIssue {
+  /** Stable code; i18n key `settings.pipeline.issue.<code>` */
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+  step: 'transcription' | 'diarization' | 'speaker_id' | 'llm';
+  /** The fixed English sentence for the code */
+  message: string;
+}
+
+/**
+ * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch
+ * that would make the stored speaker detection choice unrunnable, or (lite, #1228) select
+ * local transcription, is refused with 409 `detail: {code, message}`; otherwise
+ * `pipeline_issues` describes the pipeline after the change and `config_uuid` names the
+ * config active afterwards (`null`: none).
+ */
+export interface ASRSwitchResult {
+  message: string;
+  config_uuid: string | null;
+  pipeline_issues: PipelineIssue[];
+}
+
+/** `POST /asr-settings`: a first config is auto-activated only when it keeps speaker detection runnable. */
+export interface ASRConfigCreateResult extends UserASRSettingsResponse {
+  auto_activated: boolean;
+  pipeline_issues: PipelineIssue[];
+}
+
 export interface ASRSettingsList {
   configurations: UserASRSettingsResponse[];
   shared_configurations: UserASRSettingsResponse[];
@@ -239,6 +268,12 @@ interface RawASRProvider {
   status_note?: string;
   diarization_quality?: string;
   models?: RawASRModel[];
+}
+
+/** Mirrors backend `schemas.asr_settings.ASRConfigDeleted`: the switch shape plus the reset. */
+export interface ASRConfigDeleted extends ASRSwitchResult {
+  deleted: boolean;
+  diarizer_source_reverted: boolean;
 }
 
 export class ASRSettingsApi {
@@ -363,7 +398,7 @@ export class ASRSettingsApi {
   /**
    * Create a new ASR configuration
    */
-  static async createConfig(data: UserASRSettingsCreate): Promise<UserASRSettingsResponse> {
+  static async createConfig(data: UserASRSettingsCreate): Promise<ASRConfigCreateResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}`, data);
     return response.data;
   }
@@ -380,25 +415,30 @@ export class ASRSettingsApi {
   }
 
   /**
-   * Delete a specific ASR configuration
-   * Backend returns 204 No Content on success.
+   * Delete a specific ASR configuration (issues #1226, #1236). Returns the pipeline it
+   * leaves: `config_uuid` is the config active afterwards (`null`: none), `pipeline_issues`
+   * says when no remaining config keeps speaker detection runnable, and
+   * `diarizer_source_reverted` is true when the caller's speaker detection named this
+   * configuration and was reset to the default. On lite, deleting the last config that can
+   * transcribe is refused with 409 `detail: {code, message}` (`local_asr_unavailable`, #1228).
    */
-  static async deleteConfig(uuid: string): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+  static async deleteConfig(uuid: string): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+    return response.data;
   }
 
   /**
-   * Delete all user ASR configurations (revert to local GPU default)
-   * Backend returns 204 No Content on success.
+   * Delete all user ASR configurations (revert to local GPU default).
    */
-  static async deleteAll(): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/all`);
+  static async deleteAll(): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/all`);
+    return response.data;
   }
 
   /**
    * Set a specific configuration as active
    */
-  static async setActive(uuid: string): Promise<{ message: string; config_uuid: string }> {
+  static async setActive(uuid: string): Promise<ASRSwitchResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
       config_uuid: uuid,
     });
@@ -409,7 +449,7 @@ export class ASRSettingsApi {
    * Clear the active configuration, reverting to local GPU default.
    * Does NOT delete any saved configs — they remain available for re-activation.
    */
-  static async clearActive(): Promise<{ message: string }> {
+  static async clearActive(): Promise<ASRSwitchResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/clear-active`);
     return response.data;
   }

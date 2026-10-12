@@ -10,6 +10,9 @@ file. They render the task/processing-status dashboard (filters, task grid, deta
 - `TaskFilterPanel.svelte` — status/type/age/date filters (two-way bound; parent owns refetch).
 - `TasksGrid.svelte` — paginated task table; dispatches `viewDetails` / `pageChange`.
 - `FileDetailModal.svelte` — per-file processing detail + retry; dispatches `close` / `retry`.
+  Its "Processing" block renders `detailedStatus.file.processing_steps` (from the parent's
+  `GET /my-files/{uuid}/status`, #1229) through `$components/ProcessingProvenance.svelte`, the
+  same rows the file page shows.
 
 ## Conventions / patterns
 

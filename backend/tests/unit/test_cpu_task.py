@@ -28,6 +28,7 @@ from app.models.media import Task
 from app.tasks.transcription.context import TranscriptionContext
 from app.tasks.transcription.cpu_task import _run_cpu_transcription
 from app.tasks.transcription.cpu_task import transcribe_cpu_task
+from tests.unit._plan_contexts import plan_context
 
 _CPU_TASK = "app.tasks.transcription.cpu_task"
 _CONTEXT = "app.tasks.transcription.context"
@@ -121,7 +122,7 @@ class TestRunCpuTranscription:
             content_type="audio/mpeg",
         )
 
-    def test_annotates_result_and_forces_diarization_disabled(
+    def test_annotates_result_with_the_plans_diarization_flag(
         self, db_session, cpu_task_seams, normal_user
     ):
         ctx = self._ctx(normal_user)
@@ -150,10 +151,37 @@ class TestRunCpuTranscription:
         assert result["diarization_disabled"] is True
         assert result["asr_model"] == "tiny"
         assert captured["audio_file_path"] == "/fake/audio.wav"
-        # min_speakers/max_speakers are hardcoded to 1 for the CPU lightweight path
-        assert captured["config"].min_speakers == 1
-        assert captured["config"].max_speakers == 1
         assert captured["config"].model_name == "tiny"
+        # This stage never detects speakers itself; a post stage does (issue #1225).
+        assert captured["config"].enable_diarization is False
+
+    def test_a_speaker_plan_no_longer_forces_one_speaker(
+        self, db_session, cpu_task_seams, normal_user
+    ):
+        """Issue #1225: the CPU path used to pin min=max=1 speaker and mark the file
+        "diarization disabled". With a post stage planned it does neither."""
+        ctx = self._ctx(normal_user)
+        captured = {}
+
+        class FakePipeline:
+            def __init__(self, config):
+                captured["config"] = config
+
+            def process(self, *a, **kw):
+                return {"segments": [{"text": "hi", "words": []}], "language": "en"}
+
+        with patch("app.transcription.TranscriptionPipeline", FakePipeline):
+            result = _run_cpu_transcription(
+                ctx,
+                "/fake/audio.wav",
+                source_language="en",
+                translate_to_english=False,
+                whisper_model="tiny",
+                diarization_off=False,
+            )
+
+        assert result["diarization_disabled"] is False
+        assert captured["config"].max_speakers != 1
 
     def test_whisper_model_outside_lightweight_set_is_ignored(
         self, db_session, cpu_task_seams, normal_user
@@ -211,7 +239,28 @@ class TestTranscribeCpuTask:
             "storage_path": media_file.storage_path,
             "file_name": media_file.filename,
             "content_type": media_file.content_type,
+            "pipeline_plan": plan_context("local_cpu", "off"),
         }
+
+    def test_a_planned_post_stage_leaves_diarization_enabled(
+        self, db_session, cpu_task_seams, make_media_file, make_task, normal_user
+    ):
+        media_file = make_media_file()
+        task_id = str(uuid_pkg.uuid4())
+        make_task(media_file, task_id)
+        preprocess_context = self._preprocess_context(media_file, task_id, normal_user.id)
+        preprocess_context["pipeline_plan"] = plan_context("local_cpu", "local")
+
+        with (
+            patch(
+                f"{_CPU_TASK}._run_cpu_transcription", return_value={"segments": [{"text": "hi"}]}
+            ),
+            patch(_PROCESS_AND_SAVE, return_value={"status": "success"}),
+        ):
+            transcribe_cpu_task.run(preprocess_context)
+
+        db_session.refresh(media_file)
+        assert media_file.diarization_disabled is False
 
     def test_happy_path_marks_diarization_disabled_and_returns_finalize_result(
         self, db_session, cpu_task_seams, make_media_file, make_task, normal_user

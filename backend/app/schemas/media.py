@@ -13,6 +13,7 @@ from pydantic import model_validator
 
 from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
 from app.schemas.base import UUIDBaseSchema
+from app.schemas.processing_provenance import ProcessingStepOut
 from app.schemas.user import UserBrief
 
 VALID_LOCAL_WHISPER_MODELS = frozenset(
@@ -765,6 +766,12 @@ class MediaFileDetail(MediaFile):
 
     # Caller's effective permission on this file (null = owner)
     my_permission: str | None = None
+
+    # How each step was processed (issue #1229), built by services/file_provenance_view.
+    processing_steps: list[ProcessingStepOut] = Field(
+        default_factory=list,
+        description="One display-ready row per processing step, in processing order",
+    )
 
     # Content redaction state. When redaction is enabled and detection hasn't finished,
     # transcript segments are withheld and `redaction_pending` is true so the UI shows a

@@ -84,3 +84,46 @@ describe('English source copy (#1220)', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('English source copy left over from #1220 (#1222)', () => {
+  // Namespaces whose strings were glued onto a sentence by the component. `uploader.` is
+  // guarded above; these are the other two places the same defect lived.
+  const NAMESPACES = ['about.legal.', 'settings.embeddingConsistency.'];
+  const inNamespaces = Object.entries(EN).filter(([k]) => NAMESPACES.some((n) => k.startsWith(n)));
+
+  it('scans the namespaces it claims to guard', () => {
+    expect(inNamespaces.length).toBeGreaterThan(20);
+  });
+
+  it('has no Suffix key left over from concatenated copy', () => {
+    expect(inNamespaces.map(([k]) => k).filter((k) => k.endsWith('Suffix'))).toEqual([]);
+  });
+
+  it('has no value that is a fragment (leading space, dash or closing punctuation)', () => {
+    const offenders = inNamespaces
+      .filter(([, v]) => /^\s/.test(v) || /^[–—-]\s/.test(v) || /^[.,;:!?)]/.test(v))
+      .map(([k]) => k);
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the licence and NOTICE links inside one sentence each', () => {
+    expect(EN['about.legal.licensedUnder']).toContain('{{license}}');
+    expect(EN['about.legal.thirdParty']).toContain('{{notice}}');
+  });
+
+  it('gives the repair ETA its own sentence, not a tail glued after the percentage', () => {
+    expect(EN['settings.embeddingConsistency.eta']).toContain('{{eta}}');
+    expect(EN['settings.embeddingConsistency.eta']).toMatch(/^[A-Za-z]/);
+  });
+
+  it('carries the same placeholders in every locale for the rewritten keys', () => {
+    const placeholders = (v: string) => (v.match(/\{\{\w+\}\}/g) ?? []).sort().join(',');
+    for (const key of [
+      'about.legal.licensedUnder',
+      'about.legal.thirdParty',
+      'settings.embeddingConsistency.eta',
+    ]) {
+      expect(placeholders(DE[key]), key).toBe(placeholders(EN[key]));
+    }
+  });
+});

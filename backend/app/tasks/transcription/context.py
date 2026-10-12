@@ -20,6 +20,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.services.error_categorization_service import NO_SPEECH_DETECTED_MESSAGE
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.pipeline_plan import PipelinePlan
 from app.transcription import cuda_health
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -28,6 +29,16 @@ if TYPE_CHECKING:
     from app.transcription.diarizer_native import DiarSidecarUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+def plan_of(stage_context: dict) -> PipelinePlan:
+    """The run's pipeline plan, as dispatch computed it (``preprocess_context["pipeline_plan"]``).
+
+    Every stage reads what to run from here (issue #1225); none re-reads the user's
+    speaker-detection setting, so a setting changed mid-run cannot split one run between
+    two plans.
+    """
+    return PipelinePlan.from_context(stage_context["pipeline_plan"])
 
 
 def retry_on_diar_sidecar_unavailable(

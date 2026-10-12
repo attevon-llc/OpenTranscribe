@@ -29,6 +29,7 @@ import pytest
 from app.core import stage_timing
 from app.core.stage_timing import OUTCOMES
 from app.core.stage_timing import STAGES
+from tests.unit._plan_contexts import plan_context
 
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 _LINE = re.compile(
@@ -284,7 +285,7 @@ class TestTaskStages:
         monkeypatch.setattr(preprocess, "_run_preprocess", _fail)
 
         with pytest.raises(OSError):
-            preprocess.preprocess_for_transcription.run("f-uuid", "t-pre")
+            preprocess.preprocess_for_transcription.run("f-uuid", "t-pre", plan_context())
 
         assert [(m["stage"], m["outcome"], m["task_id"]) for m in _timing_lines(capture)] == [
             ("preprocess", "failure", "t-pre")

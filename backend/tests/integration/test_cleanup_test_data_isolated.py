@@ -61,7 +61,7 @@ _SEED_STATEMENTS = (
     (
         "CREATE TABLE media_file (id serial PRIMARY KEY, uuid uuid NOT NULL, "
         'user_id int NOT NULL REFERENCES "user"(id), filename text, '
-        "upload_time timestamptz NOT NULL DEFAULT now())"
+        "upload_time timestamptz NOT NULL DEFAULT now(), metadata_important jsonb)"
     ),
     (
         "CREATE TABLE collection (id serial PRIMARY KEY, uuid uuid NOT NULL, "
@@ -386,6 +386,36 @@ def seeded_db(throwaway_pg: dict[str, Any]) -> Iterator[dict[str, Any]]:
                 ),
                 {"u": human_uuid, "owner": owner_id, "fn": "e2e-owned-notes.wav"},
             )
+            # Issue #1222: a standalone benchmark upload (registered prefix, swept), a
+            # test-seeded injected corpus file (swept), and the two injected files that must
+            # survive: the canonical eval corpus (empty seed) and an operator's namespace.
+            bench_uuid = str(uuid.uuid4())
+            injected_uuid = str(uuid.uuid4())
+            canonical_uuid = str(uuid.uuid4())
+            operator_uuid = str(uuid.uuid4())
+            for file_uuid, filename, seed in (
+                (bench_uuid, "bench-parallel-0a1b2c3d.wav", None),
+                (injected_uuid, "synthetic__T000.transcript", "pytest-synth-0123456789"),
+                (canonical_uuid, "qmsum__Bro003.transcript", ""),
+                (operator_uuid, "qmsum__Bro004.transcript", "rag403"),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO media_file (uuid, user_id, filename, upload_time, "
+                        "metadata_important) VALUES (:u, :owner, :fn, "
+                        "now() - interval '1 hour', CAST(:meta AS jsonb))"
+                    ),
+                    {
+                        "u": file_uuid,
+                        "owner": owner_id,
+                        "fn": filename,
+                        "meta": json.dumps(
+                            {"rag_eval": {"injected": True, "seed": seed}}
+                            if seed is not None
+                            else {}
+                        ),
+                    },
+                )
             # Old Tier-A tag.
             conn.execute(
                 text(
@@ -411,6 +441,9 @@ def seeded_db(throwaway_pg: dict[str, Any]) -> Iterator[dict[str, Any]]:
             "owner_email": owner_email,
             "old_media_uuid": old_uuid,
             "human_media_uuid": human_uuid,
+            "bench_media_uuid": bench_uuid,
+            "injected_media_uuid": injected_uuid,
+            "kept_injected_uuids": {canonical_uuid, operator_uuid},
             "tag_uuid": tag_uuid,
             "collection_uuid": collection_uuid,
         }
@@ -518,8 +551,13 @@ def test_execute_unambiguous_removes_only_old_tier_a_rows(
     result = _run_script(env, stub_api, live_run_marker, "--execute-unambiguous")
     assert result.returncode == 0, result.stdout + result.stderr
 
-    assert stub_api.deleted.get("media_file") == [seeded_db["old_media_uuid"]], (
-        f"expected only the OLD tier-A file deleted, got {stub_api.deleted.get('media_file')}"
+    assert set(stub_api.deleted.get("media_file", [])) == {
+        seeded_db["old_media_uuid"],
+        seeded_db["bench_media_uuid"],
+        seeded_db["injected_media_uuid"],
+    }, f"expected only the OLD tier-A files deleted, got {stub_api.deleted.get('media_file')}"
+    assert not seeded_db["kept_injected_uuids"] & set(stub_api.deleted.get("media_file", [])), (
+        "the canonical corpus and an operator-seeded corpus are real eval data, never swept"
     )
     assert fresh_uuid not in stub_api.deleted.get("media_file", []), (
         "a file created inside a still-live run window must survive (liveness cutoff)"
@@ -555,7 +593,14 @@ def test_dry_run_report_names_exactly_the_rows_execute_unambiguous_removes(
     )
 
     _run_script(env, stub_api, tmp_path / ".testruns", "--execute-unambiguous")
-    assert stub_api.deleted.get("media_file") == [seeded_db["old_media_uuid"]]
+    assert set(stub_api.deleted.get("media_file", [])) == {
+        seeded_db["old_media_uuid"],
+        seeded_db["bench_media_uuid"],
+        seeded_db["injected_media_uuid"],
+    }
+    assert "bench-parallel-0a1b2c3d.wav" in dry.stdout
+    assert "synthetic__T000.transcript [seed pytest-synth-0123456789]" in dry.stdout
+    assert "qmsum__Bro003.transcript" not in dry.stdout
 
 
 # ---------------------------------------------------------------------------------------------

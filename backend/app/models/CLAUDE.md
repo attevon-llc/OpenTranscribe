@@ -134,6 +134,10 @@ authority. See `backend/app/db/CLAUDE.md`.
   owns it.
 - `MediaFile.status` is annotated non-Optional but declared `nullable=True` — intentional
   (legacy DDL); the annotation and the kwarg are allowed to disagree, the kwarg drives DDL.
+- `MediaFile.processing_provenance` (JSONB, `v437`, #1229) is **`deferred=True`**: the gallery
+  loads the row whole and never reads it. Never assign it through the ORM; the only writer is
+  `services/file_provenance.record_stage` (an atomic `jsonb_set`), and an ORM assignment would
+  overwrite a concurrent stage's entry.
 - `MediaFile.is_quarantined` (DMCA/abuse takedown) is **independent of** `status`;
   `pre_quarantine_status` restores the prior value on release. A takedown never deletes rows.
 - `TranscriptSegment.text` always holds the **original** text; `redactions`/`toxicity` are

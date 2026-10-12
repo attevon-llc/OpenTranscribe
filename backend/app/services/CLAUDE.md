@@ -199,8 +199,16 @@ Callers: `speakers.py` (delete, merge, verify accept/reject/create, profile move
 update task), `transcript_segments.py` (orphan cleanup), `speaker_update.py` (auto-profile
 and retroactive matching), `speaker_profiles.py` (profile delete), `speaker_clusters.py`
 (cluster delete), `speaker_clustering_service` (unassign, split, merge, promote, batch
-assign), `files/reprocess.py` (transcription and rediarize clears), `task_utils.reset_file_for_retry`,
+assign, upload-time clustering, re-cluster), `speaker_matching_service` (profile
+propagation), `speaker_embedding_task` (segment-reassign voiceprint drift),
+`files/reprocess.py` (transcription and rediarize clears), `task_utils.reset_file_for_retry`,
 `speaker_merge_task` (the target half) and `file_cleanup_service.purge_media_file`.
+
+The same module is also the ONE implementation of **assignment** bookkeeping (#1233): a path
+that ADDS a speaker to a cluster or profile names what it touched in a `SpeakerImpact` and
+hands it to `reconcile_speaker_impact` after its commit, exactly like a removal — so
+membership rows, `Speaker.cluster_id`, `member_count`, the centroid, the profile embedding
+and the speaker's own document's `profile_id`/`display_name` (`relabel_speaker_ids`) agree.
 
 The rules it applies are the product's existing ones, written once:
 
@@ -232,9 +240,59 @@ The rules it applies are the product's existing ones, written once:
   the profile's name get it cleared and the chunk plane is told through
   `SpeakerRenameTracker`; a name the user set to something else survives. A cluster labelled
   with the profile's name loses the label.
-- **Unassigning from a promoted cluster does NOT unlink the profile.** That is unchanged and
-  deliberate in this fix: the grouping and the identity are separate decisions, and whether
-  a blacklisting unassign should also unlink the profile is an open product question.
+- **A reindex that could not be queued is a residual** (#1233). `_reindex_files` calls
+  `search/reindex_dispatch.queue_transcript_reindex`, which returns `QUEUED`,
+  `ALREADY_PENDING` (the debounce window already holds the reindex this change needs) or
+  `FAILED`; only `FAILED` becomes a `transcript_index` residual. `dispatch_transcript_reindex`
+  is the bool view of the same call for callers that only ask "queued now?". A failed
+  publish also releases the debounce claim it took — keeping it told every later mutation
+  of that file, for the whole window, that a reindex nobody queued was pending.
+
+### Unassigning: the section is no longer that person (issue #1233)
+
+The owner's rule, implemented once, in `speaker_cleanup.detach_from_cluster`:
+
+| Unassigning a speaker from a cluster… | |
+|---|---|
+| membership | both representations removed (`speaker_cluster_member` row and `Speaker.cluster_id`) |
+| the cluster's promoted profile | unlinked by `unlink_from_profile` — the profile-delete rule: `profile_id`/`verified` go, a display name or suggestion that IS the profile's name goes, a name the user typed stays |
+| blacklist (`blacklist=True`, the default) | cannot-link against **every remaining member**, both directions, **and** a profile blacklist row — both halves, promoted or not |
+| the cluster and profile | **remain** for everyone else; centroid and embedding rebuilt from them; an emptied cluster follows the empty-cluster rule above |
+
+`split_cluster` is the same unassignment (the moved group is someone other than those who
+stay), then the group forms a new unpromoted cluster. `blacklist=False` is the UI's explicit
+opt-out: it still unlinks, it records nothing.
+
+**Every assignment path honours the blacklist** through `speaker_blocked_from_cluster` /
+`speaker_blocked_from_profile` (blocked = blacklisted from the profile, or cannot-link with
+any member / any speaker linked to the profile) or, where the path assigns by NAME,
+`blocked_profile_names`:
+
+| Path | Before #1233 | Now |
+|---|---|---|
+| `find_or_create_cluster` (upload) | checked a promoted cluster's profile blacklist; cannot-link one direction only; linked the profile without rebuilding its embedding; dropped stale memberships without rebuilding those clusters | helper check (both directions); joins via `_join` → `join_cluster_identity`; `_settle_assignments` rebuilds the joined cluster, every cluster the speaker was dropped from, and every profile it entered or left |
+| Re-cluster Phase 1 (profiles) | regrouped any linked speaker, including one blacklisted from that profile | a link the user already unassigned (pre-#1233 data) is taken back by `unlink_from_profile` first |
+| Re-cluster Phase 2 (AHC) | cannot-link eviction | unchanged (already honoured) |
+| Re-cluster Phase 2.5 (singleton → profile cluster) | profile/cannot-link check; joined WITHOUT the profile (no label, centroid not rebuilt) | helper check; joining links the profile at the auto-link bar `max(threshold, 0.75)`; centroid + embedding settled after commit |
+| retroactive matching (`speaker_update.trigger_retroactive_matching`) | none | blocked candidates are skipped entirely — neither auto-applied nor suggested |
+| batch verify `assign` / `accept` | none | a blocked speaker is refused with a per-speaker error (a bulk action is where a correction gets swept back in unnoticed) |
+| `promote_cluster_to_profile` | — | nothing to block: an unassigned speaker is no longer a member |
+| `merge_clusters` | moved every member; target's profile not propagated | a blocked member stays in the source (which survives with it) and is listed in the route's `blocked_speaker_uuids`; moved members take a promoted target's profile |
+| `_propagate_profile_assignment` | none; profile embedding not rebuilt | blocked candidates skipped; profile + their clusters rebuilt |
+| `_handle_speaker_match` (re-match of an existing speaker) | none | blocked identity is neither suggested nor linked |
+| segment-reassign voiceprint update | rebuilt profiles only (non-strict); clusters drifted | `_rebuild_affected_aggregates` → `reconcile_speaker_impact` over the target's and source's clusters and profiles |
+| speaker merge | source's rows died with it (CASCADE) | `carry_blacklist` copies them to the target first (except the profile the target is already linked to) |
+| `app/scripts/batch_speaker_matching.py` | none | skips a suggestion of a blocked name |
+| LLM speaker ID (`speaker_identification_task._store_speaker_predictions`) | none (a ≥0.75 suggestion moves the canonical label, so it re-labels) | skips a blocked name |
+
+**The explicit override.** Naming ONE speaker as a profile — typing the name
+(`auto_create_or_assign_profile`), `assign-profile`, verify `accept` — calls
+`lift_profile_blacklist`: it drops the speaker's blacklist row for that profile and its
+cannot-links with the profile's speakers. Only those single-speaker explicit actions lift it.
+
+**Autoflush is off.** A caller that sets `profile_id` and rebuilds in the same transaction
+must flush first (`speaker_update._update_profile_embedding` does): the rebuild otherwise
+reads the membership from before the link, and the new voice never reaches the embedding.
 
 ## Speaker embeddings: two backends, one model (issue #571)
 
@@ -612,9 +670,44 @@ Owner decisions it encodes (do not re-open): lite has no local transcription and
 speaker detection; Automatic with a text-only model detects speakers on this server (full only);
 **no forced alignment / wav2vec2** — a model with `timing == "none"` is refused for every speaker
 detector (`asr_no_timing_for_speakers`); voiceprints are never taken from a vendor. Every cell is
-pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). Consumers today: the settings
-PUT (409 on a NEW selection with a diarization-step error) and `GET /user-settings/pipeline`.
-The pipeline stages adopt it in WP3 (`docs/design/v060_pipeline_composition_plan.md`).
+pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). On lite a local
+detector is never planned to run: the cell keeps `engine: local` and its blocking issue but
+plans `execution: none` (no queue, no voiceprint step), and "this server" is refused even when
+transcription is local too (#1228). Consumers: the settings
+PUT (409 on a NEW selection with a diarization-step error), the ASR-side switches
+(`services/asr_switch_plan`: diarization-step errors the switch introduces, and every
+transcription-step error), `GET /user-settings/pipeline`, and every pipeline
+stage (#1225: dispatch resolves it once and carries it in the chain context; what each cell
+then does is pinned by `tests/unit/test_pipeline_execution_matrix.py`).
+
+## Per-file processing provenance (#1229): one writer, one reader
+
+`media_file.processing_provenance` (JSONB, `v437`, `{"v": 1, "steps": {<step>: {...}}}`, shape
+in `schemas/processing_provenance.py`) records, per step, which provider/model completed it and
+where it ran. Steps: `transcription`, `diarization`, `voiceprints`, `summary`, `topics`,
+`speaker_names`.
+
+- **Write ONLY through `file_provenance.record_stage(db, file_id, stage, **facts)`.** It is one
+  `UPDATE ... jsonb_set` statement (never read-modify-write: the LLM tasks finish concurrently
+  for one file; `tests/unit/test_file_provenance_record.py` holds a row lock to prove it) inside
+  a savepoint, and it logs and swallows a DB error so provenance can never fail the stage write
+  it rides in. Unknown fact names raise `TypeError` (`base_url`, `api_key` are refused by
+  construction); a URL-shaped value is dropped. `new_run=True` (the transcript save) starts a
+  fresh document, so an earlier run's voiceprints/summary never describe a new transcript.
+- The `*_facts` helpers (`transcription_facts`, `diarization_facts`, `voiceprint_facts`,
+  `llm_facts`, `inline_speakers_by`) turn what a stage knows into canonical facts so call sites
+  stay one line. `llm_facts` calls `llm_guard.is_local_provider`, which can resolve a hostname:
+  call it in the no-session phase, never inside a write session.
+- Speaker-detection ids are canonical: `native` / `pyannote` = the local engines (server),
+  `pyannote.ai` = the cloud service, a transcription vendor id = that vendor's own speakers.
+  A legacy `pyannote` cannot be told apart from pyannote.ai, so the reader gives it no location.
+- **Read ONLY through `file_provenance_view.build_processing_steps(media_file)`**, served as
+  `processing_steps` on `MediaFileDetail` and `GET /my-files/{uuid}/status`. Display names are
+  proper nouns, pre-formatted here. `NULL` = processed before recording began: rows are
+  composed from the older columns with `recorded="legacy"` and anything they cannot say is
+  `not_recorded`; a document with a `transcription` entry means a missing step is `not_run`.
+- The scalar columns (`asr_provider`, `diarization_provider`, ...) stay the queryable index and
+  are still written where they were; `record_diarization` updates them for a post stage.
 
 ## Media URL ingestion (yt-dlp)
 

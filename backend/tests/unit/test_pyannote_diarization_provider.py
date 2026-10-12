@@ -132,7 +132,8 @@ def _run_diarize(
 def test_happy_path_succeeds_on_first_poll(tmp_path):
     result, job_capture = _run_diarize(tmp_path)
 
-    assert result.provider_name == "pyannote"
+    # ``pyannote.ai``, not ``pyannote`` (the local engine's id) — #1229.
+    assert result.provider_name == "pyannote.ai"
     assert result.model_name == "precision-3"
     assert result.num_speakers == 2
     assert len(result.segments) == 2
@@ -532,12 +533,26 @@ def test_default_model_is_precision_3():
     assert PyAnnoteCloudDiarizationProvider(api_key="k")._model_name == "precision-3"
 
 
-@pytest.mark.parametrize("stored", [None, ""])
-def test_factory_default_is_precision_3(stored):
+@pytest.mark.parametrize("stored", ["", "precision-2"])
+def test_factory_default_is_precision_3(stored, db_session, normal_user):
+    from app.models.user_diarization_settings import UserDiarizationSettings
     from app.services.diarization.factory import DiarizationProviderFactory
+    from app.utils.encryption import encrypt_api_key
 
-    provider = DiarizationProviderFactory.create_for_source(
-        "pyannote", api_key="k", model_name=stored
+    db_session.add(
+        UserDiarizationSettings(
+            user_id=normal_user.id,
+            name="pyannote.ai",
+            provider="pyannote",
+            model_name=stored,
+            api_key=encrypt_api_key("k"),
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    provider = DiarizationProviderFactory.create_for_engine(
+        "pyannote_ai", normal_user.id, db_session
     )
     assert isinstance(provider, PyAnnoteCloudDiarizationProvider)
     assert provider._model_name == "precision-3"

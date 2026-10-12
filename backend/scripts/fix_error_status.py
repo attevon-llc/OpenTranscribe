@@ -108,9 +108,11 @@ def _reset_retriable_files(db, files, dry_run):
                 db.commit()
 
                 if reset_file_for_retry(db, int(file.id), reset_retry_count=True):
-                    from app.tasks.transcription import transcribe_audio_task
+                    from app.tasks.transcription.dispatch import dispatch_transcription_pipeline
 
-                    transcribe_audio_task.delay(str(file.uuid))
+                    dispatch_transcription_pipeline(
+                        file_uuid=str(file.uuid), retry=True, reuse_requested_options=True
+                    )
                     count += 1
                     print(f"  Reset: {file.uuid} - {filename} ({category.value})")
                 else:

@@ -3,11 +3,11 @@
 ``MediaFile.diarization_model`` is what the admin panel and the file detail page report as the
 engine that produced a transcript's speakers. It was being fabricated.
 
-The cloud-ASR path computes the real values: ``merge_cloud_diarization``
-(``app/utils/diarization_merge.py``) reads ``provider_name``/``model_name`` off the
-``DiarizeResult`` the provider itself returned and puts both into ``ASRResult.metadata``. But
-``_run_cloud_asr_pipeline`` built its return dict from four fields and **dropped the metadata**,
-so neither key reached ``finalize.py`` — which covered for the gap with::
+The cloud-ASR path computes the real values: ``_run_cloud_asr_pipeline`` reads
+``provider_name``/``model_name`` off the ``DiarizeResult`` the speaker detector itself returned
+(it used to arrive via ``merge_cloud_diarization``'s ``ASRResult.metadata``, deleted in #1226
+when the merge became ``assign_speakers``). It once built its return dict from four fields and
+**dropped them**, so neither key reached ``finalize.py`` — which covered for the gap with::
 
     result.get("diarization_model", "pyannote/speaker-diarization-community-1")
 
@@ -23,7 +23,8 @@ defect. ``storage.py`` skips a ``None`` (``if diarization_model:``), so an unkno
 the column NULL — which is a reportable "we don't know" rather than a confident wrong answer.
 
 Two legitimate cases still produce ``None`` here, and both mean nothing diarized: the ASR-only
-branch, and the non-fatal diarization failure that returns the unmerged ``ASRResult``.
+branch, and the non-fatal diarization failure (or an empty result) that leaves the transcript
+unmerged.
 """
 
 from __future__ import annotations
@@ -32,6 +33,13 @@ import ast
 from pathlib import Path
 
 import pytest
+
+from tests.unit._plan_contexts import make_plan
+from tests.unit.test_cloud_asr import FakeASRProvider
+from tests.unit.test_cloud_asr import FakeDiarizeProvider
+from tests.unit.test_cloud_asr import _asr_result
+from tests.unit.test_cloud_asr import _make_ctx
+from tests.unit.test_cloud_asr import _yield_session
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CLOUD_ASR = REPO_ROOT / "backend" / "app" / "tasks" / "transcription" / "cloud_asr.py"
@@ -45,38 +53,59 @@ SHARED_WEIGHTS = "pyannote/speaker-diarization-community-1"
 # ------------------------------------------------------------------ behavioural control
 
 
-def test_the_merge_really_does_record_the_engine_that_ran():
+def test_the_pipeline_really_does_record_the_engine_that_ran(db_session, normal_user):
     """Control: the values the pipeline was discarding genuinely exist upstream.
 
     Without this, the guards below would be asserting that we correctly propagate something
     that was never computed — they would pass over a pipeline recording nothing at all.
     """
-    from app.services.asr.types import ASRResult
+    from unittest.mock import patch
+
+    from app.models.media import Task
     from app.services.diarization.types import DiarizeResult
     from app.services.diarization.types import DiarizeSegment
-    from app.utils.diarization_merge import merge_cloud_diarization
+    from app.tasks.transcription.cloud_asr import _run_cloud_asr_pipeline
 
-    asr = ASRResult(
-        segments=[],
-        language="en",
-        provider_name="gladia",
-        model_name="gladia-v2",
-        metadata={},
+    db_session.add(
+        Task(
+            id="task-provenance",
+            user_id=normal_user.id,
+            media_file_id=None,
+            task_type="transcription",
+            status="in_progress",
+            progress=0.1,
+        )
     )
+    db_session.commit()
     diarized = DiarizeResult(
         segments=[DiarizeSegment(start=0.0, end=1.0, speaker="SPEAKER_00")],
         num_speakers=1,
         provider_name="some-other-engine",
         model_name="some-other/model-v9",
     )
+    cloud_asr = "app.tasks.transcription.cloud_asr"
+    with (
+        patch(f"{cloud_asr}.session_scope", lambda: _yield_session(db_session)),
+        patch(f"{cloud_asr}.send_progress_notification"),
+        patch(
+            "app.services.diarization.factory.DiarizationProviderFactory.create_for_engine",
+            return_value=FakeDiarizeProvider(result=diarized),
+        ),
+    ):
+        result = _run_cloud_asr_pipeline(
+            _make_ctx(normal_user, "task-provenance"),
+            "/fake/audio.wav",
+            min_speakers=None,
+            max_speakers=None,
+            num_speakers=None,
+            provider=FakeASRProvider(result=_asr_result()),
+            plan=make_plan("cloud_text_word", "pyannote"),
+        )
 
-    merged = merge_cloud_diarization(asr, diarized)
-
-    assert merged.metadata["diarization_provider"] == "some-other-engine"
-    assert merged.metadata["diarization_model"] == "some-other/model-v9", (
-        "the merge no longer carries the diarizer's own model name, so there is nothing "
-        "truthful for the pipeline to propagate and the fabricated constant becomes the only "
-        "value available again"
+    assert result["diarization_provider"] == "some-other-engine"
+    assert result["diarization_model"] == "some-other/model-v9", (
+        "the pipeline no longer carries the diarizer's own model name, so there is nothing "
+        "truthful to persist and the fabricated constant becomes the only value available again"
     )
 
 
@@ -105,8 +134,9 @@ def test_the_cloud_asr_pipeline_propagates_both_fields():
     assert keys, "could not find a returned dict literal — the function was restructured"
     missing = {"diarization_provider", "diarization_model"} - keys
     assert not missing, (
-        f"_run_cloud_asr_pipeline drops {sorted(missing)} from its result dict. The merge "
-        "computed them; discarding them is what forced finalize.py to invent a model name."
+        f"_run_cloud_asr_pipeline drops {sorted(missing)} from its result dict. The "
+        "detector reported them; discarding them is what forced finalize.py to invent a model "
+        "name."
     )
 
 

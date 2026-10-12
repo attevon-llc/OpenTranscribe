@@ -40,6 +40,8 @@ from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.file_provenance import llm_facts
+from app.services.file_provenance import record_stage
 from app.services.ingest_artifacts.service import source_fingerprint
 from app.services.llm_service import LLMService
 from app.services.redaction.llm_guard import RedactionNotReadyError
@@ -533,6 +535,7 @@ def _generate_llm_summary(
 
     llm_provider = llm_service.config.provider
     llm_model = llm_service.config.model
+    inputs["llm_provenance"] = llm_facts(llm_service.config)
     logger.info(f"Using LLM: {llm_provider}/{llm_model}")
     logger.info(f"User context window: {llm_service.user_context_window} tokens")
 
@@ -574,6 +577,7 @@ def _persist_summary(
     task_id: str,
     summary_data: dict[str, Any],
     prompt_uuid: str | None,
+    provenance: dict[str, Any] | None = None,
 ) -> float | None:
     """Phase 3 — write (short session, Postgres only).
 
@@ -594,6 +598,8 @@ def _persist_summary(
         media_file.summary_data = summary_data  # type: ignore[assignment]
         media_file.summary_schema_version = 1  # type: ignore[assignment]
         media_file.summary_status = "completed"  # type: ignore[assignment]
+        if provenance:
+            record_stage(db, file_id, "summary", **provenance)
 
         # Bump usage_count on the prompt actually used (best-effort; never
         # fail the task). Makes the shared library's usage ordering and the
@@ -719,7 +725,9 @@ def summarize_transcript_task(
             return _handle_no_llm_configured(file_id, user_id, inputs["filename"], task_id)
 
         # Phase 3 — write (DB session reopened, Postgres only).
-        duration_seconds = _persist_summary(file_id, user_id, task_id, summary_data, prompt_uuid)
+        duration_seconds = _persist_summary(
+            file_id, user_id, task_id, summary_data, prompt_uuid, inputs.get("llm_provenance")
+        )
 
         # Rebuild the OpenSearch summary plane from what was just committed
         # (issue #963). Dispatched AFTER `_persist_summary`'s own session

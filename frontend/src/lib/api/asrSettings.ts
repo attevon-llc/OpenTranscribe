@@ -254,6 +254,7 @@ interface RawASRProvider {
 export interface ASRConfigDeleted {
   deleted: boolean;
   diarizer_source_reverted: boolean;
+  pipeline_issues: PipelineIssue[];
 }
 
 export class ASRSettingsApi {

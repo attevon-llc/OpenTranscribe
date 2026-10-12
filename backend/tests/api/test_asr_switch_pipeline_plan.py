@@ -231,7 +231,9 @@ def test_deleting_the_active_config_promotes_a_runnable_one_over_an_earlier_unti
 
     response = client.delete(f"{_BASE}/config/{active.uuid}", headers=user_token_headers)
 
-    assert response.status_code == status.HTTP_204_NO_CONTENT, response.text
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
     assert _active_id(db_session, normal_user) == str(runnable.id)
 
 
@@ -243,5 +245,7 @@ def test_deleting_the_active_config_clears_when_nothing_else_is_runnable(
 
     response = client.delete(f"{_BASE}/config/{active.uuid}", headers=user_token_headers)
 
-    assert response.status_code == status.HTTP_204_NO_CONTENT, response.text
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
     assert _active_id(db_session, normal_user) is None

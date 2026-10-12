@@ -64,6 +64,28 @@ def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
     return segments
 
 
+def _segment_level_speakers(asr_result, diarize_result):
+    """Segment granularity (plan C7, #1236): each segment takes its dominant speaker.
+
+    For a segment-timed model the merge must not vote by word or look up the segment's
+    midpoint: a short turn on the midpoint would win a 30-second segment, and a midpoint
+    in a pause between two turns would leave it with no speaker. ``assign_speakers`` over
+    the segment intervals is the same overlap rule the post stage applies.
+    """
+    from dataclasses import replace
+
+    from app.transcription.speaker_assigner import assign_speakers
+    from app.transcription.speaker_assigner import diarize_segments_to_frame
+
+    intervals = {"segments": [{"start": s.start, "end": s.end} for s in asr_result.segments]}
+    assign_speakers(diarize_segments_to_frame(diarize_result.segments), intervals)
+    segments = [
+        replace(seg, speaker=interval.get("speaker"))
+        for seg, interval in zip(asr_result.segments, intervals["segments"], strict=True)
+    ]
+    return replace(asr_result, segments=segments, has_speakers=any(s.speaker for s in segments))
+
+
 def _run_parallel_cloud_asr_and_diarization(
     ctx: TranscriptionContext,
     audio_file_path: str,
@@ -165,6 +187,8 @@ def _run_parallel_cloud_asr_and_diarization(
     if asr_result is None:
         raise RuntimeError("Cloud ASR transcription returned no result")
     merged = merge_cloud_diarization(asr_result, diarize_result)
+    if plan.diarization.merge == "segment":
+        merged = _segment_level_speakers(merged, diarize_result)
     logger.info(
         "Parallel cloud pipeline complete: ASR=%s, diarization=%s, file=%d",
         asr_provider.provider_name,

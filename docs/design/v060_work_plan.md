@@ -20,20 +20,19 @@ and mock ASR overlays up.
 | AI switches | Turn off automatic AI speaker names and automatic topics | #1148 |
 | Translations | All 12 languages reviewed twice, admin strings translated, guard tests against English left over and dropped accents | #1193, #1220, #1234 |
 | Pipeline | One resolver decides what runs where; `GET /user-settings/pipeline`; post-transcription speaker detection stage; any cloud vendor as speaker detector; one merge path; cloud-only lite; per-file provenance | #1224, #1225, #1226, #1228, #1229, #1236 (items 1 to 3) |
+| Pipeline UI | Settings "Processing pipeline" view, speakers-included badges, warnings, reaction to config deletion and non-activation (merged, mock-provider end-to-end run passed) | #1227, #1219 |
 | CI | Backend and commit-hook failures reconciled; accessibility allowlist ratcheted | |
 
 ## 2. Running now
 
 | Work | Issue | State |
 |---|---|---|
-| Settings "Processing pipeline" view, speakers-included badges, warnings, reaction to config deletion and non-activation | #1227 (also closes #1219) | Agent integrating with the merged code |
 | Docs: architecture diagrams, deployment variants page, drift check | #1230 | Agent building |
 
 ## 3. Next, in order
 
-1. Merge #1227 and #1230 when they report.
-2. Mock-provider end-to-end run on the review stack (mock ASR and mock LLM are up): real upload, speakers, provenance section, summary.
-3. Final gate: full backend suite, frontend suite, full end-to-end, accessibility in light and dark, openapi check, bundle budget, CI green on the final head.
+1. Merge #1230 when it reports.
+2. Final gate: full backend suite, frontend suite, full end-to-end, accessibility in light and dark, openapi check, bundle budget, CI green on the final head.
 4. Re-capture visual baselines once; walk the UI with the owner at port 5373 (light, dark, Arabic).
 5. Close #1218 and #1221 with evidence; update the PR's `Closes` lines.
 6. Tidy: merged worktrees, scratch trees, stray processes (ask before deleting).

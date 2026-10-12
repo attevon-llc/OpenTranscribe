@@ -55,7 +55,7 @@
 # unconditionally, replacing dependence on the live task queue's contents for this rule.
 
 gallery::light::aria-input-field-name::4       # BACKLOG #785 — filter/sort controls without an accessible name, tracked for #747-#757
-gallery::dark::aria-input-field-name::4        # BACKLOG #785 #972 — same structural finding as the light entry above (missing accessible name is not theme-dependent); re-keyed, not independently re-measured
+gallery::dark::aria-input-field-name::2        # BACKLOG #785 #972 — measured 2026-10-11: 2 nodes in dark (light still 4); same structural finding as the light entry above (missing accessible name is not theme-dependent); re-keyed, not independently re-measured
 # gallery::aria-required-children / gallery::aria-required-parent — REMOVED by #967:
 # VirtualGrid.svelte now wraps each visual row of `.file-card`s in a `role="row"` element
 # (`display: contents`, so the CSS Grid layout is unaffected) between the existing
@@ -67,14 +67,14 @@ gallery::dark::aria-input-field-name::4        # BACKLOG #785 #972 — same stru
 # Observed 0 nodes on the gallery surface after that change.
 
 settings-modal::light::aria-input-field-name::4  # BACKLOG #785 — same filter/sort controls rendered inside the modal
-settings-modal::dark::aria-input-field-name::4   # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
+settings-modal::dark::aria-input-field-name::2   # BACKLOG #785 #972 — measured 2026-10-11: 2 nodes in dark (light still 4); same structural finding as the light entry above; re-keyed, not independently re-measured
 # settings-modal::label-title-only — REMOVED by #747, same root cause as gallery above:
 # this surface's modal capture leaks the gallery page underneath it (see the settings/gallery
 # note on `.count-chip` in test_visual_regression.py), so it inherited the same input.
 
 
 search::light::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered on /search
-search::dark::aria-input-field-name::4         # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
+search::dark::aria-input-field-name::2         # BACKLOG #785 #972 — measured 2026-10-11: 2 nodes in dark (light still 4); same structural finding as the light entry above; re-keyed, not independently re-measured
 search::light::color-contrast::1               # BACKLOG #785 — theme-token work (frontend/src/styles/theme.css), tracked for #747-#757
 search::light::label-title-only::1             # BACKLOG #785 — a control's only accessible name comes from a title attribute
 
@@ -88,7 +88,7 @@ file-status::light::select-name::2             # BACKLOG #785 — two <select> e
 file-status::dark::select-name::2              # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
 upload::light::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered behind the upload modal
-upload::dark::aria-input-field-name::4         # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
+upload::dark::aria-input-field-name::2         # BACKLOG #785 #972 — measured 2026-10-11: 2 nodes in dark (light still 4); same structural finding as the light entry above; re-keyed, not independently re-measured
 # upload::label-title-only — REMOVED by #747, same root cause as gallery above: this
 # surface's scan is the upload modal open OVER the gallery page, which inherited the same
 # input before #747 moved it out of FilterSidebar.

@@ -66,8 +66,11 @@
   $: hasWordTimestamps = bulkMode
     ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
     : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
+  // A cloud ASR provider returns its own speakers on a transcription re-run, so the range is
+  // moot there; a re-diarize re-detects with the user's current speaker-detection choice
+  // whichever provider transcribed the file, so its range always applies.
   $: showSpeakerSettings =
-    (selectedStages.has('transcription') || selectedStages.has('rediarize')) && !isCloudASR;
+    selectedStages.has('rediarize') || (selectedStages.has('transcription') && !isCloudASR);
   $: isValid =
     selectedStages.size > 0 &&
     (!showSpeakerSettings ||
@@ -108,8 +111,8 @@
       id: 'rediarize',
       labelKey: 'reprocess.stageRediarize',
       descKey: 'reprocess.stageRediarizeDesc',
-      disabled: !hasWordTimestamps || isCloudASR,
-      disabledReason: isCloudASR ? $t('reprocess.rediarizeCloudDisabled') : $t('reprocess.stageRediarizeDisabled'),
+      disabled: !hasWordTimestamps,
+      disabledReason: $t('reprocess.stageRediarizeDisabled'),
     },
   ] as StageDefinition[];
 

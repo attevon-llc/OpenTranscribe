@@ -368,7 +368,7 @@ The reprocess dialog's **Re-diarize Only (v4)** stage re-runs speaker detection 
 - **Automatic**, **Always on this server's GPU** or **Off**: this server's engine runs, because a transcription provider's own speakers cannot be fetched again without transcribing the file again.
 - On a lite deployment, a choice that would run this server's engine is refused before anything is cleared.
 
-The dialog currently offers this stage only when your active transcription provider is the built-in model; with a cloud provider active it shows "Not available with cloud ASR providers".
+The dialog offers this stage whichever transcription provider is active, because the choice above (not the provider that transcribed the file) decides what runs. It needs a completed transcript with word-level timestamps; the dialog also shows your saved speaker range for it.
 
 **Settings → Processing pipeline** shows that same plan as a read-only page: the four steps (transcription,
 speaker detection, speaker identification, AI features), where each runs (this server or a named cloud

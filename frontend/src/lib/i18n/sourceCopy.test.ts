@@ -31,6 +31,19 @@ describe('English source copy (#1220)', () => {
     expect(EN['uploader.fastProcessingOption']).toBeTruthy();
   });
 
+  it('does not say the Fast model has no speaker detection, because it detects them afterwards', () => {
+    for (const key of [
+      'uploader.fastProcessingOption',
+      'uploader.fastProcessingHint',
+      'uploader.reviewSpeakersFast',
+    ]) {
+      expect(EN[key]).toMatch(/after transcription/);
+      expect(EN[key]).not.toMatch(/no speaker|not available|does not detect/i);
+    }
+    // The German copy is a real translation of the same claim, not the English string.
+    expect(DE['uploader.fastProcessingOption']).toMatch(/nach der Transkription/);
+  });
+
   it('never interpolates a level name into a break-glass sentence', () => {
     expect(EN['supportAccess.breakGlass.confirmSummary']).toBeUndefined();
     for (const level of ['Read', 'Write']) {

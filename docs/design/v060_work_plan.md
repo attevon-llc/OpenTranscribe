@@ -1,6 +1,6 @@
 # v0.6.0 work plan: what is done, what is running, what is next
 
-Last updated 2026-10-12. Branch `feat/v0.6.0-frontend-ux`, pull request #1191.
+Last updated 2026-10-12 (final gate run). Branch `feat/v0.6.0-frontend-ux`, pull request #1191.
 Rule for this milestone: everything lands in v0.6.0, done properly, before the v0.7.0 demo.
 The merge to master waits until the AWS agent says go (merge commit, no squash).
 
@@ -27,16 +27,23 @@ and mock ASR overlays up.
 
 | Work | Issue | State |
 |---|---|---|
-| Docs: architecture diagrams, deployment variants page, drift check | #1230 | Agent building |
+| Sweep tool deletes rows owned by other test users and says why it cannot | #1237 | Agent building (found by the final gate) |
+
+Merged since the last update: docs, diagrams and drift checks (#1230); the pipeline docs findings
+(`ENABLE_DIARIZATION` no longer presented as a control, Fast model copy, Re-diarize enabled with
+cloud transcription).
 
 ## 3. Next, in order
 
-1. Merge #1230 when it reports.
-2. Final gate: full backend suite, frontend suite, full end-to-end, accessibility in light and dark, openapi check, bundle budget, CI green on the final head.
-4. Re-capture visual baselines once; walk the UI with the owner at port 5373 (light, dark, Arabic).
-5. Close #1218 and #1221 with evidence; update the PR's `Closes` lines.
-6. Tidy: merged worktrees, scratch trees, stray processes (ask before deleting).
-7. Merge to master when the AWS agent says go.
+1. Merge #1237 when it reports; rerun the sweep tests; push; add `Closes #1237` to the PR.
+2. Final gate results on `c3585755`: frontend, backend default suite, serial integration files,
+   openapi, accessibility (19 passed, light and dark) and PR CI all green. Open, by design: the 9
+   visual baselines (stale until step 3), `test_support_access` (needs a multi-tenant stack), and
+   `test_delete_of_a_requeued_file_leaves_no_residue[live]` (stack workers race the seed).
+3. Re-capture visual baselines once; walk the UI with the owner at port 5373 (light, dark, Arabic).
+4. Close #1218 and #1221 with evidence; #1236 items 4 to 6 are covered by #1221.
+5. Tidy: merged worktrees, scratch trees, stray processes (ask before deleting).
+6. Merge to master when the AWS agent says go.
 
 ## 4. Decisions made (do not re-open)
 

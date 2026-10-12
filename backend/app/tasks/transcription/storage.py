@@ -100,6 +100,12 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
 
     # Execute bulk insert - single database roundtrip for all segments
     db.execute(insert(TranscriptSegment), records)
+    # A re-run replaced the speakers the user had corrected; their corrections go to the
+    # new speakers of the same audio before anything matches them (issue #1233). In the
+    # same transaction, so the voiceprint stage never sees the segments without them.
+    from app.services.speaker_correction_carryover import reapply_file_corrections
+
+    reapply_file_corrections(db, file_id)
     db.commit()
 
     elapsed = time.perf_counter() - start_time

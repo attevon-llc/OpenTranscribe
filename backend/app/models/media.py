@@ -1278,6 +1278,43 @@ class SpeakerProfileBlacklist(Base):
     )
 
 
+class SpeakerCorrectionCarryover(Base):
+    """A user's correction, kept by the AUDIO it judged while a re-run replaces the speaker.
+
+    Re-diarizing, re-transcribing or retrying a file deletes its speakers, and the
+    ``ON DELETE CASCADE`` on the two tables above takes every correction with them. One
+    row per correction of a deleted speaker: the speaker's time ``spans`` and what it
+    was ruled out from (a profile, or a speaker of another file). The re-run's segment
+    save hands it to the new speakers whose speech lies in those spans, then deletes it
+    (``services/speaker_correction_carryover``; issue #1233).
+    """
+
+    __tablename__ = "speaker_correction_carryover"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    media_file_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    profile_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("speaker_profile.id", ondelete="CASCADE"), nullable=True
+    )
+    cannot_link_speaker_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=True
+    )
+    spans: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(profile_id IS NULL) <> (cannot_link_speaker_id IS NULL)",
+            name="ck_speaker_correction_carryover_one_target",
+        ),
+    )
+
+
 # Issue #1162: clear a file's infrastructure-requeue count on every terminal status write.
 # Registered here so every process that can write a MediaFile status has it.
 from app.core.infra_requeue_reset import register as _register_infra_requeue_reset  # noqa: E402

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Another provider's speaker detection, with any transcription (#1226).** Speaker detection
+  can be set to a saved ASR configuration (source `asr_config`, from #1224): that provider is
+  asked to transcribe with its speaker labels on, its speaker turns are kept and its text is
+  thrown away (never stored or logged). Every catalog model that returns speakers works this
+  way (Deepgram, AssemblyAI, OpenAI `gpt-4o-transcribe-diarize`, Google, Azure, AWS,
+  Speechmatics, Gladia, pyannote.ai STT), each verified through its own response parser.
+  **That provider bills a full transcription for it**, on top of whatever transcribes the
+  text, and the audio is sent to it; the pipeline view already warns
+  (`diarizer_double_billing`). With cloud transcription this runs today, in parallel with the
+  transcription; with local transcription it runs once the post stage lands (WP3). Choosing a
+  configuration with the same provider and model as the transcription uses that provider's own
+  speakers, with no second call. A configuration that is gone, no longer shared, text-only or
+  whose key no longer decrypts fails the file with a fixed sentence (new error reason
+  `diarizer_config_unusable`, never retried automatically); a vendor failure keeps the
+  transcript without speakers, as for pyannote.ai.
+
 - **One resolver decides how a recording is processed, and `GET /api/user-settings/pipeline`
   shows it (#1224).** Transcription and speaker detection are now planned together by one pure
   function (`services/pipeline_plan.py`) instead of string checks spread over the pipeline: for
@@ -146,6 +162,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Changed
+
+- **One merge of speaker turns into text (#1226).** The cloud path that pairs a cloud
+  transcription with a separate speaker detector (pyannote.ai, or another provider) used its
+  own merge: each word took the turn covering its midpoint and words never got a speaker. It
+  now uses the same overlap-based `assign_speakers` as local diarization, at the
+  transcription model's timing (word, or segment for `whisper-1`, `gpt-4o-transcribe-diarize`
+  and Azure). Measured on two real 10-minute recordings, the two rules agree on 99.69% and
+  99.91% of words, and the new one matches the hand-labelled reference more often. Visible
+  difference: a word-timed segment that spans a speaker change is now split at the change,
+  and a word in a pause between turns gets the nearest speaker instead of none.
+- **AssemblyAI receives the speaker range (#1226).** Without a fixed speaker count, the
+  minimum and maximum are sent as `speaker_options`; before, only a fixed count reached
+  AssemblyAI. Speechmatics and Gladia still receive no speaker hints.
+- **`DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
+  with `{deleted, diarizer_source_reverted}` instead of 204 (#1226).** Deleting a configuration
+  that someone uses for speaker detection resets that choice to the default for every user who
+  had it; `diarizer_source_reverted` says whether the caller's was reset.
 
 - **Saving a speaker-detection choice is checked against the pipeline plan (#1224).**
   `PUT /api/user-settings/transcription` resolves the plan for the settings being saved and

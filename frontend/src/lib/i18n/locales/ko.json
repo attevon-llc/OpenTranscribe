@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "구간 단위 타이밍",
   "settings.asrProvider.timing.none": "타이밍 없음",
   "settings.asrProvider.timing.noneInfo": "이 모델은 타임스탬프 없이 텍스트만 반환하므로 화자를 추가할 수 없습니다.",
+  "settings.asrProvider.diarizerReverted": "해당 제공업체가 화자 감지 소스였으므로 화자 감지가 '자동'으로 되돌아갔습니다.",
+  "settings.asrProvider.notAutoActivated": "저장했지만 활성화하지 않았습니다. 활성화하면 현재 설정으로는 화자 감지를 실행할 수 없습니다.",
   "settings.speakerIdentification.countHeading": "화자 수",
   "settings.speakerIdentification.countDesc": "말하는 사람이 몇 명인지에 대한 힌트입니다. 개별 업로드나 재처리에서 덮어쓸 수 있습니다. PyAnnote 대체 엔진과 클라우드 제공업체는 이 범위를 적용하며, 기본 로컬 엔진은 화자 수를 자동으로 파악합니다.",
   "settings.speakerIdentification.countMode.label": "업로드 시 화자 수",

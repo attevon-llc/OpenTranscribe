@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Tempo por segmento",
   "settings.asrProvider.timing.none": "Sem tempo",
   "settings.asrProvider.timing.noneInfo": "Este modelo retorna texto sem marcas de tempo, então não é possível adicionar falantes a ele.",
+  "settings.asrProvider.diarizerReverted": "Esse provedor era a sua fonte de detecção de falantes, então a detecção de falantes voltou para Automática.",
+  "settings.asrProvider.notAutoActivated": "Salvo, mas não ativado: com ele, a detecção de falantes não poderia ser executada com as suas configurações atuais.",
   "settings.speakerIdentification.countHeading": "Número de falantes",
   "settings.speakerIdentification.countDesc": "Uma dica de quantas pessoas falam. Um envio ou reprocessamento específico pode substituí-la. O motor de contingência PyAnnote e os provedores na nuvem aplicam o intervalo; o motor local padrão conta os falantes automaticamente.",
   "settings.speakerIdentification.countMode.label": "Número de falantes ao enviar",

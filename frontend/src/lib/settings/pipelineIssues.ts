@@ -98,14 +98,30 @@ export function pipelineErrorCode(err: unknown): string | null {
 }
 
 /**
- * Copy for a refused speaker-detection save, keyed by the server's code. A missing key keeps
- * the existing "save the key first" message; every other known refusal gets its own sentence.
- * Null when the refusal carries no code this build knows, so the caller shows its generic one.
+ * Copy for a request the server refused with 409 `detail: {code, message}`, keyed by the code.
+ * Null when the refusal carries no code this build knows, so the caller shows its generic
+ * message: raw server text is never rendered.
+ */
+export function pipelineRefusalKey(err: unknown): string | null {
+  const code = pipelineErrorCode(err);
+  return code !== null && isPipelineIssueCode(code) ? issueKey(code) : null;
+}
+
+/**
+ * Copy key for a failed request that may carry a plan code: the code's own sentence, else the
+ * caller's generic key when the server named a code this build does not know (its `message`
+ * is not shown), else null so the caller falls back to its usual error text.
+ */
+export function pipelineFailureKey(err: unknown, fallbackKey: string): string | null {
+  return pipelineRefusalKey(err) ?? (pipelineErrorCode(err) !== null ? fallbackKey : null);
+}
+
+/**
+ * Copy for a refused speaker-detection save. A missing key keeps the existing "save the key
+ * first" message; every other known refusal gets its own sentence.
  */
 export function speakerSaveErrorKey(err: unknown): string | null {
-  const code = pipelineErrorCode(err);
-  if (code === null || !isPipelineIssueCode(code)) return null;
-  return code === 'pyannote_key_missing'
+  return pipelineErrorCode(err) === 'pyannote_key_missing'
     ? 'settings.speakerIdentification.pyannoteKey.requiredToSelect'
-    : issueKey(code);
+    : pipelineRefusalKey(err);
 }

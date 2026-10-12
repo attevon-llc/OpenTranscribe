@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Horodatage par segment",
   "settings.asrProvider.timing.none": "Sans horodatage",
   "settings.asrProvider.timing.noneInfo": "Ce modèle renvoie du texte sans horodatage ; il est donc impossible d'y ajouter des locuteurs.",
+  "settings.asrProvider.diarizerReverted": "Ce fournisseur était votre source de détection des locuteurs ; la détection des locuteurs est revenue sur Automatique.",
+  "settings.asrProvider.notAutoActivated": "Enregistré, mais non activé : avec lui, la détection des locuteurs ne pourrait pas fonctionner avec vos paramètres actuels.",
   "settings.speakerIdentification.countHeading": "Nombre de locuteurs",
   "settings.speakerIdentification.countDesc": "Une indication du nombre de personnes qui parlent. Un téléversement ou un retraitement donné peut la remplacer. Le moteur de secours PyAnnote et les fournisseurs cloud appliquent la plage ; le moteur local par défaut compte les locuteurs automatiquement.",
   "settings.speakerIdentification.countMode.label": "Nombre de locuteurs au téléversement",

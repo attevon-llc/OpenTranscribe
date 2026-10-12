@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Segment-Zeitstempel",
   "settings.asrProvider.timing.none": "Keine Zeitstempel",
   "settings.asrProvider.timing.noneInfo": "Dieses Modell liefert Text ohne Zeitstempel, daher können ihm keine Sprecher zugeordnet werden.",
+  "settings.asrProvider.diarizerReverted": "Dieser Anbieter war Ihre Quelle für die Sprechererkennung, daher ist sie wieder auf Automatisch gestellt.",
+  "settings.asrProvider.notAutoActivated": "Gespeichert, aber nicht aktiviert: Mit ihm könnte die Sprechererkennung unter Ihren aktuellen Einstellungen nicht laufen.",
   "settings.speakerIdentification.countHeading": "Anzahl der Sprecher",
   "settings.speakerIdentification.countDesc": "Ein Hinweis, wie viele Personen sprechen. Ein einzelner Upload oder eine Neuverarbeitung kann ihn überschreiben. Die PyAnnote-Fallback-Engine und Cloud-Anbieter wenden den Bereich an; die lokale Standard-Engine zählt die Sprecher automatisch.",
   "settings.speakerIdentification.countMode.label": "Sprecherzahl beim Hochladen",

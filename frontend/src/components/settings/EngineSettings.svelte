@@ -5,6 +5,9 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { getPipelineView } from '$lib/api/pipeline';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
   import EngineIntro, { type SidecarStatus } from '$components/settings/EngineIntro.svelte';
 
   type SettingSource = 'db' | 'env' | 'default';
@@ -44,9 +47,21 @@
   let draftAcousticCosineMargin = 0.05;
   let draftAcousticMaxWordDur = 1.0;
 
+  // Lite has no local speaker detection engine to choose. The plan says so; asked once here
+  // and never fatal, because the panel works without it.
+  let isLite = false;
+
   onMount(async () => {
-    await loadData();
+    await Promise.all([loadData(), loadMode()]);
   });
+
+  async function loadMode() {
+    try {
+      isLite = (await getPipelineView()).deployment_mode === 'lite';
+    } catch {
+      isLite = false;
+    }
+  }
 
   async function loadData() {
     loading = true;
@@ -110,7 +125,11 @@
       toastStore.success($t('settings.engineSettings.saved'));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.saveFailed')), 5000);
+      const refusal = pipelineFailureKey(err, 'settings.engineSettings.saveFailed');
+      toastStore.error(
+        refusal ? $t(refusal) : getErrorMessage(err, $t('settings.engineSettings.saveFailed')),
+        5000
+      );
     } finally {
       saving = false;
     }
@@ -162,6 +181,12 @@
 
       <h3 class="section-title">{$t('settings.engineSettings.diarizerHeading')}</h3>
 
+      {#if isLite}
+        <!-- Lite is cloud-only: the server refuses these two settings (local_diarization_unavailable). -->
+        <p class="lite-note" data-testid="engine-lite-note">
+          {$t(PIPELINE_ISSUE_KEYS.local_diarization_unavailable)}
+        </p>
+      {:else}
       <!-- Diarizer Backend -->
       <div class="form-row">
         <div class="form-field">
@@ -235,6 +260,8 @@
       </div>
 
       <h3 class="section-title boundary-heading">{$t('settings.engineSettings.boundaryHeading')}</h3>
+
+      {/if}
 
       <!-- Boundary Smoothing -->
       <div class="form-row">
@@ -413,6 +440,17 @@
 </div>
 
 <style>
+  .lite-note {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
   /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
      beneath left-aligned tabs reads as misaligned. */
   .engine-settings {

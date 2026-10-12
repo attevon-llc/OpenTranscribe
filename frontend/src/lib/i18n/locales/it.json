@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Temporizzazione per segmento",
   "settings.asrProvider.timing.none": "Nessuna temporizzazione",
   "settings.asrProvider.timing.noneInfo": "Questo modello restituisce testo senza marcature temporali, quindi non è possibile aggiungervi i parlanti.",
+  "settings.asrProvider.diarizerReverted": "Quel provider era la tua fonte di rilevamento dei parlanti, quindi il rilevamento è tornato su Automatico.",
+  "settings.asrProvider.notAutoActivated": "Salvato, ma non attivato: con esso il rilevamento dei parlanti non potrebbe funzionare con le tue impostazioni attuali.",
   "settings.speakerIdentification.countHeading": "Numero di parlanti",
   "settings.speakerIdentification.countDesc": "Un suggerimento su quante persone parlano. Un singolo caricamento o rielaborazione può sostituirlo. Il motore di riserva PyAnnote e i provider cloud applicano l'intervallo; il motore locale predefinito conta i parlanti automaticamente.",
   "settings.speakerIdentification.countMode.label": "Numero di parlanti al caricamento",

@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "セグメント単位のタイミング",
   "settings.asrProvider.timing.none": "タイミングなし",
   "settings.asrProvider.timing.noneInfo": "このモデルはタイムスタンプなしのテキストを返すため、話者を追加できません。",
+  "settings.asrProvider.diarizerReverted": "このプロバイダーは話者検出の取得元だったため、話者検出は「自動」に戻りました。",
+  "settings.asrProvider.notAutoActivated": "保存しましたが、有効にはしていません。有効にすると、現在の設定では話者検出が実行できなくなります。",
   "settings.speakerIdentification.countHeading": "話者数",
   "settings.speakerIdentification.countDesc": "何人が話しているかのヒントです。個別のアップロードや再処理で上書きできます。PyAnnoteフォールバックエンジンとクラウドプロバイダーはこの範囲を適用し、既定のローカルエンジンは話者数を自動で数えます。",
   "settings.speakerIdentification.countMode.label": "アップロード時の話者数",

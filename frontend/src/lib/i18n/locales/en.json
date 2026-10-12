@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Segment timing",
   "settings.asrProvider.timing.none": "No timing",
   "settings.asrProvider.timing.noneInfo": "This model returns text without timestamps, so speakers cannot be added to it.",
+  "settings.asrProvider.diarizerReverted": "That provider was your speaker detection source, so speaker detection is back to Automatic.",
+  "settings.asrProvider.notAutoActivated": "Saved, but not made active: with it, speaker detection could not run under your current settings.",
   "settings.speakerIdentification.countHeading": "Number of speakers",
   "settings.speakerIdentification.countDesc": "A hint for how many people speak. A single upload or reprocess can override it. The PyAnnote fallback engine and cloud providers apply the range; the default local engine counts speakers automatically.",
   "settings.speakerIdentification.countMode.label": "Speaker count when uploading",

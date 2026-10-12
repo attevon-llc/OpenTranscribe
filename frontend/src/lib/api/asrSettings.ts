@@ -3,6 +3,7 @@
  */
 
 import axiosInstance from '../axios';
+import type { PipelineIssue } from './pipeline';
 
 export type ASRProvider =
   | 'local'
@@ -135,15 +136,7 @@ export interface UserASRSettingsResponse {
   updated_at: string;
 }
 
-/** One issue of the caller's pipeline plan (`PipelineIssueOut`, issue #1224). */
-export interface PipelineIssue {
-  /** Stable code; i18n key `settings.pipeline.issue.<code>` */
-  code: string;
-  severity: 'error' | 'warning' | 'info';
-  step: 'transcription' | 'diarization' | 'speaker_id' | 'llm';
-  /** The fixed English sentence for the code */
-  message: string;
-}
+export type { PipelineIssue };
 
 /**
  * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch

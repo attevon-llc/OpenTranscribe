@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Метки по сегментам",
   "settings.asrProvider.timing.none": "Без меток времени",
   "settings.asrProvider.timing.noneInfo": "Эта модель возвращает текст без временных меток, поэтому добавить к нему спикеров нельзя.",
+  "settings.asrProvider.diarizerReverted": "Этот провайдер был вашим источником определения спикеров, поэтому определение спикеров снова переключено на «Автоматически».",
+  "settings.asrProvider.notAutoActivated": "Сохранено, но не активировано: с ним определение спикеров не сможет работать при ваших текущих настройках.",
   "settings.speakerIdentification.countHeading": "Количество спикеров",
   "settings.speakerIdentification.countDesc": "Подсказка о том, сколько людей говорит. Отдельная загрузка или повторная обработка может её переопределить. Резервный движок PyAnnote и облачные провайдеры учитывают диапазон; локальный движок по умолчанию считает спикеров автоматически.",
   "settings.speakerIdentification.countMode.label": "Число спикеров при загрузке",

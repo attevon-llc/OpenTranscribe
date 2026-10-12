@@ -13,6 +13,8 @@
   import ASRConfigModal from './ASRConfigModal.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import { modelCapability } from '$lib/settings/asrCapabilities';
+  import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
   import { getTranscriptionSettings, type DiarizationSource } from '$lib/api/transcriptionSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -37,6 +39,29 @@
   // The user's speaker detection choice, for the badges and the notice in the config editor.
   let diarizationSource: DiarizationSource | null = null;
   let diarizerConfigUuid: string | null = null;
+
+  // A refused change names its reason by code; anything else keeps the generic message.
+  function failure(err: unknown, fallbackKey: string): string {
+    const key = pipelineFailureKey(err, fallbackKey);
+    return key ? $t(key) : getErrorMessage(err, $t(fallbackKey));
+  }
+
+  // What a change did to the pipeline, as fixed translated sentences (never server text).
+  function announce(messages: ChangeMessage[]) {
+    for (const m of messages) {
+      const text = m.key ? $t(m.key) : (m.fallbackText ?? '');
+      if (m.severity === 'error') toastStore.error(text, 8000);
+      else if (m.severity === 'warning') toastStore.warning(text, 8000);
+      else toastStore.info(text, 8000);
+    }
+  }
+
+  // A deleted config that was the speaker detector sends the source back to Automatic.
+  function applyReset(reverted: boolean) {
+    if (!reverted) return;
+    diarizationSource = 'provider';
+    diarizerConfigUuid = null;
+  }
 
   /** Speakers and timing badges for a saved config; null when the catalog does not list it. */
   function capabilitiesFor(config: UserASRSettingsResponse) {
@@ -120,13 +145,14 @@
     if (uuid === activeConfigurationId) return;
     saving = true;
     try {
-      await ASRSettingsApi.setActive(uuid);
+      const result = await ASRSettingsApi.setActive(uuid);
       activeConfigurationId = uuid;
       usingLocalDefault = false;
       toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.activateFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.activateFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -136,13 +162,14 @@
     if (usingLocalDefault) return;
     saving = true;
     try {
-      await ASRSettingsApi.clearActive();
+      const result = await ASRSettingsApi.clearActive();
       activeConfigurationId = null;
       usingLocalDefault = true;
       toastStore.success($t('settings.asrProvider.switchedToLocal'));
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.switchToLocalFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.switchToLocalFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -188,15 +215,17 @@
     saving = true;
     try {
       const deletedName = configToDelete.name;
-      await ASRSettingsApi.deleteConfig(configToDelete.uuid);
+      const result = await ASRSettingsApi.deleteConfig(configToDelete.uuid);
       configToDelete = null;
       showDeleteModal = false;
       // Re-fetch canonical state to pick up auto-promoted active config
       await loadData();
       toastStore.success(`"${deletedName}" deleted`);
+      applyReset(result.diarizer_source_reverted);
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.deleteFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -205,15 +234,17 @@
   async function deleteAllConfigurations() {
     saving = true;
     try {
-      await ASRSettingsApi.deleteAll();
+      const result = await ASRSettingsApi.deleteAll();
       configurations = [];
       activeConfigurationId = null;
       usingLocalDefault = true;
       showDeleteAllModal = false;
       toastStore.success($t('settings.asrProvider.deletedAll'));
+      applyReset(result.diarizer_source_reverted);
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteAllFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.deleteAllFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -647,6 +678,7 @@
   {providers}
   {diarizationSource}
   deploymentMode={isLite ? 'lite' : 'full'}
+  firstConfig={configurations.length === 0 && sharedConfigurations.length === 0}
   on:saved={handleConfigSaved}
   on:close={() => { showConfigModal = false; editingConfiguration = null; }}
 />

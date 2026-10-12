@@ -16,6 +16,8 @@
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { modelCapability } from '$lib/settings/asrCapabilities';
   import { selectionNotices } from '$lib/settings/speakerSources';
+  import { notAutoActivatedMessages } from '$lib/settings/asrOutcome';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import IssueRow from './IssueRow.svelte';
 
@@ -25,6 +27,8 @@
   /** The user's speaker detection choice; decides which warnings the model earns. */
   export let diarizationSource: DiarizationSource | null = null;
   export let deploymentMode: 'full' | 'lite' = 'full';
+  /** The user has no saved config yet, so a created one would be auto-activated (if runnable). */
+  export let firstConfig = false;
 
   const dispatch = createEventDispatcher();
 
@@ -67,6 +71,8 @@
 
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
 
+  // Lite has no local transcription: that provider is not offered at all.
+  $: selectableProviders = providers.filter((p) => !(deploymentMode === 'lite' && p.provider === 'local'));
   $: selectedProvider = providers.find(p => p.provider === formData.provider) || null;
   $: availableModels = selectedProvider?.models || [];
 
@@ -173,13 +179,24 @@
         result = await ASRSettingsApi.updateConfig(editingConfig.uuid, payload);
         toastStore.success(`"${result.name}" updated`);
       } else {
-        result = await ASRSettingsApi.createConfig(payload);
-        toastStore.success(`"${result.name}" created`);
+        const created = await ASRSettingsApi.createConfig(payload);
+        result = created;
+        toastStore.success(`"${created.name}" created`);
+        // A first config is made active only when speaker detection keeps working with it.
+        for (const m of notAutoActivatedMessages(created, firstConfig)) {
+          const text = m.key ? $t(m.key) : (m.fallbackText ?? '');
+          if (m.severity === 'error') toastStore.error(text, 8000);
+          else toastStore.warning(text, 8000);
+        }
       }
       dispatch('saved', result);
       handleClose();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.saveFailed')), 5000);
+      const refusal = pipelineFailureKey(err, 'settings.asrProvider.saveFailed');
+      toastStore.error(
+        refusal ? $t(refusal) : getErrorMessage(err, $t('settings.asrProvider.saveFailed')),
+        5000
+      );
     } finally {
       saving = false;
     }
@@ -248,7 +265,7 @@
             title={editingConfig ? $t('settings.asrProvider.providerLockedOnEdit') : undefined}
           >
             <option value="">{$t('settings.asrProvider.selectProvider')}</option>
-            {#each providers as p}
+            {#each selectableProviders as p}
               <option value={p.provider}>
                 {ASRSettingsApi.getProviderDisplayName(p.provider)}
                 {#if p.status === 'experimental'} &#9888; ({$t('settings.asrProvider.experimentalShort')}){/if}

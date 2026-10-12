@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "分段时间戳",
   "settings.asrProvider.timing.none": "无时间戳",
   "settings.asrProvider.timing.noneInfo": "此模型返回不带时间戳的文本，因此无法为其添加说话人。",
+  "settings.asrProvider.diarizerReverted": "该提供商曾是您的说话人检测来源，因此说话人检测已恢复为“自动”。",
+  "settings.asrProvider.notAutoActivated": "已保存，但未设为活动：启用后，按当前设置无法运行说话人检测。",
   "settings.speakerIdentification.countHeading": "说话人数量",
   "settings.speakerIdentification.countDesc": "关于说话人数的提示。单次上传或重新处理可以覆盖它。PyAnnote 备用引擎和云提供商会应用该范围；默认的本地引擎会自动统计说话人数。",
   "settings.speakerIdentification.countMode.label": "上传时的说话人数",

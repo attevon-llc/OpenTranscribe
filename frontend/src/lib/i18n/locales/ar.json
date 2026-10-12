@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "توقيت المقاطع",
   "settings.asrProvider.timing.none": "بلا توقيت",
   "settings.asrProvider.timing.noneInfo": "يُرجع هذا النموذج نصًا بلا طوابع زمنية، لذلك لا يمكن إضافة المتحدثين إليه.",
+  "settings.asrProvider.diarizerReverted": "كان هذا المزوّد مصدر كشف المتحدثين لديك، لذلك عاد كشف المتحدثين إلى الوضع التلقائي.",
+  "settings.asrProvider.notAutoActivated": "تم الحفظ لكن لم يُفعَّل: معه لن يعمل كشف المتحدثين بإعداداتك الحالية.",
   "settings.speakerIdentification.countHeading": "عدد المتحدثين",
   "settings.speakerIdentification.countDesc": "تلميح حول عدد الأشخاص المتحدثين. يمكن تجاوزه عند رفع ملف أو إعادة معالجته. يطبّق محرك PyAnnote الاحتياطي والمزوّدون السحابيون هذا النطاق؛ أما المحرك المحلي الافتراضي فيحصي المتحدثين تلقائيًا.",
   "settings.speakerIdentification.countMode.label": "عدد المتحدثين عند الرفع",

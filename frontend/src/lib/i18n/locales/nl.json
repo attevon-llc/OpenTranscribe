@@ -4658,6 +4658,8 @@
   "settings.asrProvider.timing.segment": "Segmenttiming",
   "settings.asrProvider.timing.none": "Geen timing",
   "settings.asrProvider.timing.noneInfo": "Dit model levert tekst zonder tijdstempels, dus er kunnen geen sprekers aan worden toegevoegd.",
+  "settings.asrProvider.diarizerReverted": "Die provider was uw bron voor sprekerdetectie, dus sprekerdetectie staat weer op Automatisch.",
+  "settings.asrProvider.notAutoActivated": "Opgeslagen, maar niet geactiveerd: daarmee kan sprekerdetectie met uw huidige instellingen niet draaien.",
   "settings.speakerIdentification.countHeading": "Aantal sprekers",
   "settings.speakerIdentification.countDesc": "Een aanwijzing voor het aantal sprekers. Een enkele upload of herverwerking kan dit overschrijven. De PyAnnote-terugvalengine en cloudproviders passen het bereik toe; de standaard lokale engine telt sprekers automatisch.",
   "settings.speakerIdentification.countMode.label": "Aantal sprekers bij uploaden",

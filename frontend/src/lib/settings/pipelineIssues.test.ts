@@ -7,6 +7,7 @@ import {
   issueKey,
   isPipelineIssueCode,
   pipelineErrorCode,
+  pipelineFailureKey,
   speakerSaveErrorKey,
 } from './pipelineIssues';
 
@@ -123,5 +124,17 @@ describe('speakerSaveErrorKey', () => {
     ).toBeNull();
     expect(speakerSaveErrorKey(conflict('pyannote.ai needs a key'))).toBeNull();
     expect(speakerSaveErrorKey({ response: { status: 409 } })).toBeNull();
+  });
+});
+
+describe('pipelineFailureKey', () => {
+  it('gives a known code its sentence, an unknown code the generic key, and no code nothing', () => {
+    expect(
+      pipelineFailureKey(conflict({ code: 'local_asr_unavailable', message: 'm' }), 'g.key')
+    ).toBe('settings.pipeline.issue.local_asr_unavailable');
+    expect(pipelineFailureKey(conflict({ code: 'unheard_of', message: 'raw' }), 'g.key')).toBe(
+      'g.key'
+    );
+    expect(pipelineFailureKey(new Error('network'), 'g.key')).toBeNull();
   });
 });

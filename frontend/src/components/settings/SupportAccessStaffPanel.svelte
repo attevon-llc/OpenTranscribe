@@ -153,7 +153,7 @@
   </header>
 
   {#if isSuperAdmin}
-    <Tabs {tabs} activeId={scope} on:change={changeScope} />
+    <Tabs sticky {tabs} activeId={scope} on:change={changeScope} />
   {/if}
 
   <div

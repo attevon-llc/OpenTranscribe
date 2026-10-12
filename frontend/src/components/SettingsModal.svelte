@@ -11,52 +11,20 @@
   import axiosInstance from '$lib/axios';
   import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '$lib/api/userSettings';
 
-  // Import settings components
-  import LLMSettings from '$components/settings/LLMSettings.svelte';
-  import PromptSettings from '$components/settings/PromptSettings.svelte';
-  import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
-  import TranscriptionSection from '$components/settings/TranscriptionSection.svelte';
-  import SpeakerIdentificationSection from '$components/settings/SpeakerIdentificationSection.svelte';
-  import OrganizationContextSettings from '$components/settings/OrganizationContextSettings.svelte';
-  import DownloadSettings from '$components/settings/DownloadSettings.svelte';
-  import MediaSourcesSettings from '$components/settings/MediaSourcesSettings.svelte';
-  import WatchSourcesSettings from '$components/settings/WatchSourcesSettings.svelte';
-  import SearchSettings from '$components/settings/SearchSettings.svelte';
-  import GroupsSettings from '$components/settings/GroupsSettings.svelte';
-  import DataIntegritySettings from '$components/settings/DataIntegritySettings.svelte';
-  import EmbeddingConsistencySettings from '$components/settings/EmbeddingConsistencySettings.svelte';
-  import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
-  import RetentionSettings from '$components/settings/RetentionSettings.svelte';
-  import BackupSettings from '$components/settings/BackupSettings.svelte';
-  import SupportAccessStaffPanel from '$components/settings/SupportAccessStaffPanel.svelte';
-  import SupportAccessApprovalsPanel from '$components/settings/SupportAccessApprovalsPanel.svelte';
+  // Sections are lazy (LazySection + sectionLoaders): only the pieces the modal itself needs
+  // are imported statically.
+  import SettingsModalFrame from '$components/settings/SettingsModalFrame.svelte';
+  import LazySection from '$components/settings/LazySection.svelte';
+  import { sectionLoaders } from '$lib/settings/sectionLoaders';
+  import type { ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import { SupportAccessApi } from '$lib/api/supportAccess';
   import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
-  import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
-  import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
-  import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
-  import LockedAccountsPanel from '$components/settings/LockedAccountsPanel.svelte';
-  import QuarantinePanel from '$components/settings/QuarantinePanel.svelte';
-  import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
-  import PrivacyRedactionSettings from '$components/settings/PrivacyRedactionSettings.svelte';
-  import ChatSettingsPanel from '$components/settings/ChatSettingsPanel.svelte';
-  import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
-  import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
-  import UserProfileSettings from '$components/settings/UserProfileSettings.svelte';
-  // Managed-edition org-admin panels (only rendered when edition=cloud + org_admin;
-  // community builds get inert stubs from the $lib/cloud seam)
-  import BillingPanel from '$lib/cloud/components/BillingPanel.svelte';
-  import UsageDashboard from '$lib/cloud/components/UsageDashboard.svelte';
-  import TeamManagement from '$lib/cloud/components/TeamManagement.svelte';
-  import UserManagementTable from '$components/UserManagementTable.svelte';
-  import PendingApprovalsPanel from '$components/settings/PendingApprovalsPanel.svelte';
   import { UserApprovalsApi } from '$lib/api/userApprovals';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
   import SettingsSearch from '$components/settings/SettingsSearch.svelte';
-  import PipelineOverview from '$components/settings/PipelineOverview.svelte';
   import {
     buildSettingsSearchItems,
     createSettingsFuzzyIndex,
@@ -76,8 +44,11 @@
   import { t, locale } from '$stores/locale';
   import { getErrorMessage, handleApiError } from '$lib/utils/apiError';
 
+  /** The root layout shows the shell first when the chunk was still loading; skip the enter animation then. */
+  export let skipEnter = false;
+
   // Modal state
-  let modalElement: HTMLElement;
+  let modalElement: HTMLElement | undefined;
   // The nav list (not the sidebar) scrolls; the search header above it draws a divider once it has.
   let sidebarScrolled = false;
   let showCloseConfirmation = false;
@@ -918,514 +889,562 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="settings-modal-backdrop"
-    on:click={handleBackdropClick}
-    on:wheel|preventDefault|self
-    on:touchmove|preventDefault|self
-    role="presentation"
-  >
-    <div class="settings-modal" bind:this={modalElement} role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-      <!-- Header bar with title and close button -->
-      <div class="settings-header-bar">
-        <h2 id="settings-modal-title" class="settings-header-title">{$t('settings.title')}</h2>
-        <button class="modal-close-button" on:click={attemptClose} aria-label={$t('settings.modal.closeSettings')} title={$t('settings.modal.closeSettingsTitle')} style="position:static; margin:0; padding:0.5rem;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+  <SettingsModalFrame bind:element={modalElement} {skipEnter} on:close={attemptClose}>
+    <svelte:fragment slot="sidebar">
+      <!-- Desktop sidebar -->
+      <SettingsSearch
+        index={settingsSearchIndex}
+        idPrefix="settings-search-desktop"
+        layout="sidebar"
+        raised={sidebarScrolled}
+        bind:active={desktopSearchActive}
+        on:navigate={handleSettingsNavigate}
+      />
+      {#if !desktopSearchActive}
+        <div
+          class="sidebar-scroll"
+          on:scroll={(event) => (sidebarScrolled = event.currentTarget.scrollTop > 0)}
+        >
+        {#each sidebarSections as section}
+          <div class="sidebar-section">
+            <h3 class="section-heading">{section.title}</h3>
+            <nav class="section-nav">
+              {#each section.items as item}
+                <button
+                  class="nav-item"
+                  class:active={effectiveActiveSection === item.id}
+                  class:dirty={$settingsModalStore.dirtyState[item.id]}
+                  class:locked={item.locked}
+                  disabled={item.locked}
+                  title={item.locked ? lockReason(item.id) : undefined}
+                  on:click={() => switchSection(item.id)}
+                >
+                  <span class="nav-item-label">{item.label}</span>
+                  {#if !item.locked && item.badge > 0}
+                    <span class="nav-badge" title={$t('settings.approvals.badgeTooltip')}>
+                      {item.badge}
+                    </span>
+                  {/if}
+                  {#if item.locked}
+                    <span class="lock-indicator" aria-hidden="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                      </svg>
+                    </span>
+                  {:else if $settingsModalStore.dirtyState[item.id]}
+                    <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
+                  {/if}
+                </button>
+              {/each}
+            </nav>
+          </div>
+        {/each}
+        </div>
+      {/if}
+    </svelte:fragment>
+
+    <!-- Content Area -->
+    <!-- Mobile section navigation (hidden on desktop where sidebar is visible) -->
+    <div class="mobile-section-nav">
+      <SettingsSearch
+        index={settingsSearchIndex}
+        idPrefix="settings-search-mobile"
+        bind:active={mobileSearchActive}
+        on:navigate={handleSettingsNavigate}
+      />
+      {#if !mobileSearchActive}
+        <!-- svelte-ignore a11y_label_has_associated_control -->
+        <label class="mobile-nav-label">{$t('settings.title')}</label>
+        <select
+          class="mobile-nav-select"
+          value={effectiveActiveSection}
+          on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
+        >
+          {#each sidebarSections as section}
+            <optgroup label={section.title}>
+              {#each section.items as item}
+                <option value={item.id} disabled={item.locked}>
+                  {item.locked
+                    ? `${item.label} — ${lockReason(item.id)}`
+                    : item.badge > 0
+                      ? `${item.label} (${item.badge})`
+                      : item.label}
+                </option>
+              {/each}
+            </optgroup>
+          {/each}
+        </select>
+      {/if}
+    </div>
+
+    {#if activeSectionLocked}
+      <!-- A deep link (or a demotion mid-session) can land on a section this
+           user may not open. Say so explicitly — the old behaviour was to
+           render nothing, which looked like a broken blank pane. -->
+      <div class="content-section">
+        <EmptyState
+          icon="🔒"
+          title={activeSectionRequires === 'super_admin'
+            ? $t('settings.permission.superAdminTitle')
+            : $t('settings.permission.adminTitle')}
+          description={activeSectionRequires === 'super_admin'
+            ? $t('settings.permission.superAdminMessage')
+            : $t('settings.permission.adminMessage')}
+        />
       </div>
+    {:else}
+    <!-- Every section's heading renders at once; its panel loads on first use (LazySection),
+         so a section's chunk is only fetched when somebody opens it. -->
 
-      <div class="settings-modal-container">
-        <!-- Desktop sidebar -->
-        <aside class="settings-sidebar">
-          <SettingsSearch
-            index={settingsSearchIndex}
-            idPrefix="settings-search-desktop"
-            layout="sidebar"
-            raised={sidebarScrolled}
-            bind:active={desktopSearchActive}
-            on:navigate={handleSettingsNavigate}
-          />
-          {#if !desktopSearchActive}
-            <div
-              class="sidebar-scroll"
-              on:scroll={(event) => (sidebarScrolled = event.currentTarget.scrollTop > 0)}
-            >
-            {#each sidebarSections as section}
-              <div class="sidebar-section">
-                <h3 class="section-heading">{section.title}</h3>
-                <nav class="section-nav">
-                  {#each section.items as item}
-                    <button
-                      class="nav-item"
-                      class:active={effectiveActiveSection === item.id}
-                      class:dirty={$settingsModalStore.dirtyState[item.id]}
-                      class:locked={item.locked}
-                      disabled={item.locked}
-                      title={item.locked ? lockReason(item.id) : undefined}
-                      on:click={() => switchSection(item.id)}
-                    >
-                      <span class="nav-item-label">{item.label}</span>
-                      {#if !item.locked && item.badge > 0}
-                        <span class="nav-badge" title={$t('settings.approvals.badgeTooltip')}>
-                          {item.badge}
-                        </span>
-                      {/if}
-                      {#if item.locked}
-                        <span class="lock-indicator" aria-hidden="true">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                          </svg>
-                        </span>
-                      {:else if $settingsModalStore.dirtyState[item.id]}
-                        <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
-                      {/if}
-                    </button>
-                  {/each}
-                </nav>
-              </div>
-            {/each}
-            </div>
-          {/if}
-        </aside>
+    <!-- Profile Section -->
+    {#if effectiveActiveSection === 'profile'}
+      <LazySection load={sectionLoaders.profile} let:Component>
+        <Component />
+      </LazySection>
+    {/if}
 
-        <!-- Content Area -->
-        <main class="settings-content">
-          <!-- Mobile section navigation (hidden on desktop where sidebar is visible) -->
-          <div class="mobile-section-nav">
-            <SettingsSearch
-              index={settingsSearchIndex}
-              idPrefix="settings-search-mobile"
-              bind:active={mobileSearchActive}
-              on:navigate={handleSettingsNavigate}
+    <!-- Recording Settings Section -->
+    {#if activeSection === 'recording'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.recording.title')}</h3>
+        <p class="section-description">{$t('settings.recording.description')}</p>
+
+        <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
+          <div class="form-group">
+            <label for="maxRecordingDuration">{$t('settings.recording.maxDuration')}</label>
+            <input
+              type="number"
+              id="maxRecordingDuration"
+              class="form-control"
+              bind:value={maxRecordingDuration}
+              on:input={handleRecordingSettingsChange}
+              min="15"
+              max="480"
+              required
             />
-            {#if !mobileSearchActive}
-              <!-- svelte-ignore a11y_label_has_associated_control -->
-              <label class="mobile-nav-label">{$t('settings.title')}</label>
-              <select
-                class="mobile-nav-select"
-                value={effectiveActiveSection}
-                on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
-              >
-                {#each sidebarSections as section}
-                  <optgroup label={section.title}>
-                    {#each section.items as item}
-                      <option value={item.id} disabled={item.locked}>
-                        {item.locked
-                          ? `${item.label} — ${lockReason(item.id)}`
-                          : item.badge > 0
-                            ? `${item.label} (${item.badge})`
-                            : item.label}
-                      </option>
-                    {/each}
-                  </optgroup>
-                {/each}
-              </select>
-            {/if}
+            <small class="form-text">{$t('settings.recording.durationRange')}</small>
           </div>
 
-          {#if activeSectionLocked}
-            <!-- A deep link (or a demotion mid-session) can land on a section this
-                 user may not open. Say so explicitly — the old behaviour was to
-                 render nothing, which looked like a broken blank pane. -->
-            <div class="content-section">
-              <EmptyState
-                icon="🔒"
-                title={activeSectionRequires === 'super_admin'
-                  ? $t('settings.permission.superAdminTitle')
-                  : $t('settings.permission.adminTitle')}
-                description={activeSectionRequires === 'super_admin'
-                  ? $t('settings.permission.superAdminMessage')
-                  : $t('settings.permission.adminMessage')}
+          <div class="form-group">
+            <label for="recordingQuality">{$t('settings.recording.quality')}</label>
+            <select
+              id="recordingQuality"
+              class="form-control"
+              bind:value={recordingQuality}
+              on:change={handleRecordingSettingsChange}
+            >
+              <option value="standard">{$t('settings.recording.qualityStandard')}</option>
+              <option value="high">{$t('settings.recording.qualityHigh')}</option>
+              <option value="maximum">{$t('settings.recording.qualityMaximum')}</option>
+            </select>
+            <small class="form-text">{$t('settings.recording.qualityHelp')}</small>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                bind:checked={autoStopEnabled}
+                on:change={handleRecordingSettingsChange}
               />
-            </div>
-          {:else}
-          <!-- Profile Section -->
-          {#if effectiveActiveSection === 'profile'}
-            <UserProfileSettings />
-          {/if}
+              <span>{$t('settings.recording.autoStop')}</span>
+            </label>
+            <small class="form-text">{$t('settings.recording.autoStopHelp')}</small>
+          </div>
 
-          <!-- Recording Settings Section -->
-          {#if activeSection === 'recording'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.recording.title')}</h3>
-              <p class="section-description">{$t('settings.recording.description')}</p>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              on:click={resetRecordingSettings}
+              disabled={recordingSettingsLoading}
+            >
+              {$t('common.resetToDefaults')}
+            </button>
 
-              <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
-                <div class="form-group">
-                  <label for="maxRecordingDuration">{$t('settings.recording.maxDuration')}</label>
-                  <input
-                    type="number"
-                    id="maxRecordingDuration"
-                    class="form-control"
-                    bind:value={maxRecordingDuration}
-                    on:input={handleRecordingSettingsChange}
-                    min="15"
-                    max="480"
-                    required
-                  />
-                  <small class="form-text">{$t('settings.recording.durationRange')}</small>
-                </div>
-
-                <div class="form-group">
-                  <label for="recordingQuality">{$t('settings.recording.quality')}</label>
-                  <select
-                    id="recordingQuality"
-                    class="form-control"
-                    bind:value={recordingQuality}
-                    on:change={handleRecordingSettingsChange}
-                  >
-                    <option value="standard">{$t('settings.recording.qualityStandard')}</option>
-                    <option value="high">{$t('settings.recording.qualityHigh')}</option>
-                    <option value="maximum">{$t('settings.recording.qualityMaximum')}</option>
-                  </select>
-                  <small class="form-text">{$t('settings.recording.qualityHelp')}</small>
-                </div>
-
-                <div class="form-group">
-                  <label class="checkbox-label">
-                    <input
-                      type="checkbox"
-                      bind:checked={autoStopEnabled}
-                      on:change={handleRecordingSettingsChange}
-                    />
-                    <span>{$t('settings.recording.autoStop')}</span>
-                  </label>
-                  <small class="form-text">{$t('settings.recording.autoStopHelp')}</small>
-                </div>
-
-                <div class="form-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary"
-                    on:click={resetRecordingSettings}
-                    disabled={recordingSettingsLoading}
-                  >
-                    {$t('common.resetToDefaults')}
-                  </button>
-
-                  <button
-                    type="submit"
-                    class="btn btn-primary"
-                    disabled={!recordingSettingsChanged || recordingSettingsLoading}
-                  >
-                    {recordingSettingsLoading ? $t('common.saving') : $t('common.saveSettings')}
-                  </button>
-                </div>
-              </form>
-            </div>
-          {/if}
-
-          <!-- Audio Extraction Settings Section -->
-          {#if activeSection === 'audio-extraction'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.audioExtraction.title')}</h3>
-              <p class="section-description">{$t('settings.audioExtraction.description')}</p>
-              <AudioExtractionSettings />
-            </div>
-          {/if}
-
-          <!-- Processing pipeline: read-only view of how the next recording is processed. Mounted
-               only while open, so every visit reads the current plan. -->
-          {#if activeSection === 'processing-pipeline'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.pipeline.title')}</h3>
-              <p class="section-description">{$t('settings.pipeline.description')}</p>
-              <PipelineOverview on:navigate={(e) => switchSection(e.detail)} />
-            </div>
-          {/if}
-
-          <!-- Transcription: language, provider and model, vocabulary, accuracy (tabs).
-               asr-provider and custom-vocabulary are kept as ids and open their tab. -->
-          {#if sidebarRowFor(activeSection) === 'transcription'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.transcription.title')}</h3>
-              <p class="section-description">{$t('settings.transcription.description')}</p>
-              <TranscriptionSection
-                {isAdmin}
-                {isSuperAdmin}
-                {...transcriptionAccess}
-                initialTab={transcriptionTabFor(activeSection) ?? 'tx-language'}
-              />
-            </div>
-          {/if}
-
-          <!-- Speaker Identification: detection, voice attributes, engine, maintenance (tabs).
-               speaker-attributes and engine-settings are kept as ids and open their tab. -->
-          {#if sidebarRowFor(activeSection) === 'speaker-identification'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.speakerIdentification.title')}</h3>
-              <p class="section-description">{$t('settings.speakerIdentification.description')}</p>
-              <SpeakerIdentificationSection
-                {...speakerIdAccess}
-                embeddingCap={capOn(capState, 'admin.embedding_migration')}
-                initialTab={speakerIdTabFor(activeSection) ?? 'spk-detection'}
-                on:navigate={(e) => switchSection(e.detail)}
-              />
-            </div>
-          {/if}
-
-          <!-- Organization Context Section -->
-          {#if activeSection === 'organization-context'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
-              <p class="section-description">{$t('settings.orgContext.description')}</p>
-              <OrganizationContextSettings />
-            </div>
-          {/if}
-
-          <!-- Download Settings Section -->
-          {#if activeSection === 'download'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.download.title')}</h3>
-              <p class="section-description">{$t('settings.download.description')}</p>
-              <DownloadSettings />
-            </div>
-          {/if}
-
-          <!-- Media Sources Settings Section -->
-          {#if activeSection === 'media-sources'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.mediaSources.title')}</h3>
-              <p class="section-description">{$t('settings.mediaSources.description')}</p>
-              <MediaSourcesSettings />
-            </div>
-          {/if}
-
-          <!-- Watch Sources Settings Section -->
-          {#if activeSection === 'watch-sources'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.watchSources.title')}</h3>
-              <p class="section-description">{$t('settings.watchSources.description')}</p>
-              <WatchSourcesSettings />
-            </div>
-          {/if}
-
-          <!-- AI Prompts Section -->
-          {#if activeSection === 'ai-prompts'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.aiPrompts.title')}</h3>
-              <p class="section-description">{$t('settings.aiPrompts.description')}</p>
-              <PromptSettings onSettingsChange={onAISettingsChange} />
-            </div>
-          {/if}
-
-          <!-- LLM Provider Section -->
-          {#if activeSection === 'llm-provider'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
-              <p class="section-description">{$t('settings.llmProvider.description')}</p>
-              <LLMSettings onSettingsChange={onAISettingsChange} {isAdmin} />
-            </div>
-          {/if}
-
-          <!-- Auto-Labeling Section -->
-          {#if activeSection === 'auto-labeling'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('autoLabel.title')}</h3>
-              <p class="section-description">{$t('autoLabel.description')}</p>
-              <AutoLabelSettings />
-            </div>
-          {/if}
-
-          <!-- Privacy & Redaction: per-user preference tab + admin policy tab.
-               'redaction-policy' is kept as a section id (settings search, deep links)
-               and opens the policy tab of this same panel. -->
-          {#if activeSection === 'content-redaction' || activeSection === 'redaction-policy'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.privacyRedaction.title')}</h3>
-              <PrivacyRedactionSettings
-                {isAdmin}
-                {isSuperAdmin}
-                userCap={privacyAccess.userCap}
-                policyCap={privacyAccess.policyCap}
-                initialTab={activeSection === 'redaction-policy' ? 'policy' : 'personal'}
-              />
-            </div>
-          {/if}
-
-          <!-- Chat: per-user defaults + (admin) platform tuning, as tabs.
-               'chat-admin' is kept as a section id so the settings search and any
-               existing deep link still resolve — it just opens the Advanced tab
-               of the same panel instead of a second sidebar entry. -->
-          {#if activeSection === 'chat' || activeSection === 'chat-admin'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('chat.settings.title')}</h3>
-              <ChatSettingsPanel
-                {isAdmin}
-                initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
-              />
-            </div>
-          {/if}
-
-          <!-- Search & Indexing Section -->
-          {#if activeSection === 'search-indexing'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.searchIndexing.title')}</h3>
-              <p class="section-description">{$t('settings.searchIndexing.description')}</p>
-              <SearchSettings />
-            </div>
-          {/if}
-
-          <!-- Groups Section -->
-          {#if activeSection === 'groups'}
-            <div class="content-section">
-              <GroupsSettings />
-            </div>
-          {/if}
-
-          <!-- Admin Users Section -->
-          {#if activeSection === 'admin-users'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.users.title')}</h3>
-              <p class="section-description">{$t('settings.users.description')}</p>
-              {#if isSuperAdmin}
-                <AccountStatusDashboard />
-              {/if}
-              <!-- Above the table on purpose: a queue is work waiting, and the
-                   accounts in it are not in the table's list until they are
-                   admitted. `onDecided` refreshes the user list so an approved
-                   account appears there in the same interaction. -->
-              <PendingApprovalsPanel
-                onDecided={refreshAdminUsers}
-                on:countchange={(e) => (pendingApprovalCount = e.detail)}
-              />
-              <UserManagementTable
-                {users}
-                loading={usersLoading}
-                onRefresh={refreshAdminUsers}
-                onUserRecovery={recoverUserFiles}
-              />
-              <LockedAccountsPanel />
-            </div>
-          {/if}
-
-          <!-- Quarantine / Takedown Review Queue Section (issue #576) -->
-          {#if activeSection === 'quarantine'}
-            <div class="content-section">
-              <QuarantinePanel />
-            </div>
-          {/if}
-
-          <!-- Support access requests (issue #1122): every user decides for their own workspace -->
-          {#if activeSection === 'support-access-requests' && tenancyMulti}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.supportAccessRequests.title')}</h3>
-              <SupportAccessApprovalsPanel orgTab={supportOrgTab} on:countchange={loadSupportRequestCount} />
-            </div>
-          {/if}
-
-          <!-- Support access (issue #1122): multi-tenant deployments only -->
-          {#if activeSection === 'support-access' && tenancyMulti}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.supportAccess.title')}</h3>
-              <SupportAccessStaffPanel />
-            </div>
-          {/if}
-
-          <!-- System Statistics Section -->
-          {#if effectiveActiveSection === 'system-statistics'}
-            <SystemStatisticsPanel
-              {stats}
-              {statsLoading}
-              {statsRefreshing}
-              {searchIndexStatus}
-              {searchHealthStatus}
-              on:refresh={refreshStats}
-              on:openDetails={(e) => openProcessingDetails(e.detail)}
-            />
-          {/if}
-
-          <!-- Admin Task Health Section -->
-          {#if activeSection === 'admin-task-health'}
-            <AdminTaskHealthPanel on:requestConfirm={handleTaskHealthConfirm} />
-          {/if}
-
-          <!-- Cloud edition — Billing (org admins only) -->
-          {#if activeSection === 'billing' && orgAdminCapOn(capState, 'billing')}
-            <div class="content-section">
-              <h3 class="section-title">{$t('billing.title')}</h3>
-              <p class="section-description">{$t('billing.description')}</p>
-              <BillingPanel />
-            </div>
-          {/if}
-
-          <!-- Cloud edition — Usage Dashboard (org admins only) -->
-          {#if activeSection === 'usage' && orgAdminCapOn(capState, 'usage_dashboard')}
-            <div class="content-section">
-              <h3 class="section-title">{$t('usage.title')}</h3>
-              <p class="section-description">{$t('usage.description')}</p>
-              <UsageDashboard />
-            </div>
-          {/if}
-
-          <!-- Cloud edition — Team Management (org admins only) -->
-          {#if activeSection === 'team' && orgAdminCapOn(capState, 'organizations')}
-            <div class="content-section">
-              <h3 class="section-title">{$t('team.title')}</h3>
-              <p class="section-description">{$t('team.description')}</p>
-              <TeamManagement />
-            </div>
-          {/if}
-
-          <!-- Admin System Settings: removed (retry config moved to task health) -->
-
-          <!-- Embedding Migration Section -->
-          {#if activeSection === 'embedding-migration'}
-            <div class="content-section">
-              <EmbeddingMigrationSettings locked={!isSuperAdmin} />
-              <EmbeddingConsistencySettings />
-            </div>
-          {/if}
-
-          <!-- Data Integrity Section -->
-          {#if activeSection === 'data-integrity'}
-            <div class="content-section">
-              <DataIntegritySettings />
-            </div>
-          {/if}
-
-          <!-- File Retention Section (includes derived media cache) -->
-          {#if activeSection === 'retention'}
-            <div class="content-section">
-              <RetentionSettings />
-            </div>
-          {/if}
-
-          <!-- Scheduled Database Backups Section -->
-          {#if activeSection === 'backup'}
-            <div class="content-section">
-              <BackupSettings />
-            </div>
-          {/if}
-
-          <!-- Authentication Settings Section (Super Admin only) -->
-          {#if activeSection === 'authentication'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.authentication.title')}</h3>
-              <p class="section-description">{$t('settings.authentication.description')}</p>
-              <AuthenticationSettings />
-            </div>
-          {/if}
-
-
-          <!-- Audit Log Viewer (Super Admin only) -->
-          {#if activeSection === 'audit-logs'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.auditLog.sectionTitle')}</h3>
-              <p class="section-description">{$t('settings.auditLog.sectionDescription')}</p>
-              <AuditLogViewer />
-            </div>
-          {/if}
-          {/if}
-        </main>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              disabled={!recordingSettingsChanged || recordingSettingsLoading}
+            >
+              {recordingSettingsLoading ? $t('common.saving') : $t('common.saveSettings')}
+            </button>
+          </div>
+        </form>
       </div>
-    </div>
-  </div>
+    {/if}
+
+    <!-- Audio Extraction Settings Section -->
+    {#if activeSection === 'audio-extraction'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.audioExtraction.title')}</h3>
+        <p class="section-description">{$t('settings.audioExtraction.description')}</p>
+        <LazySection load={sectionLoaders.audioExtraction} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Processing pipeline: read-only view of how the next recording is processed. Mounted
+         only while open, so every visit reads the current plan. -->
+    {#if activeSection === 'processing-pipeline'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.pipeline.title')}</h3>
+        <p class="section-description">{$t('settings.pipeline.description')}</p>
+        <LazySection load={sectionLoaders.pipeline} let:Component>
+          <Component on:navigate={(e: CustomEvent<SettingsSection>) => switchSection(e.detail)} />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Transcription: language, provider and model, vocabulary, accuracy (tabs).
+         asr-provider and custom-vocabulary are kept as ids and open their tab. -->
+    {#if sidebarRowFor(activeSection) === 'transcription'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.transcription.title')}</h3>
+        <p class="section-description">{$t('settings.transcription.description')}</p>
+        <LazySection load={sectionLoaders.transcription} let:Component>
+          <Component
+            {isAdmin}
+            {isSuperAdmin}
+            {...transcriptionAccess}
+            initialTab={transcriptionTabFor(activeSection) ?? 'tx-language'}
+          />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Speaker Identification: detection, voice attributes, engine, maintenance (tabs).
+         speaker-attributes and engine-settings are kept as ids and open their tab. -->
+    {#if sidebarRowFor(activeSection) === 'speaker-identification'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.speakerIdentification.title')}</h3>
+        <p class="section-description">{$t('settings.speakerIdentification.description')}</p>
+        <LazySection load={sectionLoaders.speakerIdentification} let:Component>
+          <Component
+            {...speakerIdAccess}
+            embeddingCap={capOn(capState, 'admin.embedding_migration')}
+            initialTab={speakerIdTabFor(activeSection) ?? 'spk-detection'}
+            on:navigate={(e: CustomEvent<SettingsSection>) => switchSection(e.detail)}
+          />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Organization Context Section -->
+    {#if activeSection === 'organization-context'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
+        <p class="section-description">{$t('settings.orgContext.description')}</p>
+        <LazySection load={sectionLoaders.organizationContext} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Download Settings Section -->
+    {#if activeSection === 'download'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.download.title')}</h3>
+        <p class="section-description">{$t('settings.download.description')}</p>
+        <LazySection load={sectionLoaders.download} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Media Sources Settings Section -->
+    {#if activeSection === 'media-sources'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.mediaSources.title')}</h3>
+        <p class="section-description">{$t('settings.mediaSources.description')}</p>
+        <LazySection load={sectionLoaders.mediaSources} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Watch Sources Settings Section -->
+    {#if activeSection === 'watch-sources'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.watchSources.title')}</h3>
+        <p class="section-description">{$t('settings.watchSources.description')}</p>
+        <LazySection load={sectionLoaders.watchSources} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- AI Prompts Section -->
+    {#if activeSection === 'ai-prompts'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.aiPrompts.title')}</h3>
+        <p class="section-description">{$t('settings.aiPrompts.description')}</p>
+        <LazySection load={sectionLoaders.prompts} let:Component>
+          <Component onSettingsChange={onAISettingsChange} />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- LLM Provider Section -->
+    {#if activeSection === 'llm-provider'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
+        <p class="section-description">{$t('settings.llmProvider.description')}</p>
+        <LazySection load={sectionLoaders.llm} let:Component>
+          <Component onSettingsChange={onAISettingsChange} {isAdmin} />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Auto-Labeling Section -->
+    {#if activeSection === 'auto-labeling'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('autoLabel.title')}</h3>
+        <p class="section-description">{$t('autoLabel.description')}</p>
+        <LazySection load={sectionLoaders.autoLabel} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Privacy & Redaction: per-user preference tab + admin policy tab.
+         'redaction-policy' is kept as a section id (settings search, deep links)
+         and opens the policy tab of this same panel. -->
+    {#if activeSection === 'content-redaction' || activeSection === 'redaction-policy'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.privacyRedaction.title')}</h3>
+        <LazySection load={sectionLoaders.privacyRedaction} let:Component>
+          <Component
+            {isAdmin}
+            {isSuperAdmin}
+            userCap={privacyAccess.userCap}
+            policyCap={privacyAccess.policyCap}
+            initialTab={activeSection === 'redaction-policy' ? 'policy' : 'personal'}
+          />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Chat: per-user defaults + (admin) platform tuning, as tabs.
+         'chat-admin' is kept as a section id so the settings search and any
+         existing deep link still resolve — it just opens the Advanced tab
+         of the same panel instead of a second sidebar entry. -->
+    {#if activeSection === 'chat' || activeSection === 'chat-admin'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('chat.settings.title')}</h3>
+        <LazySection load={sectionLoaders.chat} let:Component>
+          <Component
+            {isAdmin}
+            initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
+          />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Search & Indexing Section -->
+    {#if activeSection === 'search-indexing'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.searchIndexing.title')}</h3>
+        <p class="section-description">{$t('settings.searchIndexing.description')}</p>
+        <LazySection load={sectionLoaders.searchIndexing} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Groups Section -->
+    {#if activeSection === 'groups'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.groups} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Admin Users Section -->
+    {#if activeSection === 'admin-users'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.users.title')}</h3>
+        <p class="section-description">{$t('settings.users.description')}</p>
+        {#if isSuperAdmin}
+          <LazySection load={sectionLoaders.accountStatus} lines={2} let:Component>
+            <Component />
+          </LazySection>
+        {/if}
+        <!-- Above the table on purpose: a queue is work waiting, and the
+             accounts in it are not in the table's list until they are
+             admitted. `onDecided` refreshes the user list so an approved
+             account appears there in the same interaction. -->
+        <LazySection load={sectionLoaders.pendingApprovals} lines={2} let:Component>
+          <Component
+            onDecided={refreshAdminUsers}
+            on:countchange={(e: CustomEvent<number>) => (pendingApprovalCount = e.detail)}
+          />
+        </LazySection>
+        <LazySection load={sectionLoaders.userTable} let:Component>
+          <Component
+            {users}
+            loading={usersLoading}
+            onRefresh={refreshAdminUsers}
+            onUserRecovery={recoverUserFiles}
+          />
+        </LazySection>
+        <LazySection load={sectionLoaders.lockedAccounts} lines={2} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Quarantine / Takedown Review Queue Section (issue #576) -->
+    {#if activeSection === 'quarantine'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.quarantine} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Support access requests (issue #1122): every user decides for their own workspace -->
+    {#if activeSection === 'support-access-requests' && tenancyMulti}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.supportAccessRequests.title')}</h3>
+        <LazySection load={sectionLoaders.supportApprovals} let:Component>
+          <Component orgTab={supportOrgTab} on:countchange={loadSupportRequestCount} />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Support access (issue #1122): multi-tenant deployments only -->
+    {#if activeSection === 'support-access' && tenancyMulti}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.supportAccess.title')}</h3>
+        <LazySection load={sectionLoaders.supportStaff} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- System Statistics Section -->
+    {#if effectiveActiveSection === 'system-statistics'}
+      <LazySection load={sectionLoaders.statistics} let:Component>
+        <Component
+          {stats}
+          {statsLoading}
+          {statsRefreshing}
+          {searchIndexStatus}
+          {searchHealthStatus}
+          on:refresh={refreshStats}
+          on:openDetails={(e: CustomEvent<string>) => openProcessingDetails(e.detail)}
+        />
+      </LazySection>
+    {/if}
+
+    <!-- Admin Task Health Section -->
+    {#if activeSection === 'admin-task-health'}
+      <LazySection load={sectionLoaders.taskHealth} let:Component>
+        <Component on:requestConfirm={handleTaskHealthConfirm} />
+      </LazySection>
+    {/if}
+
+    <!-- Cloud edition — Billing (org admins only) -->
+    {#if activeSection === 'billing' && orgAdminCapOn(capState, 'billing')}
+      <div class="content-section">
+        <h3 class="section-title">{$t('billing.title')}</h3>
+        <p class="section-description">{$t('billing.description')}</p>
+        <LazySection load={sectionLoaders.billing} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Cloud edition — Usage Dashboard (org admins only) -->
+    {#if activeSection === 'usage' && orgAdminCapOn(capState, 'usage_dashboard')}
+      <div class="content-section">
+        <h3 class="section-title">{$t('usage.title')}</h3>
+        <p class="section-description">{$t('usage.description')}</p>
+        <LazySection load={sectionLoaders.usage} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Cloud edition — Team Management (org admins only) -->
+    {#if activeSection === 'team' && orgAdminCapOn(capState, 'organizations')}
+      <div class="content-section">
+        <h3 class="section-title">{$t('team.title')}</h3>
+        <p class="section-description">{$t('team.description')}</p>
+        <LazySection load={sectionLoaders.team} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Admin System Settings: removed (retry config moved to task health) -->
+
+    <!-- Embedding Migration Section -->
+    {#if activeSection === 'embedding-migration'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.embeddingMigration} let:Component>
+          <Component locked={!isSuperAdmin} />
+        </LazySection>
+        <LazySection load={sectionLoaders.embeddingConsistency} lines={3} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Data Integrity Section -->
+    {#if activeSection === 'data-integrity'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.dataIntegrity} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- File Retention Section (includes derived media cache) -->
+    {#if activeSection === 'retention'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.retention} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Scheduled Database Backups Section -->
+    {#if activeSection === 'backup'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.backup} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Authentication Settings Section (Super Admin only) -->
+    {#if activeSection === 'authentication'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.authentication.title')}</h3>
+        <p class="section-description">{$t('settings.authentication.description')}</p>
+        <LazySection load={sectionLoaders.authentication} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Audit Log Viewer (Super Admin only) -->
+    {#if activeSection === 'audit-logs'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.auditLog.sectionTitle')}</h3>
+        <p class="section-description">{$t('settings.auditLog.sectionDescription')}</p>
+        <LazySection load={sectionLoaders.auditLog} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+    {/if}
+  </SettingsModalFrame>
 {/if}
 
 <!-- Close Confirmation Modal -->
@@ -1463,97 +1482,8 @@
   {stats}
 />
 
+
 <style>
-  .settings-modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--modal-backdrop);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal);
-    animation: fadeIn 0.2s ease-out;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  .settings-modal {
-    position: relative;
-    width: 90vw;
-    max-width: 1200px;
-    height: 85vh;
-    max-height: 900px;
-    background-color: var(--surface-color);
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
-    animation: slideUp 0.3s ease-out;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .settings-header-bar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-    min-height: 44px;
-  }
-
-  .settings-header-title {
-    font-weight: 600;
-    font-size: 1.1rem;
-    color: var(--text-color);
-    margin: 0;
-    margin-right: auto;
-  }
-
-  .modal-close-button {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-  }
-
-  .modal-close-button:hover {
-    color: var(--text-color);
-    background: var(--button-hover, var(--background-color));
-  }
-
-  .settings-modal-container {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  /* A column, not a scroller: the search is a fixed header and only .sidebar-scroll scrolls, so a
-     scrollbar can never sit on top of the input. */
-  .settings-sidebar {
-    display: flex;
-    flex-direction: column;
-    width: 240px;
-    background-color: var(--background-color);
-    border-right: 1px solid var(--border-color);
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
   .sidebar-scroll {
     flex: 1 1 auto;
     min-height: 0;
@@ -1673,13 +1603,6 @@
     color: #fbbf24;
   }
 
-  .settings-content {
-    --tabs-sticky-inset: 1.5rem;
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.5rem;
-    overscroll-behavior: contain;
-  }
 
   /* Mobile section navigation - hidden when sidebar is visible */
   .mobile-section-nav {
@@ -1852,64 +1775,9 @@
   }
 
   /* Responsive Design */
-
-  /* Raise above navbar (z-index 1200) on tablet so close button is reachable */
   @media (max-width: 768px) {
-    .settings-modal {
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
-      max-width: none;
-      max-height: none;
-      border-radius: 0;
-      padding-top: env(safe-area-inset-top, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
-    }
-
-    .settings-modal-container {
-      flex-direction: column;
-      overflow: visible;
-    }
-
-    /* Hide full sidebar on mobile — use select dropdown */
-    .settings-sidebar {
-      display: none;
-    }
-
     .mobile-section-nav {
       display: block;
-    }
-
-    .settings-header-bar {
-      padding: 0.75rem 1rem;
-    }
-
-    .settings-content {
-      --tabs-sticky-inset: 1rem;
-      padding: 1rem;
-      flex: 1 1 0;
-      min-height: 0;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      overflow-x: hidden;
-    }
-
-    /* Global mobile overrides for all settings panels */
-    .settings-content :global(.form-group) {
-      min-width: 0;
-    }
-
-    .settings-content :global(input),
-    .settings-content :global(select),
-    .settings-content :global(textarea) {
-      min-height: 44px;
-      font-size: 1rem;
-      max-width: 100%;
-      box-sizing: border-box;
-    }
-
-    .settings-content :global(button) {
-      min-height: 44px;
     }
 
     .form-actions {

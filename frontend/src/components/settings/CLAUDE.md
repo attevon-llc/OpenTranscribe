@@ -9,6 +9,18 @@ AdminTaskHealthPanel).
 
 ## Key files
 
+- **Opening is two-stage and sections are lazy.** `routes/+layout.svelte` paints `SettingsModalShell`
+  (frame + skeletons) the instant the store opens, while the large `SettingsModal` chunk loads, then
+  swaps it in (`skipEnter`, no replayed animation). Both render `SettingsModalFrame` (the dialog
+  chrome, E2E class names `.settings-modal` / `.settings-sidebar` / `.settings-content`). Every panel
+  is loaded on first use through `LazySection` + `$lib/settings/sectionLoaders` (headings render
+  at once, panel gets a skeleton and a retry state). The shell, modal and default section are
+  prefetched on idle after sign-in and on user-menu hover/focus (`$lib/settings/settingsModalLoader`).
+  New section = add a loader to `sectionLoaders` (and `LEAD_LOADER`), never a static import in the modal;
+  keep `settingsModalLoader.ts` free of component imports (root layout budget). Tests that open a
+  section should `await` the panel (`waitForOpen` in `SettingsModal.test.ts` waits out the skeleton).
+- **Every tab strip is `<Tabs sticky>`** (`ui/Tabs.svelte`; `wrap` for many tabs). Hand-rolled
+  `role="tablist"` / `.tabs` rows fail `settingsTabsSticky.test.ts`.
 - `../SettingsModal.svelte` — the **shell/router**: vertical sidebar nav + `{#if activeSection}`
   routing to one panel at a time. Owns `activeSection` (from `settingsModalStore`) and shared
   modals (ConfirmationModal, ProcessingDetailsModal).

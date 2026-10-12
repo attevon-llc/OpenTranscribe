@@ -13,6 +13,7 @@
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
+  import { prefetchSettingsModal } from '$lib/settings/settingsModalLoader';
   import UserMenuExtras from '$lib/cloud/components/UserMenuExtras.svelte';
 
   /** The currently signed-in user (null when unauthenticated). */
@@ -113,6 +114,8 @@
   <button
     class="user-button"
     on:click={toggleDropdown}
+    on:pointerenter={() => prefetchSettingsModal()}
+    on:focus={() => prefetchSettingsModal()}
     aria-label={$t('nav.userMenuTooltip')}
     aria-haspopup="menu"
     aria-expanded={showDropdown}

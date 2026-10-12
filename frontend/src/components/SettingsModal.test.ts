@@ -10,7 +10,7 @@
  * ~40 child settings panels themselves are out of scope here (each is/should be
  * tested independently, and Playwright already exercises this modal end to end).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -72,6 +72,7 @@ import { user as mockUser } from '$stores/auth';
 import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
+import { sectionLoaders } from '$lib/settings/sectionLoaders';
 import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 
 function setUser(role: 'user' | 'admin' | 'super_admin' | null) {
@@ -79,6 +80,13 @@ function setUser(role: 'user' | 'admin' | 'super_admin' | null) {
     role ? { role } : null
   );
 }
+
+// Sections load lazily, so vitest would otherwise transform each panel's module tree inside the
+// test that first opens it. Do that once up front (it used to happen while collecting the static
+// imports), so test timeouts measure the component, not the transformer.
+beforeAll(async () => {
+  await Promise.all(Object.values(sectionLoaders).map((load) => load()));
+}, 180_000);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -114,6 +122,12 @@ function openModal() {
 async function waitForOpen(container: HTMLElement) {
   await waitFor(() =>
     expect(container.querySelector('.settings-content .section-title')).not.toBeNull()
+  );
+  // Section panels load lazily: the heading is there at once, the panel a moment later.
+  // Generous: under vitest each lazily imported panel is transformed on demand, not prebuilt.
+  await waitFor(
+    () => expect(container.querySelector('[data-testid="settings-section-loading"]')).toBeNull(),
+    { timeout: 10_000 }
   );
 }
 
@@ -258,14 +272,15 @@ describe('merged Privacy & Redaction section', () => {
       setUser('super_admin');
       settingsModalStore.open(section);
       const { container, unmount } = render(SettingsModal);
-      await waitFor(() =>
-        expect(container.querySelector('.settings-content [role="tablist"]')).not.toBeNull()
+      await waitFor(
+        () => expect(container.querySelector('.settings-content [role="tablist"]')).not.toBeNull(),
+        { timeout: 10_000 }
       );
       expect(container.querySelector('.settings-content [role="tablist"]')).toHaveClass('sticky');
       unmount();
       settingsModalStore.reset();
     }
-  });
+  }, 30_000);
 
   it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
     setUser('user');
@@ -460,7 +475,10 @@ describe('Transcription and Speaker Identification sections', () => {
         true
       )
     );
-    expect(tab(container, 'tx-provider')?.getAttribute('aria-selected')).toBe('true');
+    await waitFor(
+      () => expect(tab(container, 'tx-provider')?.getAttribute('aria-selected')).toBe('true'),
+      { timeout: 10_000 }
+    );
   });
 
   describe('revealing the active sidebar row', () => {

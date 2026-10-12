@@ -10,8 +10,10 @@ authority. See `backend/app/db/CLAUDE.md`.
 
 - `media.py` (~925 lines — the deliberate exception to the ~300-line rule): `MediaFile`,
   `TranscriptSegment`, `Speaker`/`SpeakerProfile`/`SpeakerCluster`/`SpeakerMatch`, `Collection`,
-  `Tag`, `Task`, `Analytics`, `Comment`. `SpeakerCannotLink` and `SpeakerProfileBlacklist` are
-  defined here but **not re-exported** from `__init__.py` — import them from `app.models.media`.
+  `Tag`, `Task`, `Analytics`, `Comment`. `SpeakerCannotLink`, `SpeakerProfileBlacklist` and
+  `SpeakerCorrectionCarryover` (`v438`, a correction held by its time spans across a re-run,
+  issue #1233) are defined here but **not re-exported** from `__init__.py` — import them from
+  `app.models.media`.
 - `group.py` — `UserGroup`, `UserGroupMember`, and (since `v378`) `GroupMapping`.
   `MAPPING_SOURCES` / `MEMBERSHIP_SOURCES` are the CHECK bodies' single source of truth
   (`*_SQL` built from the tuples); `v382` widened both to add `proxy` and `scim`.

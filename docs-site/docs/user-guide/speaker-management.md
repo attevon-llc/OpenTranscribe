@@ -128,17 +128,25 @@ person**:
 
 Nothing automatic puts a corrected speaker back: upload-time matching, **Re-cluster All**,
 voice matching after you label someone, profile suggestions, AI speaker-name suggestions and
-merges all skip it. A bulk
-**Assign** or **Accept** in the Inbox refuses it and lists it as an error, and merging a cluster
-into the one the speaker was removed from leaves that speaker where it was. Splitting speakers
-out of a cluster is treated the same way as unassigning them: the group that moves out forms a
-new cluster. When you merge two speakers, the corrections recorded on the one being merged
-away carry over to the speaker that remains.
+merges all skip it, and the speaker is no longer offered that name as a suggestion. Reprocessing
+the file (re-running speaker detection, re-transcribing, or retrying it) keeps the correction
+too: the new speaker that holds the same stretch of audio inherits it. A bulk action that
+includes a corrected speaker skips it and says so, and merging a cluster into the one the
+speaker was removed from leaves that speaker where it was, with a message saying how many
+stayed behind. Splitting speakers out of a cluster is treated the same way as unassigning
+them: the group that moves out forms a new cluster. When you merge two speakers, the
+corrections recorded on the one being merged away carry over to the speaker that remains.
+Rejecting a suggested identity for a speaker counts as a correction as well.
 
-To undo a correction, name that one speaker yourself: type the profile's name on it, assign it
-to the profile, or accept the profile for it. That clears the "not this profile" mark, and the
-"not the same person" marks against that profile's speakers, for that one speaker. Bulk
-actions never clear it.
+Automatic matching also never renames a speaker that already has a name: a speaker you named,
+or whose suggestion you accepted, keeps that name even if its voice sounds like someone else's
+cluster. Giving a cluster member a different name (or assigning it to a different profile)
+takes it out of that cluster.
+
+To undo a correction, name that one speaker yourself: type the profile's name on it in the
+transcript, or use **Accept** or **Assign to profile…** on it in the Inbox (an unassigned
+speaker appears there). That clears the "not this profile" mark, and the "not the same person"
+marks against that profile's speakers, for that one speaker. Bulk actions never clear it.
 
 ![Speaker management clusters view with identified speakers across all files](/img/screenshots/speakers/speaker-management-clusters.png)
 

@@ -281,11 +281,14 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   unassign recorded** (issue #1233; rule and per-path table in
   `app/services/CLAUDE.md` → "Unassigning"). `POST /speaker-clusters/{uuid}/unassign` now
   also unlinks the cluster's promoted profile and records cannot-link + profile blacklist
-  rows; `/split` is the same unassignment. Bulk routes REFUSE a blocked speaker and say so
-  (`/batch-verify` per-speaker `errors`, `/{source}/merge/{target}`'s new
+  rows; `/split` is the same unassignment, and so is `/speakers/{uuid}/verify?action=reject`
+  on a linked speaker. Bulk routes REFUSE a blocked speaker and say so
+  (`/batch-verify` per-speaker `errors` + `blocked_speaker_uuids`, `/{source}/merge/{target}`'s
   `blocked_speaker_uuids`); single-speaker explicit routes (`/speaker-profiles/speakers/{uuid}/assign-profile`,
-  `/speakers/{uuid}/verify?action=accept`, a typed display name) LIFT it via
-  `speaker_cleanup.lift_profile_blacklist`. `POST /speakers/{uuid}/merge/{target}` carries
+  `/speakers/{uuid}/verify?action=accept`, a typed display name, and `/batch-verify` with
+  `override_unassignment: true` for exactly ONE speaker — 422 for more) LIFT it via
+  `speaker_cleanup.lift_profile_blacklist`. A 200 from `/batch-verify` can still carry
+  `failed_count > 0`: a client must never read it as success. `POST /speakers/{uuid}/merge/{target}` carries
   the source's rows to the target (`carry_blacklist`) before the CASCADE drops them. Use the
   `speaker_cleanup` helpers; a second blacklist check is how the old one-direction cannot-link
   check came to exist beside a profile-only one.

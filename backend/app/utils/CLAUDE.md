@@ -27,6 +27,15 @@ so keep heavy imports lazy.
   allowlist, plus any raw `.publish("websocket_notifications", …)` bypassing both functions
   entirely. Both return bool, never raise (`send_ws_event_for_file`'s `TypeError` on a bad
   selector is a programmer error, not a runtime failure mode).
+- `speaker_labels.py` — **the only home for a speaker's canonical display label** (what search,
+  chat, exports and the OpenSearch documents show as the name). Priority: `display_name` (a human)
+  > a `suggested_name` that a **voiceprint** produced (`suggestion_source` in
+  `EMBEDDING_SUGGESTION_SOURCES`) at `confidence >= 0.75` > the diarizer `name` >
+  `UNKNOWN_SPEAKER_LABEL`. An LLM suggestion, or one of unknown provenance, **never** becomes the
+  label (owner decision 2026-10-12; it used to, at >= 0.75, issue #605). Call
+  `canonical_speaker_label_for_row(row)` where you have a row, and select
+  `Speaker.suggestion_source` wherever you query columns. Detail and the existing-data backfill:
+  `app/services/CLAUDE.md`.
 - `media_types.py` — `normalize_media_content_type()` is **the only place media MIME aliases
   are folded** (`audio/vnd.wave`/`audio/x-wav` → `audio/wav`, `audio/x-flac` → `audio/flac`, …;
   issue #1044). Every ingest path stores its result and `/stream-url` signs it as
@@ -148,7 +157,7 @@ therefore failed **every transcription** with a `Security Violation [pathsec.ope
 nothing an operator could act on. Same class of failure as #491, second route in.
 
 ```python
-from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE   # (LookupError, OSError)
+from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE  # (LookupError, OSError)
 ```
 
 - Deliberately **not** `Exception` — a `TypeError`/`AttributeError` from our own code is a

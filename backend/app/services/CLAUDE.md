@@ -191,8 +191,9 @@ Every path now does the same two calls around its own write:
 
 ```python
 impact = capture_speaker_impact(db, [speaker_id], removed=True, reindex=True)  # BEFORE
-db.delete(speaker); db.commit()
-raise_if_incomplete(reconcile_speaker_impact(db, impact))                     # AFTER commit
+db.delete(speaker)
+db.commit()
+raise_if_incomplete(reconcile_speaker_impact(db, impact))  # AFTER commit
 ```
 
 Callers: `speakers.py` (delete, merge, verify accept/reject/create, profile moves in the
@@ -283,7 +284,7 @@ any member / any speaker linked to the profile) or, where the path assigns by NA
 | segment-reassign voiceprint update | rebuilt profiles only (non-strict); clusters drifted | `_rebuild_affected_aggregates` → `reconcile_speaker_impact` over the target's and source's clusters and profiles |
 | speaker merge | source's rows died with it (CASCADE) | `carry_blacklist` copies them to the target first (except the profile the target is already linked to) |
 | `app/scripts/batch_speaker_matching.py` | none | skips a suggestion of a blocked name |
-| LLM speaker ID (`speaker_identification_task._store_speaker_predictions`) | none (a ≥0.75 suggestion moves the canonical label, so it re-labels) | skips a blocked name |
+| LLM speaker ID (`speaker_identification_task._store_speaker_predictions`) | none | skips a blocked name (and a speaker that already carries a voiceprint suggestion). It never moves the canonical label: see "A speaker's label comes from a human or a voiceprint" below |
 
 **The explicit override.** Naming ONE speaker as a profile — typing the name
 (`auto_create_or_assign_profile`), `assign-profile`, verify `accept`, or a `batch-verify`
@@ -305,7 +306,7 @@ explicit actions lift it; `override_unassignment` with more than one speaker is 
 | **Rejecting an identification is an unassignment**: `verify?action=reject` leaves the linked profile's clusters through `detach_from_cluster` (blacklist both halves) and records a profile blacklist (`rejected_by_user`) for the linked profile and the profile its suggestion named | `speakers._reject_speaker_suggestion` |
 | **A moved segment leaves the old speaker's voiceprint**: the reassignment task removes the segment's embedding from the source by the exact inverse of the weighted add the target gets, and both rewritten documents keep the file's tenant (they were rewritten without `organization_id`, i.e. as personal) | `speaker_embedding_task._remove_segment_from_voiceprint` |
 | **A correction survives a re-run of the file** (rediarize, re-transcribe, retry), which deletes the speakers and, by CASCADE, their corrections: stashed by the corrected speaker's time spans before the delete, re-applied when the re-run saves its segments to every new speaker whose speech is ≥ `INHERIT_SHARE` (0.5) inside them | `speaker_correction_carryover` (table `v438`) |
-| Suggestions never offer a refused identity (speaker list, profile suggestions endpoint), and the voice-match suggestion of `_handle_no_speaker_match` (a >=0.75 one moves the canonical label) skips a refused name or cannot-link partner | `SmartSpeakerSuggestionService.without_refused`, `SpeakerMatchingService._refusals` |
+| Suggestions never offer a refused identity (speaker list, profile suggestions endpoint), and the voice-match suggestion of `_handle_no_speaker_match` (a >=0.75 voiceprint one moves the canonical label) skips a refused name or cannot-link partner | `SmartSpeakerSuggestionService.without_refused`, `SpeakerMatchingService._refusals` |
 
 Deliberately unchanged: deleting a cluster records nothing (it discards a grouping; it
 is not a statement that the members differ), and `blacklist: false` on unassign records
@@ -314,6 +315,35 @@ nothing (the UI's "Prevent from rejoining" opt-out).
 **Autoflush is off.** A caller that sets `profile_id` and rebuilds in the same transaction
 must flush first (`speaker_update._update_profile_embedding` does): the rebuild otherwise
 reads the membership from before the link, and the new voice never reaches the embedding.
+
+## A speaker's label comes from a human or a voiceprint, never from an LLM (owner decision 2026-10-12)
+
+The canonical label (`utils/speaker_labels.canonical_speaker_label`: what the chunk index,
+digests, facts, chat speaker resolution, exports and the speaker API's `resolved_display_name`
+show as the speaker's name) is **(a)** `display_name` — a name a human typed or verified — or
+**(b)** a `suggested_name` whose `suggestion_source` is in `EMBEDDING_SUGGESTION_SOURCES`
+(`voice_match`, `profile_match`: written only by the voiceprint matchers) at
+`confidence >= 0.75`, else the diarizer label. An LLM suggestion (`llm_analysis`) is shown in the
+suggestion UIs with its confidence and nothing more; accepting it writes `display_name`.
+
+- **Allow-list on provenance, fail closed.** A source that is not on the list — `llm_analysis`,
+  `metadata_hint`, `user_skipped`, a new producer, or **no source at all** (legacy rows) — never
+  reaches the label. `test_speaker_label_provenance.py::test_every_source_the_app_writes_is_classified`
+  scans `app/` for every `suggestion_source` literal and fails on an unclassified one.
+- **Pass the source at every call site**, or use `canonical_speaker_label_for_row`. A raw-column
+  query (`reindex_task`, `rename_propagation_task`, the chat roster) must select
+  `Speaker.suggestion_source` too; omitting it silently reads as "unknown source".
+- **The chat roster only finds a speaker through `suggested_name` when a voiceprint wrote it**
+  (`speaker_resolver.build_candidate_roster`): a "who said X" question must not resolve a speaker
+  through a guess.
+- **The LLM task will not overwrite a voiceprint suggestion** — that would replace the evidence
+  the label rests on with a guess.
+- **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
+  `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
+  speaker whose old label was an LLM suggestion, refreshes the persisted
+  `speaker.resolved_display_name`, and regenerates `file_facts`. Resumable by an id cursor in
+  `SystemSettings`, 100 files per tick, finished by the `speaker_label_provenance_backfill_complete`
+  flag. No manual reindex is needed.
 
 ## Speaker embeddings: two backends, one model (issue #571)
 

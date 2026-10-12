@@ -75,6 +75,12 @@ OpenTranscribe uses **voice fingerprinting** to identify the same speaker across
 
 ### LLM-Powered Identification
 
+An AI suggestion is only ever a suggestion. A speaker's name in search, chat, summaries and
+exports comes from a name you typed or verified, or from a voice match to a profile of at least
+75% similarity. An AI-suggested name never replaces the speaker label on its own, however
+confident it is: it appears in the speaker editor with its confidence, and the speaker takes the
+name only when you accept it.
+
 If LLM is configured, get AI-powered speaker name suggestions based on:
 - Conversation context
 - Topics discussed

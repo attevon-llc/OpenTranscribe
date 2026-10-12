@@ -62,8 +62,9 @@ indexing → WebSocket notification.
     chunk-index writers (`search_indexing_task`, `reindex_task`) call. Keying on `display_name`
     alone missed a *cleared* label (a legal `{"display_name": ""}`, which reverts to the
     diarizer label) and an edit to `name` alone; keying on the older `display_name or name`
-    chain (removed in issue #605) additionally missed a confident LLM/embedding
-    `suggested_name` — the indexer trusts one at `confidence >= 0.75` and eight
+    chain (removed in issue #605) additionally missed a confident VOICEPRINT
+    `suggested_name` (`suggestion_source` `voice_match`/`profile_match`; an LLM one is never
+    the label, see `app/utils/CLAUDE.md`) — the indexer trusts one at `confidence >= 0.75` and eight
     repair/propagation call sites kept computing the pre-suggestion value, so a rename
     computed the wrong `old_names`, the `update_by_query` matched nothing, and it logged
     `status: success` while the drift survived. `SpeakerRenameTracker.record`/`.flush` is the

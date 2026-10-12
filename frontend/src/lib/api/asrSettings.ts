@@ -135,9 +135,11 @@ export interface PipelineIssue {
 }
 
 /**
- * `set-active` / `clear-active` (issue #1225). A switch that would make the stored
- * speaker detection choice unrunnable is refused with 409 `detail: {code, message}`;
- * otherwise `pipeline_issues` describes the pipeline after the switch.
+ * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch
+ * that would make the stored speaker detection choice unrunnable, or (lite, #1228) select
+ * local transcription, is refused with 409 `detail: {code, message}`; otherwise
+ * `pipeline_issues` describes the pipeline after the change and `config_uuid` names the
+ * config active afterwards (`null`: none).
  */
 export interface ASRSwitchResult {
   message: string;
@@ -384,11 +386,15 @@ export class ASRSettingsApi {
   }
 
   /**
-   * Delete a specific ASR configuration
-   * Backend returns 204 No Content on success.
+   * Delete a specific ASR configuration (issue #1236). Returns the pipeline it leaves:
+   * `config_uuid` is the config active afterwards (`null`: none) and `pipeline_issues`
+   * says when no remaining config keeps speaker detection runnable. On lite, deleting the
+   * last config that can transcribe is refused with 409 `detail: {code, message}`
+   * (`local_asr_unavailable`, #1228).
    */
-  static async deleteConfig(uuid: string): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+  static async deleteConfig(uuid: string): Promise<ASRSwitchResult> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+    return response.data;
   }
 
   /**

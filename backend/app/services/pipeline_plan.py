@@ -228,11 +228,32 @@ def post_stage_engine(engine: str) -> PostStageEngine:
 def post_stage_queue(engine: str, deployment_mode: str | None = None) -> str:
     """Where a post stage runs: this server's engine prefers a GPU, a vendor is I/O only.
 
-    A cloud detector never holds a GPU slot while it waits on the vendor.
+    A cloud detector never holds a GPU slot while it waits on the vendor. Lite has no
+    local speaker detection (#1228), so there is no queue for this server's engine there:
+    asking for one is refused rather than routed to the CPU worker.
+
+    Raises:
+        PipelinePlanRefusedError: this server's engine on a lite deployment.
     """
-    if post_stage_engine(engine) == "local":
-        return gpu_preferred_queue(deployment_mode)
-    return CeleryQueues.CLOUD_ASR
+    if post_stage_engine(engine) != "local":
+        return CeleryQueues.CLOUD_ASR
+    if _is_lite(deployment_mode):
+        from app.core.exceptions import PipelinePlanRefusedError
+
+        code = "local_diarization_unavailable"
+        raise PipelinePlanRefusedError(code, ISSUE_MESSAGES[code])
+    return gpu_preferred_queue(deployment_mode)
+
+
+def _is_lite(deployment_mode: str | None) -> bool:
+    import os
+
+    mode = deployment_mode if deployment_mode is not None else os.getenv("DEPLOYMENT_MODE", "")
+    return mode.strip().lower() == "lite"
+
+
+#: The executions that run speaker detection on this server. Lite never plans one.
+LOCAL_EXECUTIONS: frozenset[str] = frozenset({"inline_local", "post_stage_local"})
 
 
 def _local_hints(diarizer_backend: str) -> frozenset[SpeakerHint]:
@@ -255,7 +276,9 @@ def _diarization_engine(i: PlanInputs, local_asr: bool, add) -> DiarizationEngin
             add("automatic_uses_server", "info")
         return "local"
     if source == "local":
-        if lite and not local_asr:
+        # Whatever transcribes: with local Whisper refused too, the source must still say
+        # why it cannot run, or saving "this server" while on local Whisper slips through.
+        if lite:
             add("local_diarization_unavailable", "error")
         return "local"
     if source == "pyannote":
@@ -344,7 +367,12 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
 
     d_engine = _diarization_engine(i, local_asr, add)
     execution = _execution(d_engine, t_engine)
+    if lite and execution in LOCAL_EXECUTIONS:
+        # Lite has no local speaker detection (owner decision 2026-10-11, #1228). The
+        # stored choice stays visible (engine, issue); nothing is planned to run for it.
+        execution = "none"
     diarizing = d_engine != "off"
+    runs = execution != "none"
     if diarizing and timing == "none":
         add("asr_no_timing_for_speakers", "error")
     if diarizing and timing == "segment" and execution != "inline_asr":
@@ -358,7 +386,7 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
         add("speaker_hints_ignored", "warning")
     t_queue, d_queue = _queues(i, t_engine, execution)
 
-    if not diarizing:
+    if not runs:
         id_execution: Literal["inline_native", "embedding_stage", "none"] = "none"
     elif execution == "inline_local":
         id_execution = "inline_native"
@@ -386,10 +414,10 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
             queue=d_queue,
             speaker_hints=hints,
             config_uuid=cfg.uuid if cfg is not None else None,
-            merge=timing if diarizing else "none",
+            merge=timing if runs else "none",
         ),
         speaker_id=SpeakerIdStep(
-            runs=diarizing,
+            runs=runs,
             where="server",
             backend=i.diarizer_backend,
             execution=id_execution,

@@ -101,6 +101,25 @@ def _run_cpu_transcription(
     return raw_result
 
 
+def _refuse_on_lite() -> None:
+    """Lite ships no faster-whisper (#1228, plan A7).
+
+    Dispatch never routes a lite run here; a message that still arrives (queued before an
+    upgrade, or published by hand) fails with the plan's fixed sentence and a permanent
+    configuration category, before any audio is fetched, instead of a
+    ``ModuleNotFoundError`` from inside the transcriber.
+
+    Raises:
+        PipelinePlanRefusedError: on a lite deployment.
+    """
+    if str(settings.DEPLOYMENT_MODE).strip().lower() == "lite":
+        from app.core.exceptions import PipelinePlanRefusedError
+        from app.services.pipeline_plan import ISSUE_MESSAGES
+
+        code = "local_asr_unavailable"
+        raise PipelinePlanRefusedError(code, ISSUE_MESSAGES[code])
+
+
 @celery_app.task(
     bind=True,
     name="transcription.cpu_transcribe",
@@ -153,6 +172,7 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             # model warm-up or GPU allocation. The engine's own entry checkpoints cover
             # the stage bodies; this covers everything the task does before reaching one.
             stand_down_if_requested("transcribe_cpu_task.entry")
+            _refuse_on_lite()
 
             from app.services.minio_service import download_temp_audio
 

@@ -374,9 +374,11 @@ def _dispatch_manual_rediarize(
     The post stage runs the plan's detector: pyannote.ai on ``cloud-asr``, otherwise this
     server's engine on ``gpu_preferred_queue()`` (a transcription vendor's own speakers, or
     "off", cannot be re-run after the fact, so they mean this server). A choice that cannot
-    run (no pyannote.ai key, or no local engine on lite) fails the task with its fixed
-    sentence rather than silently running something else.
+    run (no pyannote.ai key) fails the task with its fixed sentence rather than silently
+    running something else; this server's engine on lite is refused earlier, by
+    :func:`refuse_unrunnable_rerun`, and ``post_stage_queue`` refuses it again here.
     """
+    from app.core.config import settings
     from app.db.session_utils import session_scope
     from app.services.pipeline_plan import post_stage_engine
     from app.services.pipeline_plan import post_stage_queue
@@ -397,8 +399,45 @@ def _dispatch_manual_rediarize(
             "engine": engine,
             "diarizer_config_uuid": plan.diarization.config_uuid,
         },
-        queue=post_stage_queue(engine),
+        queue=post_stage_queue(engine, str(settings.DEPLOYMENT_MODE)),
     )
+
+
+def refuse_unrunnable_rerun(
+    db: Session,
+    owner_id: int,
+    stages: list[str] | None,
+    *,
+    whisper_model: str | None,
+    disable_diarization: bool,
+) -> None:
+    """409 ``{code, message}`` BEFORE any destructive write when the re-run cannot run.
+
+    A transcription re-run deletes the transcript and then dispatches; a blocking pipeline
+    plan used to surface only after that delete. A manual re-detection clears the speakers
+    first; on lite (no local speaker detection, #1228) a choice that resolves to this
+    server's engine (``local``, or Automatic, which cannot re-run a vendor's speakers after
+    the fact, plan Q9) can never run there. Both are now refused while the data is intact.
+    """
+    from app.services.pipeline_plan import post_stage_engine
+    from app.services.pipeline_plan_inputs import plan_for_user
+    from app.utils.lite_mode import is_lite_deployment
+    from app.utils.lite_mode import plan_refusal
+
+    if not stages or "transcription" in stages:
+        plan = plan_for_user(
+            db,
+            owner_id,
+            whisper_model=whisper_model,
+            disable_diarization=True if disable_diarization else None,
+        )
+        blocking = plan.blocking()
+        if blocking:
+            raise plan_refusal(blocking[0].code)
+    elif "rediarize" in stages and is_lite_deployment():
+        plan = plan_for_user(db, owner_id)
+        if post_stage_engine(plan.diarization.engine) == "local":
+            raise plan_refusal("local_diarization_unavailable")
 
 
 def dispatch_selective_tasks(
@@ -562,6 +601,14 @@ def process_file_reprocess(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
+
+        refuse_unrunnable_rerun(
+            db,
+            int(media_file.user_id),
+            stages,
+            whisper_model=whisper_model,
+            disable_diarization=disable_diarization,
+        )
 
         logger.info(
             f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"

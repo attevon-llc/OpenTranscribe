@@ -201,15 +201,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Azure). Measured on two real 10-minute recordings, the two rules agree on 99.69% and
   99.91% of words, and the new one matches the hand-labelled reference more often. Visible
   difference: a word-timed segment that spans a speaker change is now split at the change,
-  and a word in a pause between turns gets the nearest speaker instead of none.
+  and a word in a pause between turns gets the nearest speaker instead of none. A segment
+  whose words all belong to one speaker is stored under that speaker, even when the vendor's
+  segment interval (padded with silence) overlaps someone else's turn more.
 - **AssemblyAI receives the speaker range (#1226).** Without a fixed speaker count, the
   minimum and maximum are sent as `speaker_options`; before, only a fixed count reached
   AssemblyAI. Speechmatics and Gladia still receive no speaker hints.
-- **`DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
-  with `{deleted, diarizer_source_reverted, pipeline_issues}` instead of 204 (#1226).** Deleting a configuration
-  that someone uses for speaker detection resets that choice to the default for every user who
-  had it; `diarizer_source_reverted` says whether the caller's was reset, and
-  `pipeline_issues` describes the caller's pipeline afterwards, like set-active and clear-active.
+- **Lite is cloud-only for transcription and speaker detection (#1228).** A lite
+  (`--lite`, no GPU) deployment no longer detects speakers on this server: lite's
+  rediarize-on-CPU path is removed. Speakers come from a transcription provider that returns
+  them, or from pyannote.ai; voiceprints for cross-file speaker identification are still
+  computed on this server's CPU. Every local option is refused with a stable code and a fixed
+  message instead of failing later: choosing "this server" for speaker detection
+  (`local_diarization_unavailable`), Automatic with a text-only model
+  (`automatic_needs_speaker_provider`), switching to, creating or keeping only a local
+  transcription config, clearing the active cloud config, a per-file Whisper model, the
+  admin's local-model and local-engine settings (`local_asr_unavailable`). The transcription
+  settings no longer offer "this server" on lite.
+  - Lite users who had "this server" with a cloud model that returns speakers are moved to
+    Automatic by migration `v436_lite_local_speaker_detection_to_automatic`, so they keep
+    getting speakers (from their transcription provider). Others keep their choice and see
+    what to change in Settings; their files are refused with that message until they do.
+  - No transcript, speaker or voiceprint changes: files diarized on lite's CPU before this
+    keep their speakers. The migration is data-only, idempotent, a no-op on the full image,
+    and its downgrade is a no-op.
+- **Deleting an ASR configuration returns the pipeline it leaves (#1236, #1226).**
+  `DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
+  instead of a bare 204, with `config_uuid` (the config now active), `pipeline_issues` (like
+  `set-active`), `deleted` and `diarizer_source_reverted`. Deleting a configuration that
+  someone uses for speaker detection resets that choice to the default for every user who had
+  it; `diarizer_source_reverted` says whether the caller's was reset.
+- **Re-processing refuses a run that cannot run before deleting anything.** A transcription
+  re-run or a speaker re-detection whose pipeline is refused (for example a lite deployment
+  with "this server" chosen) now answers 409 while the transcript and speakers are intact,
+  instead of deleting them and then failing.
 - **Billing: users with a pyannote.ai key and local transcription are now billed by
   pyannote.ai (#1225).** Choosing pyannote.ai with the built-in model used to run this server's
   detector without saying so. It now does what it says, so every file such a user transcribes
@@ -377,6 +402,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A cloud transcription provider that cannot be started no longer falls back to local
+  Whisper (#1236).** A saved key that no longer decrypts, a refused endpoint or a removed
+  config used to send the file to this server's Whisper against the user's choice (or, on
+  lite, fail with an internal error). The file now fails with a clear message telling the user
+  to check the provider's settings.
+- **Segment-timed models beside a cloud speaker detector get the right speaker per segment
+  (#1236).** With `whisper-1` or Azure transcribing and pyannote.ai detecting speakers, a
+  segment took the speaker at its midpoint: a short interjection in the middle of a long
+  segment won it, and a pause there left it with no speaker. It now takes the speaker who
+  talks most in it.
+- **On lite, the GPU-worker restart no longer signals every worker.** With no GPU worker to
+  find, `POST /asr-settings/local-model/restart` fell through to a shutdown broadcast to all
+  workers; on lite it is now refused.
 - **Re-detecting speakers re-splits segments at speaker changes (#1225).** `rediarize_task`
   saved the new speakers without `finalize_segments`, so a segment spanning two speakers kept
   one label. It now goes through the same boundary smoothing, re-segmentation and merge as
@@ -404,6 +442,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reprocess, Bedrock, speaker-attribute and uploader strings had lost their diacritics
   ("transcripcion", "Parametres", "nao", "Uberprufen"). `lib/i18n/accents.test.ts` now fails on
   the words that are never valid unaccented. Italian and Dutch were scanned and are clean.
+
+- **Unassigning a speaker is a correction nothing silently undoes (#1233).** Unassigning a
+  speaker from a cluster now means that section is no longer that person: it also leaves the
+  cluster's promoted profile (a name that came from the profile is cleared, a name the user
+  typed is kept), and the blacklist is recorded both against every remaining member and
+  against the profile, while the cluster and profile stay for everyone else with their centroid
+  and embedding rebuilt. Splitting speakers out of a cluster does the same. Every path that can
+  assign a speaker honours that blacklist: upload-time clustering, Re-cluster All (which also
+  takes back a profile link the user had already unassigned under the old rule), voice matching
+  after a label, profile propagation, re-matching, cluster merge (a blocked member stays put and
+  is reported) and Inbox batch Assign/Accept (refused with a per-speaker error); a speaker merge
+  carries the source's corrections to the target. Naming one speaker explicitly lifts its own
+  correction. Every assignment path now leaves membership, `member_count`, the centroid and the
+  profile embedding consistent: joining a profile's cluster updates the profile embedding,
+  Re-cluster All's profile matching links the profile it joins, a cluster a speaker is dropped
+  from is rebuilt, a segment reassignment rebuilds the clusters its drifted voiceprint belongs
+  to, and the profile embedding built after labelling a speaker now includes that speaker. A
+  transcript reindex that cannot be queued after a speaker change is reported instead of only
+  logged, and a failed queue attempt no longer blocks the next one for the debounce window.
 
 - **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
   orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,

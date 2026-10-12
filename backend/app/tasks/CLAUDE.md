@@ -244,8 +244,16 @@ indexing → WebSocket notification.
   publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
   `torch+cpu`/`torchaudio`/`pyannote.audio`/`onnxruntime`.
   The post stage is published with an explicit queue (`pipeline_plan.post_stage_queue`),
-  so a cloud detector lands on `cloud-asr`, which lite staffs; a local one is refused on
-  lite before dispatch. `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
+  so a cloud detector lands on `cloud-asr`, which lite staffs. **Lite has no local speaker
+  detection and no local transcription (#1228)**: the plan never produces `inline_local` /
+  `post_stage_local` there (a stored local choice plans `execution: none` with its blocking
+  issue), dispatch refuses it with the fixed sentence before any task row, `post_stage_queue`
+  refuses this server's engine instead of resolving to `cpu` (the old rediarize-on-CPU
+  route), and `rediarize_task(engine="local")` / `transcription.cpu_transcribe` refuse at
+  their top as defence in depth. Voiceprints still run on `cpu` (`embedding_stage`) after
+  every cloud detector; `rediarize` stays in `GPU_PREFERRED_TASKS` for the full image only.
+  `tests/unit/test_lite_dispatch_refusals.py` pins the dispatch half.
+  `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
   from the compose files and fails on any new route into a dead queue; an exemption
   there requires a written reason.
   This is deliberately NOT the live `inspect().active_queues()` probe that

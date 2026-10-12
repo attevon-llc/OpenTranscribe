@@ -198,30 +198,19 @@ class Ledger:
         self.profile_uuids: list[str] = []
 
 
-def _remove_api_profiles(engine, profile_uuids: list[str]) -> None:
-    from app.services.opensearch_service import remove_profile_embedding
-
-    for profile_uuid in profile_uuids:
-        remove_profile_embedding(profile_uuid)
-        with engine.begin() as conn:
-            conn.execute(text("DELETE FROM speaker_profile WHERE uuid = :p"), {"p": profile_uuid})
-
-
 @pytest.fixture
 def created(engine) -> Iterator[Ledger]:
     ledger = Ledger()
     try:
         yield ledger
     finally:
-        try:
-            _remove_api_profiles(engine, ledger.profile_uuids)
-        finally:
-            teardown_seed(
-                engine,
-                ledger.files,
-                throwaway_user_ids=ledger.users,
-                chat_conversation_ids=ledger.chats,
-            )
+        teardown_seed(
+            engine,
+            ledger.files,
+            throwaway_user_ids=ledger.users,
+            chat_conversation_ids=ledger.chats,
+            api_profile_uuids=ledger.profile_uuids,
+        )
 
 
 def _seed(engine, created: Ledger, owner_id: int, **kwargs: Any) -> SeededFile:
@@ -728,6 +717,195 @@ def test_deleting_a_promoted_profile_restores_member_labels(api, engine, admin_i
     assert rows and all(r.display_name is None and r.profile_id is None for r in rows), rows
     assert label != name, "the cluster still carries the deleted profile's name"
     assert _speaker_doc(f"profile_{profile_uuid}") is None, "the deleted profile kept its embedding"
+
+
+# ------------------------------- an unassigned speaker is no longer that person, anywhere (#1233)
+
+
+def _as_throwaway_owner(api: Api, engine, created: Ledger) -> int:
+    """Log ``api`` in as a fresh throwaway account and return its id.
+
+    The assignment paths run a kNN over the OWNER's clusters, and the shared admin owns
+    real data on a shared stack: a seeded voice must never be able to join one of those.
+    """
+    password = uuid_pkg.uuid4().hex
+    with Session(engine) as db:
+        uid, _user_uuid, email = create_throwaway_user(db, password=password)
+    created.users.append(uid)
+    api.logout()
+    api.login(email, password)
+    return uid
+
+
+def _promote_shared(api: Api, engine, created: Ledger, cluster: SharedCluster) -> tuple[str, str]:
+    with engine.begin() as conn:  # an unnamed cluster, so promotion names it after the profile
+        conn.execute(
+            text("UPDATE speaker_cluster SET label = NULL WHERE id = :c"), {"c": cluster.cluster_id}
+        )
+    name = f"{DELRES_PREFIX}{new_tag()}"
+    resp = api.post(f"/api/speaker-clusters/{cluster.cluster_uuid}/promote", json={"name": name})
+    assert resp.status_code == 200, resp.text
+    created.profile_uuids.append(resp.json()["profile_uuid"])
+    return resp.json()["profile_uuid"], name
+
+
+def _speaker_row(engine, speaker_uuid: str) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(
+            text("SELECT id, profile_id, display_name, cluster_id FROM speaker WHERE uuid = :u"),
+            {"u": speaker_uuid},
+        ).one()
+
+
+def test_unassigning_from_a_promoted_cluster_unlinks_blacklists_and_sticks(api, engine, created):
+    """The unassign rule end to end on real stores, then two assignment paths re-run.
+
+    ``a``'s speaker leaves the promoted cluster: it loses the profile and the name that
+    came with it, the blacklist is recorded both ways, and the cluster and profile stay
+    for ``b`` with their centroid and embedding rebuilt from ``b`` alone. Then a batch
+    assign (over the transport) and upload-time clustering (in-process, real kNN) must
+    both leave it where the user put it.
+    """
+    from app.services.speaker_clustering_service import SpeakerClusteringService
+
+    owner = _as_throwaway_owner(api, engine, created)
+    a, b, cluster = _seed_shared_pair(engine, created, owner)
+    profile_uuid, name = _promote_shared(api, engine, created, cluster)
+    victim, keeper = a.speaker_uuids[0], b.speaker_uuids[0]
+    assert _speaker_row(engine, victim).display_name == name, "control: promotion named it"
+    keeper_voice = cluster.voiceprints[keeper]
+
+    resp = api.post(
+        f"/api/speaker-clusters/{cluster.cluster_uuid}/unassign",
+        json={"speaker_uuids": [victim], "blacklist": True},
+    )
+    assert resp.status_code == 200, resp.text
+
+    row = _speaker_row(engine, victim)
+    assert (row.profile_id, row.display_name) == (None, None)
+    with engine.connect() as conn:
+        profile_id = conn.execute(
+            text("SELECT id FROM speaker_profile WHERE uuid = :p"), {"p": profile_uuid}
+        ).scalar_one()
+        assert (
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM speaker_profile_blacklist "
+                    "WHERE speaker_id = :s AND profile_id = :p"
+                ),
+                {"s": row.id, "p": profile_id},
+            ).scalar_one()
+            == 1
+        )
+        cannot_link = {
+            (int(r[0]), int(r[1]))
+            for r in conn.execute(
+                text(
+                    "SELECT speaker_id, cannot_link_speaker_id FROM speaker_cannot_link "
+                    "WHERE :s IN (speaker_id, cannot_link_speaker_id)"
+                ),
+                {"s": row.id},
+            )
+        }
+        keeper_id = b.speaker_ids[0]
+        assert {(row.id, keeper_id), (keeper_id, row.id)} <= cannot_link, cannot_link
+        assert (
+            conn.execute(
+                text("SELECT profile_id FROM speaker WHERE id = :s"), {"s": keeper_id}
+            ).scalar_one()
+            == profile_id
+        ), "the profile must remain for the other member"
+    _assert_centroid_rebuilt(engine, cluster, [keeper_voice], a)
+    profile_vector = _speaker_doc(f"profile_{profile_uuid}")
+    assert profile_vector is not None and _cosine(profile_vector, keeper_voice) >= (
+        CENTROID_MATCH_COSINE
+    ), "the profile embedding still averages the unassigned voice"
+
+    # Path 1, over the transport: a bulk assign is refused and says so.
+    resp = api.post(
+        "/api/speaker-clusters/batch-verify",
+        json={"speaker_uuids": [victim], "action": "assign", "profile_uuid": profile_uuid},
+    )
+    assert resp.status_code == 200, resp.text
+    assert (resp.json()["updated_count"], resp.json()["failed_count"]) == (0, 1), resp.json()
+
+    # Path 2, in-process with the real kNN: upload-time clustering of the victim's file.
+    with Session(engine) as db:
+        SpeakerClusteringService(db).cluster_speakers_for_file(a.file_id, owner)
+    row = _speaker_row(engine, victim)
+    if row.cluster_id is not None and row.cluster_id not in (cluster.cluster_id, a.cluster_id):
+        with engine.connect() as conn:
+            a.extra_cluster_uuids.append(
+                str(
+                    conn.execute(
+                        text("SELECT uuid FROM speaker_cluster WHERE id = :c"),
+                        {"c": row.cluster_id},
+                    ).scalar_one()
+                )
+            )
+        a.extra_cluster_ids.append(int(row.cluster_id))
+    assert row.cluster_id != cluster.cluster_id, "clustering put the speaker back"
+    assert row.profile_id is None, "clustering re-linked the unassigned speaker"
+    assert _speaker_row(engine, a.speaker_uuids[1]).cluster_id is not None, (
+        "control: the same pass clustered the file's other speaker, so it really ran"
+    )
+
+
+# --------------------------------------------------------------------------- teardown
+
+
+def test_teardown_continues_past_a_failed_store_and_reports_every_failure(
+    engine, admin_id, monkeypatch
+):
+    """A transient OpenSearch error must not leak the rows of every later step (#1233)."""
+    from opensearchpy.exceptions import NotFoundError
+
+    from app.services.opensearch_service import get_opensearch_client
+
+    files: list[SeededFile] = []
+    try:
+        with Session(engine) as db:
+            sf = seed_complete_file(db, admin_id, register=files.append)
+        client = get_opensearch_client()
+        assert client is not None
+        calls: list[int] = []
+
+        def search_context_missing(*args: Any, **kwargs: Any) -> Any:
+            calls.append(1)
+            raise NotFoundError(404, "search_context_missing", {})
+
+        monkeypatch.setattr(client, "delete_by_query", search_context_missing)
+
+        raised: Exception | None = None
+        try:
+            teardown_seed(engine, files, throwaway_user_ids=[], chat_conversation_ids=[])
+        except (NotFoundError, AssertionError) as exc:  # judged below, after the rows
+            raised = exc
+
+        with engine.connect() as conn:
+            left = conn.execute(
+                text(
+                    "SELECT (SELECT count(*) FROM tag WHERE id = :t)"
+                    " + (SELECT count(*) FROM collection WHERE id = :c)"
+                    " + (SELECT count(*) FROM speaker_profile WHERE id = :p)"
+                    " + (SELECT count(*) FROM watch_source WHERE id = :w)"
+                ),
+                {
+                    "t": sf.tag_id,
+                    "c": sf.collection_id,
+                    "p": sf.profile_id,
+                    "w": sf.watch_source_id,
+                },
+            ).scalar_one()
+        assert left == 0, f"{left} seeded row(s) survived: the steps after the failure never ran"
+        from tests.integration.deletion_residue import TeardownIncompleteError
+
+        assert isinstance(raised, TeardownIncompleteError), f"not reported as a whole: {raised!r}"
+        assert f"opensearch documents of {sf.file_uuid}" in str(raised)
+        assert len(calls) >= 3, "the scroll error is transient and must be retried first"
+    finally:
+        monkeypatch.undo()
+        teardown_seed(engine, files, throwaway_user_ids=[], chat_conversation_ids=[])
 
 
 # --------------------------------------------------------------------------- account routes

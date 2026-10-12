@@ -169,17 +169,17 @@ def test_clearing_onto_local_whisper_is_accepted(
     assert _active_id(db_session, normal_user) is None
 
 
-def test_lite_reports_the_transcription_error_on_clear_without_refusing(
+def test_lite_refuses_clearing_onto_local_whisper(
     client, user_token_headers, normal_user, db_session, add_asr_config, pipeline_env
 ):
-    """Lite's transcription-step refusal is WP6's; until then it is reported, not silent."""
+    """#1228: on lite, clearing the active cloud config would select local Whisper."""
     pipeline_env("lite")
-    add_asr_config("deepgram", "nova-3", active=True)
+    current = add_asr_config("deepgram", "nova-3", active=True)
 
     response = client.post(f"{_BASE}/clear-active", headers=user_token_headers)
 
-    assert response.status_code == status.HTTP_200_OK, response.text
-    assert "local_asr_unavailable" in _codes(response.json())
+    assert_refused(response, "local_asr_unavailable")
+    assert _active_id(db_session, normal_user) == str(current.id)
 
 
 # --- create: first-config auto-activation ---------------------------------------------------
@@ -234,6 +234,7 @@ def test_deleting_the_active_config_promotes_a_runnable_one_over_an_earlier_unti
     assert response.status_code == status.HTTP_200_OK, response.text
     body = response.json()
     assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+    assert response.json()["config_uuid"] == str(runnable.uuid)
     assert _active_id(db_session, normal_user) == str(runnable.id)
 
 
@@ -248,4 +249,40 @@ def test_deleting_the_active_config_clears_when_nothing_else_is_runnable(
     assert response.status_code == status.HTTP_200_OK, response.text
     body = response.json()
     assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+    assert response.json()["config_uuid"] is None
     assert _active_id(db_session, normal_user) is None
+
+
+def test_deleting_reports_the_pipeline_it_leaves(
+    client, user_token_headers, normal_user, db_session, add_asr_config
+):
+    """#1236 item 3: a delete that leaves a stored choice unrunnable SAYS so, like
+    set-active, instead of a bare 204 the user only learns about from another page."""
+    _store_source(db_session, normal_user, "pyannote")  # no key saved
+    active = add_asr_config("deepgram", "nova-3", active=True)
+
+    response = client.delete(f"{_BASE}/config/{active.uuid}", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert body["message"] == "ASR configuration deleted"
+    issues = {(i["code"], i["severity"], i["step"]) for i in body["pipeline_issues"]}
+    assert ("pyannote_key_missing", "error", "diarization") in issues
+    message = next(
+        i["message"] for i in body["pipeline_issues"] if i["code"] == "pyannote_key_missing"
+    )
+    assert message == ISSUE_MESSAGES["pyannote_key_missing"]
+
+
+def test_deleting_an_inactive_config_reports_the_unchanged_active_one(
+    client, user_token_headers, normal_user, db_session, add_asr_config
+):
+    active = add_asr_config("deepgram", "nova-3", active=True)
+    spare = add_asr_config("assemblyai", "universal")
+
+    response = client.delete(f"{_BASE}/config/{spare.uuid}", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert response.json()["config_uuid"] == str(active.uuid)
+    assert _codes(response.json()) == {"speaker_hints_ignored"}
+    assert _active_id(db_session, normal_user) == str(active.id)

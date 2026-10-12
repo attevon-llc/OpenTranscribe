@@ -183,7 +183,10 @@ def _merge_turns(raw_segments: list[dict], diarize_result, plan: PipelinePlan) -
     """Assign the detector's speaker turns to the converted segments, in place.
 
     One merge for every engine (``assign_speakers``), at the plan's merge granularity
-    (``word`` per timed word; anything else at segment level; plan C7).
+    (plan C7): ``word`` per timed word; anything else at segment level, where each segment
+    takes the speaker who overlaps it most. Never the segment midpoint: a short turn on the
+    midpoint would win a 30-second segment, and a midpoint in a pause between two turns
+    would leave it with no speaker (#1236).
     """
     from app.transcription.speaker_assigner import assign_speakers
     from app.transcription.speaker_assigner import diarize_segments_to_frame

@@ -177,14 +177,13 @@ class TestSpeakerConstraintModels:
 
 
 class TestIsBlockedFromCluster:
-    """Test the _is_speaker_blocked_from_cluster method."""
+    """Test ``speaker_cleanup.speaker_blocked_from_cluster``."""
 
     def test_not_blocked_by_default(self, db_session, cluster_with_members):
         """Speaker is not blocked when no constraints exist."""
-        from app.services.speaker_clustering_service import SpeakerClusteringService
+        from app.services.speaker_cleanup import speaker_blocked_from_cluster
 
         data = cluster_with_members
-        service = SpeakerClusteringService(db_session)
 
         # Create a new speaker not in the cluster
         new_speaker = Speaker(
@@ -196,14 +195,13 @@ class TestIsBlockedFromCluster:
         db_session.add(new_speaker)
         db_session.commit()
 
-        assert not service._is_speaker_blocked_from_cluster(new_speaker.id, data["cluster"])
+        assert not speaker_blocked_from_cluster(db_session, new_speaker.id, data["cluster"])
 
     def test_blocked_by_cannot_link(self, db_session, cluster_with_members):
         """Speaker is blocked when cannot-link exists with a cluster member."""
-        from app.services.speaker_clustering_service import SpeakerClusteringService
+        from app.services.speaker_cleanup import speaker_blocked_from_cluster
 
         data = cluster_with_members
-        service = SpeakerClusteringService(db_session)
 
         new_speaker = Speaker(
             uuid=uuid_pkg.uuid4(),
@@ -222,14 +220,13 @@ class TestIsBlockedFromCluster:
         db_session.add(link)
         db_session.commit()
 
-        assert service._is_speaker_blocked_from_cluster(new_speaker.id, data["cluster"])
+        assert speaker_blocked_from_cluster(db_session, new_speaker.id, data["cluster"])
 
     def test_blocked_by_profile_blacklist(self, db_session, promoted_cluster):
         """Speaker is blocked when profile-blacklisted."""
-        from app.services.speaker_clustering_service import SpeakerClusteringService
+        from app.services.speaker_cleanup import speaker_blocked_from_cluster
 
         data = promoted_cluster
-        service = SpeakerClusteringService(db_session)
 
         new_speaker = Speaker(
             uuid=uuid_pkg.uuid4(),
@@ -247,7 +244,7 @@ class TestIsBlockedFromCluster:
         db_session.add(blacklist)
         db_session.commit()
 
-        assert service._is_speaker_blocked_from_cluster(new_speaker.id, data["cluster"])
+        assert speaker_blocked_from_cluster(db_session, new_speaker.id, data["cluster"])
 
 
 class TestUnassignSpeakers:
@@ -327,13 +324,14 @@ class TestUnassignSpeakers:
         )
         assert blacklist is not None
 
-        # Should NOT have cannot-link entries
+        # ...AND cannot-link entries with each remaining member: the blacklist is recorded
+        # speaker-to-speaker as well as speaker-to-profile (issue #1233).
         links = (
             db_session.query(SpeakerCannotLink)
             .filter(SpeakerCannotLink.speaker_id == female_speaker.id)
             .count()
         )
-        assert links == 0
+        assert links == 3
 
     def test_unassign_all_deletes_cluster(self, db_session, cluster_with_members):
         """Unassigning all members deletes the cluster."""

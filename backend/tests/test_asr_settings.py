@@ -254,6 +254,7 @@ class TestASRConfigCRUD:
         body = resp.json()
         assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
         assert isinstance(body["pipeline_issues"], list)
+        assert resp.json()["message"] == "ASR configuration deleted"
         # Confirm it is gone
         resp2 = client.get(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
         assert resp2.status_code == 404

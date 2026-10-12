@@ -178,13 +178,20 @@ def test_a_cloud_speaker_detection_post_stage_lands_on_a_queue_lite_staffs(engin
     assert queue in _queues_with_a_consumer_in_lite()
 
 
-def test_a_local_post_stage_never_targets_the_gpu_queue_in_lite():
-    """Lite refuses a local post stage before dispatch (``local_diarization_unavailable``);
-    should one ever be published anyway, it must not wait forever on 'gpu'."""
+def test_lite_has_no_queue_for_a_local_post_stage_and_staffs_the_cloud_one():
+    """#1228: lite runs no local speaker detection, so the old rediarize-on-CPU route is
+    gone: asking for a local post-stage queue is refused, not routed to 'cpu' (or left
+    waiting on 'gpu'). The cloud detectors' post stage lands on a queue lite staffs."""
+    from app.core.exceptions import PipelinePlanRefusedError
     from app.services.pipeline_plan import post_stage_queue
 
-    assert post_stage_queue("local", "lite") == CeleryQueues.CPU
+    with pytest.raises(PipelinePlanRefusedError):
+        post_stage_queue("local", "lite")
     assert post_stage_queue("local", "full") == CeleryQueues.GPU
+    for engine in ("pyannote_ai", "asr_config"):
+        queue = post_stage_queue(engine, "lite")
+        assert queue == CeleryQueues.CLOUD_ASR
+        assert queue in _queues_with_a_consumer_in_lite()
 
 
 def test_the_lite_resolution_is_the_cpu_queue():

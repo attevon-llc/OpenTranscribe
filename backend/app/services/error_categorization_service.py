@@ -157,6 +157,15 @@ DIARIZATION_PROVIDER_FAILED_MESSAGE = (
     "The speaker detection provider could not detect speakers in this file."
 )
 
+#: Raised when the cloud transcription provider a run was planned with cannot be built (a
+#: stored key that no longer decrypts, a refused endpoint, a config that was removed): the
+#: run fails visibly instead of silently transcribing on this server (#1236). Must not
+#: contain any substring the retry classifier treats as transient.
+CLOUD_ASR_UNUSABLE_MESSAGE = (
+    "The cloud transcription provider chosen for this file could not be started. Check its "
+    "settings under Transcription, then retry."
+)
+
 #: User-facing reasons caused by the user's own settings, not the input or the
 #: infrastructure: permanent for the automatic retry paths.
 CONFIGURATION_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
@@ -168,13 +177,18 @@ def _pipeline_refusal_messages() -> tuple[str, ...]:
     """The fixed sentences a run refused by its pipeline plan can store (issue #1225).
 
     Every ``error`` code of ``services/pipeline_plan`` (dispatch refuses a run whose plan
-    has one) plus the post stage's own configuration failure. Read back by exact match, so
-    a stored refusal keeps its reason and its permanent retry category.
+    has one) plus the two stages' own configuration failures (a speaker detector or a
+    cloud transcription provider that cannot be built). Read back by exact match, so a
+    stored refusal keeps its reason and its permanent retry category.
     """
     from app.services.pipeline_plan import BLOCKING_CODES
     from app.services.pipeline_plan import ISSUE_MESSAGES
 
-    return (*(ISSUE_MESSAGES[code] for code in BLOCKING_CODES), DIARIZER_CONFIG_UNUSABLE_MESSAGE)
+    return (
+        *(ISSUE_MESSAGES[code] for code in BLOCKING_CODES),
+        DIARIZER_CONFIG_UNUSABLE_MESSAGE,
+        CLOUD_ASR_UNUSABLE_MESSAGE,
+    )
 
 
 class ErrorCategorizationService:

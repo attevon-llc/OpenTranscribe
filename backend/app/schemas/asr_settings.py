@@ -11,7 +11,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
-from app.schemas.pipeline import PipelineIssueOut
+from app.schemas.pipeline import ASRSwitchResult
 
 
 class ASRProvider(StrEnum):
@@ -338,8 +338,12 @@ class ASRStatusResponse(BaseModel):
     active_model_capabilities: ASRModelCapabilities | None = None
 
 
-class ASRConfigDeleted(BaseModel):
-    """Result of deleting one or all ASR configurations."""
+class ASRConfigDeleted(ASRSwitchResult):
+    """Result of deleting one or all ASR configurations: the switch shape plus the reset.
+
+    ``config_uuid`` is the config active afterwards (``null``: none) and ``pipeline_issues``
+    the caller's pipeline after the delete, as for ``set-active`` (#1236).
+    """
 
     deleted: bool = True
     diarizer_source_reverted: bool = Field(
@@ -347,12 +351,5 @@ class ASRConfigDeleted(BaseModel):
         description=(
             "The caller's speaker detection was set to a deleted configuration "
             "(source asr_config) and has been reset to the default (#1226)."
-        ),
-    )
-    pipeline_issues: list[PipelineIssueOut] = Field(
-        default_factory=list,
-        description=(
-            "The caller's pipeline AFTER the delete, like the set-active and clear-active "
-            "results (#1225): deletion is never refused, so errors are reported here."
         ),
     )

@@ -62,11 +62,13 @@ class PipelineView(BaseModel):
 
 
 class ASRSwitchResult(BaseModel):
-    """Response of the ASR-side switches (``set-active``, ``clear-active``), issue #1225.
+    """Response of the ASR-side switches (``set-active``, ``clear-active``, issue #1225) and of
+    deleting a config (``DELETE /asr-settings/config/{uuid}``, issue #1236).
 
-    ``pipeline_issues`` is the caller's pipeline AFTER the switch: warnings, and errors the
-    switch did not introduce (a switch that would introduce a diarization-step error is
-    refused with 409 ``{code, message}`` instead).
+    ``pipeline_issues`` is the caller's pipeline AFTER the change: warnings, and errors the
+    change did not introduce (a switch that would introduce a diarization-step error, or on
+    lite any switch onto local transcription, #1228, is refused with 409 ``{code, message}``
+    instead). ``config_uuid`` is the config active afterwards (``null``: none).
     """
 
     message: str

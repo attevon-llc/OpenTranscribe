@@ -244,12 +244,26 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   answer the same 409 for an error the switch would INTRODUCE and otherwise return
   `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
   break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
-  the first remaining config that keeps the choice runnable, else clears. A #1109-locked
-  source is never refused. Lite's transcription-step 409s are WP6's (`REFUSED_STEPS`).
-  `DELETE /asr-settings/config/{uuid}` and `/all` answer `ASRConfigDeleted` `{deleted,
-  diarizer_source_reverted, pipeline_issues}` (#1226): a deleted config named as someone's
-  speaker detector (`asr_config`) resets that choice for every holder, and
-  `diarizer_source_reverted` says whether the caller's was.
+  the first remaining config that keeps the choice runnable, else clears, and answers the
+  switch shape too (`config_uuid` + `pipeline_issues`, #1236). A #1109-locked source is never
+  refused on the diarization step. `DELETE /asr-settings/config/{uuid}` and `/all` answer
+  `ASRConfigDeleted` (the switch shape plus `deleted` and `diarizer_source_reverted`, #1226):
+  a deleted config named as someone's speaker detector (`asr_config`) resets that choice for
+  every holder, and `diarizer_source_reverted` says whether the caller's was.
+- **Lite is cloud-only for transcription and speaker detection (#1228): every local option is
+  a 409 with the plan's `{code, message}`**, from `utils/lite_mode.py` (`refuse_on_lite`,
+  `plan_refusal`) or the plan itself. `local_asr_unavailable`: an ASR switch onto local
+  Whisper (`set-active` a local config, `clear-active`, deleting the last config that can
+  transcribe), creating/updating a `local` config, `/asr-settings/local-model/{set,restart}`
+  (restart used to broadcast a shutdown to EVERY worker on lite), engine-settings
+  `transcriber_backend`, and any per-file `whisper_model` (`utils/whisper_model_choice`, the
+  one chokepoint upload/URL/reprocess share). `local_diarization_unavailable`: the settings
+  PUT for "this server", engine-settings `diarizer_backend`/`diarizer_require_sidecar`, and a
+  manual re-detection whose plan resolves to this server's engine (Automatic included).
+  `GET /transcription/system-defaults` omits `local` on lite. Reprocess (single and bulk)
+  refuses an unrunnable plan BEFORE deleting the transcript or clearing speakers
+  (`files/reprocess.refuse_unrunnable_rerun`). Pinned row by row, each with a full-image
+  control, in `tests/api/test_lite_settings_refusals.py`.
 - **A route that deletes a speaker or moves one out of a cluster/profile must use
   `services/speaker_cleanup`** (issue #1214): `capture_speaker_impact` before the write,
   `raise_if_incomplete(reconcile_speaker_impact(...))` after the commit. Hand-rolling
@@ -263,6 +277,18 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   the write. A route wrapping its body in `except Exception` must re-raise
   `SpeakerCleanupIncompleteError` (as `verify_speaker_identification` and
   `delete_speaker_profile` do) or it becomes a 500.
+- **A route that ASSIGNS a speaker to a cluster or profile must honour the blacklist an
+  unassign recorded** (issue #1233; rule and per-path table in
+  `app/services/CLAUDE.md` → "Unassigning"). `POST /speaker-clusters/{uuid}/unassign` now
+  also unlinks the cluster's promoted profile and records cannot-link + profile blacklist
+  rows; `/split` is the same unassignment. Bulk routes REFUSE a blocked speaker and say so
+  (`/batch-verify` per-speaker `errors`, `/{source}/merge/{target}`'s new
+  `blocked_speaker_uuids`); single-speaker explicit routes (`/speaker-profiles/speakers/{uuid}/assign-profile`,
+  `/speakers/{uuid}/verify?action=accept`, a typed display name) LIFT it via
+  `speaker_cleanup.lift_profile_blacklist`. `POST /speakers/{uuid}/merge/{target}` carries
+  the source's rows to the target (`carry_blacklist`) before the CASCADE drops them. Use the
+  `speaker_cleanup` helpers; a second blacklist check is how the old one-direction cannot-link
+  check came to exist beside a profile-only one.
 - **`main.py`'s `OpenTranscribeError` handler maps by MRO**, so a subclass keeps its family's
   status (`SpeakerCleanupIncompleteError` → `SearchIndexError` → 503). It matched the exact
   type only before #1214, which turned every subclass into a 500.

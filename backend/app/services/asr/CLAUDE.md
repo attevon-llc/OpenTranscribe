@@ -79,13 +79,24 @@ way as soon as its catalog entry says `supports_diarization` and its parser fill
 - `resolve_config(cfg)` is the same env / local fallback for ANY row (or `None`): it lets
   `services/asr_switch_plan` plan a switch before making it. Every ASR-side switch
   (`set-active`, `clear-active`, first-config auto-activation, the promotion on delete)
-  goes through `assess_asr_switch` and refuses (409 `{code, message}`) only a diarization-step
-  error the switch introduces (#1225); `REFUSED_STEPS` is where lite's transcription-step
-  refusal (WP6) belongs.
-- **Failure is asymmetric on purpose** (`tasks/transcription/core.py:2076-2103`): errors *constructing*
-  the provider fall back to local; errors from `transcribe()` propagate and the file is marked FAILED
-  rather than silently re-running on GPU. Providers wrap failures in `RuntimeError`, which is **not** in
-  the task's `autoretry_for=(ConnectionError, TimeoutError)` — a cloud ASR failure is not retried.
+  goes through `assess_asr_switch` and refuses (409 `{code, message}`) a diarization-step
+  error the switch introduces (#1225), and ANY transcription-step error (#1228: on lite every
+  switch onto local Whisper is `local_asr_unavailable`, whatever came before and whatever the
+  #1109 lock says). Deleting the active config asks `active_delete_refusal` first (lite: 409
+  when no remaining config can transcribe) and `choose_after_active_delete` after; the delete
+  returns the switch shape (`config_uuid` + `pipeline_issues`, #1236). On lite a `local`
+  config cannot be created or updated into, and the super-admin local-model endpoints 409.
+- **A cloud plan never falls back to local Whisper (#1236).** `create_for_user` still degrades a
+  config it cannot load to the env default or local (other callers rely on that), but the
+  transcription stage (`tasks/transcription/core.py:_cloud_asr_provider_or_none`) refuses any
+  provider other than the one the plan names: a construction error, a degrade to local, or a
+  degrade to another vendor raises `CloudASRUnusableError`, whose text is
+  `CLOUD_ASR_UNUSABLE_MESSAGE` (reason `pipeline_not_runnable`, permanent
+  `CONFIGURATION_REQUIRED`); the raw cause goes to the ERROR log only. It used to transcribe on
+  this server against the user's choice (full) or die inside the engine (lite). Errors from
+  `transcribe()` propagate and the file is marked FAILED. Providers wrap failures in
+  `RuntimeError`, which is **not** in the task's `autoretry_for=(ConnectionError, TimeoutError)`
+  — a cloud ASR failure is not retried.
 
 ## API keys
 

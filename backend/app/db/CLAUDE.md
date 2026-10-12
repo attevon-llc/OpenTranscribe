@@ -81,7 +81,10 @@ speaker collections and vocabulary terms with their tenant where unambiguous, an
 unique names per user per tenant via `COALESCE(organization_id, 0)` expression indexes;
 numbered v430 to stay clear of parallel branches; its stamping SQL is re-used by
 `app/services/tenant_stamp_backfill.py`, so keep `STAMP_STATEMENTS`/`AMBIGUOUS_REPORT_SQL`
-stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created last). **Derive
+stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created last),
+`v434_reset_unusable_pyannote_source` and `v436_lite_local_speaker_detection_to_automatic`
+(both data-only, detection keyed on the ABSENCE of the rows they rewrite; v436 acts only when
+`DEPLOYMENT_MODE=lite` at migration time and is a no-op on the full image, issue #1228). **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

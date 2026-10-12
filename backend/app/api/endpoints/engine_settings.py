@@ -23,6 +23,7 @@ from app.db.base import get_db
 from app.models.system_settings import SystemSettings
 from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import set_setting
+from app.utils.lite_mode import refuse_on_lite
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -180,10 +181,19 @@ def update_engine_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
-    """Write one or more engine settings to the DB. Only provided (non-None) fields are saved."""
+    """Write one or more engine settings to the DB. Only provided (non-None) fields are saved.
+
+    Lite has no local transcription or speaker detection engine (#1228): choosing one is
+    409 ``local_asr_unavailable`` / ``local_diarization_unavailable``. Boundary smoothing
+    stays editable there; it applies to any diarized transcript.
+    """
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update")
+    if "transcriber_backend" in updates:
+        refuse_on_lite("local_asr_unavailable")
+    if {"diarizer_backend", "diarizer_require_sidecar"} & updates.keys():
+        refuse_on_lite("local_diarization_unavailable")
 
     if "transcriber_backend" in updates:
         from app.transcription.engine.backends import VALID_TRANSCRIBER_BACKENDS

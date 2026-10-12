@@ -135,9 +135,11 @@ export interface PipelineIssue {
 }
 
 /**
- * `set-active` / `clear-active` (issue #1225). A switch that would make the stored
- * speaker detection choice unrunnable is refused with 409 `detail: {code, message}`;
- * otherwise `pipeline_issues` describes the pipeline after the switch.
+ * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch
+ * that would make the stored speaker detection choice unrunnable, or (lite, #1228) select
+ * local transcription, is refused with 409 `detail: {code, message}`; otherwise
+ * `pipeline_issues` describes the pipeline after the change and `config_uuid` names the
+ * config active afterwards (`null`: none).
  */
 export interface ASRSwitchResult {
   message: string;
@@ -250,11 +252,10 @@ interface RawASRProvider {
   models?: RawASRModel[];
 }
 
-/** Mirrors backend `schemas.asr_settings.ASRConfigDeleted`. */
-export interface ASRConfigDeleted {
+/** Mirrors backend `schemas.asr_settings.ASRConfigDeleted`: the switch shape plus the reset. */
+export interface ASRConfigDeleted extends ASRSwitchResult {
   deleted: boolean;
   diarizer_source_reverted: boolean;
-  pipeline_issues: PipelineIssue[];
 }
 
 export class ASRSettingsApi {
@@ -391,9 +392,12 @@ export class ASRSettingsApi {
   }
 
   /**
-   * Delete a specific ASR configuration.
+   * Delete a specific ASR configuration (issues #1226, #1236). Returns the pipeline it
+   * leaves: `config_uuid` is the config active afterwards (`null`: none), `pipeline_issues`
+   * says when no remaining config keeps speaker detection runnable, and
    * `diarizer_source_reverted` is true when the caller's speaker detection named this
-   * configuration and was reset to the default (#1226).
+   * configuration and was reset to the default. On lite, deleting the last config that can
+   * transcribe is refused with 409 `detail: {code, message}` (`local_asr_unavailable`, #1228).
    */
   static async deleteConfig(uuid: string): Promise<ASRConfigDeleted> {
     const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);

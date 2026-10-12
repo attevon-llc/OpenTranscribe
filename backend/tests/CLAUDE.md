@@ -479,6 +479,16 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   and `live` (`DELETION_RESIDUE_BACKEND_URL`, else `E2E_BACKEND_URL`, else :5174 — it must
   share the Postgres named by `POSTGRES_PORT`, and refuses a mixed stack). The GDPR legs leave
   id-only `erasure_ledger` rows behind by design (the ledger outlives what it records).
+  ⚠️ **`live` measures the code the backend at that URL serves**, which on an isolated
+  `--fresh` stack is whatever checkout started it — not your branch. To run the live legs
+  against a branch, serve that checkout's app on a free port with the suite's own environment
+  (`TESTING=True`, so no startup task runs) and point `DELETION_RESIDUE_BACKEND_URL` at it;
+  Celery work it publishes is still consumed by the stack's workers, which run the stack's
+  code. `teardown_seed` attempts every step whatever an earlier one did and raises
+  `TeardownIncompleteError` listing every failure (#1233) — a transient
+  `search_context_missing` used to abort it and leak the `e2e-delres-*` rows of every later
+  step. `test_delete_of_a_requeued_file_leaves_no_residue[live]` races the stack's own
+  workers, which move a seeded PENDING file on before the precondition reads it.
 - **`integration/test_orphan_sweep_storage.py` proves the storage orphan sweep (#1212) on a
   THROWAWAY bucket**, never the real media bucket: a fixture makes `e2e-orphan-sweep-<hex>`,
   points `settings.MEDIA_BUCKET_NAME` at it, and empties and removes it in `finally`. The

@@ -284,6 +284,7 @@ def _store_speaker_predictions(file_id: int, predictions: dict[str, Any]) -> Non
     with different names, which is exactly the case ``SpeakerRenameTracker``
     groups by new name at flush time.
     """
+    from app.services.speaker_cleanup import blocked_profile_names
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
@@ -302,6 +303,15 @@ def _store_speaker_predictions(file_id: int, predictions: dict[str, Any]) -> Non
                 .filter(Speaker.media_file_id == file_id, Speaker.name == speaker_label)
                 .first()
             )
+
+            # A confident suggestion moves the canonical label, so a name the user
+            # unassigned this speaker from must not come back this way (issue #1233).
+            if (
+                speaker
+                and str(predicted_name or "").casefold()
+                in blocked_profile_names(db, [int(speaker.id)])[int(speaker.id)]
+            ):
+                continue
 
             if speaker:
                 before = canonical_speaker_label_for_row(speaker)

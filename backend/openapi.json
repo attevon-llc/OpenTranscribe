@@ -38687,7 +38687,7 @@
     },
     "/api/speaker-clusters/{source_uuid}/merge/{target_uuid}": {
       "post": {
-        "description": "Merge source cluster into target cluster.",
+        "description": "Merge source cluster into target cluster.\n\nA source member the user unassigned from the target (or its profile, or one of its\nmembers) is not moved; it stays in the source, which survives with it, and its UUID\nis listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).",
         "operationId": "merge_clusters_api_speaker_clusters__source_uuid__merge__target_uuid__post",
         "parameters": [
           {
@@ -38978,7 +38978,7 @@
     },
     "/api/speaker-profiles/profiles/{profile_uuid}": {
       "delete": {
-        "description": "Delete a speaker profile, taking its name and voice back from everything it reached.\n\nA linked speaker carries the profile's name as its display name (the invariant\n``services/speaker_profile_rename`` documents), so unlinking alone left every member\nstill labelled as the deleted identity. Members whose display name IS the profile's\nname get it cleared (their label falls back to the suggestion or diarizer label, and\nthe chunk plane is told), and a cluster named after the profile loses that label.\nThe profile's embedding is erased and verified, and every cluster that held a member\nor was promoted to the profile is rebuilt by ``speaker_cleanup`` — an emptied\npromoted cluster is deleted with its centroid instead of being left listed with\nnobody in it (issue #1214). A display name the user set to something else survives.",
+        "description": "Delete a speaker profile, taking its name and voice back from everything it reached.\n\nA linked speaker carries the profile's name as its display name (the invariant\n``services/speaker_profile_rename`` documents), so unlinking alone left every member\nstill labelled as the deleted identity. ``speaker_cleanup.unlink_from_profile`` — the\nsame rule a cluster unassign applies (#1233) — clears a display name or suggestion\nthat IS the profile's name (the label falls back to the diarizer label, and the chunk\nplane is told), and a cluster named after the profile loses that label.\nThe profile's embedding is erased and verified, and every cluster that held a member\nor was promoted to the profile is rebuilt by ``speaker_cleanup`` — an emptied\npromoted cluster is deleted with its centroid instead of being left listed with\nnobody in it (issue #1214). A display name the user set to something else survives.",
         "operationId": "delete_speaker_profile_api_speaker_profiles_profiles__profile_uuid__delete",
         "parameters": [
           {

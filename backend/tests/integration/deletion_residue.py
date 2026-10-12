@@ -20,6 +20,7 @@ a hand-kept list is exactly what a new table or a new index plane silently falls
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
@@ -37,6 +38,7 @@ from sqlalchemy.sql import table as sa_table
 from tests.integration.deletion_seed import SeededFile
 from tests.integration.deletion_seed import redis_client
 
+logger = logging.getLogger(__name__)
 #: JSON columns that legitimately keep a deleted file's UUID, with the reason. Anything
 #: else a text scan finds is residue.
 JSON_REFERENCE_EXEMPT: dict[tuple[str, str], str] = {
@@ -352,12 +354,114 @@ def scan_residue(
     ]
 
 
+class TeardownIncompleteError(AssertionError):
+    """At least one store kept seeded data; every failed step is listed, not just the first."""
+
+
+#: Attempts per OpenSearch sweep. A ``delete_by_query`` is a scroll search, and a scroll
+#: context reaped mid-sweep (``search_context_missing``) fails a perfectly retryable call;
+#: that one transient error used to abort the whole teardown and leak ``e2e-delres-*`` rows.
+_OPENSEARCH_SWEEP_ATTEMPTS = 3
+
+
+class _Teardown:
+    """Runs every teardown step whatever an earlier one did, and remembers what failed."""
+
+    def __init__(self, engine: Any) -> None:
+        self.engine = engine
+        self.failures: list[str] = []
+
+    def attempt(self, step: str, action: Any) -> None:
+        try:
+            action()
+        except Exception as exc:  # recorded; raised together with every other failure
+            logger.exception("deletion-residue teardown step failed: %s", step)
+            self.failures.append(f"{step}: {type(exc).__name__}: {exc}")
+
+    def sql(self, statements: list[tuple[str, dict[str, Any]]]) -> None:
+        """One transaction per step, so one failure cannot roll another step back."""
+        with self.engine.begin() as conn:
+            for statement, params in statements:
+                conn.execute(text(statement), params)
+
+    def purge(self, sf: SeededFile) -> None:
+        from sqlalchemy.orm import Session
+
+        from app.models.media import MediaFile
+        from app.services.file_cleanup_service import purge_media_file
+
+        with Session(self.engine) as db:
+            row = db.query(MediaFile).filter(MediaFile.id == sf.file_id).one_or_none()
+            if row is not None:
+                purge_media_file(db, row)
+            db.commit()
+
+    def sweep_opensearch(self, client: Any, sf: SeededFile, *, throwaway: bool) -> None:
+        for remaining in range(_OPENSEARCH_SWEEP_ATTEMPTS - 1, -1, -1):
+            try:
+                client.delete_by_query(
+                    index=",".join(scannable_indices(client)),
+                    body={"query": residue_query(sf, include_owner=throwaway)},
+                    params={
+                        "ignore_unavailable": "true",
+                        "refresh": "true",
+                        "conflicts": "proceed",
+                    },
+                )
+                return
+            except Exception:
+                if remaining == 0:
+                    raise
+                logger.warning("Transient OpenSearch sweep failure for %s; retrying", sf.file_uuid)
+
+    def sweep_minio(self, sf: SeededFile, *, throwaway: bool) -> None:
+        from app.services.minio_service import minio_client
+
+        for finding in minio_residue(sf, include_owner=throwaway):
+            bucket, _, key = finding.removeprefix("minio: ").partition("/")
+            minio_client.remove_object(bucket, key)
+
+    def seeded_rows(self, sf: SeededFile) -> None:
+        ids = {
+            "cl": sf.cluster_id,
+            "tag": sf.tag_id,
+            "col": sf.collection_id,
+            "prof": sf.profile_id,
+            "ws": sf.watch_source_id,
+            "ue": sf.usage_event_id,
+        }
+        self.sql(
+            [
+                ("DELETE FROM speaker_cluster WHERE id = :cl", ids),
+                *[
+                    ("DELETE FROM speaker_cluster WHERE id = :cl", {"cl": extra})
+                    for extra in sf.extra_cluster_ids
+                ],
+                ("DELETE FROM tag WHERE id = :tag", ids),
+                ("DELETE FROM collection_member WHERE collection_id = :col", ids),
+                ("DELETE FROM collection WHERE id = :col", ids),
+                ("DELETE FROM speaker_profile WHERE id = :prof", ids),
+                ("DELETE FROM watch_source_file WHERE watch_source_id = :ws", ids),
+                ("DELETE FROM watch_source WHERE id = :ws", ids),
+                ("DELETE FROM usage_event WHERE id = CAST(:ue AS uuid)", ids),
+            ]
+        )
+
+    def raise_if_failed(self) -> None:
+        if self.failures:
+            raise TeardownIncompleteError(
+                f"teardown left seeded data in {len(self.failures)} place(s); every step "
+                "was still attempted:\n  " + "\n  ".join(self.failures)
+            )
+
+
 def teardown_seed(
     engine: Any,
     files: list[SeededFile],
     *,
     throwaway_user_ids: list[int],
     chat_conversation_ids: list[int],
+    api_profile_uuids: list[str] | None = None,
 ) -> None:
     """Remove everything the seed wrote that the delete under test did not. Idempotent.
 
@@ -366,65 +470,74 @@ def teardown_seed(
     is swept store by store. The scope is strictly the seeded identifiers — the shared
     admin's real documents are never addressed (``include_owner`` is only set for a
     throwaway owner).
-    """
-    from sqlalchemy.orm import Session
 
-    from app.models.media import MediaFile
-    from app.services.file_cleanup_service import purge_media_file
-    from app.services.minio_service import minio_client
+    **Every step runs whatever an earlier one did** (issue #1233): a step that raises is
+    logged with its traceback, recorded, and the sweep continues, each SQL step in its
+    own transaction. Once everything has been attempted,
+    :class:`TeardownIncompleteError` lists every failed step. A teardown that stopped at
+    the first error (a transient ``search_context_missing``) leaked the rows of every
+    later step and named only one.
+
+    Args:
+        api_profile_uuids: Profiles a test created through the API (a promotion) rather
+            than through the seed; their rows and embeddings are removed too.
+    """
     from app.services.opensearch_service import get_opensearch_client
     from app.services.opensearch_service import remove_profile_embedding
 
-    with Session(engine) as db:
-        for sf in files:
-            row = db.query(MediaFile).filter(MediaFile.id == sf.file_id).one_or_none()
-            if row is not None:
-                purge_media_file(db, row)
-        db.commit()
+    td = _Teardown(engine)
+    for profile_uuid in api_profile_uuids or []:
+        td.attempt(
+            f"opensearch profile {profile_uuid}", lambda u=profile_uuid: remove_profile_embedding(u)
+        )
+        td.attempt(
+            f"postgres profile {profile_uuid}",
+            lambda u=profile_uuid: td.sql(
+                [("DELETE FROM speaker_profile WHERE uuid = :p", {"p": u})]
+            ),
+        )
+    for sf in files:
+        td.attempt(f"purge file {sf.file_uuid}", lambda sf=sf: td.purge(sf))
 
     client = get_opensearch_client()
-    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    if client is None:
+        td.failures.append("opensearch: SKIP_OPENSEARCH said a cluster was reachable but it is not")
     for sf in files:
-        owner_is_throwaway = sf.owner_id in throwaway_user_ids
-        client.delete_by_query(
-            index=",".join(scannable_indices(client)),
-            body={"query": residue_query(sf, include_owner=owner_is_throwaway)},
-            params={"ignore_unavailable": "true", "refresh": "true", "conflicts": "proceed"},
-        )
+        throwaway = sf.owner_id in throwaway_user_ids
+        if client is not None:
+            td.attempt(
+                f"opensearch documents of {sf.file_uuid}",
+                lambda sf=sf, t=throwaway: td.sweep_opensearch(client, sf, throwaway=t),
+            )
         if sf.profile_uuid:
-            remove_profile_embedding(sf.profile_uuid)
-        for finding in minio_residue(sf, include_owner=owner_is_throwaway):
-            bucket, _, key = finding.removeprefix("minio: ").partition("/")
-            minio_client.remove_object(bucket, key)
+            td.attempt(
+                f"opensearch profile {sf.profile_uuid}",
+                lambda u=sf.profile_uuid: remove_profile_embedding(u),
+            )
+        td.attempt(
+            f"minio objects of {sf.file_uuid}",
+            lambda sf=sf, t=throwaway: td.sweep_minio(sf, throwaway=t),
+        )
         for db_index, key in sf.redis_keys:
-            redis_client(db_index).delete(key)
+            td.attempt(
+                f"redis {db_index}:{key}", lambda i=db_index, k=key: redis_client(i).delete(k)
+            )
 
-    with engine.begin() as conn:
-        for cid in chat_conversation_ids:
-            conn.execute(text("DELETE FROM chat_message WHERE conversation_id = :c"), {"c": cid})
-            conn.execute(text("DELETE FROM chat_conversation WHERE id = :c"), {"c": cid})
-        for sf in files:
-            ids = {
-                "cl": sf.cluster_id,
-                "tag": sf.tag_id,
-                "col": sf.collection_id,
-                "prof": sf.profile_id,
-                "ws": sf.watch_source_id,
-                "ue": sf.usage_event_id,
-            }
-            conn.execute(text("DELETE FROM speaker_cluster WHERE id = :cl"), ids)
-            for extra_id in sf.extra_cluster_ids:
-                conn.execute(text("DELETE FROM speaker_cluster WHERE id = :cl"), {"cl": extra_id})
-            conn.execute(text("DELETE FROM tag WHERE id = :tag"), ids)
-            conn.execute(text("DELETE FROM collection_member WHERE collection_id = :col"), ids)
-            conn.execute(text("DELETE FROM collection WHERE id = :col"), ids)
-            conn.execute(text("DELETE FROM speaker_profile WHERE id = :prof"), ids)
-            conn.execute(text("DELETE FROM watch_source_file WHERE watch_source_id = :ws"), ids)
-            conn.execute(text("DELETE FROM watch_source WHERE id = :ws"), ids)
-            conn.execute(text("DELETE FROM usage_event WHERE id = CAST(:ue AS uuid)"), ids)
-
+    for cid in chat_conversation_ids:
+        td.attempt(
+            f"postgres chat {cid}",
+            lambda c=cid: td.sql(
+                [
+                    ("DELETE FROM chat_message WHERE conversation_id = :c", {"c": c}),
+                    ("DELETE FROM chat_conversation WHERE id = :c", {"c": c}),
+                ]
+            ),
+        )
+    for sf in files:
+        td.attempt(f"postgres rows of {sf.file_uuid}", lambda sf=sf: td.seeded_rows(sf))
     for uid in throwaway_user_ids:
-        _delete_throwaway_user(engine, uid)
+        td.attempt(f"throwaway user {uid}", lambda u=uid: _delete_throwaway_user(engine, u))
+    td.raise_if_failed()
 
 
 def _delete_throwaway_user(engine: Any, user_id: int) -> None:

@@ -110,8 +110,13 @@ def new_tag() -> str:
     return uuid_pkg.uuid4().hex[:8]
 
 
-def create_throwaway_user(db: Session, *, role: str = "user") -> tuple[int, str, str]:
-    """Commit a throwaway local account. Returns ``(id, uuid, email)``."""
+def create_throwaway_user(
+    db: Session, *, role: str = "user", password: str | None = None
+) -> tuple[int, str, str]:
+    """Commit a throwaway local account. Returns ``(id, uuid, email)``.
+
+    ``password`` lets a test log in as the account; left unset, nobody can.
+    """
     from app.core.security import get_password_hash
     from app.models.user import User
 
@@ -119,7 +124,7 @@ def create_throwaway_user(db: Session, *, role: str = "user") -> tuple[int, str,
     user = User(
         email=email,
         full_name="Deletion residue subject",
-        hashed_password=get_password_hash(uuid_pkg.uuid4().hex),
+        hashed_password=get_password_hash(password or uuid_pkg.uuid4().hex),
         is_active=True,
         is_superuser=False,
         role=role,

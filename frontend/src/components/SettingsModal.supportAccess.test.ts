@@ -5,7 +5,7 @@
  * explicit `tenancyMode` check for `isCapabilityEnabled` would put support access on every
  * community install whose capabilities fetch failed. These tests pin that.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
@@ -43,6 +43,7 @@ import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
+import { sectionLoaders } from '$lib/settings/sectionLoaders';
 
 function setUser(role: 'user' | 'admin' | 'super_admin') {
   (mockUser as unknown as { set: (value: { role: string }) => void }).set({ role });
@@ -58,6 +59,13 @@ function setMode(tenancyMode: 'single' | 'multi' | undefined) {
     tenancyMode,
   });
 }
+
+// Sections load lazily, so vitest would otherwise transform each panel's module tree inside the
+// test that first opens it. Do that once up front (it used to happen while collecting the static
+// imports), so test timeouts measure the component, not the transformer.
+beforeAll(async () => {
+  await Promise.all(Object.values(sectionLoaders).map((load) => load()));
+}, 180_000);
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -28,6 +28,12 @@
   import { initDownloadNotifications } from '$lib/services/downloadNotifications';
   import { runStartup } from '$lib/startup';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import {
+    loadSettingsModal,
+    loadSettingsModalShell,
+    prefetchSettingsModal,
+    whenIdle,
+  } from '$lib/settings/settingsModalLoader';
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
@@ -43,6 +49,10 @@
   // (the login page included) doesn't download them before first paint. Each one is fetched
   // the moment its condition is known, never on a click, so behaviour is unchanged.
   let SettingsModal: Component<any> | null = null;
+  // Painted while SettingsModal's chunk is still in flight, so the dialog opens at once and its
+  // sidebar and content fill in afterwards. Small enough to be prefetched on idle (below).
+  let SettingsModalShell: Component<any> | null = null;
+  let shellShown = false;
   let FirstRunWizard: Component<any> | null = null;
   let QuotaExceededModal: Component<any> | null = null;
   let LegalGateModal: Component<any> | null = null;
@@ -51,7 +61,19 @@
   // The modal renders itself only while the store says open, and mounts already open, so a
   // deep link or event that opens settings before the chunk lands is not lost.
   $: if ($isAuthenticated && !lifecycleHold && $settingsModalStore.isOpen && !SettingsModal) {
-    void import("../components/SettingsModal.svelte").then((m) => (SettingsModal = m.default));
+    void loadSettingsModal().then((m) => (SettingsModal = m.default));
+    if (!SettingsModalShell) void loadSettingsModalShell().then((m) => (SettingsModalShell = m.default));
+  }
+  // The real modal skips its enter animation when it takes over from the shell.
+  $: if ($settingsModalStore.isOpen && SettingsModalShell && !SettingsModal) shellShown = true;
+  $: if (!$settingsModalStore.isOpen) shellShown = false;
+
+  // Warm the shell, the modal and the default section once the browser is idle after sign-in, so
+  // the first open does not wait on the network. The user menu warms them again on hover/focus.
+  let settingsPrefetchScheduled = false;
+  $: if ($isAuthenticated && !lifecycleHold && !settingsPrefetchScheduled) {
+    settingsPrefetchScheduled = true;
+    whenIdle(() => prefetchSettingsModal());
   }
   // The wizard only acts for the bootstrap super_admin (it checks completion on mount), and
   // Settings can only re-open it for that same role.
@@ -265,7 +287,11 @@
       {#if $supportSession.active}<SupportAccessBanner />{/if}
       <NotificationsPanel />
       <UploadManager />
-      {#if SettingsModal}<svelte:component this={SettingsModal} />{/if}
+      {#if SettingsModal}
+        <svelte:component this={SettingsModal} skipEnter={shellShown} />
+      {:else if SettingsModalShell && $settingsModalStore.isOpen}
+        <svelte:component this={SettingsModalShell} />
+      {/if}
       {#if FirstRunWizard}<svelte:component this={FirstRunWizard} />{/if}
       <ConnectionStatusBanner />
       {#if isCloudEdition}

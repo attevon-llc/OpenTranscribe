@@ -60,7 +60,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.media import Speaker
-from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -114,12 +114,7 @@ def find_label_drift(client, index: str, db: Session) -> tuple[list[str], list[i
         if row is None:
             orphaned.append(speaker_id)
             continue
-        expected = canonical_speaker_label(
-            row.name,
-            display_name=row.display_name,
-            suggested_name=row.suggested_name,
-            confidence=row.confidence,
-        )
+        expected = canonical_speaker_label_for_row(row)
         for label in labels:
             if label != expected:
                 drift.append(
@@ -244,12 +239,7 @@ def test_a_label_matching_the_resolver_reports_no_drift(
     make_speaker, media_file = seeded_speaker
 
     speaker = make_speaker(display_name="Ada Lovelace")
-    expected = canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=speaker.suggested_name,
-        confidence=speaker.confidence,
-    )
+    expected = canonical_speaker_label_for_row(speaker)
     _index_chunk(
         client, index, file_uuid=str(media_file.uuid), speaker_id=speaker.id, label=expected
     )
@@ -273,12 +263,7 @@ def test_a_label_disagreeing_with_the_resolver_is_detected(
     make_speaker, media_file = seeded_speaker
 
     speaker = make_speaker(name="SPEAKER_00", suggested_name="Joe Rogan", confidence=0.7006)
-    expected = canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=speaker.suggested_name,
-        confidence=speaker.confidence,
-    )
+    expected = canonical_speaker_label_for_row(speaker)
     assert expected != "Joe Rogan", (
         "precondition: 0.7006 is below DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD, so the "
         f"resolver must NOT name this speaker — it returned {expected!r}. If this fires, the "
@@ -294,6 +279,53 @@ def test_a_label_disagreeing_with_the_resolver_is_detected(
     assert len(drift) == 1, f"the seeded disagreement must be reported exactly once: {drift}"
     assert f"speaker_id={speaker.id}" in drift[0]
     assert "'Joe Rogan'" in drift[0], "the report must quote the label the index actually holds"
+
+
+def test_an_llm_suggestion_indexed_as_the_label_is_detected(
+    isolated_chunk_index, seeded_speaker, db_session: Session
+):
+    """Owner decision 2026-10-12: a CONFIDENT LLM suggestion is still only a suggestion, so a
+    chunk indexed under its name is drift -- the index would be naming a person nobody verified."""
+    client, index = isolated_chunk_index
+    make_speaker, media_file = seeded_speaker
+
+    speaker = make_speaker(
+        name="SPEAKER_00",
+        suggested_name="Joe Rogan",
+        confidence=0.95,
+        suggestion_source="llm_analysis",
+    )
+    assert canonical_speaker_label_for_row(speaker) == "SPEAKER_00"
+    _index_chunk(
+        client, index, file_uuid=str(media_file.uuid), speaker_id=speaker.id, label="Joe Rogan"
+    )
+
+    drift, _ = find_label_drift(client, index, db_session)
+
+    assert len(drift) == 1, f"the LLM-named chunk must be reported exactly once: {drift}"
+    assert f"speaker_id={speaker.id}" in drift[0]
+
+
+def test_a_voiceprint_match_indexed_as_the_label_is_not_drift(
+    isolated_chunk_index, seeded_speaker, db_session: Session
+):
+    """The control for the test above: the same confidence from a voiceprint IS the label."""
+    client, index = isolated_chunk_index
+    make_speaker, media_file = seeded_speaker
+
+    speaker = make_speaker(
+        name="SPEAKER_00",
+        suggested_name="Joe Rogan",
+        confidence=0.95,
+        suggestion_source="voice_match",
+    )
+    _index_chunk(
+        client, index, file_uuid=str(media_file.uuid), speaker_id=speaker.id, label="Joe Rogan"
+    )
+
+    drift, _ = find_label_drift(client, index, db_session)
+
+    assert drift == [], f"a voiceprint-matched name is the canonical label: {drift}"
 
 
 def test_a_chunk_referencing_a_deleted_speaker_is_reported_as_orphaned(

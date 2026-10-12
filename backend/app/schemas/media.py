@@ -331,6 +331,10 @@ class Speaker(SpeakerBase, UUIDBaseSchema):
     media_file_id: UUID
     profile_id: UUID | None = None
     confidence: float | None = None
+    # Where ``suggested_name`` came from (``llm_analysis``, ``voice_match``, ``profile_match``
+    # ...). Only a voiceprint source can become the speaker's name; the SPA reads this to
+    # tell a guess it must offer for verification from a voice match.
+    suggestion_source: str | None = None
     created_at: datetime
 
     # Computed status fields from SpeakerStatusService

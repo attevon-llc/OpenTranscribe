@@ -635,7 +635,7 @@ class Speaker(Base):
     )  # AI-suggested name from LLM or embedding match
     suggestion_source: Mapped[str | None] = mapped_column(
         String, nullable=True
-    )  # Source of suggestion: "llm_analysis", "voice_match", "profile_match"
+    )  # "llm_analysis" (a guess; never the label), "voice_match"/"profile_match" (voiceprint), "user_skipped"
     verified: Mapped[bool | None] = mapped_column(
         Boolean, default=False
     )  # Flag to indicate if the speaker has been verified

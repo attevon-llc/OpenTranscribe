@@ -33,7 +33,13 @@ from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 
 def _speaker(**kwargs):
-    defaults = dict(name="SPEAKER_01", display_name=None, suggested_name=None, confidence=None)
+    defaults = dict(
+        name="SPEAKER_01",
+        display_name=None,
+        suggested_name=None,
+        confidence=None,
+        suggestion_source=None,
+    )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 
@@ -43,7 +49,12 @@ def test_the_rename_propagation_plane_agrees_with_the_chunk_index_writer():
     no ``display_name`` at all. Red before the fix: ``'SPEAKER_01' != 'Joe Rogan
     (Host)'`` — every repair site computed the raw diarizer label while the
     indexer had already written the suggestion."""
-    speaker = _speaker(name="SPEAKER_01", suggested_name="Joe Rogan (Host)", confidence=0.9)
+    speaker = _speaker(
+        name="SPEAKER_01",
+        suggested_name="Joe Rogan (Host)",
+        confidence=0.9,
+        suggestion_source="voice_match",
+    )
 
     assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(speaker)
     assert canonical_speaker_label_for_row(speaker) == _resolve_reindex_speaker_name(speaker)
@@ -54,7 +65,12 @@ def test_a_suggestion_below_threshold_is_a_control_not_a_finding():
     """Control, must stay green both before AND after the fix. Without it, the
     test above would also pass for a resolver that blindly prefers ANY suggestion
     regardless of confidence, rather than the specific ``>= 0.75`` rule."""
-    speaker = _speaker(name="SPEAKER_01", suggested_name="Joe Rogan (Host)", confidence=0.74)
+    speaker = _speaker(
+        name="SPEAKER_01",
+        suggested_name="Joe Rogan (Host)",
+        confidence=0.74,
+        suggestion_source="voice_match",
+    )
 
     assert canonical_speaker_label_for_row(speaker) == "SPEAKER_01"
     assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(speaker)
@@ -86,7 +102,12 @@ def test_a_drifted_write_plane_would_be_caught_by_the_agreement_test_above(monke
 
     monkeypatch.setattr(sit, "resolve_chunk_speaker_name", _old_ad_hoc_resolution)
 
-    speaker = _speaker(name="SPEAKER_01", suggested_name="Joe Rogan (Host)", confidence=0.9)
+    speaker = _speaker(
+        name="SPEAKER_01",
+        suggested_name="Joe Rogan (Host)",
+        confidence=0.9,
+        suggestion_source="voice_match",
+    )
 
     assert sit.resolve_chunk_speaker_name(speaker) == "SPEAKER_01"
     assert canonical_speaker_label_for_row(speaker) == "Joe Rogan (Host)"

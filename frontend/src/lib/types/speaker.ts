@@ -64,9 +64,11 @@ export interface Segment {
    * it is set. `suggested_name` + `confidence` + `suggestion_source` are the
    * machine guess and must be surfaced AS a suggestion, never as the name.
    * Note `resolved_speaker_name` above (and `Speaker.resolved_display_name`)
-   * deliberately collapse the two — both come from `canonical_speaker_label()`,
-   * which returns `suggested_name` once confidence >= 0.75. Do not key
-   * "does this speaker have a real name" off either of them.
+   * come from `canonical_speaker_label()`, which returns a typed `display_name`
+   * or a VOICEPRINT-matched `suggested_name` (`suggestion_source` `voice_match` /
+   * `profile_match`, confidence >= 0.75) — never an LLM one (`llm_analysis`).
+   * They still mix "confirmed" and "matched by voice", so do not key
+   * "has a human confirmed a name" off either of them.
    */
   speaker?: {
     uuid: string; // Public UUID identifier

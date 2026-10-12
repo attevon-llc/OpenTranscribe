@@ -171,6 +171,7 @@ def _current_speaker_name(speaker_id: int) -> str | None:
                     Speaker.display_name,
                     Speaker.suggested_name,
                     Speaker.confidence,
+                    Speaker.suggestion_source,
                 )
                 .filter(Speaker.id == speaker_id)
                 .first()

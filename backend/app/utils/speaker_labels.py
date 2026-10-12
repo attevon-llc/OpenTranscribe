@@ -62,6 +62,26 @@ def is_assigned_speaker_name(value: object) -> bool:
 #: ``SpeakerStatusService.HIGH_CONFIDENCE_THRESHOLD``) — not a new number, just named once.
 DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD = 0.75
 
+#: ``Speaker.suggestion_source`` values written ONLY by a voiceprint/embedding match
+#: (``speaker_matching_service`` for ``profile_match`` / ``voice_match``,
+#: ``speaker_update`` and ``batch_speaker_matching`` for ``voice_match``). Their
+#: ``confidence`` is a cosine similarity gated at ``CLUSTER_ASSIGNMENT_THRESHOLD`` (0.75), so
+#: a suggestion carrying one of them at >= 0.75 is evidence about the VOICE.
+#:
+#: Owner decision 2026-10-12: a speaker's canonical label (what search, chat, exports and the
+#: OpenSearch documents show as the name) comes only from a name a human typed/verified or
+#: from one of these. Every other source -- ``llm_analysis``, ``metadata_hint``,
+#: ``user_skipped``, and a row with NO source (legacy data that cannot prove where its
+#: suggestion came from) -- is a suggestion the human must verify: shown in suggestion UIs
+#: with its confidence, never promoted to the speaker's name. This is an allow-list on
+#: purpose: a new suggestion producer is non-canonical until someone decides otherwise.
+EMBEDDING_SUGGESTION_SOURCES: frozenset[str] = frozenset({"voice_match", "profile_match"})
+
+
+def is_embedding_suggestion_source(source: object) -> bool:
+    """Whether a ``suggestion_source`` marks a voiceprint match (see the allow-list above)."""
+    return isinstance(source, str) and source in EMBEDDING_SUGGESTION_SOURCES
+
 
 #: Words that mean the model is NOT naming anyone: "Unknown (not Robert)", "N/A", "Unidentified".
 _NON_NAME_PATTERN = re.compile(
@@ -76,8 +96,8 @@ def looks_like_a_person_name(value: object) -> bool:
     """Whether an LLM ``predicted_name`` is a name rather than a statement about not having one.
 
     The model answers "who is this speaker?" with prose when it cannot tell ("Unknown (not
-    Robert)"). Stored as ``suggested_name`` at confidence >= 0.75 that string becomes the
-    canonical label everywhere the index and exports read it, so it is refused at the door.
+    Robert)"). Stored as ``suggested_name`` that string is shown to the user as the
+    suggestion, so it is refused at the door.
     """
     if not isinstance(value, str):
         return False
@@ -93,13 +113,18 @@ def canonical_speaker_label(
     display_name: str | None = None,
     suggested_name: str | None = None,
     confidence: float | None = None,
+    suggestion_source: str | None = None,
     suggestion_threshold: float = DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD,
 ) -> str:
     """Resolve the one canonical display label for a speaker.
 
     Priority: **any** set ``display_name`` (a human labeled this speaker, verified or not
-    — more authoritative than an automatic guess) > a confident ``suggested_name`` > the
-    raw diarization ``name`` > :data:`UNKNOWN_SPEAKER_LABEL`.
+    — more authoritative than an automatic guess) > a ``suggested_name`` that a
+    **voiceprint match** produced at ``confidence >= 0.75`` (``suggestion_source`` in
+    :data:`EMBEDDING_SUGGESTION_SOURCES`) > the raw diarization ``name`` >
+    :data:`UNKNOWN_SPEAKER_LABEL`. An LLM suggestion (``llm_analysis``) -- or any suggestion
+    whose source is not a voiceprint match, or unknown -- never reaches the label, however
+    confident: the human verifies it first, which sets ``display_name``.
 
     This deliberately merges two behaviours that used to disagree.
     ``transcript_builders.get_speaker_name`` required ``verified`` before trusting
@@ -122,10 +147,12 @@ def canonical_speaker_label(
         name: The raw diarization label (``Speaker.name``), or ``None`` when there is no
             linked speaker at all.
         display_name: A user-set display name, verified or not.
-        suggested_name: An LLM/embedding speaker-ID suggestion. Per the root CLAUDE.md,
-            suggestions are never auto-applied to the record — this is a *display*
-            fallback only, exactly as ``get_speaker_name`` used before this helper existed.
-        confidence: The suggestion's confidence, 0-1.
+        suggested_name: A speaker-ID suggestion (LLM or voiceprint). Only a voiceprint one
+            can become the label; see ``suggestion_source``.
+        confidence: The suggestion's confidence, 0-1 (a cosine similarity for a voiceprint
+            suggestion).
+        suggestion_source: ``Speaker.suggestion_source``. Omitted/``None`` means the
+            provenance is unknown, which fails closed: the suggestion is ignored.
         suggestion_threshold: Minimum confidence for the suggestion to be shown.
 
     Returns:
@@ -135,6 +162,7 @@ def canonical_speaker_label(
         return str(display_name)
     if (
         suggested_name
+        and is_embedding_suggestion_source(suggestion_source)
         and confidence is not None
         and confidence >= suggestion_threshold
         # Rows stored before predictions were validated can hold "Unknown (not Robert)".
@@ -165,7 +193,7 @@ def canonical_speaker_label_for_row(row: Any) -> str:
 
     Args:
         row: Anything exposing ``.name`` / ``.display_name`` / ``.suggested_name``
-            / ``.confidence`` — a ``Speaker`` ORM instance, a SQLAlchemy
+            / ``.confidence`` / ``.suggestion_source`` — a ``Speaker`` ORM instance, a SQLAlchemy
             columns-only row/tuple with matching attribute names, or a test
             stand-in.
 
@@ -177,4 +205,7 @@ def canonical_speaker_label_for_row(row: Any) -> str:
         display_name=row.display_name,
         suggested_name=row.suggested_name,
         confidence=row.confidence,
+        # getattr: a stand-in or columns-only row that predates the provenance rule
+        # degrades to "unknown source" (suggestion ignored) rather than raising.
+        suggestion_source=getattr(row, "suggestion_source", None),
     )

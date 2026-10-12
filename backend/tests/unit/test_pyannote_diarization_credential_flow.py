@@ -31,6 +31,7 @@ from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.error_categorization_service import UserErrorReason
 from app.utils.encryption import encrypt_api_key
 from app.utils.error_classification import ErrorCategory
+from tests.unit._plan_contexts import make_plan
 
 _KEY = "fixture-key-cccc-3333"
 
@@ -65,7 +66,9 @@ class TestFactory:
         _select_pyannote(db_session, normal_user)
         _store_key(db_session, normal_user, encrypt_api_key(_KEY))
 
-        provider = DiarizationProviderFactory.create_for_user(normal_user.id, db_session)
+        provider = DiarizationProviderFactory.create_for_engine(
+            "pyannote_ai", normal_user.id, db_session
+        )
 
         assert isinstance(provider, PyAnnoteCloudDiarizationProvider)
         assert provider._api_key == _KEY
@@ -75,7 +78,7 @@ class TestFactory:
         _select_pyannote(db_session, normal_user)
 
         with pytest.raises(DiarizationNotConfiguredError) as raised:
-            DiarizationProviderFactory.create_for_user(normal_user.id, db_session)
+            DiarizationProviderFactory.create_for_engine("pyannote_ai", normal_user.id, db_session)
 
         assert str(raised.value) == DiarizationNotConfiguredError.MESSAGE
 
@@ -85,17 +88,20 @@ class TestFactory:
         _store_key(db_session, normal_user, "v3:not-valid-ciphertext")
 
         with pytest.raises(DiarizationNotConfiguredError):
-            DiarizationProviderFactory.create_for_user(normal_user.id, db_session)
+            DiarizationProviderFactory.create_for_engine("pyannote_ai", normal_user.id, db_session)
 
     def test_other_users_key_is_never_used(self, db_session, normal_user, admin_user):
         _select_pyannote(db_session, normal_user)
         _store_key(db_session, admin_user, encrypt_api_key(_KEY))
 
         with pytest.raises(DiarizationNotConfiguredError):
-            DiarizationProviderFactory.create_for_user(normal_user.id, db_session)
+            DiarizationProviderFactory.create_for_engine("pyannote_ai", normal_user.id, db_session)
 
-    def test_sources_without_a_cloud_provider_still_resolve_to_none(self, db_session, normal_user):
-        assert DiarizationProviderFactory.create_for_user(normal_user.id, db_session) is None
+    def test_the_local_engine_needs_no_key(self, db_session, normal_user):
+        from app.services.diarization.local_provider import LocalDiarizationProvider
+
+        provider = DiarizationProviderFactory.create_for_engine("local", normal_user.id, db_session)
+        assert isinstance(provider, LocalDiarizationProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +193,7 @@ def test_pipeline_fails_before_calling_cloud_asr(
             max_speakers=None,
             num_speakers=None,
             provider=asr,
-            diarization_source="pyannote",
+            plan=make_plan("cloud_text_word", "pyannote"),
         )
 
     assert asr.calls == 0

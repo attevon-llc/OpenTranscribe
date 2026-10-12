@@ -176,13 +176,10 @@ def search_corpus(search_corpus_user, search_corpus_token):
     """Inject all six meetings, index them for real, wait for convergence, then tear down."""
     from app.core.config import settings
     from app.db.base import SessionLocal
-    from app.models.media import MediaFile
-    from app.models.media import Speaker
-    from app.models.media import TranscriptSegment
     from app.scripts.corpus_injection.injector import dispatch_indexing
     from app.scripts.corpus_injection.injector import inject_meeting
+    from app.scripts.corpus_injection.purge import purge_injected
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search.indexing_service import TranscriptIndexingService
     from tests.fixtures.search_corpus import build_meeting_docs
 
     _ensure_neural_ready()
@@ -219,19 +216,10 @@ def search_corpus(search_corpus_user, search_corpus_token):
         client = get_opensearch_client()
         if client is not None:
             client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
-        indexer = TranscriptIndexingService()
         db = SessionLocal()
         try:
-            for record in records.values():
-                media_file = db.get(MediaFile, record.media_file_id)
-                if media_file is not None:
-                    db.query(TranscriptSegment).filter(
-                        TranscriptSegment.media_file_id == media_file.id
-                    ).delete()
-                    db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete()
-                    db.delete(media_file)
-                    db.commit()
-                indexer.delete_transcript_chunks(record.file_uuid)
+            report = purge_injected(db, user_id, "search_quality_fixture", seed)
+            assert report.clean, f"search corpus not cleanly purged: {report.failed}"
         finally:
             db.close()
 

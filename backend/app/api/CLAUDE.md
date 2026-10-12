@@ -239,10 +239,17 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   fixed sentence from `pipeline_plan.ISSUE_MESSAGES`, never exception text) for a NEW
   `diarization_source` / `diarization_asr_config_uuid` that produces a diarization-step
   error; re-saving an unchanged stored value is never refused. An endpoint that changes what
-  the plan depends on must ask the plan, not add a `source == "..."` check. ⚠️ The ASR-side
-  switches (`/asr-settings/set-active`, `/clear-active`, first-config auto-activation, the
-  promotion on delete) do not re-check the plan yet: they can leave a stored speaker choice
-  that the plan now reports as an error, visible only on `GET /user-settings/pipeline` (WP3/WP6).
+  the plan depends on must ask the plan, not add a `source == "..."` check. The ASR-side
+  switches ask it too (#1225, `services/asr_switch_plan`): `set-active` / `clear-active`
+  answer the same 409 for an error the switch would INTRODUCE and otherwise return
+  `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
+  break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
+  the first remaining config that keeps the choice runnable, else clears. A #1109-locked
+  source is never refused. Lite's transcription-step 409s are WP6's (`REFUSED_STEPS`).
+  `DELETE /asr-settings/config/{uuid}` and `/all` answer `ASRConfigDeleted` `{deleted,
+  diarizer_source_reverted, pipeline_issues}` (#1226): a deleted config named as someone's
+  speaker detector (`asr_config`) resets that choice for every holder, and
+  `diarizer_source_reverted` says whether the caller's was.
 - **A route that deletes a speaker or moves one out of a cluster/profile must use
   `services/speaker_cleanup`** (issue #1214): `capture_speaker_impact` before the write,
   `raise_if_incomplete(reconcile_speaker_impact(...))` after the commit. Hand-rolling

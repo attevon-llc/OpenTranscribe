@@ -50,6 +50,32 @@ def get_alembic_head() -> str | None:
     return head
 
 
+def _revision_module(revision: str):
+    """Load one revision file by path (its module-level constants are the source of truth)."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{revision}.py"
+    spec = importlib.util.spec_from_file_location(revision, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load revision {revision} from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _has_unusable_pyannote_source(conn, tables: list[str]) -> bool:
+    """v434's data marker: a stored pyannote.ai choice with no key and local transcription.
+
+    The predicate is read from the revision itself, so detection and the reset it detects
+    cannot drift apart.
+    """
+    if not {"user_setting", "user_diarization_settings", "user_asr_settings"} <= set(tables):
+        return False
+    module = _revision_module("v434_reset_unusable_pyannote_source")
+    detect = text(module.DETECT_SQL)
+    return bool(conn.execute(detect, {"env_local": module.env_asr_is_local()}).scalar())
+
+
 def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     """Detect the schema version of an existing untracked database.
 
@@ -562,6 +588,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'requested_disable_diarization')"
     )
 
+    # v434: a data-only revision (issue #1225). No schema marker, so like v379 it keys on
+    # the ABSENCE of the rows it rewrites: a database that still holds a pyannote.ai choice
+    # with no key under local transcription is stamped v433 and re-runs the reset.
+    has_unusable_pyannote_source = _has_unusable_pyannote_source(conn, tables)
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -604,9 +635,7 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v433: same as v432 plus the requested per-file transcription options. The newest
-    # revision on this chain, so this is the top of the ladder.
-    if (
+    matches_v433 = (
         matches_v389
         and has_file_facts
         and has_recorded_date_provenance
@@ -620,7 +649,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_duration_source
         and has_support_access_grant
         and has_requested_options
-    ):
+    )
+    # v434: same schema as v433, with no unusable pyannote.ai choice left. The newest
+    # revision on this chain, so this is the top of the ladder.
+    if matches_v433 and not has_unusable_pyannote_source:
+        return "v434_reset_unusable_pyannote_source"
+    # v433: same as v432 plus the requested per-file transcription options.
+    if matches_v433:
         return "v433_add_requested_transcription_options"
     # v432: same as v431 plus the support-access tables.
     if (

@@ -251,7 +251,9 @@ class TestASRConfigCRUD:
         uuid = created["uuid"]
         resp = client.delete(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
         assert resp.status_code == 200
-        assert resp.json() == {"deleted": True, "diarizer_source_reverted": False}
+        body = resp.json()
+        assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+        assert isinstance(body["pipeline_issues"], list)
         # Confirm it is gone
         resp2 = client.get(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
         assert resp2.status_code == 404
@@ -268,7 +270,9 @@ class TestASRConfigCRUD:
         _create_config(client, user_token_headers, name="Bulk B")
         resp = client.delete("/api/asr-settings/all", headers=user_token_headers)
         assert resp.status_code == 200
-        assert resp.json() == {"deleted": True, "diarizer_source_reverted": False}
+        body = resp.json()
+        assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+        assert isinstance(body["pipeline_issues"], list)
         data = _list_configs(client, user_token_headers)
         assert len(data["configs"]) == 0
 

@@ -33,6 +33,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.transcription.engine.job import RawTranscriptResult
+from tests.unit._plan_contexts import plan_context
 
 if TYPE_CHECKING:
     from app.transcription.engine.config import EngineConfig
@@ -451,7 +452,7 @@ class TestSplitPathReachesCompletedExactlyOnce:
             "asr_provider": "local",
             "downstream_tasks": None,
             "diarization_disabled": False,
-            "diarization_source": "provider",
+            "pipeline_plan": plan_context(),
             "segment_count": 12,
         }
 

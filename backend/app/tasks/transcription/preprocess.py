@@ -132,19 +132,20 @@ def preprocess_for_transcription(
     self,
     file_uuid: str,
     task_id: str,
+    pipeline_plan: dict,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     downstream_tasks: list[str] | None = None,
     source_language: str | None = None,
     translate_to_english: bool | None = None,
-    disable_diarization: bool | None = None,
-    diarization_source: str | None = None,
     whisper_model: str | None = None,
 ) -> dict:
     """Download media, extract audio, upload to MinIO temp for GPU worker.
 
-    Returns context dict consumed by the GPU transcription task via Celery chain.
+    Returns context dict consumed by the GPU transcription task via Celery chain. The
+    ``pipeline_plan`` computed at dispatch (``services/pipeline_plan``) rides along in it
+    unchanged: every later stage reads what to run from there, never from a setting.
     """
     # issue #1020: a run recovery already replaced must not preprocess (and overwrite the
     # temp audio of) the file a second time. Its payload makes every later stage stand down.
@@ -159,14 +160,13 @@ def preprocess_for_transcription(
         return _run_preprocess(
             file_uuid,
             task_id,
+            pipeline_plan,
             min_speakers,
             max_speakers,
             num_speakers,
             downstream_tasks,
             source_language,
             translate_to_english,
-            disable_diarization,
-            diarization_source,
             whisper_model,
         )
 
@@ -174,14 +174,13 @@ def preprocess_for_transcription(
 def _run_preprocess(
     file_uuid: str,
     task_id: str,
+    pipeline_plan: dict,
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
     downstream_tasks: list[str] | None,
     source_language: str | None,
     translate_to_english: bool | None,
-    disable_diarization: bool | None,
-    diarization_source: str | None,
     whisper_model: str | None,
 ) -> dict:
     """The preprocess stage body (see ``preprocess_for_transcription``)."""
@@ -262,21 +261,6 @@ def _run_preprocess(
                 file_id, file_uuid, task_id, local_wav_path=local_wav_path
             )
 
-        # Resolve diarization_source: explicit arg > legacy bool > user DB setting
-        if diarization_source is None:
-            if disable_diarization is not None:
-                # Legacy callers: convert bool to diarization_source
-                diarization_source = "off" if disable_diarization else "provider"
-            else:
-                from .core import _get_user_transcription_settings
-
-                with session_scope() as db_settings:
-                    user_ts = _get_user_transcription_settings(db_settings, user_id)
-                    diarization_source = user_ts.get("diarization_source", "provider")
-
-        # Compute disable_diarization from diarization_source for backward compat
-        disable_diarization = diarization_source == "off"
-
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.20)
 
@@ -306,8 +290,7 @@ def _run_preprocess(
             "downstream_tasks": downstream_tasks,
             "source_language": source_language,
             "translate_to_english": translate_to_english,
-            "disable_diarization": disable_diarization,
-            "diarization_source": diarization_source,
+            "pipeline_plan": pipeline_plan,
             "whisper_model": whisper_model,
             "local_wav_path": local_wav_path,
         }

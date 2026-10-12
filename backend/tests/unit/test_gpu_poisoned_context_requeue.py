@@ -15,6 +15,8 @@ from unittest.mock import patch
 import pytest
 from celery.exceptions import Reject
 
+from tests.unit._plan_contexts import plan_context
+
 POISONED = RuntimeError("parallel_for failed: cudaErrorInvalidDevice: invalid device ordinal")
 
 
@@ -150,6 +152,7 @@ def test_the_diarize_task_routes_a_failure_through_the_same_helper():
         "storage_path": "x",
         "file_name": "x.wav",
         "content_type": "audio/wav",
+        "pipeline_plan": plan_context(),
     }
     with (
         patch.object(diarize_task, "superseded_or_none", return_value=None),

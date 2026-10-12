@@ -21,7 +21,7 @@ task                                             slow work formerly inside the s
 ===============================================  ====================================
 ``extract_speaker_embeddings``                   MinIO download + ffmpeg + embedding model
 ``update_speaker_embedding_on_reassignment``     MinIO download + ffmpeg + inference
-``transcription.embeddings``                     per-speaker ffmpeg slices + inference
+``rediarize`` (cloud post stage)                  pyannote.ai upload + job poll (HTTP)
 ``reindex_batch``                                50 OpenSearch re-index round trips
 ``watch_source.stitch_and_import``               SMB/S3 part downloads + ffmpeg concat
 ``watch_source.send_notification``               SMTP send (30 s timeout per config)
@@ -201,6 +201,9 @@ class _FakeEmbeddingService:
         norm = np.linalg.norm(vec)
         return vec / norm if norm else vec
 
+    def get_embedding_dimension(self):
+        return 3
+
     def cleanup(self):
         self._tracker.observe("model_cleanup")
 
@@ -286,9 +289,7 @@ def test_extract_speaker_embeddings_holds_no_transaction_across_audio_and_model(
     media_file, speakers = _make_transcribed_file(db_session, normal_user)
     speaker_mapping = {s.name: s.id for s in speakers}
 
-    async_result = seb.extract_speaker_embeddings_task.apply(
-        args=[str(media_file.uuid), speaker_mapping]
-    )
+    async_result = seb.extract_speaker_embeddings_task.apply(args=[str(media_file.uuid)])
     result = async_result.get()
 
     assert result["status"] == "success", result
@@ -298,7 +299,6 @@ def test_extract_speaker_embeddings_holds_no_transaction_across_audio_and_model(
         "temp_audio_exists",
         "download_temp_audio",
         "extract_embeddings",
-        "gpu_sync",
         "model_cleanup",
     ):
         assert observed[label] == 0, _leak(tracker, label)
@@ -336,9 +336,7 @@ def test_extract_speaker_embeddings_releases_scope_when_inference_fails(
 
     monkeypatch.setattr(_FakeEmbeddingService, "extract_embeddings_for_segments", boom)
 
-    result = seb.extract_speaker_embeddings_task.apply(
-        args=[str(media_file.uuid), {s.name: s.id for s in speakers}]
-    ).get()
+    result = seb.extract_speaker_embeddings_task.apply(args=[str(media_file.uuid)]).get()
 
     assert result["status"] == "error"
     assert tracker.seen["extract_embeddings"] == 0, _leak(tracker, "extract_embeddings")
@@ -496,91 +494,61 @@ def test_reassignment_read_phase_returns_plain_data(db_session, normal_user, rea
 
 
 # --------------------------------------------------------------------------- #
-# 4. transcription/embeddings — the in-pipeline copy of the same call
+# 4. rediarize — the cloud post stage (issue #1225): pyannote.ai upload + poll
 # --------------------------------------------------------------------------- #
-def test_transcription_embeddings_extracts_outside_the_session(
+def test_rediarize_cloud_engine_holds_no_transaction_across_the_vendor_call(
     db_session, normal_user, monkeypatch
 ):
-    from app.tasks.transcription.context import TranscriptionContext
+    """The post stage reads (file, segments, the key), then talks to the vendor with NO
+    scope open, then writes in its own short scope."""
+    from app.services.diarization.factory import DiarizationProviderFactory
+    from app.services.diarization.types import DiarizeResult
+    from app.services.diarization.types import DiarizeSegment
+    from app.tasks import rediarize_task as rdz
 
     tracker = _ScopeTracker(db_session)
-    recorded: dict = {}
-    media_file, speakers = _make_transcribed_file(db_session, normal_user)
+    media_file, _speakers = _make_transcribed_file(db_session, normal_user)
+    monkeypatch.setattr(rdz, "session_scope", tracker.scope)
 
-    monkeypatch.setattr(temb, "session_scope", tracker.scope)
-    monkeypatch.setattr(
-        temb, "update_task_status", lambda *a, **kw: tracker.observe("update_task_status")
-    )
-    monkeypatch.setattr(
-        "app.utils.hardware_detection.detect_hardware", lambda: _FakeHardware(tracker)
-    )
-    monkeypatch.setattr(
-        "app.services.speaker_embedding_service.get_cached_embedding_service",
-        lambda: _FakeEmbeddingService(tracker),
-    )
+    def _audio(*_a, **_k):
+        tracker.observe("prepare_audio")
+        return "/scratch/audio.wav", None
 
-    class _FakeMatching:
-        def __init__(self, db, embedding_service=None):
-            self.embedding_service = embedding_service
-            recorded["embedding_service"] = embedding_service
-
-        def process_speaker_embeddings_native(
-            self, *, media_file_id, user_id, native_embeddings, accessible_profile_ids=None
-        ):
-            tracker.observe("speaker_matching")
-            recorded["native_embeddings"] = native_embeddings
-            return [{"speaker_id": sid} for sid in native_embeddings]
-
-        def process_speaker_segments(
-            self,
-            audio_path,
-            media_file_id,
-            user_id,
-            segments,
-            speaker_mapping,
-            accessible_profile_ids=None,
-        ):
-            # See the note on the sibling fake: present only so the control
-            # revert fails on scope depth rather than on an AttributeError.
-            raw = self.embedding_service.extract_embeddings_for_segments(
-                audio_path, segments, speaker_mapping
+    class _VendorDetector:
+        def diarize(self, audio_path, config, progress_callback=None):
+            tracker.observe("vendor_http")
+            return DiarizeResult(
+                segments=[
+                    DiarizeSegment(start=0.0, end=8.0, speaker="SPEAKER_00"),
+                    DiarizeSegment(start=8.0, end=16.0, speaker="SPEAKER_01"),
+                ],
+                num_speakers=2,
+                provider_name="pyannote",
+                model_name="precision-3",
             )
-            tracker.observe("speaker_matching")
-            recorded["native_embeddings"] = {
-                sid: self.embedding_service.aggregate_embeddings(embs) for sid, embs in raw.items()
-            }
-            return [{"speaker_id": sid} for sid in raw]
 
-    monkeypatch.setattr(temb, "SpeakerMatchingService", _FakeMatching)
+    def _build(engine, user_id, db, *, config_uuid=None):
+        tracker.observe("build_detector")
+        return _VendorDetector()
 
-    ctx = TranscriptionContext(
-        task_id=str(uuid_mod.uuid4()),
-        file_id=media_file.id,
-        file_uuid=str(media_file.uuid),
-        user_id=normal_user.id,
-        file_path="test/meeting.mp4",
-        file_name="meeting.mp4",
-        content_type="video/mp4",
-    )
-    speaker_mapping = {s.name: s.id for s in speakers}
+    monkeypatch.setattr(rdz, "_prepare_audio", _audio)
+    monkeypatch.setattr(DiarizationProviderFactory, "create_for_engine", staticmethod(_build))
+    monkeypatch.setattr(rdz, "_after_speakers_changed", lambda *a, **k: None)
+    for name in ("send_progress_notification", "send_completion_notification"):
+        monkeypatch.setattr(f"app.tasks.transcription.notifications.{name}", lambda *a, **k: None)
 
-    temb._process_speaker_embeddings(
-        ctx,
-        "does-not-matter.wav",
-        [{"speaker": s.name, "start": 0.0, "end": 4.0} for s in speakers],
-        speaker_mapping,
-    )
+    result = rdz.rediarize_task.apply(
+        kwargs={"file_uuid": str(media_file.uuid), "engine": "pyannote_ai", "merge": "segment"}
+    ).get()
 
+    assert result["status"] == "success", result
     observed = tracker.seen
-    assert observed["extract_embeddings"] == 0, _leak(tracker, "extract_embeddings")
-    assert observed["gpu_sync"] == 0, _leak(tracker, "gpu_sync")
-    assert observed["speaker_matching"] == 1, tracker.observations
-    assert observed["update_task_status"] == 1, tracker.observations
-    assert tracker.opened >= 1
-    assert tracker.max_depth == 1
-
-    assert set(recorded["native_embeddings"]) == set(speaker_mapping.values())
-    assert np.allclose(next(iter(recorded["native_embeddings"].values())), [0.6, 0.8, 0.0])
+    assert observed["prepare_audio"] == 0, _leak(tracker, "prepare_audio")
+    assert observed["vendor_http"] == 0, _leak(tracker, "vendor_http")
+    # Building the detector reads the stored key: that one belongs inside a scope.
+    assert observed["build_detector"] == 1, tracker.observations
+    assert tracker.opened >= 2
+    assert tracker.max_depth == 1, "session scopes must not nest"
 
 
 # --------------------------------------------------------------------------- #
@@ -1805,16 +1773,17 @@ def test_another_providers_speaker_detection_calls_the_vendor_outside_the_sessio
 ):
     """The adapter is BUILT in the factory's read session (no network) and the vendor is
     called with no session open; both legs of the parallel cloud path are observed."""
-    from app.models import UserSetting
     from app.models.user_asr_settings import UserASRSettings
     from app.services.asr.base import ASRProvider
     from app.services.asr.factory import ASRProviderFactory
     from app.services.asr.types import ASRResult
     from app.services.asr.types import ASRSegment
     from app.services.asr.types import ASRWord
+    from app.services.pipeline_plan import DiarizerConfigInfo
     from app.tasks.transcription import cloud_asr
     from app.tasks.transcription.context import TranscriptionContext
     from app.utils.encryption import encrypt_api_key
+    from tests.unit._plan_contexts import make_plan
 
     tracker = _ScopeTracker(db_session)
     monkeypatch.setattr(cloud_asr, "session_scope", tracker.scope)
@@ -1851,26 +1820,20 @@ def test_another_providers_speaker_detection_calls_the_vendor_outside_the_sessio
     diarizer = UserASRSettings(
         user_id=normal_user.id,
         name=f"speakers-{uuid_mod.uuid4().hex[:8]}",
-        provider="deepgram",
-        model_name="nova-3",
-        api_key=encrypt_api_key("dg-key"),
+        provider="gladia",
+        model_name="standard",
+        api_key=encrypt_api_key("gladia-key"),
     )
     db_session.add(diarizer)
     db_session.commit()
-    db_session.add_all(
-        [
-            UserSetting(
-                user_id=normal_user.id,
-                setting_key="transcription_diarization_source",
-                setting_value="asr_config",
-            ),
-            UserSetting(
-                user_id=normal_user.id,
-                setting_key="transcription_diarization_asr_config_uuid",
-                setting_value=str(diarizer.uuid),
-            ),
-        ]
+    plan = make_plan(
+        "cloud_text_word",
+        "asr_config",
+        diarization_config=DiarizerConfigInfo(
+            provider="gladia", model="standard", uuid=str(diarizer.uuid), returns_speakers=True
+        ),
     )
+    assert plan.diarization.execution == "parallel_cloud"
     task_id = f"task-{uuid_mod.uuid4().hex[:8]}"
     db_session.add(
         TaskModel(
@@ -1886,7 +1849,7 @@ def test_another_providers_speaker_detection_calls_the_vendor_outside_the_sessio
     monkeypatch.setattr(
         ASRProviderFactory,
         "create_from_db_config",
-        staticmethod(lambda cfg: _Vendor("deepgram", "vendor_speakers", "SPEAKER_01")),
+        staticmethod(lambda cfg: _Vendor("gladia", "vendor_speakers", "SPEAKER_01")),
     )
     ctx = TranscriptionContext(
         task_id=task_id,
@@ -1904,11 +1867,11 @@ def test_another_providers_speaker_detection_calls_the_vendor_outside_the_sessio
         None,
         None,
         None,
-        provider=_Vendor("gladia", "vendor_text", None),
-        diarization_source="asr_config",
+        provider=_Vendor("deepgram", "vendor_text", None),
+        plan=plan,
     )
 
     assert tracker.opened >= 2
     assert tracker.seen == {"vendor_text": 0, "vendor_speakers": 0}, _leak(tracker, "vendor")
-    assert result["diarization_provider"] == "deepgram"
+    assert result["diarization_provider"] == "gladia"
     assert {w["speaker"] for w in result["segments"][0]["words"]} == {"SPEAKER_01"}

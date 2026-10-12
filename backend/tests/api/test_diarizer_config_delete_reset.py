@@ -59,7 +59,9 @@ def test_deleting_my_speaker_detector_resets_my_choice(
     )
 
     assert response.status_code == status.HTTP_200_OK, response.text
-    assert response.json() == {"deleted": True, "diarizer_source_reverted": True}
+    body = response.json()
+    assert (body["deleted"], body["diarizer_source_reverted"]) == (True, True)
+    assert "diarizer_config_missing" not in {issue["code"] for issue in body["pipeline_issues"]}
     assert _setting(db_session, normal_user, SOURCE_KEY) is None
     assert _setting(db_session, normal_user, POINTER_KEY) is None
     settings = client.get("/api/user-settings/transcription", headers=user_token_headers).json()
@@ -128,6 +130,8 @@ def test_deleting_all_configs_resets_a_choice_naming_any_of_them(
     response = client.delete("/api/asr-settings/all", headers=user_token_headers)
 
     assert response.status_code == status.HTTP_200_OK, response.text
-    assert response.json() == {"deleted": True, "diarizer_source_reverted": True}
+    body = response.json()
+    assert (body["deleted"], body["diarizer_source_reverted"]) == (True, True)
+    assert "diarizer_config_missing" not in {issue["code"] for issue in body["pipeline_issues"]}
     assert _setting(db_session, normal_user, SOURCE_KEY) is None
     assert _setting(db_session, normal_user, POINTER_KEY) is None

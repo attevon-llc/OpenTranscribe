@@ -38,7 +38,6 @@ from unittest.mock import patch
 
 import pytest
 from kombu.exceptions import OperationalError
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.constants import CeleryQueues
@@ -48,6 +47,7 @@ from app.models.media import MediaFile
 from app.models.media import Task
 from app.models.prompt import UserSetting
 from app.models.user_asr_settings import UserASRSettings
+from app.services.pipeline_plan import ISSUE_MESSAGES
 
 _DISPATCH = "app.tasks.transcription.dispatch"
 _SESSION_SCOPE = f"{_DISPATCH}.session_scope"
@@ -131,193 +131,185 @@ class TestGpuSplitEnabled:
         assert gpu_split_enabled() is False
 
 
-class TestResolveGpuQueue:
-    """``_resolve_gpu_queue()`` — the routing decision issue #703 is about.
+class TestDispatchRoutesFromThePlan:
+    """``_plan_for_dispatch()`` — the transcription queue comes from the pipeline plan.
 
     ``celery-worker`` always consumes the shared 'gpu' queue, split or not;
     ``celery-worker-gpu-transcribe`` consumes 'gpu-transcribe' ONLY when the
     gpu-split Compose profile is active. Routing there when it is not means a
-    transcription queues forever behind a consumer that was never started, so
-    the default-environment case (no ENGINE_GPU_SPLIT) must be pinned to 'gpu'
-    exactly as strictly as the split-enabled case is pinned to 'gpu-transcribe'.
+    transcription queues forever behind a consumer that was never started (issue #703),
+    so the default-environment case is pinned to 'gpu' exactly as strictly as the
+    split-enabled case is pinned to 'gpu-transcribe'.
 
-    ``ENGINE_GPU_SPLIT=true`` alone is NOT sufficient (regression found on this
-    branch): it is an ordinary ``.env`` knob reachable in every container via
-    ``env_file`` regardless of which Compose overlay is actually loaded, so an
-    operator can set it directly without ``--with-gpu-split`` and get no consumer
-    at all. ``_resolve_gpu_queue`` therefore also calls
-    ``_gpu_transcribe_consumer_present()`` (a live Celery ``inspect().active_queues()``
-    check) before honouring the flag; every test here patches that function directly
-    rather than a Celery broker, since the routing DECISION — not the inspect
-    mechanics — is what's under test.
+    ``ENGINE_GPU_SPLIT=true`` alone is NOT sufficient: it reaches every container via
+    ``env_file`` regardless of which overlay is loaded, so dispatch also asks
+    ``_gpu_transcribe_consumer_present()`` before honouring it. Every test patches that
+    function, since the routing DECISION is what is under test.
     """
 
     @staticmethod
-    def _resolve(user_id: int, db) -> str:
-        from app.tasks.transcription.dispatch import _resolve_gpu_queue
+    def _queue(db, media_file, **kwargs) -> str:
+        from app.tasks.transcription.dispatch import _plan_for_dispatch
 
-        return _resolve_gpu_queue(user_id, db)
+        options = {"whisper_model": None, "skip_diarization": False, **kwargs}
+        return _plan_for_dispatch(db, media_file, **options).transcription.queue
+
+    @staticmethod
+    def _activate(db_session, user_id: int, provider: str, model: str) -> None:
+        cfg = UserASRSettings(
+            user_id=user_id,
+            name=f"cfg-{uuid_pkg.uuid4().hex[:8]}",
+            provider=provider,
+            model_name=model,
+            is_active=True,
+        )
+        db_session.add(cfg)
+        db_session.commit()
+        db_session.refresh(cfg)
+        db_session.add(
+            UserSetting(
+                user_id=user_id, setting_key="active_asr_config_id", setting_value=str(cfg.id)
+            )
+        )
+        db_session.commit()
 
     def test_local_provider_default_env_routes_to_the_always_staffed_queue(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, make_media_file, monkeypatch
     ):
-        """No ENGINE_GPU_SPLIT set at all (the state of every container that was not
-        started with --with-gpu-split) must resolve to 'gpu', never 'gpu-transcribe' —
-        this is the queue-nothing-drains case issue #703 exists to prevent."""
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
         monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+        assert self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.GPU
 
     def test_local_provider_with_split_explicitly_disabled(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, make_media_file, monkeypatch
     ):
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "false")
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+        assert self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.GPU
 
     def test_split_flag_set_without_a_live_consumer_never_routes_to_gpu_transcribe(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, make_media_file, monkeypatch
     ):
-        """THE REGRESSION TEST. This is exactly the dead-queue configuration: an operator
-        set ENGINE_GPU_SPLIT=true in .env (reaches every container via env_file) but never
-        passed --with-gpu-split, so celery-worker-gpu-transcribe was never started and
-        nothing consumes 'gpu-transcribe'. Routing there black-holes every upload with no
-        error, no timeout — files stuck 'processing' forever. Must resolve to the
-        always-staffed 'gpu' queue instead."""
+        """THE REGRESSION TEST: the flag reached the container but no
+        celery-worker-gpu-transcribe was started. Must resolve to 'gpu'."""
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
         monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", lambda: False)
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+        assert self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.GPU
 
     def test_local_provider_with_split_enabled_and_a_live_consumer_routes_to_the_dedicated_worker(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, make_media_file, monkeypatch
     ):
-        """The positive case: the flag is set AND a worker is verified to actually be
-        consuming 'gpu-transcribe' — traffic goes to the dedicated queue."""
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
         monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", lambda: True)
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU_TRANSCRIBE
+        assert (
+            self._queue(db_session, make_media_file(FileStatus.PENDING))
+            == CeleryQueues.GPU_TRANSCRIBE
+        )
 
-    def test_cloud_provider_wins_over_split(self, db_session, normal_user, monkeypatch):
+    def test_cloud_provider_wins_over_split(
+        self, db_session, normal_user, make_media_file, monkeypatch
+    ):
         """A cloud ASR provider never touches the local GPU stage at all — split being
         active must not override that routing, and must not even reach the (expensive)
         consumer-presence check."""
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
 
         def _fail_if_called():
-            raise AssertionError(
-                "_gpu_transcribe_consumer_present must not be called for a cloud provider"
-            )
+            raise AssertionError("the consumer probe must not run for a cloud provider")
 
         monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", _fail_if_called)
-        cfg = UserASRSettings(
-            user_id=normal_user.id,
-            name="cloud-test",
-            provider="deepgram",
-            model_name="nova-2",
-            is_active=True,
-        )
-        db_session.add(cfg)
-        db_session.commit()
-        db_session.refresh(cfg)
-        db_session.add(
-            UserSetting(
-                user_id=normal_user.id,
-                setting_key="active_asr_config_id",
-                setting_value=str(cfg.id),
-            )
-        )
-        db_session.commit()
+        self._activate(db_session, normal_user.id, "deepgram", "nova-2")
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+        assert (
+            self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.CLOUD_ASR
+        )
 
     def test_lite_deployment_with_no_cloud_provider_refuses_instead_of_routing_to_a_dead_queue(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, make_media_file, monkeypatch
     ):
-        """THE REGRESSION TEST for issue #865's follow-up. A lite deployment
-        (DEPLOYMENT_MODE=lite) ships no local WhisperX — ``docker-compose.lite.yml``
-        scales the 'gpu' consumers to zero replicas. Before this fix, the old bare
-        ``except Exception: logger.debug(...)`` swallowed the factory's
-        ``ASRConfigurationError`` (raised by ``services/asr/factory.py`` for exactly
-        this deployment shape) and fell through to the ordinary 'gpu' routing below —
-        publishing into a queue nothing drains, with the API already having answered
-        200. It must instead propagate so the caller can mark the file ERROR."""
+        """Issue #865's follow-up: lite ships no local WhisperX and scales the 'gpu'
+        consumers to zero, so a lite user with no cloud ASR is refused with the plan's
+        stable code instead of being published into a queue nothing drains."""
+        from app.core.exceptions import PipelinePlanRefusedError
+
         monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
 
-        with pytest.raises(ASRConfigurationError, match="[Ll]ite"):
-            self._resolve(normal_user.id, db_session)
+        with pytest.raises(PipelinePlanRefusedError) as refused:
+            self._queue(db_session, make_media_file(FileStatus.PENDING))
+        assert refused.value.code == "local_asr_unavailable"
+        assert isinstance(refused.value, ASRConfigurationError)
 
     def test_lite_deployment_with_a_working_cloud_provider_still_routes_to_cloud_asr(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, normal_user, make_media_file, monkeypatch
     ):
-        """Control #1: lite is only a problem when there is nothing else to route
-        to. A configured cloud provider must resolve exactly as it would under a
-        full deployment — same fixture shape as test_cloud_provider_wins_over_split."""
+        """Control: lite is only a problem when there is nothing else to route to."""
         monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-        cfg = UserASRSettings(
-            user_id=normal_user.id,
-            name="cloud-test-lite",
-            provider="deepgram",
-            model_name="nova-2",
-            is_active=True,
-        )
-        db_session.add(cfg)
-        db_session.commit()
-        db_session.refresh(cfg)
-        db_session.add(
-            UserSetting(
-                user_id=normal_user.id,
-                setting_key="active_asr_config_id",
-                setting_value=str(cfg.id),
-            )
-        )
-        db_session.commit()
+        self._activate(db_session, normal_user.id, "deepgram", "nova-2")
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.CLOUD_ASR
+        assert (
+            self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.CLOUD_ASR
+        )
 
     def test_full_deployment_with_no_config_still_routes_to_gpu(
-        self, db_session, normal_user, monkeypatch
+        self, db_session, make_media_file, monkeypatch
     ):
-        """Control #2: a full deployment with no ASR config must keep resolving to
-        the always-staffed 'gpu' queue — the refusal is lite-specific, not a general
-        tightening of the no-config fallback."""
+        """Control: the refusal is lite-specific, not a tightening of the no-config case."""
         monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
         monkeypatch.delenv("ASR_PROVIDER", raising=False)
         monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
 
-        assert self._resolve(normal_user.id, db_session) == CeleryQueues.GPU
+        assert self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.GPU
 
-    def test_transient_provider_error_still_falls_back_to_gpu_with_a_warning(
-        self, db_session, normal_user, monkeypatch, caplog
+    def test_a_per_file_lightweight_model_routes_to_cpu_transcribe(
+        self, db_session, make_media_file, monkeypatch
     ):
-        """Control #3: the taxonomy split itself. A transient failure (e.g. a DB
-        hiccup while loading the user's ASR config) is NOT a deliberate refusal —
-        it must still fall back to 'gpu' exactly as before, but now log at WARNING
-        instead of the previous DEBUG so an operator can see resolution is failing.
-        A bare ``except Exception: raise`` would wrongly pass the regression test
-        above alone; asserting the WARNING here is what proves the split is by
-        exception type, not just "ASRConfigurationError happens to be raised"."""
         monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
 
-        def _boom(user_id, db):
-            raise SQLAlchemyError("connection reset")
-
-        monkeypatch.setattr("app.services.asr.factory.ASRProviderFactory.create_for_user", _boom)
-
-        with caplog.at_level("WARNING"):
-            result = self._resolve(normal_user.id, db_session)
-
-        assert result == CeleryQueues.GPU
-        assert any(
-            record.levelname == "WARNING" and "ASR provider resolution failed" in record.message
-            for record in caplog.records
+        assert (
+            self._queue(db_session, make_media_file(FileStatus.PENDING), whisper_model="tiny")
+            == CeleryQueues.CPU_TRANSCRIBE
         )
+
+    def test_a_post_stage_plan_never_takes_the_split_queue(
+        self, db_session, normal_user, make_media_file, monkeypatch
+    ):
+        """Local Whisper + pyannote.ai: the GPU stage transcribes only, so even a live
+        split topology must not route it to gpu-transcribe (that worker forwards to the
+        local diarizer)."""
+        from app.models.user_diarization_settings import UserDiarizationSettings
+        from app.utils.encryption import encrypt_api_key
+
+        monkeypatch.delenv("ASR_PROVIDER", raising=False)
+        monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
+        monkeypatch.setattr(f"{_DISPATCH}._gpu_transcribe_consumer_present", lambda: True)
+        db_session.add_all(
+            [
+                UserSetting(
+                    user_id=normal_user.id,
+                    setting_key="transcription_diarization_source",
+                    setting_value="pyannote",
+                ),
+                UserDiarizationSettings(
+                    user_id=normal_user.id,
+                    name="pyannote.ai",
+                    provider="pyannote",
+                    model_name="precision-3",
+                    api_key=encrypt_api_key("fixture-key-dispatch"),
+                    is_active=True,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        assert self._queue(db_session, make_media_file(FileStatus.PENDING)) == CeleryQueues.GPU
 
 
 class TestGpuTranscribeConsumerPresent:
@@ -614,7 +606,7 @@ class TestDispatchBatchTranscription:
     def _dispatch(file_uuids: list[str]) -> dict:
         from app.tasks.transcription.dispatch import dispatch_batch_transcription
 
-        return dispatch_batch_transcription(file_uuids, gpu_queue="gpu")
+        return dispatch_batch_transcription(file_uuids)
 
     def test_returns_dict_format_and_records_every_task(
         self, db_session, dispatch_seams, make_media_file
@@ -708,7 +700,7 @@ class TestDispatchBatchFiresBeforeDispatch:
     def _dispatch(file_uuids: list[str]) -> dict:
         from app.tasks.transcription.dispatch import dispatch_batch_transcription
 
-        return dispatch_batch_transcription(file_uuids, gpu_queue="gpu")
+        return dispatch_batch_transcription(file_uuids)
 
     def test_hook_sees_every_file_with_its_own_task_id(
         self, db_session, dispatch_seams, make_media_file, dispatch_hooks
@@ -759,10 +751,9 @@ class TestDispatchBatchFiresBeforeDispatch:
 
 
 class TestDispatchTranscriptionPipelineAsrRefusal:
-    """``dispatch_transcription_pipeline()`` — the single-file caller of
-    ``_resolve_gpu_queue()`` — must surface a deliberate ASR refusal as a real file
-    state, not merely propagate an exception with the file left dangling at
-    PROCESSING and no explanation (issue #865's follow-up)."""
+    """``dispatch_transcription_pipeline()`` must surface a refused plan as a real file
+    state, not merely propagate an exception with the file left dangling at PROCESSING and
+    no explanation (issue #865's follow-up, generalised to every blocking plan issue)."""
 
     @staticmethod
     def _dispatch(file_uuid: str) -> str:
@@ -782,7 +773,9 @@ class TestDispatchTranscriptionPipelineAsrRefusal:
 
         db_session.refresh(media_file)
         assert media_file.status == FileStatus.ERROR
-        assert "lite" in (media_file.last_error_message or "").lower()
+        assert media_file.last_error_message == ISSUE_MESSAGES["local_asr_unavailable"]
+        # A configuration refusal is permanent: nothing retries it automatically.
+        assert media_file.error_category == "configuration_required"
         assert db_session.query(Task).filter(Task.media_file_id == media_file.id).first() is None
 
 
@@ -801,9 +794,7 @@ class TestDispatchTranscriptionPipelinePublishFailure:
     def _dispatch(file_uuid: str) -> str:
         from app.tasks.transcription.dispatch import dispatch_transcription_pipeline
 
-        # gpu_queue="gpu" bypasses ASR-provider resolution entirely — that seam is
-        # #865's, not this one's.
-        return dispatch_transcription_pipeline(file_uuid=file_uuid, gpu_queue="gpu")
+        return dispatch_transcription_pipeline(file_uuid=file_uuid)
 
     def test_a_failed_publish_marks_the_file_error_with_the_real_reason(
         self, db_session, dispatch_seams, make_media_file

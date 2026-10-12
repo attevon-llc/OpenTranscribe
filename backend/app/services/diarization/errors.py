@@ -13,13 +13,14 @@ from app.services.error_categorization_service import DIARIZER_CONFIG_UNUSABLE_M
 
 
 class DiarizerConfigUnusableError(RuntimeError):
-    """The saved configuration chosen for speaker detection cannot be used.
+    """The speaker detector a run was planned with cannot be built.
 
-    It no longer exists, is no longer shared with the user, needs a capability the
-    deployment turned off, cannot be decrypted, or its model returns no speakers. Registered
-    in ``ErrorCategorizationService`` (reason ``diarizer_config_unusable``, permanent retry
-    category ``CONFIGURATION_REQUIRED``), like ``DiarizationNotConfiguredError`` for a
-    missing pyannote.ai key.
+    For ``asr_config``: the saved configuration no longer exists, is no longer shared with
+    the user, needs a capability the deployment turned off, cannot be decrypted, or its model
+    returns no speakers or no timing. Also an engine name no plan produces. ``str()`` is the
+    fixed sentence registered in ``ErrorCategorizationService`` (reason
+    ``pipeline_not_runnable``, permanent retry category ``CONFIGURATION_REQUIRED``). The one
+    definition; ``diarization.factory`` re-exports it.
     """
 
     MESSAGE = DIARIZER_CONFIG_UNUSABLE_MESSAGE

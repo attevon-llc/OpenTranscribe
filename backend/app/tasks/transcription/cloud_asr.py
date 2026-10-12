@@ -1,10 +1,10 @@
 """Cloud ASR provider pipeline and cloud diarization merging."""
 
 import contextlib
-import dataclasses
 import logging
 
 from app.db.session_utils import session_scope
+from app.services.pipeline_plan import PipelinePlan
 from app.utils.task_utils import update_task_status
 
 from .context import TranscriptionContext
@@ -70,19 +70,20 @@ def _run_parallel_cloud_asr_and_diarization(
     asr_config,
     asr_provider,
     progress_callback,
+    plan: PipelinePlan,
     min_speakers: int = 1,
     max_speakers: int = 20,
     num_speakers: int | None = None,
 ):
-    """Run cloud ASR and a cloud speaker detector in parallel.
+    """Run cloud ASR and the plan's cloud speaker detector in parallel.
 
     Both are I/O-bound HTTP calls, so ThreadPoolExecutor is the right pattern
     (consistent with migration_pipeline.py, speaker_attribute_task.py, llm_service.py).
 
     Returns:
-        ``(asr_result, diarize_result)``. ``diarize_result`` is ``None`` when nothing
-        diarized separately (the source changed, or the detector failed non-fatally); the
-        caller merges the turns with ``assign_speakers``, the one merge (plan C7).
+        ``(asr_result, diarize_result)``. ``diarize_result`` is ``None`` when the detector
+        failed (non-fatal) or returned no turns; the caller merges the turns with
+        ``assign_speakers``, the one merge (plan C7, #1226).
     """
     from concurrent.futures import ThreadPoolExecutor
     from concurrent.futures import as_completed
@@ -90,26 +91,17 @@ def _run_parallel_cloud_asr_and_diarization(
     from app.services.diarization.factory import DiarizationProviderFactory
     from app.services.diarization.types import DiarizeConfig
 
-    # Resolved BEFORE either leg starts. A pyannote selection with no usable key raises
-    # DiarizationNotConfiguredError here (issue #1204), and an asr_config selection whose
-    # configuration is gone or returns no speakers raises DiarizerConfigUnusableError (#1226),
-    # so the file fails visibly without the user being billed for a cloud ASR run.
+    # Built BEFORE either leg starts, in a read-only session closed before any HTTP. A
+    # pyannote.ai plan with no usable key raises DiarizationNotConfiguredError here
+    # (issue #1204), so the file fails visibly without the user being billed for a cloud
+    # ASR run.
     with session_scope() as db:
-        diarize_provider = DiarizationProviderFactory.create_for_user(ctx.user_id, db)
-
-    if diarize_provider is None:
-        # The stored source no longer names a separate detector: the user changed it after
-        # this file was dispatched, the deployment locked it (#1109), or the asr_config it
-        # names is the transcription provider itself. Use the ASR provider's own speakers.
-        logger.info(
-            "No separate speaker detector for user %d; using %s's own diarization",
+        diarize_provider = DiarizationProviderFactory.create_for_engine(
+            plan.diarization.engine,
             ctx.user_id,
-            asr_provider.provider_name,
+            db,
+            config_uuid=plan.diarization.config_uuid,
         )
-        provider_config = dataclasses.replace(
-            asr_config, enable_diarization=asr_provider.supports_diarization()
-        )
-        return asr_provider.transcribe(audio_file_path, provider_config, progress_callback), None
 
     diarize_config = DiarizeConfig(
         min_speakers=min_speakers,
@@ -161,7 +153,7 @@ def _run_parallel_cloud_asr_and_diarization(
         # Re-raise a classified error (e.g. ASRRateLimitedError) UNCHANGED, not wrapped in a
         # plain RuntimeError — wrapping would lose the type transcribe_gpu_task's except
         # ASRRateLimitedError clause matches on, silently turning off the retry for every job
-        # that goes through this parallel ASR+diarization path (diarization_source="pyannote").
+        # that goes through this parallel ASR+diarization path (``parallel_cloud``).
         from app.services.asr.errors import ASRProviderError
 
         if isinstance(asr_error, ASRProviderError):
@@ -187,23 +179,19 @@ def _run_parallel_cloud_asr_and_diarization(
     return asr_result, diarize_result
 
 
-def _merge_turns(raw_segments: list[dict], diarize_result, asr_result) -> None:
+def _merge_turns(raw_segments: list[dict], diarize_result, plan: PipelinePlan) -> None:
     """Assign the detector's speaker turns to the converted segments, in place.
 
-    One merge for every engine (``assign_speakers``), at the granularity the transcription
-    model's timing supports (catalog ``timestamp_granularity``; plan C7).
+    One merge for every engine (``assign_speakers``), at the plan's merge granularity
+    (``word`` per timed word; anything else at segment level; plan C7).
     """
-    from app.services.asr.factory import ASRProviderFactory
     from app.transcription.speaker_assigner import assign_speakers
     from app.transcription.speaker_assigner import diarize_segments_to_frame
 
-    timing = ASRProviderFactory.get_model_capabilities(
-        asr_result.provider_name, asr_result.model_name
-    )["timestamp_granularity"]
     assign_speakers(
         diarize_segments_to_frame(diarize_result.segments),
         {"segments": raw_segments},
-        granularity="word" if timing == "word" else "segment",
+        granularity="word" if plan.diarization.merge == "word" else "segment",
     )
 
 
@@ -214,7 +202,8 @@ def _run_cloud_asr_pipeline(
     max_speakers: int | None,
     num_speakers: int | None,
     provider=None,
-    diarization_source: str = "provider",
+    *,
+    plan: PipelinePlan,
 ) -> dict:
     """
     Run the cloud ASR transcription pipeline for a non-local provider.
@@ -227,7 +216,9 @@ def _run_cloud_asr_pipeline(
         num_speakers: Optional fixed speaker count
         provider: Already-instantiated ASR provider (avoids a redundant DB lookup).
             If None, a new provider is created from DB config (fallback path).
-        diarization_source: Where to run diarization ('provider', 'local', 'pyannote', 'off').
+        plan: The run's pipeline plan. ``inline_asr`` asks the vendor for speakers,
+            ``parallel_cloud`` runs the plan's cloud detector beside it; anything else
+            (off, or a post stage that detects speakers after this) asks for text only.
 
     Returns:
         Result dict with 'segments' and 'language' keys matching the WhisperX format
@@ -274,7 +265,9 @@ def _run_cloud_asr_pipeline(
         min_speakers=speaker_range.min_speakers,
         max_speakers=speaker_range.max_speakers,
         num_speakers=speaker_range.num_speakers,
-        enable_diarization=(diarization_source == "provider" and provider.supports_diarization()),
+        enable_diarization=(
+            plan.diarization.execution == "inline_asr" and provider.supports_diarization()
+        ),
         translate_to_english=translate_enabled,
         vocabulary=vocab_terms if vocab_terms else None,
     )
@@ -289,13 +282,14 @@ def _run_cloud_asr_pipeline(
 
     # Parallel cloud execution: ASR + a cloud speaker detector simultaneously
     diarize_result = None
-    if diarization_source in ("pyannote", "asr_config"):
+    if plan.diarization.execution == "parallel_cloud":
         asr_result, diarize_result = _run_parallel_cloud_asr_and_diarization(
             ctx,
             audio_file_path,
             config,
             provider,
             cloud_progress_callback,
+            plan,
             min_speakers=speaker_range.min_speakers,
             max_speakers=speaker_range.max_speakers,
             num_speakers=speaker_range.num_speakers,
@@ -306,22 +300,22 @@ def _run_cloud_asr_pipeline(
     # Convert ASRResult to the dict format the rest of the pipeline expects
     raw_segments = _convert_asr_result_to_segments(asr_result, ctx.file_id)
     if diarize_result is not None:
-        _merge_turns(raw_segments, diarize_result, asr_result)
+        _merge_turns(raw_segments, diarize_result, plan)
 
     seg_speakers: set[str] = {s["speaker"] for s in raw_segments if s.get("speaker")}
     logger.info(
-        "Cloud ASR pipeline: %d raw segments, %d speakers (%s), diarization_source=%s for file %d",
+        "Cloud ASR pipeline: %d raw segments, %d speakers (%s), speakers by %s for file %d",
         len(raw_segments),
         len(seg_speakers),
         sorted(seg_speakers) if seg_speakers else "none",
-        diarization_source,
+        plan.diarization.execution,
         ctx.file_id,
     )
 
     # The engine that ACTUALLY served diarization, read off the DiarizeResult itself, so this
     # reports what really ran rather than what was configured. None in the two cases where
     # nothing diarized separately: the `else` branch above (ASR only) and the non-fatal
-    # diarization failure.
+    # diarization failure (or an empty result).
     #
     # ⚠️ Do NOT substitute a default here or downstream. These were dropped on the floor until
     # issue #28, and `finalize.py` covered for it with a hardcoded
@@ -342,7 +336,6 @@ def _run_cloud_asr_pipeline(
         "language": asr_result.language,
         "asr_provider": asr_result.provider_name,
         "asr_model": asr_result.model_name,
-        "diarization_source": diarization_source,
         "diarization_provider": diar_meta.get("diarization_provider"),
         "diarization_model": diar_meta.get("diarization_model"),
     }

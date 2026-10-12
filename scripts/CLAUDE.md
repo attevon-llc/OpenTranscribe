@@ -1024,6 +1024,14 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
     again at the point of deletion. Orphan `profile_<uuid>` speaker docs are reported, never
     deleted (Tier C). `--planes records,indexes,...` selects; the integration test of the row
     sweep runs `--planes records` so it never touches the host's real stores.
+  - **Injected corpora and benchmark uploads (#1222)**: the records plane also finds media whose
+    `metadata_important.rag_eval.seed` fully matches `INJECTED_TEST_SEED_SHAPE` (the seeds the
+    TEST suites mint; never the canonical empty seed or an operator seed) and
+    `bench-parallel-<hex8>.<ext>` (standalone `benchmark_parallel.py --upload`, which also deletes
+    its own uploads unless `--keep-uploads`). Both are deleted over the API, so they end in
+    `purge_media_file`, the same destroyer as `python -m app.scripts.corpus_injection --purge`
+    (`inject-eval-corpus.sh ... --purge --dry-run|--yes`). An operator's corpus is removed with
+    that command, never by the sweep.
   - **Stack scoping**: the store planes exit 2 when the EXPORTED `POSTGRES_PORT`/
     `OPENSEARCH_PORT`/`MINIO_PORT` resolve to different stacks (base + one `--port-offset`),
     which is the "exported one port, forgot another" accident. `.env`/default values are one
@@ -1068,6 +1076,11 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   pytest controller) and `cleanup-test-data.py` resolve the same path
   (`unit/test_testrun_registry_location.py`). `testrun_end` releases and removes a run's own
   marker; stale markers are pruned by the sweep's tmp plane (issue #1195).
+- `pki/run-pki-e2e-leg.sh` (matrix leg `3-pki`, issue #1222) — starts a PROD+nginx+PKI stack under the
+  stock names and stops it from one EXIT trap armed BEFORE `opentr.sh start` (INT/TERM exit 130/143 so
+  the trap runs; `--keep-stack` skips the stop). `unit/test_pki_leg_teardown.py` proves the trap logic
+  with stubs; a real PKI run is the only proof that `./opentr.sh stop` removes the PKI overlay's
+  containers, and none has been done for this change.
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
 - `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
   **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock

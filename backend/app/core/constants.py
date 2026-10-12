@@ -41,8 +41,8 @@ class CeleryQueues:
     CLOUD_ASR = "cloud-asr"  # Dynamic: cloud ASR providers (CPU worker consumes)
     CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
     # Phase 4: transcription-only GPU worker (celery-worker-gpu-transcribe, gpu-split
-    # profile). dispatch.py's _resolve_gpu_queue() routes here only when
-    # gpu_split_enabled() is true (issue #703 — this queue previously had no publisher).
+    # profile). The pipeline plan routes here only for inline local speaker detection with
+    # gpu_split_enabled() true and a live consumer (issue #703; dispatch._plan_for_dispatch).
     GPU_TRANSCRIBE = "gpu-transcribe"
     GPU_DIARIZE = "gpu-diarize"  # Phase 4: diarization-only GPU worker
     REDACTION = "redaction"  # Content redaction detection (dedicated CPU service)
@@ -88,10 +88,10 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     is the same argument issue #584 already accepted for
     ``extract_speaker_embeddings``, generalised to the rest of the family.
 
-    ⚠️ **Not for work that REQUIRES a GPU to be correct.**
-    ``transcription.process_file`` stays pinned to ``gpu``: lite ships no local
-    ASR and ``services/asr/factory.py`` refuses it by name, so rerouting it would
-    replace a clear refusal with a different failure on another worker.
+    ⚠️ **Not for work that REQUIRES a GPU to be correct.** Local Whisper
+    (``transcription.gpu_transcribe`` on ``gpu``) stays where it is: lite ships no
+    local ASR and the pipeline plan refuses it at dispatch (``local_asr_unavailable``),
+    so rerouting it would replace a clear refusal with a different failure.
 
     ⚠️ Deliberately **not** a live consumer probe. ``inspect().active_queues()``
     (as in ``tasks/transcription/dispatch.py``) costs a broker broadcast of up to
@@ -157,7 +157,7 @@ def gpu_split_enabled() -> bool:
     Before this branch the flag was inert for dispatch, so that combination is a
     regression, not a pre-existing risk.
 
-    Do NOT route on this value alone. ``dispatch.py::_resolve_gpu_queue`` also
+    Do NOT route on this value alone. ``dispatch.py::_plan_for_dispatch`` also
     verifies a live consumer is bound to ``CeleryQueues.GPU_TRANSCRIBE`` (via Celery
     control ``inspect().active_queues()``) before honouring it, and falls back to the
     always-staffed ``'gpu'`` queue otherwise — that check, not this function, is what

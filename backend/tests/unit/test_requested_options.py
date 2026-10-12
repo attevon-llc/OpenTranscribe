@@ -73,8 +73,8 @@ def test_a_re_run_of_a_normal_file_leaves_the_diarization_source_to_the_user(sta
     row = make_file(requested_whisper_model="large-v3-turbo", requested_min_speakers=2)
     dispatch_module.dispatch_transcription_pipeline(str(row.uuid), reuse_requested_options=True)
     stage = stages[0]
-    assert stage["diarization_source"] is None
-    assert stage["disable_diarization"] is None
+    assert stage["pipeline_plan"]["diarization"]["source"] == "provider"
+    assert stage["pipeline_plan"]["diarization"]["engine"] == "local"
     assert stage["whisper_model"] == "large-v3-turbo"
 
 
@@ -95,7 +95,7 @@ def test_a_fresh_request_replaces_the_stored_one_even_with_none(stages, make_fil
     stage = stages[0]
     assert stage["whisper_model"] is None
     assert stage["min_speakers"] is None
-    assert stage["diarization_source"] is None
+    assert stage["pipeline_plan"]["diarization"]["engine"] != "off"
     db_session.refresh(row)
     assert row.requested_whisper_model is None
     assert row.requested_min_speakers is None
@@ -112,7 +112,7 @@ def test_a_fresh_request_is_stored_for_the_next_re_run(stages, make_file, db_ses
     assert row.requested_disable_diarization is True
 
     dispatch_module.dispatch_transcription_pipeline(str(row.uuid), reuse_requested_options=True)
-    assert stages[1]["diarization_source"] == "off"
+    assert stages[1]["pipeline_plan"]["diarization"]["engine"] == "off"
     assert (stages[1]["min_speakers"], stages[1]["max_speakers"]) == (2, 6)
 
 
@@ -142,10 +142,46 @@ def test_resolution_keeps_a_stored_skip_as_off_not_provider():
         max_speakers=None,
         num_speakers=None,
         disable_diarization=None,
-        diarization_source=None,
     )
-    assert got.diarization_source == "off"
-    assert got.disable_diarization is None
+    assert got.skip_diarization is True
+
+
+@pytest.mark.parametrize("explicit", [None, False])
+def test_a_re_run_keeps_a_stored_pyannote_choice(stages, make_file, db_session, explicit):
+    """Issue #1225: ``disable_diarization=False`` used to be mapped to source ``provider`` in
+    preprocess, silently replacing a ``pyannote`` (or ``local``) choice. The plan now carries
+    the user's source unchanged; "not skipped" means exactly that and nothing more."""
+    from app.models.prompt import UserSetting
+    from app.models.user_diarization_settings import UserDiarizationSettings
+    from app.utils.encryption import encrypt_api_key
+
+    row = make_file()
+    db_session.add_all(
+        [
+            UserSetting(
+                user_id=row.user_id,
+                setting_key="transcription_diarization_source",
+                setting_value="pyannote",
+            ),
+            UserDiarizationSettings(
+                user_id=row.user_id,
+                name="pyannote.ai",
+                provider="pyannote",
+                model_name="precision-3",
+                api_key=encrypt_api_key("fixture-key-requested-options"),
+                is_active=True,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    dispatch_module.dispatch_transcription_pipeline(
+        str(row.uuid), disable_diarization=explicit, reuse_requested_options=True
+    )
+
+    diarization = stages[0]["pipeline_plan"]["diarization"]
+    assert diarization["source"] == "pyannote"
+    assert diarization["engine"] == "pyannote_ai"
 
 
 def test_the_recovery_service_retry_the_spa_uses_replays_the_files_request(

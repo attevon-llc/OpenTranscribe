@@ -34,6 +34,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._plan_contexts import make_plan
 from tests.unit.test_cloud_asr import FakeASRProvider
 from tests.unit.test_cloud_asr import FakeDiarizeProvider
 from tests.unit.test_cloud_asr import _asr_result
@@ -87,7 +88,7 @@ def test_the_pipeline_really_does_record_the_engine_that_ran(db_session, normal_
         patch(f"{cloud_asr}.session_scope", lambda: _yield_session(db_session)),
         patch(f"{cloud_asr}.send_progress_notification"),
         patch(
-            "app.services.diarization.factory.DiarizationProviderFactory.create_for_user",
+            "app.services.diarization.factory.DiarizationProviderFactory.create_for_engine",
             return_value=FakeDiarizeProvider(result=diarized),
         ),
     ):
@@ -98,7 +99,7 @@ def test_the_pipeline_really_does_record_the_engine_that_ran(db_session, normal_
             max_speakers=None,
             num_speakers=None,
             provider=FakeASRProvider(result=_asr_result()),
-            diarization_source="pyannote",
+            plan=make_plan("cloud_text_word", "pyannote"),
         )
 
     assert result["diarization_provider"] == "some-other-engine"

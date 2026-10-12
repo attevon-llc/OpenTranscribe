@@ -18,6 +18,11 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is
   loaded (not the `en` fallback), which is safe because `npm run check:i18n` enforces exact
   key parity — keep it green.
+  **A link or badge inside a sentence is ONE translated string with a named placeholder**, rendered
+  with `$lib/i18n/slots` (`$t(key, { link: SLOT })` then `splitAtSlot`); never a `*Suffix` key or a
+  value that starts with a space, dash or punctuation (`lib/i18n/sourceCopy.test.ts`). Accents are
+  part of the word: `lib/i18n/accents.test.ts` fails on es/fr/pt/de words written without them
+  (#1222).
 
 ## Commands (run in `frontend/`)
 

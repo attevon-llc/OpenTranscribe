@@ -63,7 +63,9 @@ def rediarize_calls(monkeypatch):
     calls: list[tuple[tuple, dict]] = []
     monkeypatch.setenv("SKIP_CELERY", "False")
     monkeypatch.setattr(
-        rediarize_task.rediarize_task, "delay", lambda *a, **k: calls.append((a, k))
+        rediarize_task.rediarize_task,
+        "apply_async",
+        lambda args=(), kwargs=None, **options: calls.append((tuple(args), dict(kwargs or {}))),
     )
     return calls
 
@@ -286,7 +288,7 @@ def test_complete_dispatches_what_prepare_recorded(
     assert len(pipeline_stages) == 1
     stage = pipeline_stages[0]
     assert (stage["min_speakers"], stage["max_speakers"]) == (2, 6)
-    assert stage["diarization_source"] == "off"
+    assert stage["pipeline_plan"]["diarization"]["engine"] == "off"
 
 
 def test_complete_with_disable_diarization_dispatches_it(
@@ -303,7 +305,7 @@ def test_complete_with_disable_diarization_dispatches_it(
     stage = pipeline_stages[0]
     # /complete repeats the range, so its value wins over what /prepare recorded.
     assert stage["min_speakers"] == 3
-    assert stage["disable_diarization"] is True
+    assert stage["pipeline_plan"]["diarization"]["engine"] == "off"
     row = db_session.query(MediaFile).filter(MediaFile.uuid == file_id).one()
     assert row.requested_min_speakers == 3
     assert row.requested_disable_diarization is True

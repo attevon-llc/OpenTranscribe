@@ -619,7 +619,7 @@ def test_the_configuration_error_classifies_as_a_permanent_settings_problem():
 
     classified = ErrorCategorizationService.classify_failure(str(DiarizerConfigUnusableError()))
 
-    assert classified.reason == UserErrorReason.DIARIZER_CONFIG_UNUSABLE
+    assert classified.reason == UserErrorReason.PIPELINE_NOT_RUNNABLE
     assert classified.retry_category == ErrorCategory.CONFIGURATION_REQUIRED
     assert classified.user_message == DiarizerConfigUnusableError.MESSAGE
 

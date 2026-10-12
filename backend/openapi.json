@@ -14,6 +14,14 @@
             "description": "The caller's speaker detection was set to a deleted configuration (source asr_config) and has been reset to the default (#1226).",
             "title": "Diarizer Source Reverted",
             "type": "boolean"
+          },
+          "pipeline_issues": {
+            "description": "The caller's pipeline AFTER the delete, like the set-active and clear-active results (#1225): deletion is never refused, so errors are reported here.",
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Pipeline Issues",
+            "type": "array"
           }
         },
         "title": "ASRConfigDeleted",
@@ -101,6 +109,39 @@
         ],
         "title": "ASRProvider",
         "type": "string"
+      },
+      "ASRSwitchResult": {
+        "description": "Response of the ASR-side switches (``set-active``, ``clear-active``), issue #1225.\n\n``pipeline_issues`` is the caller's pipeline AFTER the switch: warnings, and errors the\nswitch did not introduce (a switch that would introduce a diarization-step error is\nrefused with 409 ``{code, message}`` instead).",
+        "properties": {
+          "config_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Uuid"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pipeline_issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Pipeline Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message",
+          "pipeline_issues"
+        ],
+        "title": "ASRSwitchResult",
+        "type": "object"
       },
       "ActivePromptResponse": {
         "description": "Schema for active prompt response",
@@ -25532,7 +25573,7 @@
         ]
       },
       "post": {
-        "description": "Create a new ASR configuration. Auto-activates if this is the user's first config.",
+        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless that would make their stored speaker\ndetection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards.",
         "operationId": "create_asr_config_api_asr_settings_post",
         "requestBody": {
           "content": {
@@ -25606,14 +25647,14 @@
     },
     "/api/asr-settings/clear-active": {
       "post": {
-        "description": "Clear the active ASR configuration, reverting to local GPU default.",
+        "description": "Clear the active ASR configuration, reverting to the deployment default.\n\n409 ``{code, message}`` when that would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "clear_active_asr_config_api_asr_settings_clear_active_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Clear Active Asr Config Api Asr Settings Clear Active Post"
+                  "$ref": "#/components/schemas/ASRSwitchResult"
                 }
               }
             },
@@ -25633,7 +25674,7 @@
     },
     "/api/asr-settings/config/{config_uuid}": {
       "delete": {
-        "description": "Delete an ASR configuration. Auto-promotes another config if this was active.\n\nA speaker-detection choice naming this configuration (source ``asr_config``) is reset\nto the default for every user who held it; ``diarizer_source_reverted`` says whether\nthe caller's was.",
+        "description": "Delete an ASR configuration.\n\nA speaker-detection choice naming this configuration (source ``asr_config``) is reset\nto the default for every user who held it (#1226); ``diarizer_source_reverted`` says\nwhether the caller's was. If it was active, the first remaining config that keeps the\nstored speaker detection choice runnable is promoted (issue #1225); with none, the active\npointer is cleared. Deletion itself is never refused: ``pipeline_issues`` reports the\ncaller's pipeline afterwards, and a choice it cannot run is refused per file.",
         "operationId": "delete_asr_config_api_asr_settings_config__config_uuid__delete",
         "parameters": [
           {
@@ -25990,7 +26031,7 @@
     },
     "/api/asr-settings/set-active": {
       "post": {
-        "description": "Set the active ASR configuration for the current user.",
+        "description": "Set the active ASR configuration for the current user.\n\n409 ``{code, message}`` when the switch would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "set_active_asr_config_api_asr_settings_set_active_post",
         "requestBody": {
           "content": {
@@ -26007,7 +26048,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Set Active Asr Config Api Asr Settings Set Active Post"
+                  "$ref": "#/components/schemas/ASRSwitchResult"
                 }
               }
             },

@@ -62,9 +62,6 @@ vi.mock('$lib/cloud', () => ({ refreshUsage: vi.fn(), refreshBilling: vi.fn() })
 vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
   default: (await import('../test-mocks/EmptyComponent.svelte')).default,
 }));
-vi.mock('./NotificationsPanel.svelte', async () => ({
-  default: (await import('../test-mocks/EmptyComponent.svelte')).default,
-}));
 
 import Navbar from './Navbar.svelte';
 import { capabilities } from '$stores/capabilities';

@@ -121,6 +121,16 @@ def _llm_step(db: Session, user_id: int) -> PipelineStepOut:
     )
 
 
+def plan_issues_out(plan: PipelinePlan) -> list[PipelineIssueOut]:
+    """A plan's issues in their wire form (also the ASR switches' ``pipeline_issues``)."""
+    return [
+        PipelineIssueOut(
+            code=issue.code, severity=issue.severity, step=issue.step, message=issue.message
+        )
+        for issue in plan.issues
+    ]
+
+
 @router.get("/pipeline", response_model=PipelineView)
 def get_pipeline(
     request: Request,
@@ -132,12 +142,7 @@ def get_pipeline(
     plan = resolve_pipeline_plan(inputs)
     return PipelineView(
         steps=[*_plan_steps(plan), _llm_step(db, current_user.id)],
-        issues=[
-            PipelineIssueOut(
-                code=issue.code, severity=issue.severity, step=issue.step, message=issue.message
-            )
-            for issue in plan.issues
-        ],
+        issues=plan_issues_out(plan),
         deployment_mode="lite" if inputs.deployment_mode == "lite" else "full",
         diarization_source_locked=inputs.source_locked,
     )

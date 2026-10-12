@@ -11,6 +11,8 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from app.schemas.pipeline import PipelineIssueOut
+
 
 class ASRProvider(StrEnum):
     LOCAL = "local"
@@ -345,5 +347,12 @@ class ASRConfigDeleted(BaseModel):
         description=(
             "The caller's speaker detection was set to a deleted configuration "
             "(source asr_config) and has been reset to the default (#1226)."
+        ),
+    )
+    pipeline_issues: list[PipelineIssueOut] = Field(
+        default_factory=list,
+        description=(
+            "The caller's pipeline AFTER the delete, like the set-active and clear-active "
+            "results (#1225): deletion is never refused, so errors are reported here."
         ),
     )

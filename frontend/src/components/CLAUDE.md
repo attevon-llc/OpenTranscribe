@@ -38,8 +38,12 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   `localStorage['opentr:notificationRetention']`, a UI preference that `clearUserState` keeps. The
   "N older notifications cleared" note (`notifications/ClearedNotice.svelte`) reads
   `clearedNotice`, whose count is fixed at panel open and acknowledged at close **in the store**:
-  `NotificationsPanel` is mounted twice (`+layout.svelte` and `Navbar.svelte`), so component state
-  or a DOM `id` would be duplicated — the setting uses an implicit `<label>` for that reason.
+  the store is the source of truth because the panel is app chrome that must not keep its own
+  copy. **Mounted exactly once, by `routes/+layout.svelte`** (issue #1222): it used to be mounted
+  again by `Navbar.svelte`, so the markup, the click-outside listener and the scroll lock all
+  doubled while it was open. `Navbar.notificationsMount.test.ts` fails on a second mount. The
+  bell button (`.notifications-btn`, a visual-regression mask) stays in the navbar and only toggles
+  `showNotificationsPanel`; `.notifications-panel` / `.notifications-backdrop` are unchanged.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`.
   Each subfolder holds the presentational children split out of one oversized coordinator.

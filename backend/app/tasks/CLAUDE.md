@@ -12,10 +12,33 @@ indexing → WebSocket notification.
 ## Key files
 
 - `transcription/` — the 3-stage chain: `preprocess.py` (CPU: download, ffmpeg, MinIO temp)
-  → `core.py` (GPU: Whisper + PyAnnote + DB save) → `postprocess.py` (CPU: embeddings,
-  indexing, downstream dispatch). `dispatch.py` orchestrates the chain and routes
-  `transcription.gpu_transcribe` / `cpu_transcribe` **at call time** — that's why they're
-  deliberately absent from `task_routes`.
+  → `core.py` / `cpu_task.py` (transcription + inline speakers + DB save) → `postprocess.py`
+  (CPU: voiceprints, indexing, downstream dispatch). `dispatch.py` orchestrates the chain and
+  routes `transcription.gpu_transcribe` / `cpu_transcribe` **at call time** — that's why
+  they're deliberately absent from `task_routes`. The legacy single-task
+  `transcription.process_file` path (`legacy_task.py`, `background.py`) is deleted (#1225).
+- **Every stage runs from the pipeline plan (#1225).** `dispatch._plan_for_dispatch` resolves
+  `services/pipeline_plan` ONCE (`plan_for_user`), refuses a blocking issue before any publish
+  (file ERROR, `error_category` from the fixed sentence, `PipelinePlanRefusedError`), and puts
+  `plan.to_context()` in the chain context as `pipeline_plan`; stages read it with
+  `transcription/context.plan_of`. The transcription link and its queue are the plan's
+  (`_transcribe_stage`); `gpu-transcribe` (split) only for inline speakers. Postprocess hands
+  speaker detection to the **post stage** (`rediarize_task`, the plan's engine / merge /
+  queue: `cloud-asr` for a vendor, `gpu_preferred_queue()` for this server) whenever
+  `execution` is `post_stage_*`; otherwise it runs the voiceprint step itself
+  (`inline_native`) or dispatches it (`embedding_stage`, CPU). **One metering terminus per
+  run**: postprocess when nothing was handed off, the post stage when it ran, the embedding
+  stage for `embedding_stage` runs (`closes_pipeline`; the post stage dispatches it with
+  `closes_pipeline=False`). Pinned cell by cell in `tests/unit/test_pipeline_execution_matrix.py`.
+- `rediarize_task.py` — the post stage AND the user's manual "re-detect speakers" (which
+  plans with the file owner's current choice and never meters). Read phase → detector with
+  no session open → `finalize_segments` re-split → write phase → voiceprint stage once
+  (inline with this server's vectors, else `extract_speaker_embeddings_task` on `cpu`). A
+  vendor failure is non-fatal: transcript kept, `CLOUD_DIARIZATION_FAILED_MESSAGE` recorded.
+- `services/voiceprint_extractor.py` (used by `speaker_embedding_task.py`) — the voiceprint
+  stage's ONE interface: `extract(audio_path, turns) -> Voiceprints` (per-speaker 256-d
+  WeSpeaker vectors). `get_voiceprint_extractor()` is the seam the Rust implementation
+  (#1231) replaces.
 - `transcription/requested_options.py` — the per-file request (Whisper model, speaker range,
   "skip diarization") stored on `media_file.requested_*` by every fresh dispatch and replayed by
   `dispatch_transcription_pipeline(..., reuse_requested_options=True)` — which retry, recovery and
@@ -220,9 +243,9 @@ indexing → WebSocket notification.
   (the lite overlay sets that on **every** service, and routing is decided by the
   publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
   `torch+cpu`/`torchaudio`/`pyannote.audio`/`onnxruntime`.
-  `transcription.process_file` stays on `gpu` on purpose: lite ships no local ASR and
-  `services/asr/factory.py` refuses it by name, so a reroute would only relocate the
-  failure. `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
+  The post stage is published with an explicit queue (`pipeline_plan.post_stage_queue`),
+  so a cloud detector lands on `cloud-asr`, which lite staffs; a local one is refused on
+  lite before dispatch. `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
   from the compose files and fails on any new route into a dead queue; an exemption
   there requires a written reason.
   This is deliberately NOT the live `inspect().active_queues()` probe that

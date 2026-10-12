@@ -26,6 +26,8 @@ from app.tasks.transcription.user_settings import resolve_speaker_range
 from app.tasks.transcription.user_settings import resolve_speaker_range_for_user
 from app.transcription.config import TranscriptionConfig
 from app.transcription.engine.config import EngineConfig
+from tests.unit._plan_contexts import make_plan
+from tests.unit._plan_contexts import plan_context
 
 
 @contextlib.contextmanager
@@ -120,6 +122,7 @@ def test_local_paths_resolve_the_range_per_file_then_saved(
             context = dict(
                 zip(("min_speakers", "max_speakers", "num_speakers"), per_file, strict=True)
             )
+            context["pipeline_plan"] = plan_context()
             run(ctx, "/a.wav", context)
     assert (seen[0]["min_speakers"], seen[0]["max_speakers"]) == expected
 
@@ -150,7 +153,9 @@ def test_cloud_asr_hands_the_saved_range_to_the_provider(saved_range, monkeypatc
     provider = _CapturingProvider()
     ctx = MagicMock(task_id="t", file_id=1, user_id=saved_range.id)
     with pytest.raises(_StopError):
-        cloud_asr._run_cloud_asr_pipeline(ctx, "/a.wav", None, None, None, provider=provider)
+        cloud_asr._run_cloud_asr_pipeline(
+            ctx, "/a.wav", None, None, None, provider=provider, plan=make_plan("cloud_speakers")
+        )
     config = provider.config
     assert config is not None
     assert (config.min_speakers, config.max_speakers) == (3, 5)
@@ -167,7 +172,7 @@ def _local_diarization_result(user_id, **extra):
         "task_id": "task-1198",
         "speaker_mapping": {},
         "asr_provider": "deepgram",
-        "diarization_source": "local",
+        "pipeline_plan": plan_context("cloud_speakers", "local"),
         "diarization_disabled": False,
         "downstream_tasks": None,
         **extra,
@@ -221,6 +226,7 @@ def test_rediarize_resolves_a_blank_range_to_the_saved_one(saved_range, db_sessi
     import uuid
 
     from app.models.media import MediaFile
+    from app.models.media import TranscriptSegment
 
     media = MediaFile(
         uuid=str(uuid.uuid4()),
@@ -233,18 +239,25 @@ def test_rediarize_resolves_a_blank_range_to_the_saved_one(saved_range, db_sessi
     )
     db_session.add(media)
     db_session.commit()
+    db_session.add(
+        TranscriptSegment(
+            uuid=str(uuid.uuid4()),
+            media_file_id=media.id,
+            start_time=0.0,
+            end_time=2.0,
+            text="hello there",
+        )
+    )
+    db_session.commit()
     captured: list[SpeakerRange] = []
 
-    def _diarize(audio_file_path, speaker_range, wav_path=None):
+    def _detect(engine, detector, audio_file_path, speaker_range, sidecar_wav_path):
         captured.append(speaker_range)
         raise _StopError
 
     monkeypatch.setattr(rediarize_module, "session_scope", lambda: _scope_of(db_session))
     monkeypatch.setattr(rediarize_module, "_prepare_audio", lambda *a, **k: ("/a.wav", None))
-    monkeypatch.setattr(
-        rediarize_module, "_load_segments_as_transcript", lambda fid: {"segments": []}
-    )
-    monkeypatch.setattr(rediarize_module, "_run_diarization", _diarize)
+    monkeypatch.setattr(rediarize_module, "_detect", _detect)
     monkeypatch.setattr(
         "app.tasks.transcription.notifications.send_progress_notification", lambda *a, **k: None
     )

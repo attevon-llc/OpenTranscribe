@@ -32,13 +32,15 @@ from app.tasks.transcription.cloud_asr import _convert_asr_result_to_segments
 from app.tasks.transcription.cloud_asr import _run_cloud_asr_pipeline
 from app.tasks.transcription.cloud_asr import _run_parallel_cloud_asr_and_diarization
 from app.tasks.transcription.context import TranscriptionContext
+from tests.unit._plan_contexts import make_plan
 
 _CLOUD_ASR = "app.tasks.transcription.cloud_asr"
 _SESSION_SCOPE = f"{_CLOUD_ASR}.session_scope"
 _SEND_PROGRESS = f"{_CLOUD_ASR}.send_progress_notification"
 _DIARIZE_FACTORY_CREATE = (
-    "app.services.diarization.factory.DiarizationProviderFactory.create_for_user"
+    "app.services.diarization.factory.DiarizationProviderFactory.create_for_engine"
 )
+_PYANNOTE_PLAN = make_plan("cloud_text_word", "pyannote")
 _ASR_FACTORY_CREATE = "app.services.asr.factory.ASRProviderFactory.create_for_user"
 
 
@@ -229,28 +231,6 @@ class TestRunParallelCloudAsrAndDiarization:
     the merge/fallback/error-handling logic is the thing under test.
     """
 
-    def test_source_no_longer_pyannote_uses_the_providers_own_diarization(
-        self, cloud_asr_seams, normal_user
-    ):
-        """The factory answers None only when the stored source is no longer pyannote (the
-        user changed it after dispatch, or the deployment locked it). That source means the
-        ASR provider's own speaker detection, so it must be switched ON; the pre-#1204
-        fallback sent the pyannote-mode config (diarization off) and lost every speaker.
-        A missing key raises instead; see test_pyannote_diarization_credential_flow.py."""
-        ctx = _make_ctx(normal_user, "task-1")
-        asr = FakeASRProvider(result=_asr_result(), supports_diar=True)
-
-        with patch(_DIARIZE_FACTORY_CREATE, return_value=None):
-            result, turns = _run_parallel_cloud_asr_and_diarization(
-                ctx, "/fake/audio.wav", ASRConfig(enable_diarization=False), asr, None
-            )
-
-        assert result is asr._result
-        assert turns is None
-        assert asr.calls == 1
-        assert asr.captured_config is not None
-        assert asr.captured_config.enable_diarization is True
-
     def test_both_succeed_returns_the_transcript_and_the_turns(self, cloud_asr_seams, normal_user):
         ctx = _make_ctx(normal_user, "task-2")
         asr = FakeASRProvider(result=_asr_result(with_speaker=False))
@@ -263,7 +243,7 @@ class TestRunParallelCloudAsrAndDiarization:
 
         with patch(_DIARIZE_FACTORY_CREATE, return_value=diarize):
             result, turns = _run_parallel_cloud_asr_and_diarization(
-                ctx, "/fake/audio.wav", ASRConfig(), asr, None
+                ctx, "/fake/audio.wav", ASRConfig(), asr, None, _PYANNOTE_PLAN
             )
 
         assert asr.calls == 1
@@ -279,7 +259,7 @@ class TestRunParallelCloudAsrAndDiarization:
 
         with patch(_DIARIZE_FACTORY_CREATE, return_value=diarize):
             result, turns = _run_parallel_cloud_asr_and_diarization(
-                ctx, "/fake/audio.wav", ASRConfig(), asr, None
+                ctx, "/fake/audio.wav", ASRConfig(), asr, None, _PYANNOTE_PLAN
             )
 
         # ASR result is returned untouched — diarization is best-effort.
@@ -297,7 +277,9 @@ class TestRunParallelCloudAsrAndDiarization:
             patch(_DIARIZE_FACTORY_CREATE, return_value=diarize),
             pytest.raises(RuntimeError, match="Cloud ASR transcription failed"),
         ):
-            _run_parallel_cloud_asr_and_diarization(ctx, "/fake/audio.wav", ASRConfig(), asr, None)
+            _run_parallel_cloud_asr_and_diarization(
+                ctx, "/fake/audio.wav", ASRConfig(), asr, None, _PYANNOTE_PLAN
+            )
 
     def test_asr_rate_limited_error_is_reraised_unchanged_not_wrapped(
         self, cloud_asr_seams, normal_user
@@ -305,7 +287,7 @@ class TestRunParallelCloudAsrAndDiarization:
         """An ASRRateLimitedError from the ASR leg must reach the caller AS an
         ASRRateLimitedError, not wrapped in a plain RuntimeError — transcribe_gpu_task's
         `except ASRRateLimitedError` retry clause matches on the type, and a wrapped error
-        would silently turn the retry off for every diarization_source="pyannote" job.
+        would silently turn the retry off for every ``parallel_cloud`` job.
         """
         from app.services.asr.errors import ASRRateLimitedError
 
@@ -322,7 +304,9 @@ class TestRunParallelCloudAsrAndDiarization:
             patch(_DIARIZE_FACTORY_CREATE, return_value=diarize),
             pytest.raises(ASRRateLimitedError) as excinfo,
         ):
-            _run_parallel_cloud_asr_and_diarization(ctx, "/fake/audio.wav", ASRConfig(), asr, None)
+            _run_parallel_cloud_asr_and_diarization(
+                ctx, "/fake/audio.wav", ASRConfig(), asr, None, _PYANNOTE_PLAN
+            )
 
         assert excinfo.value is rate_limited
         assert excinfo.value.retry_after == 12.5
@@ -355,12 +339,12 @@ class TestRunCloudAsrPipeline:
             max_speakers=None,
             num_speakers=None,
             provider=asr,
+            plan=make_plan("cloud_speakers"),
         )
 
         assert result["language"] == "en"
         assert result["asr_provider"] == "deepgram"
         assert result["asr_model"] == "nova-3"
-        assert result["diarization_source"] == "provider"
         assert len(result["segments"]) == 1
         assert result["segments"][0]["text"] == "hello world"
 
@@ -382,6 +366,7 @@ class TestRunCloudAsrPipeline:
             max_speakers=None,
             num_speakers=None,
             provider=asr,
+            plan=make_plan("cloud_speakers"),
         )
 
         assert asr.captured_config is not None
@@ -402,6 +387,7 @@ class TestRunCloudAsrPipeline:
             max_speakers=None,
             num_speakers=None,
             provider=asr,
+            plan=make_plan("cloud_speakers"),
         )
 
         # translate_to_english defaults to False via user language settings (no row
@@ -423,7 +409,7 @@ class TestRunCloudAsrPipeline:
             max_speakers=None,
             num_speakers=None,
             provider=asr,
-            diarization_source="off",
+            plan=make_plan("cloud_speakers", "off"),
         )
 
         assert asr.captured_config is not None
@@ -443,7 +429,7 @@ class TestRunCloudAsrPipeline:
             max_speakers=None,
             num_speakers=None,
             provider=asr,
-            diarization_source="provider",
+            plan=make_plan("cloud_speakers", "provider"),
         )
 
         assert asr.captured_config is not None
@@ -467,14 +453,13 @@ class TestRunCloudAsrPipeline:
                 max_speakers=5,
                 num_speakers=None,
                 provider=asr,
-                diarization_source="pyannote",
+                plan=_PYANNOTE_PLAN,
             )
 
         parallel_mock.assert_called_once()
         _, kwargs = parallel_mock.call_args
         assert kwargs["min_speakers"] == 2
         assert kwargs["max_speakers"] == 5
-        assert result["diarization_source"] == "pyannote"
         # segments are converted from the parallel pipeline's result, not asr's own call
         assert asr.calls == 0
 
@@ -493,6 +478,7 @@ class TestRunCloudAsrPipeline:
                 max_speakers=None,
                 num_speakers=None,
                 provider=None,
+                plan=make_plan("cloud_speakers"),
             )
 
         factory_mock.assert_called_once()
@@ -502,7 +488,16 @@ class TestRunCloudAsrPipeline:
 class TestParallelMergeUsesAssignSpeakers:
     """The parallel path's turns reach the text through ``assign_speakers`` (#1226)."""
 
-    def _run(self, normal_user, make_task, task_id, asr_result, turns, provider_name="pyannote"):
+    def _run(
+        self,
+        normal_user,
+        make_task,
+        task_id,
+        asr_result,
+        turns,
+        provider_name="pyannote",
+        plan=_PYANNOTE_PLAN,
+    ):
         make_task(task_id)
         ctx = _make_ctx(normal_user, task_id)
         asr = FakeASRProvider(result=asr_result)
@@ -523,7 +518,7 @@ class TestParallelMergeUsesAssignSpeakers:
                 max_speakers=None,
                 num_speakers=None,
                 provider=asr,
-                diarization_source="pyannote",
+                plan=plan,
             )
 
     def test_word_timed_model_labels_each_word_by_overlap(
@@ -554,6 +549,7 @@ class TestParallelMergeUsesAssignSpeakers:
             "task-merge-segment",
             asr_result,
             [(0.0, 0.4, "SPEAKER_00"), (0.4, 1.0, "SPEAKER_01")],
+            plan=make_plan("cloud_text_segment", "pyannote"),
         )
 
         segment = result["segments"][0]

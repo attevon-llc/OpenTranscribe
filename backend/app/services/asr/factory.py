@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from app.core.exceptions import ASRConfigurationError
@@ -48,25 +49,26 @@ _KEY_REQUIRED: dict[str, str] = {
     "pyannote": "PYANNOTE_API_KEY",
 }
 
-#: ``ASR_PROVIDER`` env fallback: provider -> (model env var, default model). The one table
-#: both ``_from_env`` (which builds the provider) and ``resolve_active_config`` (which only
-#: names it) read, so the model a plan reports is the model the job would use.
-_ENV_MODEL: dict[str, tuple[str, str]] = {
-    "deepgram": ("DEEPGRAM_MODEL", "nova-3"),
-    "assemblyai": ("ASSEMBLYAI_MODEL", "universal"),
-    "openai": ("OPENAI_ASR_MODEL", "gpt-4o-transcribe"),
-    "google": ("GOOGLE_ASR_MODEL", "chirp-3"),
-    "azure": ("AZURE_ASR_MODEL", "whisper"),
-    "aws": ("AWS_ASR_MODEL", "standard"),
-    "speechmatics": ("SPEECHMATICS_MODEL", "standard"),
-    "gladia": ("GLADIA_MODEL", "standard"),
-    "pyannote": ("PYANNOTE_MODEL", "parakeet"),
+#: ``ASR_PROVIDER`` env fallback: provider -> a reader of its model env var with the default.
+#: The one table both ``_from_env`` (which builds the provider) and ``resolve_active_config``
+#: (which only names it) read, so the model a plan reports is the model the job would use.
+#: Each entry reads its variable by a literal name, which is what lets the env-coverage test
+#: see that ``.env.example``'s ``*_MODEL`` keys are consumed.
+_ENV_MODEL: dict[str, Callable[[], str]] = {
+    "deepgram": lambda: os.getenv("DEEPGRAM_MODEL", "nova-3"),
+    "assemblyai": lambda: os.getenv("ASSEMBLYAI_MODEL", "universal"),
+    "openai": lambda: os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe"),
+    "google": lambda: os.getenv("GOOGLE_ASR_MODEL", "chirp-3"),
+    "azure": lambda: os.getenv("AZURE_ASR_MODEL", "whisper"),
+    "aws": lambda: os.getenv("AWS_ASR_MODEL", "standard"),
+    "speechmatics": lambda: os.getenv("SPEECHMATICS_MODEL", "standard"),
+    "gladia": lambda: os.getenv("GLADIA_MODEL", "standard"),
+    "pyannote": lambda: os.getenv("PYANNOTE_MODEL", "parakeet"),
 }
 
 
 def _env_model(provider: str) -> str:
-    var, default = _ENV_MODEL[provider]
-    return os.getenv(var, default)
+    return _ENV_MODEL[provider]()
 
 
 def _env_provider_usable(provider: str) -> bool:
@@ -685,7 +687,17 @@ class ASRProviderFactory:
         usable ``ASR_PROVIDER`` env provider, else local with ``WHISPER_MODEL``. ``cfg``
         is the ``UserASRSettings`` row, or ``None`` for the env and local fallbacks.
         """
-        cfg = ASRProviderFactory._active_config_row(user_id, db)
+        return ASRProviderFactory.resolve_config(ASRProviderFactory._active_config_row(user_id, db))
+
+    @staticmethod
+    def resolve_config(
+        cfg: UserASRSettings | None,
+    ) -> tuple[str, str, UserASRSettings | None]:
+        """``(provider, model, cfg)`` for ``cfg`` as the active row (``None``: no row).
+
+        Lets a caller plan a switch before making it (``services/asr_switch_plan``) with
+        the same env / local fallback a job uses.
+        """
         if cfg is not None:
             return str(cfg.provider or "local"), str(cfg.model_name or ""), cfg
         env_provider = os.getenv("ASR_PROVIDER", "local").lower()

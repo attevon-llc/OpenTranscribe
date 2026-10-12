@@ -20,6 +20,9 @@ Error reasons include:
 - PROCESSING_ERROR: Generic server-side processing failures
 - INTERRUPTED: Server-side interruptions (a worker lost, out of memory) that outlasted
   every automatic retry
+- DIARIZATION_NOT_CONFIGURED: pyannote.ai speaker detection chosen with no usable key
+- PIPELINE_NOT_RUNNABLE: the user's transcription and speaker detection choices cannot run
+  together (a pipeline-plan refusal, ``services/pipeline_plan.py``)
 - UNCLASSIFIED: Unclassified errors with fallback handling
 
 ⚠️ No-raw-echo contract: every ``user_message`` and suggestion this service returns is a
@@ -55,6 +58,7 @@ Classes:
     ErrorCategorizationService: Main service class for error processing.
 """
 
+import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -80,7 +84,7 @@ class UserErrorReason(StrEnum):
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
     DIARIZATION_NOT_CONFIGURED = "diarization_not_configured"
-    DIARIZER_CONFIG_UNUSABLE = "diarizer_config_unusable"
+    PIPELINE_NOT_RUNNABLE = "pipeline_not_runnable"
     UNCLASSIFIED = "unclassified"
 
 
@@ -137,18 +141,18 @@ DIARIZATION_NOT_CONFIGURED_MESSAGE = (
     "is saved for your account."
 )
 
-#: Raised when speaker detection is set to another saved provider's speaker detection
-#: (``asr_config``, #1226) and that configuration cannot be used: deleted, no longer shared,
-#: its credentials no longer decrypt, or its model returns no speakers.
+#: Raised when the speaker detector a run was planned with cannot be built: another saved
+#: provider named as the detector (``asr_config``, #1226) that is gone, no longer shared,
+#: text-only, untimed or whose key no longer decrypts, or an engine no plan produces.
 #: Must not contain any substring the retry classifier treats as transient.
 DIARIZER_CONFIG_UNUSABLE_MESSAGE = (
-    "Speaker detection is set to another provider's speaker detection, but that provider "
-    "configuration no longer exists, is no longer shared with you, or does not return speakers."
+    "The provider chosen for speaker detection cannot be used for this file. Choose another "
+    "speaker detection option in Settings, then retry."
 )
 
 #: Raised (and logged) when a cloud speaker-detection vendor fails. Every pipeline path
-#: treats that as non-fatal today (the transcript is kept without speakers); the sentence
-#: exists so the exception's text is fixed wherever it travels, never the vendor's message.
+#: treats that as non-fatal (the transcript is kept without speakers); the sentence exists so
+#: the exception's text is fixed wherever it travels, never the vendor's message.
 DIARIZATION_PROVIDER_FAILED_MESSAGE = (
     "The speaker detection provider could not detect speakers in this file."
 )
@@ -156,8 +160,21 @@ DIARIZATION_PROVIDER_FAILED_MESSAGE = (
 #: User-facing reasons caused by the user's own settings, not the input or the
 #: infrastructure: permanent for the automatic retry paths.
 CONFIGURATION_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
-    {UserErrorReason.DIARIZATION_NOT_CONFIGURED, UserErrorReason.DIARIZER_CONFIG_UNUSABLE}
+    {UserErrorReason.DIARIZATION_NOT_CONFIGURED, UserErrorReason.PIPELINE_NOT_RUNNABLE}
 )
+
+
+def _pipeline_refusal_messages() -> tuple[str, ...]:
+    """The fixed sentences a run refused by its pipeline plan can store (issue #1225).
+
+    Every ``error`` code of ``services/pipeline_plan`` (dispatch refuses a run whose plan
+    has one) plus the post stage's own configuration failure. Read back by exact match, so
+    a stored refusal keeps its reason and its permanent retry category.
+    """
+    from app.services.pipeline_plan import BLOCKING_CODES
+    from app.services.pipeline_plan import ISSUE_MESSAGES
+
+    return (*(ISSUE_MESSAGES[code] for code in BLOCKING_CODES), DIARIZER_CONFIG_UNUSABLE_MESSAGE)
 
 
 class ErrorCategorizationService:
@@ -425,13 +442,14 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def _handle_diarizer_config_unusable() -> tuple[UserErrorReason, str, list[str]]:
-        """Handle another provider's speaker detection that can no longer be used (#1226)."""
+    def _pipeline_not_runnable(message: str) -> tuple[UserErrorReason, str, list[str]]:
+        """A run the pipeline plan refused: the sentence already names what to change."""
         return (
-            UserErrorReason.DIARIZER_CONFIG_UNUSABLE,
-            DIARIZER_CONFIG_UNUSABLE_MESSAGE,
+            UserErrorReason.PIPELINE_NOT_RUNNABLE,
+            message,
             [
-                "Choose another speaker detection option in Settings under Speaker Identification",
+                "Open Settings and change the transcription or speaker detection choice "
+                "named above",
                 'Then use the "Retry" button to process this file again',
             ],
         )
@@ -608,7 +626,6 @@ _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str
     ErrorCategorizationService._handle_permission_error,
     ErrorCategorizationService._handle_interrupted_error,
     ErrorCategorizationService._handle_diarization_not_configured,
-    ErrorCategorizationService._handle_diarizer_config_unusable,
     ErrorCategorizationService._handle_generic_error,
 )
 
@@ -619,3 +636,9 @@ _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str
 _REASON_BY_MESSAGE: dict[str, Callable[[], tuple[UserErrorReason, str, list[str]]]] = {
     handler()[1]: handler for handler in _FIXED_MESSAGE_HANDLERS
 }
+_REASON_BY_MESSAGE.update(
+    {
+        message: functools.partial(ErrorCategorizationService._pipeline_not_runnable, message)
+        for message in _pipeline_refusal_messages()
+    }
+)

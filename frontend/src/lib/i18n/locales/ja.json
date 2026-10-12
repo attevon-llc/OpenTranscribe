@@ -3372,6 +3372,8 @@
   "speakers.merge.cannotSelf": "グループを自身と統合することはできません",
   "speakers.merge.success": "グループが正常に統合されました",
   "speakers.merge.error": "グループの統合に失敗しました",
+  "speakers.merge.someLeftBehind_one": "統合しました。{{count}} 人のスピーカーは移動されませんでした（以前に解除したか、別の名前を付けています）",
+  "speakers.merge.someLeftBehind_other": "統合しました。{{count}} 人のスピーカーは移動されませんでした（以前に解除したか、別の名前を付けています）",
   "speakers.split.selectMembers": "分割するメンバーを選択してください",
   "speakers.split.selectMembersBanner": "新しいグループに分割するメンバーを選択してください",
   "speakers.split.confirm": "{{count}} メンバーを分割",

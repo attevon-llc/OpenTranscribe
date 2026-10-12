@@ -3403,6 +3403,8 @@
   "speakers.merge.cannotSelf": "클러스터를 자기 자신과 병합할 수 없습니다",
   "speakers.merge.success": "클러스터가 성공적으로 병합되었습니다",
   "speakers.merge.error": "클러스터 병합에 실패했습니다",
+  "speakers.merge.someLeftBehind_one": "병합했습니다. 화자 {{count}}명은 이동되지 않았습니다(이전에 할당 해제했거나 다른 이름을 지정함)",
+  "speakers.merge.someLeftBehind_other": "병합했습니다. 화자 {{count}}명은 이동되지 않았습니다(이전에 할당 해제했거나 다른 이름을 지정함)",
   "speakers.split.selectMembers": "새 클러스터로 분할할 구성원을 선택하세요",
   "speakers.split.selectMembersBanner": "새 클러스터로 분할할 구성원을 선택하세요",
   "speakers.split.confirm": "구성원 {{count}}명 분할",

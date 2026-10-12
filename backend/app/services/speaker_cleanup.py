@@ -56,6 +56,12 @@ assignment path honours (issue #1233), at the bottom of this module:
 * :func:`lift_profile_blacklist` — a user who explicitly names one speaker as that
   profile again overrides their own earlier correction; only explicit single-speaker
   actions call it.
+* :func:`has_other_identity` / :func:`identity_conflicts_with_cluster` — an automatic
+  path never renames a speaker that is already somebody else.
+* A promoted cluster holds only its profile's speakers and unnamed ones: refreshing it
+  releases a member since linked to another profile (decision 5 of #1233).
+
+A correction outlives a re-run of its file through ``speaker_correction_carryover``.
 """
 
 from __future__ import annotations
@@ -298,6 +304,8 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
         service = SpeakerClusteringService(db)
         for cluster in clusters:
             cluster_uuid = str(cluster.uuid)
+            if cluster.promoted_to_profile_id is not None:
+                _release_members_of_other_profiles(db, cluster)
             remaining = int(
                 db.query(func.count(SpeakerClusterMember.id))
                 .filter(SpeakerClusterMember.cluster_id == cluster.id)
@@ -456,6 +464,8 @@ def _resync_speaker_docs(db: Session, speaker_ids: set[int]) -> None:
 REASON_UNASSIGNED = "unassigned_by_user"
 #: ``reason`` written on the rows a speaker merge copies from the source to the target.
 REASON_MERGED = "inherited_by_merge"
+#: ``reason`` written when a user rejects a profile identification of a speaker.
+REASON_REJECTED = "rejected_by_user"
 
 
 def blacklisted_profile_ids(db: Session, speaker_ids: Iterable[int]) -> dict[int, set[int]]:
@@ -610,6 +620,105 @@ def speaker_blocked_from_cluster(db: Session, speaker_id: int, cluster: SpeakerC
         .first()
     )
     return conflict is not None
+
+
+def has_other_identity(db: Session, speaker: Speaker, profile_id: int) -> bool:
+    """Whether the speaker is already somebody other than this profile.
+
+    Linked to a different profile, or carrying a name (typed, or an accepted suggestion)
+    that is not this profile's. A voice similarity never outranks an identity the speaker
+    already has, so no automatic path takes such a speaker over (issue #1233).
+    """
+    from app.models.media import SpeakerProfile
+    from app.utils.speaker_labels import is_assigned_speaker_name
+
+    if speaker.profile_id is not None:
+        return int(speaker.profile_id) != int(profile_id)
+    if not is_assigned_speaker_name(speaker.display_name):
+        return False
+    name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
+    return name is None or str(speaker.display_name).strip().casefold() != str(name).casefold()
+
+
+def identity_conflicts_with_cluster(db: Session, speaker: Speaker, cluster: SpeakerCluster) -> bool:
+    """Whether joining this promoted cluster would rename a speaker that is someone else."""
+    profile_id = cluster.promoted_to_profile_id
+    return profile_id is not None and has_other_identity(db, speaker, int(profile_id))
+
+
+def _release_members_of_other_profiles(db: Session, cluster: SpeakerCluster) -> None:
+    """A promoted cluster holds only its profile's speakers and unnamed ones (decision 5).
+
+    A member since linked to another profile (renamed, assigned, accepted) is that
+    person's now: it leaves the cluster, so the centroid stops averaging it and new
+    speakers of its voice stop matching this profile. Nothing is blacklisted — the link
+    to the other profile already says who it is.
+    """
+    from sqlalchemy import or_
+
+    from app.models.media import Speaker
+    from app.models.media import SpeakerClusterMember
+
+    member_of = (
+        db.query(SpeakerClusterMember.speaker_id)
+        .filter(SpeakerClusterMember.cluster_id == cluster.id)
+        .scalar_subquery()
+    )
+    leaving = [
+        int(r[0])
+        for r in db.query(Speaker.id)
+        .filter(
+            or_(Speaker.id.in_(member_of), Speaker.cluster_id == cluster.id),
+            Speaker.profile_id.isnot(None),
+            Speaker.profile_id != cluster.promoted_to_profile_id,
+        )
+        .all()
+    ]
+    if not leaving:
+        return
+    db.query(SpeakerClusterMember).filter(
+        SpeakerClusterMember.cluster_id == cluster.id,
+        SpeakerClusterMember.speaker_id.in_(leaving),
+    ).delete(synchronize_session="fetch")
+    db.query(Speaker).filter(Speaker.id.in_(leaving), Speaker.cluster_id == cluster.id).update(
+        {Speaker.cluster_id: None}, synchronize_session="fetch"
+    )
+    logger.info(
+        "Cluster %s released %d member(s) now linked to another profile",
+        cluster.uuid,
+        len(leaving),
+    )
+
+
+def blocking_profile_ids_named(db: Session, speaker_id: int, name: str) -> set[int]:
+    """The profiles called ``name`` that a correction blocks this speaker from.
+
+    The id-level twin of :func:`blocked_profile_names`, for an explicit override that
+    must lift exactly what blocked the name it is applying.
+    """
+    from app.models.media import Speaker
+    from app.models.media import SpeakerProfile
+
+    sid = int(speaker_id)
+    candidates = set(blacklisted_profile_ids(db, [sid])[sid])
+    partners = cannot_link_partners(db, [sid])[sid]
+    if partners:
+        candidates |= {
+            int(pid)
+            for (pid,) in db.query(Speaker.profile_id)
+            .filter(Speaker.id.in_(sorted(partners)), Speaker.profile_id.isnot(None))
+            .all()
+        }
+    if not candidates:
+        return set()
+    wanted = name.strip().casefold()
+    return {
+        int(pid)
+        for pid, pname in db.query(SpeakerProfile.id, SpeakerProfile.name)
+        .filter(SpeakerProfile.id.in_(sorted(candidates)))
+        .all()
+        if str(pname).casefold() == wanted
+    }
 
 
 def record_unassignment(

@@ -35,12 +35,14 @@ from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import carry_blacklist
+from app.services.speaker_cleanup import detach_from_cluster
 from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_labels import PLACEHOLDER_SPEAKER_NAME_PATTERN
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.uuid_helpers import require_profile_in_scope
 from app.utils.uuid_helpers import require_speaker_access
@@ -49,13 +51,6 @@ logger = logging.getLogger(__name__)
 
 # Whitelist of fields that can be updated via the speaker update endpoint
 SPEAKER_UPDATABLE_FIELDS = {"name", "display_name", "suggested_name", "verified"}
-
-#: A ``display_name`` matching this is a **diarization placeholder**, not a human-assigned
-#: identity — as are ``NULL`` and ``""``. The distinction is deliberate and shared with the
-#: frontend's speaker plane: a placeholder is scoped to **one file**, so ``SPEAKER_00`` in
-#: recording A and ``SPEAKER_00`` in recording B are different people and must never be
-#: treated as one cross-file identity. Anything else is a name a human assigned.
-PLACEHOLDER_SPEAKER_NAME_PATTERN = r"^SPEAKER_\d+$"
 
 # Speaker suggestion constants
 SPEAKER_SUGGESTION_MIN_CONFIDENCE = 0.5
@@ -898,6 +893,8 @@ def list_speakers(
             confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
             max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
         )
+        # A speaker is never offered an identity the user unassigned it from (#1233).
+        batch_suggestions = SmartSpeakerSuggestionService.without_refused(db, batch_suggestions)
 
         # Process each speaker with pre-fetched suggestions
         result = [
@@ -2270,6 +2267,59 @@ def _accept_speaker_profile_match(
     }
 
 
+def _clusters_promoted_to_holding(db: Session, profile_id: int, speaker_id: int) -> list[Any]:
+    """The clusters promoted to ``profile_id`` that count this speaker as a member."""
+    from sqlalchemy import or_
+
+    from app.models.media import SpeakerCluster
+    from app.models.media import SpeakerClusterMember
+
+    member_of = (
+        db.query(SpeakerClusterMember.cluster_id)
+        .filter(SpeakerClusterMember.speaker_id == speaker_id)
+        .scalar_subquery()
+    )
+    cluster_id = db.query(Speaker.cluster_id).filter(Speaker.id == speaker_id).scalar_subquery()
+    clusters: list[Any] = (
+        db.query(SpeakerCluster)
+        .filter(
+            SpeakerCluster.promoted_to_profile_id == profile_id,
+            or_(SpeakerCluster.id.in_(member_of), SpeakerCluster.id == cluster_id),
+        )
+        .all()
+    )
+    return clusters
+
+
+def _rejected_profile_ids(db: Session, speaker: Speaker, linked_profile_id: int | None) -> set[int]:
+    """The profiles a rejection refuses: the one linked, and the one the suggestion named.
+
+    The suggestion's profile is looked up by name among the speaker owner's profiles in
+    the speaker file's tenant, the same scope the name-based paths assign in.
+    """
+    from sqlalchemy import func
+
+    rejected = {linked_profile_id} if linked_profile_id is not None else set()
+    if speaker.suggested_name and str(speaker.suggested_name).strip():
+        org_id = (
+            db.query(MediaFile.organization_id)
+            .filter(MediaFile.id == speaker.media_file_id)
+            .scalar()
+        )
+        named = (
+            db.query(SpeakerProfile.id)
+            .filter(
+                SpeakerProfile.user_id == speaker.user_id,
+                func.lower(SpeakerProfile.name) == str(speaker.suggested_name).strip().lower(),
+                org_stamp_is(SpeakerProfile.organization_id, org_id),
+            )
+            .first()
+        )
+        if named is not None:
+            rejected.add(int(named[0]))
+    return rejected
+
+
 def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -> dict[str, Any]:
     """Handle rejection of a speaker identification suggestion.
 
@@ -2297,8 +2347,36 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
     ``recently_attempted`` cooldown rather than actually prevented (audit
     follow-up to issue #603).
     """
+    from app.services.speaker_cleanup import REASON_REJECTED
+    from app.services.speaker_cleanup import record_unassignment
+    from app.services.speaker_cleanup import unlink_from_profile
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
+
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     before = canonical_speaker_label_for_row(speaker)
+    # Read before the write: afterwards nothing says which clusters averaged this voice.
+    impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
+    impact.relabel_speaker_ids.add(int(speaker_id))
+    # The renames below are dispatched as ONE before/after pair at the end, so the
+    # shared helpers' own tracker is never flushed.
+    superseded = SpeakerRenameTracker()
+
+    # Rejecting an identification says "not this person" — an unassignment (#1233).
+    # Rejecting a LINK leaves that profile's clusters and the profile by the one
+    # unassign implementation (a name from the profile goes, a typed name stays, the
+    # cannot-link and the profile blacklist are recorded). The profile its suggestion
+    # named is recorded too, so no automatic path (retroactive matching above all)
+    # applies either identity again.
+    if old_profile_id is not None:
+        for cluster in _clusters_promoted_to_holding(db, old_profile_id, int(speaker_id)):
+            impact |= detach_from_cluster(
+                db, cluster, [speaker], blacklist=True, tracker=superseded
+            )
+        unlink_from_profile(db, [speaker], old_profile_id, superseded)
+    for profile_id in sorted(_rejected_profile_ids(db, speaker, old_profile_id)):
+        record_unassignment(
+            db, [speaker_id], against_speaker_ids=[], profile_id=profile_id, reason=REASON_REJECTED
+        )
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
@@ -2319,10 +2397,10 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
                 f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
             )
 
-    # The profile the speaker leaves must stop averaging its voice (issue #1214).
-    raise_if_incomplete(
-        _handle_profile_embedding_updates(db, speaker_id, old_profile_id, None, False)
-    )
+    # The profile and clusters the speaker leaves stop averaging its voice (#1214).
+    if old_profile_id is not None:
+        impact.profile_ids.add(old_profile_id)
+    raise_if_incomplete(reconcile_speaker_impact(db, impact))
 
     return {
         "status": "rejected",

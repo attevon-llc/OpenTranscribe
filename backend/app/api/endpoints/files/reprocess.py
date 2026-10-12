@@ -99,19 +99,23 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         from app.models.media import Analytics
         from app.models.media import Speaker
         from app.models.media import TranscriptSegment
+        from app.services.speaker_correction_carryover import stash_file_corrections
 
-        # Delete existing transcript segments (this will cascade and handle relationships)
-        existing_segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == media_file.id)
-            .all()
-        )
-        for segment in existing_segments:
-            db.delete(segment)
-
-        # Clear any existing speaker data. What the speakers belonged to is read first:
-        # the bulk delete's CASCADE forgets which clusters and profiles averaged them in.
+        # The user's corrections of these speakers are kept by the audio they judged,
+        # read while the speakers and their segments still exist (issue #1233).
+        stash_file_corrections(db, int(media_file.id))
+        # Read before the deletes: their CASCADE forgets which clusters and profiles
+        # averaged the speakers in.
         speaker_impact = _capture_file_speakers(db, int(media_file.id))
+
+        # Bulk, like the speaker delete below: with autoflush off, per-row ORM deletes
+        # were still pending when the speakers went, and the segments' foreign key
+        # refused the speaker delete for any file that had speakers.
+        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == media_file.id).delete(
+            synchronize_session=False
+        )
+
+        # Clear any existing speaker data.
         db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
             synchronize_session=False
         )
@@ -214,6 +218,11 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
             return  # Already clears everything
 
         if "rediarize" in stages:
+            from app.services.speaker_correction_carryover import stash_file_corrections
+
+            # The user's corrections of these speakers are kept by the audio they judged
+            # (issue #1233) — read FIRST, while the segments still name their speakers.
+            stash_file_corrections(db, int(media_file.id))
             # Null out speaker_id on segments first to avoid FK constraint violations,
             # then delete speakers. Transcript text/words are preserved.
             db.query(TranscriptSegment).filter(

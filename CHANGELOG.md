@@ -533,6 +533,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transcript reindex that cannot be queued after a speaker change is reported instead of only
   logged, and a failed queue attempt no longer blocks the next one for the debounce window.
 
+- **Speaker corrections: the edge cases (#1233, review pass).** Undoing a wrong unassignment
+  from the Inbox works: its per-speaker **Accept** and **Assign to profile…** now lift the
+  correction for that one speaker (`batch-verify` gained `override_unassignment`, accepted
+  only for a single speaker), where before the server refused them and the Inbox still showed
+  success. Every bulk refusal is reported (`blocked_speaker_uuids`; a merge that leaves
+  corrected speakers behind says how many), and a bulk **name** now honours corrections too.
+  A correction survives re-running the file (speaker detection, transcription or a retry),
+  which used to delete it with the speakers and let the voiceprint stage match the same audio
+  straight back: it is kept by its time spans (new table `speaker_correction_carryover`,
+  Alembic `v438`) and given to the new speaker holding mostly that audio. Automatic matching
+  never renames a speaker that already has a name or another profile; giving a cluster member
+  another name or profile takes it out of that cluster; rejecting a suggested identity is a
+  correction; a segment moved to another speaker leaves the old speaker's voiceprint (and both
+  rewritten voiceprints keep their organization, which they used to lose); suggestions no
+  longer offer an identity the user ruled out. A latent foreign-key failure in clearing a
+  transcript that still has its segments (today always preceded by the retry reset, which
+  removes them first) is fixed.
+
 - **Removing a speaker removes every copy of its voice (#1214).** Deleting a speaker, the
   orphan cleanup after reassigning its last segment, a speaker merge, cluster unassign, split,
   merge and delete, profile delete, profile reassignment, batch profile assignment, a retry

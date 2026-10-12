@@ -181,16 +181,28 @@ def batch_verify(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Batch verify multiple speakers."""
+    """Batch verify multiple speakers.
+
+    A speaker the user unassigned from (or rejected) the identity being applied is
+    skipped and listed in ``blocked_speaker_uuids`` (issue #1233). ``override_unassignment``
+    lifts that correction, for exactly one speaker; with more it is a 422.
+    """
     service = SpeakerClusteringService(db)
-    return service.batch_verify_speakers(
-        speaker_uuids=[str(u) for u in data.speaker_uuids],
-        user_id=current_user.id,
-        action=data.action,
-        profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
-        display_name=data.display_name,
-        organization_id=ctx.org_id,
-    )
+    try:
+        return service.batch_verify_speakers(
+            speaker_uuids=[str(u) for u in data.speaker_uuids],
+            user_id=current_user.id,
+            action=data.action,
+            profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
+            display_name=data.display_name,
+            organization_id=ctx.org_id,
+            override_unassignment=data.override_unassignment,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail="An unassignment can only be overridden for one speaker at a time",
+        ) from e
 
 
 @router.get("/speakers/{speaker_uuid}/media-preview")

@@ -3403,6 +3403,8 @@
   "speakers.merge.cannotSelf": "Impossibile unire un cluster con se stesso",
   "speakers.merge.success": "Cluster uniti con successo",
   "speakers.merge.error": "Impossibile unire i cluster",
+  "speakers.merge.someLeftBehind_one": "Unione completata. {{count}} parlante non è stato spostato: l'avevi rimosso o gli avevi dato un altro nome",
+  "speakers.merge.someLeftBehind_other": "Unione completata. {{count}} parlanti non sono stati spostati: li avevi rimossi o gli avevi dato un altro nome",
   "speakers.split.selectMembers": "Seleziona i membri da dividere in un nuovo cluster",
   "speakers.split.selectMembersBanner": "Seleziona i membri da dividere in un nuovo cluster",
   "speakers.split.confirm": "Dividi {{count}} membri",

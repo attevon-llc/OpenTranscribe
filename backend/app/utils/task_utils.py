@@ -946,6 +946,12 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             from app.models.media import Speaker
             from app.models.media import TranscriptSegment
 
+            # The user's corrections of the speakers deleted below are kept by the audio
+            # they judged, read while the segments still name them (issue #1233).
+            from app.services.speaker_correction_carryover import stash_file_corrections
+
+            stash_file_corrections(db, int(file_id))
+
             # Delete existing transcript segments
             db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
 

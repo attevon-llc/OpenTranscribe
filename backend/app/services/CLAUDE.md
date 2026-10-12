@@ -275,10 +275,10 @@ any member / any speaker linked to the profile) or, where the path assigns by NA
 | Re-cluster Phase 2 (AHC) | cannot-link eviction | unchanged (already honoured) |
 | Re-cluster Phase 2.5 (singleton → profile cluster) | profile/cannot-link check; joined WITHOUT the profile (no label, centroid not rebuilt) | helper check; joining links the profile at the auto-link bar `max(threshold, 0.75)`; centroid + embedding settled after commit |
 | retroactive matching (`speaker_update.trigger_retroactive_matching`) | none | blocked candidates are skipped entirely — neither auto-applied nor suggested |
-| batch verify `assign` / `accept` | none | a blocked speaker is refused with a per-speaker error (a bulk action is where a correction gets swept back in unnoticed) |
+| batch verify `assign` / `accept` / `name` | none | a blocked speaker is refused with a per-speaker error and listed in `blocked_speaker_uuids` (a bulk action is where a correction gets swept back in unnoticed); `name` was added in the review pass |
 | `promote_cluster_to_profile` | — | nothing to block: an unassigned speaker is no longer a member |
 | `merge_clusters` | moved every member; target's profile not propagated | a blocked member stays in the source (which survives with it) and is listed in the route's `blocked_speaker_uuids`; moved members take a promoted target's profile |
-| `_propagate_profile_assignment` | none; profile embedding not rebuilt | blocked candidates skipped; profile + their clusters rebuilt |
+| `_propagate_profile_assignment` | none; profile embedding not rebuilt | blocked candidates skipped, and (review pass) so is one named anything but the profile's name; profile + their clusters rebuilt |
 | `_handle_speaker_match` (re-match of an existing speaker) | none | blocked identity is neither suggested nor linked |
 | segment-reassign voiceprint update | rebuilt profiles only (non-strict); clusters drifted | `_rebuild_affected_aggregates` → `reconcile_speaker_impact` over the target's and source's clusters and profiles |
 | speaker merge | source's rows died with it (CASCADE) | `carry_blacklist` copies them to the target first (except the profile the target is already linked to) |
@@ -286,9 +286,30 @@ any member / any speaker linked to the profile) or, where the path assigns by NA
 | LLM speaker ID (`speaker_identification_task._store_speaker_predictions`) | none (a ≥0.75 suggestion moves the canonical label, so it re-labels) | skips a blocked name |
 
 **The explicit override.** Naming ONE speaker as a profile — typing the name
-(`auto_create_or_assign_profile`), `assign-profile`, verify `accept` — calls
-`lift_profile_blacklist`: it drops the speaker's blacklist row for that profile and its
-cannot-links with the profile's speakers. Only those single-speaker explicit actions lift it.
+(`auto_create_or_assign_profile`), `assign-profile`, verify `accept`, or a `batch-verify`
+of exactly one speaker with `override_unassignment: true` (the Inbox's per-speaker
+accept/assign, which is where an unassigned speaker lands and where a wrong unassignment
+is undone) — calls `lift_profile_blacklist`: it drops the speaker's blacklist row for that
+profile and its cannot-links with the profile's speakers. Only those single-speaker
+explicit actions lift it; `override_unassignment` with more than one speaker is a
+`ValueError` (422 at the route), so a batch can never carry a lift.
+
+**Review pass (#1233, 2026-10-12): rules the first sweep did not cover.**
+
+| Rule | Where |
+|---|---|
+| A bulk action REPORTS what a correction skipped: `batch_verify_speakers` and `merge_clusters` return `blocked_speaker_uuids`, and the SPA shows it (Inbox error toast, merge warning toast `speakers.merge.someLeftBehind`) instead of a success | `speaker_clustering_service`, `routes/speakers/+page.svelte` |
+| Batch `name` honours a correction like `accept` (it used to bypass it) | `batch_verify_speakers` |
+| **An automatic path never overwrites an identity a speaker already has**: `has_other_identity` = linked to another profile, or named (typed, or an accepted suggestion) something other than the profile. `find_or_create_cluster`, Re-cluster Phase 2.5 and profile propagation skip such a speaker; `merge_clusters` leaves it in the source and reports it (except members of the SOURCE's own profile — merging two named clusters says the names are one person) | `speaker_cleanup.has_other_identity` / `identity_conflicts_with_cluster` |
+| **Decision 5: a speaker linked to another profile is no longer in the old profile's cluster.** `reconcile_speaker_impact` releases, from every promoted cluster it refreshes, members linked to a different profile — so renaming, assigning, accepting, batch-assigning or retroactively matching a member away takes it out (no blacklist: the new link already says who it is) | `speaker_cleanup._release_members_of_other_profiles` |
+| **Rejecting an identification is an unassignment**: `verify?action=reject` leaves the linked profile's clusters through `detach_from_cluster` (blacklist both halves) and records a profile blacklist (`rejected_by_user`) for the linked profile and the profile its suggestion named | `speakers._reject_speaker_suggestion` |
+| **A moved segment leaves the old speaker's voiceprint**: the reassignment task removes the segment's embedding from the source by the exact inverse of the weighted add the target gets, and both rewritten documents keep the file's tenant (they were rewritten without `organization_id`, i.e. as personal) | `speaker_embedding_task._remove_segment_from_voiceprint` |
+| **A correction survives a re-run of the file** (rediarize, re-transcribe, retry), which deletes the speakers and, by CASCADE, their corrections: stashed by the corrected speaker's time spans before the delete, re-applied when the re-run saves its segments to every new speaker whose speech is ≥ `INHERIT_SHARE` (0.5) inside them | `speaker_correction_carryover` (table `v438`) |
+| Suggestions never offer a refused identity (speaker list, profile suggestions endpoint), and the voice-match suggestion of `_handle_no_speaker_match` (a >=0.75 one moves the canonical label) skips a refused name or cannot-link partner | `SmartSpeakerSuggestionService.without_refused`, `SpeakerMatchingService._refusals` |
+
+Deliberately unchanged: deleting a cluster records nothing (it discards a grouping; it
+is not a statement that the members differ), and `blacklist: false` on unassign records
+nothing (the UI's "Prevent from rejoining" opt-out).
 
 **Autoflush is off.** A caller that sets `profile_id` and rebuilds in the same transaction
 must flush first (`speaker_update._update_profile_embedding` does): the rebuild otherwise

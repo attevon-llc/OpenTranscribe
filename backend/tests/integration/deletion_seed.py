@@ -402,6 +402,16 @@ def seed_complete_file(  # noqa: C901 — one linear recipe; splitting it hides 
             ),
             {**params, "pid": seeded.profile_id},
         )
+    # A correction waiting for a re-run of this file (issue #1233): it names the file
+    # and, when there is no profile, the other speaker, so it must die with either.
+    db.execute(
+        text(
+            "INSERT INTO speaker_correction_carryover "
+            "(media_file_id, profile_id, cannot_link_speaker_id, spans) "
+            "VALUES (:fid, :pid, CASE WHEN :pid IS NULL THEN :s2 END, '[[0, 1]]'::jsonb)"
+        ),
+        {**params, "pid": seeded.profile_id},
+    )
     db.execute(
         text(
             "INSERT INTO watch_source_file (uuid, watch_source_id, remote_path, filename, "

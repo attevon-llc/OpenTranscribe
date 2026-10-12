@@ -740,6 +740,13 @@ def get_speaker_profile_suggestions(
         suggestions.extend(
             _get_llm_suggestions(db, speaker, current_user, accessible_profile_ids=accessible_ids)
         )
+        # Never offer an identity the user unassigned this speaker from (#1233).
+        from app.services.speaker_cleanup import blocked_profile_names
+
+        refused = blocked_profile_names(db, [int(speaker_id)])[int(speaker_id)]
+        suggestions = [
+            s for s in suggestions if str(s.get("profile_name") or "").casefold() not in refused
+        ]
 
         # Sort suggestions by confidence (highest first) and source priority
         def sort_key(suggestion):

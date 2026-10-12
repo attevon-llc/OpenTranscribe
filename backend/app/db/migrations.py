@@ -617,6 +617,10 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'processing_provenance')"
     )
 
+    # v438: speaker corrections carried across a re-run (issue #1233). Single-marker
+    # revision: the table IS the fingerprint.
+    has_correction_carryover = "speaker_correction_carryover" in tables
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -674,9 +678,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
-    # v437: same as v436 plus the processing provenance column. The newest revision on
-    # this chain, so this is the top of the ladder. The data-only arms below it do not
-    # require the column, so a database without it is stamped v436 or lower and re-runs it.
+    # v438: same as v437 plus the speaker correction carry-over table. The newest revision
+    # on this chain, so this is the top of the ladder.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+        and has_correction_carryover
+    ):
+        return "v438_add_speaker_correction_carryover"
+    # v437: same as v436 plus the processing provenance column. The data-only arms below it
+    # do not require the column, so a database without it is stamped v436 or lower and
+    # re-runs it.
     if (
         matches_v433
         and not has_unusable_pyannote_source

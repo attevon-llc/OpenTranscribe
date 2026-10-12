@@ -86,7 +86,10 @@ stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created las
 (both data-only, detection keyed on the ABSENCE of the rows they rewrite; v436 acts only when
 `DEPLOYMENT_MODE=lite` at migration time and is a no-op on the full image, issue #1228),
 `v437_add_media_processing_provenance` (nullable JSONB `media_file.processing_provenance`,
-issue #1229; single-marker arm on the column). **Derive
+issue #1229; single-marker arm on the column),
+`v438_add_speaker_correction_carryover` (`speaker_correction_carryover`: a user's speaker
+correction kept by its time spans while a re-run replaces the file's speakers, issue #1233;
+every FK `ON DELETE CASCADE`; single-marker arm on the table). **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

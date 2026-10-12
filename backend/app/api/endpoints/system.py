@@ -100,7 +100,6 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
         "device_mode": device_mode,
         "force_cpu_mode": force_cpu,
         "whisper_model": os.getenv("WHISPER_MODEL", "large-v3-turbo"),
-        "diarization_enabled": os.getenv("ENABLE_DIARIZATION", "true").strip().lower() == "true",
     }
 
 

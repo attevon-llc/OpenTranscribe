@@ -56,6 +56,7 @@ vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
 
 import SelectiveReprocessModal from './SelectiveReprocessModal.svelte';
 import { DEFAULT_TRANSCRIPTION_SETTINGS } from '$lib/api/transcriptionSettings';
+import { ASRSettingsApi } from '$lib/api/asrSettings';
 
 const FILE = {
   uuid: 'file-1',
@@ -142,5 +143,34 @@ describe('SelectiveReprocessModal speaker range', () => {
 
     const body = await submit();
     expect(body.min_speakers).toBeUndefined();
+  });
+});
+
+describe('SelectiveReprocessModal with a cloud ASR provider active', () => {
+  // The backend re-detects speakers with the user's CURRENT speaker-detection choice whatever
+  // transcribed the file (a lite deployment refuses engine-needing choices before clearing).
+  beforeEach(() => {
+    vi.mocked(ASRSettingsApi.getStatus).mockResolvedValueOnce({
+      is_cloud_provider: true,
+      active_provider: 'deepgram',
+      active_model: 'nova-3',
+    } as never);
+  });
+
+  it('still offers Re-diarize Only, enabled', async () => {
+    render(SelectiveReprocessModal, { props: { showModal: true, file: FILE } });
+    const boxes = () => Array.from(document.querySelectorAll<HTMLInputElement>('.stage-checkbox'));
+    await waitFor(() => expect(boxes().length).toBeGreaterThan(1));
+    await waitFor(() => expect(ASRSettingsApi.getStatus).toHaveBeenCalled());
+    await waitFor(() => expect(boxes()[1].disabled).toBe(false));
+    expect(document.body.textContent).not.toContain('reprocess.rediarizeCloudDisabled');
+  });
+
+  it('offers the speaker range for a re-diarize and sends the request', async () => {
+    await openOnSettingsStep('rediarize');
+    await waitFor(() => expect(field('#modal-min-speakers').value).toBe('3'));
+
+    const body = await submit();
+    expect(body).toMatchObject({ stages: ['rediarize'], min_speakers: 3, max_speakers: 5 });
   });
 });

@@ -44,12 +44,18 @@ def test_warns_on_cpu_with_heavy_model(caplog):
     assert cfgmod._CPU_MODE_WARNING_EMITTED is True
 
 
-def test_warns_on_cpu_with_diarization_enabled(caplog):
+def test_diarization_on_cpu_is_not_a_misconfiguration(caplog):
+    """Speaker detection follows each run's plan, so it is never advice to edit .env."""
     cfg = _config(enable_diarization=True)
     with caplog.at_level(logging.WARNING, logger="app.transcription.config"):
         TranscriptionConfig._maybe_warn_cpu_mode_misconfigured(cfg)
 
-    assert any("ENABLE_DIARIZATION" in rec.message for rec in caplog.records)
+    assert caplog.records == []
+
+
+def test_from_environment_ignores_enable_diarization(monkeypatch):
+    monkeypatch.setenv("ENABLE_DIARIZATION", "false")
+    assert TranscriptionConfig.from_environment().enable_diarization is True
 
 
 def test_warns_only_once_per_process(caplog):

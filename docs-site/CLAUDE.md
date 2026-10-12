@@ -34,5 +34,5 @@ or `#which-combinations-are-valid` instead.
 - Describe UI with its real labels from `frontend/src/lib/i18n/locales/en.json`. A feature that
   only the API exposes (today: `disable_diarization` upload flag) must be described as API-only.
 - Claims about processing must match `services/pipeline_plan.py`, not intent: e.g.
-  `ENABLE_DIARIZATION` no longer controls speaker detection, lite has no local transcription or
+  the `ENABLE_DIARIZATION` variable is gone (speaker detection follows each user's setting), lite has no local transcription or
   speaker detection, and there is no forced alignment.

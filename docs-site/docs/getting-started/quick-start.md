@@ -59,7 +59,7 @@ The installer will ask for:
    - `base` - Fast (recommended on CPU-only systems)
 
 :::note[CPU-only installs and speaker detection]
-On a host with no GPU (or with `--cpu`), the installer also writes `ENABLE_DIARIZATION=false` to `.env`. That variable no longer turns speaker detection off: each user's setting in **Settings → Speaker Identification** decides, and on a CPU-only install speaker detection on this server runs on the CPU. To skip it, choose Off there or skip speaker detection for a file. See [Environment Variables](../configuration/environment-variables.md#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
+On a host with no GPU (or with `--cpu`), speaker detection is not switched off for you: each user's setting in **Settings → Speaker Identification** decides, and on a CPU-only install speaker detection on this server runs on the CPU. To skip it, choose Off there or skip speaker detection for a file. See [Environment Variables](../configuration/environment-variables.md#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
 :::
 
 ### Step 3: Start OpenTranscribe

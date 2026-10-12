@@ -55,7 +55,7 @@ No, but **highly recommended** for practical use when transcribing on your own s
 - **GPU (RTX 3080)**: 1-hour video → ~5 minutes
 - **CPU (8-core)**: 1-hour video → ~60 minutes
 
-Speaker detection on your own server also runs without a GPU, more slowly. On a CPU-only install the installer writes `ENABLE_DIARIZATION=false` to `.env`, but that variable no longer turns speaker detection off: to skip it, choose **Off** under **Settings → Speaker Identification → Speaker Detection**.
+Speaker detection on your own server also runs without a GPU, more slowly. On a CPU-only install nothing switches it off for you (the old `ENABLE_DIARIZATION` variable is gone): to skip it, choose **Off** under **Settings → Speaker Identification → Speaker Detection**.
 
 If you have no GPU at all, the lite deployment sends transcription and speaker detection to cloud providers you configure; see [Deployment variants](./installation/deployment-variants.md).
 

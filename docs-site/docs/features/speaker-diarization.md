@@ -348,7 +348,7 @@ Automatic detection and repair of inconsistent speaker embeddings:
 
 Choose **Off (one speaker for the whole recording)** under **Settings → Speaker Identification → Speaker Detection** to skip speaker detection on your uploads. The transcript is still produced; every segment is assigned to one speaker, and speaker profiles and cross-file matching do not run for those files. Use it for dictation, voicemail or single-speaker recordings.
 
-The upload API also accepts a per-file `disable_diarization` flag; the upload dialog does not offer a per-file switch. The server-wide `ENABLE_DIARIZATION` variable no longer turns speaker detection off: the choice in Settings decides.
+The upload API also accepts a per-file `disable_diarization` flag; the upload dialog does not offer a per-file switch. There is no server-wide variable for this (the old `ENABLE_DIARIZATION` is gone): the choice in Settings decides.
 
 ### pyannote.ai Cloud Diarization (New in v0.4.0)
 
@@ -368,7 +368,7 @@ The reprocess dialog's **Re-diarize Only (v4)** stage re-runs speaker detection 
 - **Automatic**, **Always on this server's GPU** or **Off**: this server's engine runs, because a transcription provider's own speakers cannot be fetched again without transcribing the file again.
 - On a lite deployment, a choice that would run this server's engine is refused before anything is cleared.
 
-The dialog currently offers this stage only when your active transcription provider is the built-in model; with a cloud provider active it shows "Not available with cloud ASR providers".
+The dialog offers this stage whichever transcription provider is active, because the choice above (not the provider that transcribed the file) decides what runs. It needs a completed transcript with word-level timestamps; the dialog also shows your saved speaker range for it.
 
 **Settings → Processing pipeline** shows that same plan as a read-only page: the four steps (transcription,
 speaker detection, speaker identification, AI features), where each runs (this server or a named cloud

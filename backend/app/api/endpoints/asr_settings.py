@@ -926,12 +926,19 @@ def delete_all_asr_configs(
 ) -> schemas.ASRConfigDeleted:
     """Delete all ASR configurations for the current user (reverts to system default).
 
-    Speaker-detection choices naming any of them are reset like a single delete.
+    Speaker-detection choices naming any of them are reset like a single delete. On lite,
+    where the default is local Whisper, deleting a user's configs is refused (409
+    ``local_asr_unavailable``, #1228).
     """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     owned = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id)
     uuids = [str(row.uuid) for row in owned.with_entities(UserASRSettings.uuid).all()]
+    if uuids:
+        # Clearing every config clears the active one, and without a config lite would fall
+        # back to local Whisper, which it does not ship (#1228). With nothing configured
+        # there is nothing to delete and no fallback to introduce.
+        refuse_on_lite("local_asr_unavailable")
     reverted = _reset_diarizer_references(db, uuids, current_user.id)
     owned.delete()
     _clear_active_asr_setting(db, current_user.id)

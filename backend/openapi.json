@@ -25759,7 +25759,7 @@
     },
     "/api/asr-settings/all": {
       "delete": {
-        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete.",
+        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete. On lite,\nwhere the default is local Whisper, deleting a user's configs is refused (409\n``local_asr_unavailable``, #1228).",
         "operationId": "delete_all_asr_configs_api_asr_settings_all_delete",
         "responses": {
           "200": {

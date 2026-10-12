@@ -558,3 +558,38 @@ def test_lite_manual_re_detection_with_pyannote_ai_is_published_on_cloud_asr(
     assert len(sent) == 1
     assert sent[0]["queue"] == CeleryQueues.CLOUD_ASR
     assert sent[0]["kwargs"]["engine"] == "pyannote_ai"
+
+
+def test_lite_refuses_to_delete_every_config_because_that_would_mean_local_whisper(
+    world, pipeline_env
+):
+    """``DELETE /all`` clears the active config, and clearing means local Whisper on lite."""
+    pipeline_env("lite")
+    active = world.add_asr_config("deepgram", "nova-3", active=True)
+    world.add_asr_config("assemblyai", "universal")
+
+    response = world.client.delete(f"{_ASR}/all", headers=world.headers)
+
+    assert response.status_code == status.HTTP_409_CONFLICT, response.text
+    assert response.json()["detail"]["code"] == LOCAL_ASR
+    assert world.stored("active_asr_config_id") == str(active.id)
+
+
+def test_the_full_image_still_deletes_every_config(world, pipeline_env):
+    """Control: the same request on the full image succeeds, so the refusal is lite-only."""
+    pipeline_env("full")
+    world.add_asr_config("deepgram", "nova-3", active=True)
+
+    response = world.client.delete(f"{_ASR}/all", headers=world.headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert response.json()["config_uuid"] is None
+
+
+def test_lite_with_no_configs_has_nothing_to_delete_and_is_not_refused(world, pipeline_env):
+    """Control: with nothing configured the call is a harmless no-op, not a 409."""
+    pipeline_env("lite")
+
+    response = world.client.delete(f"{_ASR}/all", headers=world.headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text

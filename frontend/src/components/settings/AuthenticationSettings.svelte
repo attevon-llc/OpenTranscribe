@@ -16,6 +16,7 @@
   import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import Tabs from '$components/ui/Tabs.svelte';
   import { firstRunWizardStore } from '$stores/firstRunWizardStore';
 
   let activeTab = 'local';
@@ -344,17 +345,13 @@
       </p>
     </div>
   {:else}
-    <div class="tabs">
-      {#each tabs as tab}
-        <button
-          class="tab"
-          class:active={activeTab === tab.id}
-          on:click={() => activeTab = tab.id}
-        >
-          {tab.label}
-        </button>
-      {/each}
-    </div>
+    <Tabs
+      sticky
+      wrap
+      tabs={tabs}
+      bind:activeId={activeTab}
+      ariaLabel={$t('settings.authentication.title')}
+    />
 
     {#if loading}
       <div class="loading">{$t('settings.authentication.loadingConfig')}</div>
@@ -457,46 +454,6 @@
     margin-left: auto;
   }
 
-  /*
-   * Ten tabs no longer fit on one row at every width. Wrap the row instead of
-   * scrolling it horizontally -- each .tab keeps white-space: nowrap so a label
-   * itself never breaks onto multiple lines ("PKI/Certifica te", "OID C" is what
-   * shrink-to-fit produced before this tab bar existed); only the row wraps.
-   */
-  .tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    border-bottom: 1px solid var(--color-border);
-    margin-bottom: 1rem;
-  }
-
-  .tab {
-    flex: 0 0 auto;
-    white-space: nowrap;
-    padding: 0.5rem 1rem;
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    cursor: pointer;
-    color: var(--color-text-secondary);
-    font-size: 0.875rem;
-    box-shadow: none;
-  }
-
-  .tab:hover {
-    color: var(--color-text);
-    background: none;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .tab.active {
-    color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
-  }
-
   .loading {
     text-align: center;
     padding: 2rem;
@@ -597,18 +554,5 @@
       grid-template-columns: 1fr;
     }
 
-    /* One scrolling row on mobile — wrapping ten tabs onto four-plus lines
-       pushes the panel itself below the fold, unlike the two-row wrap at
-       desktop widths. */
-    .tabs {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      scrollbar-width: thin;
-    }
-
-    .tab {
-      min-height: 44px;
-      text-align: center;
-    }
   }
 </style>

@@ -93,4 +93,16 @@ describe('Tabs', () => {
       await vi.waitFor(() => expect(list).not.toHaveClass('stuck'));
     });
   });
+
+  describe('wrap', () => {
+    it('keeps one scrolling row by default and wraps only when asked', () => {
+      render(Tabs, { props: { tabs, activeId: 'a' } });
+      expect(screen.getByRole('tablist')).not.toHaveClass('wrap');
+    });
+
+    it('wraps onto extra rows when asked', () => {
+      render(Tabs, { props: { tabs, activeId: 'a', wrap: true } });
+      expect(screen.getByRole('tablist')).toHaveClass('wrap');
+    });
+  });
 });

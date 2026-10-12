@@ -36,7 +36,9 @@ describe('root layout static imports', () => {
     'LegalGateModal',
     'IdleTimeoutDialog',
   ])('does not statically import %s', (name) => {
-    expect(staticImports.filter((line) => line.includes(name))).toEqual([]);
+    // The module specifier, not the bare name: the layout legitimately imports the loader
+    // helpers (`loadSettingsModal`, ...) that fetch the component on demand.
+    expect(staticImports.filter((line) => line.includes(`${name}.svelte`))).toEqual([]);
   });
 });
 

@@ -26,6 +26,13 @@
    */
   export let sticky = false;
 
+  /**
+   * Wrap onto extra rows instead of scrolling sideways. For a strip with too many tabs to fit one
+   * row at desktop width (Authentication has twelve); phones always scroll one row so a pinned
+   * strip never eats the viewport.
+   */
+  export let wrap = false;
+
   $: resolvedAriaLabel = ariaLabel ?? $t('common.tabs');
 
   const dispatch = createEventDispatcher<{ change: string }>();
@@ -95,6 +102,7 @@
   class="tabs"
   class:sticky
   class:stuck
+  class:wrap
   role="tablist"
   aria-label={resolvedAriaLabel}
 >
@@ -123,10 +131,27 @@
 </div>
 
 <style>
+  /* The hairline is an inset shadow, not a border: the strip scrolls sideways when its tabs do not
+     fit, and an overflow clip at the padding box would shave the active tab's 2px underline that
+     overlaps a bottom border. */
   .tabs {
     display: flex;
     gap: 4px;
-    border-bottom: 1px solid var(--border-color);
+    box-shadow: inset 0 -1px 0 var(--border-color);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .tabs.wrap {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  @media (max-width: 640px) {
+    .tabs.wrap {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
   }
   /* Sticky offsets are measured from the scroll container's content box, so its padding (published
      by the host as --tabs-sticky-inset) would stay visible above a pinned strip as a band of
@@ -142,7 +167,9 @@
     background: var(--surface-color);
   }
   .tabs.sticky.stuck {
-    box-shadow: 0 6px 8px -6px color-mix(in srgb, var(--text-color) 40%, transparent);
+    box-shadow:
+      inset 0 -1px 0 var(--border-color),
+      0 6px 8px -6px color-mix(in srgb, var(--text-color) 40%, transparent);
   }
   /* Zero-height marker just above the strip: once it leaves its scroll container the strip is pinned. */
   .tabs-sentinel {
@@ -158,11 +185,12 @@
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
+    flex: 0 0 auto;
+    white-space: nowrap;
     /* Reset the aggressive global `button {}` base style (rounded corners +
        drop shadow) so tabs stay square with a flat bottom bar. */
     border-radius: 0;
     box-shadow: none;
-    margin-bottom: -1px;
     color: var(--text-secondary);
     font-size: 14px;
     font-weight: 500;

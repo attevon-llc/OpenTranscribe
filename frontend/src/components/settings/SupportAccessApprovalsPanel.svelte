@@ -35,7 +35,7 @@
 <div class="panel">
   <p class="description">{$t('settings.supportAccessRequests.description')}</p>
   {#if orgTab}
-    <Tabs {tabs} activeId={active} on:change={changeTab} />
+    <Tabs sticky {tabs} activeId={active} on:change={changeTab} />
   {/if}
   <div
     role={orgTab ? 'tabpanel' : undefined}

@@ -87,7 +87,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config editor show *Speakers included* / *Text only* and *Word timing* / *Segment timing* /
   *No timing* per provider and model, and *Speakers via adapter (extra billing)* on a provider
   used only for its speakers; lite hides the local model controls. 60 new strings in all 12
-  languages.
+  languages. Deleting, activating or clearing a provider reports what it did to the pipeline
+  (speaker detection reverted to Automatic when the deleted provider was its source, and any
+  blocking problem it leaves, each by its code), creating a first provider that was not made
+  active says so and why, and a refused change shows its own sentence. On lite the provider
+  editor offers no local provider and the Speaker Engine tab shows the read-only reason instead
+  of the local engine controls. Toasts now wrap to three lines before they are cut.
 
 - **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
   About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,

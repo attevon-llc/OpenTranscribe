@@ -173,6 +173,13 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   read-only with the administrator note, not hidden. `asr_config` lists saved configs whose model returns
   speakers (excluding the transcribing one) and exists only with `asr.user_providers`. If the preview rules in
   `speakerSources.ts` and the plan ever disagree, the plan wins: change both.
+- **Changing saved ASR providers reports its effect on the pipeline** (`$lib/settings/asrOutcome`): delete,
+  set-active and clear-active return `{diarizer_source_reverted, pipeline_issues}`, create returns
+  `auto_activated`; `changeMessages` / `notAutoActivatedMessages` turn them into messages keyed by code
+  (standing notes such as `speaker_hints_ignored` are left out). A 409 `detail.code` is rendered through
+  `pipelineFailureKey`: known code -> its sentence, unknown code -> the caller's generic key, never the
+  server's `message`. Lite (`deployment_mode`): no `local` in the editor's provider list, no local model card,
+  and `EngineSettings` swaps the local engine controls for the `local_diarization_unavailable` reason.
 - `PyannoteCredentialForm` (the user's pyannote.ai key) renders under the Speaker Detection source select
   when `asr.user_providers` is on. The key is write-only: never pre-fill the input, never log it.
   Its states come from `$lib/settings/pyannoteCredential`.

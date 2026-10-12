@@ -150,10 +150,15 @@
     font-size: 14px;
     color: var(--text-primary);
     font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     min-width: 0;
+    /* A sentence wraps to three lines before it is cut: a one-line clip hid the reason in
+       messages like "speaker detection is back to Automatic". Short messages are unchanged. */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow-wrap: anywhere;
   }
 
   :global([data-theme='dark']) .toast-message {

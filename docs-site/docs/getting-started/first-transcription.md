@@ -26,7 +26,7 @@ OpenTranscribe supports a wide range of formats:
 - **WEBM** - Web-optimized video
 
 ### File Size Limits
-- Maximum file size: **4GB**
+- Maximum file size: **15 GB** (`MAX_UPLOAD_BYTES`)
 - Recommended: Under 2GB for faster processing
 - Long videos (3+ hours) supported
 
@@ -76,16 +76,14 @@ Record audio directly in your browser:
 
 ## Step 3: Monitor Processing
 
-OpenTranscribe processes files through 13 stages:
-
 ### Processing Stages
 
 ```mermaid
 flowchart LR
-    A[Queued] --> B[Preprocessing]
+    A[Queued] --> B[Preparing Audio]
     B --> C[Transcribing]
-    C --> D[Diarizing]
-    D --> E[Post-Processing]
+    C --> D[Detecting Speakers]
+    D --> E[Voiceprints & Indexing]
     E --> F[Complete]
 
     style A fill:#6b7280
@@ -97,18 +95,17 @@ flowchart LR
 ```
 
 1. **Queued** - File is waiting in the processing queue
-2. **Starting** - Worker is beginning processing
-3. **Extracting Audio** - Converting video to audio if needed
-4. **Loading Models** - Loading WhisperX and PyAnnote models
-5. **Transcribing** - AI transcription in progress
-6. **Aligning** - Word-level timestamp alignment
-7. **Diarizing** - Detecting and separating speakers
-8. **Creating Profiles** - Generating voice fingerprints
-9. **Matching Speakers** - Cross-video speaker matching
-10. **Generating Waveform** - Creating audio visualization
-11. **Indexing** - Adding to search index
-12. **Saving** - Storing results to database
-13. **Complete** - Ready to view!
+2. **Preparing audio** - Extracting the audio track (from video if needed) and converting it for transcription
+3. **Transcribing** - Turning speech into text, either with the built-in model on this server or with the cloud provider chosen in **Settings → Transcription**
+4. **Detecting speakers** - Working out who spoke when, as chosen in **Settings → Speaker Identification → Speaker Detection** (this server, your transcription provider, the pyannote.ai cloud service, or off). Depending on that choice this happens together with transcription or just after the transcript is saved
+5. **Voiceprints and matching** - Computing a voiceprint for each speaker on this server and matching it against speakers in your other recordings
+6. **Indexing** - Adding the transcript to the search index
+7. **Complete** - Ready to view!
+
+If an AI provider is configured, summaries, topics and speaker name suggestions follow once the
+transcript is ready. To see which provider and model handled each step of a finished file, open
+the file and expand its **Processing** section. See
+[How Your Files Are Processed](../user-guide/uploading-files.md#how-your-files-are-processed).
 
 ### Where to Watch Progress
 
@@ -301,7 +298,7 @@ Group related files:
 
 ### Upload Fails
 
-- **Check file size** (must be under 4GB)
+- **Check file size** (must be under 15 GB)
 - **Check format** (must be supported audio/video)
 - **Check disk space** (need enough storage)
 - **Try again** - network errors can be temporary
@@ -322,9 +319,11 @@ Group related files:
 
 ### Speakers Not Detected
 
-- **Check HuggingFace token** - required for diarization
+- **Check your Speaker detection choice** - under **Settings → Speaker Identification → Speaker Detection**, make sure it is not **Off**, then look at the file's **Processing** section to see who detected speakers
+- **Check the transcription model** - some cloud models return text only or segment timing only; a speaker change inside a segment is then not detected
+- **Check HuggingFace token** - needed when speakers are detected on this server (the full image), because the speaker models are downloaded from HuggingFace
 - **Clear audio** - speakers need distinct voices
-- **Adjust MIN/MAX speakers** in configuration
+- **Adjust MIN/MAX speakers** - honoured by pyannote.ai, the PyAnnote engine and some cloud providers; this server's default engine counts speakers itself and ignores them
 - **Manual editing** - edit speaker labels manually if needed
 
 ## Next Steps

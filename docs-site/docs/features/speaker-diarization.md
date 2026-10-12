@@ -4,9 +4,75 @@ sidebar_position: 2
 
 # Speaker Diarization
 
-OpenTranscribe identifies different speakers and segments audio by "who spoke when" using PyAnnote.audio.
+OpenTranscribe identifies different speakers and segments audio by "who spoke when". Speakers can be detected on this server, by the cloud provider that transcribes the file, or by a separate cloud service; you choose which.
 
-## PyAnnote.audio Technology
+## Where speakers are detected
+
+Transcription and speaker detection are two separate choices. Which model transcribes a file is set under **Settings → Transcription**; who detects its speakers is set under **Settings → Speaker Identification → Speaker Detection**. Any pairing works on a full deployment, with the limits listed below.
+
+### The Speaker Detection options
+
+| Option (as shown in Settings) | What happens |
+|---|---|
+| **Automatic (recommended)** | The default. See the rules below. |
+| **Always on this server's GPU** | Speakers are detected on this server, whichever model transcribes. Not available on a lite deployment. |
+| **pyannote.ai cloud service** | The audio is sent to the hosted pyannote.ai service, with the built-in model or a cloud provider. Needs your own pyannote.ai API key, and pyannote.ai bills that key for every file. This is not the PyAnnote engine that can run on this server. |
+| **Off (one speaker for the whole recording)** | No speaker detection. Every segment is assigned to one speaker, and speaker profiles and cross-file matching do not run. |
+
+There is a fifth choice that the Settings card does not list yet: **another saved transcription provider, used only for its speakers**. It is set through the settings API (`PUT /api/user-settings/transcription` with `diarization_source: "asr_config"` and `diarization_asr_config_uuid`). That provider transcribes the whole file again with speaker detection on; OpenTranscribe keeps only its speaker turns and throws its text away. **The provider still bills a full transcription**, and the pipeline summary warns about this. If you pick the same provider and model that already transcribes the file, its own speakers are used and nothing is billed twice.
+
+### Automatic rules
+
+- **Built-in model** (including the lightweight CPU models): speakers are detected on this server.
+- **Cloud model that returns speakers**: that provider's own speaker labels are used. Nothing else runs.
+- **Cloud model that returns text only**: on a full deployment, this server detects the speakers after the transcript is saved. On a lite deployment this is refused with a message asking you to choose pyannote.ai or another provider for speaker detection.
+
+Which cloud models return speakers, and which combinations are valid on each deployment, are listed on [Deployment variants](../installation/deployment-variants.md#which-cloud-providers-return-speakers) (see also [which combinations are valid](../installation/deployment-variants.md#which-combinations-are-valid)).
+
+### When detection runs
+
+- **Inside transcription.** With the built-in GPU model and this server's engine, speakers are detected in the same task, right after the words. With a cloud provider that detects speakers itself, its labels arrive with the transcript. With a cloud transcription provider and a cloud speaker detector (pyannote.ai or another saved provider), both requests run side by side.
+- **After the transcript is saved.** In every other pairing (for example a cloud transcript with this server's engine, or the built-in model with pyannote.ai), speaker detection runs as a separate step once the transcript is stored. If a cloud speaker detector fails at that point, the transcript is kept without speakers and the reason is recorded; nothing silently falls back to another detector.
+
+### How speakers are matched to the words
+
+The speaker turns are merged onto the transcript in one place, by timing:
+
+- If the transcription model returns **word timestamps**, each word gets the speaker who was talking at that moment.
+- If it returns **segment timestamps only**, each segment gets one speaker. A speaker change inside a segment is then not detected, and the pipeline summary shows a warning.
+- If it returns **no timestamps at all**, speakers cannot be placed. Choosing speaker detection with such a model is refused with a clear message; pick a model with word or segment timing, or turn speaker detection off.
+
+There is no forced-alignment step. Word timestamps come from the transcription model itself (for the built-in model, from faster-whisper; see [Native Word-Level Timestamps](#native-word-level-timestamps)), and cloud timestamps are used as the provider returns them.
+
+### Voiceprints are always computed on this server
+
+Whoever detects the speakers, the voiceprints used for cross-file matching and speaker profiles are computed on this server, never taken from a vendor. They come from one interface: today the WeSpeaker model, served by the diar-native sidecar or, when the sidecar is not available, loaded inside the worker. A Rust replacement for this extractor is planned for v0.8.0 ([#1231](https://github.com/attevon-llc/OpenTranscribe/issues/1231)); it plugs into the same interface.
+
+### Lite deployments
+
+A lite deployment has no local speaker detection. Use a cloud model that returns speakers (with **Automatic**), the **pyannote.ai cloud service**, another saved provider used only for speakers, or **Off**. **Always on this server's GPU** is refused there. Voiceprints are still computed on the lite server's CPU.
+
+### Which engine runs on this server
+
+When speakers are detected on this server, the engine is a deployment-wide choice made by a super admin under **Settings → Speaker Identification → Speaker Engine** (**Diarizer Backend**): the diar-native sidecar (the default) or the in-process PyAnnote engine. Users choose *where* speakers are detected, not which local engine does it. See [Native Diarization Engine](#native-diarization-engine-new-in-v050).
+
+### Speaker-count hints
+
+Your minimum, maximum or exact speaker count is passed to the detector when it can use it:
+
+- **pyannote.ai** honours all three.
+- **This server's engine** honours them only when the in-process PyAnnote engine is selected. The default diar-native engine counts speakers automatically and ignores them.
+- **A cloud transcription provider's own speakers** honour whatever that provider supports (listed on [Deployment variants](../installation/deployment-variants.md#which-cloud-providers-return-speakers)).
+
+When the detector ignores the hints, the pipeline summary says so.
+
+### Seeing the plan before you upload
+
+The processing pipeline summary in Settings is a read-only view of how your next file will be processed: the transcription step, speaker detection, voiceprints and AI features, where each one runs, and any problem with the combination you chose. It reads `GET /api/user-settings/pipeline`, which API clients can call directly. Saving a speaker-detection choice that cannot run is refused, and a file whose plan cannot run fails before any work starts, with the same message.
+
+## This Server's Engine (PyAnnote v4 pipeline)
+
+This section describes the engine that runs when speakers are detected **on this server**. Both local engines (diar-native and in-process PyAnnote) run the same `pyannote/speaker-diarization-community-1` pipeline.
 
 **State-of-the-art speaker diarization** (upgraded to PyAnnote v4):
 
@@ -30,6 +96,8 @@ OpenTranscribe identifies different speakers and segments audio by "who spoke wh
 - **Optimized Processing**: Faster GPU utilization with reduced memory overhead
 
 ## How It Works
+
+The diagram shows the path when speakers are detected on this server. When a cloud service detects them instead, the speaker turns come from that service and everything from embedding extraction onward still runs here.
 
 ```mermaid
 flowchart LR
@@ -56,6 +124,7 @@ flowchart LR
 
 Each speaker gets a unique voice embedding:
 - 256-dimensional vector (PyAnnote v4)
+- Always computed on this server, whichever detector found the speakers
 - Captures voice characteristics with high precision
 - Used for cross-video matching
 - Enables speaker recognition across videos
@@ -146,21 +215,24 @@ AI Suggestion: "John Smith (CEO)" - 85% confidence
 
 ### Detection Range
 
-Adjust speaker count expectations:
+Speaker count expectations are set at three levels:
+
+- **System default range**: `MIN_SPEAKERS` / `MAX_SPEAKERS` in `.env` (defaults 1 and 20).
+- **Your own range**: **Settings → Speaker Identification → Speaker Detection → Number of speakers** (1 to 50).
+- **Per file**: the upload wizard's **Speakers** step, or the reprocess dialog.
 
 ```bash
-# .env configuration
+# .env configuration (system default range)
 MIN_SPEAKERS=1   # Minimum speakers
-MAX_SPEAKERS=20  # Maximum speakers (no hard limit)
+MAX_SPEAKERS=20  # Maximum speakers
 ```
 
 **Use Cases**:
 - 1-1 interview: MIN=2, MAX=2
 - Team meeting: MIN=3, MAX=10
 - Conference panel: MIN=5, MAX=15
-- Large event: MIN=10, MAX=50+
 
-**Note**: PyAnnote has no hard maximum - can handle 50+ speakers for large conferences.
+**Note**: the range is a hint, and not every detector uses it. The default diar-native engine counts speakers automatically and ignores it; see [Speaker-count hints](#speaker-count-hints).
 
 ### Quality Settings
 
@@ -272,15 +344,11 @@ Automatic detection and repair of inconsistent speaker embeddings:
 - Progress tracking with WebSocket notifications
 - Distributed locking prevents concurrent repairs
 
-### Disable Speaker Diarization (New in v0.4.0)
+### Turning Speaker Detection Off
 
-Speaker diarization can be disabled on a per-transcription or per-user basis:
+Choose **Off (one speaker for the whole recording)** under **Settings → Speaker Identification → Speaker Detection** to skip speaker detection on your uploads. The transcript is still produced; every segment is assigned to one speaker, and speaker profiles and cross-file matching do not run for those files. Use it for dictation, voicemail or single-speaker recordings.
 
-- **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog to skip diarization for a specific file. The transcript will still be produced but without speaker labels.
-- **Per-reprocess**: The reprocess dialog also includes the diarization toggle, allowing you to re-transcribe without diarization.
-- **User default**: Set your default in Settings → Speaker Identification → Speaker Detection (choose *Off*) to skip diarization on all uploads by default.
-
-This is useful when diarization is not needed (e.g., single-speaker monologues) and you want faster processing, or when processing audio where diarization quality is poor.
+The upload API also accepts a per-file `disable_diarization` flag; the upload dialog does not offer a per-file switch. The server-wide `ENABLE_DIARIZATION` variable no longer turns speaker detection off: the choice in Settings decides.
 
 ### pyannote.ai Cloud Diarization (New in v0.4.0)
 
@@ -289,46 +357,38 @@ OpenTranscribe's independent diarization provider architecture allows routing di
 - **pyannote.ai**: The cloud service from the creators of PyAnnote, offering the same algorithms without requiring a local GPU for diarization
 - Each user saves their own pyannote.ai API key in Settings → Speaker Identification → Speaker Detection (shown when users may bring their own provider keys), then chooses *pyannote.ai cloud service* as the speaker-detection source. The key is stored encrypted and is never shown again
 - When pyannote.ai is selected, speaker diarization is sent to the cloud API, whichever model transcribes. With the built-in (local) model it runs right after the transcript is saved; with a cloud provider it runs beside transcription. pyannote.ai bills your key for every file it processes
-- If the cloud service fails, the transcript is kept without speakers and the reason is recorded on the file's speaker-detection task. There is no silent fallback to local diarization; re-detect speakers from the file's menu once the service is back
+- Choosing pyannote.ai without a saved key is refused, rather than falling back to this server
+- If the cloud service fails, the transcript is kept without speakers and the reason is recorded on the file's speaker-detection task. There is no silent fallback to local diarization; re-run speaker detection (see below) once the service is back
 
-### Diarization Source
+### Re-running Speaker Detection
 
-A per-user setting — **Settings → Speaker Identification → Speaker Detection** (`transcription_diarization_source`,
-backed by `UserDiarizationSettings`) — decides where a file's speaker labels actually come
-from. It takes four values:
+The reprocess dialog's **Re-diarize Only (v4)** stage re-runs speaker detection on the existing transcript text without transcribing again. It uses your **current** speaker-detection choice, not the one the file was first processed with:
 
-| Value | Behavior |
-|---|---|
-| **`provider`** (default, "Automatic") | With the built-in model (including the tiny/base CPU models), speakers are detected on this server. With a **cloud ASR provider** that returns speakers, its labels are used as-is. With a cloud model that returns **text only**, this server detects speakers right after the transcript is saved (full deployments only; a model with no timestamps at all cannot be combined with speaker detection). |
-| **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above: beside cloud transcription, or right after the built-in model's transcript is saved. |
-| **`local`** | Diarization runs on this server, whichever model transcribes: inside the GPU stage for the built-in model, or as a separate pass after a cloud or CPU transcript is saved. Not available on a lite deployment, which has no local speaker detection: choose pyannote.ai or a transcription provider that returns speakers there. |
-| **`off`** | No diarization at all — the transcript is produced without speaker labels. |
+- **pyannote.ai cloud service** or another saved provider: that service detects the speakers again.
+- **Automatic**, **Always on this server's GPU** or **Off**: this server's engine runs, because a transcription provider's own speakers cannot be fetched again without transcribing the file again.
+- On a lite deployment, a choice that would run this server's engine is refused before anything is cleared.
 
-Speaker detection that runs after the transcript is saved assigns speakers per word when the
-model returns word timestamps, and per segment otherwise (a speaker change inside a segment is
-then not detected; the pipeline view reports this as a warning). Voiceprints are always computed
-on this server. `GET /api/user-settings/pipeline` returns how your next file will be processed
-and any problem with the combination you chose; saving a combination that cannot run is refused,
-and so is switching the transcription provider into one.
+The dialog currently offers this stage only when your active transcription provider is the built-in model; with a cloud provider active it shows "Not available with cloud ASR providers".
 
-An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
-error rather than silently falling back to local diarization. The same holds for transcription:
-a file planned for a cloud provider that cannot be started (for example a saved key that no
-longer works) fails with a clear message instead of being transcribed on this server.
+### Stored setting values
+
+For API clients: the Speaker Detection choice is stored per user as `diarization_source` on `GET/PUT /api/user-settings/transcription`. The values are `provider` (Automatic), `local` (this server), `pyannote` (pyannote.ai), `asr_config` (another saved provider, named by `diarization_asr_config_uuid`) and `off`. An unrecognized value is refused, and a combination that cannot run (for example `pyannote` with no API key) is refused with its message instead of falling back to another detector. The same holds for transcription: a file planned for a cloud provider that cannot be started (for example a saved key that no longer works) fails with a clear message instead of being transcribed on this server.
 
 ### Native Diarization Engine (New in v0.5.0)
 
-The `local` diarization path described above no longer means "PyAnnote" by default. A
+Speaker detection on this server (the `local` path) no longer means "PyAnnote" by default. A
 from-scratch **native diarization engine** — a `diar-server` sidecar built for this project — is
 now the primary engine for on-box (`local`) diarization, replacing PyAnnote as the default while
 staying fully independent of ASR engine selection: you can run cloud ASR with local diarization,
-local ASR with cloud diarization, or any other combination.
+local ASR with cloud diarization, or any other combination (a lite deployment has no local
+diarization at all; see [Lite deployments](#lite-deployments)).
 
 - **Backend selection**: `engine.diarizer_backend` (SystemSettings, falls back to env
   `ENGINE_DIARIZER_BACKEND`) accepts `native` (default) or `pyannote`. If the `diar-native`
   sidecar is unreachable when a task needs it, the pipeline automatically falls back to the
   in-process PyAnnote engine documented earlier on this page — there is no hard dependency on
-  the sidecar being up.
+  the sidecar being up, unless a super admin turns on **Require Diarization Sidecar**, which
+  fails the job instead of falling back.
 - **Running it**: the sidecar ships as an additive Docker Compose overlay,
   `docker-compose.diar-native.yml`. It shares the backend image rather than shipping a separate
   one — the `diar-server` binary is already inside `davidamacey/opentranscribe-backend`, so
@@ -406,12 +466,14 @@ Track identification confidence:
 
 Configure speaker detection for each upload or reprocess:
 
-- **Upload dialog**: Set min/max speakers before transcription
-- **Reprocess dialog**: Adjust speaker range for re-transcription
-- **User preferences**: Save default settings in Settings → Speaker Identification → Speaker Detection
-  - **Always prompt**: Show speaker settings on every upload
-  - **Use defaults**: Skip dialog, use system defaults (1-20)
-  - **Use custom**: Skip dialog, use your saved min/max values
+- **Upload dialog**: Set min/max (or an exact count) in the **Speakers** step
+- **Reprocess dialog**: Adjust speaker range for re-transcription or re-diarization
+- **User preferences**: **Speaker count when uploading**, under Settings → Speaker Identification → Speaker Detection → Number of speakers
+  - **Use my range, but let me change it per file**: the Speakers step is pre-filled with your range
+  - **Leave the range empty on upload**: the system default range applies
+  - **Always use my range**: your saved range is used on every upload
+
+Whether the range is used depends on the detector; see [Speaker-count hints](#speaker-count-hints).
 
 ## Performance
 
@@ -429,10 +491,10 @@ Configure speaker detection for each upload or reprocess:
 - Warm cache (subsequent transcriptions): **40-60 seconds faster** due to pre-loaded models
 - **Fast speaker assignment**: 273x faster clustering on GPU
 
-**Per-File Processing**:
+**Per-File Processing** (this server's engine):
 - Base diarization: ~20-30 seconds for 1-hour audio
-- With word-level alignment: +17-120 seconds depending on language
-- Parallel with transcription (optimized pipeline)
+- No separate alignment pass: word timestamps come from transcription itself
+- With the built-in GPU model, diarization runs in the same task right after transcription (the transcription model's GPU memory is released first)
 - Diarization adds ~30% overhead to total transcription time
 
 **Example Timelines** (with warm cache):
@@ -511,7 +573,7 @@ ${MODEL_CACHE_DIR}/torch/pyannote/      # PyAnnote voice embeddings
 
 ### Native Word-Level Timestamps
 
-Word-level timestamps are generated natively during transcription via faster-whisper's cross-attention DTW mechanism. This eliminates the need for a separate alignment model (WAV2VEC2) and supports all 100+ languages without any additional processing overhead. Post-processing validates and corrects timestamps for monotonicity and drift.
+Word-level timestamps are generated natively during transcription via faster-whisper's cross-attention DTW mechanism. No separate alignment model runs: the WAV2VEC2 forced-alignment step the old WhisperX pipeline used is gone, and word timing works for all 100+ languages without any additional processing overhead. Post-processing validates and corrects timestamps for monotonicity and drift.
 
 ## Technical Deep Dive
 
@@ -558,7 +620,7 @@ The 512-dim pyannote/embedding model is retained in the `speakers_v3` index for 
 
 ### Gender Classification Model Selection
 
-Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/attevon-llc/OpenTranscribe/issues/141)). This model was selected based on three criteria:
+Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/attevon-llc/OpenTranscribe/issues/141)). It classifies voice attributes only; it plays no part in word timing or alignment. This model was selected based on three criteria:
 
 1. **Apache 2.0 licensing**: Unlike many voice classification models that use restrictive research-only licenses, this model's Apache 2.0 license permits commercial and production use without legal risk. This was a hard requirement for OpenTranscribe's open-source distribution.
 2. **Language independence**: The model analyzes acoustic features (pitch, formant frequencies, timbre) rather than linguistic content, so it works across all 100+ supported transcription languages without retraining.
@@ -579,14 +641,14 @@ This approach improves cluster purity without over-relying on gender prediction 
 ### Too Many Speakers Detected
 
 **Solutions**:
-- Lower MAX_SPEAKERS
+- Lower the maximum in your speaker range (Settings, the upload wizard's Speakers step, or the reprocess dialog). The default diar-native engine ignores the range, so this helps only with pyannote.ai, a provider that supports count hints, or the in-process PyAnnote engine
 - Improve audio quality
 - Merge duplicate speakers manually
 
 ### Too Few Speakers Detected
 
 **Solutions**:
-- Increase MAX_SPEAKERS
+- Raise the minimum, or set an exact count, in your speaker range (same caveat as above)
 - Check audio has multiple distinct voices
 - Verify speakers have different vocal characteristics
 

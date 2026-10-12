@@ -134,10 +134,31 @@ Admin-tunable, runtime-safe transcription engine settings. All changes apply liv
   - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
   - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
 
-### Backend Selection
+### Speaker separation engine
 
-- **Transcriber backend**: select the active transcription engine
-- **Diarizer backend**: select the active diarization engine
+These choose **which local engine** detects speakers when speakers are detected on this server.
+They do not decide *where* speakers are detected: each user chooses that under **Settings →
+Speaker Identification → Speaker Detection** (this server, the transcription provider, the
+pyannote.ai cloud service, or off).
+
+- **Diarizer Backend**: **Native engine (default)** runs the diar-native sidecar as its own
+  service; **PyAnnote fallback engine** runs PyAnnote inside the backend and is being phased
+  out. Stored as the `engine.diarizer_backend` setting, with `ENGINE_DIARIZER_BACKEND` as the
+  server default. The choice applies from the next file processed.
+- **Require Diarization Sidecar** (only matters for the native engine): off (default), a file
+  whose sidecar request fails is processed with PyAnnote instead; on, the file fails so you
+  notice the broken sidecar.
+
+The native engine counts speakers itself and ignores the minimum and maximum speaker counts; the
+PyAnnote engine honours them. With the native engine, the read-only processing pipeline summary
+in each user's Settings reports this as a warning.
+
+:::note[Lite deployments]
+The lite (cloud-only) image has no local speaker detection, so saving **Diarizer Backend** or
+**Require Diarization Sidecar** there is refused with *"This deployment has no local speaker
+detection. Choose pyannote.ai or a provider that returns speakers."* Boundary correction stays
+editable there.
+:::
 
 ## Redaction Policy
 

@@ -8,37 +8,35 @@ OpenTranscribe provides powerful speaker diarization and management features to 
 
 ## Speaker Diarization
 
-**Automatic speaker detection** using PyAnnote.audio identifies different speakers and segments audio by "who spoke when".
+**Automatic speaker detection** identifies different speakers and segments audio by "who spoke when". It is on by default.
 
-### Enabling Speaker Diarization
+### Choosing who detects speakers
 
-1. Configure HuggingFace token (required):
-   - See [HuggingFace Setup](../installation/huggingface-setup.md)
+Speaker detection is chosen separately from transcription, under **Settings → Speaker Identification → Speaker Detection**:
 
-2. Enable in UI settings or `.env`:
-   ```bash
-   MIN_SPEAKERS=1
-   MAX_SPEAKERS=20  # Increase for large meetings/conferences
-   ```
+- **Automatic (recommended)**: speakers are detected on this server when the built-in model transcribes, by the cloud provider when it returns speakers, and on this server when a cloud model returns text only (on a lite deployment that last case is refused; pick another option).
+- **Always on this server's GPU**: this server detects speakers whichever model transcribes. Not available on a lite deployment.
+- **pyannote.ai cloud service**: the audio is sent to pyannote.ai, which bills your own API key.
+- **Off (one speaker for the whole recording)**: no speaker detection.
 
-3. Process files - speakers automatically detected
+Details, timing rules and the lite limits are on [Speaker Diarization](../features/speaker-diarization.md#where-speakers-are-detected).
 
-### Disabling Speaker Diarization
+Detecting speakers **on this server** needs a HuggingFace token with the model agreement accepted; see [HuggingFace Setup](../installation/huggingface-setup.md). Cloud speaker detection does not.
 
-Speaker diarization can be skipped when not needed (e.g., single-speaker monologues, or when faster processing is more important than speaker labels):
+### Turning Speaker Detection Off
 
-- **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog
-- **Per-reprocess**: The reprocess dialog includes the same toggle
-- **User default**: Set your preference in Settings → Speaker Identification → Speaker Detection
+Choose **Off (one speaker for the whole recording)** in **Settings → Speaker Identification → Speaker Detection** when you do not need speaker labels (dictation, voicemail, single-speaker recordings). Every segment is assigned to one speaker, and speaker profiles and cross-file matching do not run for those files; the transcript is otherwise complete. The upload dialog has no per-file switch for this.
 
-Transcripts processed without diarization will not have speaker labels but are otherwise complete.
+### Re-detecting Speakers
+
+To detect speakers again without re-transcribing, open the file's reprocess dialog and choose **Re-diarize Only (v4)**. It uses your **current** Speaker Detection choice: pyannote.ai if you chose it, otherwise this server's engine (a cloud transcription provider's own speakers cannot be fetched again without transcribing again). On a lite deployment, a re-run that would use this server's engine is refused before anything is changed. The dialog currently offers this stage only while your active transcription provider is the built-in model.
 
 ## Speaker Identification Workflow
 
 ```mermaid
 flowchart TD
-    A[New Transcription] --> B[PyAnnote Diarization]
-    B --> C[Extract Speaker Embeddings]
+    A[New Transcription] --> B[Speaker Detection\nthis server or cloud]
+    B --> C[Extract Speaker Embeddings\nalways on this server]
     C --> D[Match Against Global Profiles]
     D --> E{Match Found?}
     E -->|Yes, >85%| F[Auto-Assign Speaker Name]
@@ -120,20 +118,27 @@ person**:
 - The speaker leaves the cluster. If the cluster has been promoted to a named profile, the
   speaker also leaves that profile, and the name it got from the profile is removed. A name
   you typed yourself is kept.
-- With **blacklist** on (the default), the correction is remembered: the speaker is marked as
-  "not the same person" as each speaker still in the cluster, and as "not this profile".
+- With **Prevent from rejoining this cluster** ticked (the default), the correction is
+  remembered: the speaker is marked as "not the same person" as each speaker still in the
+  cluster, and as "not this profile".
+- With it unticked, the speaker still leaves the cluster and its profile, but nothing is
+  remembered, so later matching may put it back.
 - The cluster and the profile stay for everyone else. Their stored voice average is rebuilt
   from the speakers that remain.
 
 Nothing automatic puts a corrected speaker back: upload-time matching, **Re-cluster All**,
-voice matching after you label someone, profile suggestions and merges all skip it. A bulk
+voice matching after you label someone, profile suggestions, AI speaker-name suggestions and
+merges all skip it. A bulk
 **Assign** or **Accept** in the Inbox refuses it and lists it as an error, and merging a cluster
 into the one the speaker was removed from leaves that speaker where it was. Splitting speakers
-out of a cluster is treated the same way as unassigning them.
+out of a cluster is treated the same way as unassigning them: the group that moves out forms a
+new cluster. When you merge two speakers, the corrections recorded on the one being merged
+away carry over to the speaker that remains.
 
 To undo a correction, name that one speaker yourself: type the profile's name on it, assign it
-to the profile, or accept the profile for it. That clears the "not this profile" mark for that
-speaker.
+to the profile, or accept the profile for it. That clears the "not this profile" mark, and the
+"not the same person" marks against that profile's speakers, for that one speaker. Bulk
+actions never clear it.
 
 ![Speaker management clusters view with identified speakers across all files](/img/screenshots/speakers/speaker-management-clusters.png)
 
@@ -200,15 +205,15 @@ Track speaker identification confidence:
 
 ### Adjust Speaker Detection Range
 
-For meetings with many participants:
+Set the number of speakers to expect in **Settings → Speaker Identification → Speaker Detection → Number of speakers** (1 to 50), or per file in the upload wizard's **Speakers** step and the reprocess dialog. An administrator sets the system default range in `.env`:
 
 ```bash
-# .env configuration
-MIN_SPEAKERS=2       # Minimum speakers to detect
-MAX_SPEAKERS=50      # Maximum speakers (no hard limit)
+# .env configuration (system default range)
+MIN_SPEAKERS=1
+MAX_SPEAKERS=20
 ```
 
-**Note**: PyAnnote can handle 50+ speakers for large conferences.
+**Note**: the range is a hint. pyannote.ai and the in-process PyAnnote engine apply it, and a cloud provider applies whatever part of it that provider supports. The default diar-native engine on this server counts speakers automatically and ignores it.
 
 ### Speaker Display Preferences
 
@@ -223,23 +228,22 @@ Customize in UI settings:
 ### All Speakers Shown as "Speaker 1"
 
 **Causes**:
-- HuggingFace token not configured
+- Speaker Detection is set to **Off** (every segment gets one speaker)
 - Single speaker in audio
 - Poor audio quality
+- For detection on this server: HuggingFace token not configured
 
 **Solutions**:
-- Verify HuggingFace setup
+- Check **Settings → Speaker Identification → Speaker Detection**, then re-detect speakers (see [Re-detecting Speakers](#re-detecting-speakers))
 - Check audio has multiple speakers
 - Ensure clear audio quality
+- Verify [HuggingFace setup](../installation/huggingface-setup.md)
 
 ### Too Many/Few Speakers Detected
 
 **Solutions**:
-```bash
-# Adjust detection range
-MIN_SPEAKERS=1
-MAX_SPEAKERS=30  # Tune based on actual speaker count
-```
+- Set a speaker range or exact count for the file when you upload or reprocess it. This has an effect only with a detector that uses the range (see the note under [Adjust Speaker Detection Range](#adjust-speaker-detection-range)).
+- Merge duplicate speakers manually.
 
 ### Speaker Segments Fragmented
 
@@ -253,7 +257,7 @@ MAX_SPEAKERS=30  # Tune based on actual speaker count
 2. **Verify AI Suggestions**: Review LLM-suggested names
 3. **Use Consistent Names**: Maintain naming convention
 4. **Review Cross-Video Matches**: Confirm auto-matched speakers
-5. **Adjust Detection Range**: Tune MIN/MAX_SPEAKERS for your use case
+5. **Adjust Detection Range**: Set your speaker range for your use case, where the detector uses it
 
 ## Next Steps
 

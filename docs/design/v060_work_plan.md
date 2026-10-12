@@ -25,25 +25,20 @@ and mock ASR overlays up.
 
 ## 2. Running now
 
-| Work | Issue | State |
-|---|---|---|
-| Sweep tool deletes rows owned by other test users and says why it cannot | #1237 | Agent building (found by the final gate) |
+Nothing. All agent work is merged and pushed (head `71bee649`, PR CI green).
 
-Merged since the last update: docs, diagrams and drift checks (#1230); the pipeline docs findings
-(`ENABLE_DIARIZATION` no longer presented as a control, Fast model copy, Re-diarize enabled with
-cloud transcription).
+Merged since the last update: sweep tool fix (#1237), docs and diagrams (#1230), instant-open Settings
+modal with lazy sections and shared sticky tabs, duplicate-call removal and the session-check shell,
+clean visual baselines, support-access e2e verified on a multi-tenant stack.
 
 ## 3. Next, in order
 
-1. Merge #1237 when it reports; rerun the sweep tests; push; add `Closes #1237` to the PR.
-2. Final gate results on `c3585755`: frontend, backend default suite, serial integration files,
-   openapi, accessibility (19 passed, light and dark) and PR CI all green. Open, by design: the 9
-   visual baselines (stale until step 3), `test_support_access` (needs a multi-tenant stack), and
-   `test_delete_of_a_requeued_file_leaves_no_residue[live]` (stack workers race the seed).
-3. Re-capture visual baselines once; walk the UI with the owner at port 5373 (light, dark, Arabic).
-4. Close #1218 and #1221 with evidence; #1236 items 4 to 6 are covered by #1221.
-5. Tidy: merged worktrees, scratch trees, stray processes (ask before deleting).
-6. Merge to master when the AWS agent says go.
+1. Owner walkthrough at port 5373 (light, dark, Arabic); confirm the five #1233 decisions.
+2. Close #1218 and #1221 with that evidence (a comment with the gate results is already on #1221).
+3. Follow-ups filed on v0.6.0: #1238 (capture wrapper reseeds), #1239 (small-business LAN install test over
+   nginx/HTTPS), #1240 (email-not-configured state).
+4. Tidy: merged agent worktrees, scratch trees, `/tmp/fwd.py` forwarder (ask before deleting).
+5. Merge to master when the AWS agent says go.
 
 ## 4. Decisions made (do not re-open)
 

@@ -33,6 +33,7 @@ import pytest
 from celery.exceptions import Reject
 
 from app.core import worker_shutdown as ws
+from tests.unit._plan_contexts import plan_context
 
 _ABORT_EXC_NAME = "TranscriptionAbortedError"
 
@@ -507,6 +508,7 @@ _ABORT_PROBE_CONTEXT = {
     "storage_path": "s/p",
     "file_name": "f.wav",
     "content_type": "audio/wav",
+    "pipeline_plan": plan_context(),
 }
 
 

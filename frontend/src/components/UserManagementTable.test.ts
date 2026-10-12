@@ -2,10 +2,10 @@
  * `UserManagementTable.svelte` is the admin account-lifecycle panel: search
  * filtering, super_admin-elevation confirmation gates (create/invite/promote,
  * reverting the role `<select>` on cancel), and the lock/unlock/force-logout/MFA-
- * reset actions that go through `runAccountAction` (row-scoped pending state,
- * and — pinned explicitly below — only `lockAccount` refreshes the list
- * afterwards; `unlockAccount` deliberately does not, since unlocking resets only
- * the failed-login counter and changes nothing else visible in the row). This is
+ * reset actions that go through `runAccountAction` (row-scoped pending state;
+ * `lockAccount` always refreshes the list, `unlockAccount` refreshes only when
+ * the response reports `was_disabled` — issue #570 §A.1.1, pinned explicitly
+ * below by two tests rather than one blanket "never refreshes" assertion). This is
  * exactly the "complex derived state and multi-step orchestration" #475 scopes
  * Priority 3 to. `$lib/axios` is mocked at the transport boundary only — the real
  * `AdminApi`/`invitations.ts` client code runs, so the URLs/params under test are
@@ -362,8 +362,14 @@ describe('lock / unlock: only lock refreshes the list', () => {
     });
   });
 
-  it('unlocking posts but does NOT refresh the list (nothing visible in the row changes)', async () => {
-    mockAxios.post.mockResolvedValue({ data: { success: true, was_locked: true } });
+  // issue #570 §A.1.1: unlockAccount IS the inverse of lockAccount — it can
+  // also reactivate a disabled account. Whether the list needs refreshing
+  // depends on `was_disabled`, not on the action itself, so this is now two
+  // tests instead of one blanket "never refreshes" assertion.
+  it('unlocking a merely lockout-locked account does NOT refresh (nothing visible in the row changes)', async () => {
+    mockAxios.post.mockResolvedValue({
+      data: { success: true, was_locked: true, was_disabled: false },
+    });
     const users = [makeUser({ uuid: 'u-1' })];
     const onRefresh = vi.fn();
     const { getByTitle, getByRole } = render(UserManagementTable, { props: { users, onRefresh } });
@@ -373,6 +379,21 @@ describe('lock / unlock: only lock refreshes the list', () => {
 
     await waitFor(() => expect(mockAxios.post).toHaveBeenCalledWith('/admin/users/u-1/unlock'));
     expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('unlocking a DISABLED account also reactivates it and DOES refresh the list', async () => {
+    mockAxios.post.mockResolvedValue({
+      data: { success: true, was_locked: true, was_disabled: true },
+    });
+    const users = [makeUser({ uuid: 'u-1', is_active: false })];
+    const onRefresh = vi.fn();
+    const { getByTitle, getByRole } = render(UserManagementTable, { props: { users, onRefresh } });
+
+    await fireEvent.click(getByTitle('userManagement.unlockAccountFor', { exact: false }));
+    await fireEvent.click(getByRole('button', { name: 'userManagement.unlockAccount' }));
+
+    await waitFor(() => expect(mockAxios.post).toHaveBeenCalledWith('/admin/users/u-1/unlock'));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 });
 

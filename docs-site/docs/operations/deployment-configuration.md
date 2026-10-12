@@ -22,12 +22,14 @@ workers that silently re-download every file. See
 
 ## Deployment types and launch commands
 
+This table is about launch commands and overlays. For what each image can do (local or cloud transcription, where speakers are detected, which cloud models return speakers), see [Deployment Variants](../installation/deployment-variants.md).
+
 | Deployment | Command | Notes |
 |---|---|---|
 | **Dev (default)** | `./opentr.sh start dev` | Vite hot-reload, relaxed auth limits, auto-loads `docker-compose.override.yml`. |
 | **Production** | `./opentr.sh start prod --build` | Pre-built/local images, nginx, strict auth. |
-| **CPU-only** | `./opentr.sh start dev --cpu` | Local transcription on CPU; skips the GPU overlay. |
-| **Lite (cloud ASR)** | `./opentr.sh start dev --lite` | No GPU; transcription via a configured cloud ASR provider. Speaker embeddings (v4/256-d) come from the diar-native CPU-EP sidecar, not an in-process PyAnnote model — the lite image runs no in-process PyAnnote (issue #660), though since #654 `requirements-lite.txt` DOES install `pyannote.audio` and the export toolchain (onnx/onnxscript/onnxslim/onnxconverter-common) so the sidecar can provision its own weights. Add `--with-diar-native`; set `DIAR_NATIVE_MODELS_DIR` only if pointing it at a pre-made export instead of provisioning fresh. v3 (512-d) speaker data is unserviceable under lite until migrated to v4. |
+| **CPU-only** | `./opentr.sh start dev --cpu` | Full image, local transcription on CPU; skips the GPU overlay. Speaker detection is not switched off by this mode: when a user's speaker-detection choice puts it on this server, it runs on the CPU. To skip it, choose Off in Settings (the old `ENABLE_DIARIZATION` variable is gone; see [Environment Variables](../configuration/environment-variables.md)). |
+| **Lite (cloud only)** | `./opentr.sh start dev --lite` | No GPU. Transcription and speaker detection are done by cloud providers you configure; lite has no local Whisper and no local speaker detection (choosing either is refused with a clear message, issue #1228). Voiceprints for cross-file speaker identification are still computed on this server's CPU, by the diar-native sidecar's CPU build (`--with-diar-native`) or, as a fallback, the in-process WeSpeaker model; that is why the lite image still ships `pyannote.audio` and a CPU `torch`. Set `DIAR_NATIVE_MODELS_DIR` only if pointing the sidecar at a pre-made export instead of provisioning fresh. Which image each variant uses and what it can run: [Deployment Variants](../installation/deployment-variants.md). |
 | **GPU scale (dual-GPU)** | `./opentr.sh start dev --gpu-scale` | N parallel workers on `GPU_SCALE_DEVICE_ID`; keeps the default worker too when `GPU_SCALE_DEFAULT_WORKER=1`. |
 | **GPU split** | `./opentr.sh start dev --with-gpu-split` | Transcription and diarization on **separate** GPUs. Needs `ENGINE_GPU_SPLIT=true`. On a production install, set `ENGINE_GPU_SPLIT=true` in `.env` and run `./opentranscribe.sh start` — that single variable is both the app-side routing switch and (as of issue #708) what `opentranscribe.sh` gates the `docker-compose.gpu-split.yml` overlay on; there is no separate `--with-*` flag (`./opentranscribe.sh` has none). |
 | **Native diarization sidecar** | `./opentr.sh start dev --with-diar-native` | Runs `diar-server` (Rust/ONNX) alongside `celery-worker` instead of in-process PyAnnote. **Windows installer excluded** — see `windows-installer/INSTALL-WINDOWS.md`. |
@@ -182,7 +184,7 @@ to `0` to dedicate the default GPU to other work.
 
 ### Split GPU (transcription on one card, diarization on another)
 
-Run the WhisperX transcription stage and the PyAnnote diarization stage on
+Run the WhisperX transcription stage and the local speaker-detection stage on
 **separate** GPUs for higher throughput on a 2+ GPU host:
 
 ```bash

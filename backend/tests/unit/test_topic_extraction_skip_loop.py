@@ -180,10 +180,14 @@ def test_a_recent_topic_extraction_attempt_is_not_re_dispatched(
     from app.utils.task_utils import update_task_status
 
     system_llm(LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="sk-test-not-real")
+    # The sweep is database-wide, so a stack that already holds a completed file without
+    # topics (a dev or review deployment) adds its own dispatches. Measure that first and
+    # assert on the difference this test's file makes, not on an absolute count.
+    _, baseline = _sweep(db_session)
     media_file = _completed_file(db_session, normal_user)
 
     _, first = _sweep(db_session)
-    assert first["topics_dispatched"] == 1, first
+    assert first["topics_dispatched"] == baseline["topics_dispatched"] + 1, (first, baseline)
 
     # The dispatched run records itself and fails, as it would against a
     # provider that is configured but erroring.
@@ -193,7 +197,7 @@ def test_a_recent_topic_extraction_attempt_is_not_re_dispatched(
 
     incomplete, second = _sweep(db_session)
     assert _ours(incomplete, media_file).missing_topics is False
-    assert second["topics_dispatched"] == 0, second
+    assert second["topics_dispatched"] == baseline["topics_dispatched"], (second, baseline)
 
 
 # --------------------------------------------------------------------------- #

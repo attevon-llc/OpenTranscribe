@@ -395,6 +395,29 @@ def _poll_status(
     return status
 
 
+def _processing_rows_when_voiceprints_recorded(
+    api_session: requests.Session, backend_url: str, file_uuid: str, timeout_secs: int = 120
+) -> dict[str, dict]:
+    """The file's ``processing_steps`` by step, once the voiceprint stage has recorded itself.
+
+    Voiceprints are written by a stage that runs after ``completed``, so the row appears a
+    little later; this waits on that row, and returns the last rows seen if it never does so
+    the caller's assertion names what was missing.
+    """
+    import time
+
+    deadline = time.time() + timeout_secs
+    rows: dict[str, dict] = {}
+    while time.time() < deadline:
+        resp = api_session.get(f"{backend_url}/api/files/{file_uuid}", timeout=30)
+        assert resp.status_code == 200, resp.text[:300]
+        rows = {r["step"]: r for r in resp.json()["processing_steps"]}
+        if rows.get("voiceprints", {}).get("status") == "done":
+            return rows
+        time.sleep(3)
+    return rows
+
+
 class TestMockedAsrHappyPath:
     """Upload through the real pipeline against the mock Gladia server."""
 
@@ -411,6 +434,38 @@ class TestMockedAsrHappyPath:
         assert any(DISTINCTIVE_TOKEN in seg["text"] for seg in segments), (
             "canned distinctive token not found in any segment text"
         )
+
+    def test_processing_steps_record_what_each_stage_ran(
+        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+    ):
+        """The file's ``processing_steps`` (#1229) name the provider each stage really used.
+
+        Cloud transcription through the mock Gladia returns its own speakers, so the plan is
+        ``inline_asr``: transcription and speaker detection are both Gladia, in the cloud, and
+        the voiceprints run on this server afterwards (they are recorded by a later stage, so
+        the test waits for that row rather than assuming it is there at ``completed``).
+        """
+        status = _poll_status(api_session, backend_url, uploaded_file)
+        assert status == "completed", f"file did not complete (status={status})"
+
+        rows = _processing_rows_when_voiceprints_recorded(api_session, backend_url, uploaded_file)
+
+        transcription = rows["transcription"]
+        assert transcription["status"] == "done", transcription
+        assert transcription["recorded"] == "full", "a fresh run must be fully recorded"
+        assert transcription["provider"] == "gladia", transcription
+        assert transcription["where"] == "cloud", transcription
+
+        speakers = rows["diarization"]
+        assert speakers["status"] == "done", speakers
+        assert speakers["provider"] == "gladia", speakers
+        assert speakers["where"] == "cloud", speakers
+
+        voiceprints = rows["voiceprints"]
+        assert voiceprints["status"] == "done", (
+            f"voiceprints never recorded within 120s: {voiceprints}"
+        )
+        assert voiceprints["where"] == "server", voiceprints
 
     def test_two_distinct_speakers_via_segments_and_speakers_api(
         self, api_session: requests.Session, backend_url: str, uploaded_file: str

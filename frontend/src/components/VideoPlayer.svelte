@@ -691,31 +691,22 @@
   }
 
   :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-track) {
-    background: var(--border-color) !important;
+    background: var(--slider-track) !important;
   }
 
   :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-track) {
-    background: var(--border-color) !important;
+    background: var(--slider-track) !important;
   }
 
   /* Audio progress bar thumb - blue in light mode, white in dark mode */
   :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
-    background: var(--primary-color) !important;
+    background: var(--slider-player-thumb) !important;
     border: none !important;
   }
 
   :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
-    background: var(--primary-color) !important;
+    background: var(--slider-player-thumb) !important;
     border: none !important;
-  }
-
-  /* Dark mode specific - white thumbs */
-  :global([data-theme='dark'] .plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
-    background: white !important;
-  }
-
-  :global([data-theme='dark'] .plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
-    background: white !important;
   }
 
   /* Audio player progress bar positioning and sizing - AUDIO ONLY */
@@ -733,56 +724,47 @@
 
   /* Make audio progress bar track more prominent */
   :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-track) {
-    height: 6px !important;
-    border-radius: 3px !important;
+    height: var(--slider-track-height) !important;
+    border-radius: var(--slider-track-radius) !important;
   }
 
   :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-track) {
-    height: 6px !important;
-    border-radius: 3px !important;
+    height: var(--slider-track-height) !important;
+    border-radius: var(--slider-track-radius) !important;
   }
 
   /* Make audio progress bar thumb more prominent */
   :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
-    width: 16px !important;
-    height: 16px !important;
+    width: var(--slider-thumb-size) !important;
+    height: var(--slider-thumb-size) !important;
     border-radius: 50% !important;
     cursor: pointer !important;
   }
 
   :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
-    width: 16px !important;
-    height: 16px !important;
+    width: var(--slider-thumb-size) !important;
+    height: var(--slider-thumb-size) !important;
     border-radius: 50% !important;
     cursor: pointer !important;
   }
 
   :global(.plyr--audio .plyr__volume input[type="range"]::-webkit-slider-track) {
-    background: var(--border-color) !important;
+    background: var(--slider-track) !important;
   }
 
   :global(.plyr--audio .plyr__volume input[type="range"]::-moz-range-track) {
-    background: var(--border-color) !important;
+    background: var(--slider-track) !important;
   }
 
   /* Audio volume thumb - blue in light mode, white in dark mode */
   :global(.plyr--audio .plyr__volume input[type="range"]::-webkit-slider-thumb) {
-    background: var(--primary-color) !important;
+    background: var(--slider-player-thumb) !important;
     border: none !important;
   }
 
   :global(.plyr--audio .plyr__volume input[type="range"]::-moz-range-thumb) {
-    background: var(--primary-color) !important;
+    background: var(--slider-player-thumb) !important;
     border: none !important;
-  }
-
-  /* Dark mode specific - white volume thumbs */
-  :global([data-theme='dark'] .plyr--audio .plyr__volume input[type="range"]::-webkit-slider-thumb) {
-    background: white !important;
-  }
-
-  :global([data-theme='dark'] .plyr--audio .plyr__volume input[type="range"]::-moz-range-thumb) {
-    background: white !important;
   }
 
   /* Ensure audio player popups appear above other components */

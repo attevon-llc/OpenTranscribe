@@ -36,6 +36,7 @@ the burst (not the last) — a bounded worst case rather than an unbounded
 
 from __future__ import annotations
 
+import enum
 import logging
 
 from app.core.constants import TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS
@@ -45,19 +46,35 @@ logger = logging.getLogger(__name__)
 _DEBOUNCE_KEY_TEMPLATE = "transcript_reindex_debounce:{file_uuid}"
 
 
-def dispatch_transcript_reindex(
+class ReindexDispatch(enum.Enum):
+    """What one dispatch attempt did (issue #1233).
+
+    ``ALREADY_PENDING`` and ``FAILED`` used to be the same ``False``, so a caller that
+    must report a reindex it could not queue (``speaker_cleanup``) could not tell the
+    debounce window's "the reindex you need is already queued" from "nothing will ever
+    rebuild this file's planes".
+    """
+
+    QUEUED = "queued"
+    ALREADY_PENDING = "already_pending"
+    FAILED = "failed"
+
+
+def queue_transcript_reindex(
     *,
     file_id: int,
     file_uuid: str,
     user_id: int,
     priority: int | None = None,
-) -> bool:
+) -> ReindexDispatch:
     """Queue a debounced full re-index of one file's transcript content.
 
     Safe to call from a request handler or a Celery task after committing a
     mutation. Never raises — a dispatch failure must not turn a successful
-    edit into a failed request; it only means the index stays stale until the
-    next full/maintenance reindex picks it up.
+    edit into a failed request; the caller decides whether ``FAILED`` is worth
+    reporting. A failed publish releases the debounce claim it took, so the next
+    mutation of the file tries again instead of being told for the rest of the window
+    that a reindex nobody queued is already pending.
 
     Args:
         file_id: Internal media file id.
@@ -69,20 +86,22 @@ def dispatch_transcript_reindex(
             priority so a file that already waited out a failure is not queued behind new work.
 
     Returns:
-        True if a re-index was newly queued for this file, False if one was
-        already pending within the debounce window (or dispatch failed).
+        ``QUEUED`` when a re-index was newly queued, ``ALREADY_PENDING`` when one is
+        already queued within the debounce window, ``FAILED`` when none could be.
     """
+    key = _DEBOUNCE_KEY_TEMPLATE.format(file_uuid=file_uuid)
+    claimed = False
     try:
         from app.core.redis import get_redis
         from app.tasks.search_indexing_task import index_transcript_search_task
 
-        key = _DEBOUNCE_KEY_TEMPLATE.format(file_uuid=file_uuid)
-        claimed = get_redis().set(key, "1", nx=True, ex=TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS)
+        redis = get_redis()
+        claimed = bool(redis.set(key, "1", nx=True, ex=TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS))
         if not claimed:
             logger.debug(
                 f"Re-index already pending for file {file_uuid} within the debounce window"
             )
-            return False
+            return ReindexDispatch.ALREADY_PENDING
 
         options: dict[str, int] = {"countdown": TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS}
         if priority is not None:
@@ -95,7 +114,40 @@ def dispatch_transcript_reindex(
             f"Queued debounced re-index for file {file_uuid} "
             f"(fires in {TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS}s)"
         )
-        return True
+        return ReindexDispatch.QUEUED
     except Exception:  # noqa: BLE001 — a dispatch failure must not break the mutation
         logger.exception(f"Could not queue transcript re-index for file {file_uuid}")
-        return False
+        if claimed:
+            _release_claim(key, file_uuid)
+        return ReindexDispatch.FAILED
+
+
+def _release_claim(key: str, file_uuid: str) -> None:
+    """Drop a debounce claim whose publish failed; the key's TTL is the fallback."""
+    try:
+        from app.core.redis import get_redis
+
+        get_redis().delete(key)
+    except Exception:  # noqa: BLE001 — the claim expires on its own TTL
+        logger.exception(f"Could not release the reindex debounce claim for file {file_uuid}")
+
+
+def dispatch_transcript_reindex(
+    *,
+    file_id: int,
+    file_uuid: str,
+    user_id: int,
+    priority: int | None = None,
+) -> bool:
+    """:func:`queue_transcript_reindex` for callers that only need "was one queued now".
+
+    Returns:
+        True if a re-index was newly queued for this file, False if one was
+        already pending within the debounce window or dispatch failed.
+    """
+    return (
+        queue_transcript_reindex(
+            file_id=file_id, file_uuid=file_uuid, user_id=user_id, priority=priority
+        )
+        is ReindexDispatch.QUEUED
+    )

@@ -5,46 +5,49 @@
     "title": "OpenTranscribe — Transcription Pipeline",
     "quality_profile": "showcase",
     "views": [
-      { "id": "happy-path", "label": "Upload to searchable transcript", "focus": ["user", "backend", "dispatch", "preprocess", "asr", "diarize", "postprocess", "index", "notify"], "note": "The full path from an uploaded file to a searchable, speaker-labeled transcript." },
-      { "id": "gpu-work", "label": "GPU-bound work", "focus": ["preprocess", "asr", "diarize"], "note": "ASR and diarization run on Celery's gpu queue; this is the expensive part of the pipeline." },
-      { "id": "post-processing", "label": "Post-processing + delivery", "focus": ["postprocess", "index", "notify"], "note": "Boundary correction, redaction, DB write, search indexing, and the WebSocket notification back to the user." }
+      { "id": "happy-path", "label": "Upload to searchable transcript", "focus": ["user", "backend", "dispatch", "preprocess", "transcribe", "postprocess", "index", "notify"], "note": "Default (local Whisper, Automatic): speakers and voiceprints come out of the transcription task itself." },
+      { "id": "plan", "label": "One decision point", "focus": ["backend", "dispatch", "transcribe", "poststage", "voiceprints"], "note": "dispatch.py resolves pipeline_plan once, refuses blocking issues before queueing, and every stage reads that plan." },
+      { "id": "speakers", "label": "Speaker detection paths", "focus": ["transcribe", "postprocess", "poststage", "voiceprints", "index"], "note": "Speakers inline in the transcribe task, or in a post stage after the transcript is saved. Voiceprints always run here." }
     ]
   },
   "lanes": [
     { "id": "web", "label": "API / Web" },
-    { "id": "pipeline", "label": "Celery Pipeline (gpu/cpu queues)" },
-    { "id": "data", "label": "Data + Search" }
+    { "id": "pipeline", "label": "Celery pipeline (queue chosen by the plan)" },
+    { "id": "speakers", "label": "Speakers (this server or cloud)" }
   ],
   "phases": [
-    { "id": "intake", "label": "Intake", "fromCol": 0, "toCol": 1 },
-    { "id": "gpu", "label": "ASR + diarization", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
-    { "id": "wrapup", "label": "Post-process + deliver", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+    { "id": "intake", "label": "Intake + plan", "fromCol": 0, "toCol": 1 },
+    { "id": "transcribe", "label": "Transcription", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "speakers", "label": "Speakers + delivery", "fromCol": 4, "toCol": 5, "variant": "dashed" }
   ],
-  "mainPath": ["user", "backend", "dispatch", "preprocess", "asr", "diarize", "postprocess", "index"],
+  "mainPath": ["user", "backend", "dispatch", "preprocess", "transcribe", "postprocess", "index"],
   "nodes": [
     { "id": "user", "lane": "web", "col": 0, "type": "external", "label": "User", "sublabel": "uploads media", "width": 132 },
     { "id": "backend", "lane": "web", "col": 1, "type": "backend", "label": "FastAPI", "sublabel": "stores to MinIO", "width": 132 },
-    { "id": "dispatch", "lane": "pipeline", "col": 1, "type": "messagebus", "label": "Celery Dispatch", "sublabel": "gpu queue", "width": 132 },
-    { "id": "preprocess", "lane": "pipeline", "col": 2, "type": "backend", "label": "Preprocess", "sublabel": "extract/normalize audio", "width": 132 },
-    { "id": "asr", "lane": "pipeline", "col": 3, "type": "backend", "label": "ASR", "sublabel": "WhisperX (local/cloud)", "width": 132 },
-    { "id": "diarize", "lane": "pipeline", "col": 4, "type": "backend", "label": "Diarization", "sublabel": "PyAnnote / diar-native", "width": 132 },
-    { "id": "postprocess", "lane": "pipeline", "col": 5, "type": "backend", "label": "Post-process", "sublabel": "boundary fix, redact, write DB", "tag": "Postgres", "width": 170 },
-    { "id": "index", "lane": "data", "col": 5, "type": "database", "label": "Index", "sublabel": "OpenSearch hybrid index", "width": 132 },
+    { "id": "dispatch", "lane": "pipeline", "col": 1, "type": "messagebus", "label": "Plan + dispatch", "sublabel": "pipeline_plan", "tag": "refuses invalid", "width": 132 },
+    { "id": "preprocess", "lane": "pipeline", "col": 2, "type": "backend", "label": "Preprocess", "sublabel": "cpu: extract audio", "width": 132 },
+    { "id": "transcribe", "lane": "pipeline", "col": 3, "type": "backend", "label": "Transcribe", "sublabel": "local or cloud ASR", "tag": "inline speakers", "width": 132 },
+    { "id": "postprocess", "lane": "pipeline", "col": 4, "type": "backend", "label": "Postprocess", "sublabel": "hand off, enrich", "width": 132 },
+    { "id": "poststage", "lane": "speakers", "col": 4, "type": "backend", "label": "Speaker post stage", "sublabel": "rediarize_task", "tag": "assign_speakers", "width": 132 },
+    { "id": "voiceprints", "lane": "speakers", "col": 5, "type": "backend", "label": "Voiceprints", "sublabel": "always this server", "width": 132 },
+    { "id": "index", "lane": "pipeline", "col": 5, "type": "database", "label": "Index", "sublabel": "OpenSearch", "width": 132 },
     { "id": "notify", "lane": "web", "col": 5, "type": "messagebus", "label": "Notify", "sublabel": "WebSocket to browser", "width": 132 }
   ],
   "edges": [
     { "id": "upload", "from": "user", "to": "backend", "label": "upload", "variant": "default" },
-    { "id": "enqueue", "from": "backend", "to": "dispatch", "label": "enqueue", "variant": "emphasis" },
+    { "id": "enqueue", "from": "backend", "to": "dispatch", "label": "plan once", "variant": "emphasis" },
     { "id": "start-preprocess", "from": "dispatch", "to": "preprocess", "variant": "default" },
-    { "id": "run-asr", "from": "preprocess", "to": "asr", "variant": "emphasis" },
-    { "id": "run-diarize", "from": "asr", "to": "diarize", "label": "speaker turns", "variant": "emphasis" },
-    { "id": "run-postprocess", "from": "diarize", "to": "postprocess", "variant": "emphasis" },
+    { "id": "run-transcribe", "from": "preprocess", "to": "transcribe", "label": "plan's queue", "variant": "emphasis" },
+    { "id": "run-postprocess", "from": "transcribe", "to": "postprocess", "label": "transcript saved", "variant": "emphasis" },
+    { "id": "post-stage", "from": "postprocess", "to": "poststage", "label": "post_stage_*", "variant": "dashed" },
+    { "id": "stage-voiceprints", "from": "poststage", "to": "voiceprints", "variant": "dashed" },
+    { "id": "post-voiceprints", "from": "postprocess", "to": "voiceprints", "label": "embedding stage", "variant": "dashed" },
     { "id": "index-transcript", "from": "postprocess", "to": "index", "label": "index for search", "variant": "dashed" },
     { "id": "notify-user", "from": "postprocess", "to": "notify", "label": "transcript ready", "variant": "dashed" }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Async by design", "items": ["Upload returns immediately; all heavy work runs on Celery", "gpu queue: ASR + diarization; cpu/nlp queues: redaction, facts, embeddings"] },
-    { "dot": "rose", "title": "Correctness steps", "items": ["Boundary correction (smoother) trims speaker-turn overlap, ~-32% WSER", "Redaction runs before the transcript is considered final"] },
-    { "dot": "emerald", "title": "Delivery", "items": ["OpenSearch gets the searchable copy; Postgres stays system of record", "Frontend learns completion via WebSocket, not polling"] }
+    { "dot": "cyan", "title": "One plan per run", "items": ["services/pipeline_plan.py decides engine, queue, merge and voiceprint step for every transcription x speaker-detection combination", "tasks/transcription/dispatch.py _plan_for_dispatch refuses a blocking issue (fixed sentence) before any task is published"] },
+    { "dot": "rose", "title": "Where speakers come from", "items": ["Inline: local engine in the gpu task, the cloud vendor's own labels, or a cloud diarizer alongside cloud ASR", "Post stage (rediarize_task): this server on gpu, or pyannote.ai / another vendor on cloud-asr; finalize_segments re-splits", "One merge: assign_speakers, word or segment granularity; models with no timestamps are refused, no forced alignment"] },
+    { "dot": "emerald", "title": "Voiceprints never leave", "items": ["inline_native: vectors from the local engine, matched in postprocess", "embedding_stage: services/voiceprint_extractor.py on the cpu queue after any other detector", "Each stage records what ran in media_file.processing_provenance (file_provenance.record_stage)"] }
   ]
 }

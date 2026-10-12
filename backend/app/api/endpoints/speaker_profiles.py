@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.deps_context import scope_to_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import MAX_AVATAR_SIZE
@@ -27,6 +28,7 @@ from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
+from app.services.permission_service import org_scope_pred
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
@@ -52,10 +54,14 @@ def list_speaker_profiles(
 ):
     """List the caller's speaker profiles in the active tenant, including shared ones."""
     try:
-        # Admins see all profiles; regular users see own + shared
-        is_admin = current_user.is_admin
-        if is_admin:
+        # A caller who sees all in scope gets every profile of the tenant; regular users
+        # see own + shared
+        sees_all = ctx.bypass.sees_all_in_scope
+        if sees_all:
             query = db.query(SpeakerProfile)
+            tenant_pred = org_scope_pred(SpeakerProfile.organization_id, ctx.org_id)
+            if tenant_pred is not None:
+                query = query.filter(tenant_pred)
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
         else:
             accessible = PermissionService.get_accessible_profile_ids_with_source(
@@ -87,8 +93,8 @@ def list_speaker_profiles(
 
         profiles = query.all()
 
-        # For admin, compute owned_ids to mark is_shared correctly
-        if is_admin:
+        # For a see-all caller, compute owned_ids to mark is_shared correctly
+        if sees_all:
             owned_ids = {
                 row[0]
                 for row in db.query(SpeakerProfile.id)
@@ -171,7 +177,9 @@ def list_speaker_profiles(
             avatar_url = None
             if profile.avatar_path:
                 try:
-                    avatar_url = get_file_url(profile.avatar_path, expires=3600)
+                    avatar_url = get_file_url(
+                        profile.avatar_path, expires=ctx.bypass.presign_ttl(3600)
+                    )
                 except Exception:
                     logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
 
@@ -218,7 +226,9 @@ def list_speaker_profiles(
         raise ErrorHandler.internal_error() from e
 
 
-@router.post("/profiles", response_model=dict[str, Any])
+@router.post(
+    "/profiles", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 def create_speaker_profile(
     name: str,
     description: str | None = None,
@@ -366,7 +376,8 @@ def update_speaker_profile(
                 db,
                 int(profile_id),
                 name,
-                restrict_to_user_id=None if current_user.is_admin else current_user.id,
+                restrict_to_user_id=None if ctx.bypass.sees_all_in_scope else current_user.id,
+                organization_id=profile.organization_id,
             )
 
         if description is not None:
@@ -470,6 +481,7 @@ def assign_speaker_to_profile(
             organization_id=ctx.org_id,
             min_permission="editor",
             forbidden_detail="Not authorized to access this speaker",
+            bypass=ctx.bypass,
         )
         speaker_id = speaker.id
         # Read before the assignment writes over it — the task's re-score gate
@@ -693,6 +705,7 @@ def get_speaker_profile_suggestions(
             current_user,
             organization_id=ctx.org_id,
             forbidden_detail="Not authorized to access this speaker",
+            bypass=ctx.bypass,
         )
         speaker_id = speaker.id
 
@@ -768,7 +781,7 @@ def get_speaker_profile_occurrences(
         occurrences = matching_service.find_speaker_occurrences(
             int(profile_id),
             current_user.id,
-            include_quarantined=current_user.is_admin,
+            include_quarantined=ctx.bypass.user_is_admin,
             organization_id=ctx.org_id,
         )
 
@@ -788,18 +801,53 @@ def delete_speaker_profile(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete a speaker profile."""
+    """Delete a speaker profile, taking its name and voice back from everything it reached.
+
+    A linked speaker carries the profile's name as its display name (the invariant
+    ``services/speaker_profile_rename`` documents), so unlinking alone left every member
+    still labelled as the deleted identity. ``speaker_cleanup.unlink_from_profile`` — the
+    same rule a cluster unassign applies (#1233) — clears a display name or suggestion
+    that IS the profile's name (the label falls back to the diarizer label, and the chunk
+    plane is told), and a cluster named after the profile loses that label.
+    The profile's embedding is erased and verified, and every cluster that held a member
+    or was promoted to the profile is rebuilt by ``speaker_cleanup`` — an emptied
+    promoted cluster is deleted with its centroid instead of being left listed with
+    nobody in it (issue #1214). A display name the user set to something else survives.
+    """
+    from app.models.media import SpeakerCluster
+    from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
+    from app.services.speaker_cleanup import capture_speaker_impact
+    from app.services.speaker_cleanup import raise_if_incomplete
+    from app.services.speaker_cleanup import reconcile_speaker_impact
+    from app.services.speaker_cleanup import unlink_from_profile
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
+
+    tracker = SpeakerRenameTracker()
     try:
         profile = require_profile_in_scope(
             db, profile_uuid, current_user, organization_id=ctx.org_id
         )
         profile_id = profile.id
+        profile_name = str(profile.name)
 
-        # Unassign all speakers from this profile
         speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
-        for speaker in speakers:
-            speaker.profile_id = None  # type: ignore[assignment]
-            speaker.verified = False  # type: ignore[assignment]
+        impact = capture_speaker_impact(
+            db, [int(s.id) for s in speakers], removed=False, reindex=False
+        )
+        impact.owner_ids.add(int(profile.user_id))
+        promoted = (
+            db.query(SpeakerCluster)
+            .filter(SpeakerCluster.promoted_to_profile_id == profile_id)
+            .all()
+        )
+        for cluster in promoted:
+            impact.cluster_uuids.add(str(cluster.uuid))
+            impact.owner_ids.add(int(cluster.user_id))
+            if cluster.label == profile_name:
+                cluster.label = None  # type: ignore[assignment]
+
+        # The one unlink rule, shared with a cluster unassign (#1233).
+        impact.relabel_speaker_ids |= unlink_from_profile(db, speakers, int(profile_id), tracker)
 
         # Delete avatar from MinIO if exists
         if profile.avatar_path:
@@ -810,28 +858,20 @@ def delete_speaker_profile(
             except Exception:
                 logger.warning(f"Failed to delete avatar for profile {profile.uuid}")
 
-        # Capture UUID before DB delete
-        profile_uuid_str = str(profile.uuid)
-
-        # Delete the profile
+        impact.erase_profile_uuids.add(str(profile.uuid))
         db.delete(profile)
         db.commit()
+        tracker.flush(db)
 
-        # Remove profile embedding from all OpenSearch indices (non-fatal)
-        try:
-            from app.services.opensearch_service import remove_profile_embedding
-
-            remove_profile_embedding(profile_uuid_str)
-        except Exception as e:
-            logger.warning(f"Failed to remove profile {profile_uuid_str} from OpenSearch: {e}")
-
+        raise_if_incomplete(reconcile_speaker_impact(db, impact))
         return None
 
-    except HTTPException:
+    except (HTTPException, SpeakerCleanupIncompleteError):
         raise
     except Exception as e:
         logger.exception(f"Error deleting speaker profile: {e}")
         db.rollback()
+        tracker.discard()
         raise ErrorHandler.internal_error() from e
 
 
@@ -1054,7 +1094,11 @@ def list_speaker_collections(
         raise ErrorHandler.internal_error() from e
 
 
-@router.post("/collections", response_model=dict[str, Any])
+@router.post(
+    "/collections",
+    response_model=dict[str, Any],
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def create_speaker_collection(
     name: str,
     description: str | None = None,

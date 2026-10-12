@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
  * `groupLanguages` is the real logic in this module — a partition + two
- * independent sorts. `getSpeakerBehaviorLabel`/`Description` are simple maps
- * whose only branch worth testing is the raw-value fallback. The CRUD
+ * independent sorts. The CRUD
  * functions get one request-shape assertion each.
  */
 const mockInstance = vi.hoisted(() => ({
@@ -18,8 +17,11 @@ vi.mock('$lib/axios', async () => {
 });
 
 import {
-  getSpeakerBehaviorDescription,
-  getSpeakerBehaviorLabel,
+  DEFAULT_TRANSCRIPTION_SETTINGS,
+  isLightweightModel,
+  speakerPrefill,
+  speakerSubmitRange,
+  type TranscriptionSystemDefaults,
   getTranscriptionSettings,
   getTranscriptionSystemDefaults,
   groupLanguages,
@@ -70,32 +72,6 @@ describe('groupLanguages', () => {
   });
 });
 
-describe('getSpeakerBehaviorLabel', () => {
-  it('returns the known label for each valid behavior', () => {
-    expect(getSpeakerBehaviorLabel('always_prompt')).toBe('Always show speaker settings');
-    expect(getSpeakerBehaviorLabel('use_defaults')).toBe('Use system defaults');
-    expect(getSpeakerBehaviorLabel('use_custom')).toBe('Use my saved settings');
-  });
-
-  it('falls back to echoing the raw value for an unrecognized behavior', () => {
-    // Cast past the union to simulate a server value the client doesn't know about.
-    expect(getSpeakerBehaviorLabel('unknown_behavior' as never)).toBe('unknown_behavior');
-  });
-});
-
-describe('getSpeakerBehaviorDescription', () => {
-  it('returns the known description for each valid behavior', () => {
-    expect(getSpeakerBehaviorDescription('use_defaults')).toBe(
-      'Skip settings and use system MIN/MAX_SPEAKERS values'
-    );
-  });
-
-  it('falls back to an empty string for an unrecognized behavior, not the raw value', () => {
-    // Unlike getSpeakerBehaviorLabel, the description fallback is '' rather than the raw value.
-    expect(getSpeakerBehaviorDescription('unknown_behavior' as never)).toBe('');
-  });
-});
-
 describe('CRUD requests', () => {
   it('gets transcription settings from the user-settings endpoint', async () => {
     mockInstance.get.mockResolvedValue({ data: { min_speakers: 1 } });
@@ -120,10 +96,73 @@ describe('CRUD requests', () => {
     expect(result).toEqual(resetResponse);
   });
 
+  it('scopes a reset to one field group through the group query param', async () => {
+    mockInstance.delete.mockResolvedValue({ data: { message: 'reset' } });
+    const result = await resetTranscriptionSettings('speakers');
+    expect(result).toEqual({ message: 'reset' });
+    expect(mockInstance.delete).toHaveBeenCalledWith('/user-settings/transcription', {
+      params: { group: 'speakers' },
+    });
+  });
+
   it('gets system defaults from the system-defaults endpoint', async () => {
     mockInstance.get.mockResolvedValue({ data: { min_speakers: 1, max_speakers: 20 } });
     const result = await getTranscriptionSystemDefaults();
     expect(mockInstance.get).toHaveBeenCalledWith('/user-settings/transcription/system-defaults');
     expect(result).toEqual({ min_speakers: 1, max_speakers: 20 });
+  });
+});
+
+describe('speakerPrefill / speakerSubmitRange (#1198)', () => {
+  const base = { ...DEFAULT_TRANSCRIPTION_SETTINGS, min_speakers: 3, max_speakers: 5 };
+  const system = { min_speakers: 1, max_speakers: 20 } as TranscriptionSystemDefaults;
+
+  it('starts from the saved range unless the user chose "use system defaults"', () => {
+    expect(speakerPrefill({ ...base, speaker_prompt_behavior: 'always_prompt' })).toEqual({
+      minSpeakers: 3,
+      maxSpeakers: 5,
+    });
+    expect(speakerPrefill({ ...base, speaker_prompt_behavior: 'use_custom' })).toEqual({
+      minSpeakers: 3,
+      maxSpeakers: 5,
+    });
+    expect(speakerPrefill({ ...base, speaker_prompt_behavior: 'use_defaults' })).toEqual({
+      minSpeakers: null,
+      maxSpeakers: null,
+    });
+    expect(speakerPrefill(null)).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+
+  it('sends the SYSTEM range for blank fields under "use system defaults"', () => {
+    const settings = { ...base, speaker_prompt_behavior: 'use_defaults' as const };
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, null)
+    ).toEqual({ minSpeakers: 1, maxSpeakers: 20 });
+    // A value the user typed still wins.
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: 2, maxSpeakers: null }, null)
+    ).toEqual({ minSpeakers: 2, maxSpeakers: 20 });
+  });
+
+  it('injects nothing when a fixed count replaces the range', () => {
+    const settings = { ...base, speaker_prompt_behavior: 'use_defaults' as const };
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, 4)
+    ).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+
+  it('leaves blanks blank elsewhere, so the server applies the saved range', () => {
+    const settings = { ...base, speaker_prompt_behavior: 'always_prompt' as const };
+    expect(
+      speakerSubmitRange(settings, system, { minSpeakers: null, maxSpeakers: null }, null)
+    ).toEqual({ minSpeakers: null, maxSpeakers: null });
+  });
+});
+
+describe('isLightweightModel', () => {
+  it('recognises the models the server routes to the CPU worker', () => {
+    expect(['tiny', 'tiny.en', 'base', 'base.en'].every(isLightweightModel)).toBe(true);
+    expect(isLightweightModel('large-v3-turbo')).toBe(false);
+    expect(isLightweightModel(null)).toBe(false);
   });
 });

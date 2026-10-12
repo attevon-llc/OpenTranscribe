@@ -111,7 +111,7 @@ def test_the_two_redis_fixtures_go_through_the_shared_helper():
     ):
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert "run_container(" in text, f"{rel} no longer uses the shared container starter"
-        assert "stop_container(" in text, f"{rel} no longer uses the shared teardown"
+        assert "remove_container(" in text, f"{rel} no longer uses the shared teardown"
 
 
 # --------------------------------------------------------- the retry must actually retry
@@ -140,6 +140,30 @@ def test_run_container_retries_before_giving_up(monkeypatch: pytest.MonkeyPatch)
     result = docker_ops.run_container(["run", "-d", "redis:7-alpine"])
     assert len(calls) == 2, f"expected one retry after a timeout, got {len(calls)} attempt(s)"
     assert result.stdout == "ok"
+
+
+def test_run_container_labels_every_container_it_starts(monkeypatch: pytest.MonkeyPatch):
+    """A container whose teardown never ran (SIGKILL, a hung retry) must still be findable.
+
+    The test-artifact sweep keys on this label; a throwaway Redis started without it is
+    indistinguishable from an unrelated project's container on this shared daemon.
+    """
+    from tests import docker_ops
+
+    seen: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "ok", "")
+
+    monkeypatch.setattr(docker_ops.subprocess, "run", fake_run)
+
+    docker_ops.run_container(["run", "-d", "--name", "x", "redis:7-alpine"])
+    argv = seen[0]
+    assert argv[:2] == ["docker", "run"], argv
+    labels = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--label"]
+    assert docker_ops.TEST_ARTIFACT_LABEL in labels, f"container started unlabelled: {argv}"
+    assert argv[-1] == "redis:7-alpine", f"the label must not displace the image: {argv}"
 
 
 def test_run_container_raises_with_every_attempt_diagnosed(monkeypatch: pytest.MonkeyPatch):

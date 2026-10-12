@@ -1,0 +1,280 @@
+{
+  "licence_note": "Metrics only. No question text, reference answers, app answer prose, or citation snippets are recorded here — see the module docstring of tests.eval.harness.probe_metrics (issue #72).",
+  "notes": [],
+  "rows": [
+    {
+      "category": "single_general",
+      "chunks_used": 15,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "gen-000-TS3005a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general",
+      "chunks_used": 17,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "gen-001-TS3005b",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general",
+      "chunks_used": 17,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "gen-002-TS3005d",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "gen-003-ES2002a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general",
+      "chunks_used": 16,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "gen-004-TS3005c",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 45,
+      "coverage_ratio": 0.75,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 3,
+      "query_id": "multi-000-TS3005-decisions",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 40,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "neg-000-absent-topic",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 39,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "neg-001-absent-speaker",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 33,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "neg-002-absent-topic",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 35,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "neg-003-absent-speaker",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 17,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-000-TS3005d",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-001-TS3005a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 13,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-002-ES2002a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-003-TS3005a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "spec-004-ES2002a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-005-TS3005d",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-006-TS3005c",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-007-ES2002a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 15,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-008-TS3005b",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 12,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "spec-009-TS3005a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    }
+  ],
+  "run_name": "523-ctxexp",
+  "schema_version": 1,
+  "summary": {
+    "multi_file": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.75,
+      "min_coverage_ratio": 0.75,
+      "queries": 1
+    },
+    "negative_control": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.0,
+      "min_coverage_ratio": 0.0,
+      "queries": 4
+    },
+    "single_general": {
+      "errored": 0,
+      "mean_coverage_ratio": 1.0,
+      "min_coverage_ratio": 1.0,
+      "queries": 5
+    },
+    "single_specific": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.9,
+      "min_coverage_ratio": 0.0,
+      "queries": 10
+    }
+  },
+  "target": {
+    "host": "localhost",
+    "llm_model": "gemma-4-e4b",
+    "llm_provider": "vllm",
+    "port": 5874
+  }
+}

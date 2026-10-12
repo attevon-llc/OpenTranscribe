@@ -85,7 +85,7 @@ WHISPER_MODEL=large-v3-turbo
 
 ### Hybrid Mode {/* #hybrid-mode */}
 
-For systems where the GPU cannot fit the full transcription model, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while diarization stays on the NVIDIA GPU. This requires only ~1.3 GB VRAM.
+For systems where the GPU cannot fit the full transcription model, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while speaker detection stays on the NVIDIA GPU. This requires only ~1.3 GB VRAM (measured for the in-process PyAnnote engine).
 
 **Auto-activation thresholds** (minimum batch=2 VRAM peak vs. 80% of GPU VRAM):
 
@@ -96,8 +96,10 @@ For systems where the GPU cannot fit the full transcription model, OpenTranscrib
 | small | 2,933 MB | ~3.7 GB |
 
 macOS (Apple Silicon) is **not** a hybrid-mode platform: Docker Desktop has no Metal/GPU
-passthrough into the Linux VM, so a container there has no MPS device to place diarization on.
-Use the `--lite` (CPU-only) image; both stages run on CPU. The MPS branch in
+passthrough into the Linux VM, so a container there has no MPS device to place speaker detection on.
+The image built for Apple Silicon is the `--lite` image, which runs no local transcription and no
+local speaker detection: both go to cloud providers (see
+[Deployment Variants](../installation/deployment-variants.md)). The MPS branch in
 `HardwareConfig._detect_optimal_device` gates on `platform.system() == "darwin"`, which is never
 true inside the Linux container every install path runs — see
 `backend/app/transcription/CLAUDE.md`.
@@ -477,6 +479,8 @@ All benchmarks use a 3.3-hour podcast (11,893s) on an NVIDIA RTX A6000 (49 GB).
 | Legacy WhisperX + alignment | 706s | 75s | 194s | 10.2s |
 | WhisperX batched, no alignment | 304s | 76s | 198s | 0.04s |
 | Native pipeline (batch_size=32, beam=5) | **332s** | **105s** | **192s** | **0.5s** |
+
+The "alignment" rows are historical comparisons. The shipped pipeline runs no forced alignment and no wav2vec2 alignment model: local word timestamps come from Whisper's cross-attention (DTW).
 
 ### Quality Comparison
 

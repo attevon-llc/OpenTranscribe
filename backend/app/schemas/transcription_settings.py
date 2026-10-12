@@ -6,6 +6,7 @@ preferences including speaker detection, prompt behavior, and garbage cleanup se
 """
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -59,9 +60,12 @@ class TranscriptionSettings(BaseModel):
     )
     garbage_cleanup_threshold: int = Field(
         default=DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
-        ge=0,
-        le=100,
-        description="Confidence threshold (0-100) below which segments are flagged as garbage",
+        ge=20,
+        le=200,
+        description=(
+            "Maximum word length in characters (20-200); longer unbroken tokens are "
+            "replaced with [background noise]. Unset inherits the admin default."
+        ),
     )
     source_language: str = Field(
         default=DEFAULT_SOURCE_LANGUAGE,
@@ -115,11 +119,17 @@ class TranscriptionSettings(BaseModel):
     diarization_source: str = Field(
         default=DEFAULT_DIARIZATION_SOURCE,
         description=(
-            "Diarization source: 'provider' (use ASR provider's diarization), "
-            "'local' (always use local PyAnnote on GPU), "
+            "Diarization source: 'provider' (Automatic: the transcription provider's "
+            "speakers, or this server when it returns text only), "
+            "'local' (this server's engine), "
             "'pyannote' (pyannote.ai cloud diarization), "
-            "'off' (no diarization)"
+            "'asr_config' (another saved provider's speaker detection, named by "
+            "diarization_asr_config_uuid), 'off' (no diarization)"
         ),
+    )
+    diarization_asr_config_uuid: UUID | None = Field(
+        default=None,
+        description="The saved ASR configuration used for speakers when the source is asr_config",
     )
 
     class Config:
@@ -173,9 +183,12 @@ class TranscriptionSettingsUpdate(BaseModel):
     )
     garbage_cleanup_threshold: int | None = Field(
         default=None,
-        ge=0,
-        le=100,
-        description="Confidence threshold (0-100) below which segments are flagged as garbage",
+        ge=20,
+        le=200,
+        description=(
+            "Maximum word length in characters (20-200); longer unbroken tokens are "
+            "replaced with [background noise]. Unset inherits the admin default."
+        ),
     )
     source_language: str | None = Field(
         default=None,
@@ -212,7 +225,11 @@ class TranscriptionSettingsUpdate(BaseModel):
     # Diarization control
     diarization_source: str | None = Field(
         default=None,
-        description="Diarization source: 'provider', 'local', 'pyannote', or 'off'",
+        description="Diarization source: 'provider', 'local', 'pyannote', 'asr_config' or 'off'",
+    )
+    diarization_asr_config_uuid: UUID | None = Field(
+        default=None,
+        description="The saved ASR configuration to use for speakers with source asr_config",
     )
 
     class Config:

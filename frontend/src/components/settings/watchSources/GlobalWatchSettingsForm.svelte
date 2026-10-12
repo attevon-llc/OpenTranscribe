@@ -15,7 +15,7 @@
   const dispatch = createEventDispatcher<{ save: void }>();
 </script>
 
-<div class="section-head admin-section">
+<div class="section-head">
   <h4>{$t('settings.watchSources.globalHeading')}</h4>
 </div>
 <div class="global-settings">
@@ -75,9 +75,11 @@
       </div>
     </div>
   {/if}
-  <button class="btn btn-primary" on:click={() => dispatch('save')} disabled={saving}>
-    {saving ? $t('common.saving') : $t('common.save')}
-  </button>
+  <div class="form-actions">
+    <button class="btn btn-primary" on:click={() => dispatch('save')} disabled={saving}>
+      {saving ? $t('common.saving') : $t('common.save')}
+    </button>
+  </div>
 </div>
 
 <style>
@@ -90,10 +92,11 @@
   .section-head h4 {
     margin: 0;
   }
-  .admin-section {
-    margin-top: 28px;
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.5rem;
     border-top: 1px solid var(--border-color);
-    padding-top: 16px;
   }
   .global-settings,
   .form-group {

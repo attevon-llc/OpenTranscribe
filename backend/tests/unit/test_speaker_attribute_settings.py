@@ -26,6 +26,7 @@ class TestSpeakerAttributeSettings:
             "gender_detection_enabled": True,
             "age_detection_enabled": True,
             "show_attributes_on_cards": True,
+            "auto_llm_speaker_identification": True,
         }
 
     def test_explicit_values_override_defaults(self):
@@ -53,6 +54,7 @@ class TestSpeakerAttributeSettingsUpdate:
             "gender_detection_enabled": None,
             "age_detection_enabled": None,
             "show_attributes_on_cards": None,
+            "auto_llm_speaker_identification": None,
         }
 
     def test_setting_a_single_field_leaves_the_others_none(self):
@@ -83,6 +85,7 @@ class TestSpeakerAttributeSystemDefaults:
             "gender_detection_enabled",
             "age_detection_enabled",
             "show_attributes_on_cards",
+            "auto_llm_speaker_identification",
         }
 
     def test_constructs_when_all_fields_are_supplied(self):
@@ -91,12 +94,14 @@ class TestSpeakerAttributeSystemDefaults:
             gender_detection_enabled=False,
             age_detection_enabled=True,
             show_attributes_on_cards=False,
+            auto_llm_speaker_identification=True,
         )
         assert defaults.model_dump() == {
             "detection_enabled": True,
             "gender_detection_enabled": False,
             "age_detection_enabled": True,
             "show_attributes_on_cards": False,
+            "auto_llm_speaker_identification": True,
         }
 
     def test_missing_a_single_field_still_raises(self):
@@ -105,6 +110,7 @@ class TestSpeakerAttributeSystemDefaults:
                 detection_enabled=True,
                 gender_detection_enabled=True,
                 age_detection_enabled=True,
+                auto_llm_speaker_identification=True,
                 # show_attributes_on_cards omitted
             )
         missing = {err["loc"][0] for err in excinfo.value.errors()}

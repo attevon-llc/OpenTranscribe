@@ -40,6 +40,14 @@ export interface CapabilitiesState {
    * today's behaviour (fallback allowed).
    */
   apiMediatedUploadEnabled?: boolean;
+  /**
+   * Whether this deployment is multi-tenant (issue #1122). **Fail-closed**, unlike the
+   * rest of this store: `'multi'`/`'single'` only when the server said exactly that;
+   * `undefined` before the fetch, on a failed fetch and on an older backend. Support-access
+   * UI renders only for `'multi'`, and must not be gated through `isCapabilityEnabled`
+   * (fail-open), which would show it on a community install whose fetch failed.
+   */
+  tenancyMode?: 'single' | 'multi';
 }
 
 const COMMUNITY_DEFAULTS: CapabilitiesState = {
@@ -102,6 +110,10 @@ export async function loadCapabilities(): Promise<void> {
       maxUploadBytes:
         rawMaxUpload === null ? null : typeof rawMaxUpload === 'number' ? rawMaxUpload : undefined,
       apiMediatedUploadEnabled: response.data?.api_mediated_upload_enabled !== false,
+      tenancyMode:
+        response.data?.tenancy_mode === 'multi' || response.data?.tenancy_mode === 'single'
+          ? response.data.tenancy_mode
+          : undefined,
     });
   } catch {
     // Fail-open for feature visibility (community defaults, everything shown), but NOT

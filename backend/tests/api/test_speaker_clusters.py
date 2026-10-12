@@ -28,11 +28,17 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
+
+# These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach
+# as a failure. CI has no OpenSearch, so stand the stores in with the recorders; the live
+# behaviour is covered by test_deletion_residue_live.
+pytestmark = pytest.mark.usefixtures("speaker_os_seams")
 
 PREFIX = "/api/speaker-clusters"
 
@@ -96,9 +102,12 @@ def test_list_clusters_shows_own(client, user_token_headers, normal_user, db_ses
 
 
 def test_list_clusters_excludes_other_users(
-    client, other_user_auth_headers, normal_user, db_session
+    client, user_token_headers, other_user_auth_headers, normal_user, db_session
 ):
-    cluster = _make_cluster(db_session, normal_user)
+    # Two members, so the cluster is listable for its owner and the exclusion is a real one.
+    cluster = _make_cluster(db_session, normal_user, member_count=2)
+    mine = client.get(PREFIX, headers=user_token_headers)
+    assert str(cluster.uuid) in {c["uuid"] for c in mine.json()["items"]}
     resp = client.get(PREFIX, headers=other_user_auth_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert str(cluster.uuid) not in {c["uuid"] for c in resp.json()["items"]}
@@ -399,3 +408,25 @@ def test_media_preview_malformed_uuid_404(client, user_token_headers):
     resp = client.get(f"{PREFIX}/speakers/not-a-uuid/media-preview", headers=user_token_headers)
     assert resp.status_code == status.HTTP_404_NOT_FOUND
     assert resp.json()["detail"] == "Speaker not found"
+
+
+def test_list_clusters_shows_groups_not_lone_unlabeled_speakers(
+    client, user_token_headers, normal_user, db_session
+):
+    """The tab lists GROUPS: a pair, a named singleton and a promoted singleton, not a lone speaker.
+
+    Upload-time clustering keeps a one-speaker cluster per unmatched speaker; Re-cluster All keeps
+    only groups of two or more. Listing the singletons made the tab fill after an upload and empty
+    after a recluster (#1192). Those speakers are still reviewed in the inbox.
+    """
+    pair = _make_cluster(db_session, normal_user, member_count=2)
+    named = _make_cluster(db_session, normal_user, label="Alice", member_count=1)
+    lone = _make_cluster(db_session, normal_user, member_count=1)
+
+    body = client.get(PREFIX, headers=user_token_headers).json()
+    listed = {c["uuid"] for c in body["items"]}
+
+    assert str(pair.uuid) in listed
+    assert str(named.uuid) in listed
+    assert str(lone.uuid) not in listed
+    assert body["total"] == len(body["items"])

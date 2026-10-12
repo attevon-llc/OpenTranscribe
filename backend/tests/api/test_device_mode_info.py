@@ -16,7 +16,6 @@ from app.api.endpoints.system import _device_mode_info
 def _clean_env(monkeypatch):
     monkeypatch.delenv("FORCE_CPU_MODE", raising=False)
     monkeypatch.setenv("WHISPER_MODEL", "base")
-    monkeypatch.setenv("ENABLE_DIARIZATION", "false")
 
 
 def test_gpu_available_no_force_returns_cuda():
@@ -74,11 +73,10 @@ def test_loading_state_treated_as_gpu_to_avoid_banner_flash():
     assert out["force_cpu_mode"] is False
 
 
-def test_diarization_flag_parsed(monkeypatch):
-    monkeypatch.setenv("ENABLE_DIARIZATION", "true")
-    out = _device_mode_info([{"available": True}])
-    assert out["diarization_enabled"] is True
-
-    monkeypatch.setenv("ENABLE_DIARIZATION", "FALSE")
-    out = _device_mode_info([{"available": True}])
-    assert out["diarization_enabled"] is False
+def test_reports_no_diarization_field_whatever_the_env_says(monkeypatch):
+    """ENABLE_DIARIZATION controls nothing (each run's PipelinePlan decides), so
+    the endpoint must not present it as if it did."""
+    for value in ("true", "false"):
+        monkeypatch.setenv("ENABLE_DIARIZATION", value)
+        out = _device_mode_info([{"available": True}])
+        assert "diarization_enabled" not in out

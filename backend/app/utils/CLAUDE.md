@@ -34,8 +34,10 @@ so keep heavy imports lazy.
   Linux and Python 3.14 both say `audio/vnd.wave`, and browsers won't play that label. The
   frontend twin is `$lib/utils/mediaType.ts`; keep the alias tables in sync.
 - `uuid_helpers.py` — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
-  `get_file_by_uuid_with_permission` (admin bypass → takedown 404 → public → tenant gate → owner
-  → shares, in that order), `require_resource_owner`.
+  `get_file_by_uuid_with_permission` (load the row → platform bypass asked about the LOADED row's
+  own tenant, `bypass.allows(org_id=row.organization_id, ...)`, which in multi-tenant mode is
+  False without a support-access grant → takedown 404 → public → tenant gate → owner → shares, in
+  that order), `require_resource_owner`.
 - `db_helpers.py` — `apply_tenant_scope` (SQL-plane default-deny tenant filter mirroring
   `api/deps_context.scope_to_context`), user file/tag/speaker query builders, tag-cache busting.
 - `stats_helpers.py`'s `get_queue_depths()` (the admin Statistics API) is a thin caller of
@@ -73,8 +75,10 @@ so keep heavy imports lazy.
   Read the rule below before adding any `cuda:N` / `get_device_properties(N)` call anywhere.
 - `text_preprocessing.py` — **topics/collections extraction ONLY**; never use it for
   summarization or speaker ID (it strips the grammar those need).
-- `segment_dedup.py`, `segment_postprocess.py`, `diarization_merge.py`, `diarization_metrics.py`
-  — pipeline math; see `backend/app/transcription/CLAUDE.md`.
+- `segment_dedup.py`, `segment_postprocess.py`, `diarization_metrics.py`
+  — pipeline math; see `backend/app/transcription/CLAUDE.md`. Speaker turns reach text through
+  ONE merge, `transcription/speaker_assigner.assign_speakers` (word or segment granularity);
+  the cloud-only midpoint merge `diarization_merge.py` was deleted in #1226.
 - `benchmark_timing.py` / `vram_profiler.py` / `nvml_monitor.py` — instrumentation gated on
   `ENABLE_BENCHMARK_TIMING` / `ENABLE_VRAM_PROFILING`, so production pays zero overhead.
 

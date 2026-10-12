@@ -210,23 +210,29 @@ def test_the_running_backend_actually_completes_a_real_export():
         pytest.skip("no running backend container in this compose project — stack is down")
 
     probe_dir = "/tmp/export-capability-probe"  # noqa: S108 - path inside the container
-    proc = subprocess.run(
-        [
-            "docker",
-            "exec",
-            container,
-            "bash",
-            "-c",
-            f"rm -rf {probe_dir}; mkdir -p {probe_dir}; "
-            f'HF_TOKEN="$HUGGINGFACE_TOKEN" diar-server provision-models '
-            f"--models-dir {probe_dir} --mode cpu --json",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=1800,
-    )
+    # The export writes gated weights into the live backend container: a timeout or an
+    # interrupt mid-export must not leave them there.
+    try:
+        proc = subprocess.run(
+            [
+                "docker",
+                "exec",
+                container,
+                "bash",
+                "-c",
+                f"rm -rf {probe_dir}; mkdir -p {probe_dir}; "
+                f'HF_TOKEN="$HUGGINGFACE_TOKEN" diar-server provision-models '
+                f"--models-dir {probe_dir} --mode cpu --json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+    finally:
+        subprocess.run(
+            ["docker", "exec", container, "rm", "-rf", probe_dir], check=False, timeout=60
+        )
     payload = _verdict(proc.stdout)
-    subprocess.run(["docker", "exec", container, "rm", "-rf", probe_dir], check=False, timeout=60)
 
     assert payload is not None, (
         f"provision-models emitted no JSON verdict.\nstdout={proc.stdout[-1500:]!r}\n"

@@ -22,6 +22,8 @@ The installer will:
 ✅ Generate secure configuration
 ✅ Set up management scripts
 
+By default it installs the **full** image (local transcription and speaker detection, on the GPU when one is found). Add `--cpu` (`curl ... | bash -s -- --cpu`) to run the full image on CPU only, or `--lite` for the cloud-only image. On an arm64 host such as Apple Silicon it defaults to the lite image, the only one published for arm64. See [Deployment Variants](../installation/deployment-variants.md) to choose.
+
 ## Prerequisites
 
 Before running the installer, ensure you have:
@@ -31,7 +33,7 @@ Before running the installer, ensure you have:
 3. **8GB+ RAM** (16GB+ recommended)
 
 :::info[HuggingFace Token Required]
-For speaker diarization to work, you'll need a **free HuggingFace token**. The installer will prompt you for it. See [HuggingFace Setup](../installation/huggingface-setup.md) for details.
+For speaker detection on this server (the full image's default), you'll need a **free HuggingFace token**. The installer will prompt you for it. Speakers detected by a cloud provider do not need it, but the voiceprint model is exported from the same gated repository, so set it on a lite install too if you run the diar-native sidecar. See [HuggingFace Setup](../installation/huggingface-setup.md) for details.
 :::
 
 ## Installation Steps
@@ -47,14 +49,18 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 The installer will ask for:
 
 1. **HuggingFace Token** (optional but recommended)
-   - Used for speaker diarization models
+   - Used for the speaker-detection and voiceprint models that run on this server
    - Get a free token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
 2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
    - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
    - `large-v3` - Best accuracy, required for translation to English
    - `medium` - Good balance (8GB+ NVIDIA GPU)
-   - `base` - Fast (CPU-only systems)
+   - `base` - Fast (recommended on CPU-only systems)
+
+:::note[CPU-only installs and speaker detection]
+On a host with no GPU (or with `--cpu`), speaker detection is not switched off for you: each user's setting in **Settings → Speaker Identification** decides, and on a CPU-only install speaker detection on this server runs on the CPU. To skip it, choose Off there or skip speaker detection for a file. See [Environment Variables](../configuration/environment-variables.md#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
+:::
 
 ### Step 3: Start OpenTranscribe
 

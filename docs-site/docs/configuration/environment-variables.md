@@ -102,6 +102,21 @@ USE_NATIVE_SPEAKER_EMBEDDINGS=true
 MODEL_CACHE_DIR=./models
 ```
 
+### Whether speakers are detected: a user setting, not `ENABLE_DIARIZATION`
+
+Whether speakers are detected, and where, is chosen per user in
+**Settings → Speaker Identification → Speaker detection** (Automatic by default, or this server, the pyannote.ai
+cloud service, or Off), and can be skipped per file through the upload API
+(`disable_diarization`). Every run is planned from that choice.
+No environment variable turns speaker detection off for a deployment.
+
+There used to be an `ENABLE_DIARIZATION` variable. It is no longer read or written: every
+transcription run takes its speaker-detection setting from the run's plan, so the variable
+controlled nothing. The installer no longer writes it, `.env.example` no longer lists it, and
+Settings → System Statistics no longer reports it. A leftover `ENABLE_DIARIZATION` line in an
+existing `.env` is ignored and can be deleted. To run without speaker detection, choose **Off**
+in Settings (or skip speaker detection for a file).
+
 ### Speaker Detection Use Cases
 
 | Event Type | Speakers | Recommended MAX_SPEAKERS | Notes |
@@ -120,9 +135,14 @@ first task.
 
 ## Native Diarization Engine (diar-native)
 
-`ENGINE_DIARIZER_BACKEND` selects which diarizer serves `local` (on-box) diarization —
-`native` (the coded default) routes to the `diar-native` sidecar, `pyannote` routes to the
-in-process PyAnnote fork. This is a **different axis** from `ASR_PROVIDER`/diarization-source
+`ENGINE_DIARIZER_BACKEND` selects which engine detects speakers when they are detected on
+this server — `native` (the coded default) routes to the `diar-native` sidecar, `pyannote`
+routes to the in-process PyAnnote fork. It is an admin setting: the `engine.diarizer_backend`
+database setting wins over the variable, users see the engine read-only and choose only
+*where* speakers are detected. With `native`, a sidecar that is not running or fails falls back
+to in-process PyAnnote. The minimum/maximum speaker count is honoured only by the `pyannote`
+engine; the native engine counts speakers itself and ignores the hints. On a lite deployment
+neither engine is used for speaker detection. This is a **different axis** from `ASR_PROVIDER`/diarization-source
 above: it only decides which *engine* runs once diarization is already happening locally. See
 [Speaker Diarization → Native Diarization Engine](../features/speaker-diarization.md#native-diarization-engine-new-in-v050)
 for what the sidecar does and how its weights get provisioned; this section is only the
@@ -130,7 +150,7 @@ variable reference. Defaults below come from `.env.example`'s "GPU AND TRANSCRIP
 `docker-compose.diar-native.yml` — not invented here.
 
 ```bash
-# Engine selection. SystemSettings `engine.diarizer_backend` (Settings -> Engine) wins over
+# Engine selection. SystemSettings `engine.diarizer_backend` (Settings → Speaker Identification → Speaker Engine) wins over
 # this; both are re-read on every diarization call, so neither needs a worker restart.
 ENGINE_DIARIZER_BACKEND=native   # native (default) | pyannote
 
@@ -229,7 +249,7 @@ never touches the GPU, so what it costs is heap, not VRAM.
 | 2 GB | every English model, including the 768-dim ones |
 | 4 GB *(default)* | headroom for indexing bursts and the larger multilingual models |
 
-Enabling multilingual search therefore needs **no heap change**: Settings → Search →
+Enabling multilingual search therefore needs **no heap change**: Settings → Search & Indexing →
 pick the multilingual model → **Download & deploy** → Apply (re-embeds every
 transcript; measured ~3.2 documents/sec on the OpenSearch CPU node).
 
@@ -424,8 +444,31 @@ CLOUD_ASR_CONCURRENCY=16           # Concurrency for cloud-asr worker (default 1
 
 ### Deployment Mode
 
+`DEPLOYMENT_MODE=lite` marks a lite (cloud-only) deployment. `docker-compose.lite.yml` sets it
+on every backend service, and the installer writes it to `.env` when run with `--lite`. With it
+set:
+
+- Transcription on this server is refused; choose a cloud provider. A `local` ASR
+  configuration cannot be created or switched to.
+- Speaker detection on this server is refused. Speakers come from a cloud transcription model
+  that returns them, from the pyannote.ai cloud service, or from another saved provider
+  configuration. With a text-only model, "Automatic" is refused instead of falling back to this
+  server.
+- Voiceprints for cross-file speaker matching are still computed on this server's CPU.
+
+Leave it at `full` for the full image, where local transcription and on-server speaker
+detection are available alongside cloud providers. Which image each variant runs, and what it
+can do, is on [Deployment Variants](../installation/deployment-variants.md).
+
+`FORCE_CPU_MODE=true` keeps a full install off the GPU even when one is present: `opentr.sh`
+and `opentranscribe.sh` skip GPU detection and the GPU overlays, and Settings → System
+Statistics shows the CPU-only advisory. The installer writes it when run with `--cpu` (or
+`OPENTRANSCRIBE_FORCE_CPU=1`). It does not turn speaker detection off; see
+[Whether speakers are detected](#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
+
 ```bash
-DEPLOYMENT_MODE=full  # full (local GPU + optional cloud) or lite (cloud-only, no GPU, ~2GB image)
+DEPLOYMENT_MODE=full  # full (local GPU + optional cloud) or lite (cloud-only, no GPU)
+FORCE_CPU_MODE=false  # true = never use the GPU, even when one is present
 # BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest
 # ^ leave commented out: docker-compose.lite.yml derives it from OT_IMAGE_TAG when unset,
 # which is what lets `update --version` / `--rollback` pin/upgrade/roll back a lite install.
@@ -605,7 +648,7 @@ Every processing failure is sorted into one of two classes:
 - **Transient** — the infrastructure failed (out of memory, a lost connection, a timeout, a
   worker that died) or the cause is unknown. The file is put back in the queue within minutes,
   with exponential backoff and jitter, **ahead of files submitted after it**, until the admin's
-  *max retries* setting (Settings → Transcription) is used up. Only then does it fail, with a
+  *max retries* setting (Settings → Task Health Monitor) is used up. Only then does it fail, with a
   reason that says it was interrupted and retried.
 
 Celery's own shutdown settings: `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT` (default 30) and
@@ -928,7 +971,7 @@ Before [#1029](https://github.com/attevon-llc/OpenTranscribe/issues/1029), a pro
 
 ## File Retention
 
-OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/attevon-llc/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → Admin → File Retention.
+OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/attevon-llc/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → File Retention.
 
 ## URL Download Quality Settings
 
@@ -1077,14 +1120,22 @@ LOGIN_BANNER_TEXT=This is a restricted system...
 ## Cloud ASR Providers
 
 :::tip[Configure these in the UI]
-Each user sets their own ASR provider and API key in **Settings → Transcription**,
+Each user sets their own ASR provider and API key in **Settings → Transcription → Provider & Model**,
 stored encrypted in the database. The variables below are only the
 **deployment-wide fallback** for users who have set nothing, and for a zero-touch
 provisioned install. They were removed from `.env.example` for that reason.
 :::
 
-`ASR_PROVIDER` selects the default engine: `local` (the bundled WhisperX, needs a
-GPU) or one of the cloud providers below.
+`ASR_PROVIDER` selects the default engine: `local` (the bundled WhisperX on this server;
+fastest on a GPU, also runs on CPU, and refused on a lite deployment) or one of the cloud
+providers below.
+
+:::note[The OpenAI default model returns no timestamps]
+`OPENAI_ASR_MODEL` defaults to `gpt-4o-transcribe`, which returns text with no timestamps, so
+speaker detection is refused with it (choose Off for speaker detection, or use `whisper-1` or
+`gpt-4o-transcribe-diarize`). Which models return speakers and timestamps:
+[Deployment Variants](../installation/deployment-variants.md#which-cloud-providers-return-speakers).
+:::
 
 | Provider | `ASR_PROVIDER` | Variables |
 |---|---|---|
@@ -1116,7 +1167,7 @@ default **16**), not a per-provider setting.
 
 :::tip[Configure these in the UI]
 Each user configures their own LLM provider, model and API key in
-**Settings → LLM Provider**, encrypted at rest. `LLMService` resolves per-user
+**Settings → LLM Provider Configuration**, encrypted at rest. `LLMService` resolves per-user
 settings first and only falls back to the variables below when a user has none —
 which is also the path background tasks take. Leave `LLM_PROVIDER` empty for
 transcription-only mode with no AI features at all.
@@ -1159,7 +1210,7 @@ deployment on EC2/ECS/EKS provisions no secret at all. Required IAM actions:
 ### Context window
 
 `max_tokens` is a **UI setting**, not an environment variable
-(**Settings → LLM Provider → Max Tokens**). It still defaults to **8192**, but a
+(**Settings → LLM Provider Configuration → Max Tokens**). It still defaults to **8192**, but a
 **Discover context window** probe (beside Test Connection) now measures the
 model's real maximum instead of making you trust that default: for **vLLM** it
 reads `max_model_len` off `GET /v1/models`, for **Ollama** it reads the model's
@@ -1287,7 +1338,7 @@ See `backend/app/services/search/CLAUDE.md` before changing any of them.
 ### Per-variable reference — cloud ASR
 
 Every variable below is the **deployment-wide fallback**. A user who configures a
-provider in **Settings → Transcription** overrides all of it, and their API key is
+provider in **Settings → Transcription → Provider & Model** overrides all of it, and their API key is
 stored encrypted rather than in a file.
 
 | Variable | Valid values / limits | Default | Description |
@@ -1357,7 +1408,7 @@ AWS_ASR_MODEL=standard
 | `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
 | `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
 | `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
-| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
+| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider Configuration → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
 
 #### Example — local Ollama on the same host
 

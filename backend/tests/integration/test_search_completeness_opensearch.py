@@ -208,50 +208,50 @@ def corpus():
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
-    if _MODEL_ID:
-        client.ingest.put_pipeline(
-            id=PIPELINE,
-            body={
-                "processors": [
-                    {
-                        "text_embedding": {
-                            "model_id": _MODEL_ID,
-                            "field_map": {"embedding_text": "embedding"},
-                        }
-                    }
-                ]
-            },
-        )
     name = f"test_completeness_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    rng = random.Random(1078)  # noqa: S311 — deterministic test corpus, not crypto
-    docs = [d for f in range(N_FILES) for d in _file_docs(f, rng)]
-    marker_base = {
-        "file_id": -9999,
-        "file_uuid": MARKER_UUID,
-        "user_id": USER_ID,
-        "accessible_user_ids": [USER_ID],
-        "title": "Marker file",
-        "speakers": ["Dan Ray"],
-        "language": "en",
-        "content_type": "audio/mpeg",
-        "doc_type": "chunk",
-    }
-    docs += [
-        (
-            f"{MARKER_UUID}_{n}",
-            {
-                **marker_base,
-                "chunk_index": n,
-                "content": t,
-                "embedding_text": t,
-                "speaker": "Dan Ray",
-            },
-        )
-        for n, t in enumerate(MARKER_CHUNKS)
-    ]
-    _bulk(client, name, docs)
     try:
+        if _MODEL_ID:
+            client.ingest.put_pipeline(
+                id=PIPELINE,
+                body={
+                    "processors": [
+                        {
+                            "text_embedding": {
+                                "model_id": _MODEL_ID,
+                                "field_map": {"embedding_text": "embedding"},
+                            }
+                        }
+                    ]
+                },
+            )
+        client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+        rng = random.Random(1078)  # noqa: S311 — deterministic test corpus, not crypto
+        docs = [d for f in range(N_FILES) for d in _file_docs(f, rng)]
+        marker_base = {
+            "file_id": -9999,
+            "file_uuid": MARKER_UUID,
+            "user_id": USER_ID,
+            "accessible_user_ids": [USER_ID],
+            "title": "Marker file",
+            "speakers": ["Dan Ray"],
+            "language": "en",
+            "content_type": "audio/mpeg",
+            "doc_type": "chunk",
+        }
+        docs += [
+            (
+                f"{MARKER_UUID}_{n}",
+                {
+                    **marker_base,
+                    "chunk_index": n,
+                    "content": t,
+                    "embedding_text": t,
+                    "speaker": "Dan Ray",
+                },
+            )
+            for n, t in enumerate(MARKER_CHUNKS)
+        ]
+        _bulk(client, name, docs)
         yield client, name, rng
     finally:
         client.indices.delete(index=name, ignore_unavailable=True)

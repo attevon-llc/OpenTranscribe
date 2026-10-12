@@ -48,6 +48,7 @@ from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
 from app.services.permission_service import PermissionService
+from app.services.platform_bypass import PlatformBypass
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import clean_tag_name
 from app.services.tag_service import lookup_existing_tag
@@ -153,11 +154,19 @@ def resolve_bulk_tag(
 
 
 def _require_editor(
-    db: Session, file_id: int, user_id: int, is_admin: bool
+    db: Session, file_id: int, user_id: int, bypass: PlatformBypass
 ) -> BulkTagResult | None:
     """Return a failure result unless the caller may *write* to this file."""
-    if is_admin:
-        return None
+    if bypass.user_is_admin:
+        file = db.get(MediaFile, file_id)
+        if file is not None and bypass.allows(
+            org_id=file.organization_id,
+            owner_id=file.user_id,
+            need="write",
+            resource_type="media_file",
+            resource_uuid=str(file.uuid),
+        ):
+            return None
     try:
         PermissionService.check_file_access(
             db, file_id, user_id, min_permission=REQUIRED_PERMISSION
@@ -174,7 +183,7 @@ def apply_tag_to_file(
     tag: Tag | None,
     add: bool,
     user_id: int,
-    is_admin: bool = False,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> BulkTagResult:
     """Attach or detach ``tag`` on one file, isolated from the rest of the batch.
 
@@ -190,13 +199,13 @@ def apply_tag_to_file(
         tag: The batch's tag, or None when a remove named an unknown tag.
         add: True to attach, False to detach.
         user_id: The acting user, checked for ``editor`` on this file.
-        is_admin: Admins bypass the permission gate, as everywhere else.
+        bypass: The request's platform bypass, decided on the file's own tenant.
 
     Returns:
         This file's outcome. Never raises for an expected condition — a refusal
         or a database error comes back as :attr:`BulkTagOutcome.FAILED`.
     """
-    refusal = _require_editor(db, file_id, user_id, is_admin)
+    refusal = _require_editor(db, file_id, user_id, bypass)
     if refusal is not None:
         return refusal
 

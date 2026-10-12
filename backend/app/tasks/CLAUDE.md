@@ -12,10 +12,39 @@ indexing → WebSocket notification.
 ## Key files
 
 - `transcription/` — the 3-stage chain: `preprocess.py` (CPU: download, ffmpeg, MinIO temp)
-  → `core.py` (GPU: Whisper + PyAnnote + DB save) → `postprocess.py` (CPU: embeddings,
-  indexing, downstream dispatch). `dispatch.py` orchestrates the chain and routes
-  `transcription.gpu_transcribe` / `cpu_transcribe` **at call time** — that's why they're
-  deliberately absent from `task_routes`.
+  → `core.py` / `cpu_task.py` (transcription + inline speakers + DB save) → `postprocess.py`
+  (CPU: voiceprints, indexing, downstream dispatch). `dispatch.py` orchestrates the chain and
+  routes `transcription.gpu_transcribe` / `cpu_transcribe` **at call time** — that's why
+  they're deliberately absent from `task_routes`. The legacy single-task
+  `transcription.process_file` path (`legacy_task.py`, `background.py`) is deleted (#1225).
+- **Every stage runs from the pipeline plan (#1225).** `dispatch._plan_for_dispatch` resolves
+  `services/pipeline_plan` ONCE (`plan_for_user`), refuses a blocking issue before any publish
+  (file ERROR, `error_category` from the fixed sentence, `PipelinePlanRefusedError`), and puts
+  `plan.to_context()` in the chain context as `pipeline_plan`; stages read it with
+  `transcription/context.plan_of`. The transcription link and its queue are the plan's
+  (`_transcribe_stage`); `gpu-transcribe` (split) only for inline speakers. Postprocess hands
+  speaker detection to the **post stage** (`rediarize_task`, the plan's engine / merge /
+  queue: `cloud-asr` for a vendor, `gpu_preferred_queue()` for this server) whenever
+  `execution` is `post_stage_*`; otherwise it runs the voiceprint step itself
+  (`inline_native`) or dispatches it (`embedding_stage`, CPU). **One metering terminus per
+  run**: postprocess when nothing was handed off, the post stage when it ran, the embedding
+  stage for `embedding_stage` runs (`closes_pipeline`; the post stage dispatches it with
+  `closes_pipeline=False`). Pinned cell by cell in `tests/unit/test_pipeline_execution_matrix.py`.
+- `rediarize_task.py` — the post stage AND the user's manual "re-detect speakers" (which
+  plans with the file owner's current choice and never meters). Read phase → detector with
+  no session open → `finalize_segments` re-split → write phase → voiceprint stage once
+  (inline with this server's vectors, else `extract_speaker_embeddings_task` on `cpu`). A
+  vendor failure is non-fatal: transcript kept, `CLOUD_DIARIZATION_FAILED_MESSAGE` recorded.
+- `services/voiceprint_extractor.py` (used by `speaker_embedding_task.py`) — the voiceprint
+  stage's ONE interface: `extract(audio_path, turns) -> Voiceprints` (per-speaker 256-d
+  WeSpeaker vectors). `get_voiceprint_extractor()` is the seam the Rust implementation
+  (#1231) replaces.
+- `transcription/requested_options.py` — the per-file request (Whisper model, speaker range,
+  "skip diarization") stored on `media_file.requested_*` by every fresh dispatch and replayed by
+  `dispatch_transcription_pipeline(..., reuse_requested_options=True)` — which retry, recovery and
+  the download hop of a URL import pass. A fresh request overwrites the stored one even with
+  `None`. Speaker-range precedence is decided once, in `user_settings.resolve_speaker_range`
+  (per file, then the user's saved range, then env); never re-derive it at a call site.
 - `transcription/hooks.py` — cloud-edition seam. Exceptions are swallowed; **hangs are not**
   (hooks run inside the completion path holding an open `session_scope`). Any outbound call
   in a hook needs a tight timeout.
@@ -142,8 +171,9 @@ indexing → WebSocket notification.
   `_mark_pipeline_error`), a worker that died (`core/broker_orphans.py` reaper, and the health
   check's `recover_stuck_task`). Don't add a parallel path. Two classes:
   **permanent** (`ErrorCategory.INVALID_MEDIA` — set by `classify_failure` from an input-shaped
-  user reason; also `PRIVATE_OR_REMOVED`, `FILE_TOO_LARGE`, `USER_CANCELLED`,
-  `RETRIES_EXHAUSTED`) fails fast, never retried; **transient** (everything in
+  user reason; `CONFIGURATION_REQUIRED` — the user's own settings make the run impossible, e.g.
+  pyannote.ai diarization with no key, #1204; also `PRIVATE_OR_REMOVED`, `FILE_TOO_LARGE`,
+  `USER_CANCELLED`, `RETRIES_EXHAUSTED`) fails fast, never retried; **transient** (everything in
   `RETRIABLE_CATEGORIES`, including UNKNOWN) is requeued with backoff + jitter until the admin
   retry limit, then ERROR with `RETRIES_EXHAUSTED`. Worker loss spends a SEPARATE per-file
   budget (`TRANSCRIPTION_MAX_INFRA_REQUEUES`, a Redis sorted set), never `retry_count`.
@@ -177,6 +207,24 @@ indexing → WebSocket notification.
   `services/account_lifecycle_service.py`; this module is only the scheduling shell.
 
 ## Conventions / patterns
+
+- **A stage that completes a processing step records it, in its own write session** (#1229):
+  `services/file_provenance.record_stage(db, file_id, "<step>", **facts)` (or one of its
+  `record_*` wrappers). Current call sites: `transcription/storage.update_media_file_transcription_status`
+  (`record_transcription_run`: new run + transcription + inline/parallel speaker detection,
+  with the plan's engine/execution/merge passed down from `finalize._process_and_save_critical`),
+  `rediarize_task._save` (`record_diarization`, same session as the re-split segments, with the
+  plan's engine so a vendor's own id is never read as this server's engine),
+  `transcription/postprocess._process_native_embeddings` and
+  `transcription/embeddings._process_speaker_embeddings_native` (`record_inline_voiceprints`),
+  `speaker_embedding_task._match_and_finalize_embeddings` (`voiceprints`, facts from the
+  extractor's `Voiceprints`, incl. its `backend`),
+  `summarization._persist_summary`, `TopicExtractionService._persist_extraction`,
+  `speaker_identification_task._store_speaker_predictions` (the LLM facts are resolved in the
+  no-session phase and handed to the write). A new or replacement stage must keep the call;
+  `tests/unit/test_file_provenance_hooks.py` runs each site for real and
+  `test_pipeline_execution_matrix.py::test_every_stage_of_a_run_records_what_it_ran` runs the
+  chain per executable plan cell.
 
 - **Any WebSocket event naming a `MediaFile` must go through
   `app/utils/websocket_notify.py:send_ws_event_for_file`, never the raw `send_ws_event`**
@@ -213,9 +261,17 @@ indexing → WebSocket notification.
   (the lite overlay sets that on **every** service, and routing is decided by the
   publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
   `torch+cpu`/`torchaudio`/`pyannote.audio`/`onnxruntime`.
-  `transcription.process_file` stays on `gpu` on purpose: lite ships no local ASR and
-  `services/asr/factory.py` refuses it by name, so a reroute would only relocate the
-  failure. `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
+  The post stage is published with an explicit queue (`pipeline_plan.post_stage_queue`),
+  so a cloud detector lands on `cloud-asr`, which lite staffs. **Lite has no local speaker
+  detection and no local transcription (#1228)**: the plan never produces `inline_local` /
+  `post_stage_local` there (a stored local choice plans `execution: none` with its blocking
+  issue), dispatch refuses it with the fixed sentence before any task row, `post_stage_queue`
+  refuses this server's engine instead of resolving to `cpu` (the old rediarize-on-CPU
+  route), and `rediarize_task(engine="local")` / `transcription.cpu_transcribe` refuse at
+  their top as defence in depth. Voiceprints still run on `cpu` (`embedding_stage`) after
+  every cloud detector; `rediarize` stays in `GPU_PREFERRED_TASKS` for the full image only.
+  `tests/unit/test_lite_dispatch_refusals.py` pins the dispatch half.
+  `tests/unit/test_lite_mode_queue_consumers.py` derives the lite consumer set
   from the compose files and fails on any new route into a dead queue; an exemption
   there requires a written reason.
   This is deliberately NOT the live `inspect().active_queues()` probe that

@@ -61,19 +61,27 @@ class LocalDiarizationProvider(DiarizationProvider):
         config: DiarizeConfig,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> DiarizeResult:
-        """Run local diarization using the model manager (diar-native, PyAnnote fallback).
+        """Run this server's speaker detection (diar-native, PyAnnote fallback).
+
+        The post stage (``rediarize_task``, plan engine ``local``) runs through here.
 
         Args:
             audio_path: Path to the audio file on disk.
-            config: Diarization configuration (speaker counts, etc.).
+            config: Speaker counts, and optionally a WAV the native sidecar can open
+                directly (``sidecar_wav_path``).
             progress_callback: Optional callback for progress updates.
 
         Returns:
-            DiarizeResult with segments, speaker count, and native metadata.
+            DiarizeResult whose ``provider_name``/``model_name`` name the engine that
+            ACTUALLY ran (``native`` or ``pyannote``, read off the diarizer after any
+            fallback, never the configured value), with the native objects the post stage
+            reuses in ``metadata``: ``diarize_df`` (the frame ``assign_speakers`` reads),
+            ``overlap_info`` and ``native_embeddings`` (per-speaker vectors, free).
         """
         from app.core.config import settings
         from app.transcription.audio import load_audio
         from app.transcription.config import TranscriptionConfig
+        from app.transcription.engine.stages import _run_diarize
         from app.transcription.model_manager import ModelManager
 
         if progress_callback:
@@ -93,34 +101,28 @@ class LocalDiarizationProvider(DiarizationProvider):
         if progress_callback:
             progress_callback(0.3, "Running speaker diarization")
 
-        diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
+        diarize_df, overlap_info, native_embeddings = _run_diarize(
+            diarizer, audio, config.sidecar_wav_path
+        )
 
-        # Convert DiarizeResult to DiarizeSegment list
-        import numpy as np
-
-        segments: list[DiarizeSegment] = []
-        for s, e, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker, strict=True):
-            segments.append(
-                DiarizeSegment(
-                    start=float(s),
-                    end=float(e),
-                    speaker=self._normalize_speaker_label(str(sp)) or "SPEAKER_00",
-                )
+        segments: list[DiarizeSegment] = [
+            DiarizeSegment(
+                start=float(s),
+                end=float(e),
+                speaker=self._normalize_speaker_label(str(sp)) or "SPEAKER_00",
             )
-
-        unique_speakers = int(np.unique(diarize_df.speaker).size) if len(diarize_df) > 0 else 0
+            for s, e, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker, strict=True)
+        ]
 
         if progress_callback:
             progress_callback(1.0, "Diarization complete")
 
         result = DiarizeResult(
             segments=segments,
-            num_speakers=unique_speakers,
-            provider_name="local",
-            model_name="pyannote/speaker-diarization-community-1",
+            num_speakers=len({seg.speaker for seg in segments}),
+            provider_name=str(getattr(diarizer, "last_provider", None) or "local"),
+            model_name=str(getattr(diarizer, "last_model", None) or ""),
         )
-        # Attach native objects as metadata for downstream pipeline compatibility
-        # (e.g. assign_speakers(), embedding extraction)
         result.metadata["native_embeddings"] = native_embeddings
         result.metadata["overlap_info"] = overlap_info
         result.metadata["diarize_df"] = diarize_df

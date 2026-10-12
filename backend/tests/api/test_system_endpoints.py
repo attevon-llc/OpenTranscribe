@@ -130,9 +130,9 @@ def test_stats_system_block_has_device_mode_fields(client, user_token_headers):
         "device_mode",
         "force_cpu_mode",
         "whisper_model",
-        "diarization_enabled",
     ):
         assert key in system_block, f"missing system key {key!r}"
+    assert "diarization_enabled" not in system_block
     assert system_block["device_mode"] in ("cpu", "cuda")
     assert isinstance(system_block["gpus"], list)
 

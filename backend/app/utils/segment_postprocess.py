@@ -25,6 +25,11 @@ def resegment_by_speaker(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
         # Fast path: check if all words share the same speaker
         speakers = {w.get("speaker") for w in words if "speaker" in w}
         if len(speakers) <= 1:
+            # The words decide: a segment's own overlap label can name a speaker who says
+            # none of its words when the interval is padded with silence (cloud vendors).
+            (word_speaker,) = speakers or {None}
+            if word_speaker and word_speaker != segment.get("speaker"):
+                segment = {**segment, "speaker": word_speaker}
             result.append(segment)
             continue
 

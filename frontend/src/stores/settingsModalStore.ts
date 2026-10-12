@@ -5,7 +5,9 @@ export type SettingsSection =
   | 'profile'
   | 'recording'
   | 'audio-extraction'
+  | 'processing-pipeline'
   | 'transcription'
+  | 'speaker-identification'
   | 'organization-context'
   | 'speaker-attributes'
   | 'download'
@@ -34,6 +36,7 @@ export type SettingsSection =
   // an empty pane. Cache configuration lives inside the 'retention' panel.
   | 'admin-users'
   | 'admin-task-health'
+  | 'quarantine'
   | 'chat-admin'
   | 'redaction-policy'
   | 'embedding-migration'
@@ -42,6 +45,8 @@ export type SettingsSection =
   | 'backup'
   | 'media-sources'
   | 'watch-sources'
+  | 'support-access'
+  | 'support-access-requests'
   // Super Admin sections
   | 'authentication'
   | 'audit-logs';
@@ -59,7 +64,9 @@ const initialState: SettingsModalState = {
     profile: false,
     recording: false,
     'audio-extraction': false,
+    'processing-pipeline': false,
     transcription: false,
+    'speaker-identification': false,
     'organization-context': false,
     'speaker-attributes': false,
     download: false,
@@ -80,6 +87,7 @@ const initialState: SettingsModalState = {
     team: false,
     'admin-users': false,
     'admin-task-health': false,
+    quarantine: false,
     'redaction-policy': false,
     'embedding-migration': false,
     'data-integrity': false,
@@ -87,6 +95,8 @@ const initialState: SettingsModalState = {
     backup: false,
     'media-sources': false,
     'watch-sources': false,
+    'support-access': false,
+    'support-access-requests': false,
     authentication: false,
     'audit-logs': false,
   },

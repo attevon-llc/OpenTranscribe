@@ -30,22 +30,21 @@ import pytest
 from fastapi import HTTPException
 from fastapi import status
 
-from app.core.capabilities import COMMUNITY_CAPABILITIES
-from app.core.capabilities import reset_capability_resolver
-from app.core.capabilities import set_capability_resolver
 from app.models.media import MediaFile
 
 
 @pytest.fixture
-def caps_off():
-    """Install a resolver that turns the given capability keys off."""
+def complete_without_storage(monkeypatch):
+    """Let ``/files/complete`` run with no object store: the object "exists", no header reads."""
 
-    def _install(*keys: str) -> None:
-        overrides = dict.fromkeys(keys, False)
-        set_capability_resolver(lambda _request: {**COMMUNITY_CAPABILITIES, **overrides})
+    def _no_header(*args, **kwargs):
+        raise RuntimeError("no s3")
 
-    yield _install
-    reset_capability_resolver()
+    monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda path: 4096)
+    monkeypatch.setattr("app.services.minio_service.range_read", _no_header)
+    monkeypatch.setattr(
+        "app.api.endpoints.files.complete_upload._fingerprint_object", lambda *a, **k: None
+    )
 
 
 def _seed_prepared_file(db_session, owner, **overrides) -> MediaFile:
@@ -170,6 +169,43 @@ class TestModelChoice:
         assert response.status_code == status.HTTP_200_OK, response.text
         dispatch.assert_called_once()
         assert dispatch.call_args.kwargs["whisper_model"] == expected
+
+    @pytest.mark.parametrize(
+        ("locked", "expected"),
+        [(False, "base"), (True, None)],
+        ids=["unlocked", "locked-after-prepare"],
+    )
+    def test_complete_without_a_model_uses_the_one_recorded_at_prepare(
+        self,
+        client,
+        user_token_headers,
+        normal_user,
+        db_session,
+        caps_off,
+        pipeline_stages,
+        complete_without_storage,
+        locked,
+        expected,
+    ):
+        """The upload wizard sends its model choice on /prepare only (#1121).
+
+        /complete then carries no ``whisper_model``, and the transcription must still run
+        with the model the user picked -- read back from the row /prepare wrote, unless the
+        deployment has locked model choice since. The read-back lives in
+        ``dispatch_transcription_pipeline`` (``reuse_requested_options``), so this drives the
+        real dispatch and asserts on what the first pipeline stage is built with.
+        """
+        if locked:
+            caps_off("transcription.model_choice")
+        media_file = _seed_prepared_file(db_session, normal_user, requested_whisper_model="base")
+
+        response = client.post(
+            "/api/files/complete",
+            headers=user_token_headers,
+            json={"file_id": str(media_file.uuid)},
+        )
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert [stage["whisper_model"] for stage in pipeline_stages] == [expected]
 
     @pytest.mark.parametrize(
         ("locked", "expected"),
@@ -303,29 +339,36 @@ class TestTaskTimeSettingLocks:
     def test_locked_values_fall_back_to_defaults(self, db_session, normal_user, caps_off):
         from app.core.constants import DEFAULT_REPETITION_PENALTY
         from app.core.constants import DEFAULT_VAD_THRESHOLD
+        from app.services.pipeline_plan_inputs import load_plan_inputs
         from app.tasks.transcription.user_settings import _get_user_transcription_settings
 
         _store_user_settings(db_session, normal_user, self._STORED)
         caps_off("transcription.diarization_source", "transcription.advanced")
 
         resolved = _get_user_transcription_settings(db_session, normal_user.id)
+        # The speaker-detection source is read by the pipeline plan, never by the task
+        # settings dict (issue #1225); the lock applies there.
+        plan_inputs = load_plan_inputs(db_session, normal_user.id)
 
-        assert resolved["diarization_source"] == "provider"
-        assert resolved["disable_diarization"] is False
+        assert "diarization_source" not in resolved
+        assert plan_inputs.diarization_source == "provider"
+        assert plan_inputs.source_locked is True
         assert resolved["vad_threshold"] == DEFAULT_VAD_THRESHOLD
         assert resolved["repetition_penalty"] == DEFAULT_REPETITION_PENALTY
         # Not a locked field: still the user's own value.
         assert resolved["min_speakers"] == 2
 
     def test_stored_values_apply_by_default(self, db_session, normal_user):
+        from app.services.pipeline_plan_inputs import load_plan_inputs
         from app.tasks.transcription.user_settings import _get_user_transcription_settings
 
         _store_user_settings(db_session, normal_user, self._STORED)
 
         resolved = _get_user_transcription_settings(db_session, normal_user.id)
+        plan_inputs = load_plan_inputs(db_session, normal_user.id)
 
-        assert resolved["diarization_source"] == "off"
-        assert resolved["disable_diarization"] is True
+        assert plan_inputs.diarization_source == "off"
+        assert plan_inputs.source_locked is False
         assert resolved["vad_threshold"] == 0.9
         assert resolved["repetition_penalty"] == 1.8
         assert resolved["hallucination_silence_threshold"] == 4.0

@@ -18,6 +18,7 @@ from app.db.base import get_db
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.speaker_cleanup import blocked_profile_names
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
@@ -68,12 +69,15 @@ def batch_process_speaker_matches():
                         f"Found {len(found_matches)} matches for speaker {speaker.id} ({speaker.name})"
                     )
 
-                    # Update suggested name if high confidence match found
+                    # Update suggested name if high confidence match found — never one
+                    # the user unassigned this speaker from (issue #1233).
+                    refused = blocked_profile_names(db, [int(speaker.id)])[int(speaker.id)]
                     for match in found_matches:
                         if (
                             match["confidence"] >= 0.75
                             and match["display_name"]
                             and not speaker.suggested_name
+                            and str(match["display_name"]).casefold() not in refused
                         ):
                             # Captured before the write (issue #605) — a
                             # confident suggestion moves the canonical chunk

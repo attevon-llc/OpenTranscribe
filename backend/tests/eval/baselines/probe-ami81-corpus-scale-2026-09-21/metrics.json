@@ -1,0 +1,166 @@
+{
+  "licence_note": "Metrics only. No question text, reference answers, app answer prose, or citation snippets are recorded here — see the module docstring of tests.eval.harness.probe_metrics (issue #72).",
+  "notes": [],
+  "rows": [
+    {
+      "category": "multi_file_corpus_scale",
+      "chunks_used": 39,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-000-TS3005-decisions",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-001-TS3008d-needle-specific",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-002-IS1006c-needle-specific",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-003-IS1006c-needle-specific",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.024390243902439025,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "scale-004-TS3008d-needle-general",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.024390243902439025,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "scale-005-IS1006c-needle-general",
+      "retrieved": 40,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.024390243902439025,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "scale-006-ES2006a-needle-general",
+      "retrieved": 40,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "corpus_scale_broad",
+      "chunks_used": 38,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-007-broad",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "corpus_scale_broad",
+      "chunks_used": 42,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "scale-008-broad",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control_corpus_scale",
+      "chunks_used": 40,
+      "coverage_ratio": 0.04878048780487805,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 2,
+      "query_id": "scale-009-absent-topic",
+      "retrieved": 48,
+      "scope_size": 41,
+      "warning_codes": []
+    }
+  ],
+  "run_name": "ot-probe-corpus-scale",
+  "schema_version": 1,
+  "summary": {
+    "corpus_scale_broad": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.04878,
+      "min_coverage_ratio": 0.04878048780487805,
+      "queries": 2
+    },
+    "multi_file_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.04878,
+      "min_coverage_ratio": 0.04878048780487805,
+      "queries": 1
+    },
+    "negative_control_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.04878,
+      "min_coverage_ratio": 0.04878048780487805,
+      "queries": 1
+    },
+    "single_general_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.02439,
+      "min_coverage_ratio": 0.024390243902439025,
+      "queries": 3
+    },
+    "single_specific_corpus_scale": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.04878,
+      "min_coverage_ratio": 0.04878048780487805,
+      "queries": 3
+    }
+  },
+  "target": {
+    "host": "localhost",
+    "llm_model": "mock-gpt",
+    "llm_provider": "custom",
+    "port": 5674
+  }
+}

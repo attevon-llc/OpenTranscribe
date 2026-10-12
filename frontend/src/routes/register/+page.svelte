@@ -73,7 +73,8 @@
   }
 
   // Handle form submission
-  // The toast truncates to one line, which hid the policy reason; show it in full here too.
+  // A rejection is shown only inline: the toast truncated to one line (hiding the policy reason),
+  // and showing both put the same message on screen twice.
   let formError = '';
 
   async function handleSubmit() {
@@ -101,7 +102,6 @@
         }
       } else {
         formError = (result.message || $t('auth.registrationFailed')).replace(/^Value error,\s*/, '');
-        toastStore.error(formError);
       }
     } catch (err) {
       console.error("Registration error:", err);

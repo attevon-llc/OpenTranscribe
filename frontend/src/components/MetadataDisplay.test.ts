@@ -1,9 +1,9 @@
 /**
- * Which diarization engine actually served THIS file (#706). `diarization_provider` is
- * `"native"` | `"pyannote"` | `null` — `null` means "not diarized / not recorded" and must
- * never render a default. Distinct from the admin panel's configured-vs-effective display
- * (`ProcessingDetailsModal.svelte`) — this answers "what ran on this file", not "what is the
- * deployment set to".
+ * The models block that used to sit under "File details" is gone (#1229): it printed a
+ * hardcoded English "Whisper:" label (even for cloud transcription) and rendered every
+ * engine that was not `native` as "PyAnnote", so a pyannote.ai cloud run read as the local
+ * engine. How a file was processed now lives in the "Processing" section
+ * (`fileDetail/ProcessingSection.svelte`), rendered from the backend's `processing_steps`.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
@@ -40,34 +40,25 @@ function baseFile(overrides: Partial<MediaFileDetail> = {}): MediaFileDetail {
   } as MediaFileDetail;
 }
 
-describe('MetadataDisplay diarization engine field (#706)', () => {
-  it('renders "Native" when diarization_provider is native', () => {
-    render(MetadataDisplay, {
-      file: baseFile({ diarization_provider: 'native' }),
+describe('MetadataDisplay no longer carries the processing models (#1229)', () => {
+  it('renders no hardcoded Whisper label and no engine guess for a cloud-diarized file', () => {
+    const { container } = render(MetadataDisplay, {
+      file: baseFile({
+        whisper_model: 'large-v3-turbo',
+        asr_provider: 'deepgram',
+        asr_model: 'nova-3',
+        diarization_provider: 'pyannote.ai',
+        diarization_model: 'precision-3',
+        embedding_mode: 'v4',
+      }),
       showMetadata: true,
     });
-    expect(screen.getByText('metadata.diarizationEngineLabel')).toBeTruthy();
-    expect(screen.getByText('metadata.diarizationEngineNative')).toBeTruthy();
-  });
-
-  it('renders "PyAnnote" when diarization_provider is pyannote (direct or fallen-back)', () => {
-    render(MetadataDisplay, {
-      file: baseFile({ diarization_provider: 'pyannote' }),
-      showMetadata: true,
-    });
-    expect(screen.getByText('metadata.diarizationEngineLabel')).toBeTruthy();
-    expect(screen.getByText('metadata.diarizationEnginePyannote')).toBeTruthy();
-  });
-
-  it('does NOT render the diarization engine field, or invent a default, when null', () => {
-    render(MetadataDisplay, { file: baseFile({ diarization_provider: null }), showMetadata: true });
+    // The section did render, so the absences below are not an empty component.
+    expect(screen.getByText('metadata.uploadDate:')).toBeTruthy();
+    expect(container.textContent).not.toContain('Whisper:');
     expect(screen.queryByText('metadata.diarizationEngineLabel')).toBeNull();
-    expect(screen.queryByText('metadata.diarizationEngineNative')).toBeNull();
     expect(screen.queryByText('metadata.diarizationEnginePyannote')).toBeNull();
-  });
-
-  it('does NOT render the diarization engine field when undefined (not recorded)', () => {
-    render(MetadataDisplay, { file: baseFile(), showMetadata: true });
-    expect(screen.queryByText('metadata.diarizationEngineLabel')).toBeNull();
+    expect(container.textContent).not.toContain('precision-3');
+    expect(container.textContent).not.toContain('nova-3');
   });
 });

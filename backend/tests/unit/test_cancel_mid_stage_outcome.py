@@ -35,6 +35,7 @@ from app.tasks.transcription.cancellation import CANCELLED_BY_USER
 from app.utils.error_classification import ErrorCategory
 from tests.unit._fake_liveness_redis import FakeRedis
 from tests.unit._fake_liveness_redis import install_fake_redis
+from tests.unit._plan_contexts import plan_context
 
 _STAGE_MODULES = (
     "app.services.transcription_retry",
@@ -152,7 +153,7 @@ def _context(media_file: MediaFile, task_id: str) -> dict:
         "storage_path": media_file.storage_path,
         "file_name": media_file.filename,
         "content_type": media_file.content_type,
-        "diarization_source": "provider",
+        "pipeline_plan": plan_context(),
     }
 
 
@@ -242,7 +243,7 @@ class TestEachStage:
             preprocess, "_preprocess_audio", _cancel_then_raise(db_session, media_file, task_id)
         ):
             result = preprocess.preprocess_for_transcription.run(
-                file_uuid=str(media_file.uuid), task_id=task_id
+                file_uuid=str(media_file.uuid), task_id=task_id, pipeline_plan=plan_context()
             )
 
         assert_cancelled_payload(result, media_file, task_id)
@@ -265,7 +266,7 @@ class TestEachStage:
 
         with patch.object(
             core,
-            "_resolve_asr_provider_or_none",
+            "_cloud_asr_provider_or_none",
             _cancel_then_raise(db_session, media_file, task_id, "model inference failed"),
         ):
             result = core.transcribe_gpu_task.run(_context(media_file, task_id))
@@ -404,7 +405,7 @@ class TestWithoutACancel:
                 "This file appears to be corrupted or is not a valid audio/video file."
             )
 
-        with patch.object(core, "_resolve_asr_provider_or_none", _fail):
+        with patch.object(core, "_cloud_asr_provider_or_none", _fail):
             with pytest.raises(_StorageFetchError):
                 core.transcribe_gpu_task.run(_context(media_file, task_id))
 

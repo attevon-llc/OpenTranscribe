@@ -77,8 +77,10 @@ def resolve_text_field_preset(preset: str, *, has_speaker_filter: bool = False) 
 #: see its own comment (#526). ``language`` was wrongly here by omission until
 #: #834: it is document data off the OpenSearch ``_source``, and its default ""
 #: reads as an UNKNOWN language to the reranker's three-bucket rule, not as a
-#: neutral reset.
-CACHE_EXCLUDED_FIELDS = frozenset({"expanded"})
+#: neutral reset. ``is_llm_summary`` (#464) is the second excluded field: only
+#: ``scope_digest_hits`` ever sets it, on a map-tier hit read fresh from Postgres,
+#: and map-tier hits are never in the ranked legs this cache holds.
+CACHE_EXCLUDED_FIELDS = frozenset({"expanded", "is_llm_summary"})
 
 
 @dataclass
@@ -124,6 +126,23 @@ class ChunkHit:
     #: ``expanded`` so a citation naming a widened span can be told apart from
     #: one naming exactly its own indexed chunk.
     expanded: bool = False
+    #: True only for a #464 map-tier hit built from a FRESH ``MediaFile.summary_data``
+    #: (``mapreduce.file_summaries.scope_digest_hits``'s ``use_summaries`` branch) rather
+    #: than an extractive ``FileFacts.digest`` section. Both shapes set ``digest_section``
+    #: (so ``is_digest`` is True for either — the sentence-provenance masker
+    #: (``redactor.mask_digests``) must treat them identically, falling through to its
+    #: inline masking path for both), but they are DIFFERENT TEXT with different
+    #: provenance guarantees: a digest section is extractive (TextRank over transcript
+    #: sentences someone actually said), a summary is abstractive (an LLM's interpretation
+    #: of the recording). ``citations.build_overview_citations`` reads this to choose
+    #: ``KIND_SUMMARY`` vs ``KIND_DIGEST`` — rendering an LLM's own prose with the
+    #: extractive-digest badge would misattribute interpretation as a derived quote.
+    #: Never set at construction by anything except ``scope_digest_hits``'s summary
+    #: branch; excluded from ``to_cache_dict``/``from_cache_dict`` like ``expanded``
+    #: above, because a map-tier hit is never a candidate for the Redis retrieval cache
+    #: (that cache only ever holds ``result.chunks``/``result.digests``, the RANKED
+    #: legs — ``scope_digest_hits`` reads Postgres fresh on every turn).
+    is_llm_summary: bool = False
 
     @property
     def is_digest(self) -> bool:
@@ -174,6 +193,52 @@ def dynamic_rrf_window(size: int) -> int:
     wasted work — scale with the request and clamp to sane bounds.
     """
     return max(_RRF_WINDOW_MIN, min(size * 4, settings.SEARCH_RRF_WINDOW_SIZE))
+
+
+#: Ceiling for :func:`scope_aware_pool_size`. Matches the admin ``le`` bound already
+#: on both ``chat.rag.candidate_pool`` and ``chat.rag.rerank_max_pairs``
+#: (``core/chat_flag_registry.py``) — an operator could already reach this value by
+#: hand-configuring either knob, so scaling automatically up to the same number
+#: introduces no new ceiling that wasn't already reachable.
+SCOPE_AWARE_POOL_CEILING = 500
+
+
+def scope_aware_pool_size(base: int, *, per_file: int, scope_size: int | None) -> int:
+    """Widen a chunk-retrieval size toward covering every file in a bounded scope.
+
+    Issue #975: a fixed pool starves ``diversity_sample`` of raw material once a
+    scope holds more files than the pool can cover — a 48-candidate pull over a
+    41-file scope concentrates on whichever 1-2 files scored highest, and
+    ``diversity_sample`` can only reorder the candidates it is handed. It cannot
+    backfill a file OpenSearch never returned in the first place. Scaling the pull
+    toward ``per_file`` candidates for every file in scope fixes that at the
+    source, rather than asking the narrowing stage to recover material that was
+    never fetched.
+
+    Args:
+        base: The admin-configured floor (``chat.rag.candidate_pool`` or
+            ``chat.rag.rerank_max_pairs``) — never returned smaller than this, so
+            an operator's explicit minimum still holds at small scope.
+        per_file: Candidates wanted per file in scope. Chat calls this with
+            ``chat.rag.max_chunks_per_file``, which is what makes the shipped
+            default self-consistent: 12 chunks/file x a ~4-file typical scope is
+            48 — today's ``candidate_pool`` default — so an unchanged typical
+            scope gets a byte-identical pool size out of this function.
+        scope_size: Files in the resolved scope, or ``None``/``0`` for the
+            unbounded "all accessible" scope. Left UNSCALED there on purpose: the
+            file count is not known without an extra Postgres query on every
+            turn, and "all accessible" can be arbitrarily large, so scaling
+            blindly would be an unbounded latency/cost regression for the one
+            scope shape this function cannot see the size of.
+
+    Returns:
+        ``base`` unchanged for an unbounded or empty scope; otherwise
+        ``per_file * scope_size``, floored at ``base`` and capped at
+        :data:`SCOPE_AWARE_POOL_CEILING`.
+    """
+    if not scope_size or scope_size <= 0:
+        return base
+    return max(base, min(per_file * scope_size, SCOPE_AWARE_POOL_CEILING))
 
 
 def _hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
@@ -538,7 +603,14 @@ def retrieve_digests(
     return digests
 
 
-def diversity_sample(hits: list[ChunkHit], *, max_per_file: int, cap: int) -> list[ChunkHit]:
+def diversity_sample(
+    hits: list[ChunkHit],
+    *,
+    max_per_file: int,
+    cap: int,
+    min_file_score: float | None = None,
+    exempt_file_uuids: frozenset[str] = frozenset(),
+) -> list[ChunkHit]:
     """Round-robin across files so one long recording can't crowd out the rest.
 
     Chatting across several transcripts is the point of the feature; a purely
@@ -547,10 +619,39 @@ def diversity_sample(hits: list[ChunkHit], *, max_per_file: int, cap: int) -> li
     chunk each pass, which preserves "best file first" while guaranteeing the
     other selected files are represented.
 
+    ⚠️ Issue #975 follow-up: this round-robin gives EVERY distinct file in
+    ``hits`` one chunk in round 1, regardless of how weak that file's match is.
+    That is harmless at the small scope (~4 files) this was designed for — every
+    file in scope is plausibly relevant. It stops being harmless once the caller
+    widens the candidate pool for a large scope (:func:`scope_aware_pool_size`):
+    a corpus with shared vocabulary across recordings (e.g. a meeting corpus)
+    puts SOME chunk from nearly every file somewhere in a 400+-candidate pool,
+    and round 1 alone then burns the whole ``cap`` on one chunk each from dozens
+    of barely-related files — measured on a genuine single-file "needle" question
+    at 41-file scope: files represented went from a correct 1-2 to a diluted 30+,
+    each contributing exactly one weak chunk. ``min_file_score`` is the fix:
+    excluding a file before it ever enters ``file_order`` (not merely
+    de-prioritizing it) is what keeps round 1 from being spent on it.
+
     Args:
         hits: Retrieved chunks in score order.
         max_per_file: Ceiling on chunks contributed by any one file.
         cap: Total chunks to return.
+        min_file_score: When given, a file is excluded ENTIRELY — not merely
+            visited later — unless its best (first-seen) hit's ``score`` is
+            strictly greater than this floor. ``None`` (the default) preserves
+            the original unfiltered behaviour for every existing caller. The
+            caller is responsible for the floor being on the same scale as
+            ``hits[*].score`` — see ``chat/retrieval.py``, which passes ``0.0``
+            (a cross-encoder decision boundary when reranking ran, a harmless
+            no-op against the always-positive RRF/hybrid score when it did
+            not) ONLY when the pool was actually widened past the admin's
+            configured floor, so the small-scope case this function's
+            defaults were tuned against is untouched.
+        exempt_file_uuids: Files that bypass ``min_file_score``. Issue #990: a
+            file the speaker-focus leg deliberately targeted must not be vetoed
+            by a cross-encoder score computed for a vague question, or the leg
+            cannot change the outcome. Empty (the default) exempts nothing.
 
     Returns:
         Re-ordered subset of ``hits``, at most ``cap`` long.
@@ -563,8 +664,15 @@ def diversity_sample(hits: list[ChunkHit], *, max_per_file: int, cap: int) -> li
         by_file.setdefault(hit.file_uuid, []).append(hit)
 
     # File order = best chunk each file achieved (hits arrive score-ordered, so
-    # first-seen is best-seen).
-    file_order = list(by_file.keys())
+    # first-seen is best-seen). A file whose best score doesn't clear the floor
+    # never enters this list at all, so it competes for none of `cap`.
+    file_order = [
+        file_uuid
+        for file_uuid, chunks in by_file.items()
+        if min_file_score is None
+        or file_uuid in exempt_file_uuids
+        or chunks[0].score > min_file_score
+    ]
 
     selected: list[ChunkHit] = []
     for round_index in range(max_per_file):
@@ -579,9 +687,11 @@ def diversity_sample(hits: list[ChunkHit], *, max_per_file: int, cap: int) -> li
 
 __all__ = [
     "ChunkHit",
+    "SCOPE_AWARE_POOL_CEILING",
     "diversity_sample",
     "dynamic_rrf_window",
     "resolve_text_field_preset",
     "retrieve_chunks",
     "retrieve_digests",
+    "scope_aware_pool_size",
 ]

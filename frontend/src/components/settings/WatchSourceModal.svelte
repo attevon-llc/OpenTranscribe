@@ -97,8 +97,9 @@
       skip_files_older_than_days: 30,
       recursive: true,
       auto_transcribe: true,
-      min_speakers: 1,
-      max_speakers: 20,
+      // Blank = use the owner's saved speaker range (issue #1198).
+      min_speakers: null,
+      max_speakers: null,
       multipart_enabled: false,
       multipart_regex: DEFAULT_REGEX,
       multipart_time_window_hours: 24,
@@ -184,8 +185,8 @@
       skip_files_older_than_days: src.skip_files_older_than_days ?? null,
       recursive: src.recursive,
       auto_transcribe: src.auto_transcribe,
-      min_speakers: src.min_speakers ?? 1,
-      max_speakers: src.max_speakers ?? 20,
+      min_speakers: src.min_speakers ?? null,
+      max_speakers: src.max_speakers ?? null,
       multipart_enabled: src.multipart_enabled,
       multipart_regex: src.multipart_regex || DEFAULT_REGEX,
       multipart_time_window_hours: src.multipart_time_window_hours,
@@ -246,6 +247,11 @@
     if (i <= maxStepReached) currentStepIndex = i;
   }
 
+  // A blank speaker field is sent as null, which the server reads as "my saved range".
+  function optionalCount(value: unknown): number | null {
+    return value === null || value === undefined || value === '' ? null : Number(value);
+  }
+
   function buildPayload(collectionIds: string[]): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
@@ -259,8 +265,8 @@
           : Number(form.skip_files_older_than_days),
       recursive: form.recursive,
       auto_transcribe: form.auto_transcribe,
-      min_speakers: Number(form.min_speakers),
-      max_speakers: Number(form.max_speakers),
+      min_speakers: optionalCount(form.min_speakers),
+      max_speakers: optionalCount(form.max_speakers),
       tag_names: selectedTags,
       collection_ids: collectionIds,
       multipart_enabled: form.multipart_enabled,
@@ -573,13 +579,14 @@
         <div class="form-row">
           <div class="form-group">
             <label for="ws-min">{$t('settings.watchSources.fields.minSpeakers')}</label>
-            <input id="ws-min" type="number" min="1" class="form-input" bind:value={form.min_speakers} />
+            <input id="ws-min" type="number" min="1" class="form-input" bind:value={form.min_speakers} placeholder={$t('settings.watchSources.fields.speakersPlaceholder')} />
           </div>
           <div class="form-group">
             <label for="ws-max">{$t('settings.watchSources.fields.maxSpeakers')}</label>
-            <input id="ws-max" type="number" min="1" class="form-input" bind:value={form.max_speakers} />
+            <input id="ws-max" type="number" min="1" class="form-input" bind:value={form.max_speakers} placeholder={$t('settings.watchSources.fields.speakersPlaceholder')} />
           </div>
         </div>
+        <p class="field-hint">{$t('settings.watchSources.speakersHelp')}</p>
         <label class="checkbox-row">
           <input type="checkbox" bind:checked={form.recursive} />
           <span>{$t('settings.watchSources.fields.recursive')}</span>

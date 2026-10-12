@@ -86,6 +86,10 @@
   --border-color: #e5e7eb;
   --error-color: #ef4444;
   --error-color-rgb: 239, 68, 68;
+  /* A solid fill that carries WHITE text (count badges). Distinct from `--error-color`, the
+     status fill/icon colour, which is too light for white text (3.76:1 light, 2.76:1 dark).
+     #dc2626 is 4.83:1 with white; one value in both themes, like `--primary-color`. */
+  --error-solid: #dc2626;
   --success-color: #10b981;
   --success-color-rgb: 16, 185, 129;
   --warning-color: #f59e0b;
@@ -93,6 +97,22 @@
   --info-color: #3b82f6;
   --card-background: #ffffff;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  /* Navbar surface (#754). NOT an alias of --surface-color: that token also
+     backs cards, modals and dropdowns, and darkening it globally would
+     repaint all of those for a change the issue scoped to the nav bar.
+     Light: one step darker than --surface-color (#ffffff) via the existing
+     --hover-color neighbour, so the bar reads as lifted off the (lighter)
+     page. Dark: the bar is ALREADY lighter than the page (#1e293b over
+     #0f172a) — held here at the unchanged --surface-color value, so applying
+     "darker" only in light mode does not invert dark mode's existing lift.
+     Elevation in dark comes from --navbar-shadow + --navbar-border instead
+     of a value shift. --navbar-hover is intentionally NOT --hover-color:
+     in light mode --hover-color IS --navbar-bg's value, so nav-link
+     hover/rest would be indistinguishable if hover reused it. */
+  --navbar-bg: #f1f5f9;
+  --navbar-border: transparent;
+  --navbar-hover: #e2e8f0;
+  --navbar-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 2px 6px rgba(15, 23, 42, 0.08);
   --divider-color: #e5e7eb;
   --input-background: #ffffff;
   --input-border: #d1d5db;
@@ -133,6 +153,34 @@
   --color-info-bg: rgba(59, 130, 246, 0.1);
   --color-info-border: rgba(59, 130, 246, 0.3);
   --color-info: var(--info-color);
+
+  /* Text-weight status colours, and secondary text for TINTED surfaces.
+   *
+   * `--success-color` / `--error-color` are FILL colours, calibrated to be legible as a
+   * solid background or an icon — not as small text sitting on their own soft tint. Used
+   * that way they fail WCAG AA (SC 1.4.3, 4.5:1 for normal text) outright: #10b981 on the
+   * success tint measures 2.27:1 and #ef4444 on the error tint 3.29:1. `--color-warning-text`
+   * already existed for exactly this reason; these complete the set.
+   *
+   * `--text-on-tint` is the same story for `--text-secondary` (#64748b). It clears AA on the
+   * base white surface (4.76:1) and fails on every tint the app actually uses — 4.34:1 on
+   * slate-100, 4.25:1 on the success tint, 4.16:1 on the error tint. All three are near
+   * misses, which is why they survived review: they look fine and are measurably not.
+   *
+   * Measured against the tints in use — light: #047857 on #e2f7f0 = 4.91:1,
+   * #b91c1c on #fdecec = 5.67:1 (and 6.47:1 on white), #475569 on #f1f5f9 = 6.91:1.
+   * Dark: #34d399 on #1e293b = 7.57:1, #f87171 on #1e293b = 5.29:1.
+   *
+   * ⚠️ Those dark figures are against the PLAIN dark surface and do not transfer to a
+   * tinted badge, which composites a translucent wash of the status colour UNDERNEATH the
+   * text. `TasksGrid.svelte`'s dark `.status-error` measured 4.38:1 that way with the very
+   * same #f87171 that reads 5.29:1 on the plain surface (issue #972). Always re-measure
+   * against the composited background, never against the token's nominal surface.
+   */
+  --color-success-text: #047857;
+  --color-error-text: #b91c1c;
+  --color-info-text: #1d4ed8;
+  --text-on-tint: #475569;
 
   /* Alternate-name aliases used by some components */
   --bg-primary: var(--surface-color);
@@ -231,10 +279,8 @@
   --error-dark: #b91c1c;
   --error-hover: #dc2626;
   --success-hover: #059669;
-  --color-success-text: #047857;
   --warning-dark: #b45309;
   --info-dark: #1d4ed8;
-  --color-info-text: #1d4ed8;
 
   /* Named for dark mode and used inside already-dark-scoped rules, so these
      intentionally hold the same dark value in both themes. */
@@ -269,6 +315,7 @@
   --border-color: #334155;
   --error-color: #f87171;
   --error-color-rgb: 248, 113, 113;
+  --error-solid: #dc2626; /* See the note on :root */
   --success-color: #34d399;
   --success-color-rgb: 52, 211, 153;
   --warning-color: #fbbf24;
@@ -276,6 +323,18 @@
   --info-color: #60a5fa;
   --card-background: #1e293b;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  /* Navbar surface (#754), dark mode. Value held at the unchanged
+     --surface-color (#1e293b) deliberately — the bar is already lighter
+     than the page here, so "darker" (a light-mode-only observation, §4.2
+     of the plan) is not applied. Elevation is bought with a visible hairline
+     border (page bg #0f172a vs this border ~1.7:1, enough to read as a
+     lifted edge) and a stronger/larger-radius shadow than light mode. Hover
+     reuses --hover-color: no collision risk here since --navbar-bg was NOT
+     repurposed from it (unlike the light block). */
+  --navbar-bg: #1e293b;
+  --navbar-border: #334155;
+  --navbar-hover: #334155;
+  --navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
   --divider-color: #334155;
   --input-background: #334155; /* Darker input background */
   --input-border: #475569;
@@ -308,6 +367,18 @@
   --color-warning-bg: rgba(251, 191, 36, 0.15);
   --color-warning-border: rgba(251, 191, 36, 0.3);
   --color-warning-text: #fbbf24;
+  /* Dark-mode siblings of the light block's text-weight status colours. The direction
+   * inverts: on a dark surface the FILL colours are too dark to read, so these go lighter
+   * rather than darker. `--text-on-tint` matches `--text-secondary` here because dark tints
+   * are overlays on an already-dark surface, so the near-misses the light theme has do not
+   * arise. */
+  /* ⚠️ These are sized for a TINTED badge, not the plain dark surface — that is the
+   * stricter of the two and the one #972 found failing. Hence the lighter greens/blues
+   * than the plain-surface figures in the light block's comment would suggest. */
+  --color-success-text: #6ee7b7;
+  --color-error-text: #f87171;
+  --color-info-text: #93c5fd;
+  --text-on-tint: var(--text-secondary);
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);
@@ -334,10 +405,8 @@
   --error-dark: #fca5a5;
   --error-hover: #ef4444;
   --success-hover: #10b981;
-  --color-success-text: #6ee7b7;
   --warning-dark: #fcd34d;
   --info-dark: #93c5fd;
-  --color-info-text: #93c5fd;
 }
 
 /* Global styles that should adapt to theme */

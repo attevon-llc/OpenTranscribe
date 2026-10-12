@@ -43,6 +43,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from tests.docker_ops import TEST_ARTIFACT_LABEL
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMPOSE_FILE = _REPO_ROOT / "docker-compose.yml"
 
@@ -109,6 +111,8 @@ def start_container(name: str, password: str) -> None:
             name,
             "--label",
             CONTAINER_LABEL,
+            "--label",
+            TEST_ARTIFACT_LABEL,
             "--tmpfs",
             "/var/lib/postgresql/data",
             "-e",

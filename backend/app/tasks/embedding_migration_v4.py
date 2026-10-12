@@ -515,7 +515,7 @@ def migrate_speaker_embeddings_v4_task(
         # embedding model through the same (mode, model_name)-keyed cache
         # (speaker_embedding_service.get_cached_embedding_service); with no
         # lock, the two race it and pay a 40-60s reload on every alternation.
-        # A transcription pause point (_process_speaker_embeddings) checks
+        # The transcription voiceprint stage (speaker_embedding_task) checks
         # this lock and waits briefly rather than racing it.
         from app.services.migration_lock_service import migration_lock
 

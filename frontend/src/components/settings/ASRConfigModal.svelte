@@ -12,10 +12,23 @@
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import type { DiarizationSource } from '$lib/api/transcriptionSettings';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
+  import { modelCapability } from '$lib/settings/asrCapabilities';
+  import { selectionNotices } from '$lib/settings/speakerSources';
+  import { notAutoActivatedMessages } from '$lib/settings/asrOutcome';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
+  import CapabilityBadges from './CapabilityBadges.svelte';
+  import IssueRow from './IssueRow.svelte';
 
   export let show = false;
   export let editingConfig: UserASRSettingsResponse | null = null;
   export let providers: ASRProviderInfo[] = [];
+  /** The user's speaker detection choice; decides which warnings the model earns. */
+  export let diarizationSource: DiarizationSource | null = null;
+  export let deploymentMode: 'full' | 'lite' = 'full';
+  /** The user has no saved config yet, so a created one would be auto-activated (if runnable). */
+  export let firstConfig = false;
 
   const dispatch = createEventDispatcher();
 
@@ -58,10 +71,30 @@
 
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
 
+  // Lite has no local transcription: that provider is not offered at all.
+  $: selectableProviders = providers.filter((p) => !(deploymentMode === 'lite' && p.provider === 'local'));
   $: selectedProvider = providers.find(p => p.provider === formData.provider) || null;
   $: availableModels = selectedProvider?.models || [];
 
   $: selectedModel = availableModels.find(m => m.id === formData.model_name) || null;
+
+  // What the chosen model returns (the provider's values until a model is picked), and what
+  // that means for the user's current speaker detection choice.
+  $: capability = formData.provider
+    ? modelCapability(providers, formData.provider, formData.model_name)
+    : null;
+  $: modelNotices = capability
+    ? selectionNotices(
+        diarizationSource ?? 'off',
+        { returnsSpeakers: capability.returnsSpeakers, timing: capability.timing },
+        deploymentMode
+      ).map((notice) => ({
+        ...notice,
+        messageKey: notice.code in PIPELINE_ISSUE_KEYS
+          ? PIPELINE_ISSUE_KEYS[notice.code as keyof typeof PIPELINE_ISSUE_KEYS]
+          : null
+      }))
+    : [];
 
   $: estimatedCostPerHour = selectedModel?.price_per_min_batch
     ? ASRSettingsApi.formatPricePerHour(selectedModel.price_per_min_batch)
@@ -146,13 +179,24 @@
         result = await ASRSettingsApi.updateConfig(editingConfig.uuid, payload);
         toastStore.success(`"${result.name}" updated`);
       } else {
-        result = await ASRSettingsApi.createConfig(payload);
-        toastStore.success(`"${result.name}" created`);
+        const created = await ASRSettingsApi.createConfig(payload);
+        result = created;
+        toastStore.success(`"${created.name}" created`);
+        // A first config is made active only when speaker detection keeps working with it.
+        for (const m of notAutoActivatedMessages(created, firstConfig)) {
+          const text = m.key ? $t(m.key) : (m.fallbackText ?? '');
+          if (m.severity === 'error') toastStore.error(text, 8000);
+          else toastStore.warning(text, 8000);
+        }
       }
       dispatch('saved', result);
       handleClose();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.saveFailed')), 5000);
+      const refusal = pipelineFailureKey(err, 'settings.asrProvider.saveFailed');
+      toastStore.error(
+        refusal ? $t(refusal) : getErrorMessage(err, $t('settings.asrProvider.saveFailed')),
+        5000
+      );
     } finally {
       saving = false;
     }
@@ -221,7 +265,7 @@
             title={editingConfig ? $t('settings.asrProvider.providerLockedOnEdit') : undefined}
           >
             <option value="">{$t('settings.asrProvider.selectProvider')}</option>
-            {#each providers as p}
+            {#each selectableProviders as p}
               <option value={p.provider}>
                 {ASRSettingsApi.getProviderDisplayName(p.provider)}
                 {#if p.status === 'experimental'} &#9888; ({$t('settings.asrProvider.experimentalShort')}){/if}
@@ -281,6 +325,31 @@
                 placeholder={$t('settings.asrProvider.modelNamePlaceholder')}
                 class="form-input"
               />
+            {/if}
+            {#if capability}
+              <div class="model-capabilities" data-testid="model-capabilities">
+                <CapabilityBadges
+                  returnsSpeakers={capability.returnsSpeakers}
+                  timing={capability.timing}
+                />
+              </div>
+              {#if capability.timing === 'none'}
+                <p class="field-hint" data-testid="model-no-timing-info">
+                  {$t('settings.asrProvider.timing.noneInfo')}
+                </p>
+              {/if}
+              {#if modelNotices.length > 0}
+                <ul class="model-notices" data-testid="model-notices">
+                  {#each modelNotices as notice (notice.code)}
+                    <IssueRow
+                      code={notice.code}
+                      severity={notice.severity}
+                      messageKey={notice.messageKey}
+                      rowTestId="model-notice"
+                    />
+                  {/each}
+                </ul>
+              {/if}
             {/if}
             {#if estimatedCostPerHour}
               <p class="cost-hint">{$t('settings.asrProvider.estimatedCost')}: <strong>{estimatedCostPerHour}</strong></p>
@@ -397,6 +466,19 @@
 </BaseModal>
 
 <style>
+  .model-capabilities {
+    margin-top: 0.5rem;
+  }
+
+  .model-notices {
+    list-style: none;
+    margin: 0.5rem 0 1rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
   .modal-title {
     margin: 0;
     font-size: 1.25rem;

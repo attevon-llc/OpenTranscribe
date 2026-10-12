@@ -5,12 +5,15 @@ Provides a clean interface for getting and setting system configuration
 with type conversion and caching support.
 """
 
+import contextlib
 import json
 import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
+from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
 from app.models.system_settings import SystemSettings
 
 logger = logging.getLogger(__name__)
@@ -311,10 +314,54 @@ def get_garbage_cleanup_config(db: Session) -> dict:
     """
     return {
         "garbage_cleanup_enabled": get_setting_bool(
-            db, "transcription.garbage_cleanup_enabled", True
+            db, "transcription.garbage_cleanup_enabled", DEFAULT_GARBAGE_CLEANUP_ENABLED
         ),
-        "max_word_length": get_setting_int(db, "transcription.max_word_length", 50),
+        "max_word_length": get_setting_int(
+            db, "transcription.max_word_length", DEFAULT_GARBAGE_CLEANUP_THRESHOLD
+        ),
     }
+
+
+def get_effective_garbage_cleanup_config(db, user_id: int) -> dict:
+    """Effective garbage-cleanup config for one user: user pref > system default > constant.
+
+    The system value (``transcription.garbage_cleanup_enabled`` / ``.max_word_length``,
+    admin API ``/admin/settings/garbage-cleanup``) is the deployment default. A user who
+    has never saved the setting has no row and so inherits it; a saved row overrides it.
+    The user's "threshold" is the same quantity as the system's ``max_word_length``: the
+    longest unbroken token that is kept.
+
+    Returns:
+        ``{"garbage_cleanup_enabled": bool, "max_word_length": int}``
+    """
+    from app import models
+
+    config = get_garbage_cleanup_config(db)
+    rows = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key.in_(
+                [
+                    "transcription_garbage_cleanup_enabled",
+                    "transcription_garbage_cleanup_threshold",
+                ]
+            ),
+        )
+        .all()
+    )
+    stored = {r.setting_key: r.setting_value for r in rows}
+
+    enabled = stored.get("transcription_garbage_cleanup_enabled")
+    if enabled is not None:
+        config["garbage_cleanup_enabled"] = str(enabled).lower() == "true"
+    threshold = stored.get("transcription_garbage_cleanup_threshold")
+    if threshold is not None:
+        # Same 20-200 bounds the admin API enforces; a smaller stored value would make
+        # ordinary words count as "too long". An unparseable value keeps the deployment default.
+        with contextlib.suppress(TypeError, ValueError):
+            config["max_word_length"] = min(200, max(20, int(threshold)))
+    return config
 
 
 def update_garbage_cleanup_config(

@@ -23,7 +23,9 @@ primitive in the same spirit as this folder.
 - `SortDropdown.svelte` — the shared sort-field-and-direction control (gallery + search sort
   bars consolidated into one primitive, H2); takes a `sortOptions` prop (`SortOption[]`, with an
   optional `noDirection` entry for fixed-order fields like "relevance"), `ariaLabelKey`, and an
-  `align: 'left' | 'right'` prop for menu placement. Hand-rolls its own menu with
+  `align: 'left' | 'right'` prop for menu placement. The direction arrow points **down =
+  descending, up = ascending** (a `noDirection` option is always down); the glyph is drawn
+  pointing that way, not rotated by CSS, and the same semantics apply on `/search`. Hand-rolls its own menu with
   `$lib/actions/clickOutside` (there is no generic `Dropdown.svelte` primitive — see Gotchas).
 - `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
@@ -33,6 +35,17 @@ primitive in the same spirit as this folder.
 - `SearchBar.svelte` — the shared search-input shell (icon, clear button, debounce).
 - `ConnectionStatusBanner.svelte` — global banner for WebSocket/API connectivity loss.
 - `ExpandableSection.svelte` — accessible collapsible (`aria-expanded`/`aria-controls`, chevron, slide).
+- `RangeSlider.svelte` — the ONE slider. Label + live value badge + native `<input type="range">`
+  - hint (+ optional muted "System default: X" via `defaultValue`). Props: `id label value(bind)
+min max step disabled hint decimals unit format valueText defaultValue class`; extra attributes
+    (`data-testid`, `aria-*`, `dir`) land on the native input; `on:input`/`on:change` forward the
+    native events. **Contract: every slider uses `ui/RangeSlider`; its styling lives in
+    `src/styles/range-slider.css`** (tokens `--slider-*`, `.range-input`). Raw `type="range"` in a
+    template, or `::-webkit-slider-thumb`/`::-moz-range-thumb` rules outside that stylesheet and the
+    two Plyr player files, fail `rangeSliderStructure.test.ts` (allowlist entries need a written
+    reason). The look is the native slider tinted with `accent-color` on purpose: fill, thumb,
+    keyboard and RTL direction come from the browser. The gallery's dual-thumb filter sliders
+    (`svelte-range-slider-pips` in `FilterSidebar.svelte`) are intentionally separate (owner decision).
 - `Spinner.svelte`, `ProgressBar.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
   `CardGridSkeleton.svelte`, `EmptyState.svelte`, `TagInput.svelte`.
 

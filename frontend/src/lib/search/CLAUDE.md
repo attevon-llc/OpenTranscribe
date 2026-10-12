@@ -43,10 +43,14 @@ inside `SettingsModal`. Media/transcript search is server-side hybrid keyword+se
   with `$lib/utils/searchHighlight`, and every `{@html}` must go through `sanitizeHighlightHtml`
   (`$lib/utils/sanitizeHtml`) — `SettingsSearch.svelte` does this.
 - In-document find lives in `TranscriptSearch.svelte`'s `computeMatches` (plain-text, indexOf over
-  loaded segment text + speaker labels) and `search/SearchTranscriptModal.svelte`'s
-  `buildMatchPositions` (time-range: classifies keyword-vs-semantic matches by overlap against
-  segment start/end times). These solve genuinely different problems — one indexes raw text
-  offsets, the other resolves against timed transcript segments — and are not duplicates of each
-  other. A third module (`findInText.ts`, literal Ctrl+F-style find) was extracted here but never
-  wired to either caller and was deleted (H3). Do not add a generic `findInText`-style module
-  without a concrete second consumer that actually needs it.
+  loaded segment text + speaker labels) and `$lib/transcript/matchClassification.ts`'s
+  `classifySegments`/`buildTimeRanges`/`overlapsAny` (time-range: classifies keyword-vs-semantic
+  matches by overlap against segment start/end times — moved out of the deleted
+  `search/SearchTranscriptModal.svelte` in issue #755, same algorithm). These solve genuinely
+  different problems — one indexes raw text offsets, the other resolves against timed transcript
+  segments — and are **still not duplicates of each other** even though both now feed the same
+  renderer (`TranscriptSegmentList`, via `TranscriptViewModal`). A third module (`findInText.ts`,
+  literal Ctrl+F-style find) was extracted here but never wired to either caller and was deleted
+  (H3). Do not add a generic `findInText`-style module without a concrete second consumer that
+  actually needs it, and do not merge the two matchers into one — #755's consolidation was of the
+  renderer/chrome around them, not the matchers themselves.

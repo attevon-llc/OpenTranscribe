@@ -35,7 +35,23 @@ def test_prepare_audio_returns_scratch_path_with_no_cleanup_dir(tmp_path, monkey
     assert temp_dir is None, "must not return a dir the caller would rmtree the scratch ns with"
 
 
-def test_run_diarization_passes_wav_path_to_native_and_omits_for_pyannote(tmp_path):
+def _empty_frame():
+    import numpy as np
+
+    from app.transcription.diarize_result import DiarizeResult
+
+    return DiarizeResult(
+        start=np.array([], dtype=np.float64),
+        end=np.array([], dtype=np.float64),
+        speaker=np.array([], dtype=object),
+    )
+
+
+def test_local_engine_passes_wav_path_to_native_and_omits_for_pyannote(tmp_path):
+    """The post stage's local engine (``LocalDiarizationProvider``) hands the scratch WAV to
+    the native sidecar only, never to the in-process PyAnnote fallback."""
+    from app.services.diarization.local_provider import LocalDiarizationProvider
+    from app.services.diarization.types import DiarizeConfig
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
     audio_path = str(tmp_path / "a.wav")
@@ -44,7 +60,10 @@ def test_run_diarization_passes_wav_path_to_native_and_omits_for_pyannote(tmp_pa
 
     fake_audio = MagicMock()
     native_diarizer = MagicMock(spec=NativeSpeakerDiarizer)
-    native_diarizer.diarize.return_value = ("diar_df", {}, {})
+    native_diarizer.diarize.return_value = (_empty_frame(), {}, {})
+    native_diarizer.last_provider = "native"
+    native_diarizer.last_model = "native-model"
+    config = DiarizeConfig(min_speakers=1, max_speakers=20, sidecar_wav_path=audio_path)
 
     with (
         patch("app.transcription.audio.load_audio", return_value=fake_audio),
@@ -53,14 +72,18 @@ def test_run_diarization_passes_wav_path_to_native_and_omits_for_pyannote(tmp_pa
             return_value=MagicMock(get_diarizer=MagicMock(return_value=native_diarizer)),
         ),
     ):
-        rediarize_task._run_diarization(audio_path, None, None, None, wav_path=audio_path)
+        result = LocalDiarizationProvider().diarize(audio_path, config)
 
     native_diarizer.diarize.assert_called_once()
     _, kwargs = native_diarizer.diarize.call_args
     assert kwargs.get("wav_path") == audio_path
+    # The provider reports the engine that actually ran, not a generic "local".
+    assert result.provider_name == "native"
 
     non_native_diarizer = MagicMock()  # not spec'd as NativeSpeakerDiarizer
-    non_native_diarizer.diarize.return_value = ("diar_df", {}, {})
+    non_native_diarizer.diarize.return_value = (_empty_frame(), {}, {})
+    non_native_diarizer.last_provider = "pyannote"
+    non_native_diarizer.last_model = "pyannote/speaker-diarization-community-1"
     with (
         patch("app.transcription.audio.load_audio", return_value=fake_audio),
         patch(
@@ -68,6 +91,7 @@ def test_run_diarization_passes_wav_path_to_native_and_omits_for_pyannote(tmp_pa
             return_value=MagicMock(get_diarizer=MagicMock(return_value=non_native_diarizer)),
         ),
     ):
-        rediarize_task._run_diarization(audio_path, None, None, None, wav_path=audio_path)
+        result = LocalDiarizationProvider().diarize(audio_path, config)
 
     non_native_diarizer.diarize.assert_called_once_with(fake_audio)
+    assert result.provider_name == "pyannote"

@@ -48,7 +48,9 @@ from app.utils.stats_helpers import get_queue_depths
 # Sharing a worker is what actually closes both.
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.xdist_group("celery_queue_depth_live"),
+    # Shared with test_orphaned_delivery_recovery_live.py: same db 15, same per-DB unacked
+    # hash, so the two modules must not run beside each other either.
+    pytest.mark.xdist_group("redis_db15_live"),
 ]
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -98,6 +100,22 @@ def queue_name() -> str:
     return _TEST_QUEUE
 
 
+def _delete_owned_keys(client: redis_lib.Redis, queue_name: str) -> None:
+    """Delete exactly the keys this module's tests touch. NEVER FLUSHDB -- db 15 is
+    verified empty before this test runs, not owned outright.
+
+    `unacked_key`/`unacked_index` are kombu's PER-DB globals, not per-queue, so deleting
+    them here is safe only because `xdist_group` (top of file) keeps every test in this
+    module on one worker. If that marker is ever removed, these deletes silently destroy a
+    concurrent test's reservation.
+    """
+    from kombu.transport.redis import Channel
+
+    sep = Channel.sep
+    keys_to_delete = [queue_name, f"{queue_name}{sep}{_TEST_PRIORITY}"]
+    client.delete(*keys_to_delete, Channel.unacked_key, "unacked_index")
+
+
 @pytest.fixture
 def raw_client(queue_name: str):
     client = redis_lib.from_url(_redis_url())
@@ -105,20 +123,14 @@ def raw_client(queue_name: str):
         client.ping()
     except redis_lib.exceptions.RedisError as exc:
         pytest.skip(f"live Redis (db {_TEST_DB}) unreachable: {exc}")
-    yield client
-    # Teardown: delete exactly the keys this test touched. NEVER FLUSHDB --
-    # db 15 is verified empty before this test runs, not owned outright.
-    #
-    # `unacked_key`/`unacked_index` are kombu's PER-DB globals, not per-queue, so
-    # deleting them here is safe only because `xdist_group` (top of file) keeps
-    # every test in this module on one worker. If that marker is ever removed,
-    # these two deletes silently destroy a concurrent test's reservation.
-    from kombu.transport.redis import Channel
-
-    sep = Channel.sep
-    keys_to_delete = [queue_name, f"{queue_name}{sep}{_TEST_PRIORITY}"]
-    client.delete(*keys_to_delete, Channel.unacked_key, "unacked_index")
-    client.close()
+    # Also at SETUP: a run interrupted before its teardown leaves these fixed keys behind,
+    # and the next run must start from (and heal) that rather than inherit it.
+    _delete_owned_keys(client, queue_name)
+    try:
+        yield client
+    finally:
+        _delete_owned_keys(client, queue_name)
+        client.close()
 
 
 def test_a_task_at_a_non_default_priority_is_invisible_to_a_bare_llen_but_counted(

@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
   import {
     getRedactionPolicy,
     updateRedactionPolicy,
@@ -91,17 +92,12 @@
         </div>
         {#if policy.force_toxicity}
           <div class="form-group" style="margin-top: 0.5rem;">
-            <label class="form-label" for="force-tox">
-              {$t('settings.redactionPolicy.forceToxicityThreshold')}
-              <span class="value-badge">{policy.force_toxicity_threshold.toFixed(2)}</span>
-            </label>
-            <input
+            <RangeSlider
               id="force-tox"
-              class="range-input"
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
+              label={$t('settings.redactionPolicy.forceToxicityThreshold')}
+              min={0}
+              max={1}
+              step={0.05}
               bind:value={policy.force_toxicity_threshold}
             />
           </div>
@@ -222,27 +218,6 @@
   }
   .form-group {
     margin: 0;
-  }
-  .form-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-color);
-    margin-bottom: 0.375rem;
-  }
-  .value-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--primary-on-surface);
-    background: rgba(var(--primary-color-rgb), 0.12);
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-  }
-  .range-input {
-    width: 100%;
-    accent-color: var(--primary-color);
   }
   .setting-row {
     display: flex;

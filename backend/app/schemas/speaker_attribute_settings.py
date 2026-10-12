@@ -10,6 +10,7 @@ class SpeakerAttributeSettings(BaseModel):
     gender_detection_enabled: bool = True
     age_detection_enabled: bool = True
     show_attributes_on_cards: bool = True
+    auto_llm_speaker_identification: bool = True
 
 
 class SpeakerAttributeSettingsUpdate(BaseModel):
@@ -19,6 +20,7 @@ class SpeakerAttributeSettingsUpdate(BaseModel):
     gender_detection_enabled: bool | None = None
     age_detection_enabled: bool | None = None
     show_attributes_on_cards: bool | None = None
+    auto_llm_speaker_identification: bool | None = None
 
 
 class SpeakerAttributeSystemDefaults(BaseModel):
@@ -28,3 +30,4 @@ class SpeakerAttributeSystemDefaults(BaseModel):
     gender_detection_enabled: bool
     age_detection_enabled: bool
     show_attributes_on_cards: bool
+    auto_llm_speaker_identification: bool

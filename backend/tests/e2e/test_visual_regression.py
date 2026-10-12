@@ -464,6 +464,16 @@ def _stabilize(page: Page) -> None:
         "document.querySelectorAll('video,audio').forEach(m=>{try{m.pause();"
         "m.currentTime=0;}catch(e){}})"
     )
+    # Web fonts load lazily, and `networkidle` can fire before the first text uses a face. A
+    # capture taken before Poppins lands photographs the fallback sans-serif, and that image
+    # then fails against every correct render (v0.6.0: all ten baselines were recaptured
+    # in the fallback face once). Wait for pending faces, then REFUSE to capture without
+    # the real one, so a missing font fails loudly instead of being baked into a baseline.
+    page.evaluate("document.fonts.ready.then(() => true)")
+    assert page.evaluate("document.fonts.check('600 14px Poppins')"), (
+        "Poppins is not loaded; a visual capture now would bake the fallback font into the "
+        "baseline (is frontend/static/fonts populated by the prebuild step?)"
+    )
     # Kept deliberately: a paint/layout settle before a screenshot. The comparison is a
     # pixel diff, not a locator, so there is nothing to auto-wait on (issue #431).
     page.wait_for_timeout(600)
@@ -818,6 +828,22 @@ def test_visual_regression(
     """Capture and compare a full-page screenshot for each surface and theme."""
     backend_url = request.getfixturevalue("backend_url")
     _skip_unless_isolated_stack(surface, base_url, backend_url)
+    # Dismiss the FirstRunWizard before ANY surface is captured. `api_token` is what
+    # calls the completion endpoint (see its docstring), but its only other consumer is
+    # `trace_conversation_uuid` — i.e. the `chat_trace` surface. So a subset run that
+    # excludes chat_trace (`--surface gallery --surface file_detail --surface speakers
+    # --surface settings`, exactly what update-visual-baselines.sh issues for a navbar
+    # change) never instantiated it, and on a brand-new `--fresh` admin the wizard's
+    # BaseModal stayed open over every page.
+    #
+    # That failed ASYMMETRICALLY, which is why it was not obvious: `settings` is the
+    # only surface that CLICKS, so it alone went red ("<div class="modal-backdrop">
+    # intercepts pointer events" on `.user-button`). gallery/file_detail/speakers merely
+    # screenshot, so they PASSED while photographing the page through the wizard's
+    # backdrop — a green run that would have baked the modal into three committed
+    # baselines. Resolved here rather than added to the signature so it stays a
+    # deliberate, explained step rather than an unused parameter.
+    request.getfixturevalue("api_token")
     context = _make_context(browser, theme)
     page = context.new_page()
     try:
@@ -932,6 +958,20 @@ def test_visual_regression(
             # this one: the background's card COUNT changes the layout of the region, and a
             # mask is a fixed rectangle over an element that may not even be present.
             png_bytes = page.locator(".settings-modal").screenshot(
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
+        elif surface == "speakers":
+            # The cluster list is clustering-model OUTPUT: two fresh stacks seeded with the
+            # same media disagree on how many clusters there are and on each one's match %
+            # and gender, so the full page differed by 17% (height 800 vs 954) with no UI
+            # change, and masking cannot fix a row COUNT. Capture the page chrome above the
+            # list (navbar, disclaimer banner, tabs, search + Re-cluster toolbar), which is
+            # what the UI work in v0.6.0 changed and is identical on every stack.
+            png_bytes = page.screenshot(
+                full_page=True,
+                clip={"x": 0, "y": 0, "width": 1280, "height": 340},
                 animations="disabled",
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",

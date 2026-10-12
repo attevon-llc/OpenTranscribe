@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { getPipelineView } from '$lib/api/pipeline';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
+  import EngineIntro, { type SidecarStatus } from '$components/settings/EngineIntro.svelte';
 
   type SettingSource = 'db' | 'env' | 'default';
 
@@ -20,9 +24,13 @@
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_cosine_margin: EngineSettingValue<number>;
     boundary_acoustic_max_word_dur: EngineSettingValue<number>;
+    /** Read-only probe result; not a setting, so it has no source badge or reset. */
+    diarizer_sidecar_status?: SidecarStatus;
   }
 
-  type EngineSettingKey = keyof EngineSettingsResponse;
+  type EngineSettingKey = Exclude<keyof EngineSettingsResponse, 'diarizer_sidecar_status'>;
+
+  const dispatch = createEventDispatcher<{ change: { hasChanges: boolean } }>();
 
   let loading = false;
   let saving = false;
@@ -39,9 +47,21 @@
   let draftAcousticCosineMargin = 0.05;
   let draftAcousticMaxWordDur = 1.0;
 
+  // Lite has no local speaker detection engine to choose. The plan says so; asked once here
+  // and never fatal, because the panel works without it.
+  let isLite = false;
+
   onMount(async () => {
-    await loadData();
+    await Promise.all([loadData(), loadMode()]);
   });
+
+  async function loadMode() {
+    try {
+      isLite = (await getPipelineView()).deployment_mode === 'lite';
+    } catch {
+      isLite = false;
+    }
+  }
 
   async function loadData() {
     loading = true;
@@ -105,7 +125,11 @@
       toastStore.success($t('settings.engineSettings.saved'));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.saveFailed')), 5000);
+      const refusal = pipelineFailureKey(err, 'settings.engineSettings.saveFailed');
+      toastStore.error(
+        refusal ? $t(refusal) : getErrorMessage(err, $t('settings.engineSettings.saveFailed')),
+        5000
+      );
     } finally {
       saving = false;
     }
@@ -118,7 +142,7 @@
       toastStore.success($t('settings.engineSettings.resetToDefault', { key }));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, `Failed to reset ${key}`), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.resetFailed', { key })), 5000);
     } finally {
       resetInProgress = null;
     }
@@ -144,26 +168,25 @@
     Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
     Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value
   );
+
+  $: dispatch('change', { hasChanges: isDirty });
 </script>
 
 <div class="engine-settings">
   {#if loading}
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else if settings}
-    <!-- Section header -->
-    <div class="section-header">
-      <h4>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-          <line x1="8" y1="21" x2="16" y2="21"/>
-          <line x1="12" y1="17" x2="12" y2="21"/>
-        </svg>
-        {$t('settings.engineSettings.title')}
-      </h4>
-    </div>
-
     <div class="settings-form">
+      <EngineIntro sidecarStatus={settings.diarizer_sidecar_status} />
 
+      <h3 class="section-title">{$t('settings.engineSettings.diarizerHeading')}</h3>
+
+      {#if isLite}
+        <!-- Lite is cloud-only: the server refuses these two settings (local_diarization_unavailable). -->
+        <p class="lite-note" data-testid="engine-lite-note">
+          {$t(PIPELINE_ISSUE_KEYS.local_diarization_unavailable)}
+        </p>
+      {:else}
       <!-- Diarizer Backend -->
       <div class="form-row">
         <div class="form-field">
@@ -193,8 +216,8 @@
             class="form-select"
             disabled={saving || resetInProgress !== null}
           >
-            <option value="native">native (default)</option>
-            <option value="pyannote">pyannote (failover)</option>
+            <option value="native">{$t('settings.engineSettings.backendNative')}</option>
+            <option value="pyannote">{$t('settings.engineSettings.backendPyannote')}</option>
           </select>
         </div>
       </div>
@@ -235,6 +258,10 @@
           </label>
         </div>
       </div>
+
+      <h3 class="section-title boundary-heading">{$t('settings.engineSettings.boundaryHeading')}</h3>
+
+      {/if}
 
       <!-- Boundary Smoothing -->
       <div class="form-row">
@@ -307,6 +334,9 @@
             <span class="toggle-switch"></span>
             <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
           </label>
+          <p class="field-hint scope-note" data-testid="recheck-scope">
+            {$t('settings.engineSettings.boundaryAcousticScope')}
+          </p>
         </div>
       </div>
 
@@ -344,6 +374,9 @@
             disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
           />
           <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticCosineMarginHelp')}</p>
+          <p class="field-hint scope-note" data-testid="recheck-scope">
+            {$t('settings.engineSettings.boundaryAcousticScope')}
+          </p>
         </div>
       </div>
 
@@ -381,6 +414,9 @@
             disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
           />
           <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}</p>
+          <p class="field-hint scope-note" data-testid="recheck-scope">
+            {$t('settings.engineSettings.boundaryAcousticScope')}
+          </p>
         </div>
       </div>
 
@@ -404,9 +440,32 @@
 </div>
 
 <style>
+  .lite-note {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
+  /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
+     beneath left-aligned tabs reads as misaligned. */
   .engine-settings {
     max-width: 800px;
-    margin: 0 auto;
+  }
+
+  .section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+  }
+
+  .boundary-heading {
+    margin-top: 0.5rem;
   }
 
   .loading {
@@ -414,25 +473,6 @@
     padding: 3rem;
     color: var(--text-muted);
     font-size: 0.8125rem;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .section-header h4 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 500;
-    color: var(--text-color);
   }
 
   .settings-form {

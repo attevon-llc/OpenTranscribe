@@ -2,6 +2,7 @@
   import type { MediaFileDetail } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { supportSessionGate } from '$stores/supportSession';
 
   export let file: MediaFileDetail | null = null;
   export let diarizationDisabled: boolean = false;
@@ -54,6 +55,8 @@
 <svelte:window on:click={() => { closeExportDropdown(); closeDownloadDropdown(); }} />
 
 <div class="transcript-actions">
+  <!-- A support session cannot export (the server refuses it, and so does the UI). -->
+  {#if !$supportSessionGate.active}
   <div class="export-dropdown" class:open={showExportDropdown}>
     <button
       class="export-transcript-button"
@@ -100,8 +103,9 @@
       </div>
     {/if}
   </div>
+  {/if}
 
-  {#if !diarizationDisabled}
+  {#if !diarizationDisabled && !$supportSessionGate.readOnly}
   <button
     class="edit-speakers-button"
     on:click={toggleSpeakerEditor}
@@ -119,7 +123,7 @@
   </button>
   {/if}
 
-  {#if file && file.download_url}
+  {#if file && file.download_url && !$supportSessionGate.active}
     <div class="export-dropdown download-dropdown" class:open={showDownloadDropdown}>
       <button
         class="action-button download-button"

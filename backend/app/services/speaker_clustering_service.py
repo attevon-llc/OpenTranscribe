@@ -32,6 +32,17 @@ from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.speaker_cleanup import SpeakerImpact
+from app.services.speaker_cleanup import blacklisted_profile_ids
+from app.services.speaker_cleanup import blocked_profile_names
+from app.services.speaker_cleanup import clusters_holding_speakers
+from app.services.speaker_cleanup import detach_from_cluster
+from app.services.speaker_cleanup import join_cluster_identity
+from app.services.speaker_cleanup import raise_if_incomplete
+from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_cleanup import speaker_blocked_from_cluster
+from app.services.speaker_cleanup import speaker_blocked_from_profile
+from app.services.speaker_cleanup import unlink_from_profile
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -57,6 +68,10 @@ GENDER_OUTLIER_EVICT_THRESHOLD = 0.70
 SIM_CHUNK = 500
 
 
+class CentroidRecomputeError(RuntimeError):
+    """A strict centroid recompute could not replace the stored centroid."""
+
+
 class SpeakerClusteringService:
     """Service for clustering speakers across media files.
 
@@ -80,6 +95,36 @@ class SpeakerClusteringService:
         # they happen and dispatched once per commit — never per row, which would
         # queue one update_by_query per speaker per file (issue #432).
         self._rename_tracker = SpeakerRenameTracker()
+        # Every aggregate an assignment made stale — the joined clusters, the clusters a
+        # joining speaker was dropped from, the profiles it entered or left — settled
+        # through ``speaker_cleanup`` once the assignments commit (issue #1233).
+        self._assigned = SpeakerImpact()
+        # The members the last ``merge_clusters`` left in the source because an
+        # unassignment forbids them from the target; the endpoint reports them.
+        self.blocked_speaker_uuids: list[str] = []
+
+    def _settle_assignments(self) -> list[dict[str, Any]]:
+        """Rebuild what this instance's committed assignments touched. Never raises.
+
+        Call after the commit, never before: a rolled-back assignment must not reach
+        OpenSearch. Returns the cleanup's residuals (already logged at ERROR).
+        """
+        impact, self._assigned = self._assigned, SpeakerImpact()
+        if impact.is_empty():
+            return []
+        return reconcile_speaker_impact(self.db, impact)
+
+    def _join(
+        self, speaker: Speaker, cluster: SpeakerCluster, confidence: float, margin: float | None
+    ) -> None:
+        """Add a speaker to a cluster and take on its identity, recording what is stale."""
+        self._add_speaker_to_cluster(speaker, cluster, confidence, margin=margin)
+        self._assigned.owner_ids.add(int(cluster.user_id))
+        self._assigned.cluster_uuids.add(str(cluster.uuid))
+        touched_profiles = join_cluster_identity(self.db, speaker, cluster, self._rename_tracker)
+        if touched_profiles:
+            self._assigned.profile_ids |= touched_profiles
+            self._assigned.relabel_speaker_ids.add(int(speaker.id))
 
     def _scoped_cluster_query(
         self, cluster_uuid: str, user_id: int, organization_id: OrgScope = UNSCOPED
@@ -172,7 +217,7 @@ class SpeakerClusteringService:
                         continue
 
                     # Check constraints before assigning
-                    if self._is_speaker_blocked_from_cluster(speaker_id, cluster):
+                    if speaker_blocked_from_cluster(self.db, speaker_id, cluster):
                         logger.debug(
                             "Speaker %s blocked from cluster %s by constraint",
                             speaker_id,
@@ -200,26 +245,10 @@ class SpeakerClusteringService:
                             )
                             continue
 
-                    self._add_speaker_to_cluster(
-                        speaker, cluster, candidate["similarity"], margin=margin
-                    )
-                    # Auto-propagate profile if cluster is promoted
-                    if cluster.promoted_to_profile_id:
-                        speaker.profile_id = cluster.promoted_to_profile_id
-                        profile = (
-                            self.db.query(SpeakerProfile)
-                            .filter(SpeakerProfile.id == cluster.promoted_to_profile_id)
-                            .first()
-                        )
-                        if profile:
-                            self._rename_tracker.record(
-                                int(speaker.media_file_id),
-                                canonical_speaker_label_for_row(speaker),
-                                str(profile.name),
-                            )
-                            speaker.display_name = profile.name
-                            speaker.verified = True
-                    self._update_cluster_centroid(cluster, user_id)
+                    # Joining a promoted cluster links its profile; the centroid, the
+                    # profile embedding and any cluster the speaker was dropped from are
+                    # rebuilt by `_settle_assignments` once the caller commits (#1233).
+                    self._join(speaker, cluster, candidate["similarity"], margin)
                     return cluster  # type: ignore[no-any-return]
 
             # No match — create a new singleton cluster in the file's scope
@@ -232,6 +261,7 @@ class SpeakerClusteringService:
             logger.error("Error in find_or_create_cluster for speaker %s: %s", speaker_id, e)
             self.db.rollback()
             self._rename_tracker.discard()
+            self._assigned = SpeakerImpact()
             return None
 
     def cluster_speakers_for_file(
@@ -274,6 +304,9 @@ class SpeakerClusteringService:
         # Any speaker that joined a promoted cluster was relabelled above; the
         # chunk plane still carries the diarizer label it was indexed with.
         self._rename_tracker.flush(self.db)
+        # A background path: a residual is logged at ERROR by the shared cleanup and the
+        # assignments themselves have committed, so the task carries on.
+        self._settle_assignments()
         return clusters
 
     # ------------------------------------------------------------------
@@ -377,10 +410,32 @@ class SpeakerClusteringService:
                 .all()
             )
 
+            # A speaker still linked to a profile it was unassigned from is data written
+            # before #1233 made the unassign unlink: the blacklist is the later decision,
+            # so the link is taken back here instead of the profile cluster re-adopting it.
+            blacklisted = blacklisted_profile_ids(self.db, [int(s.id) for s in profile_speakers])
+            stale_links = [
+                s for s in profile_speakers if int(s.profile_id or 0) in blacklisted[int(s.id)]
+            ]
+            for stale in stale_links:
+                profile_id_left = int(stale.profile_id)  # type: ignore[arg-type]
+                if unlink_from_profile(self.db, [stale], profile_id_left, self._rename_tracker):
+                    self._assigned.profile_ids.add(profile_id_left)
+                    self._assigned.relabel_speaker_ids.add(int(stale.id))
+            if stale_links:
+                # Autoflush is off: Phase 2 must see these as the unlabeled speakers they are.
+                self.db.flush()
+                logger.info(
+                    "Re-cluster: unlinked %d speaker(s) from profiles they were unassigned from",
+                    len(stale_links),
+                )
+            self._assigned.owner_ids.add(user_id)
+
             profile_groups: dict[int, list[Speaker]] = defaultdict(list)
             profiled_speaker_ids: set[int] = set()
             for spk in profile_speakers:
-                assert spk.profile_id is not None  # filtered on profile_id.isnot(None) above
+                if spk.profile_id is None:  # unlinked just above
+                    continue
                 profile_groups[int(spk.profile_id)].append(spk)
                 profiled_speaker_ids.add(int(spk.id))
 
@@ -869,11 +924,13 @@ class SpeakerClusteringService:
                         if emb is None:
                             continue
                         spk_org = org_by_file.get(int(spk.media_file_id))
+                        # Joining a profile cluster links the profile (as upload-time
+                        # matching does), so it takes the auto-link bar, never less.
                         matches = find_matching_clusters(
                             emb,
                             user_id,
                             k=5,
-                            threshold=threshold,
+                            threshold=max(threshold, CLUSTER_ASSIGNMENT_THRESHOLD),
                             organization_id=int(spk_org) if spk_org is not None else None,
                         )
                         for match in matches:
@@ -881,14 +938,14 @@ class SpeakerClusteringService:
                             if not matched_cluster:
                                 continue
                             # Check constraints before assigning singleton
-                            if self._is_speaker_blocked_from_cluster(int(spk.id), matched_cluster):
+                            if speaker_blocked_from_cluster(self.db, int(spk.id), matched_cluster):
                                 logger.debug(
                                     "Singleton %s blocked from cluster %s by constraint",
                                     spk.id,
                                     matched_cluster.uuid,
                                 )
                                 continue
-                            self._add_speaker_to_cluster(spk, matched_cluster, match["similarity"])
+                            self._join(spk, matched_cluster, match["similarity"], None)
                             speakers_assigned += 1
                             matched_singletons += 1
                             break  # Assigned to first valid match
@@ -940,6 +997,12 @@ class SpeakerClusteringService:
                     )
 
             self.db.commit()
+            # Phase 2.5 joins and the stale-link repair relabelled speakers and changed
+            # profile membership; their clusters' centroids and the profiles' embeddings
+            # are rebuilt from the committed rows (issue #1233). Logged, not raised: the
+            # re-cluster itself has committed.
+            self._rename_tracker.flush(self.db)
+            cleanup_residual = self._settle_assignments()
             logger.info(
                 "Re-clustering complete for user %d: "
                 "%d profile clusters (%d speakers), "
@@ -958,7 +1021,7 @@ class SpeakerClusteringService:
                 centroid_failures > 0
                 and clusters_created > 0
                 and centroid_failures / clusters_created > 0.1
-            ):
+            ) or cleanup_residual:
                 status = "partial_failure"
 
             return {
@@ -972,11 +1035,14 @@ class SpeakerClusteringService:
                 "speakers_assigned": speakers_assigned,
                 "singletons": singletons,
                 "centroid_failures": centroid_failures,
+                "cleanup_residual_stages": sorted({str(r["stage"]) for r in cleanup_residual}),
             }
 
         except Exception as e:
             logger.error("Error in batch re-clustering: %s", e)
             self.db.rollback()
+            self._rename_tracker.discard()
+            self._assigned = SpeakerImpact()
             raise
 
     def _compute_similarity_groups(
@@ -1123,6 +1189,9 @@ class SpeakerClusteringService:
     ) -> SpeakerCluster | None:
         """Merge source cluster into target. All members move to target.
 
+        The emptied source is deleted with its centroid and the target's centroid is
+        rebuilt from its new member set by ``speaker_cleanup`` after the move commits.
+
         Args:
             source_uuid: UUID of the cluster to dissolve.
             target_uuid: UUID of the cluster to absorb members.
@@ -1131,6 +1200,10 @@ class SpeakerClusteringService:
 
         Returns:
             The target cluster after merge, or None on error.
+
+        Raises:
+            SpeakerCleanupIncompleteError: The merge committed, but a centroid could be
+                neither rebuilt nor erased.
         """
         try:
             # Lock both clusters in consistent UUID order to prevent deadlocks
@@ -1181,43 +1254,65 @@ class SpeakerClusteringService:
                 for s in self.db.query(Speaker).filter(Speaker.id.in_(member_speaker_ids)).all()
             }
 
+            # A member the user unassigned from the target (or from its profile, or from
+            # one of its members) is not moved: it stays in the source, which then
+            # survives with it (issue #1233). Decided before anything moves, so the
+            # target's membership is the one the user looked at.
+            self.blocked_speaker_uuids = [
+                str(speakers_by_id[int(m.speaker_id)].uuid)
+                for m in source_members
+                if int(m.speaker_id) in speakers_by_id
+                and speaker_blocked_from_cluster(self.db, int(m.speaker_id), target)
+            ]
+            blocked = set(self.blocked_speaker_uuids)
+            moved: list[Speaker] = []
+            source_profile_id = source.promoted_to_profile_id
             for member in source_members:
+                speaker = speakers_by_id.get(int(member.speaker_id))
+                if speaker is not None and str(speaker.uuid) in blocked:
+                    continue
                 if int(member.speaker_id) in existing_speaker_ids:
                     self.db.delete(member)
                 else:
                     member.cluster_id = target.id  # type: ignore[assignment]
-
-                # Update speaker FK
-                speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker:
                     speaker.cluster_id = target.id  # type: ignore[assignment]
+                    moved.append(speaker)
 
-            # Update target count
-            target.member_count = (  # type: ignore[assignment]
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == target.id)
-                .count()
-            )
+            # Merging into a promoted cluster says the moved speakers are that person:
+            # they take its profile, unless already linked to some third profile.
+            self._assigned.owner_ids.add(user_id)
+            self._assigned.cluster_uuids |= {source_uuid, target_uuid}
+            if target.promoted_to_profile_id is not None:
+                for speaker in moved:
+                    if speaker.profile_id is None or speaker.profile_id == source_profile_id:
+                        touched = join_cluster_identity(
+                            self.db, speaker, target, self._rename_tracker
+                        )
+                        if touched:
+                            self._assigned.profile_ids |= touched
+                            self._assigned.relabel_speaker_ids.add(int(speaker.id))
 
-            # Remove source cluster centroid from OpenSearch
-            try:
-                from app.services.opensearch_service import delete_cluster_embedding
-
-                delete_cluster_embedding(str(source.uuid))
-            except Exception as e:
-                logger.warning("Could not delete source cluster embedding: %s", e)
-
-            self.db.delete(source)
-            self._update_cluster_centroid(target, user_id)
             self.db.commit()
-
-            logger.info("Merged cluster %s into %s", source_uuid, target_uuid)
-            return target  # type: ignore[no-any-return]
+            self._rename_tracker.flush(self.db)
 
         except Exception as e:
             logger.error("Error merging clusters: %s", e)
             self.db.rollback()
+            self._rename_tracker.discard()
+            self._assigned = SpeakerImpact()
             return None
+
+        # The source is empty now (unless it kept blocked members): the shared cleanup
+        # deletes it with its centroid and rebuilds the target's from the merged membership.
+        raise_if_incomplete(self._settle_assignments())
+        logger.info(
+            "Merged cluster %s into %s (%d member(s) blocked by an unassignment)",
+            source_uuid,
+            target_uuid,
+            len(blocked),
+        )
+        return target  # type: ignore[no-any-return]
 
     def split_cluster(
         self,
@@ -1229,6 +1324,12 @@ class SpeakerClusteringService:
     ) -> SpeakerCluster | None:
         """Split specified speakers into a new cluster.
 
+        A split says the moved speakers are someone other than the members that stay, so
+        it is an unassignment (issue #1233): they leave the source through
+        ``speaker_cleanup.detach_from_cluster`` — unlinked from a promoted source's
+        profile, and recorded as cannot-link against the members that stay and as
+        blacklisted from that profile — then form the new, unpromoted cluster together.
+
         Args:
             cluster_uuid: UUID of the source cluster.
             speaker_uuids: UUIDs of speakers to move to the new cluster.
@@ -1237,6 +1338,10 @@ class SpeakerClusteringService:
 
         Returns:
             The newly created cluster, or None on error.
+
+        Raises:
+            SpeakerCleanupIncompleteError: The split committed, but a centroid could be
+                neither rebuilt nor erased.
         """
         try:
             source = (
@@ -1267,6 +1372,11 @@ class SpeakerClusteringService:
                 logger.warning("No speakers from source cluster to split")
                 return None
 
+            # Leave the source as an unassignment: membership, promoted profile, blacklist.
+            impact = detach_from_cluster(
+                self.db, source, speakers_to_move, blacklist=True, tracker=self._rename_tracker
+            )
+
             # Create new cluster (same tenant scope as the source — members
             # can only come from the source cluster).
             new_cluster = SpeakerCluster(
@@ -1278,15 +1388,7 @@ class SpeakerClusteringService:
             self.db.add(new_cluster)
             self.db.flush()
 
-            # Move members
             for speaker in speakers_to_move:
-                # Remove from source membership
-                self.db.query(SpeakerClusterMember).filter(
-                    SpeakerClusterMember.cluster_id == source.id,
-                    SpeakerClusterMember.speaker_id == speaker.id,
-                ).delete()
-
-                # Add to new cluster
                 member = SpeakerClusterMember(
                     uuid=uuid4(),
                     cluster_id=new_cluster.id,
@@ -1296,41 +1398,24 @@ class SpeakerClusteringService:
                 self.db.add(member)
                 speaker.cluster_id = new_cluster.id  # type: ignore[assignment]
 
-            # Update counts
             new_cluster.member_count = len(speakers_to_move)  # type: ignore[assignment]
-            source.member_count = (  # type: ignore[assignment]
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == source.id)
-                .count()
-            )
-
-            # Update centroids
-            self._update_cluster_centroid(source, user_id)
-            self._update_cluster_centroid(new_cluster, user_id)
-
-            # Delete source if empty (fresh count to avoid stale ORM attribute)
-            remaining = (
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == source.id)
-                .count()
-            )
-            if remaining == 0:
-                try:
-                    from app.services.opensearch_service import delete_cluster_embedding
-
-                    delete_cluster_embedding(str(source.uuid))
-                except Exception:
-                    logger.debug("Failed to remove cluster embedding from OpenSearch")
-                self.db.delete(source)
-
+            impact.cluster_uuids.add(str(new_cluster.uuid))
+            impact.owner_ids.add(user_id)
             self.db.commit()
-            logger.info("Split %d speakers from cluster %s", len(speakers_to_move), cluster_uuid)
-            return new_cluster
+            self._rename_tracker.flush(self.db)
 
         except Exception as e:
             logger.error("Error splitting cluster: %s", e)
             self.db.rollback()
+            self._rename_tracker.discard()
             return None
+
+        # Both centroids change: the source loses the moved voices (and is deleted with
+        # its centroid if nobody is left), the new cluster is built from them; a promoted
+        # source's profile loses them too.
+        raise_if_incomplete(reconcile_speaker_impact(self.db, impact))
+        logger.info("Split %d speakers from cluster %s", len(speakers_to_move), cluster_uuid)
+        return new_cluster
 
     def promote_cluster_to_profile(
         self,
@@ -1356,6 +1441,10 @@ class SpeakerClusteringService:
 
         Returns:
             The created SpeakerProfile, or None on error.
+
+        Raises:
+            SpeakerCleanupIncompleteError: The promotion committed, but a profile embedding or
+                the cluster centroid could be neither rebuilt nor erased.
         """
         try:
             cluster = self._scoped_cluster_query(cluster_uuid, user_id, organization_id).first()
@@ -1427,6 +1516,15 @@ class SpeakerClusteringService:
             if not cluster.label:
                 cluster.label = name  # type: ignore[assignment]
 
+            # A member already linked elsewhere leaves that profile, whose embedding
+            # still averages its voice until it is rebuilt (issue #1214).
+            touched = SpeakerImpact(
+                owner_ids={user_id},
+                cluster_uuids={str(cluster.uuid)},
+                profile_ids={int(profile.id)}
+                | {int(s.profile_id) for s in speakers_by_id.values() if s.profile_id},
+            )
+
             for member in members:
                 speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker:
@@ -1441,26 +1539,25 @@ class SpeakerClusteringService:
                     speaker.display_name = name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
 
-            # Update profile embedding
-            from app.services.profile_embedding_service import ProfileEmbeddingService
-
             self.db.commit()
             self._rename_tracker.flush(self.db)
-            ProfileEmbeddingService.update_profile_embedding(self.db, int(profile.id))
-
-            logger.info(
-                "Promoted cluster %s to profile '%s' (%d speakers)",
-                cluster_uuid,
-                name,
-                len(members),
-            )
-            return profile
 
         except Exception as e:
             logger.error("Error promoting cluster to profile: %s", e)
             self.db.rollback()
             self._rename_tracker.discard()
             return None
+
+        # The new profile's embedding, every former profile's, and the cluster centroid
+        # (profile-linked members weigh double in it) — one shared cleanup.
+        raise_if_incomplete(reconcile_speaker_impact(self.db, touched))
+        logger.info(
+            "Promoted cluster %s to profile '%s' (%d speakers)",
+            cluster_uuid,
+            name,
+            len(members),
+        )
+        return profile
 
     # ------------------------------------------------------------------
     # Outlier analysis and constraint-based unassignment
@@ -1609,10 +1706,22 @@ class SpeakerClusteringService:
         *,
         organization_id: OrgScope = UNSCOPED,
     ) -> dict:
-        """Unassign speakers from a cluster, optionally blacklisting them."""
-        from app.models.media import SpeakerCannotLink
-        from app.models.media import SpeakerProfileBlacklist
+        """Unassign speakers from a cluster: that section is no longer that person.
 
+        ``speaker_cleanup.detach_from_cluster`` applies the rule (issue #1233): the
+        speakers leave the cluster and the cluster's promoted profile (a name that came
+        from the profile is cleared, a name the user typed stays) and, with
+        ``blacklist``, are recorded as cannot-link against every remaining member and as
+        blacklisted from that profile, so no assignment path re-links them silently. The
+        cluster and its profile remain for the other members; the centroid and profile
+        embedding are rebuilt from them, and a cluster left with none is deleted with
+        its centroid.
+
+        Raises:
+            ValueError: The cluster or the speakers were not found.
+            SpeakerCleanupIncompleteError: The unassignment committed, but the centroid or
+                profile embedding could be neither rebuilt nor erased.
+        """
         cluster = self._scoped_cluster_query(cluster_uuid, user_id, organization_id).first()
         if not cluster:
             raise ValueError("Cluster not found")
@@ -1630,78 +1739,25 @@ class SpeakerClusteringService:
         if not speakers_to_remove:
             raise ValueError("No valid speakers found")
 
-        remove_ids = {s.id for s in speakers_to_remove}
+        impact = detach_from_cluster(
+            self.db,
+            cluster,
+            speakers_to_remove,
+            blacklist=blacklist,
+            tracker=self._rename_tracker,
+        )
+        impact.owner_ids.add(user_id)
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            self._rename_tracker.discard()
+            raise
+        self._rename_tracker.flush(self.db)
 
-        # Get remaining members
-        remaining_member_ids = [
-            m.speaker_id for m in cluster.members if m.speaker_id not in remove_ids
-        ]
-
-        # Remove cluster memberships
-        self.db.query(SpeakerClusterMember).filter(
-            SpeakerClusterMember.cluster_id == cluster.id,
-            SpeakerClusterMember.speaker_id.in_(remove_ids),
-        ).delete(synchronize_session="fetch")
-
-        # Set speaker.cluster_id = None
-        for s in speakers_to_remove:
-            s.cluster_id = None
-
-        # Add blacklist constraints
-        if blacklist:
-            if cluster.promoted_to_profile_id:
-                # Profile blacklist: one entry covers all current and future members
-                for s in speakers_to_remove:
-                    existing = (
-                        self.db.query(SpeakerProfileBlacklist)
-                        .filter(
-                            SpeakerProfileBlacklist.speaker_id == s.id,
-                            SpeakerProfileBlacklist.profile_id == cluster.promoted_to_profile_id,
-                        )
-                        .first()
-                    )
-                    if not existing:
-                        self.db.add(
-                            SpeakerProfileBlacklist(
-                                speaker_id=s.id,
-                                profile_id=cluster.promoted_to_profile_id,
-                                reason="unassigned_by_user",
-                            )
-                        )
-            else:
-                # Cannot-link: pairwise between removed speakers and remaining members
-                for s in speakers_to_remove:
-                    for remaining_id in remaining_member_ids:
-                        # Add both directions
-                        for a, b in [(s.id, remaining_id), (remaining_id, s.id)]:
-                            existing_link = (
-                                self.db.query(SpeakerCannotLink)
-                                .filter(
-                                    SpeakerCannotLink.speaker_id == a,
-                                    SpeakerCannotLink.cannot_link_speaker_id == b,
-                                )
-                                .first()
-                            )
-                            if not existing_link:
-                                self.db.add(
-                                    SpeakerCannotLink(
-                                        speaker_id=a,
-                                        cannot_link_speaker_id=b,
-                                        reason="unassigned_by_user",
-                                    )
-                                )
-
-        # Update cluster member_count
-        cluster.member_count = len(remaining_member_ids)
-
-        # Delete cluster if empty
-        if cluster.member_count == 0:
-            self.db.delete(cluster)
-        else:
-            # Recompute centroid
-            self._update_cluster_centroid(cluster, user_id)
-
-        self.db.commit()
+        # The removed voices leave the centroid and the profile; an emptied cluster goes
+        # with its centroid. The cluster and profile stay for everyone else.
+        raise_if_incomplete(reconcile_speaker_impact(self.db, impact))
 
         return {
             "unassigned_count": len(speakers_to_remove),
@@ -1859,6 +1915,13 @@ class SpeakerClusteringService:
         )
         speakers_by_uuid = {str(s.uuid): s for s, _ in speaker_rows}
         file_org_by_uuid = {str(s.uuid): org for s, org in speaker_rows}
+        # A bulk action is exactly where a corrected speaker gets swept back in unnoticed,
+        # so it honours the blacklist and reports each refusal; naming one speaker on
+        # its own is the explicit override (issue #1233).
+        refused_names = blocked_profile_names(self.db, [int(s.id) for s, _ in speaker_rows])
+        # "assign" moves speakers into ``profile`` and out of any profile they had.
+        assigned: set[int] = set()
+        touched = SpeakerImpact(owner_ids={user_id})
 
         for suuid in speaker_uuids:
             try:
@@ -1881,7 +1944,15 @@ class SpeakerClusteringService:
                 indexed_as = canonical_speaker_label_for_row(speaker)
 
                 if action == "accept":
-                    if speaker.suggested_name:
+                    if speaker.suggested_name and str(speaker.suggested_name).casefold() in (
+                        refused_names.get(int(speaker.id), set())
+                    ):
+                        errors.append(
+                            f"Speaker {suuid} was unassigned from that identity; "
+                            "name it individually to override"
+                        )
+                        failed += 1
+                    elif speaker.suggested_name:
                         self._rename_tracker.record(
                             int(speaker.media_file_id), indexed_as, str(speaker.suggested_name)
                         )
@@ -1893,6 +1964,16 @@ class SpeakerClusteringService:
                         failed += 1
 
                 elif action == "assign" and profile:
+                    if speaker_blocked_from_profile(self.db, int(speaker.id), int(profile.id)):
+                        errors.append(
+                            f"Speaker {suuid} was unassigned from this profile; "
+                            "assign it individually to override"
+                        )
+                        failed += 1
+                        continue
+                    assigned.add(int(speaker.id))
+                    if speaker.profile_id:
+                        touched.profile_ids.add(int(speaker.profile_id))
                     speaker.profile_id = profile.id  # type: ignore[assignment]
                     self._rename_tracker.record(
                         int(speaker.media_file_id), indexed_as, str(profile.name)
@@ -1947,6 +2028,12 @@ class SpeakerClusteringService:
             }
 
         self._rename_tracker.flush(self.db)
+        if assigned and profile is not None:
+            # The target profile gains the voices and each former profile loses them; the
+            # speakers' clusters re-weight them (profile-linked members count double).
+            touched.profile_ids.add(int(profile.id))
+            touched.cluster_uuids = clusters_holding_speakers(self.db, assigned)
+            raise_if_incomplete(reconcile_speaker_impact(self.db, touched))
         return {"updated_count": updated, "failed_count": failed, "errors": errors}
 
     # ------------------------------------------------------------------
@@ -1979,6 +2066,17 @@ class SpeakerClusteringService:
         tenant_pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
         if tenant_pred is not None:
             tenant_filters.append(tenant_pred)
+        # A cluster is a GROUP. Upload-time clustering keeps a one-speaker cluster per unmatched
+        # speaker so a later file can match it, but "Re-cluster All" rebuilds only groups of
+        # two or more; listing the singletons made the tab fill up after an upload and empty
+        # after a recluster. They stay in the table for matching and are still reviewed in the
+        # inbox, which lists every unverified speaker whatever its cluster. A named or promoted
+        # cluster is always shown.
+        tenant_filters.append(
+            (SpeakerCluster.member_count >= 2)
+            | SpeakerCluster.label.isnot(None)
+            | SpeakerCluster.promoted_to_profile_id.isnot(None)
+        )
         query = (
             self.db.query(SpeakerCluster)
             .options(
@@ -2287,40 +2385,6 @@ class SpeakerClusteringService:
         dominant: str | None = max(rows, key=lambda r: r[1])[0]
         return dominant
 
-    def _is_speaker_blocked_from_cluster(self, speaker_id: int, cluster: SpeakerCluster) -> bool:
-        """Check if a speaker is blocked from joining a cluster by constraints."""
-        from app.models.media import SpeakerCannotLink
-        from app.models.media import SpeakerProfileBlacklist
-
-        # Check 1: Profile blacklist
-        if cluster.promoted_to_profile_id:
-            blocked = (
-                self.db.query(SpeakerProfileBlacklist)
-                .filter(
-                    SpeakerProfileBlacklist.speaker_id == speaker_id,
-                    SpeakerProfileBlacklist.profile_id == cluster.promoted_to_profile_id,
-                )
-                .first()
-            )
-            if blocked:
-                return True
-
-        # Check 2: Cannot-link with any cluster member
-        member_ids = [m.speaker_id for m in cluster.members]
-        if member_ids:
-            conflicts = (
-                self.db.query(SpeakerCannotLink)
-                .filter(
-                    SpeakerCannotLink.speaker_id == speaker_id,
-                    SpeakerCannotLink.cannot_link_speaker_id.in_(member_ids),
-                )
-                .count()
-            )
-            if conflicts > 0:
-                return True
-
-        return False
-
     def _add_speaker_to_cluster(
         self,
         speaker: Speaker,
@@ -2347,7 +2411,13 @@ class SpeakerClusteringService:
         if existing:
             return
 
-        # Remove memberships in other clusters (speaker can only be in one)
+        # Remove memberships in other clusters (speaker can only be in one). Reachable when
+        # membership rows exist but ``cluster_id`` is null; each cluster dropped here still
+        # averages this voice until ``_settle_assignments`` rebuilds it (issue #1233).
+        displaced = clusters_holding_speakers(self.db, [int(speaker.id)]) - {str(cluster.uuid)}
+        if displaced:
+            self._assigned.cluster_uuids |= displaced
+            self._assigned.owner_ids.add(int(cluster.user_id))
         self.db.query(SpeakerClusterMember).filter(
             SpeakerClusterMember.speaker_id == speaker.id,
             SpeakerClusterMember.cluster_id != cluster.id,
@@ -2478,8 +2548,19 @@ class SpeakerClusteringService:
         cluster: SpeakerCluster,
         user_id: int,
         refresh: str | bool = "wait_for",
+        strict: bool = False,
     ) -> None:
-        """Recalculate and store the cluster centroid embedding."""
+        """Recalculate and store the cluster centroid embedding.
+
+        Args:
+            cluster: The cluster whose centroid is rebuilt from its current members.
+            user_id: Owner, written onto the centroid document.
+            refresh: OpenSearch refresh policy for the centroid write.
+            strict: Raise :class:`CentroidRecomputeError` instead of leaving the stored
+                centroid untouched when it cannot be rebuilt (no member voiceprint, a
+                zero vector, or a failed write). Erasure needs this: a swallowed failure
+                leaves the OLD centroid, which still averages in a deleted voiceprint.
+        """
         members = (
             self.db.query(SpeakerClusterMember)
             .options(joinedload(SpeakerClusterMember.speaker))
@@ -2507,6 +2588,8 @@ class SpeakerClusteringService:
                     best_speaker_id = int(speaker.id)
 
         if not embeddings:
+            if strict:
+                raise CentroidRecomputeError(f"cluster {cluster.uuid} has no member voiceprint")
             return
 
         # Weighted mean centroid: verified/profile-linked speakers get 2x weight
@@ -2524,6 +2607,8 @@ class SpeakerClusteringService:
                 "Zero-vector centroid for cluster %s — skipping OpenSearch storage",
                 cluster.uuid,
             )
+            if strict:
+                raise CentroidRecomputeError(f"cluster {cluster.uuid} centroid is a zero vector")
             return
 
         # Quality score: average centroid similarity (consistent with
@@ -2546,7 +2631,7 @@ class SpeakerClusteringService:
         try:
             from app.services.opensearch_service import store_cluster_embedding
 
-            store_cluster_embedding(
+            stored = store_cluster_embedding(
                 cluster_uuid=str(cluster.uuid),
                 user_id=user_id,
                 embedding=centroid.tolist(),
@@ -2558,6 +2643,13 @@ class SpeakerClusteringService:
             )
         except Exception as e:
             logger.warning("Could not update cluster centroid in OpenSearch: %s", e)
+            if strict:
+                raise CentroidRecomputeError(str(e)) from e
+        else:
+            if strict and not stored:
+                raise CentroidRecomputeError(
+                    f"OpenSearch refused the centroid write for cluster {cluster.uuid}"
+                )
 
     def _get_speaker_embedding(self, speaker: Speaker) -> list[float] | None:
         """Get embedding for a speaker from the active index."""

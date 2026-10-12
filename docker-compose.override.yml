@@ -118,6 +118,12 @@ services:
       # (GET /users/search) needs no relaxation: 60/min already clears the e2e
       # share/group flows.
       RATE_LIMIT_SEARCH_PER_MINUTE: ${DEV_RATE_LIMIT_SEARCH_PER_MINUTE:-300}
+      # Two read-only endpoints every SPA page load calls (GET /auth/methods, #1131; GET /files/owners,
+      # #966). Production limits (60/min, 60/min) are per IP and fine for a person; the e2e suite
+      # drives 3 parallel workers from ONE IP through hundreds of page loads and 429s them, which
+      # surfaced as console-error and missing-form failures rather than as rate limiting.
+      RATE_LIMIT_AUTH_METHODS_PER_MINUTE: ${DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE:-600}
+      RATE_LIMIT_DIRECTORY_PER_MINUTE: ${DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE:-600}
       ACCOUNT_LOCKOUT_THRESHOLD: ${DEV_ACCOUNT_LOCKOUT_THRESHOLD:-100}
       ACCOUNT_LOCKOUT_DURATION_MINUTES: ${DEV_ACCOUNT_LOCKOUT_DURATION_MINUTES:-1}
       # Dev bind-mounts source over a possibly stale image, so the image's baked

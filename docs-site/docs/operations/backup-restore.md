@@ -142,7 +142,7 @@ docker compose exec -T postgres pg_dump -U postgres -Fc opentranscribe > backup.
 OpenTranscribe ships a **built-in scheduled-backup system** that runs on the
 stack's existing `celery-beat` service — no host cron, no systemd timer, and
 no shell scripting. Everything is configured in the admin UI under
-**Settings → System Management → Backups** and stored in the database, so
+**Settings → Database Backups** and stored in the database, so
 schedule changes take effect with no restart.
 
 Start the stack with the backup overlay so a destination is mounted:
@@ -192,7 +192,7 @@ below. For an S3 destination, fetch the artifact first with `--from-s3` — see
 #### OpenSearch snapshots (optional)
 
 The in-app scheduler can **also take an OpenSearch snapshot** alongside each
-`pg_dump`. Enable it in the admin UI under **Settings → Backups → "Include
+`pg_dump`. Enable it in the admin UI under **Settings → Database Backups → "Include
 OpenSearch snapshot"**. Because every search index is **rebuildable from
 PostgreSQL**, this is a *convenience* (skip the reindex on restore), not a
 necessity — leave it off and nothing is lost.
@@ -258,7 +258,7 @@ The database dump protects your *metadata*; the **Media Mirror** protects the
 rebuilt from anything else. It incrementally copies the media bucket to a second
 location on its own schedule, using the same celery-beat infrastructure as the
 database backup. **Default OFF** — enable it in the admin UI under
-**Settings → System Management → Backups → Media Mirror**.
+**Settings → Database Backups → Media Mirror**.
 
 What it copies:
 

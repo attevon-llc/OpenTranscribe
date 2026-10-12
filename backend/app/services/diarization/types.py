@@ -15,6 +15,9 @@ class DiarizeConfig:
     num_speakers: int | None = None
     api_key: str | None = None
     model_name: str | None = None
+    #: A WAV the diar-native sidecar can open directly (the pipeline scratch copy), so this
+    #: server's engine need not re-encode the audio. Only the local provider reads it.
+    sidecar_wav_path: str | None = None
 
 
 @dataclass

@@ -3,6 +3,7 @@
  */
 
 import axiosInstance from '../axios';
+import type { PipelineIssue } from './pipeline';
 
 export type ASRProvider =
   | 'local'
@@ -15,6 +16,11 @@ export type ASRProvider =
   | 'speechmatics'
   | 'gladia'
   | 'pyannote';
+
+/** Which speaker-count hints (min, max, exact) a provider actually passes to its vendor. */
+export type SpeakerCountHint = 'min' | 'max' | 'num';
+/** How finely the model times its text; speakers can only be assigned to timed text. */
+export type TimestampGranularity = 'word' | 'segment' | 'none';
 
 type ASRConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
@@ -45,6 +51,10 @@ export interface ASRModelInfo {
   downloaded?: boolean;
   /** Present for local Whisper models — e.g. 'multilingual' or 'english' */
   language_support?: string;
+  /** Present only where the model differs from its provider entry. */
+  speaker_count_hints?: SpeakerCountHint[];
+  /** Present only where the model differs from its provider entry. */
+  timestamp_granularity?: TimestampGranularity;
 }
 
 export interface ASRProviderInfo {
@@ -63,6 +73,8 @@ export interface ASRProviderInfo {
   /** supports_custom_url from the backend catalog */
   supports_base_url: boolean;
   supports_diarization: boolean;
+  speaker_count_hints: SpeakerCountHint[];
+  timestamp_granularity: TimestampGranularity;
   supports_vocabulary: boolean;
   supports_translation: boolean;
   /** Not in backend catalog — defaults to true */
@@ -124,6 +136,27 @@ export interface UserASRSettingsResponse {
   updated_at: string;
 }
 
+export type { PipelineIssue };
+
+/**
+ * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch
+ * that would make the stored speaker detection choice unrunnable, or (lite, #1228) select
+ * local transcription, is refused with 409 `detail: {code, message}`; otherwise
+ * `pipeline_issues` describes the pipeline after the change and `config_uuid` names the
+ * config active afterwards (`null`: none).
+ */
+export interface ASRSwitchResult {
+  message: string;
+  config_uuid: string | null;
+  pipeline_issues: PipelineIssue[];
+}
+
+/** `POST /asr-settings`: a first config is auto-activated only when it keeps speaker detection runnable. */
+export interface ASRConfigCreateResult extends UserASRSettingsResponse {
+  auto_activated: boolean;
+  pipeline_issues: PipelineIssue[];
+}
+
 export interface ASRSettingsList {
   configurations: UserASRSettingsResponse[];
   shared_configurations: UserASRSettingsResponse[];
@@ -144,6 +177,9 @@ export interface ASRModelCapabilities {
   supports_translation: boolean;
   language_support: string;
   languages: number | null;
+  supports_diarization?: boolean;
+  speaker_count_hints?: SpeakerCountHint[];
+  timestamp_granularity?: TimestampGranularity;
 }
 
 export interface ASRStatusResponse {
@@ -195,6 +231,8 @@ interface RawASRModel {
   languages?: number;
   downloaded?: boolean;
   language_support?: string;
+  speaker_count_hints?: SpeakerCountHint[];
+  timestamp_granularity?: TimestampGranularity;
 }
 
 /**
@@ -214,6 +252,8 @@ interface RawASRProvider {
   supports_custom_url?: boolean;
   supports_base_url?: boolean;
   supports_diarization?: boolean;
+  speaker_count_hints?: SpeakerCountHint[];
+  timestamp_granularity?: TimestampGranularity;
   supports_vocabulary?: boolean;
   supports_translation?: boolean;
   sdk_available?: boolean;
@@ -221,6 +261,12 @@ interface RawASRProvider {
   status_note?: string;
   diarization_quality?: string;
   models?: RawASRModel[];
+}
+
+/** Mirrors backend `schemas.asr_settings.ASRConfigDeleted`: the switch shape plus the reset. */
+export interface ASRConfigDeleted extends ASRSwitchResult {
+  deleted: boolean;
+  diarizer_source_reverted: boolean;
 }
 
 export class ASRSettingsApi {
@@ -259,6 +305,9 @@ export class ASRSettingsApi {
         supports_region: p.requires_region ?? p.supports_region ?? false,
         supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
         supports_diarization: p.supports_diarization ?? false,
+        speaker_count_hints: p.speaker_count_hints ?? [],
+        // A catalog without the field cannot be assumed to time its text.
+        timestamp_granularity: p.timestamp_granularity ?? 'none',
         supports_vocabulary: p.supports_vocabulary ?? false,
         supports_translation: p.supports_translation ?? false,
         // sdk_available is not in the backend catalog — assume true unless explicitly false
@@ -282,6 +331,8 @@ export class ASRSettingsApi {
           languages: m.languages,
           downloaded: m.downloaded,
           language_support: m.language_support,
+          speaker_count_hints: m.speaker_count_hints,
+          timestamp_granularity: m.timestamp_granularity,
         })),
       };
     });
@@ -340,7 +391,7 @@ export class ASRSettingsApi {
   /**
    * Create a new ASR configuration
    */
-  static async createConfig(data: UserASRSettingsCreate): Promise<UserASRSettingsResponse> {
+  static async createConfig(data: UserASRSettingsCreate): Promise<ASRConfigCreateResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}`, data);
     return response.data;
   }
@@ -357,25 +408,30 @@ export class ASRSettingsApi {
   }
 
   /**
-   * Delete a specific ASR configuration
-   * Backend returns 204 No Content on success.
+   * Delete a specific ASR configuration (issues #1226, #1236). Returns the pipeline it
+   * leaves: `config_uuid` is the config active afterwards (`null`: none), `pipeline_issues`
+   * says when no remaining config keeps speaker detection runnable, and
+   * `diarizer_source_reverted` is true when the caller's speaker detection named this
+   * configuration and was reset to the default. On lite, deleting the last config that can
+   * transcribe is refused with 409 `detail: {code, message}` (`local_asr_unavailable`, #1228).
    */
-  static async deleteConfig(uuid: string): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+  static async deleteConfig(uuid: string): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
+    return response.data;
   }
 
   /**
-   * Delete all user ASR configurations (revert to local GPU default)
-   * Backend returns 204 No Content on success.
+   * Delete all user ASR configurations (revert to local GPU default).
    */
-  static async deleteAll(): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/all`);
+  static async deleteAll(): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/all`);
+    return response.data;
   }
 
   /**
    * Set a specific configuration as active
    */
-  static async setActive(uuid: string): Promise<{ message: string; config_uuid: string }> {
+  static async setActive(uuid: string): Promise<ASRSwitchResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
       config_uuid: uuid,
     });
@@ -386,7 +442,7 @@ export class ASRSettingsApi {
    * Clear the active configuration, reverting to local GPU default.
    * Does NOT delete any saved configs — they remain available for re-activation.
    */
-  static async clearActive(): Promise<{ message: string }> {
+  static async clearActive(): Promise<ASRSwitchResult> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/clear-active`);
     return response.data;
   }

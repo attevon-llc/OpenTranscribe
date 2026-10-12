@@ -65,6 +65,40 @@
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.65);
 }
 
+/* `.search-keyword-match` / `.search-semantic-segment` — the consolidated transcript-view
+ * modal's classification highlight (issue #755 D4), ported from the deleted
+ * SearchTranscriptModal.svelte. Keyword highlights the matched word(s); semantic highlights
+ * the whole segment as one unit (`box-decoration-break: clone` keeps the background
+ * continuous across wrapped lines). Class names are E2E-asserted —
+ * `backend/tests/e2e/test_search.py:297` — do not rename.
+ */
+.search-keyword-match {
+  background-color: rgba(250, 204, 21, 0.45);
+  color: var(--text-primary);
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.search-semantic-segment {
+  background-color: rgba(99, 102, 241, 0.12);
+  color: var(--text-primary);
+  padding: 0.05em 0.1em;
+  border-radius: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+[data-theme='dark'] .search-keyword-match {
+  background-color: rgba(250, 204, 21, 0.3);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .search-semantic-segment {
+  background-color: rgba(99, 102, 241, 0.22);
+  color: var(--text-primary);
+}
+
 /* Whole-element "current match" pulse — used when scrolling a container (e.g. a
    transcript segment) into view. */
 .search-current-match {

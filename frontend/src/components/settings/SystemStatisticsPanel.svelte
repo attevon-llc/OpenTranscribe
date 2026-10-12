@@ -131,12 +131,6 @@
               — {$t('settings.statistics.cpuMode.modelHintHeavy')}
             {/if}
           </li>
-          <li>
-            <strong>{$t('settings.statistics.cpuMode.diarizationLabel')}:</strong>
-            {stats.system?.diarization_enabled
-              ? $t('settings.statistics.cpuMode.diarizationOn')
-              : $t('settings.statistics.cpuMode.diarizationOff')}
-          </li>
         </ul>
         <div class="cpu-mode-banner-footer">
           {$t('settings.statistics.cpuMode.howToFix')}

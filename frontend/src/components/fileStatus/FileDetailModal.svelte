@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '../../stores/locale';
   import { taskProgressPercent } from '$lib/utils/formatting';
+  import ProcessingProvenance from '$components/ProcessingProvenance.svelte';
 
   export let detailedStatus: any;
   export let selectedFile: any;
@@ -139,6 +140,13 @@
               </div>
             {/if}
           </div>
+
+          {#if detailedStatus.file.processing_steps?.length}
+            <div class="processing-provenance">
+              <h4>{$t('fileProcessing.title')}</h4>
+              <ProcessingProvenance steps={detailedStatus.file.processing_steps} />
+            </div>
+          {/if}
 
           {#if detailedStatus.is_stuck}
             <div class="warning">
@@ -360,6 +368,10 @@
     margin: 0 0 1rem 0;
     color: var(--text-color);
     font-weight: 600;
+  }
+
+  .processing-provenance {
+    margin-bottom: 16px;
   }
 
   .metadata-grid {

@@ -255,6 +255,7 @@ def scope_speaker_digest_hits(
                         start_time=0.0,
                         end_time=None,
                         digest_section=len(sections),
+                        is_llm_summary=True,
                     )
                 )
                 summary_hits += 1

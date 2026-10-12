@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '../ui/Spinner.svelte';
+  import OrphanedDataPanel from './OrphanedDataPanel.svelte';
 
   // State
   let running = false;
@@ -51,6 +52,7 @@
 
   interface IntegrityComplete {
     status: string;
+    scope?: string;
     results?: any;
     duration_seconds?: number;
     error?: string;
@@ -66,6 +68,8 @@
 
   function handleComplete(event: CustomEvent<IntegrityComplete>) {
     const data = event.detail;
+    // The storage sweep reports on the same channel; OrphanedDataPanel owns that one.
+    if (data.scope === 'storage') return;
     running = false;
     currentIndex = '';
     processedIndices = 0;
@@ -249,6 +253,8 @@
           </div>
         </div>
       {/if}
+
+      <OrphanedDataPanel />
 
       <!-- Action Box -->
       <div class="action-box" class:running>

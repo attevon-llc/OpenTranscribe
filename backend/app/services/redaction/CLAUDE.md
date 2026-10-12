@@ -189,7 +189,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   (issue #74).** `celery-redaction` is still the only `PRELOAD_REDACTION_MODELS=true`
   container — that statement, and the identical ones in `tasks/CLAUDE.md` and
   `.env.example`, stay true; the API warms by a **different mechanism and loads only
-  Presidio**, never the ~500 MB toxicity weights. **Four** live paths reach a detector in the
+  Presidio and the English toxicity model** (see the #1190 bullet below). **Four** live paths reach a detector in the
   API process: `chat/redactor._mask_inline` (reached *more* often since `v392`, because a
   scan that skipped `pii` now falls through to it), `chat/output_redactor`,
   `redetect_edited_segment`, and — since #86 — `search/snippet_redaction`, which is the only
@@ -225,6 +225,15 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
     double-checked: the cache hit stays lock-free (~2 us, on every masked segment) and a
     caller arriving mid-build **waits for the remainder** — 3 s into a 10 s build it waits
     7.0 s instead of 8.8 s building a duplicate. Never worse than cold, at any arrival time.
+  - **The warm-up also loads the toxicity model (issue #1190).** `redetect_edited_segment` runs
+    every detector, and the first segment edit after a restart loaded `unitary/toxic-bert`
+    inside the PUT: **12.05 s** cold vs 0.02 s warm. `warmup.warm_edit_path_detectors` now runs
+    after the Presidio warm-up, on the same daemon thread under the same
+    `redaction_is_in_use` gate (measured 9.75 s on that thread). `toxicity._get_pipe` got the
+    same double-checked build lock as `_get_analyzer` — without it a request arriving mid-warm-up
+    would load a second ~500 MB copy. Only the **English** model is warmed; the first edit of a
+    non-English file still loads the multilingual one. Pinned by
+    `tests/redaction/test_edit_path_warmup.py`.
   - **Failure is never fatal.** An absent Presidio logs and returns; `_get_analyzer` still
     returns `None` and every caller's fail-closed handling is unchanged. The gate query
     closes its session **before** the build starts — a ~10 s model load inside a

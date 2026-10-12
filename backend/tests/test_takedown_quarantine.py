@@ -103,12 +103,14 @@ class TestQuarantineAccessGate:
         assert getattr(exc.value, "status_code", None) == 404
 
     def test_quarantined_file_still_visible_to_admin(self, world):
-        """Admins keep visibility (is_admin=True bypasses the gate) for review."""
+        """Admins keep visibility (the platform bypass passes the gate) for review."""
+        from app.services.platform_bypass import build_bypass
+
         db, owner, admin, file = world
         quarantine_file(db, file, admin=admin, reason="abuse report 7", legal_hold=True)
 
         got = get_file_by_uuid_with_permission(
-            db, str(file.uuid), admin.id, is_admin=True, allow_public=True
+            db, str(file.uuid), admin.id, bypass=build_bypass(db, admin, None), allow_public=True
         )
         assert got.id == file.id
         assert got.is_quarantined is True

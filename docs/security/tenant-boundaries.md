@@ -20,8 +20,17 @@ A request runs in one **tenant**, carried by `RequestContext` (`backend/app/api/
   on (a file's `organization_id`), or, for a stored pointer to another user's shared item, asks
   whether owner and user share a tenant (`owner_shares_tenant_with`).
 - Rows in another tenant answer **404**, not 403, so their existence is not confirmed.
-- Instance administrators (`is_admin`) keep instance-wide operational access by design.
+- **Platform administrators (`admin`, `super_admin`) manage the platform, not tenant content.**
+  In a single-tenant deployment (no active organization) they keep today's instance-wide
+  access, unchanged. In a multi-tenant deployment they hold **no** implicit access to tenant
+  content: they reach it only through a time-boxed, audited support-access grant that the
+  tenant approved (or a `super_admin` break-glass opening). See "Operator access" below.
   Organization administrators (`require_org_admin`) act only inside their organization.
+- **Which mode applies** is decided by `TENANCY_MODE` (`auto` by default): `auto` is multi-tenant
+  as soon as one active organization exists, `multi` forces tenant isolation, and `single`
+  restores the instance-wide admin bypass (audited whenever organizations exist). An unknown
+  value fails closed to `multi`, and a failed detection query never latches multi-tenant mode on
+  its own.
 
 Shared helpers: `backend/app/utils/tenant_sharing.py` (`owner_in_tenant`,
 `shared_visible_in_tenant` for request paths, `shared_usable_by` for worker paths,
@@ -95,11 +104,35 @@ Paths are relative to `backend/`. Test abbreviations: **XT** =
 
 | Resource | Who can see | Who can use / modify | Enforced at | Proving test |
 |---|---|---|---|---|
-| Tasks / file status / progress | Owner's files in the active tenant (admin: all) | Retry/recovery only on own files in the active tenant | `app/api/endpoints/tasks.py:_get_user_media_files`, `get_active_progress`; `user_files.py:get_user_file_status`; `task_detection_service.py:find_user_problem_files` | OL `::test_task_listing_and_lookup_follow_the_active_tenant`, `::test_my_files_status_counts_only_the_active_tenant`, `::test_active_progress_names_only_files_of_the_active_tenant` |
+| Tasks / file status / progress | Owner's files in the active tenant (single-tenant admin: all) | Retry/recovery only on own files in the active tenant | `app/api/endpoints/tasks.py:_get_user_media_files`, `get_active_progress`; `user_files.py:get_user_file_status`; `task_detection_service.py:find_user_problem_files` | OL `::test_task_listing_and_lookup_follow_the_active_tenant`, `::test_my_files_status_counts_only_the_active_tenant`, `::test_active_progress_names_only_files_of_the_active_tenant` |
 | Stuck files | Owner's files in the active tenant (admin: all) | n/a | `files/crud.py:get_media_file_by_id` via `files/management.py:get_stuck_files` | OL `::test_stuck_file_listing_follows_the_active_tenant` |
 | LLM usage | Own events stamped with the active tenant | n/a | `app/api/endpoints/usage.py:get_my_usage`, `get_my_daily_usage` | OL `::test_usage_reports_only_the_active_tenant` |
 
+### Operator access
+
+Rules every platform-role access to tenant content follows (issue #1122). Tests: **PA** =
+`tests/api/test_platform_admin_tenancy.py`, **SE** = `tests/api/test_support_access_enforcement.py`,
+**SL** = `tests/api/test_support_access_lifecycle.py`, **MC** =
+`tests/unit/test_v432_migration_consistency.py`.
+
+| Resource | Who can see | Who can use / modify | Enforced at | Proving test |
+|---|---|---|---|---|
+| Any tenant row reached by UUID (files, collections, speakers, profiles, comments, watch sources, tasks) | Owner and members per the tenant gates. A platform admin: in multi-tenant mode only inside a granted tenant, evaluated on the loaded row's own tenant | Same; a `read` grant refuses every non-safe HTTP method, a `write` grant allows edits inside its tenant only | `app/services/platform_bypass.py:PlatformBypass.allows`, `app/utils/uuid_helpers.py` chokepoints, `app/api/deps_context.py:resolve_request_bypass` | PA `::test_admin_cannot_read_other_org_file_without_grant`, SE `::test_a_read_grant_cannot_write_or_delete`, `::test_a_grant_does_not_cross_to_another_org` |
+| Support-access grants (request, approve, deny, break glass, revoke) | Grantee (own grants), the tenant's org admins, the personal-workspace subject, any `super_admin`; a grant you may not see is 404 | Tenant approves or denies within 72 h and may shorten, never extend; a platform admin cannot approve another platform admin's request even holding `org:admin`; break glass is `super_admin` only with a ticket and at most 4 h | `app/api/endpoints/support_access.py`, `app/services/support_access_lifecycle.py` (atomic conditional UPDATE) | SL `::test_self_approval_is_refused`, `::test_a_decision_that_lost_the_race_is_refused_and_changes_nothing`, `::test_break_glass_is_super_admin_only` |
+| Support-access use log | The grantee, the tenant's org admins, the subject, `super_admin` | Append-only; ids only, never a filename, title or name; written before the request is served, and a failure to write it answers 503 | `app/services/support_access_service.py:record_use`, table `support_access_use` (no foreign key to a tenant or an owner) | SE `::test_an_approved_grant_reads_the_file_and_records_the_use`, `::test_when_the_use_row_cannot_be_written_nothing_is_served`, MC `::test_the_use_log_has_no_foreign_key_to_a_tenant_or_an_owner` |
+| Surfaces a grant never reaches | n/a | Chat, search, upload and other content creation, every download and export, and every `/admin` route answer 403 `support_grant_action_not_permitted` under a grant (the attempt is still recorded) | `app/api/deps_context.py:refuse_under_support_grant`, attached by `app/api/router.py` and per route | SE `::test_a_grant_is_refused_on_chat_search_upload_export_and_admin` |
+| Presigned media URLs and redaction under a grant | Presigned URLs live at most 300 s under a grant; redaction is resolved for the file's owner in the file's tenant, never the staff member's own preferences | Unredacted reveal is owner-only in multi-tenant mode | `PlatformBypass.presign_ttl`, `files/crud.py:_resolve_redaction_for_request` | SE `::test_presigned_urls_are_capped_under_a_grant`, `::test_redaction_is_resolved_for_the_file_owner_under_a_grant` |
+| Platform listings that name other tenants' files (quarantine list, retention preview) | Platform admins | n/a | `app/services/platform_bypass.py:audit_metadata_access` (audited in multi-tenant mode, not masked) | PA `::test_quarantine_list_is_audited_in_multi_mode` |
+
 ## Known limits
+
+- **Revocation is immediate for API requests** (the grant is re-read on every request), with
+  three residuals: a presigned URL minted before the revocation (at most 300 s), a request
+  already in flight, and Celery work dispatched under a `write` grant, which runs to completion.
+- Grant `reason` text and the id-only use rows are retained after an erasure of the tenant or of
+  the staff account (the grant's foreign keys are `SET NULL`; the grant becomes permanently
+  unusable). Whether retaining the reason text is acceptable is awaiting legal confirmation; see
+  the plan's Appendix B, D5.
 
 - Speaker profile and speaker-collection names, and custom-vocabulary terms, are unique per user
   **per tenant** (`v430`; the personal workspace counts as one tenant). Rows created before

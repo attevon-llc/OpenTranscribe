@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from app.core.exceptions import ASRConfigurationError
 
 from .base import ASRProvider
 from .local_provider import LocalASRProvider
+
+if TYPE_CHECKING:
+    from app.models.user_asr_settings import UserASRSettings
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +49,48 @@ _KEY_REQUIRED: dict[str, str] = {
     "pyannote": "PYANNOTE_API_KEY",
 }
 
+#: ``ASR_PROVIDER`` env fallback: provider -> a reader of its model env var with the default.
+#: The one table both ``_from_env`` (which builds the provider) and ``resolve_active_config``
+#: (which only names it) read, so the model a plan reports is the model the job would use.
+#: Each entry reads its variable by a literal name, which is what lets the env-coverage test
+#: see that ``.env.example``'s ``*_MODEL`` keys are consumed.
+_ENV_MODEL: dict[str, Callable[[], str]] = {
+    "deepgram": lambda: os.getenv("DEEPGRAM_MODEL", "nova-3"),
+    "assemblyai": lambda: os.getenv("ASSEMBLYAI_MODEL", "universal"),
+    "openai": lambda: os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe"),
+    "google": lambda: os.getenv("GOOGLE_ASR_MODEL", "chirp-3"),
+    "azure": lambda: os.getenv("AZURE_ASR_MODEL", "whisper"),
+    "aws": lambda: os.getenv("AWS_ASR_MODEL", "standard"),
+    "speechmatics": lambda: os.getenv("SPEECHMATICS_MODEL", "standard"),
+    "gladia": lambda: os.getenv("GLADIA_MODEL", "standard"),
+    "pyannote": lambda: os.getenv("PYANNOTE_MODEL", "parakeet"),
+}
+
+
+def _env_model(provider: str) -> str:
+    return _ENV_MODEL[provider]()
+
+
+def _env_provider_usable(provider: str) -> bool:
+    """Whether ``ASR_PROVIDER=<provider>`` builds that provider (``_from_env``'s fallback rule)."""
+    if provider not in _ENV_MODEL:
+        return False
+    env_var = _KEY_REQUIRED.get(provider)
+    return env_var is None or bool(os.getenv(env_var, "").strip())
+
+
+# Two capability fields every provider entry carries (a model entry overrides where it
+# differs), both filled from what the provider MODULE does, never from vendor docs:
+#
+# - ``speaker_count_hints``: which of min/max/num speakers the module actually sends.
+#   ``tests/unit/test_asr_catalog_speaker_hints.py`` derives the set from each module's
+#   source and fails on a mismatch.
+# - ``timestamp_granularity``: ``word`` (per-word times), ``segment`` (segment times only)
+#   or ``none`` (text with no usable times, so speakers cannot be assigned to it).
+#   ``tests/unit/test_asr_catalog_timestamp_granularity.py`` feeds each parser a fixture
+#   response and fails when the parsed result cannot honour the declared value.
+#
+# ``services/pipeline_plan.py`` reads both to decide how speaker turns reach the text.
 ASR_PROVIDER_CATALOG: dict = {
     "local": {
         "id": "local",
@@ -52,6 +99,10 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
+        # Honoured by the in-process PyAnnote engine only; the diar-native engine ignores
+        # them. pipeline_plan resolves the real set from engine.diarizer_backend.
+        "speaker_count_hints": ["min", "max", "num"],
+        "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": True,
         "description": "Local GPU transcription via faster-whisper + PyAnnote",
@@ -146,6 +197,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": [],
+        "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Nova-3 flagship model with medical terminology support",
@@ -194,6 +247,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": ["min", "max", "num"],
+        "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Best-in-class diarization with the Universal speech models",
@@ -229,6 +284,10 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": False,
+        "speaker_count_hints": [],
+        # gpt-4o-transcribe / gpt-4o-mini-transcribe (and any model not listed) are asked
+        # for "json", which carries no times; the parser makes one 0.0/0.0 segment.
+        "timestamp_granularity": "none",
         "supports_vocabulary": False,
         "supports_translation": True,
         "description": "Whisper-1 and GPT-4o Transcribe (25 MB file limit)",
@@ -254,6 +313,7 @@ ASR_PROVIDER_CATALOG: dict = {
                 "max_file_size_mb": 25,
                 "supports_diarization": True,
                 "supports_translation": False,
+                "timestamp_granularity": "segment",
             },
             {
                 "id": "whisper-1",
@@ -263,6 +323,8 @@ ASR_PROVIDER_CATALOG: dict = {
                 "languages": 99,
                 "max_file_size_mb": 25,
                 "supports_translation": True,
+                # verbose_json without timestamp_granularities: segment times only.
+                "timestamp_granularity": "segment",
             },
         ],
     },
@@ -273,6 +335,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": ["min", "max"],
+        "timestamp_granularity": "word",
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "Chirp 3 model with 100+ language support (uses service account credentials)",
@@ -314,6 +378,10 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": True,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": [],
+        # Word times are parsed only when the SDK fills NBest[0].Words, which is never
+        # explicitly requested; treated as segment until a live response proves otherwise.
+        "timestamp_granularity": "segment",
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "Azure Speech Services — Whisper and Standard models",
@@ -348,6 +416,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": True,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": ["max"],
+        "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Standard and Medical transcription (HIPAA-eligible)",
@@ -394,6 +464,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": [],
+        "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Enterprise-grade with 55+ languages and speaker diarization",
@@ -425,6 +497,8 @@ ASR_PROVIDER_CATALOG: dict = {
         # without wiring the field would resurface #594 under a different vendor.
         "supports_custom_url": True,
         "supports_diarization": True,
+        "speaker_count_hints": [],
+        "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "All features bundled, 100+ languages",
@@ -451,6 +525,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
+        "speaker_count_hints": ["min", "max", "num"],
+        "timestamp_granularity": "word",
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "STT Orchestration — premium diarization + transcription in one API call",
@@ -478,6 +554,23 @@ ASR_PROVIDER_CATALOG: dict = {
         ],
     },
 }
+
+
+def _capabilities(provider_entry: dict, model_entry: dict | None) -> dict:
+    """One catalog entry's capabilities; a model entry's value wins over its provider's."""
+    model = model_entry or {}
+
+    def pick(key: str, default):
+        return model.get(key, provider_entry.get(key, default))
+
+    return {
+        "supports_translation": pick("supports_translation", True),
+        "language_support": model.get("language_support", "multilingual"),
+        "languages": model.get("languages"),
+        "supports_diarization": bool(pick("supports_diarization", False)),
+        "speaker_count_hints": list(pick("speaker_count_hints", [])),
+        "timestamp_granularity": pick("timestamp_granularity", "none"),
+    }
 
 
 class ASRProviderFactory:
@@ -537,13 +630,11 @@ class ASRProviderFactory:
         )
 
     @staticmethod
-    def create_for_user(user_id: int, db) -> ASRProvider:
-        """Load active ASR config from DB → env vars → default local.
+    def _active_config_row(user_id: int, db) -> UserASRSettings | None:
+        """The user's active ``UserASRSettings`` row (own or shared), or ``None``.
 
-        Selection priority (highest to lowest):
-        1. User's active DB config (UserASRSettings referenced by active_asr_config_id setting)
-        2. ASR_PROVIDER env var (if set to a non-local provider)
-        3. LocalASRProvider (default fallback)
+        ``None`` covers no pointer, a dangling or no-longer-shared pointer, and a row that
+        cannot be read; each falls back to env/local in every caller.
         """
         from app import models
 
@@ -555,42 +646,86 @@ class ASRProviderFactory:
             )
             .first()
         )
-        if setting and setting.setting_value:
-            try:
-                from app.models.user_asr_settings import UserASRSettings
-                from app.utils.tenant_sharing import shared_usable_by
+        if not (setting and setting.setting_value):
+            return None
+        try:
+            from app.models.user_asr_settings import UserASRSettings
+            from app.utils.tenant_sharing import shared_usable_by
 
-                cfg = (
-                    db.query(UserASRSettings)
-                    .filter(
-                        UserASRSettings.id == int(setting.setting_value),
-                        # Own, or shared within a tenant both belong to: the stored
-                        # pointer outlives membership changes, so it is re-checked here.
-                        shared_usable_by(
-                            UserASRSettings.user_id, UserASRSettings.is_shared, user_id
-                        ),
-                    )
-                    .first()
+            cfg: UserASRSettings | None = (
+                db.query(UserASRSettings)
+                .filter(
+                    UserASRSettings.id == int(setting.setting_value),
+                    # Own, or shared within a tenant both belong to: the stored
+                    # pointer outlives membership changes, so it is re-checked here.
+                    shared_usable_by(UserASRSettings.user_id, UserASRSettings.is_shared, user_id),
                 )
-                if cfg:
-                    logger.info(
-                        "ASR provider for user %d: %s (DB config id=%s model=%s%s)",
-                        user_id,
-                        cfg.provider,
-                        cfg.id,
-                        cfg.model_name,
-                        "" if cfg.api_key else ", no API key",
-                    )
-                    # Credential decryption failures raise ValueError, caught below,
-                    # which falls back to env/local exactly as before.
-                    return ASRProviderFactory.create_from_db_config(cfg)
-                else:
-                    logger.warning(
-                        "ASR config id=%s for user %d not found or not accessible — "
-                        "falling back to env/local",
-                        setting.setting_value,
-                        user_id,
-                    )
+                .first()
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to load ASR config for user %d: %s — falling back to env/local",
+                user_id,
+                exc,
+            )
+            return None
+        if cfg is None:
+            logger.warning(
+                "ASR config id=%s for user %d not found or not accessible — "
+                "falling back to env/local",
+                setting.setting_value,
+                user_id,
+            )
+        return cfg
+
+    @staticmethod
+    def resolve_active_config(user_id: int, db) -> tuple[str, str, UserASRSettings | None]:
+        """``(provider, model, cfg)`` the user's transcription would run with.
+
+        The "which config row" half of :meth:`create_for_user`, without building a
+        provider or decrypting anything: the active DB config (own or shared), else a
+        usable ``ASR_PROVIDER`` env provider, else local with ``WHISPER_MODEL``. ``cfg``
+        is the ``UserASRSettings`` row, or ``None`` for the env and local fallbacks.
+        """
+        return ASRProviderFactory.resolve_config(ASRProviderFactory._active_config_row(user_id, db))
+
+    @staticmethod
+    def resolve_config(
+        cfg: UserASRSettings | None,
+    ) -> tuple[str, str, UserASRSettings | None]:
+        """``(provider, model, cfg)`` for ``cfg`` as the active row (``None``: no row).
+
+        Lets a caller plan a switch before making it (``services/asr_switch_plan``) with
+        the same env / local fallback a job uses.
+        """
+        if cfg is not None:
+            return str(cfg.provider or "local"), str(cfg.model_name or ""), cfg
+        env_provider = os.getenv("ASR_PROVIDER", "local").lower()
+        if env_provider != "local" and _env_provider_usable(env_provider):
+            return env_provider, _env_model(env_provider), None
+        return "local", os.getenv("WHISPER_MODEL", "large-v3-turbo"), None
+
+    @staticmethod
+    def create_for_user(user_id: int, db) -> ASRProvider:
+        """Load active ASR config from DB → env vars → default local.
+
+        Selection priority (highest to lowest):
+        1. User's active DB config (UserASRSettings referenced by active_asr_config_id setting)
+        2. ASR_PROVIDER env var (if set to a non-local provider)
+        3. LocalASRProvider (default fallback)
+        """
+        cfg = ASRProviderFactory._active_config_row(user_id, db)
+        if cfg is not None:
+            logger.info(
+                "ASR provider for user %d: %s (DB config id=%s model=%s%s)",
+                user_id,
+                cfg.provider,
+                cfg.id,
+                cfg.model_name,
+                "" if cfg.api_key else ", no API key",
+            )
+            try:
+                return ASRProviderFactory.create_from_db_config(cfg)
             except ASRConfigurationError:
                 # Not a config-loading failure — a deliberate refusal to silently fall
                 # back to a local provider this deployment cannot run. Let it propagate.
@@ -639,26 +774,20 @@ class ASRProviderFactory:
         if provider == "deepgram":
             from .deepgram_provider import DeepgramProvider
 
-            return DeepgramProvider(
-                os.getenv("DEEPGRAM_API_KEY", ""), os.getenv("DEEPGRAM_MODEL", "nova-3")
-            )
+            return DeepgramProvider(os.getenv("DEEPGRAM_API_KEY", ""), _env_model(provider))
         if provider == "assemblyai":
             from .assemblyai_provider import AssemblyAIProvider
 
-            return AssemblyAIProvider(
-                os.getenv("ASSEMBLYAI_API_KEY", ""), os.getenv("ASSEMBLYAI_MODEL", "universal")
-            )
+            return AssemblyAIProvider(os.getenv("ASSEMBLYAI_API_KEY", ""), _env_model(provider))
         if provider == "openai":
             from .openai_provider import OpenAIASRProvider
 
-            return OpenAIASRProvider(
-                os.getenv("OPENAI_API_KEY", ""), os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
-            )
+            return OpenAIASRProvider(os.getenv("OPENAI_API_KEY", ""), _env_model(provider))
         if provider == "google":
             from .google_provider import GoogleASRProvider
 
             return GoogleASRProvider(
-                model_name=os.getenv("GOOGLE_ASR_MODEL", "chirp-3"),
+                model_name=_env_model(provider),
                 credentials_file=os.getenv("GOOGLE_CLOUD_CREDENTIALS"),
             )
         if provider == "azure":
@@ -667,35 +796,29 @@ class ASRProviderFactory:
             return AzureASRProvider(
                 os.getenv("AZURE_SPEECH_KEY", ""),
                 os.getenv("AZURE_SPEECH_REGION", "eastus"),
-                os.getenv("AZURE_ASR_MODEL", "whisper"),
+                _env_model(provider),
             )
         if provider == "aws":
             from .aws_provider import AWSTranscribeProvider
 
             return AWSTranscribeProvider(
                 region=os.getenv("AWS_REGION", "us-east-1"),
-                model_name=os.getenv("AWS_ASR_MODEL", "standard"),
+                model_name=_env_model(provider),
                 access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
                 secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
             )
         if provider == "speechmatics":
             from .speechmatics_provider import SpeechmaticsProvider
 
-            return SpeechmaticsProvider(
-                os.getenv("SPEECHMATICS_API_KEY", ""), os.getenv("SPEECHMATICS_MODEL", "standard")
-            )
+            return SpeechmaticsProvider(os.getenv("SPEECHMATICS_API_KEY", ""), _env_model(provider))
         if provider == "gladia":
             from .gladia_provider import GladiaProvider
 
-            return GladiaProvider(
-                os.getenv("GLADIA_API_KEY", ""), os.getenv("GLADIA_MODEL", "standard")
-            )
+            return GladiaProvider(os.getenv("GLADIA_API_KEY", ""), _env_model(provider))
         if provider == "pyannote":
             from .pyannote_provider import PyAnnoteProvider
 
-            return PyAnnoteProvider(
-                os.getenv("PYANNOTE_API_KEY", ""), os.getenv("PYANNOTE_MODEL", "parakeet")
-            )
+            return PyAnnoteProvider(os.getenv("PYANNOTE_API_KEY", ""), _env_model(provider))
         logger.warning("Unknown ASR provider '%s', falling back to local", provider)
         _guard_local_allowed()
         return LocalASRProvider()
@@ -772,9 +895,11 @@ class ASRProviderFactory:
     def get_model_capabilities(provider_id: str, model_id: str) -> dict:
         """Look up capabilities for a specific provider+model from the catalog.
 
-        For unknown local models: substring match against known IDs
-        (most-specific first: "large-v3-turbo" before "large-v3").
-        No match -> permissive default (supports_translation=True, multilingual).
+        Model-level values win over provider-level ones (OpenAI: the provider does not
+        diarize, ``gpt-4o-transcribe-diarize`` does). For unknown local models: substring
+        match against known IDs (most-specific first: "large-v3-turbo" before "large-v3").
+        An unknown provider gets a permissive language default and, fail closed, no
+        speakers and no timing.
         """
         provider_entry = ASR_PROVIDER_CATALOG.get(provider_id)
         if not provider_entry:
@@ -782,20 +907,15 @@ class ASRProviderFactory:
                 "supports_translation": True,
                 "language_support": "multilingual",
                 "languages": None,
+                "supports_diarization": False,
+                "speaker_count_hints": [],
+                "timestamp_granularity": "none",
             }
 
-        # Check model-level capabilities first
         models = provider_entry.get("models", [])
         for m in models:
             if m["id"] == model_id:
-                return {
-                    "supports_translation": m.get(
-                        "supports_translation",
-                        provider_entry.get("supports_translation", True),
-                    ),
-                    "language_support": m.get("language_support", "multilingual"),
-                    "languages": m.get("languages"),
-                }
+                return _capabilities(provider_entry, m)
 
         # For local provider: substring match (most-specific first)
         if provider_id == "local":
@@ -806,6 +926,7 @@ class ASRProviderFactory:
             # english_only entries so the same UI guards and transcriber safety net apply.
             if model_id.endswith(".en"):
                 return {
+                    **_capabilities(provider_entry, None),
                     "supports_translation": False,
                     "language_support": "english_only",
                     "languages": 1,
@@ -814,84 +935,22 @@ class ASRProviderFactory:
             sorted_models = sorted(models, key=lambda m: len(m["id"]), reverse=True)
             for m in sorted_models:
                 if m["id"] in model_id:
-                    return {
-                        "supports_translation": m.get(
-                            "supports_translation",
-                            provider_entry.get("supports_translation", True),
-                        ),
-                        "language_support": m.get("language_support", "multilingual"),
-                        "languages": m.get("languages"),
-                    }
+                    return _capabilities(provider_entry, m)
 
-        # Fallback to provider-level capabilities
-        return {
-            "supports_translation": provider_entry.get("supports_translation", True),
-            "language_support": "multilingual",
-            "languages": None,
-        }
+        return _capabilities(provider_entry, None)
 
     @staticmethod
     def get_active_model_capabilities(user_id: int, db) -> dict:
         """Get capabilities for user's active ASR model.
 
-        Resolution: user DB ASR config -> ASR_PROVIDER env -> WHISPER_MODEL env -> local default.
+        Resolution is :meth:`resolve_active_config`: user DB ASR config -> a usable
+        ASR_PROVIDER env provider -> local with WHISPER_MODEL.
         """
-        from app import models as app_models
-
-        # 1. Check user's active DB config
-        setting = (
-            db.query(app_models.UserSetting)
-            .filter(
-                app_models.UserSetting.user_id == user_id,
-                app_models.UserSetting.setting_key == "active_asr_config_id",
-            )
-            .first()
-        )
-        if setting and setting.setting_value:
-            try:
-                from app.models.user_asr_settings import UserASRSettings
-                from app.utils.tenant_sharing import shared_usable_by
-
-                cfg = (
-                    db.query(UserASRSettings)
-                    .filter(
-                        UserASRSettings.id == int(setting.setting_value),
-                        # Own, or shared within a tenant both belong to: the stored
-                        # pointer outlives membership changes, so it is re-checked here.
-                        shared_usable_by(
-                            UserASRSettings.user_id, UserASRSettings.is_shared, user_id
-                        ),
-                    )
-                    .first()
-                )
-                if cfg:
-                    provider_id = cfg.provider or "local"
-                    model_id = cfg.model_name or ""
-                    caps = ASRProviderFactory.get_model_capabilities(provider_id, model_id)
-                    return {
-                        "provider": provider_id,
-                        "model_id": model_id,
-                        **caps,
-                    }
-            except Exception:
-                logger.debug("Failed to resolve active ASR config for user %d", user_id)
-
-        # 2. ASR_PROVIDER env var
-        env_provider = os.getenv("ASR_PROVIDER", "local").lower()
-        if env_provider != "local":
-            return {
-                "provider": env_provider,
-                "model_id": "",
-                **ASRProviderFactory.get_model_capabilities(env_provider, ""),
-            }
-
-        # 3. Local default with WHISPER_MODEL
-        whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
-        caps = ASRProviderFactory.get_model_capabilities("local", whisper_model)
+        provider_id, model_id, _cfg = ASRProviderFactory.resolve_active_config(user_id, db)
         return {
-            "provider": "local",
-            "model_id": whisper_model,
-            **caps,
+            "provider": provider_id,
+            "model_id": model_id,
+            **ASRProviderFactory.get_model_capabilities(provider_id, model_id),
         }
 
     @staticmethod

@@ -1,0 +1,22 @@
+| query_id | category | citation_resolution | citation_validity | prompt_membership | quote_fidelity |
+|---|---|---|---|---|---|
+| gen-000-TS3005a | single_general | 1.0000 | 1.0000 | True | n/a |
+| gen-001-TS3005b | single_general | 1.0000 | 1.0000 | True | n/a |
+| gen-002-TS3005d | single_general | 1.0000 | 1.0000 | True | n/a |
+| gen-003-ES2002a | single_general | 1.0000 | 1.0000 | True | n/a |
+| gen-004-TS3005c | single_general | 1.0000 | 1.0000 | True | n/a |
+| multi-000-TS3005-decisions | multi_file | 1.0000 | 1.0000 | True | n/a |
+| neg-000-absent-topic | negative_control | n/a | 1.0000 | True | n/a |
+| neg-001-absent-speaker | negative_control | n/a | 1.0000 | True | n/a |
+| neg-002-absent-topic | negative_control | n/a | 1.0000 | True | n/a |
+| neg-003-absent-speaker | negative_control | n/a | 1.0000 | True | n/a |
+| spec-000-TS3005d | single_specific | 1.0000 | 1.0000 | True | 0.8000 |
+| spec-001-TS3005a | single_specific | 1.0000 | 1.0000 | True | 0.0000 |
+| spec-002-ES2002a | single_specific | 1.0000 | 1.0000 | True | 1.0000 |
+| spec-003-TS3005a | single_specific | 1.0000 | 1.0000 | True | 0.6000 |
+| spec-004-ES2002a | single_specific | 1.0000 | 1.0000 | True | 0.0000 |
+| spec-005-TS3005d | single_specific | 1.0000 | 1.0000 | True | 1.0000 |
+| spec-006-TS3005c | single_specific | 1.0000 | 1.0000 | True | n/a |
+| spec-007-ES2002a | single_specific | 1.0000 | 1.0000 | True | 1.0000 |
+| spec-008-TS3005b | single_specific | 1.0000 | 1.0000 | True | n/a |
+| spec-009-TS3005a | single_specific | 1.0000 | 1.0000 | True | 1.0000 |

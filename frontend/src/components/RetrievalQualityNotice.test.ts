@@ -23,6 +23,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import RetrievalQualityNotice from './RetrievalQualityNotice.svelte';
 
 const ISSUE_URL = 'https://github.com/attevon-llc/OpenTranscribe/issues/461';
+const SPEAKERS_ISSUE_URL = 'https://github.com/attevon-llc/OpenTranscribe/issues/524';
 
 beforeEach(() => localStorage.clear());
 afterEach(() => localStorage.clear());
@@ -49,6 +50,42 @@ describe('RetrievalQualityNotice', () => {
     expect(chatText).toContain('retrievalQuality.chatMessage');
     expect(searchText).toContain('retrievalQuality.searchMessage');
     expect(searchText).not.toContain('retrievalQuality.chatMessage');
+  });
+
+  it('says the SPEAKERS thing on the speakers surface — issue #756', () => {
+    // #756: `surface`'s copy selector used to be an `else -> chat` ternary, so widening the
+    // union to include 'speakers' without also fixing the selector would render the CHAT
+    // copy (which names the reranker — a mechanism that does not run on this page) with a
+    // green test suite, because nothing enumerated the union. This is that enumeration.
+    const { container, getByTestId } = render(RetrievalQualityNotice, {
+      props: { surface: 'speakers' },
+    });
+
+    expect(container.textContent).toContain('retrievalQuality.speakersMessage');
+    expect(container.textContent).not.toContain('retrievalQuality.chatMessage');
+    expect(container.textContent).not.toContain('retrievalQuality.searchMessage');
+
+    // The speakers surface also has its OWN issue link — #524 (the speaker axis at corpus
+    // scale), never the RAG-retrieval #461 the other two surfaces point at.
+    const link = getByTestId('retrieval-quality-link') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe(SPEAKERS_ISSUE_URL);
+  });
+
+  it('dismisses the speakers surface independently of chat/search', () => {
+    localStorage.setItem('opentr:retrievalQualityNotice:chat', 'dismissed');
+    localStorage.setItem('opentr:retrievalQualityNotice:search', 'dismissed');
+
+    const speakers = render(RetrievalQualityNotice, { props: { surface: 'speakers' } });
+    expect(
+      speakers.container.querySelector('[data-testid="retrieval-quality-notice"]')
+    ).not.toBeNull();
+
+    fireEvent.click(speakers.getByTestId('retrieval-quality-dismiss'));
+    expect(speakers.queryByTestId('retrieval-quality-notice')).toBeNull();
+    expect(localStorage.getItem('opentr:retrievalQualityNotice:speakers')).toBe('dismissed');
+    // Dismissing speakers must not touch the other two surfaces' keys.
+    expect(localStorage.getItem('opentr:retrievalQualityNotice:chat')).toBe('dismissed');
+    expect(localStorage.getItem('opentr:retrievalQualityNotice:search')).toBe('dismissed');
   });
 
   it('hides itself when dismissed and remembers that', () => {

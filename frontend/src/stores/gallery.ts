@@ -50,10 +50,10 @@ export interface GalleryState {
   filterSelectedCollectionId: string | null;
   filterDateRange: { from: Date | null; to: Date | null };
   filterDurationRange: { min: number | null; max: number | null };
-  filterFileSizeRange: { min: number | null; max: number | null };
   filterSelectedFileTypes: string[];
   filterSelectedStatuses: string[];
   filterOwnershipFilter: 'all' | 'mine' | 'shared';
+  filterSelectedOwners: string[]; // Owner UUIDs (issue #966)
   filterSortBy: string;
   filterSortOrder: 'asc' | 'desc';
 }
@@ -84,6 +84,9 @@ export interface GalleryActions {
   triggerExport: (format: string) => void;
   triggerSpeakerId: () => void;
   triggerCancelProcessing: () => void;
+  /** Admin-only takedown (issue #576). Every status is quarantinable, deliberately
+   * — do not filter to `completed` the way the chat/summarize entries do. */
+  triggerQuarantine: () => void;
   appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => void;
   resetPagination: () => void;
   setLoadingMore: (loading: boolean) => void;
@@ -111,10 +114,10 @@ const initialState: GalleryState = {
   filterSelectedCollectionId: null,
   filterDateRange: { from: null, to: null },
   filterDurationRange: { min: null, max: null },
-  filterFileSizeRange: { min: null, max: null },
   filterSelectedFileTypes: [],
   filterSelectedStatuses: [],
   filterOwnershipFilter: 'all',
+  filterSelectedOwners: [],
   filterSortBy: 'upload_time',
   filterSortOrder: 'desc',
 };
@@ -138,6 +141,7 @@ function createGalleryStore() {
   const exportTrigger = writable<string>(''); // format string
   const speakerIdTrigger = writable<number>(0);
   const cancelProcessingTrigger = writable<number>(0);
+  const quarantineTrigger = writable<number>(0);
 
   return {
     subscribe,
@@ -330,6 +334,10 @@ function createGalleryStore() {
       cancelProcessingTrigger.update((n) => n + 1);
     },
 
+    triggerQuarantine: () => {
+      quarantineTrigger.update((n) => n + 1);
+    },
+
     appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => {
       update((state) => {
         // Guard against undefined/null data from failed API responses
@@ -382,10 +390,10 @@ function createGalleryStore() {
       selectedCollectionId: string | null;
       dateRange: { from: Date | null; to: Date | null };
       durationRange: { min: number | null; max: number | null };
-      fileSizeRange: { min: number | null; max: number | null };
       selectedFileTypes: string[];
       selectedStatuses: string[];
       ownershipFilter: 'all' | 'mine' | 'shared';
+      selectedOwners: string[];
       sortBy: string;
       sortOrder: 'asc' | 'desc';
     }) => {
@@ -397,10 +405,10 @@ function createGalleryStore() {
         filterSelectedCollectionId: filters.selectedCollectionId,
         filterDateRange: { ...filters.dateRange },
         filterDurationRange: { ...filters.durationRange },
-        filterFileSizeRange: { ...filters.fileSizeRange },
         filterSelectedFileTypes: [...filters.selectedFileTypes],
         filterSelectedStatuses: [...filters.selectedStatuses],
         filterOwnershipFilter: filters.ownershipFilter,
+        filterSelectedOwners: [...filters.selectedOwners],
         filterSortBy: filters.sortBy,
         filterSortOrder: filters.sortOrder,
       }));
@@ -415,10 +423,10 @@ function createGalleryStore() {
         filterSelectedCollectionId: null,
         filterDateRange: { from: null, to: null },
         filterDurationRange: { min: null, max: null },
-        filterFileSizeRange: { min: null, max: null },
         filterSelectedFileTypes: [],
         filterSelectedStatuses: [],
         filterOwnershipFilter: 'all',
+        filterSelectedOwners: [],
         filterSortBy: 'upload_time',
         filterSortOrder: 'desc',
       }));
@@ -559,6 +567,16 @@ function createGalleryStore() {
     onCancelProcessingTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
       return cancelProcessingTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onQuarantineTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return quarantineTrigger.subscribe((value) => {
         if (hasInitialized && value > 0) {
           callback(value);
         }

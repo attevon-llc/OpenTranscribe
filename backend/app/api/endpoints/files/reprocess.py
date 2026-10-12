@@ -13,8 +13,26 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.platform_bypass import PlatformBypass
+from app.services.speaker_cleanup import SpeakerImpact
+from app.services.speaker_cleanup import capture_speaker_impact
+from app.services.speaker_cleanup import reconcile_speaker_impact
 
 logger = logging.getLogger(__name__)
+
+
+def _capture_file_speakers(db: Session, media_file_id: int) -> SpeakerImpact:
+    """What deleting a file's speakers for a re-run leaves stale (issue #1214).
+
+    The re-run indexes the file again itself, so no reindex is requested here.
+    """
+    from app.models.media import Speaker
+
+    speaker_ids = [
+        int(row[0]) for row in db.query(Speaker.id).filter(Speaker.media_file_id == media_file_id)
+    ]
+    return capture_speaker_impact(db, speaker_ids, removed=True, reindex=False)
+
 
 #: Stages whose rework needs the ORIGINAL MEDIA, and which delete what they are
 #: about to regenerate: ``transcription`` re-runs ASR (clearing segments,
@@ -91,11 +109,9 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         for segment in existing_segments:
             db.delete(segment)
 
-        # Clear any existing speaker data (extract UUIDs first, then bulk delete)
-        speaker_uuids_to_clean = [
-            str(r[0])
-            for r in db.query(Speaker.uuid).filter(Speaker.media_file_id == media_file.id).all()
-        ]
+        # Clear any existing speaker data. What the speakers belonged to is read first:
+        # the bulk delete's CASCADE forgets which clusters and profiles averaged them in.
+        speaker_impact = _capture_file_speakers(db, int(media_file.id))
         db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
             synchronize_session=False
         )
@@ -108,21 +124,20 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
             db.delete(existing_analytics)
 
         db.commit()
+
+        # Prune the OpenSearch summary plane to match the now-cleared column
+        # (issue #963) — a full transcription reprocess clears summary_data
+        # unconditionally above and the new transcript may never gain a
+        # fresh summary before this file is searched again.
+        from app.tasks.search_indexing_task import index_file_summary
+
+        index_file_summary.delay(int(media_file.id))
+
         logger.info(f"Cleared existing transcription data for file {media_file.id}")
 
-        # Remove deleted speakers from all OpenSearch speaker indices (non-fatal)
-        if speaker_uuids_to_clean:
-            try:
-                from app.services.opensearch_service import remove_speaker_embedding
-
-                for uuid in speaker_uuids_to_clean:
-                    remove_speaker_embedding(uuid)
-                logger.info(
-                    f"Removed {len(speaker_uuids_to_clean)} speaker embeddings "
-                    f"from OpenSearch for reprocessed file {media_file.id}"
-                )
-            except Exception as os_err:
-                logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
+        # Voiceprints, clusters, profiles: the shared speaker cleanup (issue #1214). A
+        # residual is logged at ERROR there; the reprocess the user asked for goes ahead.
+        reconcile_speaker_impact(db, speaker_impact)
 
     except Exception as e:
         logger.exception(f"Error clearing transcription data for file {media_file.id}: {e}")
@@ -170,7 +185,9 @@ def start_reprocessing_task(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             downstream_tasks=downstream_tasks,
-            disable_diarization=disable_diarization,
+            # False must reach the pipeline as "not asked": the bool is mapped to
+            # diarization_source "provider" there, which would override the user's choice.
+            disable_diarization=True if disable_diarization else None,
             whisper_model=whisper_model,
         )
     else:
@@ -188,6 +205,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
     # Only the "speaker_llm" branch below writes to it — declared here so the
     # `except` path can safely `discard()` regardless of which branch ran.
     tracker = SpeakerRenameTracker()
+    rediarize_impact: SpeakerImpact | None = None
 
     try:
         if "transcription" in stages:
@@ -202,22 +220,10 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
                 TranscriptSegment.media_file_id == media_file.id
             ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
 
-            speaker_uuids_to_clean = [
-                str(r[0])
-                for r in db.query(Speaker.uuid).filter(Speaker.media_file_id == media_file.id).all()
-            ]
+            rediarize_impact = _capture_file_speakers(db, int(media_file.id))
             db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
                 synchronize_session=False
             )
-            # Remove deleted speakers from OpenSearch (non-fatal)
-            if speaker_uuids_to_clean:
-                try:
-                    from app.services.opensearch_service import remove_speaker_embedding
-
-                    for uuid in speaker_uuids_to_clean:
-                        remove_speaker_embedding(uuid)
-                except Exception as os_err:
-                    logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
             # Also clear analytics since speaker stats change
             existing_analytics = (
                 db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
@@ -269,6 +275,17 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
 
         db.commit()
         tracker.flush(db)
+        if rediarize_impact is not None:
+            # After the commit, never before: a rolled-back clear must keep its voices.
+            reconcile_speaker_impact(db, rediarize_impact)
+
+        if "summarization" in stages:
+            # Prune the OpenSearch summary plane to match the now-cleared
+            # column (issue #963).
+            from app.tasks.search_indexing_task import index_file_summary
+
+            index_file_summary.delay(int(media_file.id))
+
         logger.info(f"Cleared selective data for stages {stages} on file {media_file.id}")
     except Exception as e:
         logger.exception(f"Error clearing selective data for file {media_file.id}: {e}")
@@ -343,6 +360,107 @@ def dispatch_task_by_name(
         logger.warning(f"Unknown stage '{stage}' for dispatch")
 
 
+def _dispatch_manual_rediarize(
+    file_uuid: str,
+    owner_id: int,
+    *,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    downstream_tasks: list[str] | None,
+) -> None:
+    """Re-run speaker detection with the owner's CURRENT choice (plan decision Q9).
+
+    The post stage runs the plan's detector: pyannote.ai on ``cloud-asr``, otherwise this
+    server's engine on ``gpu_preferred_queue()`` (a transcription vendor's own speakers, or
+    "off", cannot be re-run after the fact, so they mean this server). A choice that cannot
+    run (no pyannote.ai key) fails the task with its fixed sentence rather than silently
+    running something else; this server's engine on lite is refused earlier, by
+    :func:`refuse_unrunnable_rerun`, and ``post_stage_queue`` refuses it again here.
+    """
+    from app.core.config import settings
+    from app.db.session_utils import session_scope
+    from app.services.pipeline_plan import post_stage_engine
+    from app.services.pipeline_plan import post_stage_queue
+    from app.services.pipeline_plan_inputs import plan_for_user
+    from app.tasks.rediarize_task import rediarize_task
+
+    # The file OWNER's choice and credential: the task detects speakers with them.
+    with session_scope() as db:
+        plan = plan_for_user(db, owner_id)
+    engine = post_stage_engine(plan.diarization.engine)
+    rediarize_task.apply_async(
+        args=[file_uuid],
+        kwargs={
+            "min_speakers": min_speakers,
+            "max_speakers": max_speakers,
+            "num_speakers": num_speakers,
+            "downstream_tasks": downstream_tasks,
+            "engine": engine,
+            "diarizer_config_uuid": plan.diarization.config_uuid,
+        },
+        queue=post_stage_queue(engine, str(settings.DEPLOYMENT_MODE)),
+    )
+
+
+def unrunnable_rerun_code(
+    db: Session,
+    owner_id: int,
+    stages: list[str] | None,
+    *,
+    whisper_model: str | None,
+    disable_diarization: bool,
+) -> str | None:
+    """The pipeline-plan code that refuses this re-run, or ``None`` when it can run.
+
+    A transcription re-run deletes the transcript and then dispatches; a blocking pipeline
+    plan used to surface only after that delete. A manual re-detection clears the speakers
+    first; on lite (no local speaker detection, #1228) a choice that resolves to this
+    server's engine (``local``, or Automatic, which cannot re-run a vendor's speakers after
+    the fact, plan Q9) can never run there. Both are refused while the data is intact.
+    """
+    from app.services.pipeline_plan import post_stage_engine
+    from app.services.pipeline_plan_inputs import plan_for_user
+    from app.utils.lite_mode import is_lite_deployment
+
+    if not stages or "transcription" in stages:
+        plan = plan_for_user(
+            db,
+            owner_id,
+            whisper_model=whisper_model,
+            disable_diarization=True if disable_diarization else None,
+        )
+        blocking = plan.blocking()
+        return blocking[0].code if blocking else None
+    if "rediarize" in stages and is_lite_deployment():
+        plan = plan_for_user(db, owner_id)
+        if post_stage_engine(plan.diarization.engine) == "local":
+            return "local_diarization_unavailable"
+    return None
+
+
+def refuse_unrunnable_rerun(
+    db: Session,
+    owner_id: int,
+    stages: list[str] | None,
+    *,
+    whisper_model: str | None,
+    disable_diarization: bool,
+) -> None:
+    """409 ``{code, message}`` BEFORE any destructive write when the re-run cannot run."""
+    from app.utils.lite_mode import plan_refusal
+
+    code = unrunnable_rerun_code(
+        db,
+        owner_id,
+        stages,
+        whisper_model=whisper_model,
+        disable_diarization=disable_diarization,
+    )
+    if code is not None:
+        raise plan_refusal(code)
+
+
 def dispatch_selective_tasks(
     file_uuid: str,
     stages: list[str],
@@ -352,6 +470,8 @@ def dispatch_selective_tasks(
     file_id: int | None = None,
     user_id: int | None = None,
     whisper_model: str | None = None,
+    disable_diarization: bool = False,
+    owner_id: int | None = None,
 ) -> None:
     """Dispatch Celery tasks for selected pipeline stages.
 
@@ -364,6 +484,8 @@ def dispatch_selective_tasks(
         file_id: Internal file ID (passed to tasks that need it).
         user_id: Owner user ID (passed to tasks that need it).
         whisper_model: Optional Whisper model override for transcription.
+        disable_diarization: Skip diarization; honoured by the transcription stage only.
+        owner_id: The file owner, whose speaker-detection choice a re-diarize runs with.
     """
     import os
 
@@ -382,13 +504,15 @@ def dispatch_selective_tasks(
             downstream_tasks=downstream if downstream else None,
             whisper_model=whisper_model,
             user_id=user_id,
+            disable_diarization=disable_diarization,
         )
     elif "rediarize" in stages:
-        from app.tasks.rediarize_task import rediarize_task
-
         other_stages = [s for s in stages if s != "rediarize"]
-        rediarize_task.delay(
+        if owner_id is None:
+            raise ValueError("re-diarizing needs the file owner's id")
+        _dispatch_manual_rediarize(
             file_uuid,
+            owner_id,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
@@ -409,8 +533,10 @@ def process_file_reprocess(
     num_speakers: int | None = None,
     stages: list[str] | None = None,
     whisper_model: str | None = None,
+    disable_diarization: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
@@ -424,7 +550,10 @@ def process_file_reprocess(
         num_speakers: Optional fixed number of speakers for diarization
         stages: Optional list of pipeline stages to re-run. Empty/None = full reprocess.
         whisper_model: Optional Whisper model override for this transcription.
+        disable_diarization: Skip diarization for the transcription run. The request model
+            rejects it for stage selections that do not transcribe.
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+        bypass: The request's platform bypass (``ctx.bypass``), decided on the file's tenant.
 
     Returns:
         Updated MediaFile object
@@ -435,23 +564,18 @@ def process_file_reprocess(
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import reset_file_for_retry
     from app.utils.task_utils import transcript_is_regenerable
-    from app.utils.uuid_helpers import get_file_by_uuid
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     try:
-        # Get the file (allow admin to reprocess any file)
         is_admin = current_user.is_admin
-        if is_admin:
-            media_file = get_file_by_uuid(db, file_uuid)
-        else:
-            media_file = get_file_by_uuid_with_permission(
-                db,
-                file_uuid,
-                current_user.id,
-                is_admin=current_user.is_admin,
-                organization_id=organization_id,
-                min_permission="editor",
-            )
+        media_file = get_file_by_uuid_with_permission(
+            db,
+            file_uuid,
+            current_user.id,
+            bypass=bypass,
+            organization_id=organization_id,
+            min_permission="editor",
+        )
 
         file_id = media_file.id  # Get internal ID for task operations
 
@@ -499,10 +623,13 @@ def process_file_reprocess(
                 detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
-        # Store the user's requested whisper model before dispatching
-        if whisper_model:
-            media_file.requested_whisper_model = whisper_model  # type: ignore[assignment]
-            db.commit()
+        refuse_unrunnable_rerun(
+            db,
+            int(media_file.user_id),
+            stages,
+            whisper_model=whisper_model,
+            disable_diarization=disable_diarization,
+        )
 
         logger.info(
             f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"
@@ -545,6 +672,8 @@ def process_file_reprocess(
                 file_id=file_id,
                 user_id=current_user.id,
                 whisper_model=whisper_model,
+                disable_diarization=disable_diarization,
+                owner_id=int(media_file.user_id),
             )
 
             logger.info(
@@ -572,6 +701,7 @@ def process_file_reprocess(
                 whisper_model=whisper_model,
                 user_id=current_user.id,
                 db=db,
+                disable_diarization=disable_diarization,
             )
 
             logger.info(

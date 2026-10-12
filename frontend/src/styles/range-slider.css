@@ -1,0 +1,48 @@
+/*
+ * range-slider.css - the one source of truth for slider styling.
+ *
+ * Every native <input type="range"> in the app goes through
+ * `components/ui/RangeSlider.svelte`, which applies `.range-input` below. The design
+ * lives in the custom properties so the media players (whose Plyr-generated inputs
+ * can only be reached with vendor pseudo-element selectors, see VideoPlayer.svelte
+ * and PlyrMiniPlayer.svelte) read the same values instead of repeating them.
+ *
+ * The standard slider is deliberately the browser's native one tinted with
+ * `accent-color`: the filled portion, thumb, keyboard behaviour and RTL direction
+ * all come from the platform, so there are no -webkit/-moz thumb rules to keep in
+ * sync here. A structural test (components/ui/rangeSliderStructure.test.ts) fails if
+ * such rules reappear anywhere other than this file and the two player components.
+ */
+:root {
+  --slider-accent: var(--primary-color);
+  --slider-track: var(--border-color);
+  --slider-track-height: 6px;
+  --slider-track-radius: 3px;
+  --slider-thumb-size: 16px;
+  --slider-thumb-border: none;
+  --slider-focus-ring: var(--primary-color);
+  --slider-disabled-opacity: 0.5;
+  --slider-badge-bg: rgba(var(--primary-color-rgb), 0.12);
+  --slider-badge-text: var(--primary-on-surface);
+  /* Thumb on the media players' audio progress/volume bars. */
+  --slider-player-thumb: var(--primary-color);
+}
+
+[data-theme='dark'] {
+  --slider-player-thumb: #ffffff;
+}
+
+.range-input {
+  width: 100%;
+  accent-color: var(--slider-accent);
+}
+
+.range-input:focus-visible {
+  outline: 2px solid var(--slider-focus-ring);
+  outline-offset: 2px;
+}
+
+.range-input:disabled {
+  opacity: var(--slider-disabled-opacity);
+  cursor: not-allowed;
+}

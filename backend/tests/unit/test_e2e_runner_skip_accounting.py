@@ -19,6 +19,7 @@ re-implements the accounting would pass against a script that lost it.
 from __future__ import annotations
 
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -253,6 +254,8 @@ def _run_passthrough(pytest_exit: int, tmp_path: Path) -> int:
             EXIT_NOT_MEASURED={_declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")}
             VENV_PY={str(stub)!r}
             E2E_ARTIFACT_DIR={str(tmp_path)!r}
+            E2E_FRONTEND_URL=http://localhost:5173
+            E2E_BACKEND_URL=http://localhost:5174
             HAS_CUSTOM=true
             WORKERS=0
             SKIP_REASONS=(-rs)
@@ -291,17 +294,19 @@ def test_the_passthrough_path_does_not_report_a_usage_error_as_not_measured(tmp_
 # ------------------------------------------------------- the gate must SEE that exit code
 
 
-def _run_phase_verdict(exit_code: int) -> str:
+def _run_phase_verdict(exit_code: int, tmp_path: Path) -> str:
     """Drive run-dev-tests.sh's REAL run_phase with a stand-in exiting ``exit_code``.
 
     ``PHASE_NOT_MEASURED_EXIT`` is read out of the script rather than declared here, for the
     same reason as above: a harness that supplies its own copy of a constant proves the
     harness consistent, not the scripts.
     """
+    report_dir = tmp_path / f"report-{exit_code}"
+    report_dir.mkdir()
     harness = textwrap.dedent(f"""
         set -uo pipefail
         GREEN='' RED='' YELLOW='' NC=''
-        REPORT_DIR=$(mktemp -d)
+        REPORT_DIR={shlex.quote(str(report_dir))}
         PHASE_NOT_MEASURED_EXIT={_declared_int(DEV_TESTS, "PHASE_NOT_MEASURED_EXIT")}
         PHASE_NAMES=(); PHASE_STATUS=(); PHASE_LOGS=(); PHASE_SECONDS=()
         {_extract(DEV_TESTS, "run_phase")}
@@ -316,18 +321,18 @@ def _run_phase_verdict(exit_code: int) -> str:
     return result.stdout.strip().splitlines()[-1]
 
 
-def test_the_e2e_phase_reaches_a_not_measured_verdict_in_the_gate():
+def test_the_e2e_phase_reaches_a_not_measured_verdict_in_the_gate(tmp_path):
     """run-e2e.sh's NOT MEASURED exit must render as NOT MEASURED, not PASS and not FAIL.
 
     This is the other half of the accounting: a ceiling that no caller reads is a warning
     nobody acts on. All three verdicts, because any one alone is satisfiable by a constant.
     """
     not_measured_code = _declared_int(E2E_RUNNER, "EXIT_NOT_MEASURED")
-    assert _run_phase_verdict(0) == "PASS"
-    assert _run_phase_verdict(not_measured_code).startswith("NOT MEASURED"), (
+    assert _run_phase_verdict(0, tmp_path) == "PASS"
+    assert _run_phase_verdict(not_measured_code, tmp_path).startswith("NOT MEASURED"), (
         "an e2e phase that declined to count itself was folded into PASS or FAIL"
     )
-    assert _run_phase_verdict(1).startswith("FAIL")
+    assert _run_phase_verdict(1, tmp_path).startswith("FAIL")
 
 
 def test_the_not_measured_exit_code_is_the_same_number_everywhere():

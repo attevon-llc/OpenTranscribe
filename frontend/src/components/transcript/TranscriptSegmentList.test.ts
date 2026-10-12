@@ -153,6 +153,71 @@ describe('TranscriptSegmentList', () => {
     });
   });
 
+  describe('query text highlighting (regression guard)', () => {
+    // Pins the contract that broke: the index a segment resolves to via
+    // getOriginalSegmentIndex() (uuid lookup against file.transcript_segments) must equal
+    // the segmentIndex highlightTextWithMatches() is asked to filter on. TranscriptSearch's
+    // computeMatches() assigns segmentIndex by iterating file.transcript_segments in order,
+    // so `searchMatches` here mirrors that: segment 'b' is transcript_segments[1].
+    const searchProps = {
+      ...props,
+      searchQuery: 'segment',
+      searchMatches: [
+        { segmentIndex: 0, start: 0, length: 7, type: 'text' as const },
+        { segmentIndex: 1, start: 0, length: 7, type: 'text' as const },
+        { segmentIndex: 2, start: 0, length: 7, type: 'text' as const },
+        { segmentIndex: 3, start: 0, length: 7, type: 'text' as const },
+      ],
+      currentMatchIndex: 0,
+    };
+
+    it('renders a highlight span for every matched segment', () => {
+      const { container } = render(TranscriptSegmentList, { props: searchProps });
+      const highlights = container.querySelectorAll('.transcript-search-highlight');
+      expect(highlights).toHaveLength(4);
+    });
+
+    it('marks the highlight for the current match with the "current" class', () => {
+      const { container } = render(TranscriptSegmentList, { props: searchProps });
+      const segmentA = container.querySelector('[data-segment-id="a"] .segment-text');
+      const highlight = segmentA?.querySelector('.transcript-search-highlight');
+      expect(highlight?.classList.contains('current')).toBe(true);
+    });
+
+    it('does not highlight when the group order differs from transcript_segments order', () => {
+      // Groups can be reordered relative to the flat transcript_segments array (e.g. by
+      // backend overlap-group resolution); the group's segment objects are still the SAME
+      // refs as transcript_segments, so uuid-based lookup must find the right index
+      // regardless of rendering order.
+      const reordered = {
+        ...searchProps,
+        groupedTranscriptSegments: [groups[3], groups[1], groups[0], groups[2]],
+      };
+      const { container } = render(TranscriptSegmentList, { props: reordered });
+      const highlights = container.querySelectorAll('.transcript-search-highlight');
+      expect(highlights).toHaveLength(4);
+      const segmentB = container.querySelector('[data-segment-id="b"] .segment-text');
+      expect(segmentB?.querySelector('.transcript-search-highlight')).toBeTruthy();
+    });
+
+    // NOTE on what this describe block does and does NOT guard: the regression that shipped
+    // (segmentHighlight() reading searchQuery/searchMatches/currentMatchIndex/
+    // segmentClassification from closure instead of taking them as explicit parameters) is a
+    // "stale after a LATER prop update" bug, not a "wrong value at mount" bug — every test
+    // above renders with the search props already populated at mount, so it can't tell the
+    // fixed code from the broken code. A `rerender()` through @testing-library/svelte's own
+    // prop-passing helper (`@testing-library/svelte-core/props.svelte.js`) can't tell them
+    // apart either: it stores ALL props as one `$state.raw` bag and replaces the whole bag on
+    // every `rerender`, so any single prop change invalidates that one shared signal and forces
+    // a full top-to-bottom re-render regardless of which individual template expression
+    // statically depends on what — the exact fine-grained gap this bug lives in never gets
+    // exercised. The real regression guard needs a real PARENT Svelte component passing
+    // updated props down the way `TranscriptDisplay` does in production (each exported prop is
+    // its own compiled reactive binding, not one bundled bag) — see
+    // `TranscriptDisplay.test.ts`'s "search highlighting after the find bar populates matches
+    // (regression, issue #755)" block, which fails against the pre-fix code and passes here.
+  });
+
   it('attaches no scroll listener to the scroll container', () => {
     const spy = vi.spyOn(Element.prototype, 'addEventListener');
     render(TranscriptSegmentList, { props });

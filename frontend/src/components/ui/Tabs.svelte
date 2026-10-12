@@ -5,11 +5,13 @@
     /** Optional count/badge shown after the label. */
     badge?: string | number | null;
     disabled?: boolean;
+    /** Native tooltip; used to say why a tab is disabled. */
+    title?: string;
   }
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
 
   export let tabs: TabItem[] = [];
@@ -18,11 +20,30 @@
   /** Accessible label for the tablist (screen readers). Defaults to the translated "Tabs". */
   export let ariaLabel: string | undefined = undefined;
 
+  /**
+   * Pin the strip to the top of the nearest scrolling ancestor so a tall panel never scrolls the
+   * user's place away. Opt-in: only settings sections whose panels outgrow the viewport want it.
+   */
+  export let sticky = false;
+
   $: resolvedAriaLabel = ariaLabel ?? $t('common.tabs');
 
   const dispatch = createEventDispatcher<{ change: string }>();
 
   let tabEls: HTMLButtonElement[] = [];
+  let sentinel: HTMLDivElement | undefined;
+  let stuck = false;
+
+  // The sentinel sits just above the strip; once it scrolls out of its scroll container the strip
+  // is pinned, which is when the divider shadow is worth showing.
+  onMount(() => {
+    if (!sticky || !sentinel || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(([entry]) => {
+      stuck = !entry.isIntersecting;
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  });
 
   function select(id: string) {
     if (id === activeId) return;
@@ -36,7 +57,15 @@
     if (enabled.length === 0) return;
     const pos = enabled.findIndex(({ i }) => i === index);
     let nextPos = pos;
-    switch (event.key) {
+    // Left/Right follow the visual order, which a right-to-left layout reverses.
+    const rtl = (event.currentTarget as HTMLElement).closest('[dir]')?.getAttribute('dir') === 'rtl';
+    const key =
+      rtl && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+        ? event.key === 'ArrowLeft'
+          ? 'ArrowRight'
+          : 'ArrowLeft'
+        : event.key;
+    switch (key) {
       case 'ArrowRight':
       case 'ArrowDown':
         nextPos = (pos + 1) % enabled.length;
@@ -61,7 +90,14 @@
   }
 </script>
 
-<div class="tabs" role="tablist" aria-label={resolvedAriaLabel}>
+{#if sticky}<div class="tabs-sentinel" bind:this={sentinel} aria-hidden="true"></div>{/if}
+<div
+  class="tabs"
+  class:sticky
+  class:stuck
+  role="tablist"
+  aria-label={resolvedAriaLabel}
+>
   {#each tabs as tab, i (tab.id)}
     <button
       bind:this={tabEls[i]}
@@ -74,6 +110,7 @@
       aria-controls={`tabpanel-${tab.id}`}
       tabindex={tab.id === activeId ? 0 : -1}
       disabled={tab.disabled}
+      title={tab.title}
       on:click={() => select(tab.id)}
       on:keydown={(e) => onKeydown(e, i)}
     >
@@ -90,6 +127,28 @@
     display: flex;
     gap: 4px;
     border-bottom: 1px solid var(--border-color);
+  }
+  /* Sticky offsets are measured from the scroll container's content box, so its padding (published
+     by the host as --tabs-sticky-inset) would stay visible above a pinned strip as a band of
+     scrolled content. Pin the strip's top edge flush with the scrollport instead (top: -inset);
+     the small top padding, offset by an equal negative margin, keeps the resting layout unchanged. */
+  .tabs.sticky {
+    position: sticky;
+    top: calc(-1 * var(--tabs-sticky-inset, 0px));
+    z-index: var(--z-sticky);
+    margin: -0.5rem 0 1.25rem;
+    padding-top: 0.5rem;
+    /* Opaque so the panel scrolls beneath it; the modal body paints with the surface token. */
+    background: var(--surface-color);
+  }
+  .tabs.sticky.stuck {
+    box-shadow: 0 6px 8px -6px color-mix(in srgb, var(--text-color) 40%, transparent);
+  }
+  /* Zero-height marker just above the strip: once it leaves its scroll container the strip is pinned. */
+  .tabs-sentinel {
+    height: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
   .tab {
     display: inline-flex;

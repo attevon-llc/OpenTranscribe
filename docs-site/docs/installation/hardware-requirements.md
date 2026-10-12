@@ -6,11 +6,15 @@ sidebar_position: 2
 
 OpenTranscribe is designed to run on a wide range of hardware configurations, from minimal setups to high-performance systems. This guide outlines the requirements and recommendations for different use cases.
 
+:::tip[Full image or lite image?]
+What you need depends on which variant you install. The **full** image transcribes and detects speakers on this server (a GPU makes it fast; it also runs on CPU). The **lite** image never transcribes or detects speakers locally: both are done by cloud providers you configure, so it needs no GPU but does need a cloud provider account and an internet connection. See [Deployment Variants](./deployment-variants.md) to choose.
+:::
+
 ## Minimum Requirements
 
 ### Basic CPU-Only Setup
 
-For small-scale testing or low-volume transcription work:
+For small-scale testing or low-volume transcription work with the full image running on CPU (local Whisper, no cloud account needed):
 
 - **CPU**: Modern x86-64 processor (4+ cores)
 - **RAM**: 8GB minimum
@@ -21,6 +25,9 @@ For small-scale testing or low-volume transcription work:
 **Performance**:
 - Transcription speed: ~0.5-1x realtime (slower than playback)
 - Suitable for: Testing, development, occasional use
+- Speaker detection on this server also runs on the CPU when a user's speaker-detection setting asks for it; choose Off in Settings to skip it
+
+If you would rather send audio to a cloud provider than transcribe on CPU, the lite image needs no GPU either; see [Deployment Variants](./deployment-variants.md).
 
 :::warning[CPU-Only Limitations]
 CPU-only mode provides significantly slower transcription speeds (0.5-1x realtime) compared to GPU acceleration (~40x realtime with large-v3-turbo, full pipeline). For production use or regular transcription work, GPU acceleration is strongly recommended.
@@ -60,12 +67,14 @@ For regular use and production deployments:
 :::
 
 :::info[Hybrid Mode for Low-VRAM GPUs — and why macOS is not one]
-If your GPU has less than ~5 GB of usable VRAM, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU (small model, int8) while speaker diarization stays on GPU. This requires only ~1.3 GB VRAM for PyAnnote and still produces fully diarized transcripts.
+If your GPU has less than ~5 GB of usable VRAM, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU (small model, int8) while speaker detection stays on GPU (~1.3 GB VRAM measured for the in-process PyAnnote engine), and still produces speaker-separated transcripts.
 
-On **macOS (Apple Silicon)**, use the `--lite` (CPU-only) image — Docker Desktop
-on macOS has no Metal/GPU passthrough, so every container is CPU-only there
-regardless of host chip. There is no MPS acceleration path available inside a
-container on this platform; expect CPU-class timings.
+On **macOS (Apple Silicon)**, Docker Desktop has no Metal/GPU passthrough, so
+every container is CPU-only there regardless of host chip, and there is no MPS
+acceleration path inside a container. The image built for Apple Silicon is the
+`--lite` image, which transcribes and detects speakers with cloud providers only
+(no local Whisper, no local speaker detection); see
+[Deployment Variants](./deployment-variants.md).
 
 See [Performance Tuning → Hybrid Mode](../operations/performance-tuning.md#hybrid-mode) for configuration details.
 :::
@@ -141,7 +150,7 @@ AI models are cached locally to avoid re-downloading:
 | Model Category | Size | Purpose |
 |----------------|------|---------|
 | WhisperX Models | ~1.5GB | Speech recognition |
-| PyAnnote Models | ~500MB | Speaker diarization |
+| PyAnnote Models | ~500MB | Speaker detection and voiceprints on this server |
 | Sentence Transformers | ~80MB | Semantic search |
 | NLTK Data | ~13MB | Text processing |
 | **Total** | **~2.1GB** | All AI models |
@@ -199,7 +208,7 @@ The following ports must be available:
 | Platform | NVIDIA GPU | Notes |
 |----------|------------|-------|
 | Linux | ✅ Full support | Best performance |
-| macOS | N/A — no Docker Metal passthrough | CPU-only via the `--lite` image — no MPS acceleration in a container |
+| macOS | N/A — no Docker Metal passthrough | The `--lite` image: cloud transcription and speaker detection, no local Whisper, no MPS acceleration in a container |
 | Windows | ✅ via WSL2 | CUDA in WSL2 required |
 
 ## Verification Commands
@@ -289,6 +298,7 @@ NVIDIA Blackwell GPUs (GB10x/GB20x series, e.g., DGX Spark) require a separate b
 
 ## Next Steps
 
+- [Deployment Variants](./deployment-variants.md) - Choose the full or lite image
 - [Docker Compose Installation](./docker-compose.md) - Install OpenTranscribe
 - [GPU Setup](./gpu-setup.md) - Configure NVIDIA GPU support
 - [Environment Variables](../configuration/environment-variables.md) - Optimize configuration

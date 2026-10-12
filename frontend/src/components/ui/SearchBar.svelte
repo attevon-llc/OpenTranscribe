@@ -35,6 +35,10 @@
   export let navDisabled = false;
   export let autofocus = false;
   export let size: 'sm' | 'md' = 'md';
+  /** `pill` is the inset, softly filled field of macOS/iOS Settings; `default` keeps the outlined box. */
+  export let variant: 'default' | 'pill' = 'default';
+  /** `search` gives assistive tech and mobile keyboards the search semantics; the clear button stays ours. */
+  export let type: 'text' | 'search' = 'text';
   /** Debounce (ms) before emitting `search`; 0 = immediate. */
   export let debounceMs = 200;
   /** Accessible labels — pass i18n strings; English fallbacks keep the primitive usable standalone. */
@@ -111,7 +115,7 @@
   onDestroy(() => debounced.cleanup());
 </script>
 
-<div class="search-bar search-bar-{size}" class:disabled>
+<div class="search-bar search-bar-{size}" class:pill={variant === 'pill'} class:disabled>
   <span class="search-bar-icon" aria-hidden="true">
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -133,7 +137,8 @@
     bind:this={inputEl}
     {value}
     id={inputId}
-    type="text"
+    {type}
+    enterkeyhint={type === 'search' ? 'search' : undefined}
     class="search-bar-input"
     {placeholder}
     {disabled}
@@ -269,6 +274,44 @@
   .search-bar:focus-within {
     border-color: var(--border-color);
     box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  /* macOS/iOS Settings search: inset, softly filled, no outline until focused. The fill is a tint of
+     the text colour so it reads on both the light and the dark sidebar. */
+  .search-bar.pill {
+    height: 36px;
+    padding: 0 10px;
+    gap: 8px;
+    border-color: transparent;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--text-color) 8%, transparent);
+  }
+
+  .search-bar.pill:focus-within {
+    border-color: var(--primary-color);
+    background: var(--surface-color);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.22);
+  }
+
+  .pill .search-bar-clear {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+  }
+
+  /* We render our own clear button; the browser's would double it. */
+  .search-bar-input::-webkit-search-cancel-button,
+  .search-bar-input::-webkit-search-decoration {
+    appearance: none;
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search-bar,
+    .search-bar-btn,
+    .search-bar-clear {
+      transition: none;
+    }
   }
 
   .search-bar.disabled {

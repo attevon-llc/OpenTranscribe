@@ -1,12 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
-  import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '../ui/Spinner.svelte';
   import ProgressBar from '../ui/ProgressBar.svelte';
+
+  /**
+   * Every migration route is super_admin (the section itself is admin-tier, for the
+   * consistency panel beside it). Locked means: no status/progress calls, no WebSocket
+   * wiring, controls shown disabled with the reason.
+   */
+  export let locked = false;
 
   // Migration status state
   let currentMode = 'v3';
@@ -139,10 +145,6 @@
       // Progress is loaded in parallel from onMount — no need to await here
 
     } catch (err) {
-      if (getErrorStatus(err) === 403) {
-        error = $t('settings.embeddingMigration.adminRequired');
-        return;
-      }
       console.error('Failed to load migration status:', err);
       error = $t('settings.embeddingMigration.loadFailed');
     } finally {
@@ -290,6 +292,10 @@
   }
 
   onMount(() => {
+    if (locked) {
+      loading = false;
+      return;
+    }
     Promise.allSettled([loadMigrationStatus(), loadMigrationProgress()]);
 
     // Listen for WebSocket events
@@ -314,7 +320,19 @@
       {$t('settings.embeddingMigration.description')}
     </p>
 
-    {#if error}
+    {#if locked}
+      <div class="locked-state" data-testid="embedding-migration-locked">
+        <p>{$t('settings.embeddingMigration.superAdminRequired')}</p>
+        <div class="locked-controls">
+          <button class="btn btn-primary" disabled title={$t('settings.nav.requiresSuperAdmin')}>
+            {$t('settings.embeddingMigration.startMigration')}
+          </button>
+          <button class="btn btn-primary" disabled title={$t('settings.nav.requiresSuperAdmin')}>
+            {$t('settings.embeddingMigration.forceReextract')}
+          </button>
+        </div>
+      </div>
+    {:else if error}
       <div class="error-state">
         <p>{error}</p>
       </div>
@@ -554,6 +572,27 @@
 <style>
   .migration-settings {
     padding: 0.5rem 0;
+  }
+
+  .locked-state {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    color: var(--text-secondary);
+  }
+
+  .locked-state p {
+    margin: 0;
+  }
+
+  .locked-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .error-state {

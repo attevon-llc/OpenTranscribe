@@ -15,10 +15,15 @@ coordinator), plus the full-transcript match browser opened from a result card.
 - `SearchAutocomplete.svelte` — the query input: `GET /search/suggestions` debounced 200 ms with
   AbortController cancellation and arrow/Enter/Escape nav. A `title`-type suggestion `goto`s
   `/files/<uuid>` directly instead of dispatching `select`.
-- `SearchTranscriptModal.svelte` — ~1.4k lines: loads the transcript 200 segments at a time, groups
-  consecutive same-speaker segments, classifies keyword vs semantic by **time-range overlap** with
-  the hit's occurrences, and drives prev/next match (Enter / Shift+Enter), paging in more segments
-  until the target match resolves.
+- `SearchTranscriptModal.svelte` was **deleted in issue #755**. "View transcript" now opens
+  `$components/transcript/TranscriptViewModal.svelte` (`mode="search"`) — the same consolidated
+  modal the file-detail page uses for its own "View transcript" button (`mode="file"`, the
+  default). It self-fetches 200 segments at a time (issue #755 J3 — a self-contained fetch, the
+  search page owns no pagination for it), classifies keyword vs semantic by **time-range
+  overlap** with the hit's occurrences via `$lib/transcript/matchClassification`
+  (`classifySegments`/`countByType`), and renders through `TranscriptSegmentList` in read-only
+  (`editable=false`) mode rather than a second hand-rolled renderer. Prev/next walks the
+  occurrence list and scrolls; there is no third highlighter or third reading-progress bar.
 - Sort control is `$components/ui/SortDropdown.svelte` (shared with gallery, H2), consumed
   directly by `routes/search/+page.svelte` with `relevance` as a `noDirection` option (always desc).
 - `SearchPagination.svelte` — windowed pager (1–5, then current ±2). **Also used by
@@ -47,7 +52,8 @@ coordinator), plus the full-transcript match browser opened from a result card.
   `RetrievalQualityNotice` (#461) sits in `.quality-notice-slot` **above** `.results-list` rather
   than inside it; it is also gated to `searchMode === 'hybrid'`, since Exact mode is literal BM25
   and none of the fusion ranking #461 measured applies to it.
-- `SearchTranscriptModal` re-fetches on the redaction toggle (`?redact=false`, owner-only) and
-  rebuilds the loaded range **in place** — don't flip `loading` there or the view flickers.
+- `TranscriptViewModal` (search mode) re-fetches on the redaction toggle (`?redact=false`,
+  owner-only) and rebuilds the loaded range **in place** — don't flip the loading state there
+  or the view flickers.
 - `SearchResultCard` re-implements `formatDuration`/`formatFileSize`/`formatDate` locally instead of
   using `$lib/utils/formatting` — don't copy that into new cards.

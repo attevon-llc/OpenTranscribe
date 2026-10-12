@@ -93,6 +93,29 @@ fi
 
 rc=0
 
+# Teardown lives in ONE EXIT trap, armed BEFORE the stack is started. It used to be the last
+# statement of the script, so Ctrl-C/TERM (and any `set -u` abort) between `opentr.sh start`
+# and that line left the prod+nginx+PKI stack bound to the stock ports; a failed or
+# half-finished `start` is also covered, since containers exist before it returns. INT/TERM are
+# converted to an exit so the EXIT trap runs; the 130/143 codes are the shell convention.
+STACK_TOUCHED=false
+teardown_stack() {
+    local rc_in=$?
+    trap - EXIT INT TERM
+    if [[ "$STACK_TOUCHED" == "true" ]]; then
+        if [[ "$KEEP_STACK" != "true" ]]; then
+            info "${YELLOW}==>${NC} stopping the PKI prod stack"
+            ./opentr.sh stop >/dev/null 2>&1 || true
+        else
+            info "${YELLOW}==>${NC} --keep-stack: leaving the PKI prod stack up (stop it with ./opentr.sh stop)"
+        fi
+    fi
+    exit "$rc_in"
+}
+trap teardown_stack EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 info "${BLUE}==>${NC} generating the test PKI (CA + client certs)"
 if ! ./scripts/pki/setup-test-pki.sh; then
     err "setup-test-pki.sh failed — no CA/client certs to authenticate with"
@@ -100,6 +123,7 @@ if ! ./scripts/pki/setup-test-pki.sh; then
 fi
 
 info "${BLUE}==>${NC} starting the prod+nginx+PKI stack (builds prod images; several minutes)"
+STACK_TOUCHED=true
 if ! ./opentr.sh start prod --build --with-pki; then
     err "./opentr.sh start prod --build --with-pki failed"
     rc=$EXIT_GATE
@@ -129,13 +153,6 @@ if [[ $rc -eq 0 ]]; then
         err "PKI e2e failed"
         rc=$EXIT_GATE
     fi
-fi
-
-if [[ "$KEEP_STACK" != "true" ]]; then
-    info "${YELLOW}==>${NC} stopping the PKI prod stack"
-    ./opentr.sh stop >/dev/null 2>&1 || true
-else
-    info "${YELLOW}==>${NC} --keep-stack: leaving the PKI prod stack up (stop it with ./opentr.sh stop)"
 fi
 
 exit $rc

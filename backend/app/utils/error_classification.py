@@ -37,6 +37,10 @@ class ErrorCategory(Enum):
     # infrastructure-requeue cap). Terminal for the automatic paths; the user's own Retry
     # button still works, because a manual retry clears the category.
     RETRIES_EXHAUSTED = "retries_exhausted"
+    # The user's own settings make the run impossible (e.g. pyannote.ai speaker detection
+    # chosen with no API key saved, issue #1204). Running it again unchanged fails the same
+    # way, so it is never retried automatically; the manual Retry works once it is fixed.
+    CONFIGURATION_REQUIRED = "configuration_required"
 
     # Auth/Rate limit hybrid - retry with very long backoff
     AUTH_OR_RATE_LIMIT = "auth_or_rate_limit"

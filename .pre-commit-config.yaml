@@ -342,6 +342,24 @@ repos:
         pass_filenames: false
         files: ^(backend/app/.*\.py|scripts/audit-error-disclosure\.py)$
 
+  # /architecture diagrams (issue #1230): every rendered HTML must carry the sha256 of the
+  # spec it was rendered from. Stdlib only, so it runs in CI's pre-commit job without
+  # Archify; regenerate with scripts/generate-architecture-diagrams.sh.
+  - repo: local
+    hooks:
+      - id: architecture-diagram-drift-selftest
+        name: architecture diagram drift check self-test (must-fire cases still fire)
+        entry: python3 scripts/check-architecture-diagram-drift.py --selftest
+        language: system
+        pass_filenames: false
+        files: ^scripts/check-architecture-diagram-drift\.py$
+      - id: architecture-diagram-drift
+        name: architecture diagrams match their specs
+        entry: python3 scripts/check-architecture-diagram-drift.py
+        language: system
+        pass_filenames: false
+        files: ^(docs-site/(architecture-diagrams/specs|static/architecture)/|scripts/(check-architecture-diagram-drift\.py|generate-architecture-diagrams\.sh)$)
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

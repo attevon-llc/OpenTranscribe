@@ -155,6 +155,11 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 | admin | `get_current_admin_user` | user accounts, tasks, search/speaker maintenance |
 | super_admin | `get_current_active_superuser` | auth config, role changes, audit log, ASR/engine settings, backups, media mirror, watch sources, redaction policy |
 
+admin/super_admin manage the platform; in multi-tenant mode they reach tenant content only
+through a support-access grant (`services/platform_bypass.py`, `api/endpoints/support_access.py`;
+issue #1122). In single-tenant mode nothing changes. A grant never confers `org:admin`, and every
+`/org-admin/*` route resolves the base context, which ignores the grant header.
+
 - **One definition each.** `get_current_super_admin_user` in `api/endpoints/admin.py` and
   `api/endpoints/auth_config.py` are re-export aliases; the real thing lives in
   `api/endpoints/auth/dependencies.py`. It used to be declared three times, each comparing

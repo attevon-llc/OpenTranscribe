@@ -53,6 +53,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.docker_ops import TEST_ARTIFACT_LABEL
 from tests.integration import throwaway_pg
 
 # These four have NO canonical home: they are ordinary test helpers that live in the sibling
@@ -155,7 +156,17 @@ def _backend_image_has_gpg() -> bool:
         return False
     return (
         _run(
-            ["docker", "run", "--rm", "--entrypoint", "gpg", _BACKEND_IMAGE, "--version"]
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--label",
+                TEST_ARTIFACT_LABEL,
+                "--entrypoint",
+                "gpg",
+                _BACKEND_IMAGE,
+                "--version",
+            ]
         ).returncode
         == 0
     )
@@ -240,32 +251,38 @@ def networked_pg(tmp_path: Path) -> Iterator[tuple[str, str, str]]:
     image = _postgres_image_tag()
     password = uuid.uuid4().hex
 
-    created_net = _run(["docker", "network", "create", net_name])
-    assert created_net.returncode == 0, f"failed to create test network: {created_net.stderr}"
+    # Both creations sit INSIDE the try whose finally removes them: `docker network create`
+    # / `docker run` can fail after the daemon has already created the object.
     try:
-        started = _run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--network",
-                net_name,
-                "--name",
-                pg_name,
-                "--label",
-                throwaway_pg.CONTAINER_LABEL,
-                # PGDATA on a tmpfs: measured 62-92 s -> 4.6 s to accept connections on this
-                # host (throwaway_pg.py's table). Safe because nothing restarts this container
-                # and the data is meant to die with it.
-                "--tmpfs",
-                "/var/lib/postgresql/data",
-                "-e",
-                f"POSTGRES_PASSWORD={password}",
-                image,
-            ]
+        created_net = _run(
+            ["docker", "network", "create", "--label", TEST_ARTIFACT_LABEL, net_name]
         )
-        assert started.returncode == 0, f"failed to start postgres: {started.stderr}"
+        assert created_net.returncode == 0, f"failed to create test network: {created_net.stderr}"
         try:
+            started = _run(
+                [
+                    "docker",
+                    "run",
+                    "-d",
+                    "--network",
+                    net_name,
+                    "--name",
+                    pg_name,
+                    "--label",
+                    throwaway_pg.CONTAINER_LABEL,
+                    "--label",
+                    TEST_ARTIFACT_LABEL,
+                    # PGDATA on a tmpfs: measured 62-92 s -> 4.6 s to accept connections on
+                    # this host (throwaway_pg.py's table). Safe because nothing restarts this
+                    # container and the data is meant to die with it.
+                    "--tmpfs",
+                    "/var/lib/postgresql/data",
+                    "-e",
+                    f"POSTGRES_PASSWORD={password}",
+                    image,
+                ]
+            )
+            assert started.returncode == 0, f"failed to start postgres: {started.stderr}"
             _wait_ready(pg_name)
             yield net_name, pg_name, password
         finally:
@@ -321,6 +338,8 @@ def _run_pg_dump_in_backend_container(
             "docker",
             "run",
             "--rm",
+            "--label",
+            TEST_ARTIFACT_LABEL,
             "--network",
             network,
             "-v",

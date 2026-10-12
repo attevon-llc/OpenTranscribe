@@ -20,12 +20,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
+from app.services.platform_bypass import PlatformBypass
 from app.services.transcript_export_service import VALID_FORMATS
 from app.services.transcript_export_service import build_export_content
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -45,7 +47,14 @@ _CONTENT_TYPES = {
 }
 
 
-def _resolve_export_redaction(db, media_file, current_user, redact: bool, organization_id=None):
+def _resolve_export_redaction(
+    db,
+    media_file,
+    current_user,
+    redact: bool,
+    organization_id=None,
+    bypass: PlatformBypass = PlatformBypass.none(),
+):
     """Resolve (cfg, reveal_categories) for a transcript export.
 
     Identical fail-closed shape to ``subtitles._resolve_subtitle_redaction``: honors the
@@ -56,6 +65,7 @@ def _resolve_export_redaction(db, media_file, current_user, redact: bool, organi
         organization_id: The requester's active tenant scope (``ctx.org_id``),
             threaded into ``resolve_effective_config`` so a registered per-org
             redaction floor (issue #982/#987) is actually consulted (#988).
+        bypass: The request's platform bypass; decides whether a non-owner admin may reveal.
 
     Raises:
         HTTPException: 503 when the redaction policy cannot be resolved.
@@ -75,13 +85,17 @@ def _resolve_export_redaction(db, media_file, current_user, redact: bool, organi
 
     if getattr(cfg, "export_locked", False):
         return cfg, set()  # forced — never reveal on export
-    can_reveal = (media_file.user_id == current_user.id) or current_user.is_admin
+    can_reveal = (media_file.user_id == current_user.id) or bypass.admin_reveal_allowed
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
     audit_unredacted_reveal(media_file, current_user, reveal, surface="transcript_export")
     return cfg, reveal
 
 
-@router.get("/{file_uuid}/export", response_class=Response)
+@router.get(
+    "/{file_uuid}/export",
+    response_class=Response,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def export_transcript(
     file_uuid: str,
     db: Session = Depends(get_db),
@@ -109,7 +123,7 @@ def export_transcript(
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {export_format}")
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -117,7 +131,7 @@ def export_transcript(
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
 
     cfg, reveal = _resolve_export_redaction(
-        db, media_file, current_user, redact, organization_id=ctx.org_id
+        db, media_file, current_user, redact, organization_id=ctx.org_id, bypass=ctx.bypass
     )
 
     # Withheld until detection has produced spans to apply — same rule and same reasoning

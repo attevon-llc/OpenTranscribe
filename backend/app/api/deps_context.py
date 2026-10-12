@@ -14,6 +14,7 @@ endpoint uses: org context -> filter by organization_id, else by user_id.
 
 import logging
 from dataclasses import dataclass
+from dataclasses import replace
 from typing import Any
 
 from fastapi import Depends
@@ -24,11 +25,22 @@ from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.constants import SUPPORT_ACCESS_GRANT_HEADER
+from app.core.route_template import route_label
 from app.core.tenancy import UNSCOPED  # noqa: F401 — re-exported for callers
 from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
 from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
 from app.db.base import get_db
 from app.models.user import User
+from app.services.platform_access import TenancyMode
+from app.services.platform_access import tenancy_mode
+from app.services.platform_bypass import PlatformBypass
+from app.services.platform_bypass import build_bypass
+from app.services.support_access_service import coded_error
+from app.services.support_access_service import record_use
+from app.services.support_access_service import resolve_active_grant
+
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +52,9 @@ class RequestContext:
     user: User
     org_id: int | None = None  # our organization.id (NOT the provider's string id)
     org_role: str | None = None  # "org:admin" | "org:member" | None
+    # What the platform-admin role may reach on this request. Defaults to nothing, so a
+    # context built by hand fails closed (issue #1122).
+    bypass: PlatformBypass = PlatformBypass.none()
 
     @property
     def is_org_context(self) -> bool:
@@ -101,7 +116,7 @@ def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int 
     return org.id, membership.role
 
 
-def get_current_context(
+def get_base_context(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -114,13 +129,110 @@ def get_current_context(
     meant every one of them silently opted out of the account-lifecycle gate —
     a deactivated, expired, unapproved or ``must_change_password`` account could
     still create conversations, delete files and read an org's audit log.
+
+    The base context never reads a support-access grant header, so the lifecycle
+    routes (and ``require_org_admin``) cannot be broken by a stale one.
     """
     org_id, org_role = resolve_org_context(request, db, current_user)
-    return RequestContext(user=current_user, org_id=org_id, org_role=org_role)
+    return RequestContext(
+        user=current_user,
+        org_id=org_id,
+        org_role=org_role,
+        bypass=build_bypass(db, current_user, org_id),
+    )
+
+
+def resolve_request_bypass(
+    request: Request,
+    db: Session,
+    user: User,
+    org_id: int | None,
+    org_role: str | None,
+) -> tuple[int | None, str | None, PlatformBypass]:
+    """Resolve ``(org_id, org_role, bypass)``, honouring ``X-Support-Access-Grant``.
+
+    The ONE implementation, shared by ``get_current_context`` and the optional-auth
+    thumbnail route so the grant rules cannot diverge between them. Without the header the
+    request has no grant, ever: a grant is never ambient. With it:
+
+    1. multi-tenant mode only (else 400 ``support_access_unavailable``);
+    2. the grant must be the caller's own, active, with a live target (coded 403);
+    3. a ``read`` grant refuses every non-safe method (403 ``support_grant_write_required``),
+       even on routes that never ask the bypass anything;
+    4. an ORG grant makes the request *assume* that tenant with ``org_role=None`` (so a grant
+       never confers ``org:admin``); a personal grant leaves the caller's scope alone;
+    5. the request-level use row is written before the handler runs, fail-closed (503).
+    """
+    header = (request.headers.get(SUPPORT_ACCESS_GRANT_HEADER) or "").strip()
+    if not header:
+        return org_id, org_role, build_bypass(db, user, org_id)
+    if tenancy_mode(db) is not TenancyMode.MULTI:
+        raise coded_error(
+            status.HTTP_400_BAD_REQUEST,
+            "support_access_unavailable",
+            "Support access is not available on this deployment.",
+        )
+    grant = resolve_active_grant(db, header, user)
+    if request.method not in SAFE_METHODS and grant.access_level != "write":
+        raise coded_error(
+            status.HTTP_403_FORBIDDEN,
+            "support_grant_write_required",
+            "This support access grant is read-only.",
+        )
+    if grant.is_org_grant:
+        org_id, org_role = grant.organization_id, None
+        request.state.org_id = org_id
+    route = route_label(getattr(request.scope.get("route"), "path", None))
+    record_use(
+        grant,
+        actor_user_id=int(user.id),
+        method=request.method,
+        route=route,
+        resource_type=None,
+        resource_uuid=None,
+        need=None,
+        organization_id=grant.organization_id,
+        owner_user_id=grant.subject_user_id,
+    )
+    bypass = build_bypass(db, user, org_id, grant=grant, method=request.method, route=route)
+    return org_id, org_role, bypass
+
+
+def get_current_context(
+    request: Request,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_base_context),
+) -> RequestContext:
+    """The context content routes use: the base context plus any support-access grant."""
+    if not request.headers.get(SUPPORT_ACCESS_GRANT_HEADER, "").strip():
+        return ctx
+    org_id, org_role, bypass = resolve_request_bypass(
+        request, db, ctx.user, ctx.org_id, ctx.org_role
+    )
+    return replace(ctx, org_id=org_id, org_role=org_role, bypass=bypass)
+
+
+def refuse_under_support_grant(
+    ctx: RequestContext = Depends(get_current_context),
+) -> RequestContext:
+    """403 when the request carries a support-access grant (plan rules 8-9).
+
+    A grant is for in-product diagnosis of one tenant. It never creates tenant content,
+    never acts as an org admin, never feeds an LLM, and never exports. Attach this at router
+    level to the surfaces that must refuse it; the refused attempt is still recorded, because
+    the request-level use row was written while the context resolved.
+    """
+    if ctx.bypass.under_grant:
+        raise coded_error(
+            status.HTTP_403_FORBIDDEN,
+            "support_grant_action_not_permitted",
+            "This action is not available under a support access grant.",
+        )
+    return ctx
 
 
 def require_org_admin(
-    ctx: RequestContext = Depends(get_current_context),
+    ctx: RequestContext = Depends(get_base_context),
 ) -> RequestContext:
     """FastAPI dependency: 403 unless the caller is an admin of an active org.
 

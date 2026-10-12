@@ -189,38 +189,41 @@ def sample_media_file_with_thumbnail(db_session, sample_user):
     thumbnail_path = f"media/test/thumbs/{file_uuid}.webp"
     s3_live = os.environ.get("SKIP_S3", "True").lower() != "true"
 
-    if s3_live:
-        from app.core.config import settings
-        from app.services.minio_service import minio_client
+    # The object exists from put_object on, so the commit below must sit inside the
+    # protected region too: a failed setup would otherwise strand it in the bucket.
+    try:
+        if s3_live:
+            from app.core.config import settings
+            from app.services.minio_service import minio_client
 
-        thumb_bytes = b"RIFF\x1a\x00\x00\x00WEBPVP8 "  # minimal WebP-flavoured payload
-        minio_client.put_object(
-            settings.MEDIA_BUCKET_NAME,
-            thumbnail_path,
-            io.BytesIO(thumb_bytes),
-            length=len(thumb_bytes),
-            content_type="image/webp",
+            thumb_bytes = b"RIFF\x1a\x00\x00\x00WEBPVP8 "  # minimal WebP-flavoured payload
+            minio_client.put_object(
+                settings.MEDIA_BUCKET_NAME,
+                thumbnail_path,
+                io.BytesIO(thumb_bytes),
+                length=len(thumb_bytes),
+                content_type="image/webp",
+            )
+
+        file = MediaFile(
+            uuid=file_uuid,
+            filename="test_video_thumb.mp4",
+            storage_path=f"media/test/{file_uuid}.mp4",
+            thumbnail_path=thumbnail_path,
+            content_type="video/mp4",
+            file_size=1024000,
+            user_id=sample_user.id,
+            status="completed",
+            is_public=False,
         )
+        db_session.add(file)
+        db_session.commit()
+        db_session.refresh(file)
 
-    file = MediaFile(
-        uuid=file_uuid,
-        filename="test_video_thumb.mp4",
-        storage_path=f"media/test/{file_uuid}.mp4",
-        thumbnail_path=thumbnail_path,
-        content_type="video/mp4",
-        file_size=1024000,
-        user_id=sample_user.id,
-        status="completed",
-        is_public=False,
-    )
-    db_session.add(file)
-    db_session.commit()
-    db_session.refresh(file)
-
-    yield file
-
-    if s3_live:
-        try:
-            minio_client.remove_object(settings.MEDIA_BUCKET_NAME, thumbnail_path)
-        except Exception:
-            pass  # best-effort cleanup of the test object
+        yield file
+    finally:
+        if s3_live:
+            try:
+                minio_client.remove_object(settings.MEDIA_BUCKET_NAME, thumbnail_path)
+            except Exception:
+                pass  # best-effort cleanup of the test object

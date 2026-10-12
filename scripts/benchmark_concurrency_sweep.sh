@@ -80,6 +80,22 @@ gpu_vram_total_mb() {
         --id="$GPU_ID" 2>/dev/null || echo "?"
 }
 
+# set_concurrency rewrites .env's GPU_CONCURRENT_REQUESTS for each level. It used to be left at
+# whatever level ran last (1 on a clean finish, any level after Ctrl-C), so the operator's own
+# value was silently lost (issue #1195). Remember the line now; put it back on ANY exit. Only
+# that one line is touched, exactly as set_concurrency already does.
+ORIGINAL_CONCURRENCY_LINE="$(grep -m1 '^GPU_CONCURRENT_REQUESTS=' .env 2>/dev/null || true)"
+restore_concurrency_line() {
+    if [ -n "$ORIGINAL_CONCURRENCY_LINE" ]; then
+        local escaped
+        escaped="$(printf '%s' "$ORIGINAL_CONCURRENCY_LINE" | sed 's/[&|\\]/\\&/g')"
+        sed -i "s|^GPU_CONCURRENT_REQUESTS=.*|${escaped}|" .env
+        echo "[$(date +%H:%M:%S)] Restored .env ${ORIGINAL_CONCURRENCY_LINE}" \
+            "(running containers keep the last level until './opentr.sh start dev')" | tee -a "$LOG"
+    fi
+}
+trap restore_concurrency_line EXIT
+
 set_concurrency() {
     local conc=$1
     echo "" | tee -a "$LOG"

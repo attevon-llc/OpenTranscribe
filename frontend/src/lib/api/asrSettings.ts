@@ -3,6 +3,7 @@
  */
 
 import axiosInstance from '../axios';
+import type { PipelineIssue } from './pipeline';
 
 export type ASRProvider =
   | 'local'
@@ -15,6 +16,11 @@ export type ASRProvider =
   | 'speechmatics'
   | 'gladia'
   | 'pyannote';
+
+/** Which speaker-count hints (min, max, exact) a provider actually passes to its vendor. */
+export type SpeakerCountHint = 'min' | 'max' | 'num';
+/** How finely the model times its text; speakers can only be assigned to timed text. */
+export type TimestampGranularity = 'word' | 'segment' | 'none';
 
 type ASRConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
@@ -45,6 +51,10 @@ export interface ASRModelInfo {
   downloaded?: boolean;
   /** Present for local Whisper models — e.g. 'multilingual' or 'english' */
   language_support?: string;
+  /** Present only where the model differs from its provider entry. */
+  speaker_count_hints?: SpeakerCountHint[];
+  /** Present only where the model differs from its provider entry. */
+  timestamp_granularity?: TimestampGranularity;
 }
 
 export interface ASRProviderInfo {
@@ -63,6 +73,8 @@ export interface ASRProviderInfo {
   /** supports_custom_url from the backend catalog */
   supports_base_url: boolean;
   supports_diarization: boolean;
+  speaker_count_hints: SpeakerCountHint[];
+  timestamp_granularity: TimestampGranularity;
   supports_vocabulary: boolean;
   supports_translation: boolean;
   /** Not in backend catalog — defaults to true */
@@ -124,15 +136,7 @@ export interface UserASRSettingsResponse {
   updated_at: string;
 }
 
-/** One issue of the caller's pipeline plan (`PipelineIssueOut`, issue #1224). */
-export interface PipelineIssue {
-  /** Stable code; i18n key `settings.pipeline.issue.<code>` */
-  code: string;
-  severity: 'error' | 'warning' | 'info';
-  step: 'transcription' | 'diarization' | 'speaker_id' | 'llm';
-  /** The fixed English sentence for the code */
-  message: string;
-}
+export type { PipelineIssue };
 
 /**
  * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch
@@ -173,6 +177,9 @@ export interface ASRModelCapabilities {
   supports_translation: boolean;
   language_support: string;
   languages: number | null;
+  supports_diarization?: boolean;
+  speaker_count_hints?: SpeakerCountHint[];
+  timestamp_granularity?: TimestampGranularity;
 }
 
 export interface ASRStatusResponse {
@@ -224,6 +231,8 @@ interface RawASRModel {
   languages?: number;
   downloaded?: boolean;
   language_support?: string;
+  speaker_count_hints?: SpeakerCountHint[];
+  timestamp_granularity?: TimestampGranularity;
 }
 
 /**
@@ -243,6 +252,8 @@ interface RawASRProvider {
   supports_custom_url?: boolean;
   supports_base_url?: boolean;
   supports_diarization?: boolean;
+  speaker_count_hints?: SpeakerCountHint[];
+  timestamp_granularity?: TimestampGranularity;
   supports_vocabulary?: boolean;
   supports_translation?: boolean;
   sdk_available?: boolean;
@@ -294,6 +305,9 @@ export class ASRSettingsApi {
         supports_region: p.requires_region ?? p.supports_region ?? false,
         supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
         supports_diarization: p.supports_diarization ?? false,
+        speaker_count_hints: p.speaker_count_hints ?? [],
+        // A catalog without the field cannot be assumed to time its text.
+        timestamp_granularity: p.timestamp_granularity ?? 'none',
         supports_vocabulary: p.supports_vocabulary ?? false,
         supports_translation: p.supports_translation ?? false,
         // sdk_available is not in the backend catalog — assume true unless explicitly false
@@ -317,6 +331,8 @@ export class ASRSettingsApi {
           languages: m.languages,
           downloaded: m.downloaded,
           language_support: m.language_support,
+          speaker_count_hints: m.speaker_count_hints,
+          timestamp_granularity: m.timestamp_granularity,
         })),
       };
     });

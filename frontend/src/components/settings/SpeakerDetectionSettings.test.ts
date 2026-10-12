@@ -12,12 +12,14 @@ vi.mock('$stores/locale', () => ({
 vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
-vi.mock('$lib/api/asrSettings', () => ({
-  ASRSettingsApi: {
-    getStatus: vi.fn().mockResolvedValue({}),
-    getProviderDisplayName: (p: string) => p,
-  },
+const pipelineApi = vi.hoisted(() => ({ getPipelineView: vi.fn() }));
+vi.mock('$lib/api/pipeline', () => pipelineApi);
+const asrApi = vi.hoisted(() => ({
+  getSettings: vi.fn(),
+  getProviders: vi.fn(),
+  getProviderDisplayName: (p: string) => p,
 }));
+vi.mock('$lib/api/asrSettings', () => ({ ASRSettingsApi: asrApi }));
 
 const api = vi.hoisted(() => ({
   getTranscriptionSettings: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('$lib/api/pyannoteCredential', () => ({
 }));
 
 import SpeakerDetectionSettings from './SpeakerDetectionSettings.svelte';
+import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 import { resetCapabilities } from '$stores/capabilities';
 
 const SETTINGS = {
@@ -67,6 +70,14 @@ const SETTINGS = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pipelineApi.getPipelineView.mockResolvedValue(fullLocalView());
+  asrApi.getSettings.mockResolvedValue({
+    configurations: [],
+    shared_configurations: [],
+    active_configuration_uuid: undefined,
+    total: 0,
+  });
+  asrApi.getProviders.mockResolvedValue({ providers: [] });
   api.getTranscriptionSettings.mockResolvedValue({ ...SETTINGS });
   api.getTranscriptionSystemDefaults.mockResolvedValue({
     min_speakers: 1,

@@ -67,6 +67,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider's speaker detection (`diarization_asr_config_uuid`, covered by the #1109 lock).
   The ASR catalog and `/asr-settings/status` now report `supports_diarization` per model,
   `timestamp_granularity` (`word` / `segment` / `none`) and the speaker-count hints each
+  provider actually sends. The pipeline stages start reading the plan in the next change (WP3);
+  until then this is the settings-side half.
+
+- **Settings > Processing pipeline, and speaker detection that says what it will do (#1227,
+  #1219).** A read-only page, first row of the Transcription & Speakers group, shows the next
+  recording's four steps (transcription, speaker detection, speaker identification, AI features)
+  with where each runs (this server, or the named cloud vendor), one note naming every vendor
+  that receives the audio, the speakers and timing badges of the transcription model, whether the
+  speaker range is used, and the plan's problems as fixed translated sentences keyed by the
+  server's stable codes, each with a link to the tab that fixes it. On a lite deployment it says
+  there is no GPU and shows a stored local selection as a blocking problem. The Speaker Detection
+  card gains *Another provider's speaker detection* (a picker of your saved providers that return
+  speakers, with the double-billing and audio-sent note, only where you may bring your own
+  provider keys), a *where it runs* chip, and before-you-save notices for Automatic with a
+  text-only model (speakers will be detected on this server), a model with segment timing, a model
+  with no timestamps, and lite; the local option is not offered on lite and a source the
+  administrator locked is shown read-only instead of hidden. The transcription provider list and
+  config editor show *Speakers included* / *Text only* and *Word timing* / *Segment timing* /
+  *No timing* per provider and model, and *Speakers via adapter (extra billing)* on a provider
+  used only for its speakers; lite hides the local model controls. 60 new strings in all 12
+  languages. Deleting, activating or clearing a provider reports what it did to the pipeline
+  (speaker detection reverted to Automatic when the deleted provider was its source, and any
+  blocking problem it leaves, each by its code), creating a first provider that was not made
+  active says so and why, and a refused change shows its own sentence. On lite the provider
+  editor offers no local provider and the Speaker Engine tab shows the read-only reason instead
+  of the local engine controls. Toasts now wrap to three lines before they are cut.
+
+- **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
+  About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,
+  local auth, SCIM tokens) had been copied from English into seven locales because `check:i18n`
+  only counts keys. They are translated, and `untranslated.test.ts` now fails when a long value in a
+  non-English locale equals the English one unless the key is allowlisted with a written reason.
   provider actually sends.
 
 - **Every transcription / speaker-detection combination the plan allows now runs (#1225).**
@@ -278,6 +310,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text-only model (`local_diarization_unavailable`, `automatic_needs_speaker_provider`).
   Re-saving an unchanged stored choice is never refused. Local transcription with pyannote.ai is
   a valid, accepted combination.
+- **A refused speaker-detection save is explained by its reason (#1227).** The settings form
+  used to read every 409 on a pyannote.ai selection as "save your key first". It now reads the
+  server's `detail.code` and shows that code's own sentence (no timestamps, missing provider,
+  provider returns no speakers, lite limits), and a refusal with no known code gets the generic
+  message instead of a wrong specific one.
 
 - **English source strings rewritten so they translate cleanly (#1220).** The 11 translation
   reviewers of #1193 flagged copy that only works in English. Engine settings prose no longer

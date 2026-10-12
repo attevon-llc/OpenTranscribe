@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { onMount } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import Spinner from '../ui/Spinner.svelte';
@@ -10,6 +11,11 @@
   } from '../../lib/api/asrSettings';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import ASRConfigModal from './ASRConfigModal.svelte';
+  import CapabilityBadges from './CapabilityBadges.svelte';
+  import { modelCapability } from '$lib/settings/asrCapabilities';
+  import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
+  import { getTranscriptionSettings, type DiarizationSource } from '$lib/api/transcriptionSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -28,6 +34,44 @@
   let activeConfigurationId: string | null = null;
   let providers: ASRProviderInfo[] = [];
   let usingLocalDefault = true;
+  // Lite has no GPU: transcription is a cloud provider or nothing, so the local controls go.
+  let isLite = false;
+  // The user's speaker detection choice, for the badges and the notice in the config editor.
+  let diarizationSource: DiarizationSource | null = null;
+  let diarizerConfigUuid: string | null = null;
+
+  // A refused change names its reason by code; anything else keeps the generic message.
+  function failure(err: unknown, fallbackKey: string): string {
+    const key = pipelineFailureKey(err, fallbackKey);
+    return key ? $t(key) : getErrorMessage(err, $t(fallbackKey));
+  }
+
+  // What a change did to the pipeline, as fixed translated sentences (never server text).
+  function announce(messages: ChangeMessage[]) {
+    for (const m of messages) {
+      const text = m.key ? $t(m.key) : (m.fallbackText ?? '');
+      if (m.severity === 'error') toastStore.error(text, 8000);
+      else if (m.severity === 'warning') toastStore.warning(text, 8000);
+      else toastStore.info(text, 8000);
+    }
+  }
+
+  // A deleted config that was the speaker detector sends the source back to Automatic.
+  function applyReset(reverted: boolean) {
+    if (!reverted) return;
+    diarizationSource = 'provider';
+    diarizerConfigUuid = null;
+  }
+
+  /** Speakers and timing badges for a saved config; null when the catalog does not list it. */
+  function capabilitiesFor(config: UserASRSettingsResponse) {
+    const capability = modelCapability(providers, config.provider, config.model_name);
+    return {
+      returnsSpeakers: capability?.returnsSpeakers ?? null,
+      timing: capability?.timing ?? null,
+      adapterBilling: diarizationSource === 'asr_config' && diarizerConfigUuid === config.uuid
+    };
+  }
 
   function isProviderExperimental(providerId: string): boolean {
     const p = providers.find(pr => pr.id === providerId);
@@ -65,11 +109,16 @@
   async function loadData() {
     loading = true;
     try {
-      const [providersResp, settingsResp, localModelResp] = await Promise.all([
+      const [providersResp, settingsResp, localModelResp, statusResp, speakerSettings] = await Promise.all([
         ASRSettingsApi.getProviders(),
         ASRSettingsApi.getSettings().catch(() => ({ configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 })),
         ASRSettingsApi.getActiveLocalModel().catch(() => null),
+        ASRSettingsApi.getStatus().catch(() => null),
+        getTranscriptionSettings().catch(() => null),
       ]);
+      isLite = statusResp?.deployment_mode === 'lite';
+      diarizationSource = speakerSettings?.diarization_source ?? null;
+      diarizerConfigUuid = speakerSettings?.diarization_asr_config_uuid ?? null;
       providers = providersResp.providers;
       configurations = settingsResp.configurations;
       sharedConfigurations = settingsResp.shared_configurations || [];
@@ -96,13 +145,14 @@
     if (uuid === activeConfigurationId) return;
     saving = true;
     try {
-      await ASRSettingsApi.setActive(uuid);
+      const result = await ASRSettingsApi.setActive(uuid);
       activeConfigurationId = uuid;
       usingLocalDefault = false;
       toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.activateFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.activateFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -112,13 +162,14 @@
     if (usingLocalDefault) return;
     saving = true;
     try {
-      await ASRSettingsApi.clearActive();
+      const result = await ASRSettingsApi.clearActive();
       activeConfigurationId = null;
       usingLocalDefault = true;
       toastStore.success($t('settings.asrProvider.switchedToLocal'));
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.switchToLocalFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.switchToLocalFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -164,15 +215,17 @@
     saving = true;
     try {
       const deletedName = configToDelete.name;
-      await ASRSettingsApi.deleteConfig(configToDelete.uuid);
+      const result = await ASRSettingsApi.deleteConfig(configToDelete.uuid);
       configToDelete = null;
       showDeleteModal = false;
       // Re-fetch canonical state to pick up auto-promoted active config
       await loadData();
       toastStore.success(`"${deletedName}" deleted`);
+      applyReset(result.diarizer_source_reverted);
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.deleteFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -181,15 +234,17 @@
   async function deleteAllConfigurations() {
     saving = true;
     try {
-      await ASRSettingsApi.deleteAll();
+      const result = await ASRSettingsApi.deleteAll();
       configurations = [];
       activeConfigurationId = null;
       usingLocalDefault = true;
       showDeleteAllModal = false;
       toastStore.success($t('settings.asrProvider.deletedAll'));
+      applyReset(result.diarizer_source_reverted);
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteAllFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.deleteAllFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -300,8 +355,10 @@
   {#if loading}
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else}
-    <!-- Local GPU Model Info (all users) / Controls (admin only) -->
-    {#if activeLocalModel}
+    <!-- Local GPU Model Info (all users) / Controls (admin only). Lite cannot transcribe here. -->
+    {#if isLite}
+      <p class="lite-note" data-testid="asr-lite-note">{$t(PIPELINE_ISSUE_KEYS.local_asr_unavailable)}</p>
+    {:else if activeLocalModel}
       <div class="local-model-section" class:admin-mode={isAdmin}>
         <div class="admin-section-header">
           <h4>
@@ -404,20 +461,24 @@
     {/if}
 
     <!-- Active provider status bar -->
-    <div class="status-bar" class:local={usingLocalDefault}>
+    <div class="status-bar" class:local={usingLocalDefault && !isLite}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
       </svg>
-      {#if usingLocalDefault}
+      {#if usingLocalDefault && isLite}
+        {$t(PIPELINE_ISSUE_KEYS.local_asr_unavailable)}
+      {:else if usingLocalDefault}
         {$t('settings.asrProvider.usingLocalDefault')}{#if activeLocalModel} — <strong>{activeLocalModel}</strong>{/if}
       {:else}
         <span class="status-text">
           {$t('settings.asrProvider.currentProvider')}: <strong>{getActiveConfig()?.name || ''}</strong>
           ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
         </span>
-        <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
-          {$t('settings.asrProvider.useLocal')}
-        </button>
+        {#if !isLite}
+          <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
+            {$t('settings.asrProvider.useLocal')}
+          </button>
+        {/if}
       {/if}
     </div>
 
@@ -452,6 +513,7 @@
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
+                <CapabilityBadges {...capabilitiesFor(config)} />
                 {#if config.test_status && config.test_status !== 'untested'}
                   <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(config.test_status === 'success' ? ASR_TEST_STATUS_KEYS.connected : ASR_TEST_STATUS_KEYS.failed)}</span>
                 {/if}
@@ -554,6 +616,7 @@
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
+                <CapabilityBadges {...capabilitiesFor(config)} />
                 {#if config.owner_role === 'admin' || config.owner_role === 'super_admin'}
                   <span class="badge admin-badge">{$t('settings.sharing.adminBadge')}</span>
                 {/if}
@@ -613,6 +676,9 @@
   bind:show={showConfigModal}
   editingConfig={editingConfiguration}
   {providers}
+  {diarizationSource}
+  deploymentMode={isLite ? 'lite' : 'full'}
+  firstConfig={configurations.length === 0 && sharedConfigurations.length === 0}
   on:saved={handleConfigSaved}
   on:close={() => { showConfigModal = false; editingConfiguration = null; }}
 />
@@ -644,6 +710,17 @@
 />
 
 <style>
+  .lite-note {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
   /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
      beneath left-aligned tabs reads as misaligned. */
   .asr-settings {

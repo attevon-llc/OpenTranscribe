@@ -58,6 +58,47 @@ describe('ASRSettingsApi.getProviders', () => {
     expect(p.models[0].price_per_min_realtime).toBe(0.0043); // price_per_min_stream -> _realtime
   });
 
+  it('keeps what each provider and model returns: speakers, hints and timestamp granularity (#1227)', async () => {
+    mockInstance.get.mockResolvedValue({
+      data: {
+        providers: [
+          {
+            id: 'openai',
+            display_name: 'OpenAI',
+            supports_diarization: false,
+            speaker_count_hints: ['num'],
+            timestamp_granularity: 'none',
+            models: [
+              { id: 'gpt-4o-transcribe' },
+              {
+                id: 'gpt-4o-transcribe-diarize',
+                supports_diarization: true,
+                timestamp_granularity: 'segment',
+                speaker_count_hints: [],
+              },
+            ],
+          },
+          { id: 'legacy', display_name: 'Legacy', models: [] },
+        ],
+      },
+    });
+
+    const { providers } = await ASRSettingsApi.getProviders();
+
+    expect(providers[0].timestamp_granularity).toBe('none');
+    expect(providers[0].speaker_count_hints).toEqual(['num']);
+    // A model that does not differ carries nothing of its own, so the provider's value applies.
+    expect(providers[0].models[0].timestamp_granularity).toBeUndefined();
+    expect(providers[0].models[1]).toMatchObject({
+      supports_diarization: true,
+      timestamp_granularity: 'segment',
+      speaker_count_hints: [],
+    });
+    // A catalog that predates the fields cannot be assumed to time its text.
+    expect(providers[1].timestamp_granularity).toBe('none');
+    expect(providers[1].speaker_count_hints).toEqual([]);
+  });
+
   it('falls back sensibly when the backend omits optional fields entirely', async () => {
     mockInstance.get.mockResolvedValue({ data: { providers: [{}] } });
 

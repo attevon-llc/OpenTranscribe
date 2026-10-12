@@ -56,6 +56,7 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
 
   import SettingsSearch from '$components/settings/SettingsSearch.svelte';
+  import PipelineOverview from '$components/settings/PipelineOverview.svelte';
   import {
     buildSettingsSearchItems,
     createSettingsFuzzyIndex,
@@ -355,6 +356,8 @@
         // accuracy) and speakers (detection, attributes, engine, maintenance). The old rows
         // asr-provider / custom-vocabulary / engine-settings / speaker-attributes survive as
         // aliases that open their tab (see lib/settings/sectionAliases.ts).
+        // Read-only overview first: where each step runs, with links to the rows below that edit it.
+        ...(transcriptionAccess.prefsCap ? [{ id: 'processing-pipeline' as SettingsSection, label: $t('settings.pipeline.title'), icon: 'flow' }] : []),
         ...(transcriptionVisible(transcriptionAccess) ? [{ id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' }] : []),
         ...(speakerIdentificationVisible(speakerIdAccess) ? [{ id: 'speaker-identification' as SettingsSection, label: $t('settings.speakerIdentification.title'), icon: 'user' }] : [])
       ]
@@ -1123,6 +1126,16 @@
               <h3 class="section-title">{$t('settings.audioExtraction.title')}</h3>
               <p class="section-description">{$t('settings.audioExtraction.description')}</p>
               <AudioExtractionSettings />
+            </div>
+          {/if}
+
+          <!-- Processing pipeline: read-only view of how the next recording is processed. Mounted
+               only while open, so every visit reads the current plan. -->
+          {#if activeSection === 'processing-pipeline'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.pipeline.title')}</h3>
+              <p class="section-description">{$t('settings.pipeline.description')}</p>
+              <PipelineOverview on:navigate={(e) => switchSection(e.detail)} />
             </div>
           {/if}
 

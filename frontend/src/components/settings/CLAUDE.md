@@ -151,6 +151,35 @@ picker and the content router all read it, so a nav entry cannot disagree with t
 - **E2E-guarded:** `.speaker-detection-settings` (its `.btn-primary` is the Save button, so
   `PyannoteCredentialForm` uses its own button classes), the modal-level `.section-title` must remain the
   first `.section-title` in `.settings-content`, and `#speaker-behavior`, `#min-speakers`, `#max-speakers`.
+- **Processing pipeline** (`processing-pipeline`, first row of the Transcription & Speakers group, shown when
+  `transcription.prefs` is on) is `PipelineOverview.svelte`: read-only, four step cards fed by
+  `GET /user-settings/pipeline` (`$lib/api/pipeline`). It is mounted only while open, so every visit reads the
+  current plan. Thin-frontend rule: the server resolved where each step runs and what is wrong; the page only
+  picks copy. **Problems render from the plan's stable `code`** through `$lib/settings/pipelineIssues` /
+  `pipelineSteps` / `pipelineKeys` (explicit literal keys, proven by `keyMaps.test.ts`); the server's `message`
+  is shown only for a code this build has no copy for, never raw exception text. `IssueRow` is the one row
+  component for a problem (glyph + sr-only severity, not colour alone) and `CapabilityBadges` the one pill set
+  (_Speakers included / Text only_, _Word / Segment / No timing_, _Speakers via adapter (extra billing)_); the
+  page, the Speaker Detection card and the ASR provider list/editor all use them. Links dispatch `navigate`
+  with a section id; a code's fix tab is the table `FIX_SECTIONS` in `pipelineIssues.ts`.
+  Keep `pipelineKeys.ts` out of `keyMaps.ts`: `keyMaps` is in the root layout's static closure (budget in
+  `scripts/check-bundle-budget.mjs`), and putting these strings there pushed it over by 0.3 KB.
+- **`SpeakerDetectionProviderCard` previews a CHOICE; the server decides.** `$lib/settings/speakerSources`
+  mirrors `services/pipeline_plan.py` only to say, before saving, what the current transcription model means for
+  the picked source (text only, no timing, lite) and where it would run. `PUT /user-settings/transcription`
+  re-resolves the plan and answers 409 `{detail: {code, message}}`; `SpeakerDetectionSettings` reads
+  `detail.code` (`speakerSaveErrorKey`) and never maps a bare 409 to "save your key first". Lite: the `local`
+  option is not rendered (a stored one shows disabled with its reason). A locked source (#1109) renders the card
+  read-only with the administrator note, not hidden. `asr_config` lists saved configs whose model returns
+  speakers (excluding the transcribing one) and exists only with `asr.user_providers`. If the preview rules in
+  `speakerSources.ts` and the plan ever disagree, the plan wins: change both.
+- **Changing saved ASR providers reports its effect on the pipeline** (`$lib/settings/asrOutcome`): delete,
+  set-active and clear-active return `{diarizer_source_reverted, pipeline_issues}`, create returns
+  `auto_activated`; `changeMessages` / `notAutoActivatedMessages` turn them into messages keyed by code
+  (standing notes such as `speaker_hints_ignored` are left out). A 409 `detail.code` is rendered through
+  `pipelineFailureKey`: known code -> its sentence, unknown code -> the caller's generic key, never the
+  server's `message`. Lite (`deployment_mode`): no `local` in the editor's provider list, no local model card,
+  and `EngineSettings` swaps the local engine controls for the `local_diarization_unavailable` reason.
 - `PyannoteCredentialForm` (the user's pyannote.ai key) renders under the Speaker Detection source select
   when `asr.user_providers` is on. The key is write-only: never pre-fill the input, never log it.
   Its states come from `$lib/settings/pyannoteCredential`.
@@ -163,7 +192,7 @@ self-contained forms; each saves only its own fields and resets only its own gro
 (`resetTranscriptionSettings(group)`), and reports dirty state by dispatching `change` `{ hasChanges }`
 (never `setDirty`); the two section shells mount them and own the dirty flag. Shared cards, tooltips, buttons and styles live
 in `transcription/` (styles are global CSS scoped under `.tx-form`). Deployment locks: `transcription.advanced`
-hides and omits the VAD/accuracy fields; `transcription.diarization_source` hides and omits the source.
+hides and omits the VAD/accuracy fields; `transcription.diarization_source` makes the source read-only and omits it from the save.
 
 ## Gotchas
 

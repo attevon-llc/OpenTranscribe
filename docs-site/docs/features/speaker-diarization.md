@@ -295,13 +295,14 @@ OpenTranscribe's independent diarization provider architecture allows routing di
 
 A per-user setting — **Settings → Speaker Identification → Speaker Detection** (`transcription_diarization_source`,
 backed by `UserDiarizationSettings`) — decides where a file's speaker labels actually come
-from. It takes four values:
+from. It takes five values:
 
 | Value | Behavior |
 |---|---|
 | **`provider`** (default, "Automatic") | With the built-in model (including the tiny/base CPU models), speakers are detected on this server. With a **cloud ASR provider** that returns speakers, its labels are used as-is. With a cloud model that returns **text only**, this server detects speakers right after the transcript is saved (full deployments only; a model with no timestamps at all cannot be combined with speaker detection). |
 | **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above: beside cloud transcription, or right after the built-in model's transcript is saved. |
 | **`local`** | Diarization runs on this server, whichever model transcribes: inside the GPU stage for the built-in model, or as a separate pass after a cloud or CPU transcript is saved. Not available on a lite deployment, which has no local speaker detection: choose pyannote.ai or a transcription provider that returns speakers there. |
+| **`asr_config`** | Another saved cloud transcription provider (chosen with `diarization_asr_config_uuid`) supplies only the speaker labels; its text is discarded. That provider bills a full transcription of every recording and receives the audio, so the settings card says so. It needs the capability that lets users bring their own provider keys, and only models that return speakers are offered. |
 | **`off`** | No diarization at all — the transcript is produced without speaker labels. |
 
 Speaker detection that runs after the transcript is saved assigns speakers per word when the
@@ -310,6 +311,13 @@ then not detected; the pipeline view reports this as a warning). Voiceprints are
 on this server. `GET /api/user-settings/pipeline` returns how your next file will be processed
 and any problem with the combination you chose; saving a combination that cannot run is refused,
 and so is switching the transcription provider into one.
+
+**Settings → Processing pipeline** shows that same plan as a read-only page: the four steps (transcription,
+speaker detection, speaker identification, AI features), where each runs (this server or a named cloud
+vendor), whether audio leaves the server, and every problem with a link to the tab that fixes it. The
+Speaker Detection card and the provider list use the same vocabulary: *Speakers included* or *Text only*,
+*Word timing*, *Segment timing* or *No timing* (speakers cannot be added to text with no timestamps), and
+*Speakers via adapter (extra billing)* for a provider used only for its speaker labels.
 
 An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
 error rather than silently falling back to local diarization. The same holds for transcription:

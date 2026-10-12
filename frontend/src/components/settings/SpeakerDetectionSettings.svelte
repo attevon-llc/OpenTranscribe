@@ -11,9 +11,12 @@
     type TranscriptionSettingsUpdate,
     type TranscriptionSystemDefaults
   } from '$lib/api/transcriptionSettings';
+  import { ASRSettingsApi } from '$lib/api/asrSettings';
+  import { getPipelineView, type PipelineView } from '$lib/api/pipeline';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
-  import { getErrorStatus } from '$lib/utils/apiError';
-  import { pyannoteSelectionErrorKey } from '$lib/settings/pyannoteCredential';
+  import { diarizerChoices, type DiarizerChoice } from '$lib/settings/asrCapabilities';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
+  import { speakerSaveErrorKey } from '$lib/settings/pipelineIssues';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import Spinner from '../ui/Spinner.svelte';
@@ -30,15 +33,25 @@
   let maxSpeakers = 20;
   let speakerBehavior: SpeakerPromptBehavior = 'always_prompt';
   let diarizationSource: DiarizationSource = 'provider';
+  let diarizationAsrConfigUuid: string | null = null;
   let originalMinSpeakers = 1;
   let originalMaxSpeakers = 20;
   let originalSpeakerBehavior: SpeakerPromptBehavior = 'always_prompt';
   let originalDiarizationSource: DiarizationSource = 'provider';
+  let originalDiarizationAsrConfigUuid: string | null = null;
 
   // Deployment-owned: hidden here, and the server ignores writes to it.
   $: diarizationSourceEnabled = isCapabilityEnabled($capabilities, 'transcription.diarization_source');
   // The key routes 404 unless the deployment lets users bring their own provider keys.
   $: pyannoteKeyEnabled = isCapabilityEnabled($capabilities, 'asr.user_providers');
+
+  // How the next recording would be processed, for the notices on the source card. Optional:
+  // the form works without it, so a failed load shows nothing rather than an error.
+  let pipeline: PipelineView | null = null;
+  let choices: DiarizerChoice[] = [];
+  $: sourceLocked = !diarizationSourceEnabled || pipeline?.diarization_source_locked === true;
+  // The engine ignoring min/max is reported by the plan, not guessed here.
+  $: hintsIgnored = pipeline?.issues.some((issue) => issue.code === 'speaker_hints_ignored') ?? false;
 
   let systemDefaults: TranscriptionSystemDefaults | null = null;
   let loading = true;
@@ -67,7 +80,9 @@
     minSpeakers !== originalMinSpeakers ||
     maxSpeakers !== originalMaxSpeakers ||
     speakerBehavior !== originalSpeakerBehavior ||
-    diarizationSource !== originalDiarizationSource;
+    diarizationSource !== originalDiarizationSource ||
+    (diarizationSource === 'asr_config' &&
+      diarizationAsrConfigUuid !== originalDiarizationAsrConfigUuid);
 
   $: dispatch('change', { hasChanges: settingsChanged });
 
@@ -85,8 +100,38 @@
   }
 
   onMount(() => {
-    void Promise.all([loadSettings(), loadSystemDefaults()]);
+    void Promise.all([loadSettings(), loadSystemDefaults(), loadPipeline(), loadChoices()]);
   });
+
+  async function loadPipeline() {
+    try {
+      pipeline = await getPipelineView();
+    } catch (err) {
+      console.error('Failed to load the processing pipeline:', err);
+      pipeline = null;
+    }
+  }
+
+  // Saved configs that can serve as the speaker detector. Needs the same capability as
+  // bringing your own provider keys; without it the option is not offered at all.
+  async function loadChoices() {
+    if (!pyannoteKeyEnabled) return;
+    try {
+      const [saved, catalog] = await Promise.all([
+        ASRSettingsApi.getSettings(),
+        ASRSettingsApi.getProviders()
+      ]);
+      choices = diarizerChoices(
+        saved.configurations,
+        saved.shared_configurations,
+        catalog.providers,
+        saved.active_configuration_uuid ?? null
+      );
+    } catch (err) {
+      console.error('Failed to load the saved ASR providers:', err);
+      choices = [];
+    }
+  }
 
   async function loadSettings() {
     loading = true;
@@ -115,6 +160,8 @@
     // The reset response omits diarization_source, so fall back to the server default.
     diarizationSource = originalDiarizationSource =
       settings.diarization_source ?? systemDefaults?.diarization_source_default ?? 'provider';
+    diarizationAsrConfigUuid = originalDiarizationAsrConfigUuid =
+      settings.diarization_asr_config_uuid ?? null;
   }
 
   async function saveSettings() {
@@ -129,15 +176,20 @@
         max_speakers: maxSpeakers,
         speaker_prompt_behavior: speakerBehavior
       };
-      if (diarizationSourceEnabled) update.diarization_source = diarizationSource;
+      if (diarizationSourceEnabled) {
+        update.diarization_source = diarizationSource;
+        if (diarizationSource === 'asr_config') {
+          update.diarization_asr_config_uuid = diarizationAsrConfigUuid;
+        }
+      }
       applySettings(await updateTranscriptionSettings(update));
       toastStore.success($t('settings.speakerIdentification.saved'));
       dispatch('save');
+      void loadPipeline();
     } catch (err) {
       console.error('Failed to save transcription settings:', err);
-      // 409: the server refuses the pyannote.ai source until a key is saved.
-      const keyError = pyannoteSelectionErrorKey(getErrorStatus(err), diarizationSource);
-      toastStore.error($t(keyError ?? 'settings.speakerIdentification.saveFailed'));
+      // 409: the server refuses a choice that cannot run and names why in `detail.code`.
+      toastStore.error($t(speakerSaveErrorKey(err) ?? 'settings.speakerIdentification.saveFailed'));
     } finally {
       saving = false;
     }
@@ -149,6 +201,8 @@
     try {
       const settings = await getTranscriptionSettings();
       diarizationSource = originalDiarizationSource = settings.diarization_source ?? 'provider';
+      diarizationAsrConfigUuid = originalDiarizationAsrConfigUuid =
+        settings.diarization_asr_config_uuid ?? null;
     } catch (err) {
       console.error('Failed to reload the speaker detection source:', err);
     }
@@ -178,15 +232,17 @@
     </div>
   {:else}
     <div class="settings-form">
-      {#if diarizationSourceEnabled}
-        <SpeakerDetectionProviderCard
-          bind:diarizationSource
-          disabled={saving || resetting}
-          keyEnabled={pyannoteKeyEnabled}
-          on:navigate={(e) => dispatch('navigate', e.detail)}
-          on:deleted={(e) => e.detail.sourceReverted && reloadSource()}
-        />
-      {/if}
+      <SpeakerDetectionProviderCard
+        bind:diarizationSource
+        bind:diarizationAsrConfigUuid
+        {pipeline}
+        {choices}
+        locked={sourceLocked}
+        disabled={saving || resetting}
+        keyEnabled={pyannoteKeyEnabled}
+        on:navigate={(e) => dispatch('navigate', e.detail)}
+        on:deleted={(e) => e.detail.sourceReverted && reloadSource()}
+      />
 
       <SettingsCard
         title={$t('settings.speakerIdentification.countHeading')}
@@ -243,6 +299,11 @@
               />
             </div>
           </div>
+          {#if hintsIgnored}
+            <p class="field-desc dimmed" data-testid="hints-ignored-note">
+              {$t(PIPELINE_ISSUE_KEYS.speaker_hints_ignored)}
+            </p>
+          {/if}
         {/if}
         {#if diarizationSource === 'off'}
           <p class="field-desc dimmed">{$t('settings.speakerIdentification.source.offNote')}</p>

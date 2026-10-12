@@ -19,12 +19,14 @@ export type SpeakerPromptBehavior = 'always_prompt' | 'use_defaults' | 'use_cust
 
 /**
  * Valid diarization source options
- * - provider: Use ASR provider's built-in diarization
- * - local: Always use local PyAnnote on GPU
+ * - provider: Automatic: the transcription provider's speaker labels, or this server when the
+ *   provider returns text only
+ * - local: Always detect speakers on this server
  * - pyannote: Use pyannote.ai cloud diarization
+ * - asr_config: Another saved ASR provider's speaker labels (`diarization_asr_config_uuid`)
  * - off: No diarization
  */
-export type DiarizationSource = 'provider' | 'local' | 'pyannote' | 'off';
+export type DiarizationSource = 'provider' | 'local' | 'pyannote' | 'asr_config' | 'off';
 
 /**
  * Language option with code and display name
@@ -75,6 +77,8 @@ export interface TranscriptionSettings {
   hallucination_silence_threshold: number | null;
   repetition_penalty: number;
   diarization_source: DiarizationSource;
+  /** The saved ASR config named as the speaker detector; set only for `asr_config`. */
+  diarization_asr_config_uuid?: string | null;
 }
 
 /**
@@ -96,6 +100,7 @@ export interface TranscriptionSettingsUpdate {
   hallucination_silence_threshold?: number | null;
   repetition_penalty?: number;
   diarization_source?: DiarizationSource;
+  diarization_asr_config_uuid?: string | null;
 }
 
 /**

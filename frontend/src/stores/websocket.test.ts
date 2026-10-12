@@ -22,6 +22,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
+const DYNAMIC_IMPORT_BUDGET_MS = 10_000;
+
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 
 vi.mock('$lib/axios', () => ({
@@ -231,7 +233,12 @@ describe('websocket message dispatch', () => {
     const socket = openSocket();
 
     socket.deliver({ type, data: { grant_uuid: 'g1' } });
-    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
+    // The handler is reached through a dynamic import. vi.waitFor's 1 s default passed
+    // alone (3.2 s file run) and failed 2 of 4 cases inside the full pre-commit vitest run
+    // on this host, where the import resolves under 337-file contention.
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1), {
+      timeout: DYNAMIC_IMPORT_BUDGET_MS,
+    });
 
     expect(handler).toHaveBeenCalledWith({ type, data: { grant_uuid: 'g1' } });
     expect(notifications()).toEqual([]);

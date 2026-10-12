@@ -52,11 +52,18 @@ cloud model yields a speakerless transcript. The plan already describes what WP3
 - `local_provider.py` — delegates to `ModelManager.get_diarizer()`, which is **native-first**:
   the diar-native sidecar with automatic in-process PyAnnote failover, not PyAnnote directly. It
   stuffs native objects (`native_embeddings`, `overlap_info`, `diarize_df`) into
-  `DiarizeResult.metadata`, so `DiarizeResult` is **not** a pure DTO. Note its hardcoded
-  `model_name="pyannote/speaker-diarization-community-1"` reports the *weights*, which both
-  engines share — it is not a claim about which engine ran.
+  `DiarizeResult.metadata`, so `DiarizeResult` is **not** a pure DTO. Its `provider_name` /
+  `model_name` are the served engine's `last_provider` / `last_model` (#1229);
+  `pyannote/speaker-diarization-community-1` is only the fallback when the engine reports no
+  model (the *weights* both engines share).
 - `pyannote_provider.py` — pyannote.ai cloud diarization (`precision-3`; `precision-2` is retired and mapped to it). Distinct from
   `../asr/pyannote_provider.py`, which hits the *STT-orchestration* endpoint. Don't confuse them.
+- **Provider ids say which engine RAN (#1229).** pyannote.ai reports `provider_name ==
+  "pyannote.ai"` (`pipeline_plan.PYANNOTE_AI`); it used to say `pyannote`, the local in-process
+  engine's id, so a cloud run was stored and displayed as the local engine. `local_provider`
+  reports the served engine (`diarizer.last_provider`: `native` | `pyannote`), not `local`.
+  These ids land in `media_file.diarization_provider` and in the per-file provenance
+  (`services/file_provenance.py`), which maps each to where it ran.
 
 ## How it connects
 

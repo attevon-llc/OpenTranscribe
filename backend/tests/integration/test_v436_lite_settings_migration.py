@@ -260,7 +260,7 @@ def _sources(engine: Engine, ids: dict[str, int]) -> dict[str, str]:
             ),
             {"k": _SOURCE, "ids": list(ids.values())},
         ).all()
-    by_id = {int(user_id): str(value) for user_id, value in rows}
+    by_id = {int(row[0]): str(row[1]) for row in rows}
     return {label: by_id[user_id] for label, user_id in ids.items()}
 
 

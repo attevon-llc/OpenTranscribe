@@ -532,6 +532,7 @@ def blocked_profile_names(db: Session, speaker_ids: Iterable[int]) -> dict[int, 
             for sid, pid in db.query(Speaker.id, Speaker.profile_id)
             .filter(Speaker.id.in_(partner_ids), Speaker.profile_id.isnot(None))
             .all()
+            if pid is not None
         }
     wanted = set().union(*blocked.values()) | set(partner_profile.values())
     names: dict[int, str] = {}

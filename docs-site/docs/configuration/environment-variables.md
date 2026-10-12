@@ -104,8 +104,8 @@ MODEL_CACHE_DIR=./models
 
 ### Whether speakers are detected: a user setting, not `ENABLE_DIARIZATION`
 
-Whether speakers are detected, and where, is chosen per user in **Settings → Speaker
-Identification → Speaker detection** (Automatic by default, or this server, the pyannote.ai
+Whether speakers are detected, and where, is chosen per user in
+**Settings → Speaker Identification → Speaker detection** (Automatic by default, or this server, the pyannote.ai
 cloud service, or Off), and can be skipped per file through the upload API
 (`disable_diarization`). Every run is planned from that choice.
 No environment variable turns speaker detection off for a deployment.

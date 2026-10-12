@@ -10,10 +10,13 @@ import pytest
 
 # Skip all tests in this module if S3 is not available
 # Speakers are associated with media files which require S3 storage
-pytestmark = pytest.mark.skipif(
-    os.environ.get("SKIP_S3", "True").lower() == "true",
-    reason="S3/MinIO storage is disabled - speakers require media files",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        os.environ.get("SKIP_S3", "True").lower() == "true",
+        reason="S3/MinIO storage is disabled - speakers require media files",
+    ),
+    pytest.mark.usefixtures("speaker_os_seams"),
+]
 
 
 @pytest.fixture

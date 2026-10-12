@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/settings-dark.png",
-  "captured_at": "2026-10-09T13:57:09Z",
-  "git_sha": "76cbc732f7da3013b94376414a923e98d4f63961",
+  "captured_at": "2026-10-12T12:38:20Z",
+  "git_sha": "9b68ba8c8c0e3a260cecd891bddf8bb9f0b32d0d",
   "git_branch": "feat/v0.6.0-frontend-ux",
-  "git_dirty": true,
-  "git_dirty_paths": 1,
-  "reason": "v0.6.0 UI refresh recaptured with web fonts awaited (first capture baked the fallback face)",
+  "git_dirty": false,
+  "git_dirty_paths": 0,
+  "reason": "v0.6.0 UI refresh: filter sidebar, gallery toolbar, settings regroup, pipeline view, processing section",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -16,6 +16,6 @@
   },
   "change_from_previous": {
     "status": "CHANGED",
-    "differing_pixels": "3.7211%"
+    "differing_pixels": "4.3575%"
   }
 }

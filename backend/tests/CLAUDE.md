@@ -379,6 +379,23 @@ Three layers, each needed:
    `.testruns/` (`tests/testrun_marker.py`, via `conftest.py`), so a concurrent sweep never
    removes a store a running test is using, even a bare `pytest` run from another worktree.
 
+Four more rules from issue #1222:
+
+- **Corpus-injected files tear down through `purge_injected`**, not raw ORM deletes (those
+  orphan the OpenSearch chunks and speaker embeddings). Mint the seed as `pytest-<hex>`,
+  `pytest-synth-<hex10>`, `pytest-searchqual-<hex10>` or `e2e-owned-<hex10>`:
+  `INJECTED_TEST_SEED_SHAPE` in `cleanup-test-data.py` is how a killed run's files are found, and
+  `unit/test_cleanup_test_data_injected_and_bench.py` fails on an unregistered `seed = f"..."`.
+- **An overlay the stack already runs is not the test's to stop** (`e2e/idp_overlay.py`): a
+  fixture that starts LLDAP/Keycloak records whether it did, and teardown stops or removes only
+  those (`unit/test_idp_overlay_lifecycle.py`).
+- **A docker build in a test labels its image** (`ot-test-artifact=1` plus a per-test
+  `ot-test-build=<hex>`) and removes images by that label in a `finally`: never by bare name,
+  never a prune.
+- **Test a bash cleanup trap by running the real script in a throwaway layout** with stub
+  `docker`/`opentr.sh` on PATH (`unit/test_pki_leg_teardown.py`); a trap you only read is not a
+  trap you have seen fire.
+
 **The sweep** — `scripts/cleanup-test-data.py` (dry run by default; `--execute-unambiguous`
 Tier A; `--execute` adds Tier B; `--planes` selects; `--min-age-minutes N`). Rows go through the
 app's own DELETE endpoints; store planes re-check each name at the point of deletion and refuse

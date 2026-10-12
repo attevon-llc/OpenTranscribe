@@ -47,7 +47,6 @@ utils/
 ├── nvml_monitor.py         # NVIDIA NVML monitoring
 ├── pyannote_utils.py       # PyAnnote utility functions
 ├── temp_file_utils.py      # Temporary file management
-├── diarization_merge.py    # Diarization result merging
 ├── prompt_manager.py       # LLM prompt template management
 └── transcript_comparison.py # Transcript diff/comparison
 ```

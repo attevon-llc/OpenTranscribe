@@ -1,6 +1,50 @@
 {
   "components": {
     "schemas": {
+      "ASRConfigDeleted": {
+        "description": "Result of deleting one or all ASR configurations: the switch shape plus the reset.\n\n``config_uuid`` is the config active afterwards (``null``: none) and ``pipeline_issues``\nthe caller's pipeline after the delete, as for ``set-active`` (#1236).",
+        "properties": {
+          "config_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Uuid"
+          },
+          "deleted": {
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "diarizer_source_reverted": {
+            "default": false,
+            "description": "The caller's speaker detection was set to a deleted configuration (source asr_config) and has been reset to the default (#1226).",
+            "title": "Diarizer Source Reverted",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pipeline_issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Pipeline Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message",
+          "pipeline_issues"
+        ],
+        "title": "ASRConfigDeleted",
+        "type": "object"
+      },
       "ASRConnectionTestRequest": {
         "properties": {
           "access_key_id": {
@@ -25594,10 +25638,17 @@
     },
     "/api/asr-settings/all": {
       "delete": {
-        "description": "Delete all ASR configurations for the current user (reverts to system default).",
+        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete.",
         "operationId": "delete_all_asr_configs_api_asr_settings_all_delete",
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ASRConfigDeleted"
+                }
+              }
+            },
             "description": "Successful Response"
           }
         },
@@ -25641,7 +25692,7 @@
     },
     "/api/asr-settings/config/{config_uuid}": {
       "delete": {
-        "description": "Delete an ASR configuration and report the pipeline it leaves (issue #1236).\n\nIf it was active, ``choose_after_active_delete`` picks what becomes active: the first\nremaining config that keeps the stored speaker detection choice runnable (#1225), else\nthe cleared pointer. On lite, where clearing means local Whisper, a remaining config\nthat can transcribe is kept instead, and with none the delete is refused (409\n``local_asr_unavailable``, #1228). Otherwise deletion is never refused: a stored choice\nthe remaining state cannot run comes back in ``pipeline_issues`` (as for\n``set-active``), with ``config_uuid`` naming the config now active (``null``: none).",
+        "description": "Delete an ASR configuration and report the pipeline it leaves (issue #1236).\n\nA speaker-detection choice naming this configuration (source ``asr_config``) is reset\nto the default for every user who held it (#1226); ``diarizer_source_reverted`` says\nwhether the caller's was.\n\nIf it was active, ``choose_after_active_delete`` picks what becomes active: the first\nremaining config that keeps the stored speaker detection choice runnable (#1225), else\nthe cleared pointer. On lite, where clearing means local Whisper, a remaining config\nthat can transcribe is kept instead, and with none the delete is refused (409\n``local_asr_unavailable``, #1228). Otherwise deletion is never refused: a stored choice\nthe remaining state cannot run comes back in ``pipeline_issues`` (as for\n``set-active``), with ``config_uuid`` naming the config now active (``null``: none).",
         "operationId": "delete_asr_config_api_asr_settings_config__config_uuid__delete",
         "parameters": [
           {
@@ -25660,7 +25711,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ASRSwitchResult"
+                  "$ref": "#/components/schemas/ASRConfigDeleted"
                 }
               }
             },

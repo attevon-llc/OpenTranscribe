@@ -297,12 +297,11 @@ def _merge_turns(detection: _Detection, transcript: dict, merge: str) -> list[di
     """
     from app.transcription.boundary_resolver import BoundarySmoothingConfig
     from app.transcription.speaker_assigner import assign_speakers
-    from app.transcription.speaker_assigner import inherit_segment_speakers
     from app.utils.segment_postprocess import finalize_segments
 
-    result = assign_speakers(detection.frame, transcript)
-    if merge == "segment":
-        result = inherit_segment_speakers(result)
+    result = assign_speakers(
+        detection.frame, transcript, granularity="segment" if merge == "segment" else "word"
+    )
     with session_scope() as db:
         smoothing_cfg = BoundarySmoothingConfig.from_db_env(db)
     return finalize_segments(result["segments"], smoothing_cfg)

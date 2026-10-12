@@ -318,6 +318,53 @@ def _clear_asr_shared_active_references(
     q.delete(synchronize_session=False)
 
 
+def _reset_diarizer_references(db: Session, config_uuids: list[str], user_id: int) -> bool:
+    """Reset every ``asr_config`` speaker source that names a deleted configuration (E5).
+
+    The pointer is removed for every user who held it (the owner and anyone it was shared
+    with, like the active-config references above), and a source still set to
+    ``asr_config`` reverts to the default, which is the transcription provider's own speaker
+    detection. Without this a deleted diarizer leaves a blocking ``diarizer_config_missing``
+    in each holder's plan. Returns whether the CALLER's source was reverted.
+    """
+    from app.services.pipeline_plan_inputs import DIARIZER_CONFIG_KEY
+    from app.services.pipeline_plan_inputs import SOURCE_KEY
+
+    if not config_uuids:
+        return False
+    pointers = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.setting_key == DIARIZER_CONFIG_KEY,
+            models.UserSetting.setting_value.in_(config_uuids),
+        )
+        .all()
+    )
+    holders = {int(row.user_id) for row in pointers}
+    for row in pointers:
+        db.delete(row)
+    if not holders:
+        return False
+    sources = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id.in_(holders),
+            models.UserSetting.setting_key == SOURCE_KEY,
+            models.UserSetting.setting_value == "asr_config",
+        )
+        .all()
+    )
+    reverted = {int(row.user_id) for row in sources}
+    for row in sources:
+        db.delete(row)
+    if reverted:
+        logger.info(
+            "Deleted ASR config was a speaker detector: reset %d user(s) to the default",
+            len(reverted),
+        )
+    return user_id in reverted
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -778,14 +825,18 @@ def set_active_asr_config(
     )
 
 
-@router.delete("/config/{config_uuid}", response_model=ASRSwitchResult)
+@router.delete("/config/{config_uuid}", response_model=schemas.ASRConfigDeleted)
 def delete_asr_config(
     request: Request,
     config_uuid: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
-) -> ASRSwitchResult:
+) -> schemas.ASRConfigDeleted:
     """Delete an ASR configuration and report the pipeline it leaves (issue #1236).
+
+    A speaker-detection choice naming this configuration (source ``asr_config``) is reset
+    to the default for every user who held it (#1226); ``diarizer_source_reverted`` says
+    whether the caller's was.
 
     If it was active, ``choose_after_active_delete`` picks what becomes active: the first
     remaining config that keeps the stored speaker detection choice runnable (#1225), else
@@ -821,6 +872,7 @@ def delete_asr_config(
     # Clean up other users who had this shared config active (preserve owner's for auto-promote)
     if config.is_shared:
         _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
+    reverted = _reset_diarizer_references(db, [str(config.uuid)], current_user.id)
 
     db.delete(config)
     db.commit()
@@ -838,9 +890,10 @@ def delete_asr_config(
     elif not was_active and active_config_id is not None:
         still_active = db.query(UserASRSettings.uuid).filter_by(id=active_config_id).scalar()
         active_uuid = str(still_active) if still_active is not None else None
-    return ASRSwitchResult(
+    return schemas.ASRConfigDeleted(
         message="ASR configuration deleted",
         config_uuid=active_uuid,
+        diarizer_source_reverted=reverted,
         pipeline_issues=plan_issues_out(plan_for_user(db, current_user.id, request=request)),
     )
 
@@ -865,17 +918,30 @@ def clear_active_asr_config(
     )
 
 
-@router.delete("/all", status_code=204)
+@router.delete("/all", response_model=schemas.ASRConfigDeleted)
 def delete_all_asr_configs(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
-) -> None:
-    """Delete all ASR configurations for the current user (reverts to system default)."""
+) -> schemas.ASRConfigDeleted:
+    """Delete all ASR configurations for the current user (reverts to system default).
+
+    Speaker-detection choices naming any of them are reset like a single delete.
+    """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
-    db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id).delete()
+    owned = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id)
+    uuids = [str(row.uuid) for row in owned.with_entities(UserASRSettings.uuid).all()]
+    reverted = _reset_diarizer_references(db, uuids, current_user.id)
+    owned.delete()
     _clear_active_asr_setting(db, current_user.id)
     db.commit()
+    return schemas.ASRConfigDeleted(
+        message="All ASR configurations deleted",
+        config_uuid=None,
+        diarizer_source_reverted=reverted,
+        pipeline_issues=plan_issues_out(plan_for_user(db, current_user.id, request=request)),
+    )
 
 
 @router.post("/test")

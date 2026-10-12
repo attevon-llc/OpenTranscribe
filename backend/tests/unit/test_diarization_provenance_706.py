@@ -1,9 +1,9 @@
 """Persistence of the engine that ACTUALLY served diarization (issue #706).
 
 Before this file, ``media_file.diarization_provider`` was never written for a locally
-diarized file — the only producer was ``diarization_merge.py``'s in-memory
-``ASRResult.metadata`` dict on the cloud-ASR merge path (covered by
-``test_diarization_merge.py``, unchanged here). Verified live: native diarization ran
+diarized file — the only producer was the cloud-ASR merge path's in-memory
+``ASRResult.metadata`` dict (``diarization_merge.py``, since replaced by ``assign_speakers``
+and the ``DiarizeResult``'s own fields in ``cloud_asr.py``, #1226). Verified live: native diarization ran
 (``native diarization done in 3.1s: ...`` in the worker log) and the column recorded NULL.
 
 The fix threads a resolved ``(provider, model)`` pair from the diarizer instance that

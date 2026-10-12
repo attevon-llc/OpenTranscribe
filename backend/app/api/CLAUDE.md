@@ -246,7 +246,10 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
   the first remaining config that keeps the choice runnable, else clears, and answers the
   switch shape too (`config_uuid` + `pipeline_issues`, #1236). A #1109-locked source is never
-  refused on the diarization step.
+  refused on the diarization step. `DELETE /asr-settings/config/{uuid}` and `/all` answer
+  `ASRConfigDeleted` (the switch shape plus `deleted` and `diarizer_source_reverted`, #1226):
+  a deleted config named as someone's speaker detector (`asr_config`) resets that choice for
+  every holder, and `diarizer_source_reverted` says whether the caller's was.
 - **Lite is cloud-only for transcription and speaker detection (#1228): every local option is
   a 409 with the plan's `{code, message}`**, from `utils/lite_mode.py` (`refuse_on_lite`,
   `plan_refusal`) or the plan itself. `local_asr_unavailable`: an ASR switch onto local

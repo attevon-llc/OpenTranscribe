@@ -24,6 +24,10 @@ deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
   provider module's code, never to vendor docs**:
   - `speaker_count_hints` — which of min/max/num the module actually sends.
     `tests/unit/test_asr_catalog_speaker_hints.py` derives the set from the module source.
+    AssemblyAI sends `speakers_expected` for a fixed count, otherwise the range as
+    `speaker_options` (`SpeakerOptions` in the installed SDK, #1226). Speechmatics and Gladia
+    send none: their documented parameters are not wired because nothing in this repo verifies
+    them (no typed SDK field, no recorded response).
   - `timestamp_granularity` — `word` | `segment` | `none`.
     `tests/unit/test_asr_catalog_timestamp_granularity.py` feeds each parser a fixture response
     and fails when the parsed result cannot honour the declared value. OpenAI is `none` at
@@ -51,6 +55,12 @@ a key. Finally add the module to `ASR_PROVIDER_MODULES` in `tests/unit/test_prov
 providers lazy-import their SDK *inside* methods, so that import smoke test is the only guard against
 SDK drift. **There is no decorator/registry**; dispatch is a literal if/elif chain deliberately
 confined to the factory. Call sites branch only on `provider_name != "local"`, never on a vendor name.
+
+**Any provider that returns speakers can also be the speaker detector for another
+transcription** (#1226): `services/diarization/asr_adapter.py` wraps a saved configuration and
+keeps only its turns. Nothing in this package changes for it; a new provider becomes usable that
+way as soon as its catalog entry says `supports_diarization` and its parser fills
+`ASRSegment.speaker` (add it to `RUNNERS` in `tests/unit/test_asr_diarization_adapter.py`).
 
 ## Selection & failure
 
@@ -109,7 +119,8 @@ changing `provider` **clears** it.
   diarization requires `ConversationTranscriber` — `SpeechRecognizer` silently returns no speakers.
   **google** takes a service-account JSON only (applied by mutating `GOOGLE_APPLICATION_CREDENTIALS`)
   and its `speaker_tag` is 1-indexed, converted *before* `_normalize_speaker_label`. **openai** has a
-  hard 25 MB limit, no diarization at all, and translation only on `whisper-1`. **assemblyai** must send
+  hard 25 MB limit, speakers only from `gpt-4o-transcribe-diarize` (segment-timed
+  `diarized_json`), and translation only on `whisper-1`. **assemblyai** must send
   `speech_models` (a list); UI model names are not API ids. **deepgram** v6 reads the whole file into
   memory and its `validate_connection` needs a management-scoped key. **speechmatics** uses the async
   `speechmatics-batch` client via `asyncio.run()` — the legacy `speechmatics-python` SDK silently drops

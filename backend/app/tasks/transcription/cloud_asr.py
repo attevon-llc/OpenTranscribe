@@ -64,28 +64,6 @@ def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
     return segments
 
 
-def _segment_level_speakers(asr_result, diarize_result):
-    """Segment granularity (plan C7, #1236): each segment takes its dominant speaker.
-
-    For a segment-timed model the merge must not vote by word or look up the segment's
-    midpoint: a short turn on the midpoint would win a 30-second segment, and a midpoint
-    in a pause between two turns would leave it with no speaker. ``assign_speakers`` over
-    the segment intervals is the same overlap rule the post stage applies.
-    """
-    from dataclasses import replace
-
-    from app.transcription.speaker_assigner import assign_speakers
-    from app.transcription.speaker_assigner import diarize_segments_to_frame
-
-    intervals = {"segments": [{"start": s.start, "end": s.end} for s in asr_result.segments]}
-    assign_speakers(diarize_segments_to_frame(diarize_result.segments), intervals)
-    segments = [
-        replace(seg, speaker=interval.get("speaker"))
-        for seg, interval in zip(asr_result.segments, intervals["segments"], strict=True)
-    ]
-    return replace(asr_result, segments=segments, has_speakers=any(s.speaker for s in segments))
-
-
 def _run_parallel_cloud_asr_and_diarization(
     ctx: TranscriptionContext,
     audio_file_path: str,
@@ -97,17 +75,21 @@ def _run_parallel_cloud_asr_and_diarization(
     max_speakers: int = 20,
     num_speakers: int | None = None,
 ):
-    """Run cloud ASR and the plan's cloud speaker detector in parallel, then merge.
+    """Run cloud ASR and the plan's cloud speaker detector in parallel.
 
     Both are I/O-bound HTTP calls, so ThreadPoolExecutor is the right pattern
     (consistent with migration_pipeline.py, speaker_attribute_task.py, llm_service.py).
+
+    Returns:
+        ``(asr_result, diarize_result)``. ``diarize_result`` is ``None`` when the detector
+        failed (non-fatal) or returned no turns; the caller merges the turns with
+        ``assign_speakers``, the one merge (plan C7, #1226).
     """
     from concurrent.futures import ThreadPoolExecutor
     from concurrent.futures import as_completed
 
     from app.services.diarization.factory import DiarizationProviderFactory
     from app.services.diarization.types import DiarizeConfig
-    from app.utils.diarization_merge import merge_cloud_diarization
 
     # Built BEFORE either leg starts, in a read-only session closed before any HTTP. A
     # pyannote.ai plan with no usable key raises DiarizationNotConfiguredError here
@@ -181,21 +163,39 @@ def _run_parallel_cloud_asr_and_diarization(
     # Diarization failure is non-fatal — return ASR result without speakers
     if diarize_error or diarize_result is None:
         logger.warning("Cloud diarization failed, proceeding without speakers: %s", diarize_error)
-        return asr_result
+        return asr_result, None
+    if not diarize_result.segments:
+        logger.warning("Cloud diarization returned no speaker turns; proceeding without speakers")
+        return asr_result, None
 
-    # Both succeeded — merge diarization results onto ASR transcript
     if asr_result is None:
         raise RuntimeError("Cloud ASR transcription returned no result")
-    merged = merge_cloud_diarization(asr_result, diarize_result)
-    if plan.diarization.merge == "segment":
-        merged = _segment_level_speakers(merged, diarize_result)
     logger.info(
         "Parallel cloud pipeline complete: ASR=%s, diarization=%s, file=%d",
         asr_provider.provider_name,
         diarize_provider.provider_name,
         ctx.file_id,
     )
-    return merged
+    return asr_result, diarize_result
+
+
+def _merge_turns(raw_segments: list[dict], diarize_result, plan: PipelinePlan) -> None:
+    """Assign the detector's speaker turns to the converted segments, in place.
+
+    One merge for every engine (``assign_speakers``), at the plan's merge granularity
+    (plan C7): ``word`` per timed word; anything else at segment level, where each segment
+    takes the speaker who overlaps it most. Never the segment midpoint: a short turn on the
+    midpoint would win a 30-second segment, and a midpoint in a pause between two turns
+    would leave it with no speaker (#1236).
+    """
+    from app.transcription.speaker_assigner import assign_speakers
+    from app.transcription.speaker_assigner import diarize_segments_to_frame
+
+    assign_speakers(
+        diarize_segments_to_frame(diarize_result.segments),
+        {"segments": raw_segments},
+        granularity="word" if plan.diarization.merge == "word" else "segment",
+    )
 
 
 def _run_cloud_asr_pipeline(
@@ -284,8 +284,9 @@ def _run_cloud_asr_pipeline(
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
 
     # Parallel cloud execution: ASR + a cloud speaker detector simultaneously
+    diarize_result = None
     if plan.diarization.execution == "parallel_cloud":
-        asr_result = _run_parallel_cloud_asr_and_diarization(
+        asr_result, diarize_result = _run_parallel_cloud_asr_and_diarization(
             ctx,
             audio_file_path,
             config,
@@ -301,6 +302,8 @@ def _run_cloud_asr_pipeline(
 
     # Convert ASRResult to the dict format the rest of the pipeline expects
     raw_segments = _convert_asr_result_to_segments(asr_result, ctx.file_id)
+    if diarize_result is not None:
+        _merge_turns(raw_segments, diarize_result, plan)
 
     seg_speakers: set[str] = {s["speaker"] for s in raw_segments if s.get("speaker")}
     logger.info(
@@ -312,18 +315,24 @@ def _run_cloud_asr_pipeline(
         ctx.file_id,
     )
 
-    # The engine that ACTUALLY served diarization. `merge_cloud_diarization` records both
-    # from the DiarizeResult itself (utils/diarization_merge.py), so this reports what really
-    # ran rather than what was configured. Absent — and therefore None — in the two cases
-    # where nothing diarized: the `else` branch above (ASR only) and the non-fatal diarization
-    # failure that returns the unmerged ASRResult.
+    # The engine that ACTUALLY served diarization, read off the DiarizeResult itself, so this
+    # reports what really ran rather than what was configured. None in the two cases where
+    # nothing diarized separately: the `else` branch above (ASR only) and the non-fatal
+    # diarization failure (or an empty result).
     #
     # ⚠️ Do NOT substitute a default here or downstream. These were dropped on the floor until
     # issue #28, and `finalize.py` covered for it with a hardcoded
     # "pyannote/speaker-diarization-community-1" — correct only by luck, because the local
     # provider happens to serve those weights. Any other diarization provider on this path was
     # recorded under PyAnnote's name, while `diarization_provider` went to NULL beside it.
-    diar_meta = getattr(asr_result, "metadata", None) or {}
+    diar_meta = (
+        {
+            "diarization_provider": diarize_result.provider_name,
+            "diarization_model": diarize_result.model_name,
+        }
+        if diarize_result is not None
+        else {}
+    )
 
     return {
         "segments": raw_segments,

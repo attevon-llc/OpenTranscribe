@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Another provider's speaker detection, with any transcription (#1226).** Speaker detection
+  can be set to a saved ASR configuration (source `asr_config`, from #1224): that provider is
+  asked to transcribe with its speaker labels on, its speaker turns are kept and its text is
+  thrown away (never stored or logged). Every catalog model that returns speakers works this
+  way (Deepgram, AssemblyAI, OpenAI `gpt-4o-transcribe-diarize`, Google, Azure, AWS,
+  Speechmatics, Gladia, pyannote.ai STT), each verified through its own response parser.
+  **That provider bills a full transcription for it**, on top of whatever transcribes the
+  text, and the audio is sent to it; the pipeline view already warns
+  (`diarizer_double_billing`). With cloud transcription it runs in parallel with the
+  transcription; with local transcription (GPU or the tiny/base CPU models) it runs in the
+  post stage on `cloud-asr` after the transcript is saved. Choosing a configuration with the
+  same provider and model as the transcription uses that provider's own speakers, with no
+  second call. A configuration that is gone, no longer shared, text-only or whose key no
+  longer decrypts fails the file with a fixed sentence (reason `pipeline_not_runnable`, never
+  retried automatically); a vendor failure keeps the transcript without speakers, as for
+  pyannote.ai.
+
 - **`--purge` for the eval corpus injector (#1222).** `python -m app.scripts.corpus_injection
   --corpus C --user U [--seed S] --purge --yes` removes what a previous injection wrote for that
   one (corpus, seed, owner) namespace through the same destroyer every delete path uses, so
@@ -176,6 +193,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One merge of speaker turns into text (#1226).** The cloud path that pairs a cloud
+  transcription with a separate speaker detector (pyannote.ai, or another provider) used its
+  own merge: each word took the turn covering its midpoint and words never got a speaker. It
+  now uses the same overlap-based `assign_speakers` as local diarization and the post stage,
+  at the plan's merge granularity (word, or segment for `whisper-1`, `gpt-4o-transcribe-diarize`
+  and Azure). Measured on two real 10-minute recordings, the two rules agree on 99.69% and
+  99.91% of words, and the new one matches the hand-labelled reference more often. Visible
+  difference: a word-timed segment that spans a speaker change is now split at the change,
+  and a word in a pause between turns gets the nearest speaker instead of none. A segment
+  whose words all belong to one speaker is stored under that speaker, even when the vendor's
+  segment interval (padded with silence) overlaps someone else's turn more.
+- **AssemblyAI receives the speaker range (#1226).** Without a fixed speaker count, the
+  minimum and maximum are sent as `speaker_options`; before, only a fixed count reached
+  AssemblyAI. Speechmatics and Gladia still receive no speaker hints.
 - **Lite is cloud-only for transcription and speaker detection (#1228).** A lite
   (`--lite`, no GPU) deployment no longer detects speakers on this server: lite's
   rediarize-on-CPU path is removed. Speakers come from a transcription provider that returns
@@ -194,9 +225,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No transcript, speaker or voiceprint changes: files diarized on lite's CPU before this
     keep their speakers. The migration is data-only, idempotent, a no-op on the full image,
     and its downgrade is a no-op.
-- **Deleting an ASR configuration returns the pipeline it leaves (#1236).**
-  `DELETE /api/asr-settings/config/{uuid}` answers 200 with `config_uuid` (the config now
-  active) and `pipeline_issues`, like `set-active`, instead of a bare 204.
+- **Deleting an ASR configuration returns the pipeline it leaves (#1236, #1226).**
+  `DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
+  instead of a bare 204, with `config_uuid` (the config now active), `pipeline_issues` (like
+  `set-active`), `deleted` and `diarizer_source_reverted`. Deleting a configuration that
+  someone uses for speaker detection resets that choice to the default for every user who had
+  it; `diarizer_source_reverted` says whether the caller's was reset.
 - **Re-processing refuses a run that cannot run before deleting anything.** A transcription
   re-run or a speaker re-detection whose pipeline is refused (for example a lite deployment
   with "this server" chosen) now answers 409 while the transcript and speakers are intact,

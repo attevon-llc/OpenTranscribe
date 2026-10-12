@@ -16,7 +16,7 @@ const mockInstance = vi.hoisted(() => ({
 }));
 vi.mock('../axios', () => ({ default: mockInstance }));
 
-import { ASRSettingsApi, CustomVocabularyApi, type ASRSwitchResult } from './asrSettings';
+import { ASRSettingsApi, CustomVocabularyApi, type ASRConfigDeleted } from './asrSettings';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -183,9 +183,11 @@ describe('CustomVocabularyApi.getVocabulary', () => {
 // discarded here), so the settings UI can say when speaker detection is no longer runnable.
 describe('ASRSettingsApi.deleteConfig', () => {
   it('returns the active config and pipeline issues the delete leaves', async () => {
-    const body: ASRSwitchResult = {
+    const body: ASRConfigDeleted = {
       message: 'ASR configuration deleted',
       config_uuid: null,
+      deleted: true,
+      diarizer_source_reverted: true,
       pipeline_issues: [
         {
           code: 'pyannote_key_missing',

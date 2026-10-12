@@ -142,11 +142,19 @@ DIARIZATION_NOT_CONFIGURED_MESSAGE = (
 )
 
 #: Raised when the speaker detector a run was planned with cannot be built: another saved
-#: provider named as the detector (``asr_config``) before its adapter exists, or an engine
-#: no plan produces. Must not contain any substring the retry classifier treats as transient.
+#: provider named as the detector (``asr_config``, #1226) that is gone, no longer shared,
+#: text-only, untimed or whose key no longer decrypts, or an engine no plan produces.
+#: Must not contain any substring the retry classifier treats as transient.
 DIARIZER_CONFIG_UNUSABLE_MESSAGE = (
     "The provider chosen for speaker detection cannot be used for this file. Choose another "
     "speaker detection option in Settings, then retry."
+)
+
+#: Raised (and logged) when a cloud speaker-detection vendor fails. Every pipeline path
+#: treats that as non-fatal (the transcript is kept without speakers); the sentence exists so
+#: the exception's text is fixed wherever it travels, never the vendor's message.
+DIARIZATION_PROVIDER_FAILED_MESSAGE = (
+    "The speaker detection provider could not detect speakers in this file."
 )
 
 #: Raised when the cloud transcription provider a run was planned with cannot be built (a

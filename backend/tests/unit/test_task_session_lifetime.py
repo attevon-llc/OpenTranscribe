@@ -1761,3 +1761,117 @@ def test_topic_extraction_defers_for_redaction_with_no_session_open(
 
     assert deferred == [0], f"deferral ran with {deferred} scope(s) open"
     assert tracker.depth == 0
+
+
+# ---------------------------------------------------------------------------------------
+# Cloud speaker detection via another saved provider (#1226)
+# ---------------------------------------------------------------------------------------
+
+
+def test_another_providers_speaker_detection_calls_the_vendor_outside_the_session(
+    db_session, normal_user, monkeypatch
+):
+    """The adapter is BUILT in the factory's read session (no network) and the vendor is
+    called with no session open; both legs of the parallel cloud path are observed."""
+    from app.models.user_asr_settings import UserASRSettings
+    from app.services.asr.base import ASRProvider
+    from app.services.asr.factory import ASRProviderFactory
+    from app.services.asr.types import ASRResult
+    from app.services.asr.types import ASRSegment
+    from app.services.asr.types import ASRWord
+    from app.services.pipeline_plan import DiarizerConfigInfo
+    from app.tasks.transcription import cloud_asr
+    from app.tasks.transcription.context import TranscriptionContext
+    from app.utils.encryption import encrypt_api_key
+    from tests.unit._plan_contexts import make_plan
+
+    tracker = _ScopeTracker(db_session)
+    monkeypatch.setattr(cloud_asr, "session_scope", tracker.scope)
+    monkeypatch.setattr(cloud_asr, "send_progress_notification", lambda *a, **k: None)
+
+    class _Vendor(ASRProvider):
+        def __init__(self, name: str, label: str, speaker: str | None) -> None:
+            self._name, self._label, self._speaker = name, label, speaker
+
+        @property
+        def provider_name(self) -> str:
+            return self._name
+
+        def supports_diarization(self) -> bool:
+            return self._speaker is not None
+
+        def supports_vocabulary(self) -> bool:
+            return False
+
+        def supports_translation(self) -> bool:
+            return False
+
+        def validate_connection(self) -> tuple[bool, str, float]:
+            return True, "ok", 0.0
+
+        def transcribe(self, audio_path, config, progress_callback=None) -> ASRResult:
+            tracker.observe(self._label)
+            words = [ASRWord("hello", 0.0, 0.5), ASRWord("there", 0.6, 1.0)]
+            segment = ASRSegment("hello there", 0.0, 1.0, speaker=self._speaker, words=words)
+            return ASRResult(
+                segments=[segment], language="en", provider_name=self._name, model_name="nova-3"
+            )
+
+    diarizer = UserASRSettings(
+        user_id=normal_user.id,
+        name=f"speakers-{uuid_mod.uuid4().hex[:8]}",
+        provider="gladia",
+        model_name="standard",
+        api_key=encrypt_api_key("gladia-key"),
+    )
+    db_session.add(diarizer)
+    db_session.commit()
+    plan = make_plan(
+        "cloud_text_word",
+        "asr_config",
+        diarization_config=DiarizerConfigInfo(
+            provider="gladia", model="standard", uuid=str(diarizer.uuid), returns_speakers=True
+        ),
+    )
+    assert plan.diarization.execution == "parallel_cloud"
+    task_id = f"task-{uuid_mod.uuid4().hex[:8]}"
+    db_session.add(
+        TaskModel(
+            id=task_id,
+            user_id=normal_user.id,
+            media_file_id=None,
+            task_type="transcription",
+            status="in_progress",
+            progress=0.1,
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(
+        ASRProviderFactory,
+        "create_from_db_config",
+        staticmethod(lambda cfg: _Vendor("gladia", "vendor_speakers", "SPEAKER_01")),
+    )
+    ctx = TranscriptionContext(
+        task_id=task_id,
+        file_id=1,
+        file_uuid=str(uuid_mod.uuid4()),
+        user_id=normal_user.id,
+        file_path="x/a.mp3",
+        file_name="a.mp3",
+        content_type="audio/mpeg",
+    )
+
+    result = cloud_asr._run_cloud_asr_pipeline(
+        ctx,
+        "/fake/audio.wav",
+        None,
+        None,
+        None,
+        provider=_Vendor("deepgram", "vendor_text", None),
+        plan=plan,
+    )
+
+    assert tracker.opened >= 2
+    assert tracker.seen == {"vendor_text": 0, "vendor_speakers": 0}, _leak(tracker, "vendor")
+    assert result["diarization_provider"] == "gladia"
+    assert {w["speaker"] for w in result["segments"][0]["words"]} == {"SPEAKER_01"}

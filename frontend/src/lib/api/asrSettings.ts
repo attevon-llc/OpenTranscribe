@@ -252,6 +252,12 @@ interface RawASRProvider {
   models?: RawASRModel[];
 }
 
+/** Mirrors backend `schemas.asr_settings.ASRConfigDeleted`: the switch shape plus the reset. */
+export interface ASRConfigDeleted extends ASRSwitchResult {
+  deleted: boolean;
+  diarizer_source_reverted: boolean;
+}
+
 export class ASRSettingsApi {
   private static readonly BASE_PATH = '/asr-settings';
 
@@ -386,23 +392,24 @@ export class ASRSettingsApi {
   }
 
   /**
-   * Delete a specific ASR configuration (issue #1236). Returns the pipeline it leaves:
-   * `config_uuid` is the config active afterwards (`null`: none) and `pipeline_issues`
-   * says when no remaining config keeps speaker detection runnable. On lite, deleting the
-   * last config that can transcribe is refused with 409 `detail: {code, message}`
-   * (`local_asr_unavailable`, #1228).
+   * Delete a specific ASR configuration (issues #1226, #1236). Returns the pipeline it
+   * leaves: `config_uuid` is the config active afterwards (`null`: none), `pipeline_issues`
+   * says when no remaining config keeps speaker detection runnable, and
+   * `diarizer_source_reverted` is true when the caller's speaker detection named this
+   * configuration and was reset to the default. On lite, deleting the last config that can
+   * transcribe is refused with 409 `detail: {code, message}` (`local_asr_unavailable`, #1228).
    */
-  static async deleteConfig(uuid: string): Promise<ASRSwitchResult> {
+  static async deleteConfig(uuid: string): Promise<ASRConfigDeleted> {
     const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${uuid}`);
     return response.data;
   }
 
   /**
-   * Delete all user ASR configurations (revert to local GPU default)
-   * Backend returns 204 No Content on success.
+   * Delete all user ASR configurations (revert to local GPU default).
    */
-  static async deleteAll(): Promise<void> {
-    await axiosInstance.delete(`${this.BASE_PATH}/all`);
+  static async deleteAll(): Promise<ASRConfigDeleted> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/all`);
+    return response.data;
   }
 
   /**

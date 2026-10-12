@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
+from app.core.exceptions import ASRConfigurationError
 from app.services.error_categorization_service import DIARIZATION_NOT_CONFIGURED_MESSAGE
-from app.services.error_categorization_service import DIARIZER_CONFIG_UNUSABLE_MESSAGE
 
 from .base import DiarizationProvider
+from .errors import DiarizerConfigUnusableError
 
 if TYPE_CHECKING:
+    from fastapi import Request
     from sqlalchemy.orm import Session
 
+    from app.models.user_asr_settings import UserASRSettings
     from app.models.user_diarization_settings import UserDiarizationSettings
 
 logger = logging.getLogger(__name__)
@@ -38,21 +42,6 @@ class DiarizationNotConfiguredError(RuntimeError):
         super().__init__(self.MESSAGE)
 
 
-class DiarizerConfigUnusableError(RuntimeError):
-    """The speaker detector a run was planned with cannot be built.
-
-    Raised for ``asr_config`` (another saved ASR configuration's speaker detection), whose
-    adapter is not part of this change, and for an engine name no plan produces. ``str()``
-    is the fixed sentence registered in ``ErrorCategorizationService`` (reason
-    ``pipeline_not_runnable``, permanent retry category ``CONFIGURATION_REQUIRED``).
-    """
-
-    MESSAGE = DIARIZER_CONFIG_UNUSABLE_MESSAGE
-
-    def __init__(self) -> None:
-        super().__init__(self.MESSAGE)
-
-
 def get_pyannote_credential(user_id: int, db: Session) -> UserDiarizationSettings | None:
     """The user's own active pyannote.ai credential row, or ``None``."""
     from app.models.user_diarization_settings import UserDiarizationSettings
@@ -72,6 +61,77 @@ def has_pyannote_credential(user_id: int, db: Session) -> bool:
     """Whether the user has a stored pyannote.ai key (not checked against the vendor)."""
     row = get_pyannote_credential(user_id, db)
     return bool(row is not None and row.api_key)
+
+
+def get_diarizer_asr_config(
+    db: Session, user_id: int, config_uuid: str | None, request: Request | None = None
+) -> UserASRSettings | None:
+    """The saved ASR configuration named as the speaker detector, if the user may use it.
+
+    Own, or shared within a tenant both belong to (re-checked on every read, like the active
+    ASR config). Using another provider for speakers needs the per-user cloud-provider
+    capability (``asr.user_providers``); without it the config is treated as unavailable.
+    ``None`` for no pointer, a malformed or dangling one, or a capability that is off.
+    """
+    if not config_uuid:
+        return None
+    try:
+        parsed = uuid.UUID(str(config_uuid))
+    except ValueError:
+        logger.warning("Malformed diarizer config pointer for user %d", user_id)
+        return None
+    from app.core.capabilities import capability_enabled
+
+    if not capability_enabled("asr.user_providers", request):
+        return None
+    from app.models.user_asr_settings import UserASRSettings
+    from app.utils.tenant_sharing import shared_usable_by
+
+    cfg: UserASRSettings | None = (
+        db.query(UserASRSettings)
+        .filter(
+            UserASRSettings.uuid == parsed,
+            shared_usable_by(UserASRSettings.user_id, UserASRSettings.is_shared, user_id),
+        )
+        .first()
+    )
+    return cfg
+
+
+def _adapter_for_config(cfg: UserASRSettings | None) -> DiarizationProvider:
+    """An :class:`ASRDiarizationAdapter` over a saved ASR configuration.
+
+    Builds the ASR provider through ``ASRProviderFactory.create_from_db_config`` (the one
+    decryption path). Makes no network call; the caller runs ``diarize`` with no session open.
+
+    Raises:
+        DiarizerConfigUnusableError: No config, a local one, a model that returns no speakers
+            or no timing, or credentials that no longer decrypt.
+    """
+    from app.services.asr.factory import ASRProviderFactory
+
+    from .asr_adapter import ASRDiarizationAdapter
+
+    if cfg is None or (cfg.provider or "local") == "local":
+        raise DiarizerConfigUnusableError()
+    model = str(cfg.model_name or "")
+    caps = ASRProviderFactory.get_model_capabilities(str(cfg.provider), model)
+    if not caps["supports_diarization"] or caps["timestamp_granularity"] == "none":
+        raise DiarizerConfigUnusableError()
+    try:
+        asr_provider = ASRProviderFactory.create_from_db_config(cfg)
+    except ASRConfigurationError:
+        raise
+    except Exception as exc:
+        # Decryption failure (a corrupt key, or ENCRYPTION_KEY changed). The text names the
+        # config id, never a secret; it stays in the log.
+        logger.warning(
+            "Speaker-detection config %s cannot be built (%s)", cfg.uuid, type(exc).__name__
+        )
+        raise DiarizerConfigUnusableError() from exc
+    return ASRDiarizationAdapter(
+        asr_provider, model_name=model, speaker_hints=caps["speaker_count_hints"]
+    )
 
 
 class DiarizationProviderFactory:
@@ -104,8 +164,9 @@ class DiarizationProviderFactory:
         Raises:
             DiarizationNotConfiguredError: ``pyannote_ai`` and the user has no usable key
                 (none stored, or one that no longer decrypts; issue #1204).
-            DiarizerConfigUnusableError: ``asr_config`` (its adapter is not built yet), or
-                an engine no plan produces.
+            DiarizerConfigUnusableError: ``asr_config`` whose configuration is gone, no
+                longer shared, local, text-only, untimed or undecryptable, or an engine no
+                plan produces.
         """
         if engine == "local":
             from .local_provider import LocalDiarizationProvider
@@ -131,6 +192,20 @@ class DiarizationProviderFactory:
                 api_key=api_key,
                 model_name=current_pyannote_model(config.model_name if config else None),
             )
+
+        if engine == "asr_config":
+            # Another saved provider's speaker detection (#1226). The plan already resolved
+            # "same provider and model as the transcription" to that provider's own speakers,
+            # so reaching here means a separate, billed call is intended.
+            cfg = get_diarizer_asr_config(db, user_id, config_uuid)
+            if cfg is None:
+                logger.warning(
+                    "User %d is planned for another provider's speakers but config %s is "
+                    "unavailable",
+                    user_id,
+                    config_uuid,
+                )
+            return _adapter_for_config(cfg)
 
         logger.warning(
             "No speaker detector can be built for engine %r (user %d, config %s)",

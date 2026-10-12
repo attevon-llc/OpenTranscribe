@@ -247,7 +247,7 @@ ASR_PROVIDER_CATALOG: dict = {
         "requires_region": False,
         "supports_custom_url": False,
         "supports_diarization": True,
-        "speaker_count_hints": ["num"],
+        "speaker_count_hints": ["min", "max", "num"],
         "timestamp_granularity": "word",
         "supports_vocabulary": True,
         "supports_translation": False,

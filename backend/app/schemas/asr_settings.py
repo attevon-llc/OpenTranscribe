@@ -7,8 +7,11 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
+
+from app.schemas.pipeline import ASRSwitchResult
 
 
 class ASRProvider(StrEnum):
@@ -333,3 +336,20 @@ class ASRStatusResponse(BaseModel):
     active_config_uuid: UUID | None = None
     is_cloud_provider: bool = False
     active_model_capabilities: ASRModelCapabilities | None = None
+
+
+class ASRConfigDeleted(ASRSwitchResult):
+    """Result of deleting one or all ASR configurations: the switch shape plus the reset.
+
+    ``config_uuid`` is the config active afterwards (``null``: none) and ``pipeline_issues``
+    the caller's pipeline after the delete, as for ``set-active`` (#1236).
+    """
+
+    deleted: bool = True
+    diarizer_source_reverted: bool = Field(
+        False,
+        description=(
+            "The caller's speaker detection was set to a deleted configuration "
+            "(source asr_config) and has been reset to the default (#1226)."
+        ),
+    )

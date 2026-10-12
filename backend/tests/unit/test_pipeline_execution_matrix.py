@@ -36,7 +36,7 @@ from app.services.pipeline_plan import post_stage_engine
 from tests.unit._plan_contexts import TRANSCRIPTION
 from tests.unit._plan_contexts import make_plan
 
-_SOURCES = ("provider", "local", "pyannote", "off")
+_SOURCES = ("provider", "local", "pyannote", "asr_config", "off")
 
 
 def _executable_cells() -> list[tuple[str, str, str]]:
@@ -73,6 +73,10 @@ def test_the_matrix_is_not_vacuous():
     assert ("local_gpu", "pyannote", "full") in POST_STAGE_CELLS
     assert ("local_cpu", "provider", "full") in POST_STAGE_CELLS
     assert ("cloud_text_segment", "provider", "full") in POST_STAGE_CELLS
+    # Another provider's speakers (#1226): after local transcription, and beside cloud text.
+    assert ("local_gpu", "asr_config", "full") in POST_STAGE_CELLS
+    assert ("local_cpu", "asr_config", "full") in POST_STAGE_CELLS
+    assert ("cloud_text_word", "asr_config", "lite") in CELLS
 
 
 # --------------------------------------------------------------------------------------
@@ -454,3 +458,118 @@ def test_lite_refuses_a_local_post_stage(db_session, normal_user, stage_seams, m
     assert result["message"] == ISSUE_MESSAGES["local_diarization_unavailable"]
     assert detector.calls == 0
     assert stage_seams["meter"] == []
+
+
+# --------------------------------------------------------------------------------------
+# 4. another provider's speakers (#1226): the REAL adapter behind the post stage
+# --------------------------------------------------------------------------------------
+
+
+def test_local_whisper_with_another_providers_speakers_runs_end_to_end(
+    db_session, normal_user, stage_seams, monkeypatch
+):
+    """Local transcription + ``asr_config``: postprocess hands off to the post stage on
+    ``cloud-asr``; the post stage builds the REAL ``ASRDiarizationAdapter`` through
+    ``create_for_engine`` from a saved Gladia config, Gladia is stubbed at its HTTP seam,
+    the turns are merged with ``assign_speakers`` and the segment is re-split. Only the
+    vendor's turns survive: its text is never stored."""
+    from app.models import UserSetting
+    from app.models.user_asr_settings import UserASRSettings
+    from app.tasks import rediarize_task as rdz
+    from app.tasks.transcription.postprocess import finalize_transcription
+    from app.utils.encryption import encrypt_api_key
+    from tests.helpers import stub_public_dns
+    from tests.unit.test_gladia_provider import _BASE
+    from tests.unit.test_gladia_provider import _dispatch_post
+    from tests.unit.test_gladia_provider import _FakeResponse
+    from tests.unit.test_gladia_provider import _mock_session
+
+    cfg = UserASRSettings(
+        user_id=normal_user.id,
+        name=f"speakers-{uuid_pkg.uuid4().hex[:8]}",
+        provider="gladia",
+        model_name="standard",
+        api_key=encrypt_api_key("gladia-key"),
+    )
+    db_session.add(cfg)
+    db_session.add(
+        UserSetting(
+            user_id=normal_user.id,
+            setting_key="transcription_diarization_source",
+            setting_value="asr_config",
+        )
+    )
+    db_session.commit()
+    from app.services.pipeline_plan import DiarizerConfigInfo
+
+    plan = make_plan(
+        "local_gpu",
+        "asr_config",
+        diarization_config=DiarizerConfigInfo(
+            provider="gladia", model="standard", uuid=str(cfg.uuid), returns_speakers=True
+        ),
+    )
+    assert plan.diarization.execution == "post_stage_cloud"
+    assert plan.diarization.config_uuid == str(cfg.uuid)
+    media, run = _file_with_run(db_session, normal_user)
+
+    finalize_transcription.__wrapped__(_gpu_result(media, run, plan))
+    assert len(stage_seams["post_stage"]) == 1
+    sent = stage_seams["post_stage"][0]
+    assert sent["queue"] == CeleryQueues.CLOUD_ASR
+    assert sent["kwargs"]["engine"] == "asr_config"
+
+    stub_public_dns(monkeypatch, domain="api.gladia.io")
+    utterances = [
+        {
+            "text": "vendor-only-words alpha",
+            "start": 0.0,
+            "end": 2.0,
+            "speaker": 0,
+            "words": [
+                {"word": "vendor-only-words", "start": 0.0, "end": 1.0},
+                {"word": "alpha", "start": 1.0, "end": 2.0},
+            ],
+        },
+        {
+            "text": "vendor-only-words beta",
+            "start": 2.0,
+            "end": 4.0,
+            "speaker": 1,
+            "words": [
+                {"word": "vendor-only-words", "start": 2.0, "end": 3.0},
+                {"word": "beta", "start": 3.0, "end": 4.0},
+            ],
+        },
+    ]
+    done = _FakeResponse(
+        json_data={"status": "done", "result": {"transcription": {"utterances": utterances}}}
+    )
+    captured: dict = {}
+    _mock_session(
+        monkeypatch,
+        post_side_effect=_dispatch_post(
+            _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/a"}),
+            _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/j"}),
+            captured,
+        ),
+        get_side_effect=lambda *a, **k: done,
+    )
+    monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(rdz, "_prepare_audio", lambda *a, **k: (__file__, None))
+
+    result = rdz.rediarize_task.apply(kwargs={**sent["kwargs"], "file_uuid": str(media.uuid)}).get()
+
+    assert result["status"] == "success", result
+    assert captured["body"]["diarization"] is True
+    segments = _segments(db_session, media)
+    assert [(s.start_time, s.end_time) for s in segments] == [(0.0, 2.0), (2.0, 4.0)]
+    assert [s.text.strip() for s in segments] == ["hello there", "good friend"]
+    assert segments[0].speaker_id != segments[1].speaker_id
+    assert not any("vendor-only-words" in s.text for s in segments)
+    db_session.refresh(media)
+    assert media.status == FileStatus.COMPLETED
+    assert media.diarization_provider == "gladia"
+    # One voiceprint step (vendor speakers carry no vectors) and one metering terminus.
+    assert len(stage_seams["embedding_stage"]) == 1
+    assert [ctx.run_id for ctx in stage_seams["meter"]] == [run.id]

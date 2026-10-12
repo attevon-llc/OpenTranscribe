@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.pipeline_plan import DiarizerConfigInfo
 from app.services.pipeline_plan import PipelinePlan
 from app.services.pipeline_plan import PlanInputs
 from app.services.pipeline_plan import resolve_pipeline_plan
@@ -57,6 +58,17 @@ TRANSCRIPTION: dict[str, dict[str, Any]] = {
 }
 
 
+#: Another saved provider used for speakers (``asr_config``, #1226): Gladia, a vendor no
+#: transcription profile above uses, so the plan never folds it into "its own speakers".
+SPEAKER_CONFIG = DiarizerConfigInfo(
+    provider="gladia",
+    model="standard",
+    uuid="22222222-2222-2222-2222-222222222222",
+    returns_speakers=True,
+    speaker_hints=frozenset(),
+)
+
+
 def make_plan(
     transcription: str = "local_gpu",
     source: str = "provider",
@@ -64,6 +76,7 @@ def make_plan(
     deployment_mode: str = "full",
     has_pyannote_key: bool = True,
     gpu_split: bool = False,
+    diarization_config: DiarizerConfigInfo | None = None,
 ) -> PipelinePlan:
     """The plan the resolver produces for one matrix cell."""
     return resolve_pipeline_plan(
@@ -73,6 +86,9 @@ def make_plan(
             diarization_source=source,
             has_pyannote_key=has_pyannote_key,
             pyannote_model="precision-3" if source == "pyannote" else None,
+            diarization_config=(
+                (diarization_config or SPEAKER_CONFIG) if source == "asr_config" else None
+            ),
             gpu_split=gpu_split,
             **TRANSCRIPTION[transcription],
         )

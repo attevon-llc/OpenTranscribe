@@ -10,10 +10,14 @@ stages DO it, for every cell the plan calls executable:
   step once (inline, or the CPU embedding stage), and meters the run only when nothing was
   handed off: one terminus per run;
 * the post stage (``rediarize_task``) re-splits the stored transcript at speaker changes,
-  runs the voiceprint step once, and is the run's metering terminus.
+  runs the voiceprint step once, and is the run's metering terminus;
+* every stage records what it ran in the file's processing provenance (#1229): the
+  transcription, the speaker detector (engine, where, execution, merge) and the voiceprint
+  step exactly once.
 
 Fakes sit at the thin seams only: the speaker detector (``_build_detector``), the audio
-fetch, the Celery publish, websocket notifications and the OpenSearch voiceprint write.
+fetch, the Celery publish, websocket notifications and profile matching (the OpenSearch
+voiceprint plane). The inline voiceprint step itself runs for real.
 Everything else (task rows, file status, segments, speakers) is real database state.
 """
 
@@ -23,6 +27,7 @@ import uuid as uuid_pkg
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from app.core.constants import CeleryQueues
@@ -32,6 +37,7 @@ from app.models.media import Task
 from app.models.media import TranscriptSegment
 from app.services.diarization.types import DiarizeResult
 from app.services.diarization.types import DiarizeSegment
+from app.services.pipeline_plan import PYANNOTE_AI
 from app.services.pipeline_plan import post_stage_engine
 from tests.unit._plan_contexts import TRANSCRIPTION
 from tests.unit._plan_contexts import make_plan
@@ -127,6 +133,16 @@ def _bridged(db_session):
     db_session.commit()
 
 
+class _NoProfileMatching:
+    """Profile matching is the OpenSearch kNN plane: the seam, with no profiles."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def process_speaker_embeddings_native(self, **kwargs):
+        return []
+
+
 @pytest.fixture
 def stage_seams(db_session, monkeypatch):
     """The out-of-process seams of postprocess and the post stage, recorded."""
@@ -151,11 +167,30 @@ def stage_seams(db_session, monkeypatch):
         "apply_async",
         lambda *a, **k: seen["embedding_stage"].append(k),
     )
+    real_postprocess_inline = postprocess._process_native_embeddings
+    real_post_stage_inline = embeddings._process_speaker_embeddings_native
+
+    def _counted(real):
+        def run(*args, **kwargs):
+            seen["inline"].append(args)
+            real(*args, **kwargs)
+
+        return run
+
     monkeypatch.setattr(
-        postprocess, "_process_native_embeddings", lambda *a, **k: seen["inline"].append(a)
+        postprocess, "_process_native_embeddings", _counted(real_postprocess_inline)
     )
     monkeypatch.setattr(
-        embeddings, "_process_speaker_embeddings_native", lambda *a, **k: seen["inline"].append(a)
+        embeddings, "_process_speaker_embeddings_native", _counted(real_post_stage_inline)
+    )
+    monkeypatch.setattr(embeddings, "session_scope", lambda: _bridged(db_session))
+    monkeypatch.setattr(embeddings, "SpeakerMatchingService", _NoProfileMatching)
+    monkeypatch.setattr(
+        "app.services.speaker_matching_service.SpeakerMatchingService", _NoProfileMatching
+    )
+    monkeypatch.setattr(
+        "app.services.permission_service.PermissionService.get_accessible_profile_ids_for_file",
+        lambda *a, **k: [],
     )
     monkeypatch.setattr(embeddings, "_should_use_native_embeddings", lambda result: True)
     for module in (postprocess, notifications):
@@ -272,9 +307,135 @@ def test_postprocess_follows_the_plan(
     assert run.status == expected_status
 
 
+def _provenance(db_session, media) -> dict:
+    db_session.expire_all()
+    document = (
+        db_session.query(MediaFile.processing_provenance).filter(MediaFile.id == media.id).scalar()
+    )
+    assert document is not None, "no stage recorded anything"
+    steps: dict = document["steps"]
+    return steps
+
+
+def _assert_speakers_recorded(steps: dict, plan, provider: str) -> None:
+    """The speaker-detection entry names the detector that served, how the plan ran it,
+    and where: a vendor named as the detector is that vendor's own speakers (``asr``)."""
+    diarization = steps["diarization"]
+    assert diarization["provider"] == provider
+    engine = "asr" if plan.diarization.engine == "asr_config" else plan.diarization.engine
+    assert diarization["engine"] == engine
+    assert diarization["where"] == plan.diarization.where
+    assert diarization["execution"] == plan.diarization.execution
+    assert diarization["merge"] == plan.diarization.merge
+
+
+def _assert_voiceprints_recorded_once(steps: dict, *, inline: bool) -> None:
+    """Free vectors are recorded by the stage that matched them; the CPU embedding stage
+    (dispatched, not run, here) records its own, so nothing may claim it in advance."""
+    if inline:
+        assert steps["voiceprints"]["execution"] == "inline_native"
+        assert steps["voiceprints"]["where"] == "server"
+    else:
+        assert "voiceprints" not in steps
+
+
+def _served_inline(plan) -> str | None:
+    """The id the transcription stage reports for speakers it detected itself."""
+    execution = plan.diarization.execution
+    if execution == "inline_local":
+        return "native"
+    if execution == "inline_asr":
+        return str(plan.transcription.provider)
+    if execution == "parallel_cloud":
+        return (
+            PYANNOTE_AI if plan.diarization.engine == "pyannote_ai" else plan.diarization.provider
+        )
+    return None
+
+
+@pytest.mark.parametrize(("transcription", "source", "mode"), CELLS)
+def test_every_stage_of_a_run_records_what_it_ran(
+    transcription, source, mode, db_session, normal_user, stage_seams, monkeypatch
+):
+    """The real chain for one run: transcript save -> postprocess -> (post stage). The
+    file's provenance names the transcription, the speaker detector and the voiceprint step,
+    each once, as the plan ran them."""
+    from app.core.config import settings
+    from app.tasks.transcription import finalize as finalize_mod
+    from app.tasks.transcription.context import TranscriptionContext
+    from app.tasks.transcription.postprocess import finalize_transcription
+
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", mode)
+    monkeypatch.setattr(finalize_mod, "session_scope", lambda: _bridged(db_session))
+    monkeypatch.setattr(finalize_mod, "send_progress_notification", lambda *a, **k: None)
+    monkeypatch.setattr(finalize_mod, "send_transcript_ready_notification", lambda *a, **k: None)
+    monkeypatch.setattr(finalize_mod, "_should_use_native_embeddings", lambda result: True)
+    plan = make_plan(transcription, source, deployment_mode=mode)
+    media, run = _file_with_run(db_session, normal_user, words=plan.diarization.merge == "word")
+    served = _served_inline(plan)
+    inline_vectors = plan.diarization.execution == "inline_local"
+    stored = _segments(db_session, media)[0]
+    transcript = {
+        "segments": [
+            {
+                "start": stored.start_time,
+                "end": stored.end_time,
+                "text": stored.text,
+                "words": stored.words or [],
+                **({"speaker": "SPEAKER_00"} if served else {}),
+            }
+        ],
+        "language": "en",
+        "asr_provider": plan.transcription.provider,
+        "asr_model": plan.transcription.model,
+        "diarization_disabled": plan.diarization.engine == "off",
+        "diarization_provider": served,
+        "diarization_model": "m-1" if served else None,
+        "native_speaker_embeddings": {"SPEAKER_00": np.full(256, 0.1)} if inline_vectors else None,
+    }
+    ctx = TranscriptionContext(
+        task_id=run.id,
+        file_id=media.id,
+        file_uuid=str(media.uuid),
+        user_id=media.user_id,
+        file_path=media.storage_path,
+        file_name="matrix.wav",
+        content_type=media.content_type,
+    )
+
+    saved = finalize_mod._process_and_save_critical(
+        ctx, transcript, {"pipeline_plan": plan.to_context()}
+    )
+    finalize_transcription.__wrapped__(saved)
+    post_stage = plan.diarization.execution.startswith("post_stage")
+    if post_stage:
+        engine = post_stage_engine(plan.diarization.engine)
+        _run_post_stage(monkeypatch, media, run, plan, _FakeDetector(engine, native=True))
+        served = _SERVED[engine]
+        inline_vectors = engine == "local"
+
+    steps = _provenance(db_session, media)
+    assert steps["transcription"]["provider"] == plan.transcription.provider
+    assert steps["transcription"]["where"] == plan.transcription.where
+    if plan.diarization.engine == "off":
+        assert steps["diarization"]["engine"] == "off"
+    else:
+        assert served is not None
+        _assert_speakers_recorded(steps, plan, served)
+    _assert_voiceprints_recorded_once(steps, inline=plan.speaker_id.runs and inline_vectors)
+    assert len(stage_seams["inline"]) + len(stage_seams["embedding_stage"]) == (
+        1 if plan.speaker_id.runs else 0
+    )
+
+
 # --------------------------------------------------------------------------------------
 # 3. the post stage: detection, re-split, voiceprint step, terminus
 # --------------------------------------------------------------------------------------
+
+
+#: The id each post-stage engine reports for itself: this server's engine, the pyannote.ai
+#: service, and the saved vendor named as the detector (``SPEAKER_CONFIG``: Gladia).
+_SERVED = {"local": "native", "pyannote_ai": PYANNOTE_AI, "asr_config": "gladia"}
 
 
 class _FakeDetector:
@@ -297,13 +458,13 @@ class _FakeDetector:
                 "diarize_df": diarize_segments_to_frame(segments),
                 "overlap_info": {},
                 "native_embeddings": (
-                    {seg.speaker: [0.1] * 256 for seg in segments} if self.native else None
+                    {seg.speaker: np.full(256, 0.1) for seg in segments} if self.native else None
                 ),
             }
         return DiarizeResult(
             segments=segments,
             num_speakers=len(segments),
-            provider_name="native" if self.engine == "local" else "pyannote",
+            provider_name=_SERVED[self.engine],
             model_name="community-1" if self.engine == "local" else "precision-3",
             metadata=metadata,
         )
@@ -365,7 +526,10 @@ def test_the_post_stage_completes_the_run_once(
     assert [ctx.run_id for ctx in stage_seams["meter"]] == [run.id]
     db_session.refresh(media)
     assert media.status == FileStatus.COMPLETED
-    assert media.diarization_provider == ("native" if engine == "local" else "pyannote")
+    assert media.diarization_provider == _SERVED[engine]
+    steps = _provenance(db_session, media)
+    _assert_speakers_recorded(steps, plan, _SERVED[engine])
+    _assert_voiceprints_recorded_once(steps, inline=inline_vectors)
 
 
 def test_a_word_timed_post_stage_resplits_a_segment_at_the_speaker_change(
@@ -573,3 +737,9 @@ def test_local_whisper_with_another_providers_speakers_runs_end_to_end(
     # One voiceprint step (vendor speakers carry no vectors) and one metering terminus.
     assert len(stage_seams["embedding_stage"]) == 1
     assert [ctx.run_id for ctx in stage_seams["meter"]] == [run.id]
+    # Provenance: Gladia's own speakers, in the cloud, merged per word, after the fact.
+    steps = _provenance(db_session, media)
+    _assert_speakers_recorded(steps, plan, "gladia")
+    assert (steps["diarization"]["engine"], steps["diarization"]["where"]) == ("asr", "cloud")
+    assert steps["diarization"]["model"] == "standard"
+    _assert_voiceprints_recorded_once(steps, inline=False)

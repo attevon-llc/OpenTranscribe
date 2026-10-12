@@ -151,7 +151,15 @@ def test_words_a_segment_timed_vendor_returns_do_not_outvote_the_segment():
 
 
 def test_a_word_timed_plan_keeps_per_word_attribution():
-    """Control: with word timing the words decide (here: both in SPEAKER_01's turn)."""
+    """Control: with word timing the words decide (here: both in SPEAKER_01's turn).
+
+    The one merge (``assign_speakers``, #1226) labels each word by its own overlap; the
+    stored segments are then re-split by word speaker at ``finalize_segments``, the chokepoint
+    every path saves through. So the transcript says SPEAKER_01 spoke "hi there", even though
+    SPEAKER_00 holds most of the vendor's 10-second segment interval.
+    """
+    from app.utils.segment_postprocess import finalize_segments
+
     plan = make_plan("cloud_text_word", "pyannote")
     assert plan.diarization.merge == "word"
     words = [ASRWord(word="hi", start=0.0, end=1.0), ASRWord(word="there", start=1.0, end=2.0)]
@@ -160,7 +168,9 @@ def test_a_word_timed_plan_keeps_per_word_attribution():
 
     segments = _run(plan, vendor, _Detector(turns))["segments"]
 
-    assert [s["speaker"] for s in segments] == ["SPEAKER_01"]
+    assert [[w["speaker"] for w in s["words"]] for s in segments] == [["SPEAKER_01"] * 2]
+    stored = finalize_segments(segments)
+    assert [(s["speaker"], s["text"].strip()) for s in stored] == [("SPEAKER_01", "hi there")]
 
 
 def test_the_segment_merge_still_records_the_detector_that_ran():

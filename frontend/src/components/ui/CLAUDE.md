@@ -46,8 +46,12 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
     reason). The look is the native slider tinted with `accent-color` on purpose: fill, thumb,
     keyboard and RTL direction come from the browser. The gallery's dual-thumb filter sliders
     (`svelte-range-slider-pips` in `FilterSidebar.svelte`) are intentionally separate (owner decision).
+- `EmptyState.svelte` — icon -> title -> description -> actions, spaced by the
+  `--empty-state-*` tokens. The default slot IS the action row (`.empty-actions`, flex, wraps);
+  callers put buttons there with no margin of their own (issue #1243 item 16: a caller-spaced
+  "Open Review" sat 0px under its description).
 - `Spinner.svelte`, `ProgressBar.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
-  `CardGridSkeleton.svelte`, `EmptyState.svelte`, `TagInput.svelte`.
+  `CardGridSkeleton.svelte`, `TagInput.svelte`.
 
 ## Conventions / patterns
 

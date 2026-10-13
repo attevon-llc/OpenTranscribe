@@ -1320,7 +1320,6 @@
   /* Retry control for a facet whose fetch failed — an empty facet must never
      be the way an outage looks (#743a). */
   .retry-button {
-    margin-top: 0.5rem;
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;

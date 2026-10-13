@@ -105,21 +105,27 @@
   });
 </script>
 
-<div class="chat-markdown" class:streaming bind:this={container}>
+<!-- dir="auto": an English answer in the ar (RTL) UI keeps its own direction. -->
+<div class="chat-markdown" class:streaming dir="auto" bind:this={container}>
   <!-- Sanitized by renderChatMarkdown's dedicated DOMPurify profile. -->
   {@html html}
 </div>
 
 <style>
+  /* Shared prose layer for model-authored text. Sizes, weights and measure come from the
+     type tokens in styles/theme.css; see frontend/CLAUDE.md "Type and weight rules".
+     Logical (inline-start/end) properties throughout, so lists and quotes mirror in RTL. */
   .chat-markdown {
+    max-width: var(--measure-prose);
     color: var(--text-color);
-    line-height: 1.65;
-    font-size: 0.95rem;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-body);
     overflow-wrap: anywhere;
   }
 
   .chat-markdown :global(p) {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.75em;
   }
 
   .chat-markdown :global(p:last-child) {
@@ -129,36 +135,58 @@
   .chat-markdown :global(h1),
   .chat-markdown :global(h2),
   .chat-markdown :global(h3),
-  .chat-markdown :global(h4) {
-    margin: 1.25rem 0 0.5rem;
-    font-weight: 600;
-    line-height: 1.3;
+  .chat-markdown :global(h4),
+  .chat-markdown :global(h5),
+  .chat-markdown :global(h6) {
+    margin: 1.25em 0 0.5em;
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  .chat-markdown :global(:is(h1, h2, h3, h4, h5, h6):first-child) {
+    margin-top: 0;
   }
 
   .chat-markdown :global(h1) {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
   }
   .chat-markdown :global(h2) {
-    font-size: 1.15rem;
+    font-size: var(--font-size-lg);
   }
-  .chat-markdown :global(h3) {
-    font-size: 1.05rem;
+  .chat-markdown :global(h3),
+  .chat-markdown :global(h4),
+  .chat-markdown :global(h5),
+  .chat-markdown :global(h6) {
+    font-size: var(--font-size-body);
+  }
+
+  .chat-markdown :global(strong) {
+    font-weight: var(--font-weight-semibold);
   }
 
   .chat-markdown :global(ul),
   .chat-markdown :global(ol) {
-    margin: 0 0 0.75rem;
-    padding-left: 1.5rem;
+    margin: 0 0 0.75em;
+    padding-inline-start: 1.5em;
   }
 
   .chat-markdown :global(li) {
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.25em;
+  }
+
+  .chat-markdown :global(li > p) {
+    margin: 0;
+  }
+
+  .chat-markdown :global(li::marker) {
+    color: var(--text-secondary);
   }
 
   .chat-markdown :global(blockquote) {
-    margin: 0.75rem 0;
-    padding: 0.25rem 0 0.25rem 0.85rem;
-    border-left: 3px solid rgba(var(--primary-color-rgb), 0.45);
+    margin: 0.75em 0;
+    padding-block: 0.25em;
+    padding-inline: 0.85em 0;
+    border-inline-start: 3px solid rgba(var(--primary-color-rgb), 0.45);
     color: var(--text-secondary);
   }
 
@@ -168,29 +196,32 @@
     border-radius: 4px;
     padding: 0.1em 0.35em;
     font-size: 0.875em;
-    font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', Menlo, monospace);
+    font-family: var(--font-mono);
   }
 
+  /* Code is always left-to-right, whatever the page or message direction. */
   .chat-markdown :global(pre) {
     position: relative;
+    direction: ltr;
+    text-align: start;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 0.85rem 1rem;
     overflow-x: auto;
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.75em;
   }
 
   .chat-markdown :global(.code-copy) {
     position: absolute;
     top: 0.35rem;
-    right: 0.4rem;
+    inset-inline-end: 0.4rem;
     padding: 0.1rem 0.4rem;
     border: 1px solid var(--border-color);
     border-radius: 5px;
     background-color: var(--card-background);
     color: var(--text-secondary);
-    font-size: 0.68rem;
+    font-size: var(--font-size-2xs);
     font-family: inherit;
     opacity: 0;
     transition: opacity 0.15s ease;
@@ -213,13 +244,14 @@
     background: none;
     border: none;
     padding: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .chat-markdown :global(table) {
     border-collapse: collapse;
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.75em;
     display: block;
+    width: max-content;
     overflow-x: auto;
     max-width: 100%;
   }
@@ -228,13 +260,13 @@
   .chat-markdown :global(td) {
     border: 1px solid var(--border-color);
     padding: 0.4rem 0.65rem;
-    text-align: left;
-    font-size: 0.9rem;
+    text-align: start;
+    font-size: var(--font-size-md);
   }
 
   .chat-markdown :global(th) {
     background-color: var(--surface-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .chat-markdown :global(a) {
@@ -245,7 +277,7 @@
   .chat-markdown :global(hr) {
     border: none;
     border-top: 1px solid var(--border-color);
-    margin: 1rem 0;
+    margin: 1em 0;
   }
 
   /* Blinking caret while tokens are still arriving. */
@@ -254,7 +286,7 @@
     display: inline-block;
     width: 0.5em;
     height: 1em;
-    margin-left: 0.15em;
+    margin-inline-start: 0.15em;
     vertical-align: text-bottom;
     background-color: var(--primary-color);
     animation: chat-caret 1s step-end infinite;

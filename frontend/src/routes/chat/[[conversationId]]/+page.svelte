@@ -694,8 +694,8 @@
   .chat-title {
     flex: 1;
     margin: 0;
-    font-size: 0.98rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;

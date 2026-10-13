@@ -109,9 +109,9 @@
   }
 
   .summary-result-title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--primary-color, #4f46e5);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--primary-on-surface);
     text-decoration: none;
     line-height: 1.3;
     display: inline-flex;
@@ -142,7 +142,7 @@
     background: none;
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 6px;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
     cursor: pointer;
     transition: all 0.15s;
@@ -173,7 +173,7 @@
     background: var(--hover-color, #f8fafc);
     border: 1px solid transparent;
     border-radius: 6px;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -195,7 +195,7 @@
 
   .summary-match-path {
     font-size: 0.6875rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-secondary, #9ca3af);

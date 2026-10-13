@@ -320,8 +320,8 @@
   .file-list-header {
     display: grid;
     grid-template-columns: var(--file-list-columns);
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: var(--file-list-gap);
+    padding: 0.75rem var(--file-list-pad);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     font-size: 0.75rem;
@@ -363,37 +363,33 @@
     background: rgba(59, 130, 246, 0.1);
   }
 
+  /* Selection mode: the row is a grid on the header's own template, and the link is a
+     subgrid over the data tracks (file-list-grid.css), so the checkbox, type, title ...
+     cells share column edges with the header cells by construction. */
   .file-list-row.selecting-mode {
     display: grid;
-    grid-template-columns: 40px 1fr;
+    grid-template-columns: var(--file-list-columns-selecting);
+    column-gap: var(--file-list-gap);
+    padding-inline: var(--file-list-pad);
     user-select: none;
     -webkit-user-select: none;
   }
 
   .file-list-row.selecting-mode .file-list-link {
-    grid-template-columns: var(--file-list-columns);
+    grid-column: 2 / -1;
+    grid-template-columns: subgrid;
+    padding-inline: 0;
   }
 
   .file-list-link {
     display: grid;
     grid-template-columns: var(--file-list-columns);
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--file-list-gap);
+    padding: 0.5rem var(--file-list-pad);
     text-decoration: none;
     color: inherit;
     align-items: center;
     height: 100%;
-  }
-
-  .file-list-row.selecting-mode .file-list-link {
-    padding: 0.5rem 1rem 0.5rem 0;
-  }
-
-  .file-list-row.selecting-mode .list-cell-checkbox {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem 0 0.5rem 1rem;
   }
 
   .file-list-row:hover {
@@ -442,7 +438,7 @@
   }
 
   .list-cell-checkbox {
-    width: 40px;
+    width: var(--file-list-check);
     justify-content: center;
     position: relative;
   }
@@ -591,15 +587,16 @@
     font-size: inherit;
   }
 
-  /* Hide speakers and size columns on tablets */
-  @media (max-width: 1024px) {
+  /* Cell visibility follows the same container widths as the column template in
+     file-list-grid.css — keep the two lists of breakpoints identical. */
+  @container file-list (max-width: 860px) {
     .list-cell-speakers,
     .list-cell-size {
       display: none;
     }
   }
 
-  @media (max-width: 768px) {
+  @container file-list (max-width: 580px) {
     .list-cell-speakers,
     .list-cell-duration,
     .list-cell-date,

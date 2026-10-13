@@ -169,4 +169,37 @@ Hand-rolled icon buttons are where this recurs, because they are copied rather t
 Prefer the `ui/` primitives (`SearchBar`'s clear/next controls, `CopyButton`, `Chip`,
 `BaseModal`'s header close) over re-declaring the pattern.
 
+## Type and weight rules (issue #1243)
+
+The scale, weights, line heights and prose measure are tokens in `src/styles/theme.css`
+(`--font-size-2xs … --font-size-2xl`, `--font-weight-regular|medium|semibold`,
+`--line-height-tight|snug|body`, `--measure-prose`). New and edited CSS uses them; don't add
+another literal size (the tree had ~60 distinct ones).
+
+- **Body text is regular (400).** 500 is for labels, chips, meta and result titles; 600 is
+  for headings and true emphasis (`strong`, `th`). **Nothing is 700** — `theme.css` maps
+  `strong`/`b`/`th`/`h1-h6` to semibold, since the browser default (700) is Poppins Bold.
+- **`app.html`'s `@font-face` weights must point at the file downloaded for that weight**
+  (`scripts/download-fonts.js`). Weight 600 used to load `Poppins-Bold.woff2`, so every
+  "semibold" in the app rendered bold; `src/styles/typography.test.ts` pins the mapping.
+- Reading text (chat answers and messages) is `--font-size-body` (15px) at
+  `--line-height-body` (1.6), capped at `--measure-prose` (72ch). Snippets and dense lists
+  are `--font-size-md`; metadata `--font-size-sm`/`xs`, in `--text-secondary`.
+- Chat: the user's turn is the tinted bubble, the assistant's answer is plain text with no
+  surface. Assistant markdown styling lives ONLY in `chat/ChatMarkdown.svelte`.
+- Search results follow search-engine hierarchy: title (`--font-size-lg`, medium, link colour
+  `--primary-on-surface`), then muted meta, then the snippet with a `--highlight-bg` mark. A
+  bare `<mark>` anywhere gets that highlight from `theme.css`.
+- Link-coloured TEXT uses `--primary-on-surface`, never `--primary-color`: the button blue is
+  2.9:1 on the dark card.
+- **RTL**: use logical properties (`padding-inline-start`, `border-inline-start`,
+  `text-align: start`, `inset-inline-end`), and give user/model-authored text `dir="auto"` so
+  an English answer in the `ar` UI keeps its own direction. Code blocks are always LTR.
+  `typography.test.ts` fails on physical left/right properties in the chat prose and search
+  result components.
+- Empty states: `ui/EmptyState` owns the icon -> title -> description -> action rhythm
+  (`--empty-state-gap`, `--empty-state-action-gap`); pass actions in its default slot and
+  never add your own margin to them. Buttons need the base `.btn` class as well as
+  `.btn-secondary`/`.btn-primary`, which carry colour only, no padding.
+
 ## Verify UI changes in a browser (light + dark) — type-check ≠ feature-check.

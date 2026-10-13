@@ -49,7 +49,7 @@
   </div>
 
   {#each rows as _, i}
-    <div class="skel-row" aria-hidden="true">
+    <div class="skel-row" class:selecting-mode={isSelecting} aria-hidden="true">
       {#if isSelecting}
         <div class="list-cell"><div class="skel-check shimmer"></div></div>
       {/if}
@@ -97,8 +97,8 @@
   .file-list-header {
     display: grid;
     grid-template-columns: var(--file-list-columns);
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: var(--file-list-gap);
+    padding: 0.75rem var(--file-list-pad);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     font-size: 0.75rem;
@@ -112,11 +112,15 @@
     grid-template-columns: var(--file-list-columns-selecting);
   }
 
+  .skel-row.selecting-mode {
+    grid-template-columns: var(--file-list-columns-selecting);
+  }
+
   .skel-row {
     display: grid;
     grid-template-columns: var(--file-list-columns);
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--file-list-gap);
+    padding: 0.5rem var(--file-list-pad);
     align-items: center;
     /* Matches a real row's height, so the list does not grow or shrink when the
        placeholder is swapped out. */
@@ -151,16 +155,16 @@
     border-radius: 999px;
   }
 
-  /* Hidden at the same breakpoints as the real table's columns, so the
-     placeholder never renders a cell the loaded list will not have. */
-  @media (max-width: 1024px) {
+  /* Hidden at the same container widths as the real table's columns (file-list-grid.css),
+     so the placeholder never renders a cell the loaded list will not have. */
+  @container file-list (max-width: 860px) {
     .list-cell-speakers,
     .list-cell-size {
       display: none;
     }
   }
 
-  @media (max-width: 768px) {
+  @container file-list (max-width: 580px) {
     .list-cell-duration,
     .list-cell-date {
       display: none;

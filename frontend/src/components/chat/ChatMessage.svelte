@@ -139,7 +139,7 @@
           </div>
         </div>
       {:else}
-        <p class="user-text">{message.content}</p>
+        <p class="user-text" dir="auto">{message.content}</p>
       {/if}
     {:else}
       {#if message.reasoning_content}
@@ -289,20 +289,26 @@
     max-width: 100%;
   }
 
+  /* The user's turn is the tinted bubble; the answer is plain flowing text. The tail is the
+     logical end-end corner, so it follows the bubble to the left in RTL. */
   .chat-message.user .bubble {
     max-width: min(80%, 42rem);
-    padding: 0.7rem 1rem;
-    border-radius: 16px 16px 4px 16px;
+    padding: 0.625rem 1rem;
+    border-radius: 18px;
+    border-end-end-radius: 4px;
     background-color: rgba(var(--primary-color-rgb), 0.1);
-    border: 1px solid rgba(var(--primary-color-rgb), 0.2);
+  }
+
+  :global([data-theme='dark']) .chat-message.user .bubble {
+    background-color: rgba(var(--primary-color-rgb), 0.2);
   }
 
   .user-text {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 0.95rem;
-    line-height: 1.55;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
     color: var(--text-color);
   }
 
@@ -313,7 +319,7 @@
     background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.08);
     border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.25);
     color: var(--error-color, #dc3545);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .context-warning {
@@ -324,8 +330,8 @@
     background-color: var(--warning-bg);
     border: 1px solid var(--warning-border);
     color: var(--text-color);
-    font-size: 0.82rem;
-    line-height: 1.45;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-snug);
   }
 
   .cancelled-note {
@@ -422,7 +428,7 @@
   }
 
   .timestamp {
-    font-size: 0.7rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     padding: 0 0.3rem;
     font-variant-numeric: tabular-nums;

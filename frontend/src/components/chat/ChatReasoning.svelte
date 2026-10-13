@@ -92,8 +92,8 @@
 
   .chat-reasoning :global(.expandable-header) {
     padding: 0.45rem 0.7rem;
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -111,7 +111,9 @@
     color: var(--text-secondary);
   }
 
+  /* Reasoning is secondary to the answer: smaller and muted, never answer-weight text. */
   .reasoning-body :global(.chat-markdown) {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
+    color: var(--text-secondary);
   }
 </style>

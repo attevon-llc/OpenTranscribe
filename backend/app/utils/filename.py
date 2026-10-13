@@ -2,6 +2,14 @@ import re
 import unicodedata
 from pathlib import Path
 
+# C0/C1 controls (CR, LF, NUL, ESC, DEL, NEL ...) and bidirectional formatting
+# characters. They survive the ASCII filter below when they are C0/DEL, and they let a
+# name smuggle header lines or visually spoof its extension, so they are removed from
+# the whole name before it is split into stem and extension.
+_CONTROL_AND_BIDI_RE = re.compile(
+    "[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]"
+)
+
 
 def sanitize_filename(filename: str, max_length: int = 255) -> str:
     """Sanitize a filename to be safe for storage and processing.
@@ -23,6 +31,10 @@ def sanitize_filename(filename: str, max_length: int = 255) -> str:
         >>> sanitize_filename("")
         "unnamed_file"
     """
+    if not filename:
+        return "unnamed_file"
+
+    filename = _CONTROL_AND_BIDI_RE.sub("", filename)
     if not filename:
         return "unnamed_file"
 

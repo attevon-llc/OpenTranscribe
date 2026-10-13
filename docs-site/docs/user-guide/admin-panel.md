@@ -127,12 +127,15 @@ You cannot change your own role or delete your own account here; your row shows 
 
 Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
 
+The tab opens with the sidecar status and one line saying what the switch is; **How it works** expands the longer explanation. A badge and a **Reset** button appear beside a setting only when its value is overridden (in the database or by an environment variable); a value left at the server default shows neither.
+
 ### Diarization Boundary Correction
 
 - **Boundary smoothing** (default **on**): collapses 1--3 word "wrong-speaker islands" at speaker turn boundaries (pure-CPU, runs at finalize)
 - **Acoustic backchannel re-check** (default **off**, experimental, GPU): re-embeds short disputed/overlap words and reassigns them by voiceprint cosine
-  - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
-  - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
+  - Under **Advanced re-check tuning** (closed by default):
+    - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
+    - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
 
 ### Speaker separation engine
 

@@ -177,6 +177,13 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   `settingsModalStore.setDirty('transcription' | 'speaker-identification', any)` and badges a dirty tab
   with `●`. Panels mount on first visit and then stay mounted (`hidden`), so edits survive a tab switch.
   Any child form in a shell must dispatch `change`, never call `setDirty` itself.
+- **The Speaker Engine tab is progressive disclosure** (#1243 item 5): one line of purpose per control, the
+  decision up front, detail behind a disclosure. `EngineIntro` shows the sidecar chip and one sentence, with
+  the explanation and the admin env-var note under "How it works". `EngineSettingRow` is the one row chrome:
+  the source badge and Reset button render only for an overridden value (a "Default" chip on every row was
+  noise). The re-check cosine margin and max word duration sit under "Advanced re-check tuning" and the
+  local-GPU scope is stated once, on the re-check toggle, never per control. Do not re-add per-control
+  scope notes or a second explanation of Require Diarization Sidecar.
 - _Maintenance_ holds `SpeakerAttributeBulkPanel` plus a link card that dispatches `navigate` with
   `embedding-migration`, which now opens the Speaker Embedding System tab of Data & Storage (no second copy).
 - **E2E-guarded:** `.speaker-detection-settings` (its `.btn-primary` is the Save button, so

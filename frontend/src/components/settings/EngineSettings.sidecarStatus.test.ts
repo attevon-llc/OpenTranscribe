@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$lib/axios', () => {
   const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
@@ -72,9 +72,15 @@ describe('EngineSettings sidecar status chip', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    for (const key of ['routing', 'override', 'overrideAdmin', 'requireSidecar']) {
-      expect(intro.textContent).toContain(`settings.engineSettings.intro.${key}`);
-    }
+    // One visible line; the longer explanation and the admin detail wait behind "How it works".
+    expect(intro.textContent).toContain('settings.engineSettings.intro.summary');
+    expect(intro.textContent).not.toContain('settings.engineSettings.intro.details');
+    expect(intro.textContent).not.toContain('settings.engineSettings.intro.overrideAdmin');
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'settings.engineSettings.intro.howItWorks' })
+    );
+    expect(intro.textContent).toContain('settings.engineSettings.intro.details');
+    expect(intro.textContent).toContain('settings.engineSettings.intro.overrideAdmin');
     const backendSelect = container.querySelector('#diarizer-backend') as HTMLElement;
     expect(
       intro.compareDocumentPosition(backendSelect) & Node.DOCUMENT_POSITION_FOLLOWING

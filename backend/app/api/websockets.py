@@ -11,6 +11,7 @@ from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
+from app.auth.roles import ELEVATED_ROLES
 from app.auth.token_service import token_service
 from app.db.session_utils import session_scope
 
@@ -29,8 +30,10 @@ class ConnectionManager:
     def __init__(self):
         # user_id -> List[WebSocket]
         self.active_connections: dict[int, list[WebSocket]] = {}
+        # Sockets whose user held an admin tier when the connection was opened.
+        self.admin_connections: set[WebSocket] = set()
 
-    def connect(self, websocket: WebSocket, user_id: int):
+    def connect(self, websocket: WebSocket, user_id: int, is_admin: bool = False):
         """Register a WebSocket connection for a user (accept() must be called before this).
 
         Bookkeeping only — no I/O — so it is a plain function, mirroring ``disconnect``.
@@ -40,6 +43,8 @@ class ConnectionManager:
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
+        if is_admin:
+            self.admin_connections.add(websocket)
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
     async def drain(self, code: int = 1001) -> int:
@@ -69,11 +74,13 @@ class ConnectionManager:
             with contextlib.suppress(Exception):
                 await ws.close(code=code)
         self.active_connections.clear()
+        self.admin_connections.clear()
         if sockets:
             logger.info("Drained %d WebSocket connection(s) on shutdown", len(sockets))
         return len(sockets)
 
     def disconnect(self, websocket: WebSocket, user_id: int):
+        self.admin_connections.discard(websocket)
         if user_id in self.active_connections:
             self.active_connections[user_id].remove(websocket)
             if not self.active_connections[user_id]:
@@ -94,6 +101,19 @@ class ConnectionManager:
         for user_id in self.active_connections:
             await self.send_personal_message(user_id, message)
 
+    async def broadcast_to_admins(self, message: dict):
+        """Send to administrator sockets only (e.g. host GPU telemetry)."""
+        payload = json.dumps(message)
+        for connection in list(self.admin_connections):
+            try:
+                await connection.send_text(payload)
+            except Exception as e:
+                logger.error(f"Error sending admin message: {str(e)}")
+
+
+#: Event types that expose host/infrastructure detail and are never sent to non-admins,
+#: even if a publisher forgets to flag them ``admin_only``.
+ADMIN_ONLY_EVENT_TYPES = frozenset({"gpu_stats_update"})
 
 # Create connection manager instance
 manager = ConnectionManager()
@@ -139,7 +159,13 @@ async def _dispatch_notification(message: dict) -> None:
     is_broadcast = notification_data.get("broadcast", False)
     data = notification_data.get("data", {})
 
-    if is_broadcast and notification_type:
+    admin_only = bool(notification_data.get("admin_only")) or (
+        notification_type in ADMIN_ONLY_EVENT_TYPES
+    )
+
+    if admin_only and notification_type:
+        await manager.broadcast_to_admins({"type": notification_type, "data": data})
+    elif is_broadcast and notification_type:
         await manager.broadcast({"type": notification_type, "data": data})
     elif user_id and notification_type:
         await manager.send_personal_message(user_id, {"type": notification_type, "data": data})
@@ -427,7 +453,7 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
     # Register the authenticated connection
-    manager.connect(websocket, user.id)
+    manager.connect(websocket, user.id, is_admin=user.role in ELEVATED_ROLES)
 
     # Send initial connection status
     await websocket.send_text(

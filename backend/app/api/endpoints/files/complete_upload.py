@@ -306,8 +306,9 @@ def complete_upload(
     header_bytes: bytes | None = None
     try:
         from app.services.minio_service import range_read
+        from app.utils.file_validation import HEADER_READ_SIZE
 
-        header_bytes = range_read(storage_path, 0, 64)
+        header_bytes = range_read(storage_path, 0, HEADER_READ_SIZE)
     except Exception as read_err:
         logger.warning(
             f"header read for validation of {request.file_id} failed "

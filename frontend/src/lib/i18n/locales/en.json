@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "New support-access request from {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} started break-glass access to {{target}} until {{time}}.",
   "supportAccess.notify.review": "Review",
-  "ui.rangeSlider.systemDefault": "System default: {{value}}"
+  "ui.rangeSlider.systemDefault": "System default: {{value}}",
+  "settings.dataManagement.title": "Data & Storage",
+  "settings.dataManagement.description": "Stored data and its upkeep: how long files are kept, the media cache, database backups, integrity checks, the search index and speaker embeddings.",
+  "settings.dataManagement.tabs.ariaLabel": "Data and storage settings"
 }

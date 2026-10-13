@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "Nieuw verzoek om ondersteuningstoegang van {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} heeft tot {{time}} noodtoegang tot {{target}} gestart.",
   "supportAccess.notify.review": "Bekijken",
-  "ui.rangeSlider.systemDefault": "Systeemstandaard: {{value}}"
+  "ui.rangeSlider.systemDefault": "Systeemstandaard: {{value}}",
+  "settings.dataManagement.title": "Gegevens en opslag",
+  "settings.dataManagement.description": "Opgeslagen gegevens en het onderhoud ervan: hoe lang bestanden bewaard blijven, de mediacache, databaseback-ups, integriteitscontroles, de zoekindex en sprekerembeddings.",
+  "settings.dataManagement.tabs.ariaLabel": "Instellingen voor gegevens en opslag"
 }

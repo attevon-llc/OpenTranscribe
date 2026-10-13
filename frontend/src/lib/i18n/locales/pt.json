@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "Novo pedido de acesso de suporte de {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} iniciou um acesso de emergência a {{target}} até {{time}}.",
   "supportAccess.notify.review": "Revisar",
-  "ui.rangeSlider.systemDefault": "Padrão do sistema: {{value}}"
+  "ui.rangeSlider.systemDefault": "Padrão do sistema: {{value}}",
+  "settings.dataManagement.title": "Dados e armazenamento",
+  "settings.dataManagement.description": "Os dados armazenados e a sua manutenção: por quanto tempo os arquivos são mantidos, o cache de mídia, os backups do banco de dados, as verificações de integridade, o índice de pesquisa e os embeddings de locutores.",
+  "settings.dataManagement.tabs.ariaLabel": "Configurações de dados e armazenamento"
 }

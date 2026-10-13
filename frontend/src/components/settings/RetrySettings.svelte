@@ -1,6 +1,6 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
   import { AdminSettingsApi, type RetryConfig } from '../../lib/api/adminSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -93,9 +93,7 @@
   <p class="section-desc">{$t('settings.retry.desc')}</p>
 
   {#if loading}
-    <div class="loading-state">
-      <Spinner size="small" />
-    </div>
+    <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
   {:else}
     <div class="setting-row">
       <div class="setting-controls">
@@ -189,11 +187,6 @@
     margin: 0 0 1rem 0;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: 1rem;
-  }
 
   .setting-row {
     display: flex;

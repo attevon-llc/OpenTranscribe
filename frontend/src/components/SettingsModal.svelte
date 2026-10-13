@@ -38,7 +38,14 @@
     speakerIdentificationTabs,
     speakerIdentificationVisible,
   } from '$lib/settings/speakerIdentificationTabs';
-  import { sidebarRowFor, speakerIdTabFor, transcriptionTabFor } from '$lib/settings/sectionAliases';
+  import {
+    aliasIdsOf,
+    dataTabFor,
+    sidebarRowFor,
+    speakerIdTabFor,
+    transcriptionTabFor,
+  } from '$lib/settings/sectionAliases';
+  import { dataManagementTabs, dataManagementVisible } from '$lib/settings/dataManagementTabs';
 
   // Import i18n
   import { t, locale } from '$stores/locale';
@@ -93,15 +100,11 @@
     // super_admin — deployment configuration (P4.3 moved these off the admin tier)
     authentication: 'super_admin',
     'audit-logs': 'super_admin',
-    backup: 'super_admin',
     // admin
     'admin-users': 'admin',
     'admin-task-health': 'admin',
     quarantine: 'admin',
-    'data-integrity': 'admin',
-    'embedding-migration': 'admin',
-    retention: 'admin',
-    'search-indexing': 'admin',
+    'data-management': 'admin',
     'support-access': 'admin',
   };
 
@@ -125,8 +128,9 @@
     return false;
   };
 
-  $: activeSectionLocked = sectionLocked(activeSection, isAdmin, isSuperAdmin);
-  $: activeSectionRequires = SECTION_MIN_ROLE[activeSection];
+  // An alias id is judged by the row that now holds it (retention -> Data & Storage).
+  $: activeSectionLocked = sectionLocked(sidebarRowFor(activeSection), isAdmin, isSuperAdmin);
+  $: activeSectionRequires = SECTION_MIN_ROLE[sidebarRowFor(activeSection)];
 
   /** Tooltip for a locked entry, worded for the tier it actually needs. */
   const lockReason = (section: SettingsSection): string =>
@@ -269,6 +273,16 @@
     migrationCap: capOn(capState, 'speaker_attributes.migration'),
   };
 
+  $: dataAccess = {
+    isAdmin,
+    isSuperAdmin,
+    retentionCap: capOn(capState, 'admin.retention'),
+    backupCap: capOn(capState, 'admin.backup'),
+    integrityCap: capOn(capState, 'admin.data_integrity'),
+    searchCap: capOn(capState, 'admin.search_indexing'),
+    embeddingCap: capOn(capState, 'admin.embedding_migration'),
+  };
+
   $: privacyAccess = {
     isAdmin,
     isSuperAdmin,
@@ -405,11 +419,9 @@
         { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
         ...(isAdmin ? [
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' },
-          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
-          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield', cap: 'admin.data_integrity' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
-          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock', cap: 'admin.retention' },
-          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' }
+          // File retention, media cache, backups, integrity, search index and speaker embeddings
+          // are tabs of one row (the old ids stay as aliases; see lib/settings/sectionAliases.ts).
+          ...(dataManagementVisible(dataAccess) ? [{ id: 'data-management' as SettingsSection, label: $t('settings.dataManagement.title'), icon: 'database' }] : [])
         ] : [])
       ]
     }
@@ -448,13 +460,16 @@
       : []),
     // Same for the four ids that became tabs: no sidebar row, still searchable, and the
     // hit lands on the tab, but only for users whose tab is present and unlocked.
-    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess),
+    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess, dataAccess),
   ];
 
   function aliasSearchEntries(
     tx: typeof transcriptionAccess,
-    spk: typeof speakerIdAccess
+    spk: typeof speakerIdAccess,
+    data: typeof dataAccess
   ): VisibleSection[] {
+    const dataOpen = (id: string) =>
+      dataManagementTabs(data).some((tab) => tab.id === id && !tab.locked);
     const txOpen = (id: string) => transcriptionTabs(tx).some((tab) => tab.id === id && !tab.locked);
     const spkOpen = (id: string) =>
       speakerIdentificationTabs(spk).some((tab) => tab.id === id && !tab.locked);
@@ -463,6 +478,11 @@
     if (txOpen('tx-vocabulary')) entries.push({ id: 'custom-vocabulary', label: $t('settings.customVocabulary.title') } as VisibleSection);
     if (spkOpen('spk-attributes')) entries.push({ id: 'speaker-attributes', label: $t('settings.speakerAttributes.title') } as VisibleSection);
     if (spkOpen('spk-engine')) entries.push({ id: 'engine-settings', label: $t('settings.engineSettings.title') } as VisibleSection);
+    if (dataOpen('data-retention')) entries.push({ id: 'retention', label: $t('settings.retention.title') } as VisibleSection);
+    if (dataOpen('data-backup')) entries.push({ id: 'backup', label: $t('settings.backup.title') } as VisibleSection);
+    if (dataOpen('data-integrity')) entries.push({ id: 'data-integrity', label: $t('settings.dataIntegrity.title') } as VisibleSection);
+    if (dataOpen('data-search')) entries.push({ id: 'search-indexing', label: $t('settings.searchIndexing.title') } as VisibleSection);
+    if (dataOpen('data-embeddings')) entries.push({ id: 'embedding-migration', label: $t('settings.embeddingMigration.title') } as VisibleSection);
     return entries;
   }
 
@@ -486,6 +506,11 @@
   // The list is unmounted while a search is open, so it also re-reveals when the search closes.
   $: void revealActiveNavItem(effectiveActiveSection, desktopSearchActive);
   $: if (desktopSearchActive) sidebarScrolled = false;
+
+  /** A row is dirty when it, or any legacy id that now opens one of its tabs, has unsaved edits. */
+  function rowDirty(dirty: Record<string, boolean>, row: SettingsSection): boolean {
+    return !!dirty[row] || aliasIdsOf(row).some((id) => !!dirty[id]);
+  }
 
   async function revealActiveNavItem(_section: string, _searching: boolean) {
     await tick();
@@ -902,7 +927,7 @@
                 <button
                   class="nav-item"
                   class:active={effectiveActiveSection === item.id}
-                  class:dirty={$settingsModalStore.dirtyState[item.id]}
+                  class:dirty={rowDirty($settingsModalStore.dirtyState, item.id)}
                   class:locked={item.locked}
                   disabled={item.locked}
                   title={item.locked ? lockReason(item.id) : undefined}
@@ -921,7 +946,7 @@
                         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                       </svg>
                     </span>
-                  {:else if $settingsModalStore.dirtyState[item.id]}
+                  {:else if rowDirty($settingsModalStore.dirtyState, item.id)}
                     <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
                   {/if}
                 </button>
@@ -1233,16 +1258,6 @@
     {/if}
 
     <!-- Search & Indexing Section -->
-    {#if activeSection === 'search-indexing'}
-      <div class="content-section">
-        <h3 class="section-title">{$t('settings.searchIndexing.title')}</h3>
-        <p class="section-description">{$t('settings.searchIndexing.description')}</p>
-        <LazySection load={sectionLoaders.searchIndexing} let:Component>
-          <Component />
-        </LazySection>
-      </div>
-    {/if}
-
     <!-- Groups Section -->
     {#if activeSection === 'groups'}
       <div class="content-section">
@@ -1372,41 +1387,15 @@
 
     <!-- Admin System Settings: removed (retry config moved to task health) -->
 
-    <!-- Embedding Migration Section -->
-    {#if activeSection === 'embedding-migration'}
+    <!-- Data & Storage: retention, media cache, backups, integrity, search index, speaker
+         embeddings (tabs). retention / backup / data-integrity / search-indexing /
+         embedding-migration are kept as ids and open their tab. -->
+    {#if sidebarRowFor(activeSection) === 'data-management'}
       <div class="content-section">
-        <LazySection load={sectionLoaders.embeddingMigration} let:Component>
-          <Component locked={!isSuperAdmin} />
-        </LazySection>
-        <LazySection load={sectionLoaders.embeddingConsistency} lines={3} let:Component>
-          <Component />
-        </LazySection>
-      </div>
-    {/if}
-
-    <!-- Data Integrity Section -->
-    {#if activeSection === 'data-integrity'}
-      <div class="content-section">
-        <LazySection load={sectionLoaders.dataIntegrity} let:Component>
-          <Component />
-        </LazySection>
-      </div>
-    {/if}
-
-    <!-- File Retention Section (includes derived media cache) -->
-    {#if activeSection === 'retention'}
-      <div class="content-section">
-        <LazySection load={sectionLoaders.retention} let:Component>
-          <Component />
-        </LazySection>
-      </div>
-    {/if}
-
-    <!-- Scheduled Database Backups Section -->
-    {#if activeSection === 'backup'}
-      <div class="content-section">
-        <LazySection load={sectionLoaders.backup} let:Component>
-          <Component />
+        <h3 class="section-title">{$t('settings.dataManagement.title')}</h3>
+        <p class="section-description">{$t('settings.dataManagement.description')}</p>
+        <LazySection load={sectionLoaders.dataManagement} let:Component>
+          <Component {...dataAccess} initialTab={dataTabFor(activeSection) ?? 'data-retention'} />
         </LazySection>
       </div>
     {/if}

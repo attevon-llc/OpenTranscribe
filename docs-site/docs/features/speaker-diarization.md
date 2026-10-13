@@ -340,7 +340,7 @@ Automatic detection and repair of inconsistent speaker embeddings:
 
 - Identifies speakers with missing or mismatched embeddings across indices
 - GPU-accelerated batch repair re-extracts embeddings from original audio
-- Admin-triggered via Settings → Speaker Embedding System
+- Admin-triggered via Settings → Data & Storage → Speaker Embedding System
 - Progress tracking with WebSocket notifications
 - Distributed locking prevents concurrent repairs
 

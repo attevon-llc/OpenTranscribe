@@ -39,6 +39,8 @@ export type SettingsSection =
   | 'quarantine'
   | 'chat-admin'
   | 'redaction-policy'
+  // The data-storage topics are tabs of 'data-management'; the five ids below survive as aliases.
+  | 'data-management'
   | 'embedding-migration'
   | 'data-integrity'
   | 'retention'
@@ -89,6 +91,7 @@ const initialState: SettingsModalState = {
     'admin-task-health': false,
     quarantine: false,
     'redaction-policy': false,
+    'data-management': false,
     'embedding-migration': false,
     'data-integrity': false,
     retention: false,

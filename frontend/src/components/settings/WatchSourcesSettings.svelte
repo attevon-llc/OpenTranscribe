@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   /**
    * Watch Sources settings panel — the coordinator.
    *
@@ -7,7 +8,6 @@
    * `watchSources/CLAUDE.md`.
    */
   import { onMount } from 'svelte';
-  import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
@@ -250,7 +250,7 @@
 </script>
 
 {#if loading}
-  <div class="ws-loading"><Spinner /></div>
+  <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
 {:else}
   {#if tabItems.length > 1}
     <Tabs
@@ -431,11 +431,6 @@
 />
 
 <style>
-  .ws-loading {
-    display: flex;
-    justify-content: center;
-    padding: 32px;
-  }
   .scope-toggle {
     display: flex;
     gap: 8px;

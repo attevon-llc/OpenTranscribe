@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "طلب وصول دعم جديد من {{grantee}}.",
   "supportAccess.notify.breakGlass": "بدأ {{grantee}} وصولًا طارئًا إلى {{target}} حتى {{time}}.",
   "supportAccess.notify.review": "مراجعة",
-  "ui.rangeSlider.systemDefault": "الإعداد الافتراضي للنظام: {{value}}"
+  "ui.rangeSlider.systemDefault": "الإعداد الافتراضي للنظام: {{value}}",
+  "settings.dataManagement.title": "البيانات والتخزين",
+  "settings.dataManagement.description": "البيانات المخزّنة وصيانتها: مدة الاحتفاظ بالملفات، وذاكرة الوسائط المؤقتة، والنسخ الاحتياطية لقاعدة البيانات، وفحوصات السلامة، وفهرس البحث، وتضمينات المتحدثين.",
+  "settings.dataManagement.tabs.ariaLabel": "إعدادات البيانات والتخزين"
 }

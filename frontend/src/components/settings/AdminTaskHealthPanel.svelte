@@ -7,12 +7,12 @@
 </script>
 
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import Spinner from '$components/ui/Spinner.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
 
   const dispatch = createEventDispatcher<{ requestConfirm: ConfirmRequest }>();
@@ -198,10 +198,7 @@
   </div>
 
   {#if taskHealthLoading}
-    <div class="loading-state">
-      <Spinner size="large" />
-      <p>{$t('settings.taskHealth.loadingMessage')}</p>
-    </div>
+    <SettingsSkeleton variant="dashboard" label={$t('settings.taskHealth.loadingMessage')} />
   {:else if taskHealthData}
     <div class="task-health-grid">
       <!-- Recovery Actions -->
@@ -413,19 +410,7 @@
     margin-bottom: 0;
   }
 
-  .loading-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    color: var(--text-secondary);
-  }
 
-  .loading-state p {
-    margin: 0;
-    font-size: 0.8125rem;
-  }
 
   .table-container {
     overflow-x: auto;

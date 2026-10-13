@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { CONTEXT_WINDOW_RELATION_KEYS, CONTEXT_WINDOW_STATUS_KEYS, REASONING_OFF_SWITCH_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
@@ -527,19 +528,7 @@
 
 <div class="llm-settings">
   {#if loading}
-    <div class="llm-skeleton">
-      <div class="skeleton-header">
-        <div class="skeleton-line title"></div>
-        <div class="skeleton-chip"></div>
-      </div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card short"></div>
-      <div class="skeleton-section">
-        <div class="skeleton-line title"></div>
-        <div class="skeleton-line full"></div>
-        <div class="skeleton-line mid"></div>
-      </div>
-    </div>
+    <SettingsSkeleton variant="dashboard" label={$t('common.loading')} />
   {:else}
     <!-- Saved Configurations -->
     <div class="saved-configs-section">
@@ -912,64 +901,6 @@
     margin: 0 auto;
   }
 
-  .llm-skeleton {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 0.5rem 0;
-  }
-
-  .skeleton-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .skeleton-chip {
-    width: 80px;
-    height: 28px;
-    border-radius: 6px;
-    background: var(--border-color);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
-
-  .skeleton-card {
-    height: 72px;
-    border-radius: 8px;
-    background: var(--border-color);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
-
-  .skeleton-card.short {
-    height: 48px;
-  }
-
-  .skeleton-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .skeleton-line {
-    height: 12px;
-    border-radius: 4px;
-    background: var(--border-color);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
-
-  .skeleton-line.title {
-    width: 40%;
-    height: 16px;
-  }
-
-  .skeleton-line.full {
-    width: 100%;
-  }
-
-  .skeleton-line.mid {
-    width: 65%;
-  }
 
   .saved-configs-section {
     margin-bottom: 2rem;

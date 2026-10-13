@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "{{grantee}}의 새 지원 액세스 요청이 있습니다.",
   "supportAccess.notify.breakGlass": "{{grantee}}님이 {{target}}에 대한 긴급 액세스를 {{time}}까지 시작했습니다.",
   "supportAccess.notify.review": "검토",
-  "ui.rangeSlider.systemDefault": "시스템 기본값: {{value}}"
+  "ui.rangeSlider.systemDefault": "시스템 기본값: {{value}}",
+  "settings.dataManagement.title": "데이터 및 저장소",
+  "settings.dataManagement.description": "저장된 데이터와 관리: 파일 보관 기간, 미디어 캐시, 데이터베이스 백업, 무결성 검사, 검색 인덱스, 화자 임베딩.",
+  "settings.dataManagement.tabs.ariaLabel": "데이터 및 저장소 설정"
 }

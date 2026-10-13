@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
@@ -174,7 +175,7 @@
 
 <div class="engine-settings">
   {#if loading}
-    <div class="loading">{$t('settings.asrProvider.loading')}</div>
+    <SettingsSkeleton variant="form" count={4} label={$t('settings.asrProvider.loading')} />
   {:else if settings}
     <div class="settings-form">
       <EngineIntro sidecarStatus={settings.diarizer_sidecar_status} />
@@ -468,12 +469,6 @@
     margin-top: 0.5rem;
   }
 
-  .loading {
-    text-align: center;
-    padding: 3rem;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-  }
 
   .settings-form {
     display: flex;

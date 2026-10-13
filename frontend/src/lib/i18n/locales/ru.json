@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "Новый запрос доступа поддержки от {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}}: экстренный доступ к {{target}} начат и действует до {{time}}.",
   "supportAccess.notify.review": "Просмотреть",
-  "ui.rangeSlider.systemDefault": "Системное значение по умолчанию: {{value}}"
+  "ui.rangeSlider.systemDefault": "Системное значение по умолчанию: {{value}}",
+  "settings.dataManagement.title": "Данные и хранилище",
+  "settings.dataManagement.description": "Хранимые данные и их обслуживание: срок хранения файлов, кэш медиа, резервные копии базы данных, проверки целостности, поисковый индекс и эмбеддинги дикторов.",
+  "settings.dataManagement.tabs.ariaLabel": "Настройки данных и хранилища"
 }

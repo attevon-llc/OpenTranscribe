@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
@@ -189,20 +190,7 @@
 
 <div class="auto-label-settings">
   {#if loading}
-    <div class="skeleton-rows">
-      <div class="skeleton-row">
-        <div class="skeleton-text"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-      <div class="skeleton-row">
-        <div class="skeleton-text wide"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-      <div class="skeleton-row">
-        <div class="skeleton-text"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-    </div>
+    <SettingsSkeleton variant="rows" count={3} label={$t('common.loading')} />
   {:else}
     <div class="settings-group">
       <!-- Automatic AI suggestions after transcription (sends transcript text to the AI provider) -->
@@ -580,42 +568,10 @@
   }
 
   /* Skeleton Loading */
-  .skeleton-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 0.5rem 0;
-  }
 
-  .skeleton-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-  }
 
-  .skeleton-text {
-    height: 14px;
-    width: 140px;
-    border-radius: 4px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-text.wide {
-    width: 200px;
-  }
 
-  .skeleton-toggle {
-    height: 24px;
-    width: 44px;
-    border-radius: 12px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
   @media (max-width: 768px) {
     .setting-row {

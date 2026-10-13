@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "Neue Support-Zugriffsanfrage von {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} hat bis {{time}} einen Break-Glass-Zugriff auf {{target}} gestartet.",
   "supportAccess.notify.review": "Prüfen",
-  "ui.rangeSlider.systemDefault": "Systemstandard: {{value}}"
+  "ui.rangeSlider.systemDefault": "Systemstandard: {{value}}",
+  "settings.dataManagement.title": "Daten & Speicher",
+  "settings.dataManagement.description": "Gespeicherte Daten und ihre Pflege: wie lange Dateien aufbewahrt werden, der Medien-Cache, Datenbank-Backups, Integritätsprüfungen, der Suchindex und Sprecher-Embeddings.",
+  "settings.dataManagement.tabs.ariaLabel": "Daten- und Speichereinstellungen"
 }

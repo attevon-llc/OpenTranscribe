@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "{{grantee}} から新しいサポートアクセスの申請があります。",
   "supportAccess.notify.breakGlass": "{{grantee}} が {{target}} への緊急アクセスを {{time}} まで開始しました。",
   "supportAccess.notify.review": "確認",
-  "ui.rangeSlider.systemDefault": "システムの既定値: {{value}}"
+  "ui.rangeSlider.systemDefault": "システムの既定値: {{value}}",
+  "settings.dataManagement.title": "データとストレージ",
+  "settings.dataManagement.description": "保存されたデータとその管理：ファイルの保持期間、メディアキャッシュ、データベースのバックアップ、整合性チェック、検索インデックス、話者エンベディング。",
+  "settings.dataManagement.tabs.ariaLabel": "データとストレージの設定"
 }

@@ -353,7 +353,9 @@ describe('Transcription and Speaker Identification sections', () => {
             }
           : url === '/embeddings/migration/status'
             ? { current_mode: 'v4', migration_needed: false }
-            : {},
+            : url === '/admin/backup/list'
+              ? { backups: [] }
+              : {},
     }));
     setUser(role);
     settingsModalStore.open(section);
@@ -444,7 +446,7 @@ describe('Transcription and Speaker Identification sections', () => {
     expect(tab(container, 'tx-language')).not.toBeNull();
   });
 
-  it('follows the Maintenance link card to the Speaker Embedding System section', async () => {
+  it('follows the Maintenance link card to the Speaker Embedding tab of Data & Storage', async () => {
     const { container } = await openAs('super_admin', 'speaker-identification');
     await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
     const button = await waitFor(() => {
@@ -456,8 +458,11 @@ describe('Transcription and Speaker Identification sections', () => {
 
     await waitFor(() =>
       expect(
-        navItem(container, 'settings.embeddingMigration.title')?.classList.contains('active')
+        navItem(container, 'settings.dataManagement.title')?.classList.contains('active')
       ).toBe(true)
+    );
+    await waitFor(() =>
+      expect(tab(container, 'data-embeddings')?.getAttribute('aria-selected')).toBe('true')
     );
   });
 
@@ -510,12 +515,12 @@ describe('Transcription and Speaker Identification sections', () => {
       await fireEvent.click(button);
     }
 
-    it('scrolls the Speaker Embedding System row into view when the link card jumps there', async () => {
+    it('scrolls the Data & Storage row into view when the link card jumps there', async () => {
       const { container } = await openAs('super_admin', 'speaker-identification');
       scrolled.length = 0;
       await followMaintenanceLink(container);
 
-      const embedding = navItem(container, 'settings.embeddingMigration.title');
+      const embedding = navItem(container, 'settings.dataManagement.title');
       await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
       expect(embedding?.classList.contains('active')).toBe(true);
       const call = scrolled.find((c) => c.row === embedding);
@@ -533,9 +538,92 @@ describe('Transcription and Speaker Identification sections', () => {
       scrolled.length = 0;
       await followMaintenanceLink(container);
 
-      const embedding = navItem(container, 'settings.embeddingMigration.title');
+      const embedding = navItem(container, 'settings.dataManagement.title');
       await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
       expect(scrolled.find((c) => c.row === embedding)?.opts?.behavior).toBe('auto');
+    });
+  });
+
+  describe('Data & Storage row (#1243 item 8)', () => {
+    const TABS = [
+      'data-retention',
+      'data-cache',
+      'data-backup',
+      'data-integrity',
+      'data-search',
+      'data-embeddings',
+    ];
+
+    it('replaces the five System rows with one row of six tabs for a super_admin', async () => {
+      const { container } = await openAs('super_admin', 'data-management');
+      for (const key of [
+        'settings.retention.title',
+        'settings.backup.title',
+        'settings.dataIntegrity.title',
+        'settings.searchIndexing.title',
+        'settings.embeddingMigration.title',
+      ]) {
+        expect(navItem(container, key), key).toBeNull();
+      }
+      expect(navItem(container, 'settings.dataManagement.title')).not.toBeNull();
+      for (const id of TABS) expect(tab(container, id), id).not.toBeNull();
+      expect(tab(container, 'data-retention')?.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('uses the shared sticky tab strip, one tab per topic', async () => {
+      const { container } = await openAs('super_admin', 'data-management');
+      const strip = container.querySelector(
+        '[data-testid="data-management-section"] .tabs.sticky'
+      ) as HTMLElement;
+      expect(strip.getAttribute('aria-label')).toBe('settings.dataManagement.tabs.ariaLabel');
+      expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(6);
+    });
+
+    it('shows an admin the backups tab locked, not missing', async () => {
+      const { container } = await openAs('admin', 'data-management');
+      const backup = tab(container, 'data-backup');
+      expect(backup).not.toBeNull();
+      expect(backup?.disabled).toBe(true);
+      expect(tab(container, 'data-integrity')?.disabled).toBe(false);
+    });
+
+    it('gives a plain user no row', async () => {
+      const { container } = await openAs('user', 'recording');
+      expect(navItem(container, 'settings.dataManagement.title')).toBeNull();
+    });
+
+    it.each([
+      ['retention', 'data-retention'],
+      ['backup', 'data-backup'],
+      ['data-integrity', 'data-integrity'],
+      ['embedding-migration', 'data-embeddings'],
+      // search-indexing is covered by sectionAliases.test.ts: its panel needs a full search-index
+      // API fixture that this suite's blanket axios mock does not provide.
+    ] as const)('the old id %s opens the %s tab of the Data & Storage row', async (id, tabId) => {
+      const { container } = await openAs('super_admin', id);
+      expect(
+        navItem(container, 'settings.dataManagement.title')?.classList.contains('active')
+      ).toBe(true);
+      await waitFor(() =>
+        expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true')
+      );
+    });
+
+    it('keeps the modal heading the first .section-title in the content area', async () => {
+      const { container } = await openAs('super_admin', 'retention');
+      const first = container.querySelector('.settings-content .section-title');
+      expect(first?.textContent?.trim()).toBe('settings.dataManagement.title');
+    });
+
+    it('shows the unsaved-changes dot on the row when a legacy-id panel is dirty', async () => {
+      const { container } = await openAs('super_admin', 'data-management');
+      settingsModalStore.setDirty('retention', true);
+      await waitFor(() =>
+        expect(
+          navItem(container, 'settings.dataManagement.title')?.classList.contains('dirty')
+        ).toBe(true)
+      );
+      settingsModalStore.setDirty('retention', false);
     });
   });
 

@@ -19,6 +19,11 @@ AdminTaskHealthPanel).
   New section = add a loader to `sectionLoaders` (and `LEAD_LOADER`), never a static import in the modal;
   keep `settingsModalLoader.ts` free of component imports (root layout budget). Tests that open a
   section should `await` the panel (`waitForOpen` in `SettingsModal.test.ts` waits out the skeleton).
+- **Loading looks the same everywhere: `ui/SettingsSkeleton`** (`variant` form / rows / chips /
+  dashboard, drawn in the shape of the content on the shared shimmer). `LazySection` shows it while a
+  chunk loads and panels show it while their data loads, so there is no hand-made `.skeleton-*` box,
+  bare "Loading..." text or page-sized spinner (`settingsLoadingStates.test.ts` fails on them).
+  `SettingsModalShell` is the one allowed exception (it paints before anything else is loaded).
 - **Every tab strip is `<Tabs sticky>`** (`ui/Tabs.svelte`; `wrap` for many tabs). Hand-rolled
   `role="tablist"` / `.tabs` rows fail `settingsTabsSticky.test.ts`.
 - `../SettingsModal.svelte` — the **shell/router**: vertical sidebar nav + `{#if activeSection}`
@@ -48,12 +53,18 @@ AdminTaskHealthPanel).
 
 ## Authentication panels
 
-`AuthenticationSettings.svelte` is a tab shell over `LocalAuthSettings`, `LDAPSettings`,
+`AuthenticationSettings.svelte` loads each tab panel on demand (`authTabLoaders` in
+`$lib/settings/sectionLoaders`, through `LazySection`), so opening the section no longer pulls every IdP
+form. The configuration fetch runs in parallel with the active panel's chunk; panels that take config
+wait for it behind a skeleton, self-contained ones (mappings, SCIM, directory sync, change history) do not.
+`configsReady` starts false (the Local form must never paint coded defaults before the stored values
+arrive, and mounting it early fetched the password policy twice) and a save re-reads configuration
+without blanking the form. It is a tab shell over `LocalAuthSettings`, `LDAPSettings`,
 **`OIDCSettings`** (renamed from `KeycloakSettings`, which was deleted — do not resurrect a
 vendor-named panel), `PKISettings`, `ProxySettings` (trusted-header/reverse-proxy auth),
 `SAMLSettings`, `GroupMappingSettings` (the "mappings" tab, LDAP/OIDC sources only — see
 below), `SessionSettings`, `AuthMailDesignation` (the "mail" tab) and `AuthConfigAuditPanel`.
-Ten tabs total: local, ldap, oidc, pki, proxy, saml, mappings, session, mail, audit.
+Twelve tabs: local, ldap, oidc, pki, proxy, saml, mappings, scim, directorySync, session, mail, audit.
 
 - **The Local tab renders one form whose fields belong to FOUR backend categories**
   (`local`, `password_policy`, `mfa`, `lockout`). `PUT /admin/auth-config/{category}` validates
@@ -114,7 +125,7 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   render block. Locked sections are excluded from the settings search index (a search hit
   promises a destination you can open).
 - A panel nested inside another section has no section id of its own; report dirty state to the
-  parent (see `CacheSettings` → `RetentionSettings`) instead of inventing a store key with no
+  parent (see `CacheSettings` → `DataManagementSection`) instead of inventing a store key with no
   nav entry.
 - **Sidebar grouping is by WHO changes it and HOW OFTEN, not by subject** (issue #861), with
   rows inside a group ordered by expected frequency of use. Keep groups at ~6 rows or fewer; if
@@ -140,6 +151,14 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   `spk-detection` / `spk-attributes` / `spk-engine` / `spk-maintenance`. Which tabs exist comes from
   `$lib/settings/transcriptionTabs` and `speakerIdentificationTabs` (capabilities and role), never inline.
   Tab ids are global DOM ids (`tab-<id>`), hence the `tx-` / `spk-` namespaces.
+- **Data & Storage is one System row of six tabs** (`data-management`; `DataManagementSection`): File
+  Retention, Media Cache, Database Backups, Data Integrity, Search & Indexing, Speaker Embedding System.
+  Tabs come from `$lib/settings/dataManagementTabs` (admin; backups are super_admin and render locked for an
+  admin; each tab also needs its `admin.*` capability). `retention`, `backup`, `data-integrity`,
+  `search-indexing` and `embedding-migration` are aliases that open their tab (`dataTabFor`), judged for
+  privilege by the row that holds them (`SECTION_MIN_ROLE['data-management']`). The Retention and Backup panels
+  still report dirty state under their legacy ids; the sidebar dot for the row folds those in (`aliasIdsOf`).
+  Cache dispatches `dirty` and the shell reports it as `data-management`.
 - **Old section ids are aliases, not rows** (`$lib/settings/sectionAliases`): `asr-provider` and
   `custom-vocabulary` open Transcription at their tab, `engine-settings` and `speaker-attributes` open
   Speaker Identification at theirs. They stay in the `SettingsSection` union so deep links, settings
@@ -159,7 +178,7 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   with `●`. Panels mount on first visit and then stay mounted (`hidden`), so edits survive a tab switch.
   Any child form in a shell must dispatch `change`, never call `setDirty` itself.
 - _Maintenance_ holds `SpeakerAttributeBulkPanel` plus a link card that dispatches `navigate` with
-  `embedding-migration`; **Speaker Embedding System** stays a System row (no second copy).
+  `embedding-migration`, which now opens the Speaker Embedding System tab of Data & Storage (no second copy).
 - **E2E-guarded:** `.speaker-detection-settings` (its `.btn-primary` is the Save button, so
   `PyannoteCredentialForm` uses its own button classes), the modal-level `.section-title` must remain the
   first `.section-title` in `.settings-content`, and `#speaker-behavior`, `#min-speakers`, `#max-speakers`.

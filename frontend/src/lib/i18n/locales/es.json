@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "Nueva solicitud de acceso de soporte de {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} inició un acceso de emergencia a {{target}} hasta las {{time}}.",
   "supportAccess.notify.review": "Revisar",
-  "ui.rangeSlider.systemDefault": "Valor predeterminado del sistema: {{value}}"
+  "ui.rangeSlider.systemDefault": "Valor predeterminado del sistema: {{value}}",
+  "settings.dataManagement.title": "Datos y almacenamiento",
+  "settings.dataManagement.description": "Los datos almacenados y su mantenimiento: cuánto tiempo se conservan los archivos, la caché de medios, las copias de seguridad de la base de datos, las comprobaciones de integridad, el índice de búsqueda y los embeddings de hablantes.",
+  "settings.dataManagement.tabs.ariaLabel": "Ajustes de datos y almacenamiento"
 }

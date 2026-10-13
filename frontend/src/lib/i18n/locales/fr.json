@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "Nouvelle demande d'accès support de {{grantee}}.",
   "supportAccess.notify.breakGlass": "{{grantee}} a démarré un accès d'urgence à {{target}} jusqu'à {{time}}.",
   "supportAccess.notify.review": "Examiner",
-  "ui.rangeSlider.systemDefault": "Valeur par défaut du système : {{value}}"
+  "ui.rangeSlider.systemDefault": "Valeur par défaut du système : {{value}}",
+  "settings.dataManagement.title": "Données et stockage",
+  "settings.dataManagement.description": "Les données stockées et leur entretien : durée de conservation des fichiers, cache multimédia, sauvegardes de la base de données, contrôles d’intégrité, index de recherche et empreintes vocales des locuteurs.",
+  "settings.dataManagement.tabs.ariaLabel": "Paramètres des données et du stockage"
 }

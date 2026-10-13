@@ -5775,5 +5775,8 @@
   "supportAccess.notify.requested": "{{grantee}} 提交了新的支持访问请求。",
   "supportAccess.notify.breakGlass": "{{grantee}} 已开始对 {{target}} 的紧急访问，持续到 {{time}}。",
   "supportAccess.notify.review": "查看",
-  "ui.rangeSlider.systemDefault": "系统默认值：{{value}}"
+  "ui.rangeSlider.systemDefault": "系统默认值：{{value}}",
+  "settings.dataManagement.title": "数据与存储",
+  "settings.dataManagement.description": "已存储的数据及其维护：文件保留时长、媒体缓存、数据库备份、完整性检查、搜索索引和说话人嵌入。",
+  "settings.dataManagement.tabs.ariaLabel": "数据与存储设置"
 }

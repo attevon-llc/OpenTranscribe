@@ -18,22 +18,29 @@
  *     Custom properties cascade by inheritance rather than specificity, so
  *     redefining them per breakpoint applies to both.
  *
- * `--file-list-columns-selecting` is the header's template in selection mode:
- * its checkbox is a cell *inside* the header grid, whereas a row's checkbox
- * sits outside `.file-list-link`, so only the header gains a column.
+ * Selection mode prepends a `--file-list-check` track to the SAME column list
+ * (`--file-list-columns-selecting`). The header, the skeleton and the real rows all
+ * lay out on it: a real row is a grid on that template whose `.file-list-link` is a
+ * `subgrid` spanning the data tracks, so header and row cells cannot disagree on a
+ * column edge. They did while the row was `40px 1fr` with a differently padded link
+ * and the header carried its own 1rem padding before its checkbox: in selection mode
+ * every header label sat 24px right of its data (more in RTL, where the row's
+ * physical paddings did not mirror). `--file-list-pad` / `--file-list-gap` are the
+ * outer padding and column gap every one of them uses.
  */
 
 .file-list {
+  --file-list-pad: 1rem;
+  --file-list-gap: 0.5rem;
+  --file-list-check: 40px;
   --file-list-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
-  --file-list-columns-selecting: 40px 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px
-    110px;
+  --file-list-columns-selecting: var(--file-list-check) var(--file-list-columns);
 }
 
 /* Tablet: speakers and size columns are hidden. */
 @media (max-width: 1024px) {
   .file-list {
     --file-list-columns: 48px 1fr 90px 100px 110px;
-    --file-list-columns-selecting: 40px 48px 1fr 90px 100px 110px;
   }
 }
 
@@ -41,6 +48,5 @@
 @media (max-width: 768px) {
   .file-list {
     --file-list-columns: 40px 1fr 80px;
-    --file-list-columns-selecting: 40px 40px 1fr 80px;
   }
 }

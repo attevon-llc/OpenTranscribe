@@ -14,7 +14,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
-  import { modelCapability } from '$lib/settings/asrCapabilities';
+  import { modelCapability, optionWithFlags, providerCapability } from '$lib/settings/asrCapabilities';
   import { selectionNotices } from '$lib/settings/speakerSources';
   import { notAutoActivatedMessages } from '$lib/settings/asrOutcome';
   import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
@@ -86,7 +86,12 @@
   $: modelNotices = capability
     ? selectionNotices(
         diarizationSource ?? 'off',
-        { returnsSpeakers: capability.returnsSpeakers, timing: capability.timing },
+        {
+          returnsSpeakers: capability.returnsSpeakers,
+          timing: capability.timing,
+          provider: formData.provider,
+          model: formData.model_name
+        },
         deploymentMode
       ).map((notice) => ({
         ...notice,
@@ -267,7 +272,11 @@
             <option value="">{$t('settings.asrProvider.selectProvider')}</option>
             {#each selectableProviders as p}
               <option value={p.provider}>
-                {ASRSettingsApi.getProviderDisplayName(p.provider)}
+                {optionWithFlags(
+                  ASRSettingsApi.getProviderDisplayName(p.provider),
+                  providerCapability(providers, p.provider),
+                  $t
+                )}
                 {#if p.status === 'experimental'} &#9888; ({$t('settings.asrProvider.experimentalShort')}){/if}
                 {#if !p.sdk_available} ({$t('settings.asrProvider.missingSDK')}){/if}
               </option>
@@ -281,9 +290,6 @@
         {#if selectedProvider}
           <!-- Provider capabilities -->
           <div class="capabilities">
-            {#if selectedProvider.supports_diarization}
-              <span class="cap-badge">{$t('settings.asrProvider.diarizationQuality')}</span>
-            {/if}
             {#if selectedProvider.supports_vocabulary}
               <span class="cap-badge">{$t('settings.asrProvider.capVocabulary')}</span>
             {/if}
@@ -313,7 +319,7 @@
                 <option value="">{$t('settings.asrProvider.selectModel')}</option>
                 {#each availableModels as m}
                   <option value={m.id}>
-                    {m.name}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{m.description ? ` — ${m.description}` : ''}
+                    {optionWithFlags(m.name, modelCapability(providers, formData.provider, m.id), $t)}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{m.description ? ` — ${m.description}` : ''}
                   </option>
                 {/each}
               </select>
@@ -331,13 +337,11 @@
                 <CapabilityBadges
                   returnsSpeakers={capability.returnsSpeakers}
                   timing={capability.timing}
+                  local={formData.provider === 'local'}
+                  lite={deploymentMode === 'lite'}
+                  explain
                 />
               </div>
-              {#if capability.timing === 'none'}
-                <p class="field-hint" data-testid="model-no-timing-info">
-                  {$t('settings.asrProvider.timing.noneInfo')}
-                </p>
-              {/if}
               {#if modelNotices.length > 0}
                 <ul class="model-notices" data-testid="model-notices">
                   {#each modelNotices as notice (notice.code)}

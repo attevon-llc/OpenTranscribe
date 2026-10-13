@@ -1,4 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { optionWithFlags } from '$lib/settings/asrCapabilities';
+  import {
+    loadPerFileFacts,
+    optionName,
+    perFileOptions,
+    type PerFileFacts,
+  } from '$lib/settings/perFileModel';
   import { t } from '$stores/locale';
   import type { TranscriptionSystemDefaults } from '$lib/api/transcriptionSettings';
 
@@ -44,11 +52,18 @@
     return $t('uploader.reviewDefaults');
   }
 
-  function getModelLabel(): string {
-    return selectedWhisperModel === 'base'
-      ? $t('uploader.fastProcessing')
-      : `${$t('uploader.highQuality')} (${adminDefaultModel})`;
-  }
+  // The same option wording as the Model step, so the review names what will really run (a saved
+  // cloud provider, not this server's model) with the same flags.
+  let facts: PerFileFacts | null = null;
+  onMount(() => {
+    void loadPerFileFacts().then((loaded) => (facts = loaded));
+  });
+
+  $: modelLabel = (() => {
+    const options = perFileOptions(facts, adminDefaultModel);
+    const chosen = options.find((option) => option.value === selectedWhisperModel) ?? options[0];
+    return optionWithFlags(optionName(chosen, $t), chosen.capability, $t);
+  })();
 </script>
 
 <div class="step-review">
@@ -112,7 +127,7 @@
 
     <div class="review-row">
       <span class="review-label">{$t('uploader.reviewModel')}</span>
-      <span class="review-value">{getModelLabel()}</span>
+      <span class="review-value">{modelLabel}</span>
     </div>
 
     <div class="review-row">

@@ -32,7 +32,11 @@ the three media-source panels (file / URL / record) and the wizard steps of the 
   Model step now comes BEFORE Speakers. Prefill and the "blank means system range under _use
   system defaults_" rule live in `$lib/api/transcriptionSettings` (`speakerPrefill`,
   `speakerSubmitRange`), shared with `SelectiveReprocessModal`.
-- `UploadStepModel.svelte`, `UploadStepReview.svelte` — model/summary toggles and final summary.
+- `UploadStepModel.svelte`, `UploadStepReview.svelte` — model/summary toggles and final summary. The model
+  choice is `$components/PerFileModelSelect.svelte` (shared with the reprocess dialog): each option names what
+  will really run (the user's saved cloud provider, else this server's model; no Fast option on lite) and
+  carries its speaker/timing flags from the ASR catalog (#1243). The Review row reads the same options so the
+  two steps agree.
 
 ## Conventions / patterns
 

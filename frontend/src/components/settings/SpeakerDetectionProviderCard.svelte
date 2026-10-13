@@ -15,10 +15,15 @@
   import { createEventDispatcher } from 'svelte';
   import type { PipelineView } from '$lib/api/pipeline';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
-  import type { DiarizerChoice } from '$lib/settings/asrCapabilities';
+  import {
+    optionWithFlags,
+    type DiarizerChoice,
+    type SavedProviderRow
+  } from '$lib/settings/asrCapabilities';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { fixTargets, isPipelineIssueCode } from '$lib/settings/pipelineIssues';
   import {
+    billingNoteKey,
     selectionNotices,
     selectionWhere,
     speakerSourceOptions,
@@ -27,6 +32,7 @@
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
   import Chip from '../ui/Chip.svelte';
+  import CapabilityBadges from './CapabilityBadges.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import PyannoteCredentialForm from './PyannoteCredentialForm.svelte';
   import IssueRow from './IssueRow.svelte';
@@ -37,6 +43,8 @@
   export let diarizationAsrConfigUuid: string | null = null;
   /** Saved configs that may be chosen as the detector (they return speakers). */
   export let choices: DiarizerChoice[] = [];
+  /** Every saved config with what it returns, so the card can say which ones qualify. */
+  export let saved: SavedProviderRow[] = [];
   /** The saved pipeline, for the transcription model's facts and the deployment mode. */
   export let pipeline: PipelineView | null = null;
   /** The deployment manages the source; the select is read-only. */
@@ -58,7 +66,13 @@
     asrConfigEnabled: keyEnabled
   });
   $: selected = options.find((option) => option.value === diarizationSource);
-  $: notices = selectionNotices(diarizationSource, transcriptionFacts(pipeline), mode).map(
+  $: chosen = choices.find((choice) => choice.uuid === diarizationAsrConfigUuid);
+  $: notices = selectionNotices(
+    diarizationSource,
+    transcriptionFacts(pipeline),
+    mode,
+    chosen
+  ).map(
     (notice) => ({
       ...notice,
       messageKey: isPipelineIssueCode(notice.code) ? PIPELINE_ISSUE_KEYS[notice.code] : null,
@@ -68,7 +82,7 @@
       )
     })
   );
-  $: chosen = choices.find((choice) => choice.uuid === diarizationAsrConfigUuid);
+  $: billingNote = billingNoteKey(diarizationSource, pipeline);
   $: where = selectionWhere(diarizationSource, pipeline, chosen);
 
   // Choosing another provider must name one; start on the first that can serve.
@@ -152,7 +166,7 @@
           {:else if diarizationSource === 'local'}
             {$t('settings.speakerIdentification.credential.local')}
           {:else if diarizationSource === 'asr_config'}
-            {$t('settings.speakerIdentification.source.asrConfigNote')}
+            {$t('settings.speakerIdentification.credential.asrConfig')}
           {:else}
             {$t('settings.speakerIdentification.source.pyannoteHint')}
           {/if}
@@ -172,10 +186,19 @@
           >
             {#each choices as choice (choice.uuid)}
               <option value={choice.uuid}>
-                {choice.name} ({choice.providerLabel}, {choice.modelName})
+                {optionWithFlags(
+                  `${choice.name} (${choice.providerLabel}, ${choice.modelName})`,
+                  choice.timing ? { returnsSpeakers: choice.returnsSpeakers, timing: choice.timing } : null,
+                  $t
+                )}
               </option>
             {/each}
           </select>
+          {#if chosen}
+            <p class="chosen-flags" data-testid="asr-config-flags">
+              <CapabilityBadges returnsSpeakers={chosen.returnsSpeakers} timing={chosen.timing} />
+            </p>
+          {/if}
         {:else}
           <p class="field-desc">
             {$t('settings.speakerIdentification.source.asrConfigNone')}
@@ -189,6 +212,25 @@
             </button>
           </p>
         {/if}
+        {#if saved.length > 0}
+          <p class="field-desc saved-heading">{$t('settings.speakerIdentification.source.asrConfigSaved')}</p>
+          <ul class="saved-list" data-testid="asr-config-saved">
+            {#each saved as row (row.uuid)}
+              <li data-testid="asr-config-saved-row" data-qualifies={row.returnsSpeakers && !row.transcribing}>
+                <span class="saved-name">{row.name}</span>
+                <span class="saved-meta">{row.providerLabel}, {row.modelName}</span>
+                <CapabilityBadges returnsSpeakers={row.returnsSpeakers} timing={row.timing} />
+                {#if row.transcribing}
+                  <span class="saved-meta">{$t('settings.speakerIdentification.source.asrConfigTranscribing')}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
+
+      {#if billingNote}
+        <p class="field-desc" data-testid="detection-billing-note">{$t(billingNote)}</p>
       {/if}
 
       {#if diarizationSource === 'pyannote' && keyEnabled}
@@ -219,6 +261,45 @@
   .sub-label {
     display: block;
     margin-top: 0.75rem;
+  }
+
+  .chosen-flags {
+    margin: 0.5rem 0 0;
+  }
+
+  .saved-heading {
+    margin-top: 0.75rem;
+  }
+
+  .saved-list {
+    list-style: none;
+    margin: 0.25rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .saved-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .saved-list li[data-qualifies='false'] .saved-name {
+    color: var(--text-secondary);
+  }
+
+  .saved-name {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .saved-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
   }
 
   .link-button {

@@ -261,6 +261,21 @@
       || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
   }
 
+  // What this server's model returns, and what the transcription now in use returns, both from
+  // the catalog; the status bar spells out what the second means for speaker detection.
+  $: localCapability = activeLocalModel ? modelCapability(providers, 'local', activeLocalModel) : null;
+  $: activeSaved =
+    configurations.find((c) => c.uuid === activeConfigurationId) ??
+    sharedConfigurations.find((c) => c.uuid === activeConfigurationId) ??
+    null;
+  $: inUse = usingLocalDefault
+    ? isLite
+      ? null
+      : localCapability
+    : activeSaved
+      ? modelCapability(providers, activeSaved.provider, activeSaved.model_name)
+      : null;
+
   async function handleShareToggle(config: UserASRSettingsResponse) {
     const newShared = !config.is_shared;
     const idx = configurations.findIndex(c => c.uuid === config.uuid);
@@ -386,9 +401,12 @@
           </div>
           <div class="model-capabilities">
             {#if localModelInfo}
-              <span class="cap-badge" class:cap-yes={localModelInfo.supports_diarization} class:cap-no={!localModelInfo.supports_diarization}>
-                {localModelInfo.supports_diarization ? '✓' : '✗'} {$t('settings.asrProvider.diarizationQuality')}
-              </span>
+              {#if localCapability}
+                <CapabilityBadges
+                  returnsSpeakers={localCapability.returnsSpeakers}
+                  timing={localCapability.timing}
+                />
+              {/if}
               <span class="cap-badge" class:cap-yes={localModelInfo.supports_translation} class:cap-no={!localModelInfo.supports_translation}>
                 {localModelInfo.supports_translation ? '✓' : '✗'} {$t('settings.asrProvider.capTranslation')}
               </span>
@@ -480,6 +498,23 @@
           </button>
         {/if}
       {/if}
+    </div>
+
+    <!-- What the transcription in use returns, what that means, and the key to the pills -->
+    <div class="in-use-flags" data-testid="in-use-flags">
+      {#if inUse}
+        <CapabilityBadges
+          returnsSpeakers={inUse.returnsSpeakers}
+          timing={inUse.timing}
+          local={usingLocalDefault}
+          lite={isLite}
+          explain
+        />
+      {/if}
+      <details class="flags-legend">
+        <summary>{$t('settings.asrProvider.legend.title')}</summary>
+        <CapabilityBadges legend />
+      </details>
     </div>
 
     <!-- Section header -->
@@ -754,6 +789,26 @@
   }
 
   .status-text { flex: 1; }
+
+  .in-use-flags {
+    margin: -0.5rem 0 1.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .flags-legend {
+    margin-top: 0.5rem;
+  }
+
+  .flags-legend summary {
+    cursor: pointer;
+    width: fit-content;
+    color: var(--primary-on-surface);
+  }
+
+  .flags-legend[open] summary {
+    margin-bottom: 0.5rem;
+  }
 
   .btn-use-local {
     margin-left: auto;

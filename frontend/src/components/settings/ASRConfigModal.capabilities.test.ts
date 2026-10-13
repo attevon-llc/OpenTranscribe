@@ -101,6 +101,10 @@ async function pick(provider: string, model?: string) {
 const badges = () => document.querySelector('[data-testid="model-capabilities"]');
 const value = (testid: string) =>
   badges()?.querySelector(`[data-testid="${testid}"]`)?.getAttribute('data-value');
+const noTimingNote = () =>
+  document.querySelector(
+    '[data-testid="capability-note"][data-key="settings.asrProvider.timing.noneInfo"]'
+  );
 const noticeCodes = () =>
   Array.from(document.querySelectorAll<HTMLElement>('[data-testid="model-notice"]')).map(
     (n) => n.dataset.code
@@ -127,7 +131,7 @@ describe('the model picker says what the chosen model returns', () => {
     await open();
     await pick('openai', 'gpt-4o-transcribe');
     expect(value('badge-timing')).toBe('none');
-    expect(document.querySelector('[data-testid="model-no-timing-info"]')).not.toBeNull();
+    expect(noTimingNote()).not.toBeNull();
     expect(noticeCodes()).toEqual(['asr_no_timing_for_speakers']);
   });
 
@@ -142,7 +146,7 @@ describe('the model picker says what the chosen model returns', () => {
     await open({ diarizationSource: 'off' });
     await pick('openai', 'gpt-4o-transcribe');
     expect(noticeCodes()).toEqual([]);
-    expect(document.querySelector('[data-testid="model-no-timing-info"]')).not.toBeNull();
+    expect(noTimingNote()).not.toBeNull();
   });
 
   it('on lite, a text-only model is an error that points at another speaker provider', async () => {
@@ -156,5 +160,41 @@ describe('the model picker says what the chosen model returns', () => {
     await pick('openai');
     await waitFor(() => expect(value('badge-timing')).toBe('none'));
     expect(value('badge-speakers')).toBe('text-only');
+  });
+});
+
+describe('every native option in the editor carries its flags (#1243)', () => {
+  const optionTexts = (selector: string) =>
+    Array.from(document.querySelectorAll(`${selector} option`)).map((o) => o.textContent ?? '');
+
+  it('marks a provider whose models differ as varying, and one that agrees with its flags', async () => {
+    await open();
+    await waitFor(() => expect(document.querySelector('#asr-provider')).not.toBeNull());
+    const texts = optionTexts('#asr-provider');
+    expect(texts.find((t) => t.includes('openai'))).toContain('settings.asrProvider.optionVaries');
+    const deepgram = texts.find((t) => t.includes('deepgram')) ?? '';
+    expect(deepgram).toContain('settings.asrProvider.speakersIncluded');
+    expect(deepgram).toContain('settings.asrProvider.timing.word');
+  });
+
+  it('gives each model its own speakers and timing, so mixing is visible before choosing', async () => {
+    await open();
+    await pick('openai');
+    const texts = optionTexts('#asr-model');
+    const model = (name: string) => texts.find((t) => t.includes(name)) ?? '';
+    expect(model('whisper-1')).toContain('settings.asrProvider.textOnly');
+    expect(model('whisper-1')).toContain('settings.asrProvider.timing.segment');
+    expect(model('"name":"gpt-4o-transcribe"')).toContain('settings.asrProvider.timing.none');
+    expect(model('gpt-4o-transcribe-diarize')).toContain('settings.asrProvider.speakersIncluded');
+  });
+
+  it('explains the chosen model with the shared note instead of its own paragraph', async () => {
+    await open();
+    await pick('openai', 'whisper-1');
+    expect(
+      document.querySelector(
+        '[data-testid="capability-note"][data-key="settings.asrProvider.implication.textOnly"]'
+      )
+    ).not.toBeNull();
   });
 });

@@ -9,6 +9,7 @@
   import { toastStore } from '../stores/toast';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
+  import PerFileModelSelect from './PerFileModelSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -574,14 +575,11 @@
                     <label for="reprocess-model-select">
                       {$t('uploader.whisperModel')}
                     </label>
-                    <select id="reprocess-model-select" bind:value={selectedReprocessModel} class="model-select">
-                      <option value={null}>
-                        {$t('uploader.highQuality')} ({adminDefaultModel})
-                      </option>
-                      <option value="base">
-                        {$t('uploader.fastProcessing')}
-                      </option>
-                    </select>
+                    <PerFileModelSelect
+                      id="reprocess-model-select"
+                      bind:value={selectedReprocessModel}
+                      adminModel={adminDefaultModel}
+                    />
                     {#if selectedReprocessModel === 'base'}
                       <p class="model-hint-text">{$t('uploader.fastProcessingHint')}</p>
                     {/if}
@@ -1284,23 +1282,6 @@
     color: var(--text-muted);
   }
 
-  .model-select {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-background, var(--card-background));
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    cursor: pointer;
-  }
-
-  .model-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-
   .model-hint-text {
     margin: 0.35rem 0 0;
     font-size: 0.78rem;
@@ -1423,9 +1404,7 @@
       padding: 0.75rem;
     }
 
-    .setting-field input,
-    .setting-field select,
-    .model-select {
+    .setting-field input {
       min-height: 44px;
       font-size: 1rem;
     }

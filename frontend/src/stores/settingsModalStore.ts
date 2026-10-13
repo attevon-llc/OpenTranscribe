@@ -56,7 +56,11 @@ export type SettingsSection =
 interface SettingsModalState {
   isOpen: boolean;
   activeSection: SettingsSection;
-  dirtyState: Record<SettingsSection, boolean>;
+  /**
+   * Sparse: a section appears once something reports it dirty. Alias ids (a legacy id that now
+   * opens a tab of another row) are never tracked here; read a row's dirt through its own id.
+   */
+  dirtyState: Partial<Record<SettingsSection, boolean>>;
 }
 
 const initialState: SettingsModalState = {
@@ -70,38 +74,19 @@ const initialState: SettingsModalState = {
     transcription: false,
     'speaker-identification': false,
     'organization-context': false,
-    'speaker-attributes': false,
     download: false,
     'ai-prompts': false,
     'llm-provider': false,
     'auto-labeling': false,
-    'search-indexing': false,
     groups: false,
-    'asr-provider': false,
-    'custom-vocabulary': false,
     'content-redaction': false,
     chat: false,
     'chat-admin': false,
-    'engine-settings': false,
-    'system-statistics': false,
-    billing: false,
-    usage: false,
-    team: false,
-    'admin-users': false,
-    'admin-task-health': false,
-    quarantine: false,
     'redaction-policy': false,
-    'data-management': false,
-    'embedding-migration': false,
-    'data-integrity': false,
     retention: false,
     backup: false,
     'media-sources': false,
     'watch-sources': false,
-    'support-access': false,
-    'support-access-requests': false,
-    authentication: false,
-    'audit-logs': false,
   },
 };
 
@@ -156,7 +141,7 @@ function createSettingsModalStore() {
             acc[key as SettingsSection] = false;
             return acc;
           },
-          {} as Record<SettingsSection, boolean>
+          {} as Partial<Record<SettingsSection, boolean>>
         ),
       }));
     },

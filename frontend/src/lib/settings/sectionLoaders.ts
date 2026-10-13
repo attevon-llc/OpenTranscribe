@@ -48,7 +48,12 @@ export const sectionLoaders = {
   retention: () => import('$components/settings/RetentionSettings.svelte'),
   cache: () => import('$components/settings/CacheSettings.svelte'),
   backup: () => import('$components/settings/BackupSettings.svelte'),
-  authentication: () => import('$components/settings/AuthenticationSettings.svelte'),
+  // The shell opens on its Local tab; start that chunk with the shell instead of after it mounts,
+  // so the two arrive together rather than one round trip apart.
+  authentication: () => {
+    void authTabLoaders.local().catch(() => {});
+    return import('$components/settings/AuthenticationSettings.svelte');
+  },
   auditLog: () => import('$components/settings/AuditLogViewer.svelte'),
 } satisfies Record<string, ComponentLoader>;
 

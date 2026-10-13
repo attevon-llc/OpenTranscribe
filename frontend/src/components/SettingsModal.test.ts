@@ -776,7 +776,7 @@ describe('unsaved-changes close confirmation', () => {
 
     expect(container.querySelector('.settings-modal')).not.toBeNull();
     let dirty = false;
-    settingsModalStore.subscribe((s) => (dirty = s.dirtyState.recording))();
+    settingsModalStore.subscribe((s) => (dirty = !!s.dirtyState.recording))();
     expect(dirty).toBe(true);
   });
 });

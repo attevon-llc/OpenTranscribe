@@ -90,6 +90,8 @@ def _spans_by_speaker(db: Session, media_file_id: int) -> dict[int, _Spans]:
         )
         .all()
     ):
+        if speaker_id is None:
+            continue
         raw[int(speaker_id)].append((float(start), float(end)))
     return {sid: _merged(spans) for sid, spans in raw.items()}
 

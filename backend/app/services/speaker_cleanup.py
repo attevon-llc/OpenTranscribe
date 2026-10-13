@@ -708,6 +708,7 @@ def blocking_profile_ids_named(db: Session, speaker_id: int, name: str) -> set[i
             for (pid,) in db.query(Speaker.profile_id)
             .filter(Speaker.id.in_(sorted(partners)), Speaker.profile_id.isnot(None))
             .all()
+            if pid is not None
         }
     if not candidates:
         return set()

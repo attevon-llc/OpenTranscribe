@@ -83,4 +83,45 @@ describe('gallery list column alignment', () => {
     );
     expect(skeleton).toMatch(/class="skel-row"\s+class:selecting-mode=\{isSelecting\}/);
   });
+
+  describe('degrades by LIST width, never clipping Status (#1243 follow-up)', () => {
+    const queries = (css: string) =>
+      [...css.matchAll(/@container\s+file-list\s*\(max-width:\s*(\d+)px\)/g)].map((m) => m[1]);
+
+    it('makes the list a named inline-size container and uses no viewport media query for columns', () => {
+      expect(grid).toMatch(/\.file-list\s*\{[^}]*container:\s*file-list\s*\/\s*inline-size/);
+      expect(grid).not.toMatch(/@media/);
+      expect(listStyle).not.toMatch(/@media\s*\(max-width/);
+      expect(skeletonStyle).not.toMatch(/@media\s*\(max-width/);
+    });
+
+    it('uses the same breakpoints for the template, the real cells and the skeleton cells', () => {
+      expect(queries(grid)).toEqual(['860', '580']);
+      expect(queries(listStyle)).toEqual(['860', '580']);
+      expect(queries(skeletonStyle)).toEqual(['860', '580']);
+    });
+
+    it('declares the template on the consumers, since a container cannot restyle itself', () => {
+      expect(grid).toMatch(
+        /\.file-list-header,\s*\n\.file-list-row,\s*\n\.skel-row\s*\{[^}]*--file-list-columns:/
+      );
+      expect(grid).not.toMatch(/\.file-list\s*\{[^}]*--file-list-columns:/);
+    });
+
+    it('keeps the full template shrinkable so its minimum fits the first breakpoint', () => {
+      const full = /--file-list-columns:\s*(48px minmax\(120px[^;]*);/.exec(grid);
+      expect(full).not.toBeNull();
+      const fixed = [...full![1].matchAll(/(?<![\w(])(\d+)px(?![^()]*\))/g)].map((m) => +m[1]);
+      const mins = [...full![1].matchAll(/minmax\((\d+)px/g)].map((m) => +m[1]);
+      const tracks = fixed.length + mins.length;
+      const pad = 2 * 16;
+      const gaps = (tracks - 1) * 8;
+      const selecting = 40 + 8;
+      const needed =
+        fixed.reduce((a, b) => a + b, 0) + mins.reduce((a, b) => a + b, 0) + pad + gaps + selecting;
+      expect(tracks).toBe(7);
+      // Must fit at the widest container that still shows the full template (just over 860).
+      expect(needed).toBeLessThanOrEqual(861);
+    });
+  });
 });

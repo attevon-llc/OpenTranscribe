@@ -33,20 +33,36 @@
   --file-list-pad: 1rem;
   --file-list-gap: 0.5rem;
   --file-list-check: 40px;
-  --file-list-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+  /* The list is a size container: columns are chosen by the width the LIST gets, not the
+     viewport. A viewport breakpoint cannot know about the sidebar, and at 1025-1250px the
+     full template (minimum ~880px) overflowed an 808px list and clipped Status. */
+  container: file-list / inline-size;
+}
+
+/* Declared on the consumers, not on `.file-list`: a container query styles descendants of the
+   container, never the container itself. Columns shrink (`minmax(120px, ...)`), they never
+   force the row wider than the list. Full template needs ~806px (selecting) / ~758px. */
+.file-list-header,
+.file-list-row,
+.skel-row {
+  --file-list-columns: 48px minmax(120px, 1.2fr) minmax(120px, 1fr) 90px 100px 90px 110px;
   --file-list-columns-selecting: var(--file-list-check) var(--file-list-columns);
 }
 
-/* Tablet: speakers and size columns are hidden. */
-@media (max-width: 1024px) {
-  .file-list {
-    --file-list-columns: 48px 1fr 90px 100px 110px;
+/* Narrower list: speakers and size columns are hidden (display rules live with the cells). */
+@container file-list (max-width: 860px) {
+  .file-list-header,
+  .file-list-row,
+  .skel-row {
+    --file-list-columns: 48px minmax(0, 1fr) 90px 100px 110px;
   }
 }
 
-/* Phone: duration and date go too. */
-@media (max-width: 768px) {
-  .file-list {
-    --file-list-columns: 40px 1fr 80px;
+/* Narrow list: duration and date go too. */
+@container file-list (max-width: 580px) {
+  .file-list-header,
+  .file-list-row,
+  .skel-row {
+    --file-list-columns: 40px minmax(0, 1fr) 80px;
   }
 }

@@ -16,6 +16,9 @@ from timeouts import APP_SHELL_READY_MS
 pytestmark = pytest.mark.gallery
 
 TOLERANCE_PX = 1.5
+# 1100 and 900 are the widths that exposed the clipping: the sidebar leaves the list narrower
+# than the viewport, so only a container-width breakpoint (not a viewport one) fits it.
+WIDTHS = (1440, 1100, 1024, 900, 420)
 COLUMNS = ("checkbox", "type", "title", "speakers", "duration", "date", "size", "status")
 
 _MEASURE_JS = """
@@ -32,6 +35,28 @@ _MEASURE_JS = """
     edges[name] = [rb.left - hb.left, rb.right - hb.right];
   }
   return edges;
+}
+"""
+
+
+_OVERFLOW_JS = """
+() => {
+  const list = document.querySelector('.file-list').getBoundingClientRect();
+  const out = { overhang: 0, headerScroll: 0, rowScroll: 0, statusInside: false };
+  const header = document.querySelector('.file-list-header');
+  const row = document.querySelector('.file-list-row');
+  out.headerScroll = header.scrollWidth - header.clientWidth;
+  out.rowScroll = row.scrollWidth - row.clientWidth;
+  for (const root of [header, row]) {
+    for (const cell of root.querySelectorAll('.list-cell')) {
+      if (getComputedStyle(cell).display === 'none') continue;
+      const b = cell.getBoundingClientRect();
+      out.overhang = Math.max(out.overhang, b.right - list.right, list.left - b.left);
+    }
+  }
+  const s = row.querySelector('.list-cell-status').getBoundingClientRect();
+  out.statusInside = s.width > 0 && s.left >= list.left - 0.5 && s.right <= list.right + 0.5;
+  return out;
 }
 """
 
@@ -65,7 +90,7 @@ def list_view_page(browser: Browser, shared_auth_state, base_url: str):
 
 
 @pytest.mark.parametrize("locale", ["en", "ar"])
-@pytest.mark.parametrize("width", [1440, 1024, 420])
+@pytest.mark.parametrize("width", WIDTHS)
 @pytest.mark.parametrize("selecting", [False, True], ids=["normal", "selecting"])
 def test_header_cells_align_with_data_cells(list_view_page, width, locale, selecting) -> None:
     page = list_view_page(width, locale)
@@ -84,3 +109,21 @@ def test_header_cells_align_with_data_cells(list_view_page, width, locale, selec
         if max(abs(offsets[0]), abs(offsets[1])) > TOLERANCE_PX
     }
     assert not misaligned, f"header vs data cell [left, right] offsets (px): {misaligned}"
+
+
+@pytest.mark.parametrize("locale", ["en", "ar"])
+@pytest.mark.parametrize("width", WIDTHS)
+@pytest.mark.parametrize("selecting", [False, True], ids=["normal", "selecting"])
+def test_no_list_cell_overflows_the_list(list_view_page, width, locale, selecting) -> None:
+    """Columns degrade with the LIST's width: nothing overhangs it and Status stays visible."""
+    page = list_view_page(width, locale)
+    if selecting:
+        page.click(".select-btn")
+        page.wait_for_selector(".file-list-header.selecting-mode")
+
+    result = page.evaluate(_OVERFLOW_JS)
+
+    assert result["statusInside"], f"status cell clipped or hidden: {result}"
+    assert result["overhang"] <= TOLERANCE_PX, f"a cell overhangs the list: {result}"
+    assert result["headerScroll"] <= TOLERANCE_PX, f"header scrolls horizontally: {result}"
+    assert result["rowScroll"] <= TOLERANCE_PX, f"row scrolls horizontally: {result}"

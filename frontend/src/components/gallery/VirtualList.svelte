@@ -587,15 +587,16 @@
     font-size: inherit;
   }
 
-  /* Hide speakers and size columns on tablets */
-  @media (max-width: 1024px) {
+  /* Cell visibility follows the same container widths as the column template in
+     file-list-grid.css — keep the two lists of breakpoints identical. */
+  @container file-list (max-width: 860px) {
     .list-cell-speakers,
     .list-cell-size {
       display: none;
     }
   }
 
-  @media (max-width: 768px) {
+  @container file-list (max-width: 580px) {
     .list-cell-speakers,
     .list-cell-duration,
     .list-cell-date,

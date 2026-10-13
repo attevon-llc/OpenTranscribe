@@ -155,16 +155,16 @@
     border-radius: 999px;
   }
 
-  /* Hidden at the same breakpoints as the real table's columns, so the
-     placeholder never renders a cell the loaded list will not have. */
-  @media (max-width: 1024px) {
+  /* Hidden at the same container widths as the real table's columns (file-list-grid.css),
+     so the placeholder never renders a cell the loaded list will not have. */
+  @container file-list (max-width: 860px) {
     .list-cell-speakers,
     .list-cell-size {
       display: none;
     }
   }
 
-  @media (max-width: 768px) {
+  @container file-list (max-width: 580px) {
     .list-cell-duration,
     .list-cell-date {
       display: none;

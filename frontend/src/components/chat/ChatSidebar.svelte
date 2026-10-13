@@ -471,10 +471,8 @@
   .group-label {
     margin: 0 0 0.3rem;
     padding: 0 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 

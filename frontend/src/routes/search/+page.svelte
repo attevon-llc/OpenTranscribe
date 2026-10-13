@@ -959,8 +959,8 @@
   }
 
   .search-title {
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color, #111827);
     margin: 0;
   }
@@ -1085,8 +1085,8 @@
   }
 
   .section-heading {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color, #111827);
     margin: 0 0 0.75rem;
   }
@@ -1254,7 +1254,7 @@
     }
 
     .search-title {
-      font-size: 1.25rem;
+      font-size: var(--font-size-xl);
     }
 
     .back-to-gallery {

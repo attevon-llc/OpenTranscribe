@@ -192,10 +192,10 @@
     background: none;
     border: none;
     padding: 0.25rem 0.35rem;
-    margin-left: -0.35rem;
+    margin-inline-start: -0.35rem;
     border-radius: 6px;
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     cursor: pointer;
   }
@@ -252,8 +252,8 @@
 
   .source-index {
     flex-shrink: 0;
-    font-size: 0.8rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     font-variant-numeric: tabular-nums;
   }
@@ -266,8 +266,8 @@
   }
 
   .source-title {
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -277,7 +277,7 @@
   .source-meta {
     display: flex;
     gap: 0.5rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -292,7 +292,7 @@
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    font-size: 0.68rem;
+    font-size: var(--font-size-2xs);
     padding: 0.05rem 0.35rem;
     border-radius: 0.25rem;
     background: var(--surface-alt, var(--background-secondary));
@@ -305,7 +305,7 @@
   }
 
   .source-snippet {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.45;
   }
@@ -323,13 +323,14 @@
 
   .snippet-toggle {
     align-self: flex-start;
-    margin: -0.2rem 0.75rem 0.6rem calc(0.75rem + 0.6rem + 1.6rem);
+    margin-block: -0.2rem 0.6rem;
+    margin-inline: calc(0.75rem + 0.6rem + 1.6rem) 0.75rem;
     padding: 0.15rem 0.4rem;
     border: none;
     border-radius: 4px;
     background: none;
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: 500;
     cursor: pointer;
   }

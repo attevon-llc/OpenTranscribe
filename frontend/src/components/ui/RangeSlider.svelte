@@ -25,6 +25,9 @@
   let className = '';
   export { className as class };
 
+  /** Position 0..1, painted by styles/range-slider.css as the filled part of the track. */
+  $: span = Number(max) - Number(min);
+  $: fill = span > 0 ? Math.min(1, Math.max(0, (Number(value) - Number(min)) / span)) : 0;
   $: formatted = format ? format(value) : `${Number(value).toFixed(decimals)}${unit}`;
   $: badge = valueText ?? formatted;
   $: defaultText =
@@ -49,6 +52,7 @@
     {max}
     {step}
     {disabled}
+    style:--range-fill={fill}
     bind:value
     on:input
     on:change

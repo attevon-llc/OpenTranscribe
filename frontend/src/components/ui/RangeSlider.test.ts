@@ -132,4 +132,53 @@ describe('RangeSlider', () => {
     const style = src.slice(src.indexOf('<style>'));
     expect(style).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|rgba\(\s*\d/);
   });
+
+  describe('filled track (owner review: no blue at the maximum)', () => {
+    // The fill is drawn by styles/range-slider.css from `--range-fill` (0..1). The native
+    // accent-color slider stops its fill at the thumb centre, leaving a grey cap at the
+    // maximum, so the component publishes the position and the stylesheet paints to it.
+    const fill = () => input().style.getPropertyValue('--range-fill');
+
+    it('is the full track at the maximum, empty at the minimum', () => {
+      const { rerender } = render(RangeSlider, { props: { ...base, value: 1 } });
+      expect(fill()).toBe('1');
+      rerender({ value: 0 });
+      expect(fill()).toBe('0');
+    });
+
+    it('is proportional for a non-zero minimum and clamps out-of-range values', () => {
+      const { rerender } = render(RangeSlider, {
+        props: { ...base, min: 100, max: 5000, step: 100, value: 2550 },
+      });
+      expect(Number(fill())).toBeCloseTo(0.5);
+      rerender({ value: 9000 });
+      expect(fill()).toBe('1');
+      rerender({ value: 0 });
+      expect(fill()).toBe('0');
+    });
+
+    it('follows the native input while dragging', async () => {
+      render(RangeSlider, { props: { ...base, value: 0.25 } });
+      await fireEvent.input(input(), { target: { value: '1' } });
+      expect(fill()).toBe('1');
+    });
+
+    it('is not NaN for a degenerate range', () => {
+      render(RangeSlider, { props: { ...base, min: 1, max: 1, value: 1 } });
+      expect(fill()).toBe('0');
+    });
+  });
+
+  describe('stylesheet paints the fill', () => {
+    it('draws both vendor tracks from --range-fill and mirrors it in RTL', async () => {
+      const { readFileSync } = await import('fs');
+      const { resolve } = await import('path');
+      const css = readFileSync(resolve(__dirname, '../../styles/range-slider.css'), 'utf8');
+      expect(css).toMatch(/::-webkit-slider-runnable-track[^{]*\{[^}]*var\(--range-fill\)/);
+      expect(css).toMatch(/::-moz-range-track[^{]*\{[^}]*var\(--range-fill\)/);
+      expect(css).toMatch(
+        /\[dir=['"]rtl['"]\][^{]*\.range-input[^{]*\{[^}]*--range-dir:\s*to left/
+      );
+    });
+  });
 });

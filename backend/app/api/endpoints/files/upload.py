@@ -20,6 +20,7 @@ from app.models.user import User
 from app.services.minio_service import upload_file_tuned
 from app.utils import benchmark_timing
 from app.utils.error_handlers import ErrorHandler
+from app.utils.file_validation import HEADER_READ_SIZE
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
@@ -678,7 +679,7 @@ async def process_file_upload(
         # 50 GB of garbage to learn the MIME is wrong.
         first_chunk, _first_bytes = await _read_first_chunk(file)
         is_valid, validation_result = validate_uploaded_file(
-            bytes(first_chunk[:64]), content_type, file.filename
+            bytes(first_chunk[:HEADER_READ_SIZE]), content_type, file.filename
         )
         benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:

@@ -245,7 +245,7 @@ def update_gpu_stats(self):
         redis_client = celery_app.backend.client
         redis_client.setex("gpu_stats", 600, json.dumps(gpu_stats_list))
 
-        # Broadcast array to all connected WebSocket clients
+        # Broadcast array to connected administrator WebSocket clients only
         try:
             get_redis().publish(
                 "websocket_notifications",
@@ -253,6 +253,7 @@ def update_gpu_stats(self):
                     {
                         "type": "gpu_stats_update",
                         "broadcast": True,
+                        "admin_only": True,
                         "data": gpu_stats_list,
                     }
                 ),

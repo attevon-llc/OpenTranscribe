@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proves a voice match (the speaker is linked to a profile of that name, or a stored voice match
   links it to a speaker of that name at the same similarity): the upgrade records those as voice
   matches, so they keep their name.
+- **`update` and `update-full` recommend a backup before upgrading.** They print the backup
+  command and the newest backup in `./backups` before the stack is taken down, since the
+  upgrade migrates the database and migrations are one-way.
 
 ### Added
 

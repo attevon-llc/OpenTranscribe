@@ -4,7 +4,6 @@
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import axiosInstance from '$lib/axios';
   import {
-    RETENTION_CONFIG_URL,
     loadSectionData,
     peekSectionData,
     sameSectionData,
@@ -66,7 +65,9 @@
     'Pacific/Auckland',
   ];
 
-  const BASE = RETENTION_CONFIG_URL;
+  // Kept as a literal: backend/tests/unit/test_route_has_a_caller.py finds a route's frontend
+  // caller by scanning for its URL string, which an imported constant would hide.
+  const BASE = '/admin/settings/retention-config';
 
   // ---- State ---------------------------------------------------------------
 

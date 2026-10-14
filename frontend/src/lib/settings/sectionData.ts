@@ -94,15 +94,13 @@ export function sameSectionData(a: unknown, b: unknown): boolean {
   }
 }
 
-export const RETENTION_CONFIG_URL = '/admin/settings/retention-config';
-
 /** The condensed File Status summary; the full page reads the same endpoint. */
 export async function fetchFileStatusSummary<T = unknown>(): Promise<T> {
   return (await axiosInstance.get('/my-files/status')).data;
 }
 
 export async function fetchRetentionConfig<T = unknown>(): Promise<T> {
-  return (await axiosInstance.get(RETENTION_CONFIG_URL)).data;
+  return (await axiosInstance.get('/admin/settings/retention-config')).data;
 }
 
 export const SectionDataKey = {

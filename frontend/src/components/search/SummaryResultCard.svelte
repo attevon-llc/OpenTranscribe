@@ -154,7 +154,7 @@
   }
 
   :global([data-theme='dark']) .view-summary-btn:hover {
-    background: rgba(129, 140, 248, 0.12);
+    background: rgba(var(--primary-color-rgb), 0.12);
   }
 
   .summary-match-list {
@@ -190,7 +190,7 @@
 
   :global([data-theme='dark']) .summary-match-row:hover,
   :global([data-theme='dark']) .summary-match-row:focus-visible {
-    background: rgba(129, 140, 248, 0.1);
+    background: rgba(var(--primary-color-rgb), 0.1);
   }
 
   .summary-match-path {

@@ -1,0 +1,74 @@
+/*
+ * Dual-thumb (range) slider from `svelte-range-slider-pips`, used by the gallery
+ * duration filter. A different DOM from the native input, so it is skinned here with
+ * the same tokens: rounded grey track, filled blue bar, oval white-ringed handle.
+ * Add `slider-dual` to the wrapper element. Imported by FilterSidebar (the only consumer), not
+ * by the root layout, so it stays out of the static bundle budget.
+ */
+.slider-dual {
+  /* The library redefines `--slider-accent` on `.rangeSlider` (its indigo), so descendants
+     must read this copy, resolved here before that happens. */
+  --dual-accent: var(--slider-accent);
+  --range-slider: var(--slider-track);
+  --range-range: var(--dual-accent);
+  --range-range-inactive: var(--dual-accent);
+  --range-handle: var(--dual-accent);
+  --range-handle-inactive: var(--dual-accent);
+  --range-handle-focus: var(--dual-accent);
+  --range-pip: var(--slider-track);
+  --range-pip-active: var(--dual-accent);
+  --range-pip-in-range: var(--dual-accent);
+}
+
+.slider-dual .rangeSlider {
+  height: var(--slider-track-height);
+  margin: 0.5rem 0;
+  border-radius: var(--slider-track-radius);
+  cursor: pointer;
+}
+
+.slider-dual .rangeSlider .rangeBar {
+  height: var(--slider-track-height);
+  border-radius: var(--slider-track-radius);
+  background-color: var(--dual-accent);
+}
+
+.slider-dual .rangeSlider .rangeHandle {
+  top: calc(var(--slider-track-height) / 2);
+  width: var(--slider-thumb-width);
+  height: var(--slider-thumb-size);
+  cursor: pointer;
+}
+
+.slider-dual .rangeSlider .rangeNub {
+  box-sizing: border-box;
+  width: var(--slider-thumb-width);
+  height: var(--slider-thumb-size);
+  border: var(--slider-thumb-border);
+  background-color: var(--dual-accent);
+  box-shadow: var(--slider-thumb-shadow);
+  transition: box-shadow 0.15s ease;
+}
+
+/* The library turns a range-mode nub into a rotated teardrop with selectors of
+   specificity (0,5,0) that load after this sheet; !important is the only way to keep
+   the oval, and these two declarations are all it is used for. */
+.slider-dual .rangeSlider .rangeNub {
+  border-radius: calc(var(--slider-thumb-size) / 2) !important;
+  transform: none !important;
+}
+
+.slider-dual .rangeSlider .rangeHandle:hover .rangeNub,
+.slider-dual .rangeSlider .rangeHandle.active .rangeNub {
+  box-shadow: var(--slider-thumb-shadow-hover);
+}
+
+.slider-dual .rangeSlider .rangeHandle:focus-visible .rangeNub {
+  outline: 2px solid var(--slider-focus-ring);
+  outline-offset: 3px;
+}
+
+/* The library's ripple halo is replaced by the hover ring above. */
+.slider-dual .rangeSlider .rangeHandle::before {
+  display: none;
+}

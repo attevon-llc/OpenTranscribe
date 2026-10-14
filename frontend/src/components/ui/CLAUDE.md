@@ -13,9 +13,16 @@ does **not** — it lives at `src/components/ConfirmationModal.svelte`, one leve
 the other feature components; it's listed here anyway since it's a shared confirm/cancel
 primitive in the same spirit as this folder.
 
-- `BaseModal.svelte` — modal shell (backdrop, header/body/footer slots, scroll lock). Its
-  `zIndex` prop defaults to the shared `--z-modal` z-index tier (H5, see
-  `src/styles/theme.css`'s `:root` block for the full scale).
+- `BaseModal.svelte` — **the one modal chrome** (backdrop, header with title + close, body, footer
+  slot, scroll lock, focus trap, Escape, full-screen under 768px). Every dialog is built on it; a
+  component that draws its own dimmed fixed overlay fails `components/modalChrome.convention.test.ts`
+  (its `ALLOWED` list holds the only exceptions, each with a reason: the settings shell, the two
+  consent banners, drawer/popover scrims). Width is `size="sm|md|lg|xl|2xl"` (480/600/720/960/1200),
+  not a pixel prop; `titleId` is only for a caller that needs a stable `aria-labelledby`. The footer
+  normalises every `<button>` to one size, radius and weight whatever class vocabulary the caller uses
+  (`btn`, `modal-button`, ad hoc) — colour stays the caller's; order is dismiss first, primary last;
+  a form in the body is submitted from the footer with `<button type="submit" form="the-form-id">`.
+  Its `zIndex` prop defaults to the shared `--z-modal` tier (H5, see `src/styles/theme.css`).
 - `ConfirmationModal.svelte` (`src/components/`, not `ui/`) — confirm/cancel dialog; use instead
   of hand-rolled `{#if show}+BaseModal`.
 - `Tabs.svelte` — `role=tablist` with roving-tabindex keyboard nav (arrows/Home/End), badges;
@@ -50,8 +57,23 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
     two Plyr player files, fail `rangeSliderStructure.test.ts` (allowlist entries need a written
     reason). The input stays native (keyboard, RTL direction) but the track is drawn from
     `--range-fill` (0..1, set inline by the component) because the native accent-color fill stops at
-    the thumb centre and left a grey cap at the maximum; `--range-dir` mirrors it in RTL. The gallery's dual-thumb filter sliders
-    (`svelte-range-slider-pips` in `FilterSidebar.svelte`) are intentionally separate (owner decision).
+    the thumb centre and left a grey cap at the maximum; `--range-dir` mirrors it in RTL. The look is a
+    rounded grey track, blue fill, and an **oval thumb with a white ring and soft shadow**
+    (`--slider-thumb-width` > `--slider-thumb-size`, `--slider-thumb-border`), defined once for
+    `::-webkit-slider-thumb` and `::-moz-range-thumb` together. The gallery's dual-thumb duration slider
+    (`svelte-range-slider-pips`) is skinned from the same tokens by adding `slider-dual` to its wrapper (`styles/range-slider-dual.css`, imported by
+    `FilterSidebar`, kept out of the root layout's static bundle budget);
+    the library redefines `--slider-accent` on `.rangeSlider`, so that block reads `--dual-accent`.
+    `--slider-thumb-size` doubles as the unit the media players read: keep it defined.
+- `DateRangePicker.svelte` — the ONE date-range control (gallery filter sidebar and File Status
+  filters). A field-styled trigger opens a **popover**: a `position: fixed` layer portaled to
+  `<body>` (so it never grows the card it sits in and a scrolling sidebar cannot clip it), placed by
+  `$lib/popoverPosition.ts` (below the trigger, flips above when it does not fit, clamps to the
+  viewport, aligns to the trigger's end edge in RTL, becomes a bottom sheet under 560px). It holds
+  the typed From/To `type="date"` fields (the keyboard path) and the calendar; Escape, an outside
+  click or completing a range closes it and focus returns to the trigger. Wraps
+  `@svelte-plugins/datepicker` with `alwaysShow` + `isOpen`, whose day buttons must be un-styled from
+  the global `button` rule (`:where()` reset in the component). Do not add a second range picker.
 - `SettingsSkeleton.svelte` — the loading placeholder every settings panel and `LazySection` uses
   (`variant` form / rows / chips / dashboard on the shared shimmer; optional `label` makes it a status region).
 - `EmptyState.svelte` — icon -> title -> description -> actions, spaced by the
@@ -63,6 +85,11 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
 
 ## Conventions / patterns
 
+- **Form fields are not styled per component.** `src/styles/form-elements.css` paints every
+  text-like input, textarea and select (see `src/styles/CLAUDE.md`); a primitive sets layout and
+  size only. `styles/formFields.test.ts` fails on a re-painted field. A wrapper that draws the box
+  around a bare embedded input (`SearchBar`, `TagInput`, the chat composer) uses the `--field-*`
+  tokens, not literals.
 - **A11y is mandatory**: roles, `aria-*`, keyboard support, visible `:focus-visible`.
 - **No hardcoded English** — user-visible text comes from props the caller translates via i18n,
   or from the i18n store. Don't bake copy into a primitive.

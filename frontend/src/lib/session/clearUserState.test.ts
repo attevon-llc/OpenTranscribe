@@ -18,6 +18,7 @@ import { get } from 'svelte/store';
 import { clearUserState } from '$lib/session/clearUserState';
 import { apiCache, CacheTTL } from '$lib/apiCache';
 import { capabilities } from '$stores/capabilities';
+import { peekSectionData, setSectionData } from '$lib/settings/sectionData';
 
 describe('clearUserState', () => {
   beforeEach(() => {
@@ -36,6 +37,16 @@ describe('clearUserState', () => {
     await clearUserState();
 
     expect(apiCache.stats().size).toBe(0);
+  });
+
+  it('forgets the stale-while-revalidate settings copies, so User B never sees User A’s config', async () => {
+    setSectionData('settings:auth-config', { local: ['user-a'] });
+    setSectionData('settings:pipeline', { steps: [] });
+
+    await clearUserState();
+
+    expect(peekSectionData('settings:auth-config')).toBeUndefined();
+    expect(peekSectionData('settings:pipeline')).toBeUndefined();
   });
 
   it('resets capabilities to unloaded community defaults (cloud tier leak)', async () => {

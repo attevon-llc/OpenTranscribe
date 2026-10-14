@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "작동 방식",
   "settings.engineSettings.intro.details": "네이티브가 권장 엔진이며 별도의 서비스로 실행됩니다. PyAnnote는 메인 백엔드 안에서 실행되는 이전 대체 엔진으로, 점차 폐지됩니다. 여기서 바꾼 설정은 서버 기본값을 재정의하며 배지와 초기화 버튼이 표시됩니다.",
   "settings.engineSettings.diarizerBackendHint": "네이티브를 권장합니다. PyAnnote는 이전 대체 엔진입니다.",
-  "settings.engineSettings.advancedToggle": "재확인 고급 조정"
+  "settings.engineSettings.advancedToggle": "재확인 고급 조정",
+  "fileStatus.backToSettings": "설정으로 돌아가기"
 }

@@ -169,6 +169,13 @@ Hand-rolled icon buttons are where this recurs, because they are copied rather t
 Prefer the `ui/` primitives (`SearchBar`'s clear/next controls, `CopyButton`, `Chip`,
 `BaseModal`'s header close) over re-declaring the pattern.
 
+- **The app has no purple.** `a:visited` used to set `--link-visited` (indigo), which also repainted
+  every visited `.btn`-style anchor (the `:visited` selector out-specifies `.btn`); the rule and token are
+  gone, visited links keep the link blue. `src/styles/noPurple.test.ts` fails on any violet-to-magenta
+  hex/rgb/hsl literal or purple colour keyword in `.svelte`/`.css`/`.ts`, and on a `:visited` rule that sets
+  a colour. Use `--primary-color-rgb` / `--primary-on-surface` for tints, never an indigo literal. Allowlisted
+  with reasons: the speaker palette (data) and the CUI classification banner colour (regulatory).
+
 ## Type and weight rules (issue #1243)
 
 The scale, weights, line heights and prose measure are tokens in `src/styles/theme.css`

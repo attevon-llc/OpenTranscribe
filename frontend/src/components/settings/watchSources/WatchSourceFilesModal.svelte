@@ -233,7 +233,7 @@
   }
 </script>
 
-<BaseModal isOpen={show} onClose={handleClose} maxWidth="960px">
+<BaseModal isOpen={show} onClose={handleClose} size="xl">
   <svelte:fragment slot="header">
     <h2 class="modal-title">
       {$t('settings.watchSources.files.title', { name: source?.name ?? '' })}

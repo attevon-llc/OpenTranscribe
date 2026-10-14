@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "Come funziona",
   "settings.engineSettings.intro.details": "Il motore nativo è quello consigliato e viene eseguito come servizio a sé. PyAnnote viene eseguito nel backend principale; è il vecchio motore di riserva ed è in via di dismissione. Un’impostazione modificata qui sostituisce il valore predefinito del server e mostra un’etichetta con un pulsante Ripristina.",
   "settings.engineSettings.diarizerBackendHint": "Si consiglia il motore nativo. PyAnnote è il vecchio motore di riserva.",
-  "settings.engineSettings.advancedToggle": "Regolazione avanzata del ricontrollo"
+  "settings.engineSettings.advancedToggle": "Regolazione avanzata del ricontrollo",
+  "fileStatus.backToSettings": "Torna alle impostazioni"
 }

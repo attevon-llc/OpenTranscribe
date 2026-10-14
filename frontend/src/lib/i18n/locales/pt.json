@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "Como funciona",
   "settings.engineSettings.intro.details": "O motor nativo é o recomendado e roda como serviço próprio. O PyAnnote roda dentro do backend principal; é o recurso de contingência mais antigo e está sendo descontinuado. Uma configuração alterada aqui substitui o padrão do servidor e mostra um selo com um botão Redefinir.",
   "settings.engineSettings.diarizerBackendHint": "Recomenda-se o motor nativo. O PyAnnote é o recurso de contingência mais antigo.",
-  "settings.engineSettings.advancedToggle": "Ajuste avançado da reverificação"
+  "settings.engineSettings.advancedToggle": "Ajuste avançado da reverificação",
+  "fileStatus.backToSettings": "Voltar às Configurações"
 }

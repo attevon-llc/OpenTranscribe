@@ -423,22 +423,9 @@
   .form-group input[type="password"],
   .form-group input[type="number"] {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-size: 0.875rem;
-  }
-
-  .form-group input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-primary-alpha);
   }
 
   .form-group input:disabled {
-    background: var(--color-bg-tertiary);
     cursor: not-allowed;
   }
 

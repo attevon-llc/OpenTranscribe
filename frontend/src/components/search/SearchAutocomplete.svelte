@@ -240,23 +240,12 @@
     width: 100%;
     height: 44px;
     padding: 0 1rem;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 12px;
-    background: var(--input-background, var(--surface-color, #fff));
-    color: var(--text-color, #111827);
     font-size: 0.9375rem;
-    outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
     color-scheme: light dark;
   }
 
   .search-input.has-value {
     padding-right: 2.5rem;
-  }
-
-  .search-input:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .clear-btn {

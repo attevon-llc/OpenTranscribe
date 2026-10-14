@@ -288,15 +288,8 @@
   .url-input {
     width: 100%;
     padding: 0.625rem 2.5rem 0.625rem 0.75rem;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
     font-size: 0.9375rem;
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    transition: border-color 0.2s ease;
   }
-
-  .url-input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
   .url-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .paste-button {
@@ -342,10 +335,6 @@
   .protected-input {
     width: 100%;
     padding: 0.375rem 0.5rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-    background-color: var(--surface-color);
-    color: var(--text-primary);
     font-size: 0.8125rem;
   }
 
@@ -394,10 +383,6 @@
 
   .download-select {
     padding: 0.3125rem 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-primary);
     font-size: 0.8125rem;
     min-width: 120px;
   }

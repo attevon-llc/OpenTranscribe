@@ -152,7 +152,7 @@
   }
 </script>
 
-<BaseModal isOpen={show} onClose={() => dispatch('close')} maxWidth="680px">
+<BaseModal isOpen={show} onClose={() => dispatch('close')} size="lg">
   <svelte:fragment slot="header">
     <h2 class="modal-title">
       {$t('settings.emailNotifications.links.title', { name: source?.name ?? '' })}

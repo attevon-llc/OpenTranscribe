@@ -22,7 +22,7 @@
 <BaseModal
   {isOpen}
   title={$t('chat.warnings.largeSelectionTitle')}
-  maxWidth="460px"
+  size="sm"
   onClose={() => dispatch('cancel')}
 >
   <div class="warning-body" data-testid="chat-large-selection-warning">

@@ -201,16 +201,7 @@
   .search-input {
     width: 100%;
     padding: 0.4rem 0.6rem;
-    border: 1px solid var(--input-border);
-    border-radius: 4px;
     font-size: 0.85rem;
-    background-color: var(--input-background);
-    color: var(--text-color);
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--input-focus-border);
   }
 
   .search-input::placeholder {

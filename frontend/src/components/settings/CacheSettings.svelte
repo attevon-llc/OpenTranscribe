@@ -248,16 +248,7 @@
 
   .form-input {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--background-color);
-    color: var(--text-color);
     font-size: 0.875rem;
-  }
-
-  .form-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .number-input {

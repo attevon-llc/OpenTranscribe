@@ -167,3 +167,59 @@ describe('slider structure', () => {
     }
   });
 });
+
+describe('slider look contract (owner review: rounded track, oval white-ringed thumb)', () => {
+  const css = readFileSync(join(SRC, 'styles', 'range-slider.css'), 'utf8');
+  const rule = (selector: string): string => {
+    const start = css.indexOf(`${selector} {`);
+    expect(start, `${selector} rule missing`).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start));
+  };
+
+  it('defines the thumb identically for WebKit and Gecko', () => {
+    for (const sel of ['.range-input::-webkit-slider-thumb', '.range-input::-moz-range-thumb']) {
+      const body = rule(sel);
+      expect(body, sel).toMatch(/width:\s*var\(--slider-thumb-width\)/);
+      expect(body, sel).toMatch(/height:\s*var\(--slider-thumb-size\)/);
+      expect(body, sel).toMatch(/border:\s*var\(--slider-thumb-border\)/);
+      expect(body, sel).toMatch(/border-radius:\s*calc\(var\(--slider-thumb-size\) \/ 2\)/);
+      expect(body, sel).toMatch(/box-shadow:\s*var\(--slider-thumb-shadow\)/);
+    }
+  });
+
+  it('keeps the thumb an oval with a white ring, not a bare circle', () => {
+    const w = Number(/--slider-thumb-width:\s*(\d+)px/.exec(css)?.[1]);
+    const h = Number(/--slider-thumb-size:\s*(\d+)px/.exec(css)?.[1]);
+    expect(w).toBeGreaterThan(h);
+    expect(css).toMatch(/--slider-thumb-border:\s*\d+px solid #ffffff/);
+  });
+
+  it('rounds and fills the track in both engines, to the thumb centre', () => {
+    for (const sel of [
+      '.range-input::-webkit-slider-runnable-track',
+      '.range-input::-moz-range-track',
+    ]) {
+      const body = rule(sel);
+      expect(body, sel).toMatch(/border-radius:\s*var\(--slider-track-radius\)/);
+      expect(body, sel).toContain('var(--range-fill)');
+      expect(body, sel).toContain('var(--slider-thumb-width)');
+    }
+  });
+
+  it('has hover, active, focus-visible and disabled states', () => {
+    expect(css).toContain('.range-input:hover:not(:disabled)::-webkit-slider-thumb');
+    expect(css).toContain('.range-input:hover:not(:disabled)::-moz-range-thumb');
+    expect(css).toContain('.range-input:focus-visible');
+    expect(css).toContain('.range-input:disabled');
+  });
+
+  it('skins the dual-thumb gallery slider with the same tokens', () => {
+    const dual = readFileSync(join(SRC, 'styles', 'range-slider-dual.css'), 'utf8');
+    expect(dual).toContain('.slider-dual .rangeSlider .rangeNub');
+    expect(dual).toContain('var(--slider-thumb-border)');
+    const src = readFileSync(join(SRC, 'components', 'FilterSidebar.svelte'), 'utf8');
+    expect(src).toContain('slider-dual');
+    expect(src).toContain('styles/range-slider-dual.css');
+    expect(src).not.toMatch(/\.rangeNub/);
+  });
+});

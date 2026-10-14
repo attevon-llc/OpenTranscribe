@@ -236,23 +236,8 @@
 
   .form-select {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--input-border);
-    border-radius: 0.375rem;
-    background-color: var(--input-background);
-    color: var(--text-color);
-    font-size: 0.875rem;
-    transition: border-color 0.15s;
-    appearance: none;
-    -webkit-appearance: none;
     padding-right: 2.5rem;
     cursor: pointer;
-  }
-
-  .form-select:focus {
-    outline: none;
-    border-color: var(--primary-color, #3b82f6);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
   }
 
   .form-select:disabled {

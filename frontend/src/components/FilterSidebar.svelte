@@ -2,6 +2,7 @@
   import type { Tag, TagWithCount } from '$lib/types/tag';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import RangeSlider from 'svelte-range-slider-pips';
+  import '../styles/range-slider-dual.css';
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
   import axiosInstance from '../lib/axios';
@@ -938,7 +939,7 @@
         <span>{formatClock(durationSliderValues[0])}</span>
         <span>{formatClock(durationSliderValues[1])}</span>
       </div>
-      <div class="slider-wrapper">
+      <div class="slider-wrapper slider-dual">
         <RangeSlider
           bind:values={durationSliderValues}
           min={durationBounds.min}
@@ -1251,60 +1252,7 @@
 
   .slider-wrapper {
     padding: 0 0.25rem;
-    --range-slider: var(--border-color, #d7dada);
-    --range-handle-inactive: #3b82f6;
-    --range-handle: #3b82f6;
-    --range-handle-focus: #2563eb;
-    --range-range: rgba(59, 130, 246, 0.25);
-    --range-pip: var(--border-color, #d7dada);
-    --range-pip-active: #3b82f6;
-    --range-pip-in-range: #3b82f6;
     font-size: 0.75rem;
-  }
-
-  .slider-wrapper :global(.rangeSlider) {
-    margin: 0.5rem 0;
-  }
-
-  /* Vertical line handles */
-  .slider-wrapper :global(.rangeSlider .rangeHandle) {
-    width: 6px !important;
-    height: 22px !important;
-    cursor: pointer !important;
-  }
-
-  .slider-wrapper :global(.rangeSlider .rangeNub) {
-    width: 6px !important;
-    height: 22px !important;
-    border-radius: 2px !important;
-    border: none !important;
-    background-color: var(--primary-color) !important;
-    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3) !important;
-    transform: none !important;
-    transition: height 0.15s ease, width 0.15s ease, margin 0.15s ease !important;
-  }
-
-  /* Slightly larger on hover */
-  .slider-wrapper :global(.rangeSlider .rangeHandle:hover .rangeNub) {
-    width: 8px !important;
-    height: 26px !important;
-    margin-top: -2px !important;
-    margin-left: -1px !important;
-  }
-
-  /* Hide the ripple effect */
-  .slider-wrapper :global(.rangeSlider .rangeHandle::before) {
-    display: none !important;
-  }
-
-  /* Range bar — same solid color as handles */
-  .slider-wrapper :global(.rangeSlider .rangeBar) {
-    background-color: var(--primary-color) !important;
-  }
-
-  /* Pointer cursor on the track too */
-  .slider-wrapper :global(.rangeSlider) {
-    cursor: pointer !important;
   }
 
   /* Status row for the dropdown's server-side speaker search. */

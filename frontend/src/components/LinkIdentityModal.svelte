@@ -78,7 +78,7 @@
 <BaseModal
   {isOpen}
   title={$t('userManagement.linkIdentity.title')}
-  maxWidth="480px"
+  size="sm"
   zIndex={1300}
   onClose={handleClose}
 >
@@ -206,20 +206,5 @@
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--color-text);
-  }
-
-  .form-control {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-size: 0.875rem;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-primary-alpha);
   }
 </style>

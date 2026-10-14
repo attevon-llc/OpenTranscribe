@@ -170,7 +170,7 @@
     color: var(--error-color, #dc2626);
   }
   .linked-badge {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(var(--primary-color-rgb), 0.15);
     color: var(--primary-on-surface);
     margin-left: 6px;
   }

@@ -30,6 +30,9 @@ export async function purgeTenantDataCaches(): Promise<void> {
     // tab saw User A's file list, speakers, collections, tags and groups for up to the
     // 5 min TTL, because an SPA login does not reload the module holding the Map.
     import('$lib/apiCache').then(({ apiCache }) => apiCache.clear()),
+    // Stale-while-revalidate copies behind the settings sections (pipeline plan, auth config,
+    // retention, file-status summary): per-tenant data, shown instantly on the next visit.
+    import('$lib/settings/sectionData').then((m) => m.clearSectionData()),
     import('$lib/thumbnailCache').then(({ clearThumbnailCache }) => clearThumbnailCache()),
     import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => clearMediaUrlCache()),
     import('$stores/gallery').then(({ galleryStore }) => galleryStore.resetFilters()),

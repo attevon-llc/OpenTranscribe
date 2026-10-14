@@ -179,21 +179,9 @@
   }
   .searchable-input {
     width: 100%;
-    padding: 8px 12px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 14px;
-    line-height: 1.4;
   }
   .searchable-input::placeholder {
     color: var(--text-secondary);
-  }
-  .searchable-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-    border-color: var(--primary-color);
   }
   .searchable-dropdown {
     position: absolute;

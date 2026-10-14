@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 // The translator echoes the key and any variables so a test can see WHICH copy was chosen.
@@ -14,6 +16,7 @@ vi.mock('$stores/locale', () => {
 const api = vi.hoisted(() => ({ getPipelineView: vi.fn() }));
 vi.mock('$lib/api/pipeline', () => api);
 
+import { clearSectionData, setSectionData, SectionDataKey } from '$lib/settings/sectionData';
 import PipelineOverviewTestHost from './PipelineOverviewTestHost.svelte';
 import {
   fullLocalView,
@@ -38,7 +41,10 @@ const card = (c: HTMLElement, name: string) =>
   c.querySelector<HTMLElement>(`[data-testid="pipeline-step"][data-step="${name}"]`)!;
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  clearSectionData();
+});
 
 describe('PipelineOverview', () => {
   it('renders the four steps in processing order with their titles', async () => {
@@ -209,5 +215,77 @@ describe('PipelineOverview', () => {
     await fireEvent.click(container.querySelector('button.btn') as HTMLButtonElement);
     await waitFor(() => expect(cards(container)).toHaveLength(4));
     expect(api.getPipelineView).toHaveBeenCalledTimes(2);
+  });
+
+  describe('connectors between the steps', () => {
+    const connectors = (c: HTMLElement) =>
+      Array.from(c.querySelectorAll<HTMLElement>('[data-testid="pipeline-connector"]'));
+
+    it('draws one arrow into each step, as an SVG with a rail, a flow line and a filled head', async () => {
+      const { container } = await renderView(fullLocalView());
+      expect(connectors(container)).toHaveLength(4);
+      for (const c of connectors(container)) {
+        expect(c.getAttribute('aria-hidden')).toBe('true');
+        expect(c.querySelector('svg line.rail')).not.toBeNull();
+        expect(c.querySelector('svg line.flowline')).not.toBeNull();
+        expect(c.querySelector('svg path.head')).not.toBeNull();
+      }
+    });
+
+    it('marks the arrow into a cloud step as a boundary and into an off step as still', async () => {
+      const { container } = await renderView(liteCloudView());
+      const into = (name: string) =>
+        card(container, name)
+          .closest('li')!
+          .querySelector<HTMLElement>('[data-testid="pipeline-connector"]')!;
+      expect(into('transcription').classList.contains('boundary')).toBe(true);
+      expect(into('llm').classList.contains('off')).toBe(true);
+      expect(into('llm').classList.contains('boundary')).toBe(false);
+    });
+
+    it('highlights the arrow into a local step that has a warning', async () => {
+      const view = fullLocalView();
+      view.issues = [issue('diarization_speaker_range_unused', 'warning', 'diarization')];
+      const { container } = await renderView(view);
+      const into = card(container, 'diarization')
+        .closest('li')!
+        .querySelector('[data-testid="pipeline-connector"]')!;
+      expect(into.classList.contains('caution')).toBe(true);
+    });
+
+    it('stops the flow animation for people who ask for reduced motion', () => {
+      const src = readFileSync(resolve(__dirname, 'PipelineOverview.svelte'), 'utf8');
+      const block =
+        src.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\s*\}/)?.[1] ?? '';
+      expect(block).toMatch(/\.flowline\s*\{[^}]*animation:\s*none/);
+    });
+  });
+
+  describe('stale-while-revalidate', () => {
+    it('paints a remembered view at once, without a skeleton, then refreshes behind it', async () => {
+      setSectionData(SectionDataKey.pipeline, fullLocalView());
+      let resolve!: (v: unknown) => void;
+      api.getPipelineView.mockReturnValue(new Promise((r) => (resolve = r)));
+      const { container } = render(PipelineOverviewTestHost, { props: {} });
+      // Synchronously present: the remembered copy, not a skeleton.
+      expect(cards(container)).toHaveLength(4);
+      expect(container.querySelector('.settings-skeleton')).toBeNull();
+      resolve(liteCloudView());
+      await waitFor(() =>
+        expect(text(card(container, 'llm').querySelector('[data-testid="pipeline-where"]'))).toBe(
+          'settings.pipeline.off'
+        )
+      );
+    });
+
+    it('keeps the remembered view when the refresh fails instead of replacing it with an error', async () => {
+      setSectionData(SectionDataKey.pipeline, fullLocalView());
+      api.getPipelineView.mockRejectedValue(new Error('offline'));
+      const { container } = render(PipelineOverviewTestHost, { props: {} });
+      await waitFor(() => expect(api.getPipelineView).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 10));
+      expect(cards(container)).toHaveLength(4);
+      expect(text(container)).not.toContain('settings.pipeline.loadFailed');
+    });
   });
 });

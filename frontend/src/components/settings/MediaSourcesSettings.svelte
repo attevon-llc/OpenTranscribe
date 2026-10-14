@@ -555,16 +555,11 @@
     font-size: 0.6rem;
     text-transform: uppercase;
     font-weight: 600;
-    background: rgba(99, 102, 241, 0.12);
-    color: #6366f1;
+    background: rgba(var(--primary-color-rgb), 0.12);
+    color: var(--primary-on-surface);
     padding: 0.1rem 0.35rem;
     border-radius: 0.25rem;
     letter-spacing: 0.02em;
-  }
-
-  :global([data-theme='dark']) .admin-badge {
-    background: rgba(99, 102, 241, 0.2);
-    color: #818cf8;
   }
 
   .source-label {
@@ -661,18 +656,7 @@
   .form-input,
   .form-select {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--input-border);
-    border-radius: 0.375rem;
-    background: var(--input-background);
-    color: var(--text-color);
     font-size: 0.8rem;
-  }
-
-  .form-input:focus,
-  .form-select:focus {
-    outline: none;
-    border-color: var(--primary-color, #3b82f6);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
   }
 
   .toggle-row-inline {

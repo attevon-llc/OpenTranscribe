@@ -59,7 +59,7 @@
   }
 </script>
 
-<BaseModal {isOpen} {onClose} title={$t('supportAccess.uses.title')} maxWidth="760px">
+<BaseModal {isOpen} {onClose} title={$t('supportAccess.uses.title')} size="lg">
   {#if failed}
     <p class="state error" role="alert">{$t('supportAccess.uses.loadFailed')}</p>
   {:else if loading && uses.length === 0}

@@ -385,20 +385,7 @@
 
   .edit-box textarea {
     width: 100%;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--primary-color);
-    border-radius: 10px;
-    background-color: var(--card-background);
-    color: var(--text-color);
-    font-family: inherit;
-    font-size: 0.95rem;
-    line-height: 1.5;
     resize: vertical;
-  }
-
-  .edit-box textarea:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   .edit-actions {

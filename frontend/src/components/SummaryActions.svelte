@@ -213,23 +213,8 @@
   .prompt-select {
     flex: 1;
     min-width: 0;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-background);
-    color: var(--text-color);
-    font-size: 0.85rem;
     cursor: pointer;
-    transition: border-color 0.2s ease;
-    appearance: none;
-    -webkit-appearance: none;
     padding-right: 2.5rem;
-  }
-
-  .prompt-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
 
   .prompt-select:disabled {

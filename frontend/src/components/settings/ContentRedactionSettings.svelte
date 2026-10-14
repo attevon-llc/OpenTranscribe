@@ -422,23 +422,9 @@
   .form-select,
   .form-textarea {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    font-size: 0.875rem;
-    font-family: inherit;
   }
   .form-textarea {
     resize: vertical;
-    line-height: 1.5;
-  }
-  .form-select:focus,
-  .form-textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .perf-note {

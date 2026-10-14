@@ -360,16 +360,6 @@
     transform: translateX(2px) !important;
   }
 
-  .dropdown-menu :global(a.dropdown-item:visited) {
-    color: var(--text-color) !important;
-    text-decoration: none !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:visited:hover) {
-    color: var(--primary-on-surface) !important;
-    text-decoration: none !important;
-  }
-
   /* Entries contributed by child components (e.g. UserMenuExtras) live in their
      own scope; give any `.dropdown-item` inside the menu the same look. */
   .dropdown-menu :global(.dropdown-item) {

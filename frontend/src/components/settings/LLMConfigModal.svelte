@@ -555,7 +555,7 @@
 
 </script>
 
-<BaseModal isOpen={show} onClose={() => closeModal()} maxWidth="600px">
+<BaseModal isOpen={show} onClose={() => closeModal()} size="md">
   <svelte:fragment slot="header">
     <h2 class="modal-title">{editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}</h2>
     {#if isDirty}
@@ -1078,19 +1078,6 @@
 
   .form-control {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--input-bg);
-    color: var(--text-color);
-    font-size: 0.875rem;
-    transition: border-color 0.2s ease;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
   .form-label-row {

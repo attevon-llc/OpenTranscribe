@@ -418,11 +418,6 @@
     color: var(--text-color);
   }
 
-  .collection-input:focus {
-    border-bottom-color: var(--primary-color);
-    outline: none;
-  }
-
   .collection-add-button {
     background-color: var(--primary-color);
     color: white;

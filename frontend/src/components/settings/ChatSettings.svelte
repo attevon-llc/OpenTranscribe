@@ -277,25 +277,7 @@
   select,
   textarea {
     width: 100%;
-    padding: 0.5rem 0.7rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-family: inherit;
-    font-size: 0.88rem;
     resize: vertical;
-  }
-
-  select:focus-visible,
-  textarea:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-  }
-
-  select:focus,
-  textarea:focus {
-    border-color: var(--primary-color);
   }
 
   .field-footer {
@@ -324,13 +306,6 @@
 
   input[type='number'] {
     width: 100%;
-    padding: 0.5rem 0.7rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.88rem;
-    box-shadow: none;
   }
 
   .actions {

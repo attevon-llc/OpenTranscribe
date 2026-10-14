@@ -3,6 +3,7 @@
   import { t } from '../../stores/locale';
   import { taskProgressPercent } from '$lib/utils/formatting';
   import ProcessingProvenance from '$components/ProcessingProvenance.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
 
   export let detailedStatus: any;
   export let selectedFile: any;
@@ -48,33 +49,12 @@
 </script>
 
 {#if detailedStatus && selectedFile}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="detailed-status-modal"
-    role="presentation"
-    on:click={closeModal}
-    on:wheel|preventDefault|self
-    on:touchmove|preventDefault|self
-    on:keydown={(e) => e.key === 'Escape' && closeModal()}
+  <BaseModal
+    isOpen={true}
+    title={`${$t('fileStatus.fileDetails')}: ${detailedStatus.file.filename}`}
+    size="lg"
+    onClose={closeModal}
   >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <div
-      class="modal-content"
-      role="dialog"
-      aria-modal="true"
-      on:click|stopPropagation
-      on:keydown|stopPropagation
-    >
-      <div class="modal-header">
-        <h3>{$t('fileStatus.fileDetails')}: {detailedStatus.file.filename}</h3>
-        <button class="close-btn" on:click={closeModal}>×</button>
-      </div>
-
-      <div class="modal-body">
         <!-- File Details Grid -->
         <div class="file-details">
           <h4>{$t('fileStatus.fileInformation')}</h4>
@@ -236,9 +216,7 @@
             </div>
           </div>
         {/if}
-      </div>
-    </div>
-  </div>
+  </BaseModal>
 {/if}
 
 <style>
@@ -293,75 +271,6 @@
   :global([data-theme='dark']) .status-error {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
-  }
-
-  .detailed-status-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  :global([data-theme='dark']) .detailed-status-modal {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  .modal-content {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    max-width: 600px;
-    width: 90%;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  }
-
-  :global([data-theme='dark']) .modal-content {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-  }
-
-  .modal-header h3 {
-    margin: 0;
-    color: var(--text-color);
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-light);
-    transition: color 0.2s ease;
-  }
-
-  .close-btn:hover {
-    color: var(--text-color);
-  }
-
-  .modal-body {
-    padding: 1.5rem;
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
   }
 
   .file-details h4 {

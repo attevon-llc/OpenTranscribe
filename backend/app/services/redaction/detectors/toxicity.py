@@ -103,6 +103,30 @@ def _place_on_device(pipe, target: str) -> None:
         logger.warning("Could not move toxicity model to %s: %s", target, exc)
 
 
+def _run_pipe(model_name: str, pipe, payload, **kwargs):
+    """Place ``pipe`` on the live device and run it; survive a sticky CUDA fault.
+
+    A CUDA context that faulted cannot even move the model back to CPU, so the cached
+    pipeline is discarded and reloaded from disk on CPU, and the process stays on CPU.
+    """
+    from app.services.redaction.device import is_cuda_fault
+    from app.services.redaction.device import mark_cuda_faulted
+    from app.services.redaction.device import resolve_device
+
+    _place_on_device(pipe, resolve_device())
+    try:
+        return pipe(payload, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        if not is_cuda_fault(exc):
+            raise
+        mark_cuda_faulted(exc)
+        _pipes.pop(model_name, None)
+        fresh = _get_pipe(model_name)
+        if fresh is None:
+            raise
+        return fresh(payload, **kwargs)
+
+
 def preload() -> bool:
     """Eagerly load the default English toxicity model (worker_ready hook)."""
     return _get_pipe(C.REDACTION_TOXICITY_MODEL_EN) is not None
@@ -157,11 +181,9 @@ def score_text(text: str, language: str | None = None) -> dict | None:
             "install or model weights); this text was never scored for toxicity"
         )
     from app.services.redaction.device import inference_guard
-    from app.services.redaction.device import resolve_device
 
     with inference_guard():
-        _place_on_device(pipe, resolve_device())
-        raw = pipe(text[:2000])
+        raw = _run_pipe(model_name, pipe, text[:2000])
     return _normalize_scores(raw, model_name)
 
 
@@ -197,17 +219,13 @@ def score_texts(
 
     # Place on the live device. NOTE: callers (detect_and_store) already hold the GPU
     # inference guard, so we do NOT re-acquire it here (the lock is non-reentrant).
-    from app.services.redaction.device import resolve_device
-
-    _place_on_device(pipe, resolve_device())
-
     # Map non-blank texts to their indices; blanks stay None.
     idx_map = [i for i, t in enumerate(texts) if t and t.strip()]
     inputs = [texts[i][:2000] for i in idx_map]
     results: list[dict | None] = [None] * len(texts)
     if not inputs:
         return results
-    raw_all = pipe(inputs, batch_size=batch_size)
+    raw_all = _run_pipe(model_name, pipe, inputs, batch_size=batch_size)
     for slot, raw in zip(idx_map, raw_all, strict=True):
         # Per-input result is a list[{label,score}] when top_k=None.
         results[slot] = _normalize_scores([raw] if isinstance(raw, list) else raw, model_name)

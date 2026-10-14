@@ -66,6 +66,7 @@ from . import cancel_upload
 from . import complete_upload
 from . import multipart
 from . import prepare_upload
+from .captions import router as captions_router
 from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
 from .crud import get_media_file_by_id
@@ -159,6 +160,7 @@ router.include_router(
     dependencies=[Depends(require_capability("url_ingest", platform_admin_bypass=False))],
 )
 router.include_router(segments_router, prefix="", tags=["files"])
+router.include_router(captions_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
 

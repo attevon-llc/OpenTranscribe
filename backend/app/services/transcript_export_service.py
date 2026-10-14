@@ -11,8 +11,9 @@ fail-closed pattern documented in ``files/subtitles.py``: an unresolvable redact
 withholds the export (503) rather than defaulting to unmasked, and ``export_locked`` always
 wins over a per-request ``redact=false``.
 
-Output is intentionally byte-compatible with the retired client-side serializer so removing
-it does not change what users download.
+TXT / JSON / CSV keep the retired client-side serializer's layout. SRT and WebVTT do not:
+they are cut into broadcast-style cues by ``app.services.captions``, the segmenter the
+file-detail player's caption track uses, so a downloaded caption file matches the player.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 from app.models.media import Comment
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +50,6 @@ def _format_duration(total_seconds: float) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def _format_srt_timestamp(total_seconds: float) -> str:
-    """``HH:MM:SS,mmm`` — matches the retired ``formatSrtTimestamp``."""
-    if total_seconds < 0 or total_seconds != total_seconds:
-        total_seconds = 0.0
-    hours = int(total_seconds // 3600)
-    minutes = int((total_seconds % 3600) // 60)
-    seconds = int(total_seconds % 60)
-    millis = int(round((total_seconds - int(total_seconds)) * 1000))
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
-
-
-def _format_vtt_timestamp(total_seconds: float) -> str:
-    return _format_srt_timestamp(total_seconds).replace(",", ".")
-
-
 def _redact_segments(
     segments: list[TranscriptSegment],
     redaction_cfg: EffectiveRedactionConfig | None,
@@ -77,7 +64,11 @@ def _redact_segments(
     """
     from sqlalchemy.orm import object_session
 
+    from app.services.redaction.export_policy import plain_text_policy
+
     enabled = bool(redaction_cfg is not None and getattr(redaction_cfg, "enabled", False))
+    if redaction_cfg is not None:
+        redaction_cfg = plain_text_policy(redaction_cfg)
     out = []
     for seg in segments:
         text = str(seg.text or "")
@@ -140,17 +131,9 @@ def build_export_content(
     if export_format not in VALID_FORMATS:
         raise ValueError(f"Unsupported export format: {export_format}")
 
-    speaker_map: dict[int, str] = {}
-    for sp in speakers:
-        speaker_map[sp.id] = str(sp.display_name) if sp.display_name else str(sp.name)
-
-    masked = _redact_segments(segments, redaction_cfg, reveal_categories)
-    masked.sort(key=lambda s: s["start_time"])
-
-    def speaker_name(seg: dict[str, Any]) -> str:
-        if seg["speaker_id"] is None:
-            return speaker_default_label
-        return speaker_map.get(seg["speaker_id"], speaker_default_label)
+    speaker_map: dict[int, str] = {
+        int(sp.id): canonical_speaker_label_for_row(sp) for sp in speakers
+    }
 
     comment_rows: list[dict[str, Any]] = []
     if include_comments and comments:
@@ -168,6 +151,25 @@ def build_export_content(
                 {"timestamp": float(c.timestamp or 0.0), "text": c.text, "user_name": user_name}
             )
 
+    if export_format in ("srt", "vtt"):
+        return _build_cues(
+            export_format,
+            segments,
+            speaker_map,
+            comment_rows,
+            user_comment_label,
+            redaction_cfg,
+            reveal_categories,
+        )
+
+    masked = _redact_segments(segments, redaction_cfg, reveal_categories)
+    masked.sort(key=lambda s: s["start_time"])
+
+    def speaker_name(seg: dict[str, Any]) -> str:
+        if seg["speaker_id"] is None:
+            return speaker_default_label
+        return speaker_map.get(seg["speaker_id"], speaker_default_label)
+
     if export_format == "txt":
         return _build_txt(
             masked,
@@ -179,19 +181,15 @@ def build_export_content(
         )
     if export_format == "json":
         return _build_json(masked, speaker_name, comment_rows, filename, duration)
-    if export_format == "csv":
-        return _build_csv(
-            masked,
-            speaker_name,
-            comment_rows,
-            user_comment_label,
-            comment_type_label,
-            csv_header_default,
-            csv_header_with_comments,
-        )
-    if export_format == "srt":
-        return _build_srt(masked, speaker_name, comment_rows, user_comment_label)
-    return _build_vtt(masked, speaker_name, comment_rows, user_comment_label)
+    return _build_csv(
+        masked,
+        speaker_name,
+        comment_rows,
+        user_comment_label,
+        comment_type_label,
+        csv_header_default,
+        csv_header_with_comments,
+    )
 
 
 def _merge_by_timestamp(
@@ -330,68 +328,47 @@ def _build_csv(
     return header + "\n" + "\n".join(rows)
 
 
-def _build_srt(
-    masked: list[dict[str, Any]],
-    speaker_name,
+def _build_cues(
+    export_format: str,
+    segments: list[TranscriptSegment],
+    speaker_map: dict[int, str],
     comment_rows: list[dict[str, Any]],
     user_comment_label: str,
+    redaction_cfg: EffectiveRedactionConfig | None,
+    reveal_categories: set | None,
 ) -> str:
-    items: list[dict[str, Any]] = []
-    for seg in masked:
-        items.append(
-            {
-                "start": seg["start_time"],
-                "end": seg["end_time"],
-                "text": f"{speaker_name(seg)}: {seg['text']}",
-            }
-        )
-    for c in comment_rows:
-        items.append(
-            {
-                "start": c["timestamp"],
-                "end": c["timestamp"] + 2,
-                "text": f"{user_comment_label}: {c['user_name']}: {c['text']}",
-            }
-        )
-    if comment_rows:
-        items.sort(key=lambda it: it["start"])
+    """SRT / WebVTT through the shared caption segmenter, comments as their own cues.
 
-    blocks = []
-    for idx, item in enumerate(items, start=1):
-        start_ts = _format_srt_timestamp(item["start"])
-        end_ts = _format_srt_timestamp(item["end"])
-        blocks.append(f"{idx}\n{start_ts} --> {end_ts}\n{item['text']}\n")
-    return "\n".join(blocks)
+    The cues are the ones the file-detail player shows (``app.services.captions``), so
+    a downloaded caption file and the player agree. Comments are not speech: each keeps
+    its two-second cue at its timestamp, beside whatever is being said.
+    """
+    from app.services.captions import LATIN_RULES
+    from app.services.captions import Cue
+    from app.services.captions import CuePart
+    from app.services.captions import build_caption_track
+    from app.services.captions import to_srt
+    from app.services.captions import to_webvtt
+    from app.services.captions.source import caption_segments_from_rows
 
-
-def _build_vtt(
-    masked: list[dict[str, Any]],
-    speaker_name,
-    comment_rows: list[dict[str, Any]],
-    user_comment_label: str,
-) -> str:
-    items: list[dict[str, Any]] = []
-    for seg in masked:
-        items.append(
-            {
-                "start": seg["start_time"],
-                "end": seg["end_time"],
-                "text": f"{speaker_name(seg)}: {seg['text']}",
-            }
+    track = build_caption_track(
+        caption_segments_from_rows(
+            segments,
+            speaker_map,
+            include_speakers=True,
+            redaction_cfg=redaction_cfg,
+            reveal_categories=reveal_categories,
         )
-    for c in comment_rows:
-        items.append(
-            {
-                "start": c["timestamp"],
-                "end": c["timestamp"] + 2,
-                "text": f"{user_comment_label}: {c['user_name']}: {c['text']}",
-            }
-        )
-    if comment_rows:
-        items.sort(key=lambda it: it["start"])
-
-    body = "\n".join(
-        f"{_format_vtt_timestamp(it['start'])} --> {_format_vtt_timestamp(it['end'])}\n{it['text']}\n"
-        for it in items
     )
-    return "WEBVTT\n\n" + body
+    comments = [
+        Cue(
+            c["timestamp"],
+            c["timestamp"] + 2,
+            [CuePart(None, None, False, [f"{user_comment_label}: {c['user_name']}: {c['text']}"])],
+            LATIN_RULES,
+        )
+        for c in comment_rows
+    ]
+    if export_format == "srt":
+        return to_srt(track, comments)
+    return to_webvtt(track, comments)

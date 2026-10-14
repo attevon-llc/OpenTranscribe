@@ -53,6 +53,17 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
   **Every export surface takes a required redaction config** (#85, see the gotcha below).
+- **Captions** — `captions/` is the ONE caption cue segmenter (broadcast rules, sources in
+  `captions/rules.py`): the player track (`GET /files/{uuid}/captions`), the subtitle
+  download, the bulk ZIP, the burned-in video and the SRT/VTT transcript export all cut cues
+  there, so the player and every download agree. `captions/source.py` is the one loader:
+  masked text (never written back to the ORM), canonical speaker labels. Cue times come from
+  word timestamps when the words still match the text, mapped through redaction placeholders
+  by a character diff; otherwise they are interpolated by character position and the WebVTT
+  says so in a `NOTE`. **Every plain-text surface masks `blur` as `label`**
+  (`redaction/export_policy.plain_text_policy`): `blur`'s placeholder wraps the ORIGINAL word
+  for CSS to blur, so in a file it was the original in clear (all six export formats leaked
+  it before this).
 - **Browser playback renditions** — `playback_rendition.py`. Every format is accepted, but
   AIFF, WMA, ALAC, AC-3, MP2 and ADPCM audio, and AVI/WMV/MPEG/TS/FLV/3GP/MPEG-4-Part-2/
   Theora video, don't play in Firefox or Chromium. Preprocessing probes the original and,

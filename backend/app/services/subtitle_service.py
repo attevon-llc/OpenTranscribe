@@ -1,83 +1,44 @@
 """
-Subtitle generation service for creating SRT files from transcript segments.
-Handles movie-style formatting with proper line lengths and speaker labels.
-Supports overlapping speech display where multiple speakers talk simultaneously.
+Subtitle files (SRT / WebVTT / TXT) and the bulk subtitle archive.
+
+SRT and WebVTT cues come from ``app.services.captions``; this module loads the file,
+applies the export gates and serializes. TXT is a timestamped reading transcript, not
+cues, and keeps its own formatter here.
 """
 
 import io
 import logging
-import re
-import textwrap
 import zipfile
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from app.services.captions import CaptionTrack
     from app.services.redaction.config import EffectiveRedactionConfig
 
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
-from app.utils.time_format import format_srt_timestamp
 from app.utils.time_format import format_timestamp_simple
 
 logger = logging.getLogger(__name__)
 
 
 class SubtitleService:
-    """Service for generating subtitle files from transcript data."""
+    """Service for generating subtitle files from transcript data.
 
-    # Movie-style subtitle formatting constants (industry standards)
-    MAX_LINE_LENGTH = 42  # Optimal for readability
-    MAX_LINES_PER_SUBTITLE = 2
-    MIN_DISPLAY_TIME = 1.0  # Minimum 1 second display time
-    MAX_DISPLAY_TIME = 6.0  # Maximum 6 seconds display time
-    READING_SPEED_WPM = 200  # Words per minute for subtitle timing
-    MAX_CHARS_PER_SECOND = 20  # Maximum 20 characters per second for comfortable reading
+    SRT and WebVTT cue segmentation is NOT done here: both go through
+    ``app.services.captions`` (the one segmenter, shared with the file-detail player's
+    caption track and the transcript export), so a download and the player agree.
+    """
 
     @staticmethod
-    def format_timestamp(seconds: float) -> str:
-        """Convert seconds to SRT timestamp format (HH:MM:SS,mmm)."""
-        return format_srt_timestamp(seconds)
+    def _speaker_map(db: Session, segments: list[TranscriptSegment]) -> dict[int, str]:
+        """``{speaker_id: canonical label}`` for the speakers these segments name."""
+        from app.services.captions.source import speaker_labels_for
 
-    @staticmethod
-    def calculate_optimal_display_time(text: str) -> float:
-        """Calculate optimal display time based on text length and reading speed."""
-        word_count = len(text.split())
-        char_count = len(text)
-
-        # Calculate time needed based on reading speed (words per minute)
-        reading_time = (word_count / SubtitleService.READING_SPEED_WPM) * 60
-
-        # Also check character-per-second limit (industry standard)
-        chars_per_second_time = char_count / SubtitleService.MAX_CHARS_PER_SECOND
-
-        # Use the longer of the two to ensure comfortable reading
-        optimal_time = max(reading_time + 0.5, chars_per_second_time)
-
-        # Apply min/max constraints
-        optimal_time = max(optimal_time, SubtitleService.MIN_DISPLAY_TIME)
-        return min(optimal_time, SubtitleService.MAX_DISPLAY_TIME)
-
-    @staticmethod
-    def _get_speaker_prefix(speaker_name: str | None) -> str:
-        """Get formatted speaker prefix from speaker name."""
-        if not speaker_name or speaker_name.upper() == "UNKNOWN":
-            return ""
-        clean_name = speaker_name.strip()
-        return f"{clean_name}: " if clean_name else ""
-
-    @staticmethod
-    def _wrap_text(text: str) -> list[str]:
-        """Wrap text to subtitle line length constraints."""
-        return textwrap.wrap(
-            text,
-            width=SubtitleService.MAX_LINE_LENGTH,
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
+        return speaker_labels_for(db, {int(s.speaker_id) for s in segments if s.speaker_id})
 
     @staticmethod
     def _group_overlapping_segments(
@@ -89,16 +50,11 @@ class SubtitleService:
         single-element lists, while overlapping segments are grouped together.
         """
         overlap_groups: dict[str, list[TranscriptSegment]] = defaultdict(list)
-        non_overlap_segments: list[tuple[int, TranscriptSegment]] = []
 
-        # Separate overlapping and non-overlapping segments
-        for idx, segment in enumerate(segments):
+        for segment in segments:
             if segment.overlap_group_id:
                 overlap_groups[str(segment.overlap_group_id)].append(segment)
-            else:
-                non_overlap_segments.append((idx, segment))
 
-        # Build result maintaining original order
         processed_overlap_ids: set[str] = set()
         result_with_positions: list[tuple[float, list[TranscriptSegment]]] = []
 
@@ -108,13 +64,11 @@ class SubtitleService:
                 if group_id not in processed_overlap_ids:
                     processed_overlap_ids.add(group_id)
                     group = overlap_groups[group_id]
-                    # Use the earliest start time for positioning
                     min_start = min(float(s.start_time) for s in group)
                     result_with_positions.append((min_start, group))
             else:
                 result_with_positions.append((float(segment.start_time), [segment]))
 
-        # Sort by start time and return just the groups
         result_with_positions.sort(key=lambda x: x[0])
         return [group for _, group in result_with_positions]
 
@@ -126,9 +80,8 @@ class SubtitleService:
     ) -> None:
         """Mask segment text in memory (read-only export path; never committed).
 
-        Mutating the loaded ORM objects' ``text`` makes every downstream subtitle
-        formatter (overlap merge, long-segment split) inherit the masked text without
-        touching each extraction site.
+        Mutating the loaded ORM objects' ``text`` makes every downstream formatter
+        inherit the masked text without touching each extraction site.
 
         ⚠️ **Each segment is EXPUNGED from its session before it is mutated**, and that
         is not tidiness. "The DB row is never updated (no commit here)" was true only of
@@ -141,14 +94,20 @@ class SubtitleService:
         caller happens to hold the session. Only already-loaded column values are read
         downstream (``speaker_id`` and a separately-queried speaker map, never
         ``seg.speaker``), so nothing lazy-loads off a detached instance.
+
+        ``blur`` is masked as ``label`` (``export_policy.plain_text_policy``): its
+        placeholder wraps the ORIGINAL text for the page to blur with CSS, and a file has
+        no CSS.
         """
         if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
             return
 
         from sqlalchemy.orm import object_session
 
+        from app.services.redaction.export_policy import plain_text_policy
         from app.services.redaction.service import RedactionService
 
+        cfg = plain_text_policy(redaction_cfg)
         for seg in segments:
             session = object_session(seg)
             if session is not None:
@@ -158,7 +117,7 @@ class SubtitleService:
                     str(seg.text or ""),
                     seg.redactions or [],
                     seg.words,
-                    redaction_cfg,
+                    cfg,
                     reveal_categories or set(),
                 )
             except Exception:
@@ -176,176 +135,27 @@ class SubtitleService:
             seg.text = masked
 
     @staticmethod
-    def _format_overlap_for_subtitle(
-        segments: list[TranscriptSegment],
-        speaker_map: dict[int, str],
-        format_type: str = "srt",
-    ) -> tuple[float, float, str]:
-        """Format overlapping segments as a single subtitle cue with speaker labels.
+    def _caption_track(
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool,
+        redaction_cfg: "EffectiveRedactionConfig | None",
+        reveal_categories: set | None,
+    ) -> "CaptionTrack":
+        from app.services.captions import build_caption_track
+        from app.services.captions.source import load_caption_segments
 
-        Returns (start_time, end_time, formatted_text).
-        """
-        # Get time range spanning all segments
-        start_time = min(float(s.start_time) for s in segments)
-        end_time = max(float(s.end_time) for s in segments)
-
-        # Format each speaker's text with their label
-        lines = []
-        for segment in sorted(segments, key=lambda s: float(s.start_time)):
-            speaker_name = (
-                speaker_map.get(segment.speaker_id, "Unknown") if segment.speaker_id else "Unknown"  # type: ignore[call-overload]
+        if db.query(MediaFile.id).filter(MediaFile.id == media_file_id).first() is None:
+            raise ValueError(f"Media file with ID {media_file_id} not found")
+        return build_caption_track(
+            load_caption_segments(
+                db,
+                media_file_id,
+                include_speakers=include_speakers,
+                redaction_cfg=redaction_cfg,
+                reveal_categories=reveal_categories,
             )
-            text = str(segment.text).strip()
-            lines.append(f"[{speaker_name}] {text}")
-
-        return start_time, end_time, "\n".join(lines)
-
-    @staticmethod
-    def _create_subtitle_block(lines: list[str], speaker_prefix: str) -> str:
-        """Create a subtitle block from lines, adding speaker prefix to first line."""
-        block_lines = lines[: SubtitleService.MAX_LINES_PER_SUBTITLE]
-        if speaker_prefix:
-            block_lines[0] = f"{speaker_prefix}{block_lines[0]}"
-        return "\n".join(block_lines)
-
-    @staticmethod
-    def _process_sentence(
-        sentence: str,
-        current_subtitle: str,
-        speaker_prefix: str,
-        formatted_subtitles: list[str],
-    ) -> str:
-        """Process a sentence and add to subtitles if needed. Returns updated current_subtitle."""
-        if not current_subtitle:
-            return sentence
-
-        test_text = f"{current_subtitle} {sentence}"
-        test_lines = SubtitleService._wrap_text(test_text)
-
-        if len(test_lines) <= SubtitleService.MAX_LINES_PER_SUBTITLE:
-            return test_text
-
-        # Finalize current subtitle and start new one
-        subtitle_lines = SubtitleService._wrap_text(current_subtitle)
-        formatted_subtitles.append(
-            SubtitleService._create_subtitle_block(subtitle_lines, speaker_prefix)
         )
-        return sentence
-
-    @staticmethod
-    def _finalize_remaining_text(
-        current_subtitle: str, speaker_prefix: str, formatted_subtitles: list[str]
-    ) -> None:
-        """Process remaining text into subtitle blocks."""
-        if not current_subtitle:
-            return
-
-        subtitle_lines = SubtitleService._wrap_text(current_subtitle)
-        for i in range(0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE):
-            chunk = subtitle_lines[i : i + SubtitleService.MAX_LINES_PER_SUBTITLE]
-            formatted_subtitles.append(
-                SubtitleService._create_subtitle_block(chunk, speaker_prefix)
-            )
-
-    @staticmethod
-    def format_text_for_subtitles(
-        text: str, speaker_name: str | None = None, format_type: str = "srt"
-    ) -> list[str]:
-        """Format text for movie-style subtitles with proper line breaks and speaker continuity."""
-        # Clean the text
-        text = re.sub(r"\s+", " ", text.strip())
-
-        # Get speaker prefix
-        speaker_prefix = SubtitleService._get_speaker_prefix(speaker_name)
-
-        # If text with speaker prefix fits in one line, return as single subtitle
-        full_text = f"{speaker_prefix}{text}"
-        if len(full_text) <= SubtitleService.MAX_LINE_LENGTH:
-            return [full_text]
-
-        # For longer text, process sentences into subtitle blocks
-        formatted_subtitles: list[str] = []
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-        current_subtitle = ""
-
-        for sentence in sentences:
-            current_subtitle = SubtitleService._process_sentence(
-                sentence, current_subtitle, speaker_prefix, formatted_subtitles
-            )
-
-        # Handle remaining text
-        SubtitleService._finalize_remaining_text(
-            current_subtitle, speaker_prefix, formatted_subtitles
-        )
-
-        return formatted_subtitles if formatted_subtitles else [full_text]
-
-    @staticmethod
-    def split_long_segment(
-        segment: TranscriptSegment,
-        speaker_name: str | None = None,
-        format_type: str = "srt",
-    ) -> list[tuple[float, float, str]]:
-        """Split long transcript segments into properly timed subtitle chunks with speaker continuity."""
-        text = str(segment.text or "").strip()
-        start = float(segment.start_time or 0.0)
-        end = float(segment.end_time or start)
-        duration = end - start
-
-        # Format text and handle multi-part subtitles
-        formatted_subtitles = SubtitleService.format_text_for_subtitles(
-            text, speaker_name, format_type
-        )
-
-        # If only one subtitle, return as-is
-        if len(formatted_subtitles) == 1:
-            optimal_duration = SubtitleService.calculate_optimal_display_time(text)
-            actual_duration = min(duration, optimal_duration)
-            return [
-                (
-                    start,
-                    start + actual_duration,
-                    formatted_subtitles[0],
-                )
-            ]
-
-        # Handle multiple subtitle parts with proper timing distribution
-        subtitle_parts: list[tuple[float, float, str]] = []
-        total_chars = sum(len(subtitle) for subtitle in formatted_subtitles)
-
-        current_time = start
-        segment_end_time = end
-        for i, subtitle_text in enumerate(formatted_subtitles):
-            # Calculate time allocation based on text length (proportional distribution)
-            text_ratio = len(subtitle_text) / total_chars
-            allocated_time = duration * text_ratio
-
-            # Apply minimum and maximum display time constraints
-            optimal_duration = SubtitleService.calculate_optimal_display_time(subtitle_text)
-            actual_duration = min(
-                max(allocated_time, SubtitleService.MIN_DISPLAY_TIME), optimal_duration
-            )
-
-            end_time = current_time + actual_duration
-
-            # Ensure we don't exceed the original segment end time
-            if end_time > segment_end_time:
-                end_time = segment_end_time
-
-            # Ensure minimum gap between subtitles for readability
-            if i < len(formatted_subtitles) - 1:  # Not the last subtitle
-                min_gap = 0.1  # 100ms gap
-                if end_time + min_gap > segment_end_time:
-                    end_time = segment_end_time - min_gap
-
-            subtitle_parts.append((current_time, end_time, subtitle_text))
-            current_time = end_time + 0.1  # Small gap between subtitles
-
-            # Prevent overlapping with segment end
-            if current_time >= segment_end_time:
-                break
-
-        return subtitle_parts
 
     @staticmethod
     def generate_webvtt_content(
@@ -355,79 +165,14 @@ class SubtitleService:
         redaction_cfg: "EffectiveRedactionConfig | None" = None,
         reveal_categories: set | None = None,
     ) -> str:
-        """Generate WebVTT subtitle content from transcript segments.
+        """WebVTT subtitles, cut into broadcast-style cues by ``app.services.captions``."""
+        from app.services.captions import to_webvtt
 
-        Handles overlapping speech by merging segments with the same overlap_group_id
-        into a single subtitle cue with speaker labels on separate lines.
-        """
-        # Get media file and transcript segments
-        media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
-        if not media_file:
-            raise ValueError(f"Media file with ID {media_file_id} not found")
-
-        # Get all transcript segments ordered by start time
-        segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == media_file_id)
-            .order_by(
-                TranscriptSegment.start_time,
-                TranscriptSegment.end_time,
-                TranscriptSegment.id,
+        return to_webvtt(
+            SubtitleService._caption_track(
+                db, media_file_id, include_speakers, redaction_cfg, reveal_categories
             )
-            .all()
         )
-
-        if not segments:
-            raise ValueError("No transcript segments found for this media file")
-
-        # Build speaker map for quick lookup
-        speaker_map: dict[int, str] = {}
-        if include_speakers:
-            speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
-            speaker_rows = (
-                db.query(Speaker.id, Speaker.name, Speaker.display_name)
-                .filter(Speaker.id.in_(speaker_ids))
-                .all()
-            )
-            for row in speaker_rows:
-                speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
-
-        # Read-time content redaction (after speaker_map; mutates text in memory only)
-        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
-
-        # Group overlapping segments
-        segment_groups = SubtitleService._group_overlapping_segments(segments)
-
-        # Start WebVTT content
-        webvtt_content = "WEBVTT\n\n"
-
-        for group in segment_groups:
-            if len(group) > 1:
-                # Overlapping segments - merge into single cue
-                start_time, end_time, text = SubtitleService._format_overlap_for_subtitle(
-                    group, speaker_map, "webvtt"
-                )
-                start_timestamp = SubtitleService.format_timestamp(start_time).replace(",", ".")
-                end_timestamp = SubtitleService.format_timestamp(end_time).replace(",", ".")
-
-                webvtt_content += f"{start_timestamp} --> {end_timestamp}\n{text}\n\n"
-            else:
-                # Single segment - process normally
-                segment = group[0]
-                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None  # type: ignore[call-overload]
-
-                # Split long segments into properly formatted subtitles for WebVTT
-                subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
-
-                for start_time, end_time, text in subtitle_parts:
-                    # Format WebVTT timestamps (using dots instead of commas)
-                    start_timestamp = SubtitleService.format_timestamp(start_time).replace(",", ".")
-                    end_timestamp = SubtitleService.format_timestamp(end_time).replace(",", ".")
-
-                    # Add WebVTT cue
-                    webvtt_content += f"{start_timestamp} --> {end_timestamp}\n{text}\n\n"
-
-        return webvtt_content
 
     @staticmethod
     def generate_srt_content(
@@ -437,98 +182,14 @@ class SubtitleService:
         redaction_cfg: "EffectiveRedactionConfig | None" = None,
         reveal_categories: set | None = None,
     ) -> str:
-        """Generate SRT subtitle content from transcript segments.
+        """SRT subtitles, cut into broadcast-style cues by ``app.services.captions``."""
+        from app.services.captions import to_srt
 
-        Handles overlapping speech by merging segments with the same overlap_group_id
-        into a single subtitle cue with speaker labels on separate lines.
-        """
-        # Get media file and transcript segments
-        media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
-        if not media_file:
-            raise ValueError(f"Media file with ID {media_file_id} not found")
-
-        # Get all transcript segments ordered by start time
-        segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == media_file_id)
-            .order_by(
-                TranscriptSegment.start_time,
-                TranscriptSegment.end_time,
-                TranscriptSegment.id,
+        return to_srt(
+            SubtitleService._caption_track(
+                db, media_file_id, include_speakers, redaction_cfg, reveal_categories
             )
-            .all()
         )
-
-        if not segments:
-            raise ValueError("No transcript segments found for this media file")
-
-        # Build speaker map for quick lookup
-        speaker_map: dict[int, str] = {}
-        if include_speakers:
-            speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
-            speaker_rows = (
-                db.query(Speaker.id, Speaker.name, Speaker.display_name)
-                .filter(Speaker.id.in_(speaker_ids))
-                .all()
-            )
-            for row in speaker_rows:
-                speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
-
-        # Read-time content redaction (mutates text in memory only)
-        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
-
-        # Group overlapping segments
-        segment_groups = SubtitleService._group_overlapping_segments(segments)
-
-        srt_content = []
-        subtitle_index = 1
-
-        for group in segment_groups:
-            if len(group) > 1:
-                # Overlapping segments - merge into single cue
-                start_time, end_time, text = SubtitleService._format_overlap_for_subtitle(
-                    group, speaker_map, "srt"
-                )
-                start_timestamp = SubtitleService.format_timestamp(start_time)
-                end_timestamp = SubtitleService.format_timestamp(end_time)
-
-                srt_entry = f"{subtitle_index}\n{start_timestamp} --> {end_timestamp}\n{text}\n"
-                srt_content.append(srt_entry)
-                subtitle_index += 1
-            else:
-                # Single segment - process normally
-                segment = group[0]
-                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None  # type: ignore[call-overload]
-
-                # Split long segments into properly formatted subtitles
-                subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
-
-                for start_time, end_time, text in subtitle_parts:
-                    # Format SRT entry
-                    start_timestamp = SubtitleService.format_timestamp(start_time)
-                    end_timestamp = SubtitleService.format_timestamp(end_time)
-
-                    srt_entry = f"{subtitle_index}\n{start_timestamp} --> {end_timestamp}\n{text}\n"
-                    srt_content.append(srt_entry)
-                    subtitle_index += 1
-
-        return "\n".join(srt_content)
-
-    @staticmethod
-    def generate_srt_file(
-        db: Session,
-        media_file_id: int,
-        include_speakers: bool = True,
-        output_path: str | None = None,
-    ) -> str:
-        """Generate SRT file and optionally save to disk."""
-        srt_content = SubtitleService.generate_srt_content(db, media_file_id, include_speakers)
-
-        if output_path:
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(srt_content)
-
-        return srt_content
 
     @staticmethod
     def format_timestamp_simple(seconds: float) -> str:
@@ -570,17 +231,7 @@ class SubtitleService:
         if not segments:
             raise ValueError("No transcript segments found for this media file")
 
-        # Build speaker map for quick lookup
-        speaker_map: dict[int, str] = {}
-        if include_speakers:
-            speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
-            speaker_rows = (
-                db.query(Speaker.id, Speaker.name, Speaker.display_name)
-                .filter(Speaker.id.in_(speaker_ids))
-                .all()
-            )
-            for row in speaker_rows:
-                speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+        speaker_map = SubtitleService._speaker_map(db, segments) if include_speakers else {}
 
         # Read-time content redaction (mutates text in memory only)
         SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)

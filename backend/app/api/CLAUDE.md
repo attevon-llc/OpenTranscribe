@@ -177,7 +177,7 @@ Shaped for a script or agent rather than a screen.
 | `GET /files/{uuid}/info` | Lightweight identity/size/duration/language/status with no transcript — the integration read |
 | `GET /files/{uuid}/status-detail` | Status + stuck detection + retry counters + `active_task_id`. Mixed shape: also carries English `recommendations` |
 | `GET /files/supported-formats` | Static `{"subtitle_formats": [...]}`. **No auth dependency at all** — the only ungated route in that router |
-| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied; the player builds its own VTT client-side, hence no SPA caller. **409 while the file's redaction scan is incomplete** — see Gotchas |
+| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied. The player's track is the sibling `GET /files/{uuid}/captions` (inline WebVTT, transcript-READ gating, `files/captions.py`); both cut cues with `services/captions`. **409 while the file's redaction scan is incomplete** — see Gotchas |
 | `GET /usage/me` · `GET /usage/me/daily` | Per-user LLM token/cost reporting. **Core, not a cloud seam** — `usage.py`'s docstring is explicit that a self-hoster paying an OpenAI bill is the intended reader. Reporting only; quotas and billing are the part that was carved out. The only usage UI in this repo is the `isCloudEdition`-gated managed-edition stub, so the self-host panel these promise does not exist yet |
 | `GET /prompts/by-content-type/{type}` | System + user prompts for one of 5 content types |
 | `GET /search/filters` | Available filter facets from OpenSearch aggs; degrades to empty lists when the index is absent |

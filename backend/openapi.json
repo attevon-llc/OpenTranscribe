@@ -32267,6 +32267,80 @@
         ]
       }
     },
+    "/api/files/{file_uuid}/captions": {
+      "get": {
+        "description": "WebVTT captions for the player, cut into broadcast-style cues.\n\nRaises:\n    HTTPException: 404 when the file has no completed transcript, 409 while its\n        redaction scan has not finished, 503 when the redaction policy cannot be\n        resolved.",
+        "operationId": "get_caption_track_api_files__file_uuid__captions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Apply content redaction (owner/admin may disable)",
+            "in": "query",
+            "name": "redact",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Apply content redaction (owner/admin may disable)",
+              "title": "Redact",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How to show an unnamed diarization speaker, with a {number} token, e.g. 'Speaker {number}'. Omitted: the raw SPEAKER_NN label.",
+            "in": "query",
+            "name": "speaker_placeholder",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How to show an unnamed diarization speaker, with a {number} token, e.g. 'Speaker {number}'. Omitted: the raw SPEAKER_NN label.",
+              "title": "Speaker Placeholder"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Caption Track",
+        "tags": [
+          "files",
+          "files"
+        ]
+      }
+    },
     "/api/files/{file_uuid}/download-stream": {
       "get": {
         "description": "Server-Sent Events stream that pushes download progress + the final URL.\n\nThe browser opens this (EventSource, cookie-authenticated) after a ``processing``\nresponse. Events: ``progress`` (status text), ``ready`` (``{url, filename}``),\n``error`` (``{message}``). On (re)connect we re-check readiness first, so a dropped\nconnection still delivers once the worker has finished — no client polling.",

@@ -12,6 +12,9 @@ coordinator), plus the full-transcript match browser opened from a result card.
   occurrence emits `null`) and `viewTranscript`. No API calls.
 - `SearchOccurrence.svelte` — one snippet row; renders the backend's `<mark>` /
   `<mark class="semantic">` highlight markup, so its `mark` styling must stay `:global`.
+  The card title is a block of text, not a flex row: as `inline-flex` each title `<mark>` was
+  its own flex item and a narrow viewport split a word across two of them. Type rules:
+  `frontend/CLAUDE.md` "Type and weight rules".
 - `SearchAutocomplete.svelte` — the query input: `GET /search/suggestions` debounced 200 ms with
   AbortController cancellation and arrow/Enter/Escape nav. A `title`-type suggestion `goto`s
   `/files/<uuid>` directly instead of dispatching `select`.

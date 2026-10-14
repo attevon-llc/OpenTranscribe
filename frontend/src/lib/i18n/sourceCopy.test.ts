@@ -140,3 +140,69 @@ describe('English source copy left over from #1220 (#1222)', () => {
     }
   });
 });
+
+// Issue #1243: capability flags and the cost of another provider's speakers, in every locale.
+const LOCALES = import.meta.glob('./locales/*.json', { eager: true, import: 'default' }) as Record<
+  string,
+  Record<string, string>
+>;
+const CAPABILITY_COPY = [
+  'settings.asrProvider.optionVaries',
+  'settings.asrProvider.implication.speakersIncluded',
+  'settings.asrProvider.implication.speakersLocal',
+  'settings.asrProvider.implication.textOnly',
+  'settings.asrProvider.implication.textOnlyLite',
+  'settings.asrProvider.legend.title',
+  'settings.asrProvider.legend.speakersIncluded',
+  'settings.asrProvider.legend.textOnly',
+  'settings.asrProvider.legend.timingWord',
+  'settings.asrProvider.legend.timingSegment',
+  'settings.asrProvider.legend.timingNone',
+  'uploader.cloudDefaultOption',
+  'settings.speakerIdentification.source.asrConfigSaved',
+  'settings.speakerIdentification.source.asrConfigTranscribing',
+  'settings.speakerIdentification.credential.asrConfig',
+  'settings.speakerIdentification.billing.included',
+  'settings.pipeline.issue.diarizer_double_billing',
+  'settings.pipeline.issue.diarizer_same_as_transcription',
+];
+
+describe('capability and billing copy (#1243)', () => {
+  it('is translated in every locale, not copied from English', () => {
+    for (const [file, messages] of Object.entries(LOCALES)) {
+      if (file.endsWith('/en.json')) continue;
+      for (const key of CAPABILITY_COPY) {
+        expect(messages[key], `${file} ${key}`).toBeTruthy();
+        expect(messages[key], `${file} ${key}`).not.toBe(EN[key]);
+      }
+    }
+  });
+
+  it('keeps the placeholders of the one-string labels in every locale', () => {
+    for (const [file, messages] of Object.entries(LOCALES)) {
+      expect(messages['settings.asrProvider.flagsLine'], file).toMatch(
+        /\{\{speakers\}\}.*\{\{timing\}\}/
+      );
+      expect(messages['settings.asrProvider.optionWithFlags'], file).toMatch(
+        /\{\{name\}\}.*\{\{flags\}\}/
+      );
+      expect(messages['uploader.cloudDefaultOption'], file).toMatch(/\{\{provider\}\}/);
+      expect(messages['uploader.cloudDefaultOption'], file).toMatch(/\{\{model\}\}/);
+    }
+  });
+
+  it('says what another provider costs and what it receives, and that nothing is billed twice for the same one', () => {
+    expect(EN['settings.pipeline.issue.diarizer_double_billing']).toMatch(/full transcription/);
+    expect(EN['settings.pipeline.issue.diarizer_double_billing']).toMatch(/audio/);
+    expect(EN['settings.pipeline.issue.diarizer_same_as_transcription']).toMatch(/billed twice/);
+    expect(EN['settings.speakerIdentification.source.asrConfigDesc']).toMatch(/audio/);
+  });
+
+  it('left no orphaned copy behind', () => {
+    for (const messages of Object.values(LOCALES)) {
+      expect(messages['settings.speakerIdentification.source.asrConfigNote']).toBeUndefined();
+      expect(messages['uploader.highQuality']).toBeUndefined();
+      expect(messages['uploader.fastProcessing']).toBeUndefined();
+    }
+  });
+});

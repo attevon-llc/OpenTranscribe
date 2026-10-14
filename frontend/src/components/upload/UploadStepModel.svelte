@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import PerFileModelSelect from '$components/PerFileModelSelect.svelte';
 
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
@@ -40,14 +41,12 @@
       {$t('uploader.whisperModel')}
       <span class="hint">{$t('uploader.whisperModelHint')}</span>
     </label>
-    <select id="whisper-model-select" bind:value={selectedWhisperModel} on:change={emitChange} class="model-select">
-      <option value={null}>
-        {$t('uploader.highQualityOption', { model: adminDefaultModel })}
-      </option>
-      <option value="base">
-        {$t('uploader.fastProcessingOption')}
-      </option>
-    </select>
+    <PerFileModelSelect
+      id="whisper-model-select"
+      bind:value={selectedWhisperModel}
+      adminModel={adminDefaultModel}
+      on:change={emitChange}
+    />
     {#if selectedWhisperModel === 'base'}
       <p class="model-note">{$t('uploader.fastProcessingHint')}</p>
     {/if}
@@ -83,12 +82,6 @@
   .field { display: flex; flex-direction: column; gap: 0.375rem; }
   .field label { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; gap: 0.125rem; }
   .hint { font-size: 0.6875rem; font-weight: 400; color: var(--text-secondary); }
-
-  .model-select {
-    width: 100%; padding: 0.4375rem 0.625rem; border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--input-bg, var(--surface-color)); color: var(--text-primary); font-size: 0.875rem; cursor: pointer;
-  }
-  .model-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
 
   .model-managed { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
   .model-note { margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3; }

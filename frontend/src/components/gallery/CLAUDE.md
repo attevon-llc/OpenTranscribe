@@ -33,6 +33,18 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   (duration, date, size, status) are right-aligned and every body cell is 0.875rem — pinned by
   `VirtualListHeaderStyle.test.ts`, which reads the style source because jsdom cannot cascade
   scoped CSS. The grid's speaker count is `gallery.speakerCountShort`, never a literal.
+- **List column geometry has ONE definition** (`file-list-grid.css`, issue #1243 item 14):
+  `--file-list-columns`, `--file-list-check`, `--file-list-pad`, `--file-list-gap`, and
+  `--file-list-columns-selecting` (= check track + the same columns). Header, skeleton and rows
+  all consume them; in selection mode a row is a grid on the selecting template and its
+  `.file-list-link` is a `subgrid`, so header and cell edges cannot disagree (they were 24px
+  apart, mirrored wrongly in RTL, when the row was `40px 1fr` with its own physical paddings).
+  Pinned by `VirtualListColumnAlignment.test.ts` (style source) and
+  `backend/tests/e2e/test_gallery_list_alignment.py` (measured left/right edges). Never add a
+  hand-tuned padding or template to a header or row; change the variables.
+- `QuarantineModal.svelte`'s legal-hold checkbox must override the global
+  `input { width: 100% }` (`QuarantineModalStyle.test.ts`) — any new checkbox row in a flex
+  label has the same trap.
 - `GallerySelectionActions.svelte` — row-2-left: "Select items" in normal mode, expanding in
   place into the full select-all/process/organize/delete/cancel toolbar in selection mode
   (reads `galleryStore`). Split out of the old `GalleryActionButtons.svelte` by #747 so each

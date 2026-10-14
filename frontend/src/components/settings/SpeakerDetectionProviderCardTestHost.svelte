@@ -2,7 +2,7 @@
 <script lang="ts">
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
   import type { PipelineView } from '$lib/api/pipeline';
-  import type { DiarizerChoice } from '$lib/settings/asrCapabilities';
+  import type { DiarizerChoice, SavedProviderRow } from '$lib/settings/asrCapabilities';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import SpeakerDetectionProviderCard from './SpeakerDetectionProviderCard.svelte';
 
@@ -10,6 +10,7 @@
   export let diarizationAsrConfigUuid: string | null = null;
   export let pipeline: PipelineView | null = null;
   export let choices: DiarizerChoice[] = [];
+  export let saved: SavedProviderRow[] = [];
   export let locked = false;
   export let keyEnabled = true;
   export let onNavigate: (section: SettingsSection) => void = () => {};
@@ -20,6 +21,7 @@
   bind:diarizationAsrConfigUuid
   {pipeline}
   {choices}
+  {saved}
   {locked}
   {keyEnabled}
   on:navigate={(e) => onNavigate(e.detail)}

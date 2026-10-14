@@ -121,7 +121,7 @@
         </svg>
       </svelte:fragment>
       {#if reviewCount > 0}
-        <button type="button" class="btn-secondary" on:click={() => dispatch('openReview')}>
+        <button type="button" class="btn btn-secondary" on:click={() => dispatch('openReview')}>
           {$t('speakers.clusters.openReview')}
         </button>
       {/if}

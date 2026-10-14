@@ -61,13 +61,21 @@ export function speakerSourceOptions(args: {
 export interface TranscriptionFacts {
   returnsSpeakers: boolean;
   timing: PipelineTiming;
+  /** Catalog id and model of what transcribes, to tell "the same provider" from another. */
+  provider?: string | null;
+  model?: string | null;
 }
 
 /** What the transcription model returns, from the saved pipeline; null until it has loaded. */
 export function transcriptionFacts(view: PipelineView | null): TranscriptionFacts | null {
   const step = view?.steps.find((s) => s.step === 'transcription');
   if (!step || step.returns_speakers === null || step.timing === null) return null;
-  return { returnsSpeakers: step.returns_speakers, timing: step.timing };
+  return {
+    returnsSpeakers: step.returns_speakers,
+    timing: step.timing,
+    provider: step.provider,
+    model: step.model,
+  };
 }
 
 export interface SelectionNotice {
@@ -82,7 +90,8 @@ export interface SelectionNotice {
 export function selectionNotices(
   source: DiarizationSource,
   facts: TranscriptionFacts | null,
-  mode: Mode
+  mode: Mode,
+  chosen?: Pick<DiarizerChoice, 'provider' | 'modelName'>
 ): SelectionNotice[] {
   if (source === 'off') return [];
   const notices: SelectionNotice[] = [];
@@ -97,6 +106,16 @@ export function selectionNotices(
       mode === 'lite'
         ? { code: 'automatic_needs_speaker_provider', severity: 'error' }
         : { code: 'automatic_uses_server', severity: 'info' }
+    );
+  }
+  if (source === 'asr_config' && chosen) {
+    // Another saved provider: a full transcription is billed for its speakers alone, unless it
+    // is the very provider and model that transcribes, whose own speakers are then used.
+    const same = chosen.provider === facts?.provider && chosen.modelName === facts?.model;
+    notices.push(
+      same
+        ? { code: 'diarizer_same_as_transcription', severity: 'info' }
+        : { code: 'diarizer_double_billing', severity: 'warning' }
     );
   }
   // The model's own speaker labels need no merge, so its coarse timing costs nothing there.
@@ -139,4 +158,19 @@ export function selectionWhere(
       return view?.deployment_mode === 'lite' ? null : { where: 'server', vendor: null };
     }
   }
+}
+
+/**
+ * Copy key for the cost line under the picker, or null when there is nothing to add. Only the
+ * one case that needs saying here: Automatic with a model that returns its own speakers costs
+ * nothing extra. The extra-billing cases are issues (see `selectionNotices`).
+ */
+export function billingNoteKey(
+  source: DiarizationSource,
+  view: PipelineView | null
+): string | null {
+  if (source !== 'provider') return null;
+  const transcription = view?.steps.find((s) => s.step === 'transcription');
+  if (transcription?.where !== 'cloud' || transcription.returns_speakers !== true) return null;
+  return 'settings.speakerIdentification.billing.included';
 }

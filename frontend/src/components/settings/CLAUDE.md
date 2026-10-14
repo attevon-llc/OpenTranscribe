@@ -202,6 +202,20 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   with a section id; a code's fix tab is the table `FIX_SECTIONS` in `pipelineIssues.ts`.
   Keep `pipelineKeys.ts` out of `keyMaps.ts`: `keyMaps` is in the root layout's static closure (budget in
   `scripts/check-bundle-budget.mjs`), and putting these strings there pushed it over by 0.3 KB.
+- **Every surface that picks or shows a transcription model uses `CapabilityBadges` and the catalog (#1243).**
+  The pills (props), the one-line consequence (`explain`, from `capabilityNotes` in
+  `$lib/settings/asrCapabilities`) and the key to the pills (`legend`) are ONE component; never
+  hand-draw a speakers/timing flag or copy a model's capabilities into a component. A native
+  `<select>` cannot hold pills, so its options carry the flags as ONE translated string
+  (`optionWithFlags`, `settings.asrProvider.optionWithFlags` with `{{name}}`/`{{flags}}`, never
+  fragments glued together) and the chosen option repeats them as badges below. Surfaces: Provider &
+  Model (this server's model card, the transcription in use, each saved provider, the add-provider
+  provider/model lists), the upload wizard and reprocess dialog (`components/PerFileModelSelect`, options
+  from `$lib/settings/perFileModel`: "my setting" is the saved provider when one is active, never
+  hard-coded to this server's model), and the Speaker Detection card (saved-provider list). A catalog
+  entry the server does not list claims nothing (no timing pill), a provider whose models disagree reads
+  "varies by model". The local model card's flags come from the catalog's `local` entry, not from
+  `model_info` (that field says nothing about timing).
 - **`SpeakerDetectionProviderCard` previews a CHOICE; the server decides.** `$lib/settings/speakerSources`
   mirrors `services/pipeline_plan.py` only to say, before saving, what the current transcription model means for
   the picked source (text only, no timing, lite) and where it would run. `PUT /user-settings/transcription`

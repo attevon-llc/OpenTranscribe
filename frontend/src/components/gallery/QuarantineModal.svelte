@@ -204,8 +204,20 @@
     color: var(--text-secondary, var(--text-color));
   }
 
+  /* The global `input { width: 100%; padding: 8px 12px }` (styles/form-elements.css) also
+     matches a checkbox: in this flex row it claimed up to 100% of the line, so the box
+     was 105-168px wide and its text was squeezed into the leftover narrow column. */
   .legal-hold-field input {
-    margin-top: 0.2rem;
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    padding: 0;
+    margin: 0.15rem 0 0;
+  }
+
+  .legal-hold-field span {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .notice,

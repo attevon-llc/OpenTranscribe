@@ -186,6 +186,7 @@ readiness answers 503 until the schema is at head). The chain is one-way.
 | `v436_lite_local_speaker_detection_to_automatic` | data only, lite only | `local` -> `provider` for lite users whose active ASR config returns speakers (reads `DEPLOYMENT_MODE` at migration time). Downgrade no-op |
 | `v437_add_media_processing_provenance` | additive | `media_file.processing_provenance JSONB`; written only by `services/file_provenance.record_stage` |
 | `v438_add_speaker_correction_carryover` | additive | `speaker_correction_carryover` |
+| `v439_infer_legacy_voiceprint_suggestion_source` | data fix | `speaker.suggestion_source` on rows proven voice-matched |
 
 `v434` and `v436` read environment variables at migration time, so a migrate job must run with
 the same `ASR_PROVIDER` (and provider key variables) and `DEPLOYMENT_MODE` as the application.

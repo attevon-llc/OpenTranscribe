@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Twelve migrations, `v397` to `v438`, run automatically at backend start.** They add columns
+- **Thirteen migrations, `v397` to `v439`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my

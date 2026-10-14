@@ -242,8 +242,9 @@ The migration chain progresses through these versions:
 | `v434`, `v436` | Settings-only data fixes for speaker-detection choices that could no longer run (#1225, #1228) |
 | `v437` | `media_file.processing_provenance`: which provider and model completed each step (#1229) |
 | `v438` | `speaker_correction_carryover`: speaker corrections survive a re-run of the file (#1233) |
+| `v439` | `suggestion_source` stamped on provably voiceprint-matched legacy speaker suggestions (#1233) |
 
-What `v397` to `v438` mean for an existing install, including the few that change data, is
+What `v397` to `v439` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail

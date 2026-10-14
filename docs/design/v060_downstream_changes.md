@@ -285,3 +285,20 @@ on. Deleted flag: `chat.rag.map_tier_hybrid`.
 - Images no longer contain `pip`; anything that installed packages into a running container
   must move to the image build.
 - Third-party telemetry is off by default (section 4).
+
+## 9. Adoption checklist
+
+Order for a derived deployment moving from `v0.5.1` to `v0.6.0`. Move the base pin to the release
+tag, not to a branch.
+
+1. Take a database backup; the migrations (`v397` to `v439`) run on backend start and are one-way.
+2. Read section 1 and fix the two breaking seam steps: `record_event` now raises on a write
+   failure (v4), and the capability resolver fails closed (v6). Check the other steps too.
+3. Set `TENANCY_MODE` explicitly (section 2) and confirm platform staff reach tenant content only
+   through a support-access grant (v8).
+4. Apply the removed, added and changed environment variables (section 4); every addition is optional.
+5. Installs with organizations: run the two one-off backfills named in the upgrade page.
+6. Re-run any automation against the API contracts (section 6), including the status-code changes.
+7. Re-test everything in section 8.
+8. Run a role matrix on a multi-tenant stack: user, organization admin, admin and platform
+   super admin, each in community, `TENANCY_MODE=multi` and lite deployments.

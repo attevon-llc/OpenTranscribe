@@ -7,36 +7,221 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Overview
 
-- **An AI-suggested speaker name is never the speaker's name until you accept it.** A speaker's
-  name in search, chat, summaries and exports now comes only from a name you typed or verified,
-  or from a voice match to a profile or promoted cluster at 75% similarity or more. The AI
-  speaker-identification result used to become the name on its own once its confidence reached
-  75%, so a guess could be indexed and cited as a person nobody had checked. It is still stored
-  and offered in the speaker editor and suggestion lists with its confidence, and accepting it
-  sets the name. The speaker API's segment speaker now carries `suggestion_source` so the UI can
-  tell the two apart. **Existing libraries correct themselves:** the next search-index
-  maintenance passes (startup, then every 6 hours, 100 files each) re-index every completed
-  file whose speaker label came from an AI suggestion; no manual reindex is needed. Legacy
-  suggestions with no recorded source are treated as AI suggestions.
+OpenTranscribe 0.6.0 is a refinement release: a refreshed interface, settings that say what
+they will do, speaker data you can trust, and a processing pipeline you can compose. It is a
+standard upgrade. Back up first, then update; the database migrations run on their own when
+the backend starts. A few behaviours are deliberately different afterwards and are listed in
+[Upgrade Notes](#upgrade-notes).
+
+**A refreshed interface.** The gallery, navigation, file page, upload wizard, notifications and
+Settings were reworked from a UX review (#739-#758) and two consistency rounds (#1243, #1244):
+one modal, one form-field style, one slider, one date-range popover, one empty-state layout,
+lighter type and a single accent colour. Settings opens instantly and loads each section on
+demand, the app starts faster (#1131), notifications clear themselves on a retention policy
+(#1217), and rate limits say how long to wait (#788).
+
+**Settings that say what they will do.** Transcription and Speaker Identification are separate
+tabbed sections, Privacy and Redaction are one, data tools are tabs of Data & Storage, and a new
+**Processing pipeline** page shows where each step of the next recording runs and which
+providers receive the audio (#1227).
+
+**Speakers you can trust.** A speaker's name now comes only from a person or a voiceprint match,
+never from an AI guess on its own. Unassigning a speaker is a correction that every automatic
+path respects and that survives re-processing the file (#1233). Removing a speaker removes
+every copy of its voice (#1214), and you can name a speaker inline from the transcript (#1086).
+
+**A composable pipeline.** Transcription and speaker detection are chosen independently, local
+or cloud, and one resolver plans every run (#1224, #1225): local Whisper with pyannote.ai,
+another provider's speaker detection with any transcription (#1226), and a record on every file
+of which provider and model did each step (#1229). Lite is cloud-only for transcription and
+speaker detection (#1228).
+
+**Captions done properly.** One server-side segmenter with broadcast rules and per-script line
+breaking now drives the player's captions, subtitle downloads and burned-in video (#1244).
+
+**Translations.** Every new string ships in all 12 languages, the English source copy was
+rewritten so it translates cleanly (#1220), untranslated admin strings were translated with a
+guard so it cannot recur (#1234), and native-level reviewers checked each locale.
+
+**Data integrity and reliability.** Orphaned search documents and stored files can be found and
+removed from the admin UI (#1212), a delete now leaves nothing behind in any store, durations
+are a recording's real length again (#969), search indexing retries until a file is searchable
+(#1182), GPU work is admitted by available VRAM and host memory with recovery from out-of-memory
+(#1081, #1073), and a file is never stranded or failed because its worker died.
+
+**Security and tenancy.** Tenant isolation for organizations with audited, time-boxed support
+access (#1122, `TENANCY_MODE`), tenant-owned tags and collections (#1050, #1051), password
+security levels following NIST SP 800-63B-4 (#1127), session timeouts for external sign-in
+(#1106), stricter CSP, CORS and cross-origin headers (#1028-#1030), and third-party telemetry
+off by default.
+
+### Upgrade Notes
+
+0.6.0 upgrades in place like any release. The full walkthrough is in the docs:
+**Operations > Upgrading to 0.6.0**.
+
+- **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
+  migration chain is one-way: rolling back means restoring that backup.
+- **Twelve migrations, `v397` to `v438`, run automatically at backend start.** They add columns
+  and tables. The data changes are small and targeted: on installs with organizations, `v420`,
+  `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
+  tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
+  default"; `v434` moves users who chose pyannote.ai with no key and local transcription to
+  Automatic (what they already got); `v436` (lite only) moves a "this server" speaker-detection
+  choice to Automatic when the user's provider returns speakers. No transcript, speaker or
+  voiceprint is changed by any of them.
+- **Speaker labels that came only from an AI suggestion revert to `SPEAKER_NN`** until a person
+  accepts or types a name. The search-index maintenance task re-indexes the affected files in
+  the background (startup, then every 6 hours, 100 files at a time); no manual reindex.
+- **Unassigning a speaker now blocks it from rejoining** that cluster and profile automatically,
+  including after re-transcription. Name the speaker explicitly to undo it.
+- **`ENABLE_DIARIZATION` is no longer read.** Each user's *Speaker detection* setting decides
+  (default Automatic). If you relied on `ENABLE_DIARIZATION=false`, choose *Off* in that setting.
+- **Lite is cloud-only for transcription and speaker detection.** Local Whisper and this
+  server's speaker detection are no longer offered on lite; users with a text-only cloud model
+  must pick pyannote.ai or a provider that returns speakers.
+- **pyannote.ai runs when chosen.** A user with a pyannote.ai key and local transcription used to
+  get local speaker detection silently; pyannote.ai now runs and bills that key.
+- **`TENANCY_MODE` defaults to `auto`.** An install with no organizations is unaffected. An
+  install with active organizations becomes multi-tenant: administrators need a support-access
+  grant to open tenant content. Set `TENANCY_MODE=single` to keep the previous behaviour.
+- **Installs that use organizations: two one-off commands after upgrading**, in the backend
+  container: `python -m app.tasks.tenant_backfill_task` (stamps older search and voiceprint
+  documents with their organization, #1115) and
+  `python -m app.scripts.backfill_tenant_stamps --sync-voiceprints` (copies `v430`'s stamps
+  onto profile voiceprints and lists ambiguous rows, #1110). Installs without organizations
+  skip both.
+- **Notifications auto-clear** (read routine items after 24 hours, unread after 14 days, cap
+  100; errors and actionable items are kept). Change it with *Keep notifications for* in the
+  notifications panel; the choice is per browser.
+- **API changes:** `GET /api/files/{uuid}` answers 404 instead of 403 for a file you cannot
+  access; `DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
+  with the resulting pipeline instead of 204; `GET /api/files/{uuid}/suggestions` answers 204 when
+  there are none yet; `GET /api/system/stats` no longer has `diarization_enabled`; the admin
+  quarantine list returns owner and organization UUIDs and emails instead of integer ids. No
+  endpoint was removed.
 
 ### Added
 
-- **Each file shows how it was processed (#1229).** The file page has a new collapsible
-  **Processing** section beside File details, and the file status details list the same rows:
-  for transcription, speaker detection, voiceprints, summary, topics and speaker-name
-  suggestions, which provider and model completed the step and whether it ran on this server
-  or in the cloud (plus the transcript's timing granularity). Recorded per step in one new
-  column, `media_file.processing_provenance` (Alembic `v437`), written by a single atomic
-  statement so steps finishing together cannot overwrite each other; it never holds a URL, key
-  or configuration id. `GET /api/files/{uuid}` and `GET /api/my-files/{uuid}/status` carry it
-  as `processing_steps`, display-ready. Files processed before this show what was recorded at
-  the time and **Not recorded** for the rest, never a guess. The pyannote.ai speaker-detection
-  service now records itself as `pyannote.ai` (it used to record `pyannote`, the local engine's
-  id, so a cloud run displayed as the local engine), and a cloud transcription provider that
-  returned its own speakers is now recorded as the speaker detector. The old models row under
-  File details (with its untranslated "Whisper:" label) is replaced by the new section.
+#### UI and UX
+
+- **Rate limits say how long to wait (#788).** A 429 carries the real time until the limit
+  resets in `Retry-After` (exposed to the browser), toasts say "Try again in N seconds", the
+  login button counts down, chat shows a countdown banner, and a rate-limited retry stays
+  disabled until the wait is over.
+
+- **Filter the gallery by owner (#966).** `GET /api/files/owners` lists the owners of files you
+  can already see, and the file list takes an `owner=` filter, shown in the sidebar's Ownership
+  section.
+
+- **Downloads and processing times in the notifications panel (#569, #753).** A download gets
+  one row that moves through preparing, downloading and done or failed (a row left over from a
+  reload becomes an error). Completed transcription, summary and topic notifications show
+  *Completed in* how long processing took, and every notification type has its own icon.
+
+- **A *Skip to main content* link**, and an accessibility scan that now covers 8 surfaces in
+  both themes (#785).
+
+- **Settings sections can open full screen.** File status opens full screen with *Back to
+  Settings*, and the browser's Back button reopens Settings on the same section.
+
+- **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
+  notifications panel already uses, so the toolbar's three buttons all lead with an icon.
+
+- **Notification auto-clear, as an inbox retention policy (#1217, UX review item 15).**
+  Notifications used to persist until dismissed. A pure prune pass
+  (`$lib/notifications/retention`, injected clock, no timers) now runs on app load, when a
+  notification is added, and when the panel closes — never while it is open, so rows do not
+  vanish mid-read. Read, successful, informational items are removed 24 h after they were marked
+  read; unread ones after 14 days; the list is capped at 100, dropping the oldest read
+  informational rows first, then the oldest unread ones. Errors, warnings, in-flight items,
+  actionable/system notices (shares, takedowns, reindex, migration, group changes) and any
+  unclassified type are never removed. Every notification type is classified in one map with a
+  test that fails on an unclassified type. A **Keep notifications for** control in the panel
+  footer offers 24 hours after reading (default), 7 days after reading, or Never auto-clear (the
+  100 cap still applies to routine successful items); the panel says how many were cleared the
+  next time it is opened. The notifications and this choice are stored per browser. All 12
+  locales.
+
+- **Transcription notifications carry the OpenTranscribe logo (UX review item 14).** The
+  notifications panel showed a generic document glyph for `transcription_status`; it now shows the
+  product mark (`assets/logo-icon.png`, decorative `alt=""`), with the tag glyph already shared by
+  topic and auto-label notifications and the folder glyph by collection notifications.
+
+- **One shared slider (`ui/RangeSlider`) and one slider stylesheet
+  (`styles/range-slider.css`).** Every slider in Settings (toxicity threshold, forced-toxicity
+  threshold, auto-label confidence, speech-detection sensitivity, repetition penalty) and the
+  two chat generation controls now share one rounded design: label, live value badge, filled
+  native slider and hint, with a visible keyboard focus ring and a disabled state. The design
+  lives in `--slider-*` custom properties that the audio player progress and volume bars also
+  read, replacing about 40 repeated values in `VideoPlayer` and `PlyrMiniPlayer` with no visual
+  change. Structural tests fail on a raw `type="range"` input or on thumb rules declared outside
+  the shared stylesheet.
+
+#### Settings
+
+- **Per-user switches for the automatic AI suggestions (#1148).** After a transcription the app
+  automatically asked the configured AI provider for speaker names and for tag/collection
+  suggestions, with no way to stop either. *Settings -> Speaker Identification -> Voice
+  Attributes* now has **Suggest speaker names automatically with AI**
+  (`auto_llm_speaker_identification`) and *Settings -> AI & Chat -> Auto-Labeling* has **Suggest
+  tags and collections automatically after transcription** (`auto_topic_extraction`). Both
+  default to on, so nothing changes until a user turns one off; both state that transcript text
+  goes to the AI provider and are disabled with an explanation when none is configured. Resolved
+  user > system default (`auto_llm.*` system settings) > on, by one helper used by every automatic
+  dispatch and by the post-transcription recovery sweep, which no longer re-queues a step the user
+  turned off. Manual buttons and explicit reprocess stage lists are unaffected. The Voice
+  Attributes note that said turning detection off also stops AI name suggestions is gone: they
+  are decoupled.
+
+#### Speakers and speaker data safety
+
+- **Name a speaker inline from the segment's speaker menu (#1086).** Typing a name in the
+  segment speaker dropdown names that speaker for the whole file and suggests matching profiles
+  as you type. Blank names, `SPEAKER_NN` labels and the current name are refused; the old *Add
+  speaker* entry is now *New speaker for this segment...*.
+
+#### Pipeline composition and lite
+
+- **One resolver decides how a recording is processed, and `GET /api/user-settings/pipeline`
+  shows it (#1224).** Transcription and speaker detection are now planned together by one pure
+  function (`services/pipeline_plan.py`) instead of string checks spread over the pipeline: for
+  the user's transcription engine (local GPU, local CPU, cloud) and stored speaker-detection
+  choice it decides which detector runs, where (this server or a named cloud vendor), on which
+  queue, how speaker turns are merged into the text (word or segment timing), and that
+  voiceprints are always computed on this server. The new read-only endpoint returns the four
+  steps (transcription, speaker detection, speaker identification, AI features) with where each
+  runs, whether audio leaves the server, and any blocking or advisory issue as a stable code
+  plus a fixed sentence. A new speaker-detection source, `asr_config`, names another saved
+  provider's speaker detection (`diarization_asr_config_uuid`, covered by the #1109 lock). The
+  ASR catalog and `/asr-settings/status` now report `supports_diarization` per model,
+  `timestamp_granularity` (`word` / `segment` / `none`) and the speaker-count hints each
+  provider actually sends.
+
+- **Every transcription / speaker-detection combination the plan allows now runs (#1225).**
+  Dispatch resolves the pipeline plan once and every stage reads it from the chain context:
+  - **Local Whisper + pyannote.ai** runs pyannote.ai after the transcript is saved, on the
+    `cloud-asr` queue (no GPU slot held while the vendor works). It used to run this server's
+    detector silently.
+  - **The tiny/base CPU models detect speakers** through the same post stage. They used to
+    force speaker detection off.
+  - **Automatic + a text-only cloud model** detects speakers on this server after the
+    transcript is saved: per word with word timestamps, per segment with segment timestamps
+    (reported as the `segment_timing_only` warning). A model with no timestamps stays refused.
+  - **A cloud speaker-detection failure is non-fatal**: the transcript is kept without
+    speakers, and the reason is recorded as a fixed sentence.
+  - **One voiceprint interface** (`services/voiceprint_extractor.py`:
+    `extract(audio_path, turns) -> per-speaker 256-d vectors`), free when this server's engine
+    already produced vectors, otherwise the CPU embedding stage, exactly once per run.
+  - **One metering terminus per run.**
+  - The ASR-side switches (`set-active`, `clear-active`, first-config auto-activation, the
+    promotion on delete) re-plan too. A switch that would make the stored speaker-detection
+    choice unrunnable is refused with the settings PUT's 409, and the responses carry
+    `pipeline_issues`. `POST /api/asr-settings` reports `auto_activated`.
+  - A plan refusal is reported with the new `pipeline_not_runnable` reason, in all 12 locales.
+
 - **Another provider's speaker detection, with any transcription (#1226).** Speaker detection
   can be set to a saved ASR configuration (source `asr_config`, from #1224): that provider is
   asked to transcribe with its speaker labels on, its speaker turns are kept and its text is
@@ -53,36 +238,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer decrypts fails the file with a fixed sentence (reason `pipeline_not_runnable`, never
   retried automatically); a vendor failure keeps the transcript without speakers, as for
   pyannote.ai.
-
-- **`--purge` for the eval corpus injector (#1222).** `python -m app.scripts.corpus_injection
-  --corpus C --user U [--seed S] --purge --yes` removes what a previous injection wrote for that
-  one (corpus, seed, owner) namespace through the same destroyer every delete path uses, so
-  OpenSearch chunks, speaker embeddings and clusters go with the rows. A file is selected only
-  when its uuid matches the one the injector derives, `--dry-run` lists, and a bare `--purge`
-  refuses. `scripts/cleanup-test-data.py` now also sweeps files stamped with a registered test
-  seed. The synthetic and search-quality fixtures tear down through it.
-
-- **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
-  About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,
-  local auth, SCIM tokens) had been copied from English into seven locales because `check:i18n`
-  only counts keys. They are translated, and `untranslated.test.ts` now fails when a long value in a
-  non-English locale equals the English one unless the key is allowlisted with a written reason.
-
-- **One resolver decides how a recording is processed, and `GET /api/user-settings/pipeline`
-  shows it (#1224).** Transcription and speaker detection are now planned together by one pure
-  function (`services/pipeline_plan.py`) instead of string checks spread over the pipeline: for
-  the user's transcription engine (local GPU, local CPU, cloud) and stored speaker-detection
-  choice it decides which detector runs, where (this server or a named cloud vendor), on which
-  queue, how speaker turns are merged into the text (word or segment timing), and that
-  voiceprints are always computed on this server. The new read-only endpoint returns the four
-  steps (transcription, speaker detection, speaker identification, AI features) with where each
-  runs, whether audio leaves the server, and any blocking or advisory issue as a stable code
-  plus a fixed sentence. A new speaker-detection source, `asr_config`, names another saved
-  provider's speaker detection (`diarization_asr_config_uuid`, covered by the #1109 lock).
-  The ASR catalog and `/asr-settings/status` now report `supports_diarization` per model,
-  `timestamp_granularity` (`word` / `segment` / `none`) and the speaker-count hints each
-  provider actually sends. The pipeline stages start reading the plan in the next change (WP3);
-  until then this is the settings-side half.
 
 - **Settings > Processing pipeline, and speaker detection that says what it will do (#1227,
   #1219).** A read-only page, first row of the Transcription & Speakers group, shows the next
@@ -108,69 +263,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   editor offers no local provider and the Speaker Engine tab shows the read-only reason instead
   of the local engine controls. Toasts now wrap to three lines before they are cut.
 
+- **Each file shows how it was processed (#1229).** The file page has a new collapsible
+  **Processing** section beside File details, and the file status details list the same rows:
+  for transcription, speaker detection, voiceprints, summary, topics and speaker-name
+  suggestions, which provider and model completed the step and whether it ran on this server
+  or in the cloud (plus the transcript's timing granularity). Recorded per step in one new
+  column, `media_file.processing_provenance` (Alembic `v437`), written by a single atomic
+  statement so steps finishing together cannot overwrite each other; it never holds a URL, key
+  or configuration id. `GET /api/files/{uuid}` and `GET /api/my-files/{uuid}/status` carry it
+  as `processing_steps`, display-ready. Files processed before this show what was recorded at
+  the time and **Not recorded** for the rest, never a guess. The pyannote.ai speaker-detection
+  service now records itself as `pyannote.ai` (it used to record `pyannote`, the local engine's
+  id, so a cloud run displayed as the local engine), and a cloud transcription provider that
+  returned its own speakers is now recorded as the speaker detector. The old models row under
+  File details (with its untranslated "Whisper:" label) is replaced by the new section.
+
+- **pyannote.ai API key form (#1204).** *Settings -> Speaker Identification -> Speaker Detection*
+  has a write-only key field (never shown again once saved, stored encrypted) with test
+  connection and remove, shown when users may bring their own provider keys. Choosing the
+  pyannote.ai cloud service without a saved key is refused with an explanation instead of
+  silently producing a transcript with no speakers.
+
+#### Captions
+
+- **Captions are cut on the server, with broadcast rules, and play in the file page (#1244).**
+  One segmenter (`services/captions/`) now produces every caption: the player track, the
+  subtitle download (`GET /api/files/{uuid}/subtitles`, SRT / WebVTT / TXT), the bulk subtitle
+  ZIP, the burned-in video and the SRT/VTT transcript export, so the player and every download
+  agree. Rules: at most 2 lines of 42 characters (16 for CJK), 17 characters per second reading
+  speed (10 for CJK), 1 to 7 seconds per cue, a pause of 1.5 s or more always ends a cue, a
+  2-frame gap between cues. The speaker's name appears on the first cue of each turn; a name too
+  long to share a line gets its own. New `GET /api/files/{uuid}/captions` serves the WebVTT track
+  the player shows (gated like a transcript read, `Cache-Control: no-store`); the player follows
+  the redacted/original toggle and the viewer's CC choice, and each line takes the direction of
+  its own text.
+
+- **Per-script line breaking (#1244).** Japanese kinsoku, katakana words and number + counter kept
+  whole, Thai/Lao/Khmer/Myanmar broken only at word boundaries the recognizer reported or at
+  Thai syllable-safe points, display-column width for wide scripts. Dictionary-free, so a
+  Chinese or Japanese break can still fall inside a word. When word timing no longer matches the
+  text, cue times are interpolated by character position and the WebVTT says so in a `NOTE`.
+
+#### Translations
+
 - **Admin-settings strings translated in every language, with a guard so it cannot recur (#1234).**
   About 130 long strings (SAML, content redaction, proxy, redaction policy, embedding consistency,
   local auth, SCIM tokens) had been copied from English into seven locales because `check:i18n`
   only counts keys. They are translated, and `untranslated.test.ts` now fails when a long value in a
   non-English locale equals the English one unless the key is allowlisted with a written reason.
-  provider actually sends.
 
-- **Every transcription / speaker-detection combination the plan allows now runs (#1225).**
-  Dispatch resolves the pipeline plan once and every stage reads it from the chain context:
-  - **Local Whisper + pyannote.ai** runs pyannote.ai after the transcript is saved, on the
-    `cloud-asr` queue (no GPU slot held while the vendor works). It used to run this server's
-    detector silently.
-  - **The tiny/base CPU models detect speakers** through the same post stage. They used to
-    force speaker detection off.
-  - **Automatic + a text-only cloud model** detects speakers on this server after the
-    transcript is saved: per word with word timestamps, per segment with segment timestamps
-    (reported as the `segment_timing_only` warning). A model with no timestamps stays refused.
-  - **A cloud speaker-detection failure is non-fatal**: the transcript is kept without
-    speakers, and the reason is recorded as a fixed sentence.
-  - **One voiceprint interface** (`services/voiceprint_extractor.py`:
-    `extract(audio_path, turns) -> per-speaker 256-d vectors`), free when this server's engine
-    already produced vectors, otherwise the CPU embedding stage, exactly once per run.
-  - **One metering terminus per run.**
-  - The ASR-side switches (`set-active`, `clear-active`, first-config auto-activation, the
-    promotion on delete) re-plan too. A switch that would make the stored speaker-detection
-    choice unrunnable is refused with the settings PUT's 409, and the responses carry
-    `pipeline_issues`. `POST /api/asr-settings` reports `auto_activated`.
-  - A plan refusal is reported with the new `pipeline_not_runnable` reason, in all 12 locales.
+#### Media and transcription
 
-- **Icons on the gallery Tags and Collections buttons.** They reuse the tag and folder glyphs the
-  notifications panel already uses, so the toolbar's three buttons all lead with an icon.
+- **AIFF, WMA, ALAC, AVI, WMV and other formats browsers cannot play now play (#1044, Alembic
+  `v421`).** Preprocessing queues an AAC/M4A rendition for exactly those files
+  (`media.create_playback_rendition`, CPU queue) and records it in `media_file.playback_path`;
+  the original stays the download. `/stream-url` reports whether the original, a converted copy
+  or the audio track is playing. Uploads also accept FLV, AMR, AC-3 and MP2. Files uploaded
+  before this play once they are reprocessed.
 
-- **Notification auto-clear, as an inbox retention policy (#1217, UX review item 15).**
-  Notifications used to persist until dismissed. A pure prune pass (`$lib/notifications/retention`,
-  injected clock, no timers) now runs on app load, when a notification is added, and when the
-  panel closes — never while it is open, so rows do not vanish mid-read. Read, successful,
-  informational items are removed 24 h after they were marked read; unread ones after 14 days;
-  the list is capped at 100, dropping the oldest read informational rows first, then the oldest
-  unread ones. Errors, warnings, in-flight items, actionable/system notices (shares, takedowns,
-  reindex, migration, group changes) and any unclassified type are never removed. Every
-  notification type is classified in one map with a test that fails on an unclassified type. A
-  **Keep notifications for** control in the panel footer offers 24 hours after reading (default),
-  7 days after reading, or Never auto-clear (the 100 cap still applies to routine successful
-  items); the panel says how many were cleared the next time it is opened. All 12 locales.
-
-- **Transcription notifications carry the OpenTranscribe logo (UX review item 14).** The
-  notifications panel showed a generic document glyph for `transcription_status`; it now shows the
-  product mark (`assets/logo-icon.png`, decorative `alt=""`), with the tag glyph already shared by
-  topic and auto-label notifications and the folder glyph by collection notifications.
-
-- **Per-user switches for the automatic AI suggestions (#1148).** After a transcription the app
-  automatically asked the configured AI provider for speaker names and for tag/collection
-  suggestions, with no way to stop either. *Settings -> Speaker Identification -> Voice
-  Attributes* now has **Suggest speaker names automatically with AI**
-  (`auto_llm_speaker_identification`) and *Settings -> AI & Chat -> Auto-Labeling* has **Suggest
-  tags and collections automatically after transcription** (`auto_topic_extraction`). Both
-  default to on, so nothing changes until a user turns one off; both state that transcript text
-  goes to the AI provider and are disabled with an explanation when none is configured. Resolved
-  user > system default (`auto_llm.*` system settings) > on, by one helper used by every automatic
-  dispatch and by the post-transcription recovery sweep, which no longer re-queues a step the user
-  turned off. Manual buttons and explicit reprocess stage lists are unaffected. The Voice
-  Attributes note that said turning detection off also stops AI name suggestions is gone: they
-  are decoupled.
+#### Data integrity tooling
 
 - **Orphaned-data cleanup in the admin UI, and a storage sweep (#1212).** Storage objects whose
   `media_file` row was removed outside the app (raw SQL cleanup, a database restore or reset
@@ -185,38 +336,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmation dialog; a refused sweep is explained and can be overridden after a second
   confirmation.
 
-- **One shared slider (`ui/RangeSlider`) and one slider stylesheet (`styles/range-slider.css`).**
-  Every slider in Settings (toxicity threshold, forced-toxicity threshold, auto-label confidence,
-  speech-detection sensitivity, repetition penalty) and the two chat generation controls now use the
-  design of the Content Redaction toxicity slider: label, live value badge, filled native slider and
-  hint, with a visible keyboard focus ring and a disabled state. The design lives in `--slider-*`
-  custom properties that the audio player progress and volume bars also read, replacing about 40
-  repeated values in `VideoPlayer` and `PlyrMiniPlayer` with no visual change. Structural tests fail
-  on a raw `type="range"` input or on thumb rules declared outside the shared stylesheet. The
-  gallery's dual-thumb file-size and duration sliders keep their own style.
+- **Repair for durations shortened by #969.** `POST /api/admin/media-duration-backfill`
+  (`super_admin`, dry run by default) restores each file's real container duration where it had
+  been overwritten by the speech extent. It never lowers a duration and re-indexes what it changes.
 
-- **Test runs clean up after themselves, and `./opentr.sh test-cleanup` sweeps what an
-  interrupted one left (#1195).** `scripts/cleanup-test-data.py` gains store planes for leaked
-  test OpenSearch indexes and ingest pipelines, MinIO buckets and test objects, scratch Postgres
-  databases, `/tmp` trees and labelled throwaway docker resources, plus speaker profiles and
-  clusters in the row sweep. Only registered test shapes are ever candidates; production names
-  are refused, a mixed-stack port set is refused, and everything younger than the liveness
-  cutoff (now registered by every pytest run) or `--min-age-minutes` is kept.
-  `scripts/cleanup-test-leftovers.sh` runs its Tier A pass once or in the background against
-  one named stack. The gate scripts now also sweep at the END of a run, from an EXIT trap.
+- **Reviewable, forced reconcile of orphaned search documents.** *Data Integrity* counts now list
+  the orphaned keys (up to 200), and a reconcile the ratio guard refused can be forced with
+  `POST /api/admin/data-integrity?force=true&confirm=true` (`force` without `confirm` is a 400).
 
-- **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
-  `multi`, `single`; default `auto`). New API under `/api/support-access`,
-  `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,
-  denying, revoking and auditing time-boxed platform access to a tenant, plus a break-glass route
-  for `super_admin`. New tables `support_access_grant` and `support_access_use` (migration
-  `v432`), and the `X-Support-Access-Grant` request header.
+#### Reliability, GPU and operations
 
-- **pyannote.ai API key form (#1204).** *Settings -> Speaker Identification -> Speaker Detection*
-  has a write-only key field (never shown again once saved, stored encrypted) with test
-  connection and remove, shown when users may bring their own provider keys. Choosing the
-  pyannote.ai cloud service without a saved key is refused with an explanation instead of
-  silently producing a transcript with no speakers.
+- **VRAM admission per GPU stage, and recovery from CUDA out-of-memory (#1081).** Each stage
+  reserves its estimated peak from a per-worker budget (total VRAM x `GPU_VRAM_BUDGET_FRACTION`,
+  0.85, minus what the loaded models hold) and waits in line when it does not fit, up to
+  `GPU_VRAM_ADMISSION_TIMEOUT_S` before the task is requeued. On a CUDA OOM, Whisper retries with
+  half the batch (`GPU_OOM_MAX_HALVINGS`, 2). A broken CUDA context requeues the task and
+  restarts the worker (`GPU_POISONED_MAX_REQUEUES`, 2), after a context probe so a transient
+  error does not.
+
+- **GPU concurrency is capped by host memory (#1073).** A GPU worker runs at most
+  (memory limit - `GPU_HOST_BASELINE_MB`) / `GPU_PER_TASK_HOST_MB` tasks at once
+  (`GPU_HOST_MEMORY_ADMISSION=false` logs the decision without enforcing it), with gauges
+  `gpu_worker_concurrency_{configured,host_memory_cap,effective}`. `GPU_CONCURRENT_REQUESTS` now
+  also sets the worker's thread concurrency, so the two always agree (#1072).
+
+- **Per-task worker metrics (#1161).** With `WORKER_METRICS_PORT` set, every Celery worker serves
+  `celery_task_total{task,outcome}` and `celery_task_runtime_seconds{task}`.
+
+- **`ENGINE_SHARED_VOLUME_ENABLED` (#1151)** turns off the shared-volume WAV handoff between the
+  worker and the speaker engine for multi-node deployments (it follows `PIPELINE_SCRATCH_SHARED`
+  when unset).
+
+- **diar-native 0.3.3**, with its CUDA memory settings (`SPEAKRS_CUDA_MEM_LIMIT_MB`,
+  `SPEAKRS_CUDA_CONV_SEARCH`, `SPEAKRS_CUDA_CONV_MAX_WORKSPACE`) passed through.
 
 - **Celery queue-wait metrics (#1172).** Every task message is stamped with its publish time
   (header `x-ot-published-at`). Workers with `WORKER_METRICS_PORT` set now serve
@@ -227,8 +379,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Labels are bounded to the configured queues and registered tasks plus `other`. Caveats
   (producer/worker clock skew; redelivered messages include the failed attempt) are in
   Operations → Monitoring.
-- **Password security levels in the admin UI (#1127).** Settings -> Authentication -> Local has a four-card picker (Basic / Standard / Hardened / Custom) that previews the exact rules before saving, and controls for the individual values under Custom (length, composition, expiry, history, minimum age), the breached-password check (level default / on / off, with installed-list status), the optional online lookup, and MFA for administrators. New `basic` level: 8 characters, no composition rules, no expiry or history; opt-in only. `standard` and `hardened` are the new names of `nist` and `stig`, which keep working as aliases. Defaults are unchanged: existing installs stay on `hardened`, new installs get `standard` from `.env.example`. Saves are validated server-side and audit-logged.
-- **Breached-password list is now an on-demand download built from Have I Been Pwned (#1107).** No password list is shipped in the repository. `./opentranscribe.sh download-models password-blocklist` builds the top 100,000 most-breached passwords as SHA-1 hashes only from the Pwned Passwords range API (no licensing or attribution requirement) into the model cache; the offline package includes it. If none is installed the check is skipped with one startup warning. `PASSWORD_BLOCKLIST_PATH` accepts hash files and legacy plaintext files.
+
+- **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
+  `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
+  reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
+  browser never falls back from the presigned path to that route (a failed presigned attempt
+  is retried on the presigned path), and `/files/prepare` answers 503 instead of handing out a
+  fallback when it cannot plan a presigned upload. Presigned single-PUT and multipart uploads
+  are unchanged.
+
+#### Security, tenancy and sign-in
+
+- **Support-access grants and `TENANCY_MODE` (#1122).** New `TENANCY_MODE` setting (`auto`,
+  `multi`, `single`; default `auto`). New API under `/api/support-access`,
+  `/api/org-admin/support-access` and `/api/users/me/support-access` for requesting, approving,
+  denying, revoking and auditing time-boxed platform access to a tenant, plus a break-glass route
+  for `super_admin`. New tables `support_access_grant` and `support_access_use` (migration
+  `v432`), and the `X-Support-Access-Grant` request header.
+
 - **Deployment-locked settings via capability keys (#1109).** New capabilities, all `True` by
   default (no change for self-hosted installs), let an operator's capability resolver lock
   values the deployment owns. Each is enforced on the server, not just hidden:
@@ -243,124 +411,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bypass, and the task-time checks run without a request, so a resolver should answer them
   per deployment rather than per tier.
 
-- **`API_MEDIATED_UPLOAD_ENABLED` server setting (#1008).** Default `true` (no change). Set
-  `false` to keep every file byte out of the API process: `POST /api/files` answers 404 before
-  reading the body, `/api/system/capabilities` advertises `api_mediated_upload_enabled`, the
-  browser never falls back from the presigned path to that route (a failed presigned attempt
-  is retried on the presigned path), and `/files/prepare` answers 503 instead of handing out a
-  fallback when it cannot plan a presigned upload. Presigned single-PUT and multipart uploads
-  are unchanged.
+- **Password security levels in the admin UI (#1127).** Settings -> Authentication -> Local has a four-card picker (Basic / Standard / Hardened / Custom) that previews the exact rules before saving, and controls for the individual values under Custom (length, composition, expiry, history, minimum age), the breached-password check (level default / on / off, with installed-list status), the optional online lookup, and MFA for administrators. New `basic` level: 8 characters, no composition rules, no expiry or history; opt-in only. `standard` and `hardened` are the new names of `nist` and `stig`, which keep working as aliases. Defaults are unchanged: existing installs stay on `hardened`, new installs get `standard` from `.env.example`. Saves are validated server-side and audit-logged.
+
+- **Breached-password list is now an on-demand download built from Have I Been Pwned (#1107).** No password list is shipped in the repository. `./opentranscribe.sh download-models password-blocklist` builds the top 100,000 most-breached passwords as SHA-1 hashes only from the Pwned Passwords range API (no licensing or attribution requirement) into the model cache; the offline package includes it. If none is installed the check is skipped with one startup warning. `PASSWORD_BLOCKLIST_PATH` accepts hash files and legacy plaintext files.
+
+- **Idle and absolute session timeouts for external identity-provider sessions (#1106).** A
+  token whose sign-in time is older than `SESSION_ABSOLUTE_TIMEOUT_MINUTES` is refused with
+  `session_expired` (`EXTERNAL_SESSION_ABSOLUTE_TIMEOUT_ENFORCED`, default on), and the browser
+  adds an idle warning with *Stay signed in* focused first. `GET /api/auth/methods` reports both
+  timeouts. Built-in sessions are unchanged.
+
+- **MFA can be required for administrators** (`MFA_REQUIRED_FOR_ADMINS`, default off; needs MFA
+  enabled), passwords are NFKC-normalised, and an optional online breached-password lookup
+  (`PASSWORD_HIBP_ENABLED`, default off) complements the downloaded list (#1107).
+
+- **`user.platform_super_admin_link_authorized` (#993, Alembic `v397`).** An escape hatch for a
+  deployment with its own audited admin-grant process to let an externally authenticated
+  `super_admin` sign in. Defaults to false and nothing in this repository sets it.
+
+- **Locked-account management and the quarantine queue in the admin UI.** Administrators can
+  see and unlock locked accounts, and review, quarantine and release taken-down files from the
+  existing takedown backend (#576).
+
+#### Test and CI
+
+- **`--purge` for the eval corpus injector (#1222).** `python -m app.scripts.corpus_injection
+  --corpus C --user U [--seed S] --purge --yes` removes what a previous injection wrote for that
+  one (corpus, seed, owner) namespace through the same destroyer every delete path uses, so
+  OpenSearch chunks, speaker embeddings and clusters go with the rows. A file is selected only
+  when its uuid matches the one the injector derives, `--dry-run` lists, and a bare `--purge`
+  refuses. `scripts/cleanup-test-data.py` now also sweeps files stamped with a registered test
+  seed. The synthetic and search-quality fixtures tear down through it.
+
+- **Test runs clean up after themselves, and `./opentr.sh test-cleanup` sweeps what an
+  interrupted one left (#1195).** `scripts/cleanup-test-data.py` gains store planes for leaked
+  test OpenSearch indexes and ingest pipelines, MinIO buckets and test objects, scratch Postgres
+  databases, `/tmp` trees and labelled throwaway docker resources, plus speaker profiles and
+  clusters in the row sweep. Only registered test shapes are ever candidates; production names
+  are refused, a mixed-stack port set is refused, and everything younger than the liveness
+  cutoff (now registered by every pytest run) or `--min-age-minutes` is kept.
+  `scripts/cleanup-test-leftovers.sh` runs its Tier A pass once or in the background against
+  one named stack. The gate scripts now also sweep at the END of a run, from an EXIT trap.
+
+- **Accessibility and visual gates.** The axe baseline is a per-surface, count-keyed ratchet
+  over 8 surfaces in both themes, and the visual baselines were re-captured for the new UI with
+  web fonts awaited, model-output chips masked and capture refused against an empty corpus
+  (#973).
+
+- **`dev-<git-sha>` image versions** are accepted by the build script and never move `:latest`.
 
 ### Changed
 
-- **The docs describe the shipped pipeline, and say so from the code (#1230).** A new
-  Installation → Deployment Variants page compares Full (GPU), CPU-only and Lite (cloud-only):
-  where transcription, speaker detection and voiceprints run, what each needs, the billing and
-  privacy rules when audio goes to a provider (including the second bill when another vendor
-  is used only for speakers). Its published-image table, its provider speakers/timing table and
-  its transcription x speaker-detection validity matrix are generated by
-  `scripts/generate-pipeline-docs.py` from `docker-build-push.sh list-platforms`,
-  `ASR_PROVIDER_CATALOG` and `resolve_pipeline_plan`; CI's backend job runs `--check` and
-  `test_pipeline_docs_tables.py`. The transcription-pipeline, cloud-asr,
-  transcription-enrichment, speaker-clustering, celery-queues and system-overview diagrams at
-  `/architecture` show the plan-driven flow (inline or post-stage speaker detection, the vendor
-  adapter, one merge, voiceprints always on this server, per-file provenance, lite's missing
-  gpu workers), and each render now carries the sha256 of its spec:
-  `scripts/check-architecture-diagram-drift.py` (pre-commit, and
-  `test_architecture_diagram_drift.py`) fails when a spec changes without a re-render.
-  Speaker diarization, transcription, environment variables, deployment configuration,
-  installation, user-guide (settings, file Processing section, speaker unassign rules), admin
-  panel, runbook and FAQ pages were corrected: no page claims a wav2vec2 alignment step, that
-  lite detects speakers locally, or that `ENABLE_DIARIZATION=false` turns speaker detection
-  off (it no longer does; choose Off in Settings).
-- **One merge of speaker turns into text (#1226).** The cloud path that pairs a cloud
-  transcription with a separate speaker detector (pyannote.ai, or another provider) used its
-  own merge: each word took the turn covering its midpoint and words never got a speaker. It
-  now uses the same overlap-based `assign_speakers` as local diarization and the post stage,
-  at the plan's merge granularity (word, or segment for `whisper-1`, `gpt-4o-transcribe-diarize`
-  and Azure). Measured on two real 10-minute recordings, the two rules agree on 99.69% and
-  99.91% of words, and the new one matches the hand-labelled reference more often. Visible
-  difference: a word-timed segment that spans a speaker change is now split at the change,
-  and a word in a pause between turns gets the nearest speaker instead of none. A segment
-  whose words all belong to one speaker is stored under that speaker, even when the vendor's
-  segment interval (padded with silence) overlaps someone else's turn more.
-- **AssemblyAI receives the speaker range (#1226).** Without a fixed speaker count, the
-  minimum and maximum are sent as `speaker_options`; before, only a fixed count reached
-  AssemblyAI. Speechmatics and Gladia still receive no speaker hints.
-- **Lite is cloud-only for transcription and speaker detection (#1228).** A lite
-  (`--lite`, no GPU) deployment no longer detects speakers on this server: lite's
-  rediarize-on-CPU path is removed. Speakers come from a transcription provider that returns
-  them, or from pyannote.ai; voiceprints for cross-file speaker identification are still
-  computed on this server's CPU. Every local option is refused with a stable code and a fixed
-  message instead of failing later: choosing "this server" for speaker detection
-  (`local_diarization_unavailable`), Automatic with a text-only model
-  (`automatic_needs_speaker_provider`), switching to, creating or keeping only a local
-  transcription config, clearing the active cloud config, a per-file Whisper model, the
-  admin's local-model and local-engine settings (`local_asr_unavailable`). The transcription
-  settings no longer offer "this server" on lite.
-  - Lite users who had "this server" with a cloud model that returns speakers are moved to
-    Automatic by migration `v436_lite_local_speaker_detection_to_automatic`, so they keep
-    getting speakers (from their transcription provider). Others keep their choice and see
-    what to change in Settings; their files are refused with that message until they do.
-  - No transcript, speaker or voiceprint changes: files diarized on lite's CPU before this
-    keep their speakers. The migration is data-only, idempotent, a no-op on the full image,
-    and its downgrade is a no-op.
-- **Deleting an ASR configuration returns the pipeline it leaves (#1236, #1226).**
-  `DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
-  instead of a bare 204, with `config_uuid` (the config now active), `pipeline_issues` (like
-  `set-active`), `deleted` and `diarizer_source_reverted`. Deleting a configuration that
-  someone uses for speaker detection resets that choice to the default for every user who had
-  it; `diarizer_source_reverted` says whether the caller's was reset.
-- **Re-processing refuses a run that cannot run before deleting anything.** A transcription
-  re-run or a speaker re-detection whose pipeline is refused (for example a lite deployment
-  with "this server" chosen) now answers 409 while the transcript and speakers are intact,
-  instead of deleting them and then failing.
-- **Billing: users with a pyannote.ai key and local transcription are now billed by
-  pyannote.ai (#1225).** Choosing pyannote.ai with the built-in model used to run this server's
-  detector without saying so. It now does what it says, so every file such a user transcribes
-  is sent to pyannote.ai and billed to their key.
-  - Users who chose pyannote.ai **without** ever saving a key are moved back to Automatic by
-    migration `v434_reset_unusable_pyannote_source`, so their behaviour is unchanged. Without
-    that, every one of their files would fail.
-  - Users with cloud transcription keep their choice.
-  - The migration is data-only and idempotent. Downgrade is a no-op.
-- **The legacy single-task transcription path is gone (#1225).** `transcription.process_file`,
-  `legacy_task.py` and `background.py` (superseded by the 3-stage chain long ago) are deleted,
-  along with `DiarizationProviderFactory.create_for_source` / `create_for_user` and the
-  dispatcher's `_resolve_gpu_queue`. The plan is the only place that decides which detector
-  runs and on which queue.
-- **Manual "re-detect speakers" uses the file owner's current choice** (pyannote.ai, this
-  server, or another configured detector) instead of always this server's engine. It runs on
-  the plan's queue and never meters.
+#### Speakers and speaker data safety
 
-- **Saving a speaker-detection choice is checked against the pipeline plan (#1224).**
-  `PUT /api/user-settings/transcription` resolves the plan for the settings being saved and
-  answers 409 with `detail: {"code", "message"}` (a stable code and a fixed sentence) when a NEW
-  choice cannot run: pyannote.ai with no key (`pyannote_key_missing`, previously a bare-string
-  409), any speaker detection with a model that returns no timestamps such as OpenAI
-  `gpt-4o-transcribe` (`asr_no_timing_for_speakers`; there is no forced alignment), another
-  provider that is missing or returns no speakers (`diarizer_config_missing`,
-  `diarizer_config_no_speakers`), and on lite local speaker detection or Automatic with a
-  text-only model (`local_diarization_unavailable`, `automatic_needs_speaker_provider`).
-  Re-saving an unchanged stored choice is never refused. Local transcription with pyannote.ai is
-  a valid, accepted combination.
-- **A refused speaker-detection save is explained by its reason (#1227).** The settings form
-  used to read every 409 on a pyannote.ai selection as "save your key first". It now reads the
-  server's `detail.code` and shows that code's own sentence (no timestamps, missing provider,
-  provider returns no speakers, lite limits), and a refusal with no known code gets the generic
-  message instead of a wrong specific one.
+- **An AI-suggested speaker name is never the speaker's name until you accept it.** A speaker's
+  name in search, chat, summaries and exports now comes only from a name you typed or verified,
+  or from a voice match to a profile or promoted cluster at 75% similarity or more. The AI
+  speaker-identification result used to become the name on its own once its confidence reached
+  75%, so a guess could be indexed and cited as a person nobody had checked. It is still stored
+  and offered in the speaker editor and suggestion lists with its confidence, and accepting it
+  sets the name. The speaker API's segment speaker now carries `suggestion_source` so the UI can
+  tell the two apart. **Existing libraries correct themselves:** the next search-index
+  maintenance passes (startup, then every 6 hours, 100 files each) re-index every completed
+  file whose speaker label came from an AI suggestion; no manual reindex is needed. Legacy
+  suggestions with no recorded source are treated as AI suggestions.
 
-- **English source strings rewritten so they translate cleanly (#1220).** The 11 translation
-  reviewers of #1193 flagged copy that only works in English. Engine settings prose no longer
-  leaks env var names, badge values or internal terms (the `ENGINE_DIARIZER_BACKEND` detail is a
-  separate admin line); quarantine copy says plainly what is hidden and uses "quarantine" throughout;
-  the orphaned-data panel uses one noun pair ("orphaned media files" / "stored items"); the upload
-  model options, the break-glass confirmation (one sentence per access level) and the language-default
-  values are whole strings or templates instead of fragments glued together in code; `common.orphaned`
-  now names the noun; the support-session toasts say what happened. Removed keys:
-  `uploader.highQualitySuffix`, `uploader.fastProcessingSuffix`, `supportAccess.breakGlass.confirmSummary`.
-  All 12 locales carry provisional translations of the changed keys pending a native-level re-review
-  (the `de` "fur" typo is fixed too); the Spanish tu/usted mix is not decided here.
+- **The Speakers page: Review, groups-only Clusters, one gender badge.** The *Inbox* tab is
+  renamed *Review* (old `?tab=inbox` links still work). The Clusters tab lists groups only,
+  matching what *Re-cluster All* builds (one-speaker clusters still drive matching but are not
+  listed), and when it is empty while speakers wait for review it points to Review.
+
+#### UI and UX
+
+- **A refreshed interface (#1243, #1244).** Every dialog is built on one modal with one width
+  scale; one stylesheet styles every text input, textarea and select; the date range picker is a
+  popover shared by the gallery and file status; empty states share one layout and action row;
+  every menu and export item has an icon; one rounded slider design. Type is lighter (semibold is
+  the heaviest weight, and chat and search no longer read as all-bold), link-coloured text uses
+  one token, section headings are sentence case, and the stray indigo and purple accents are
+  gone.
+
+- **Navigation (#754).** The bar reads Gallery, **Transcript Search**, **AI Chat**, Speakers.
+  **File status** moved into **Settings > System** (its own page and links still work), and the
+  duplicate *All files* tab is gone.
+
+- **Gallery toolbar and status (#747, #749, #750, #967).** The toolbar has two rows: title
+  search with Add media, Collections and Tags; then the file count, Select items, sort and view.
+  An empty library and "no files match" are told apart. The filter panel collapses, takes typed
+  dates, has file-type icons and duration chips. Grid and list share one status indicator with a
+  real tooltip, and list columns give way by list width so Status is never clipped.
+
+- **The file page is organized around editing speakers (#748, #755, #756).** Player, then an
+  actions bar (Export, Edit speakers, Download), then the speaker editor or tags and
+  collections, analytics and metadata. Comments sit under the transcript. *Jump to current
+  playback position* replaces the scrollbar minimap that could rewind playback, and the search
+  page and file page open transcripts in the same view.
+
+- **Settings is regrouped (#861, #1243).** Account, Transcription & Speakers, AI & Chat, Media &
+  Output, Billing & Team, Administration, System. The search box is a fixed pill and the sidebar
+  scrolls to the active row. File Retention, Media Cache, Database Backups, Data Integrity,
+  Search & Indexing and Speaker Embedding System are tabs of one **Data & Storage** section.
+  Every tabbed section keeps its tab strip in view while it scrolls, and the Speaker Engine tab
+  explains itself in a third of the words with the detail under *How it works*. Old section
+  links still open the right tab.
+
+- **Upload wizard.** *Generate AI summary* is a positive switch, the last step is *Review*, and
+  the tags step fits its content (#751).
+
+- **New application and docs icons**, from the clean OpenTranscribe mark.
 
 - **Upload wizard and tray polish (UX review items 4, 6, 9, 12).** The Tags and Collections steps
   now use the same searchable multi-select dropdown as the filter sidebar, **Create collection**
@@ -384,15 +542,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grid's speaker count is translated (it was a hardcoded `spk` in every language). Unused filter
   locale keys are removed from all 12 locales.
 
-- **Settings: Watch Sources tabs, merged Privacy & Redaction, Speech Processing.** Watch Sources
-  is split into Sources, Email Notifications and Global Settings tabs (the last two for
-  `super_admin` only), and its Save button is the standard right-aligned action. *Content
-  Redaction* and *Redaction Policy* are now two tabs of one **Privacy & Redaction** entry; the
-  policy tab is shown locked to admins and absent for plain users, and the old `redaction-policy`
-  section id still deep-links to it. *Engine Configuration* is renamed **Speech Processing** and
-  moved into the Transcription group beside the ASR provider (same `super_admin` gate). The User
-  Management *Invite user* and *Add user* buttons use the standard primary/secondary styles with
-  a proper gap.
+- **Faster start and navigation (#1131).** Modals load on demand (the root layout went from
+  217 KB to 15 KB gzipped), startup requests run concurrently, nginx serves precompressed assets
+  with HTTP/2 on TLS, and the logo banner is a quarter of its old size. Settings paints at once
+  and loads each section lazily with a skeleton, prefetching the rest while idle and on hover.
+  The session check shows a navbar-shaped frame with *Retry now* instead of a spinner, the
+  gallery preloads during sign-in, and route code is warmed after sign-in.
+
+#### Settings
+
+- **Settings: Watch Sources tabs and merged Privacy & Redaction.** Watch Sources is split into
+  Sources, Email Notifications and Global Settings tabs (the last two for `super_admin` only),
+  and its Save button is the standard right-aligned action. *Content Redaction* and *Redaction
+  Policy* are now two tabs of one **Privacy & Redaction** entry; the policy tab is shown locked
+  to admins and absent for plain users, and the old `redaction-policy` section id still
+  deep-links to it. *Engine Configuration* became the **Speaker Engine** tab of Speaker
+  Identification (same `super_admin` gate). The User Management *Invite user* and *Add user*
+  buttons use the standard primary/secondary styles with a proper gap.
 
 - **Settings: Transcription and Speaker Identification are two tabbed sections.** The
   Transcription group is now **Transcription & Speakers** with two rows. **Transcription** (words)
@@ -410,123 +576,173 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   languages. The acoustic backchannel re-check controls state that they apply to local GPU
   transcription, not cloud ASR.
 
+- **A refused speaker-detection save is explained by its reason (#1227).** The settings form
+  used to read every 409 on a pyannote.ai selection as "save your key first". It now reads the
+  server's `detail.code` and shows that code's own sentence (no timestamps, missing provider,
+  provider returns no speakers, lite limits), and a refusal with no known code gets the generic
+  message instead of a wrong specific one.
+
+#### Pipeline composition and lite
+
+- **Lite is cloud-only for transcription and speaker detection (#1228).** A lite
+  (`--lite`, no GPU) deployment no longer detects speakers on this server: lite's
+  rediarize-on-CPU path is removed. Speakers come from a transcription provider that returns
+  them, or from pyannote.ai; voiceprints for cross-file speaker identification are still
+  computed on this server's CPU. Every local option is refused with a stable code and a fixed
+  message instead of failing later: choosing "this server" for speaker detection
+  (`local_diarization_unavailable`), Automatic with a text-only model
+  (`automatic_needs_speaker_provider`), switching to, creating or keeping only a local
+  transcription config, clearing the active cloud config, a per-file Whisper model, the
+  admin's local-model and local-engine settings (`local_asr_unavailable`). The transcription
+  settings no longer offer "this server" on lite.
+  - Lite users who had "this server" with a cloud model that returns speakers are moved to
+    Automatic by migration `v436_lite_local_speaker_detection_to_automatic`, so they keep
+    getting speakers (from their transcription provider). Others keep their choice and see
+    what to change in Settings; their files are refused with that message until they do.
+  - No transcript, speaker or voiceprint changes: files diarized on lite's CPU before this
+    keep their speakers. The migration is data-only, idempotent, a no-op on the full image,
+    and its downgrade is a no-op.
+
+- **Billing: users with a pyannote.ai key and local transcription are now billed by
+  pyannote.ai (#1225).** Choosing pyannote.ai with the built-in model used to run this server's
+  detector without saying so. It now does what it says, so every file such a user transcribes
+  is sent to pyannote.ai and billed to their key.
+  - Users who chose pyannote.ai **without** ever saving a key are moved back to Automatic by
+    migration `v434_reset_unusable_pyannote_source`, so their behaviour is unchanged. Without
+    that, every one of their files would fail.
+  - Users with cloud transcription keep their choice.
+  - The migration is data-only and idempotent. Downgrade is a no-op.
+
+- **The docs describe the shipped pipeline, and say so from the code (#1230).** A new
+  Installation → Deployment Variants page compares Full (GPU), CPU-only and Lite (cloud-only):
+  where transcription, speaker detection and voiceprints run, what each needs, the billing and
+  privacy rules when audio goes to a provider (including the second bill when another vendor
+  is used only for speakers). Its published-image table, its provider speakers/timing table and
+  its transcription x speaker-detection validity matrix are generated by
+  `scripts/generate-pipeline-docs.py` from `docker-build-push.sh list-platforms`,
+  `ASR_PROVIDER_CATALOG` and `resolve_pipeline_plan`; CI's backend job runs `--check` and
+  `test_pipeline_docs_tables.py`. The transcription-pipeline, cloud-asr,
+  transcription-enrichment, speaker-clustering, celery-queues and system-overview diagrams at
+  `/architecture` show the plan-driven flow (inline or post-stage speaker detection, the vendor
+  adapter, one merge, voiceprints always on this server, per-file provenance, lite's missing
+  gpu workers), and each render now carries the sha256 of its spec:
+  `scripts/check-architecture-diagram-drift.py` (pre-commit, and
+  `test_architecture_diagram_drift.py`) fails when a spec changes without a re-render.
+  Speaker diarization, transcription, environment variables, deployment configuration,
+  installation, user-guide (settings, file Processing section, speaker unassign rules), admin
+  panel, runbook and FAQ pages were corrected: no page claims a wav2vec2 alignment step, that
+  lite detects speakers locally, or that `ENABLE_DIARIZATION=false` turns speaker detection
+  off (it no longer does; choose Off in Settings).
+
+- **One merge of speaker turns into text (#1226).** The cloud path that pairs a cloud
+  transcription with a separate speaker detector (pyannote.ai, or another provider) used its
+  own merge: each word took the turn covering its midpoint and words never got a speaker. It
+  now uses the same overlap-based `assign_speakers` as local diarization and the post stage,
+  at the plan's merge granularity (word, or segment for `whisper-1`, `gpt-4o-transcribe-diarize`
+  and Azure). Measured on two real 10-minute recordings, the two rules agree on 99.69% and
+  99.91% of words, and the new one matches the hand-labelled reference more often. Visible
+  difference: a word-timed segment that spans a speaker change is now split at the change,
+  and a word in a pause between turns gets the nearest speaker instead of none. A segment
+  whose words all belong to one speaker is stored under that speaker, even when the vendor's
+  segment interval (padded with silence) overlaps someone else's turn more.
+
+- **AssemblyAI receives the speaker range (#1226).** Without a fixed speaker count, the
+  minimum and maximum are sent as `speaker_options`; before, only a fixed count reached
+  AssemblyAI. Speechmatics and Gladia still receive no speaker hints.
+
+- **Deleting an ASR configuration returns the pipeline it leaves (#1236, #1226).**
+  `DELETE /api/asr-settings/config/{uuid}` and `DELETE /api/asr-settings/all` answer 200
+  instead of a bare 204, with `config_uuid` (the config now active), `pipeline_issues` (like
+  `set-active`), `deleted` and `diarizer_source_reverted`. Deleting a configuration that
+  someone uses for speaker detection resets that choice to the default for every user who had
+  it; `diarizer_source_reverted` says whether the caller's was reset.
+
+- **Re-processing refuses a run that cannot run before deleting anything.** A transcription
+  re-run or a speaker re-detection whose pipeline is refused (for example a lite deployment
+  with "this server" chosen) now answers 409 while the transcript and speakers are intact,
+  instead of deleting them and then failing.
+
+- **Manual "re-detect speakers" uses the file owner's current choice** (pyannote.ai, this
+  server, or another configured detector) instead of always this server's engine. It runs on
+  the plan's queue and never meters.
+
+- **Saving a speaker-detection choice is checked against the pipeline plan (#1224).**
+  `PUT /api/user-settings/transcription` resolves the plan for the settings being saved and
+  answers 409 with `detail: {"code", "message"}` (a stable code and a fixed sentence) when a NEW
+  choice cannot run: pyannote.ai with no key (`pyannote_key_missing`, previously a bare-string
+  409), any speaker detection with a model that returns no timestamps such as OpenAI
+  `gpt-4o-transcribe` (`asr_no_timing_for_speakers`; there is no forced alignment), another
+  provider that is missing or returns no speakers (`diarizer_config_missing`,
+  `diarizer_config_no_speakers`), and on lite local speaker detection or Automatic with a
+  text-only model (`local_diarization_unavailable`, `automatic_needs_speaker_provider`).
+  Re-saving an unchanged stored choice is never refused. Local transcription with pyannote.ai is
+  a valid, accepted combination.
+
+- **pyannote.ai speaker detection defaults to `precision-3` (#1153).** A stored `precision-2` is
+  mapped to `precision-3` with a warning; the vendor retires `precision-2` on 2026-10-17.
+
+- **A missing pyannote.ai key fails the file before the billable transcription call (#1204)**,
+  with reason `diarization_not_configured`, never retried automatically. The key has its own
+  routes: `GET/PUT/DELETE /api/user-settings/diarization/pyannote` and `POST .../test`.
+
+#### Translations
+
+- **English source strings rewritten so they translate cleanly (#1220).** The 11 translation
+  reviewers of #1193 flagged copy that only works in English. Engine settings prose no longer
+  leaks env var names, badge values or internal terms (the `ENGINE_DIARIZER_BACKEND` detail is a
+  separate admin line); quarantine copy says plainly what is hidden and uses "quarantine"
+  throughout; the orphaned-data panel uses one noun pair ("orphaned media files" / "stored
+  items"); the upload model options, the break-glass confirmation (one sentence per access
+  level) and the language-default values are whole strings or templates instead of fragments
+  glued together in code; `common.orphaned` now names the noun; the support-session toasts say
+  what happened. Removed keys: `uploader.highQualitySuffix`, `uploader.fastProcessingSuffix`,
+  `supportAccess.breakGlass.confirmSummary`. All 12 locales carry translations of the changed
+  keys, re-reviewed by native-level reviewers (the `de` "fur" typo is fixed too); the Spanish
+  tu/usted mix is not decided here.
+
+#### Search and AI chat
+
+- **Search result sources are a multi-select: title, transcript, summary, speaker (#760,
+  #1197).** On/off chips replace the single source choice, with a shared collapse toggle and no
+  duplicate *Search files* box.
+
+- **Summaries are searched as their own plane (#963).** A summary is indexed as a
+  `doc_type: "summary"` hybrid leg inside the transcript index (rebuilt from
+  `media_file.summary_data`, never a second store of record), replacing the PostgreSQL
+  full-text summary leg.
+
+- **Chat cites summaries.** An overview built from a file's summary returns `kind: "summary"`
+  citations (#464).
+
+- **Chat context expansion is on by default (#523)**, and the candidate pool scales with the
+  size of the scope (capped at 500) with a relevance floor in diversity sampling (#975). Large
+  scopes take about a second longer per turn.
+
+#### Security, tenancy and sign-in
+
+- **Tags and collections belong to one tenant (#1050, #1051; Alembic `v420`, `v422`).** In an
+  organization, tags and collections are shared by its members; in the personal workspace they
+  stay the owner's. Existing organization data is moved, split or merged into the right tenant
+  by the migrations; on an install with no organizations only index shapes change.
+
+- **Content dedup, watch sources, share targets, shared media sources, LLM and ASR
+  configurations and summary prompts are scoped to the owner's organization.**
+
+#### Reliability, GPU and operations
+
 - `celery_queue_reserved` excludes orphaned transcription stages; new gauges
   `celery_queue_orphaned`, `celery_queue_oldest_unacked_age_seconds`,
   `transcription_runs_without_lease` and `transcription_files_infra_requeued` are for alerting.
+
 - Transcription lease defaults: `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS` 30 -> 15 and
   `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS` 300 -> 90. New: `BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS`,
   `BROKER_ORPHAN_STALE_SECONDS`, `TRANSCRIPTION_MAX_INFRA_REQUEUES`,
   `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD`, `CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT`,
   `CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE`. `CELERY_VISIBILITY_TIMEOUT` stays at 6 h on purpose.
 
-### Security
-
-- **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
-  deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
-  credential could read, edit, delete and re-run any tenant's files, collections, speakers and
-  tasks, and see PII that the owner's redaction policy masks. In multi-tenant mode (any active
-  organization, or `TENANCY_MODE=multi`) the role now carries no implicit content access: staff
-  reach a tenant only through a time-boxed support-access grant that the tenant approves, or a
-  `super_admin` break-glass opening with a ticket. Every request under a grant is recorded in a
-  fail-closed use log the tenant can read, and chat, search, content creation, downloads, exports
-  and `/admin` routes refuse a grant. Single-tenant installs are unchanged. **Behavior change for
-  self-hosted installs that created organizations:** by-UUID content verbs now need a grant. Set
-  `TENANCY_MODE=single` to restore the old instance-wide access (cross-tenant access is then
-  audited). See Operations -> Support Access & Break-Glass.
-- **An `editor` share could permanently delete another user's file (#1103).** Every delete
-  path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
-  editor permission, so anyone a collection was shared with as an editor could destroy the
-  files in it. Delete is now its own right: the file's owner, an organization admin of the
-  file's organization, or a platform admin. Editors keep every edit right. A refused delete
-  answers 403 (the bulk action reports a per-file `FORBIDDEN` result and carries on with the
-  rest of the batch) and is audited as `file.delete.denied`. The gallery list now carries
-  `can_delete` per file and disables **Delete** when no selected file can be deleted.
-- **`url_ingest: False` did not disable URL import (#1109).** The capability was declared but
-  read by nothing: `POST /api/files/process-url` and `GET /api/files/youtube/quota` stayed
-  reachable and the upload dialog always offered the URL tab. Both routes now return 404 when
-  the capability is off (for every account, including platform admins), and the URL tab is
-  hidden.
-- **A partial capability-resolver result granted features instead of withholding them (#868).**
-  `get_capabilities()` merged a registered resolver's result over the community defaults, which
-  are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path
-  silently granted it. The merge now fails closed: only a key the resolver returns as exactly
-  `True` is on. An omitted known key, a non-bool value, a `None`/non-dict result, or a resolver
-  that raises now denies (logged, once per distinct problem) rather than defaulting on or
-  propagating. The default community resolver's result is unchanged. `CLOUD_SEAM_VERSION` is now
-  **6**: a custom resolver that relied on omission meaning "community default" must return every
-  key it grants — start from `{**COMMUNITY_CAPABILITIES, ...}` to keep that behaviour on purpose.
-- **The CSP allowed WebSocket connections to any host (#1028).** `connect-src` was
-  `'self' ws: wss:`; bare scheme sources let script open a socket to any host, and `ws:` a
-  plaintext one. It is now `'self'`, which under CSP Level 3 still matches the app's own
-  same-host notifications socket. `npm run build` now fails if the emitted CSP carries a bare
-  `ws:`/`wss:`/`http:`/`https:` source. The reverse-proxy template's CSP header got the same
-  change. Deployers who rewrite that directive with `sub_filter` must update the match string.
-- **Production defaulted `CORS_ORIGINS` to the Vite dev origins (#1029).** A hardened
-  deployment that leaves it unset now allows no cross-origin origins (same-origin needs
-  none). Development keeps `http://localhost:5173` / `http://127.0.0.1:5173`. The resolved
-  list is logged at startup. The documented comma-separated form
-  (`CORS_ORIGINS=https://a,https://b`) also used to fail at startup with a settings parse
-  error; it now parses, as does a JSON list.
-- **Frontend nginx sends `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy:
-  same-origin` (#1030)** on every response, including the static-asset and HTML locations
-  that re-declare their headers. HTML and static assets now carry one `Cache-Control` header
-  each, not two. `Cross-Origin-Embedder-Policy` is deliberately not sent, because it would
-  block presigned media.
-- **Anonymous local-account routes did real work with local authentication disabled
-  (#997).** With `local_enabled` off, `verify-email` / `verify-email/resend` now return 404,
-  `register` is refused even when the env fallback says open, and `password-reset/*` serve
-  only the active `super_admin` break-glass account — every other caller gets the usual
-  generic answer with no reset work and no audit write. Invitations and `/token` are
-  unchanged (they also serve external identity providers and LDAP).
-- **Audit indexing no longer costs a HEAD round trip per event (#997).** The audit index's
-  existence is checked once per monthly index per process, and the audit writer's OpenSearch
-  client uses a 2 s timeout with no retries, so a slow OpenSearch can no longer hold every
-  audited request for the library's default timeout.
-- **SAML and OIDC handlers no longer block the event loop (#997).** Their synchronous config
-  loads, user sync, lockout, audit and session work now run in the threadpool.
-
 ### Fixed
 
-- **A cloud transcription provider that cannot be started no longer falls back to local
-  Whisper (#1236).** A saved key that no longer decrypts, a refused endpoint or a removed
-  config used to send the file to this server's Whisper against the user's choice (or, on
-  lite, fail with an internal error). The file now fails with a clear message telling the user
-  to check the provider's settings.
-- **Segment-timed models beside a cloud speaker detector get the right speaker per segment
-  (#1236).** With `whisper-1` or Azure transcribing and pyannote.ai detecting speakers, a
-  segment took the speaker at its midpoint: a short interjection in the middle of a long
-  segment won it, and a pause there left it with no speaker. It now takes the speaker who
-  talks most in it.
-- **On lite, the GPU-worker restart no longer signals every worker.** With no GPU worker to
-  find, `POST /asr-settings/local-model/restart` fell through to a shutdown broadcast to all
-  workers; on lite it is now refused.
-- **Re-detecting speakers re-splits segments at speaker changes (#1225).** `rediarize_task`
-  saved the new speakers without `finalize_segments`, so a segment spanning two speakers kept
-  one label. It now goes through the same boundary smoothing, re-segmentation and merge as
-  every other transcription path.
-
-- **Test leftovers from the #1195 pass (#1222).** The PKI e2e leg stops its prod stack from one
-  EXIT trap, so Ctrl-C or a failed start no longer leaves it on the stock ports. Standalone
-  `benchmark_parallel.py --upload` sends `bench-parallel-<hex8>` names (registered with the sweep)
-  and deletes its uploads. The Dockerfile `TARGETARCH` build test labels and removes its image. The
-  LDAP/Keycloak e2e fixtures stop an overlay only when they started it. Redis db 15 is confirmed
-  to be used by nothing else.
-
-- **The notifications panel is mounted once (#1222).** `Navbar.svelte` mounted a second copy while
-  it was open, so the panel's markup, click-outside listener and scroll lock doubled. The layout
-  mount stays.
-
-- **Licence, NOTICE and repair-ETA copy are whole sentences (#1222).** The About dialog glued the
-  licence and NOTICE links onto a sentence with `*Suffix` keys, and the embedding-repair ETA was
-  a "— ETA" tail after the percentage; neither could be translated for a language with a different
-  word order. Each is one string with a `{{license}}` / `{{notice}}` placeholder (rendered by
-  `$lib/i18n/slots`) or its own element, in all 12 locales (provisional translations pending a
-  native review).
-
-- **Dropped accents restored in the Spanish, French, Portuguese and German copy (#1222).** The
-  reprocess, Bedrock, speaker-attribute and uploader strings had lost their diacritics
-  ("transcripcion", "Parametres", "nao", "Uberprufen"). `lib/i18n/accents.test.ts` now fails on
-  the words that are never valid unaccented. Italian and Dutch were scanned and are clean.
+#### Speakers and speaker data safety
 
 - **Unassigning a speaker is a correction nothing silently undoes (#1233).** Unassigning a
   speaker from a cluster now means that section is no longer that person: it also leaves the
@@ -578,13 +794,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile clears the profile's name from the speakers and cluster it was applied to. A
   failure answers 503 with a fixed message instead of being logged and dropped.
 
-- **Tests no longer leak stores on failure (#1195).** Twenty-odd fixtures created an OpenSearch
-  index, bucket, container or temp file and then did fallible work before the `try` that
-  removes it; every pytest process left an `opentranscribe_test_*` tree in `/tmp`; the speaker
-  rename e2e test left an `E2E Propagated <hex>` profile; release rehearsals' `--cleanup` never
-  removed the TEST_ROOT tree; `run-dev-tests.sh` could leave a GPU-holding vLLM and its
-  overlays up after an early exit; and `probe_chat_rag.py` left its conversations, chat flags
-  and active LLM changed. An AST guard now fails any new creation without a teardown path.
+- **Speaker cards pick up *Show predictions on speaker cards* immediately** after saving it in
+  Voice Attributes, instead of after the preference cache expired.
+
+- **AI "names" that are not names are refused (#1149).** An LLM answer such as "Unknown (not
+  Robert)" is no longer stored as a suggestion, one already stored is ignored when a label is
+  computed, and a long confirmed name wraps inside its pill instead of being cut off.
+
+- **Cluster centroids are rebuilt when a file is deleted (#1211).** A deleted file's speakers
+  stayed averaged into the surviving clusters' centroids.
+
+- **The gender-detection and show-on-cards switches do what they say (#1200).** Neither was read
+  by anything, and gender from the speaker engine was stored with detection turned off.
+
+- **A speaker whose attributes held metadata hints no longer fails the file's speaker list with
+  a 500 (#1026).**
+
+#### UI and UX
+
+- **The upload wizard sends what you chose (#1121).** Its model choice and "no summary" choice
+  never reached the server, and bulk and extracted-audio uploads dropped the speaker range.
+
+- **Upload tray:** drag direction, stacking order, remembered collapse state and status colours
+  that failed contrast.
+
+- **Contrast and labelling (WCAG AA):** status text has its own colour tokens, separate from
+  fills; dark error badges and the speakers review badge pass AA; the model-discovery buttons
+  moved out of form labels.
+
+- **In-transcript search highlighting is back**, and a missing file shows a not-found page and
+  tab title (#1082).
+
+- **The notifications panel is mounted once (#1222).** `Navbar.svelte` mounted a second copy while
+  it was open, so the panel's markup, click-outside listener and scroll lock doubled. The layout
+  mount stays.
+
+#### Settings
+
+- **Speaker Embedding System no longer 403s for admins (#1208).** Every migration route needs
+  `super_admin` while the section is open to admins, so admins got "Admin access required"
+  after a burst of failing requests. The migration panel now renders locked for an admin
+  ("Only a super admin can run or monitor the speaker embedding migration") and makes no
+  migration calls; the consistency panel beside it is unchanged.
+
+#### Pipeline, transcription and media
+
+- **A cloud transcription provider that cannot be started no longer falls back to local
+  Whisper (#1236).** A saved key that no longer decrypts, a refused endpoint or a removed
+  config used to send the file to this server's Whisper against the user's choice (or, on
+  lite, fail with an internal error). The file now fails with a clear message telling the user
+  to check the provider's settings.
+
+- **Segment-timed models beside a cloud speaker detector get the right speaker per segment
+  (#1236).** With `whisper-1` or Azure transcribing and pyannote.ai detecting speakers, a
+  segment took the speaker at its midpoint: a short interjection in the middle of a long
+  segment won it, and a pause there left it with no speaker. It now takes the speaker who
+  talks most in it.
+
+- **On lite, the GPU-worker restart no longer signals every worker.** With no GPU worker to
+  find, `POST /asr-settings/local-model/restart` fell through to a shutdown broadcast to all
+  workers; on lite it is now refused.
+
+- **Re-detecting speakers re-splits segments at speaker changes (#1225).** `rediarize_task`
+  saved the new speakers without `finalize_segments`, so a segment spanning two speakers kept
+  one label. It now goes through the same boundary smoothing, re-segmentation and merge as
+  every other transcription path.
 
 - **A retry replays the file's own request (#1203).** Single and bulk retry, the SPA's retry
   button and the recovery sweep re-ran a file with defaults: a file submitted with a Fast
@@ -592,16 +866,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `local` or `pyannote` diarization was switched to the provider's own. The per-file model,
   range and "skip diarization" are now stored on the file (migration `v433`, new
   `media_file.requested_*` columns) and replayed.
+
 - **The saved speaker range is honoured everywhere (#1198).** Watch sources no longer pass 1/20
   on every import (new sources have no range of their own, and existing sources holding exactly
   1/20 are set to "use my saved range" by migration `v433`); cloud ASR with `local` diarization
   hands its range to the GPU re-diarize instead of falling back to the env default; the
   reprocess dialog starts from the saved range; and "use system defaults" now really sends the
   system range. One helper, `resolve_speaker_range`, decides: per file, then saved, then env.
+
 - **Upload: URL import, in-wizard recordings and the extracted-audio fallback keep the speaker
   range and model (#1201).** `POST /files/process-url` accepts `min_speakers`, `max_speakers`,
   `num_speakers` and `whisper_model` (playlists included). The Speakers step is no longer offered
   when speaker detection is off or the Fast model is chosen, and now follows the Model step.
+
 - **The API no longer accepts per-file options it drops (#1202).** `disable_diarization` now
   reaches the pipeline from `/files/{uuid}/reprocess`, the bulk reprocess action, `/files/prepare`
   and `/files/complete`; bulk reprocess also forwards its speaker range. **Behaviour change for API
@@ -610,37 +887,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the request cannot honour it (re-diarize-only or downstream-only stages, or a bulk action
   other than `reprocess`).
 
-- **Speaker Embedding System no longer 403s for admins (#1208).** Every migration route needs
-  `super_admin` while the section is open to admins, so admins got "Admin access required"
-  after a burst of failing requests. The migration panel now renders locked for an admin
-  ("Only a super admin can run or monitor the speaker embedding migration") and makes no
-  migration calls; the consistency panel beside it is unchanged.
-- **Speaker cards pick up *Show predictions on speaker cards* immediately** after saving it in
-  Voice Attributes, instead of after the preference cache expired.
-- **Docs point at real Settings entries (#1209).** Every "Settings -> X" path in the docs site now
-  names a sidebar entry that exists, and a unit test keeps it that way.
-- **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
-  worker-loss replay allowlist named the bulk waveform backfill task
-  (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches
-  (`media.generate_waveform`), and did not include `redaction.detect`. Both are acked on
-  receipt, so a worker killed mid-run lost them for good: the file kept no waveform, or its
-  redaction status stayed in progress and the summary and topic tasks waiting on it deferred
-  until they gave up. Both are now replayed. A test now fails if the per-file pipeline
-  dispatches a task that is neither replayable nor excluded for a stated reason.
-- **A cancelled file is no longer run again after its worker dies.** When the worker holding a
-  stage of a file in `CANCELLING` died, the orphan reaper read the run as current, spent one of
-  the file's infrastructure requeues and put the stage back at the head of its queue; if the
-  stage's message was gone too, the lost-run recovery dispatched a brand-new run with no
-  cancellation flag, so the cancelled file was transcribed after all. Both now leave the run to
-  `reconcile_cancellation`, and the stage's delivery is dropped.
-- **Non-transcription tasks held by a dead worker no longer wait out the 6 h visibility
-  timeout.** The orphan reaper only considered transcription stages, so a utility, CPU or
-  enrichment task (or a countdown task a worker was holding until its time) stayed in the
-  unacked set, counted as reserved work, until it was redelivered six hours later. It is now
-  put back at the head of its queue once no live worker has reported holding it for
-  `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` (600) after delivery or its ETA, at most
-  `BROKER_ORPHAN_MAX_REQUEUES` (5) times per message. A task the worker-loss replay sweep
-  already tracks is left to that sweep.
+- **In-process diarization crashed on CPU-only hosts** (#1007). The pinned pyannote fork's
+  cache-release hook called `torch.mps.empty_cache()` whenever CUDA was absent, so every
+  diarization on a CPU worker without a GPU failed with `Cannot execute emptyCache() without
+  MPS backend`. The fork now releases the MPS cache only when an MPS backend exists, and the
+  pin (`requirements.txt` and `Dockerfile.blackwell`) moves to that commit. Rebuild images or
+  reinstall `backend/venv` to pick it up.
+
+- **WAV files play again (#1044).** MIME aliases such as `audio/vnd.wave` are stored as
+  `audio/wav`, and raw ADTS `.aac` uploads are no longer rejected.
+
+- **A silent but valid file is reported as having no speech, not as corrupted (#1189).**
+
+- **Each GPU task decodes with its own language, translation and accuracy settings, and custom
+  vocabulary reaches local Whisper (#1117).** They used to come from whichever config the
+  worker preloaded.
+
+- **The garbage-segment cleanup setting is honoured (#1199):** user setting, then the system
+  default, then the built-in value; the accepted word-length range is 20 to 200.
+
+#### Captions
+
+- **Caption and export leaks and defects found while rebuilding captions (#1244).** The `blur`
+  redaction style put the original word in clear into SRT, WebVTT, TXT, JSON and CSV exports
+  (every plain-text surface now masks `blur` as `label`); `/segments` paging ignored the
+  organization's redaction floor; SRT timestamps were truncated instead of rounded; and the
+  WebVTT `STYLE` block made ffmpeg 6.1 (used by Plex and Jellyfin) drop every cue, so it is gone.
+
+#### Translations
+
+- **Licence, NOTICE and repair-ETA copy are whole sentences (#1222).** The About dialog glued the
+  licence and NOTICE links onto a sentence with `*Suffix` keys, and the embedding-repair ETA was
+  a "— ETA" tail after the percentage; neither could be translated for a language with a different
+  word order. Each is one string with a `{{license}}` / `{{notice}}` placeholder (rendered by
+  `$lib/i18n/slots`) or its own element, in all 12 locales (provisional translations pending a
+  native review).
+
+- **Dropped accents restored in the Spanish, French, Portuguese and German copy (#1222).** The
+  reprocess, Bedrock, speaker-attribute and uploader strings had lost their diacritics
+  ("transcripcion", "Parametres", "nao", "Uberprufen"). `lib/i18n/accents.test.ts` now fails on
+  the words that are never valid unaccented. Italian and Dutch were scanned and are clean.
+
+- **Native-speaker review of the v0.6.0 strings in all 11 translated locales**, followed by a
+  second review of the rewritten #1220 source strings (ar, de, es, fr, it, ja, ko, nl, pt, ru,
+  zh).
+
+- **Navigation no longer flashes raw translation keys.** The app shell waits for the locale to
+  load before it renders, and translated text re-renders once it has.
+
+#### Data integrity
+
+- **A delete leaves nothing behind in any store.** A pending or requeued file is destroyed
+  through the same purge as a completed one; chat citations that quote a destroyed file are
+  removed; a user who owns speaker clusters or settings can be deleted again (it was a 500); an
+  account deletion erases its cluster centroids and caches; GDPR erasure deletes speaker-profile
+  avatars. A live test now proves a delete leaves no row, object, index document or cache key.
+
+- **The voiceprint orphan sweep has the same guards as the index sweep:** refused on an empty
+  database, candidates re-checked before deletion, and a ratio guard.
+
+- **A media file's duration is its real length again (#969).** Completed files had their
+  container duration overwritten by the end of the last word, cutting trailing silence, music
+  or applause; ExifTool's group-prefixed tags also meant an audio file's container duration was
+  never captured. Durations now come from the container (ffprobe), with the speech extent only
+  as a last resort, and `media_file.duration_source` records which one (Alembic `v431`).
+
+- **Search indexing retries until a file is searchable (#1182).** A completed transcript whose
+  indexing failed is retried with backoff for up to 6 hours (`SEARCH_INDEX_RETRY_HORIZON_S`), and
+  a `search_index_sweep` beat task re-dispatches any completed file still missing from search
+  every 10 minutes. New metrics `search_indexing_failures_total`,
+  `search_indexing_retries_total` and `search_indexing_files_awaiting_reindex`.
+
+#### Reliability, GPU and operations
+
 - **A file is never stranded or failed because its worker died.** A worker killed while it held
   a transcription stage (out of memory, SIGKILL at the end of a stop grace period, node loss, a
   container restart) left that stage in the broker's unacked set for the 6 h visibility
@@ -650,6 +969,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   puts the exact interrupted stage back at the head of its queue within about 2.5 minutes, and
   re-dispatches the file when the message itself is gone. Every pipeline stage holds a lease
   while it runs; a second delivery of a running or finished stage stands down.
+
+- **A file's waveform and redaction scan are re-run when their worker dies mid-run.** The
+  worker-loss replay allowlist named the bulk waveform backfill task
+  (`media.generate_waveform_data`) but not the per-file one the pipeline dispatches
+  (`media.generate_waveform`), and did not include `redaction.detect`. Both are acked on
+  receipt, so a worker killed mid-run lost them for good: the file kept no waveform, or its
+  redaction status stayed in progress and the summary and topic tasks waiting on it deferred
+  until they gave up. Both are now replayed. A test now fails if the per-file pipeline
+  dispatches a task that is neither replayable nor excluded for a stated reason.
+
+- **A cancelled file is no longer run again after its worker dies.** When the worker holding a
+  stage of a file in `CANCELLING` died, the orphan reaper read the run as current, spent one of
+  the file's infrastructure requeues and put the stage back at the head of its queue; if the
+  stage's message was gone too, the lost-run recovery dispatched a brand-new run with no
+  cancellation flag, so the cancelled file was transcribed after all. Both now leave the run to
+  `reconcile_cancellation`, and the stage's delivery is dropped.
+
+- **Non-transcription tasks held by a dead worker no longer wait out the 6 h visibility
+  timeout.** The orphan reaper only considered transcription stages, so a utility, CPU or
+  enrichment task (or a countdown task a worker was holding until its time) stayed in the
+  unacked set, counted as reserved work, until it was redelivered six hours later. It is now
+  put back at the head of its queue once no live worker has reported holding it for
+  `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` (600) after delivery or its ETA, at most
+  `BROKER_ORPHAN_MAX_REQUEUES` (5) times per message. A task the worker-loss replay sweep
+  already tracks is left to that sweep.
+
 - **Two failure classes with one retry policy.** Unusable input (corrupt or undecodable media,
   no audio, no speech, empty or too short, unsupported format, DRM) fails at once and is never
   retried. Infrastructure failures (out of memory, lost connection, timeout, worker lost) and
@@ -657,8 +1002,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   submitted after them, until the admin retry limit — and only then fail, with a reason that
   says they were interrupted and retried. Worker losses use their own per-file cap
   (`TRANSCRIPTION_MAX_INFRA_REQUEUES`) and never spend the retry limit.
+
 - **A stage that stands down for a graceful shutdown keeps its place in line.** It used to be
   requeued at the back of its queue, behind everything submitted while it ran.
+
+- **A task whose worker was killed stayed `in_progress` forever (#1067).** After an OOM kill,
+  14 speaker-attribute and 2 speaker-clustering tasks were left with nothing running.
+  Speaker attributes were acknowledged on receipt, so the message was gone. Clustering
+  acknowledges late, but a container-level kill leaves its message in the broker until the
+  6 h visibility timeout. Tasks that are safe to run twice now heartbeat while they run, and
+  a new `system.reclaim_lost_tasks` sweep re-sends any whose heartbeat has lapsed, under the
+  same task id, within about `TASK_HEARTBEAT_TTL_SECONDS` (120 s) plus the 2-minute sweep
+  interval. After `TASK_REPLAY_MAX_ATTEMPTS` (2) re-sends the task is marked failed. The
+  health check no longer fails a task the sweep is handling. Transcription is never re-sent
+  this way. The speaker-attribute dedupe guard now records its owner and is taken over from
+  a dead one, instead of making the retry skip itself for 2 h.
+
+- **Speaker gender detection could OOM-kill the CPU worker on long meetings (#1066).** Each
+  detection gave wav2vec2 a speaker's longest merged speaking turns whole, and in a meeting
+  those run to minutes. One process peaked at 1.7 GB on a 60 s clip and 5.5 GB on 300 s, and
+  one 40-minute AMI meeting took 4.1 GB. Clips are now capped at
+  `SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS` (default 20 s, from the middle of the turn), both when
+  fetched and when inferred. At most `SPEAKER_ATTRIBUTE_MAX_CONCURRENCY` (default 2)
+  detections run at once per worker host; the rest re-queue themselves. A CPU worker unloads
+  the model after each detection. The same meeting now peaks at 1.6 GB and finishes in 97 s
+  instead of 258 s, with the same predicted genders.
+
+- **A failed transcription no longer stores the raw exception, and retry policy no longer
+  reads error prose (#959).** The preprocessing, transcription, diarization and rediarization
+  failure handlers now classify the exception once and store only the fixed user-facing
+  sentence in `last_error_message` / the task's `error_message`; the raw text is logged at
+  ERROR. Automatic retries read the stored `error_category` instead of re-matching stored
+  text, so rewording a message can no longer change retry behaviour. GPU out-of-memory
+  failures get their own `gpu_oom` category, which drives the GPU-OOM retry backoff; files
+  that failed with a GPU OOM before upgrading are not picked up by that backoff
+  automatically. Two responses that still echoed the stored text were fixed: task rows in
+  `GET /api/my-files/{uuid}/status` and the 409 for re-adding a URL that previously failed.
+  A new pre-commit gate, `scripts/audit-error-disclosure.py`, fails on any new read edge that
+  skips sanitization.
+
+- **Task recovery no longer fails or duplicates transcriptions that are waiting for a GPU
+  worker** (#1020). Recovery decided a transcription was dead from the checking process's start
+  time and its age since dispatch, so restarting a worker or the API, or simply waiting an hour,
+  failed a queued file or dispatched a second pipeline beside the first. Each run now carries a
+  queued marker and a worker heartbeat in Redis, and only a run with neither is recovered; the
+  duration budget is measured from when a worker started the run. Recovery cancels the run it
+  replaces, and every pipeline stage stands down when its run has been failed or replaced, so
+  exactly one transcription runs. Step 5.7 no longer resets transcription rows, and its reset
+  counter survives the next failure, so the stuck/reset cycle ends after two attempts. The
+  thresholds are now environment variables (`TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS`,
+  `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS`, `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS`,
+  `TASK_MAX_DURATION_TRANSCRIPTION_SECONDS`, `TASK_MAX_DURATION_DEFAULT_SECONDS`,
+  `TASK_RECOVERY_STALENESS_SECONDS`, `TASK_RECOVERY_ORPHANED_HOURS`).
+
+- **Workers recover from a silently dropped Redis connection (#1144)** through TCP keepalive, a
+  finite socket timeout (`CELERY_REDIS_SOCKET_TIMEOUT`, `CELERY_REDIS_CONNECT_TIMEOUT`) and
+  unlimited reconnects. They used to stop consuming forever.
+
+- **A run that fails after its cancel was requested is recorded as cancelled (#1163)**, with no
+  error notification.
+
+- **The PyAnnote fallback is never kept in VRAM beside diar-native.** It is not preloaded while
+  the sidecar is starting and is released once the sidecar serves again.
+
+- **Redaction falls back to CPU after a sticky CUDA fault** instead of failing every scan, and
+  the toxicity and profanity detectors are warmed at startup, so the first transcript edit after
+  a restart no longer waits about 12 seconds (#1190).
+
+- **An out-of-memory error is recognised only as a whole word**, so messages containing "boom"
+  or "zoom" no longer trigger the OOM retry policy.
+
+- **S3 storage backend no longer logs a misleading "ROOT MinIO credential" ERROR from every
+  process on its first presign** (#1005). On `STORAGE_BACKEND=s3` there is no MinIO admin API, so
+  quarantine cannot revoke already-issued presigned media URLs by itself. The backend now checks
+  once at startup whether the media bucket carries the quarantine Deny bucket policy and logs a
+  single backend-aware WARNING if not, naming `MEDIA_URL_EXPIRE_SECONDS` as the exposure window.
+  The production-deployment docs describe the bucket policy and the TTL trade-off.
+
+- **The default model download failed on CPU-only hosts** such as a `docker build` stage that
+  bakes models into an image (#1003). `scripts/download-models.py` now makes
+  `torch.mps.empty_cache()` a no-op when no MPS backend exists (the pinned pyannote fork calls
+  it whenever CUDA is absent and it raised `Cannot execute emptyCache() without MPS backend`),
+  and the WhisperX step falls back to `cpu`/`int8` when `USE_GPU=true` but no GPU is present.
+  `Dockerfile.prod` and `Dockerfile.lite` now create `DIAR_MODELS_DIR`'s default `/models`
+  owned by `appuser`, which previously could not create it (EACCES).
+
+#### Search and AI chat
+
+- **Every matching file is reachable across search result pages (#1078, #1079)**, fuzzy
+  matching no longer runs on the shingled field (over-long highlights, #1084), a speaker rename
+  rebuilds the summary plane too (#1188), and an unparseable date bound is a 400 on both search
+  legs.
+
+- **`REDIS_USE_TLS` is honoured by the cache, pub/sub and download-limiter clients (#1058).**
+
+- **`GET /api/files/{uuid}/suggestions` answers 204 when a file has no AI suggestions yet
+  (#1194)** instead of 404.
+
+- **Chat showed a raw i18n key and the raw provider exception when the LLM provider failed
+  (#1049).** Observed with AWS Bedrock during a transient `ServiceUnavailableException`: the
+  banner read `chat.errors.provider_error` and the message read "Bedrock error: An error
+  occurred (ServiceUnavailableException) when calling the ConverseStream operation (reached max
+  retries: 4)...". A capacity failure (Bedrock throttling/503, HTTP 429/502/503/504, Anthropic
+  `overloaded_error`) is now the new `provider_unavailable` error code ("The AI provider is
+  temporarily unavailable. Please try again in a moment."), anything else stays
+  `provider_error` with a generic sentence, and both are translated in all 12 locales. Provider
+  text is logged server-side only — it is no longer sent in the SSE frame or stored on the
+  message row. The code is persisted in `msg_metadata.error_code` so a reloaded thread renders
+  the same message. Every `ChatErrorCode` now has a `chat.errors.*` string (`timeout`,
+  `quota_exceeded`, `rate_limited` and others were missing; the unused camelCase
+  `quotaExceeded`/`rateLimited` keys were renamed to the codes the client emits).
+
+- **Bedrock calls now retry through short capacity blips (#1049).** Every Bedrock client,
+  streaming included, uses botocore's `adaptive` retry mode with 8 attempts instead of the
+  default (`legacy`, 5). Configurable with `BEDROCK_RETRY_MODE` and `BEDROCK_MAX_ATTEMPTS`.
+
+- **An env-configured Bedrock provider was reported unavailable, disabling chat and summary
+  actions (#1046).** `GET /api/llm/status` answered `available: false` because its probe GETs
+  `{base_url}/v1/models`, and Bedrock is an SDK provider with no `base_url`. Every surface gated
+  on that status (the chat composer, "Generate summary" and retry, the LLM reprocess options, and
+  `POST /api/files/{uuid}/summarize`, which returned 503) was disabled, while background summaries
+  through the same provider succeeded. The probe now reports an SDK provider as healthy once it
+  is configured, the same verdict `is_configured_for_user` gives. `/api/llm/status` also returns
+  `context_window`, so chat's token panel no longer reads `/api/llm-settings/status`, which is
+  not mounted when `llm.user_settings` is disabled. With that capability off, the chat model
+  picker and its configurations lookup are hidden, and the no-LLM empty state tells the user to
+  contact an administrator instead of linking to a settings section that is not shown.
+
+- **The post-transcription sweep no longer re-dispatches topic extraction every 10 minutes
+  when `LLM_PROVIDER` is set without credentials** (#1017). Three fixes: a topic-extraction
+  run that finds no usable provider now records no task row (it used to leave one
+  `in_progress`, with `active_task_id` pointing at it, on every dispatch); `missing_topics`
+  honours the same recently-attempted cooldown as the other post-transcription checks; and
+  the sweep's "LLM configured" check is now `LLMService.is_configured_for_user`, which
+  requires what the tasks require (provider set **and** its credentials or endpoint present)
+  instead of a bare `LLM_PROVIDER` check. Summarization and speaker identification already
+  closed their rows on the no-LLM path and are unchanged.
+
+- **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
+  configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
+  skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way
+  `ai.extract_topics` does, and still closes out its task record. ERROR is reserved for a
+  configured provider that actually fails.
+
+#### Security, tenancy and sign-in
+
 - **An existing `transcripts` index never received the tenant field's mapping (#1115).** The
   `organization_id` mapping added for the legacy whole-document index in #1027 was applied only
   when the index was created, so on an upgraded deployment the field appeared through dynamic
@@ -681,97 +1169,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   organization voice matching finds them. Community installs have no organizations:
   nothing is stamped and the uniqueness rule is unchanged.
 
-- **A task whose worker was killed stayed `in_progress` forever (#1067).** After an OOM kill,
-  14 speaker-attribute and 2 speaker-clustering tasks were left with nothing running.
-  Speaker attributes were acknowledged on receipt, so the message was gone. Clustering
-  acknowledges late, but a container-level kill leaves its message in the broker until the
-  6 h visibility timeout. Tasks that are safe to run twice now heartbeat while they run, and
-  a new `system.reclaim_lost_tasks` sweep re-sends any whose heartbeat has lapsed, under the
-  same task id, within about `TASK_HEARTBEAT_TTL_SECONDS` (120 s) plus the 2-minute sweep
-  interval. After `TASK_REPLAY_MAX_ATTEMPTS` (2) re-sends the task is marked failed. The
-  health check no longer fails a task the sweep is handling. Transcription is never re-sent
-  this way. The speaker-attribute dedupe guard now records its owner and is taken over from
-  a dead one, instead of making the retry skip itself for 2 h.
-- **Speaker gender detection could OOM-kill the CPU worker on long meetings (#1066).** Each
-  detection gave wav2vec2 a speaker's longest merged speaking turns whole, and in a meeting
-  those run to minutes. One process peaked at 1.7 GB on a 60 s clip and 5.5 GB on 300 s, and
-  one 40-minute AMI meeting took 4.1 GB. Clips are now capped at
-  `SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS` (default 20 s, from the middle of the turn), both when
-  fetched and when inferred. At most `SPEAKER_ATTRIBUTE_MAX_CONCURRENCY` (default 2)
-  detections run at once per worker host; the rest re-queue themselves. A CPU worker unloads
-  the model after each detection. The same meeting now peaks at 1.6 GB and finishes in 97 s
-  instead of 258 s, with the same predicted genders.
-- **Chat showed a raw i18n key and the raw provider exception when the LLM provider failed
-  (#1049).** Observed with AWS Bedrock during a transient `ServiceUnavailableException`: the
-  banner read `chat.errors.provider_error` and the message read "Bedrock error: An error
-  occurred (ServiceUnavailableException) when calling the ConverseStream operation (reached max
-  retries: 4)...". A capacity failure (Bedrock throttling/503, HTTP 429/502/503/504, Anthropic
-  `overloaded_error`) is now the new `provider_unavailable` error code ("The AI provider is
-  temporarily unavailable. Please try again in a moment."), anything else stays
-  `provider_error` with a generic sentence, and both are translated in all 12 locales. Provider
-  text is logged server-side only — it is no longer sent in the SSE frame or stored on the
-  message row. The code is persisted in `msg_metadata.error_code` so a reloaded thread renders
-  the same message. Every `ChatErrorCode` now has a `chat.errors.*` string (`timeout`,
-  `quota_exceeded`, `rate_limited` and others were missing; the unused camelCase
-  `quotaExceeded`/`rateLimited` keys were renamed to the codes the client emits).
-- **Bedrock calls now retry through short capacity blips (#1049).** Every Bedrock client,
-  streaming included, uses botocore's `adaptive` retry mode with 8 attempts instead of the
-  default (`legacy`, 5). Configurable with `BEDROCK_RETRY_MODE` and `BEDROCK_MAX_ATTEMPTS`.
-
-- **An env-configured Bedrock provider was reported unavailable, disabling chat and summary
-  actions (#1046).** `GET /api/llm/status` answered `available: false` because its probe GETs
-  `{base_url}/v1/models`, and Bedrock is an SDK provider with no `base_url`. Every surface gated
-  on that status (the chat composer, "Generate summary" and retry, the LLM reprocess options, and
-  `POST /api/files/{uuid}/summarize`, which returned 503) was disabled, while background summaries
-  through the same provider succeeded. The probe now reports an SDK provider as healthy once it
-  is configured, the same verdict `is_configured_for_user` gives. `/api/llm/status` also returns
-  `context_window`, so chat's token panel no longer reads `/api/llm-settings/status`, which is
-  not mounted when `llm.user_settings` is disabled. With that capability off, the chat model
-  picker and its configurations lookup are hidden, and the no-LLM empty state tells the user to
-  contact an administrator instead of linking to a settings section that is not shown.
-
-- **A failed transcription no longer stores the raw exception, and retry policy no longer
-  reads error prose (#959).** The preprocessing, transcription, diarization and rediarization
-  failure handlers now classify the exception once and store only the fixed user-facing
-  sentence in `last_error_message` / the task's `error_message`; the raw text is logged at
-  ERROR. Automatic retries read the stored `error_category` instead of re-matching stored
-  text, so rewording a message can no longer change retry behaviour. GPU out-of-memory
-  failures get their own `gpu_oom` category, which drives the GPU-OOM retry backoff; files
-  that failed with a GPU OOM before upgrading are not picked up by that backoff
-  automatically. Two responses that still echoed the stored text were fixed: task rows in
-  `GET /api/my-files/{uuid}/status` and the 409 for re-adding a URL that previously failed.
-  A new pre-commit gate, `scripts/audit-error-disclosure.py`, fails on any new read edge that
-  skips sanitization.
-
-- **In-process diarization crashed on CPU-only hosts** (#1007). The pinned pyannote fork's
-  cache-release hook called `torch.mps.empty_cache()` whenever CUDA was absent, so every
-  diarization on a CPU worker without a GPU failed with `Cannot execute emptyCache() without
-  MPS backend`. The fork now releases the MPS cache only when an MPS backend exists, and the
-  pin (`requirements.txt` and `Dockerfile.blackwell`) moves to that commit. Rebuild images or
-  reinstall `backend/venv` to pick it up.
-- **The post-transcription sweep no longer re-dispatches topic extraction every 10 minutes
-  when `LLM_PROVIDER` is set without credentials** (#1017). Three fixes: a topic-extraction
-  run that finds no usable provider now records no task row (it used to leave one
-  `in_progress`, with `active_task_id` pointing at it, on every dispatch); `missing_topics`
-  honours the same recently-attempted cooldown as the other post-transcription checks; and
-  the sweep's "LLM configured" check is now `LLMService.is_configured_for_user`, which
-  requires what the tasks require (provider set **and** its credentials or endpoint present)
-  instead of a bare `LLM_PROVIDER` check. Summarization and speaker identification already
-  closed their rows on the no-LLM path and are unchanged.
-- **Speaker identification no longer logs an ERROR and traceback on every file when no LLM is
-  configured** (#1004). Having no provider is a deployment choice: `ai.identify_speakers` now
-  skips at INFO with `{"status": "skipped", "reason": "LLM not configured"}`, the same way
-  `ai.extract_topics` does, and still closes out its task record. ERROR is reserved for a
-  configured provider that actually fails.
-- **S3 storage backend no longer logs a misleading "ROOT MinIO credential" ERROR from every
-  process on its first presign** (#1005). On `STORAGE_BACKEND=s3` there is no MinIO admin API, so
-  quarantine cannot revoke already-issued presigned media URLs by itself. The backend now checks
-  once at startup whether the media bucket carries the quarantine Deny bucket policy and logs a
-  single backend-aware WARNING if not, naming `MEDIA_URL_EXPIRE_SECONDS` as the exposure window.
-  The production-deployment docs describe the bucket policy and the TTL trade-off.
 - **`GET /api/auth/saml/metadata` returned 500 with SAML disabled (#998).** It now returns
   404 when SAML is off, and a configuration python3-saml rejects (on any SAML route) is a
   503 with one log line instead of an unhandled 500 and traceback.
+
 - **`POST /api/files` had no size limit while the body streamed (#999).** FastAPI spooled
   the whole multipart body to `/tmp` before the handler's size check ran, so one oversized
   or endless chunked request could fill the temp volume. A `Content-Length` over
@@ -780,26 +1181,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. The speaker-profile avatar upload is capped the same way. The no-op
   `app.router.default_max_upload_size` assignment is removed. Presigned single-PUT and
   multipart uploads are unaffected, so multi-GB uploads work as before.
-- **The default model download failed on CPU-only hosts** such as a `docker build` stage that
-  bakes models into an image (#1003). `scripts/download-models.py` now makes
-  `torch.mps.empty_cache()` a no-op when no MPS backend exists (the pinned pyannote fork calls
-  it whenever CUDA is absent and it raised `Cannot execute emptyCache() without MPS backend`),
-  and the WhisperX step falls back to `cpu`/`int8` when `USE_GPU=true` but no GPU is present.
-  `Dockerfile.prod` and `Dockerfile.lite` now create `DIAR_MODELS_DIR`'s default `/models`
-  owned by `appuser`, which previously could not create it (EACCES).
-- **Task recovery no longer fails or duplicates transcriptions that are waiting for a GPU
-  worker** (#1020). Recovery decided a transcription was dead from the checking process's start
-  time and its age since dispatch, so restarting a worker or the API, or simply waiting an hour,
-  failed a queued file or dispatched a second pipeline beside the first. Each run now carries a
-  queued marker and a worker heartbeat in Redis, and only a run with neither is recovered; the
-  duration budget is measured from when a worker started the run. Recovery cancels the run it
-  replaces, and every pipeline stage stands down when its run has been failed or replaced, so
-  exactly one transcription runs. Step 5.7 no longer resets transcription rows, and its reset
-  counter survives the next failure, so the stuck/reset cycle ends after two attempts. The
-  thresholds are now environment variables (`TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS`,
-  `TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS`, `TRANSCRIPTION_HEARTBEAT_TTL_SECONDS`,
-  `TASK_MAX_DURATION_TRANSCRIPTION_SECONDS`, `TASK_MAX_DURATION_DEFAULT_SECONDS`,
-  `TASK_RECOVERY_STALENESS_SECONDS`, `TASK_RECOVERY_ORPHANED_HOURS`).
+
+#### Docs and tests
+
+- **Test leftovers from the #1195 pass (#1222).** The PKI e2e leg stops its prod stack from one
+  EXIT trap, so Ctrl-C or a failed start no longer leaves it on the stock ports. Standalone
+  `benchmark_parallel.py --upload` sends `bench-parallel-<hex8>` names (registered with the sweep)
+  and deletes its uploads. The Dockerfile `TARGETARCH` build test labels and removes its image. The
+  LDAP/Keycloak e2e fixtures stop an overlay only when they started it. Redis db 15 is confirmed
+  to be used by nothing else.
+
+- **Tests no longer leak stores on failure (#1195).** Twenty-odd fixtures created an OpenSearch
+  index, bucket, container or temp file and then did fallible work before the `try` that
+  removes it; every pytest process left an `opentranscribe_test_*` tree in `/tmp`; the speaker
+  rename e2e test left an `E2E Propagated <hex>` profile; release rehearsals' `--cleanup` never
+  removed the TEST_ROOT tree; `run-dev-tests.sh` could leave a GPU-holding vLLM and its
+  overlays up after an early exit; and `probe_chat_rag.py` left its conversations, chat flags
+  and active LLM changed. An AST guard now fails any new creation without a teardown path.
+
+- **Docs point at real Settings entries (#1209).** Every "Settings -> X" path in the docs site now
+  names a sidebar entry that exists, and a unit test keeps it that way.
+
+### Security
+
+- **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
+  deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
+  credential could read, edit, delete and re-run any tenant's files, collections, speakers and
+  tasks, and see PII that the owner's redaction policy masks. In multi-tenant mode (any active
+  organization, or `TENANCY_MODE=multi`) the role now carries no implicit content access: staff
+  reach a tenant only through a time-boxed support-access grant that the tenant approves, or a
+  `super_admin` break-glass opening with a ticket. Every request under a grant is recorded in a
+  fail-closed use log the tenant can read, and chat, search, content creation, downloads, exports
+  and `/admin` routes refuse a grant. Single-tenant installs are unchanged. **Behavior change for
+  self-hosted installs that created organizations:** by-UUID content verbs now need a grant. Set
+  `TENANCY_MODE=single` to restore the old instance-wide access (cross-tenant access is then
+  audited). See Operations -> Support Access & Break-Glass.
+
+- **An `editor` share could permanently delete another user's file (#1103).** Every delete
+  path (`DELETE /api/files/{uuid}` and the bulk `delete` action) resolved the file with the
+  editor permission, so anyone a collection was shared with as an editor could destroy the
+  files in it. Delete is now its own right: the file's owner, an organization admin of the
+  file's organization, or a platform admin. Editors keep every edit right. A refused delete
+  answers 403 (the bulk action reports a per-file `FORBIDDEN` result and carries on with the
+  rest of the batch) and is audited as `file.delete.denied`. The gallery list now carries
+  `can_delete` per file and disables **Delete** when no selected file can be deleted.
+
+- **`url_ingest: False` did not disable URL import (#1109).** The capability was declared but
+  read by nothing: `POST /api/files/process-url` and `GET /api/files/youtube/quota` stayed
+  reachable and the upload dialog always offered the URL tab. Both routes now return 404 when
+  the capability is off (for every account, including platform admins), and the URL tab is
+  hidden.
+
+- **A partial capability-resolver result granted features instead of withholding them (#868).**
+  `get_capabilities()` merged a registered resolver's result over the community defaults, which
+  are `True` for almost every key, so a resolver that omitted a tier-gated key on some code path
+  silently granted it. The merge now fails closed: only a key the resolver returns as exactly
+  `True` is on. An omitted known key, a non-bool value, a `None`/non-dict result, or a resolver
+  that raises now denies (logged, once per distinct problem) rather than defaulting on or
+  propagating. The default community resolver's result is unchanged. `CLOUD_SEAM_VERSION` is now
+  **6**: a custom resolver that relied on omission meaning "community default" must return every
+  key it grants — start from `{**COMMUNITY_CAPABILITIES, ...}` to keep that behaviour on purpose.
+
+- **The CSP allowed WebSocket connections to any host (#1028).** `connect-src` was
+  `'self' ws: wss:`; bare scheme sources let script open a socket to any host, and `ws:` a
+  plaintext one. It is now `'self'`, which under CSP Level 3 still matches the app's own
+  same-host notifications socket. `npm run build` now fails if the emitted CSP carries a bare
+  `ws:`/`wss:`/`http:`/`https:` source. The reverse-proxy template's CSP header got the same
+  change. Deployers who rewrite that directive with `sub_filter` must update the match string.
+
+- **Production defaulted `CORS_ORIGINS` to the Vite dev origins (#1029).** A hardened
+  deployment that leaves it unset now allows no cross-origin origins (same-origin needs
+  none). Development keeps `http://localhost:5173` / `http://127.0.0.1:5173`. The resolved
+  list is logged at startup. The documented comma-separated form
+  (`CORS_ORIGINS=https://a,https://b`) also used to fail at startup with a settings parse
+  error; it now parses, as does a JSON list.
+
+- **Frontend nginx sends `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy:
+  same-origin` (#1030)** on every response, including the static-asset and HTML locations
+  that re-declare their headers. HTML and static assets now carry one `Cache-Control` header
+  each, not two. `Cross-Origin-Embedder-Policy` is deliberately not sent, because it would
+  block presigned media.
+
+- **Anonymous local-account routes did real work with local authentication disabled
+  (#997).** With `local_enabled` off, `verify-email` / `verify-email/resend` now return 404,
+  `register` is refused even when the env fallback says open, and `password-reset/*` serve
+  only the active `super_admin` break-glass account — every other caller gets the usual
+  generic answer with no reset work and no audit write. Invitations and `/token` are
+  unchanged (they also serve external identity providers and LDAP).
+
+- **Audit indexing no longer costs a HEAD round trip per event (#997).** The audit index's
+  existence is checked once per monthly index per process, and the audit writer's OpenSearch
+  client uses a 2 s timeout with no retries, so a slow OpenSearch can no longer hold every
+  audited request for the library's default timeout.
+
+- **SAML and OIDC handlers no longer block the event loop (#997).** Their synchronous config
+  loads, user sync, lockout, audit and session work now run in the threadpool.
+
+- **`GET /api/files/{uuid}` answers 404, not 403, for a file you cannot access (#1060)**, so
+  the response no longer confirms that the file exists. The file page shows a not-found state.
+
+- **Third-party telemetry and update checks are off by default.** pyannote usage metrics,
+  huggingface_hub telemetry, the Deno and MinIO update checks, MinIO callhome, the player's CDN
+  placeholder video and the npm update notifier no longer phone home; each can be opted back
+  into from `.env` (see the Privacy block in `.env.example`).
+
+- **Upload content sniffing is stricter (#1241).** Multi-byte container signatures are checked,
+  the detected type must agree with the declared type and the extension, and control and
+  bidirectional-override characters are stripped from filenames.
+
+- **Host hardware telemetry follows the `system.hardware_stats` capability.** `/api/system/stats`
+  answers 404 and the WebSocket GPU telemetry is not sent when it is off.
+
+- **`pip` is removed from the production, lite and Blackwell runtime images (#1139).**
+
+### Removed
+
+- **The legacy single-task transcription path is gone (#1225).** `transcription.process_file`,
+  `legacy_task.py` and `background.py` (superseded by the 3-stage chain long ago) are deleted,
+  along with `DiarizationProviderFactory.create_for_source` / `create_for_user` and the
+  dispatcher's `_resolve_gpu_queue`. The plan is the only place that decides which detector
+  runs and on which queue.
+
+- **The hybrid map-tier chat summary (`chat.rag.map_tier_hybrid`) was measured and deleted
+  (#532).** It cited 0.29 of in-scope files against 0.74 for the existing path.
+
+- **The PostgreSQL full-text summary search leg** is replaced by the indexed summary plane
+  (#963).
+
+- **`ENABLE_DIARIZATION`.** Speaker detection follows each user's *Speaker detection* setting;
+  the installer no longer writes the variable, `.env.example` drops it, and
+  `GET /api/system/stats` no longer reports `diarization_enabled`. See Upgrade Notes.
 
 ## [0.5.1] - 2026-09-19
 

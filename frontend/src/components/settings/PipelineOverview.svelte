@@ -264,7 +264,7 @@
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     font-size: 0.75rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
   }
 
   .step-title {

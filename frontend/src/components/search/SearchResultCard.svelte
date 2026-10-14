@@ -245,7 +245,7 @@
   }
 
   .result-card:hover {
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 
@@ -377,7 +377,7 @@
   }
 
   .preview-btn:hover {
-    background: rgba(79, 70, 229, 0.1);
+    background: rgba(var(--primary-color-rgb), 0.1);
     transform: scale(1.1);
   }
 
@@ -473,8 +473,8 @@
   }
 
   .dual-match-badge {
-    background: rgba(79, 70, 229, 0.12);
-    color: #4f46e5;
+    background: rgba(var(--primary-color-rgb), 0.12);
+    color: var(--primary-on-surface);
     font-weight: var(--font-weight-medium);
   }
 
@@ -610,8 +610,8 @@
   }
 
   .view-transcript-btn:hover {
-    background: rgba(79, 70, 229, 0.08);
-    border-color: var(--primary-color, #4f46e5);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    border-color: var(--primary-color);
   }
 
   :global([data-theme='dark']) .view-transcript-btn:hover {

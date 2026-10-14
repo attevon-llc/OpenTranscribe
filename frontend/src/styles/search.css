@@ -81,7 +81,7 @@
 }
 
 .search-semantic-segment {
-  background-color: rgba(99, 102, 241, 0.12);
+  background-color: rgba(var(--primary-color-rgb), 0.12);
   color: var(--text-primary);
   padding: 0.05em 0.1em;
   border-radius: 2px;
@@ -95,7 +95,7 @@
 }
 
 [data-theme='dark'] .search-semantic-segment {
-  background-color: rgba(99, 102, 241, 0.22);
+  background-color: rgba(var(--primary-color-rgb), 0.22);
   color: var(--text-primary);
 }
 

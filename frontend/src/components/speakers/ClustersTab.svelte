@@ -417,10 +417,8 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary, #6b7280);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     margin: 16px 0 4px;
     padding: 4px 4px;
     border: none;
@@ -518,7 +516,7 @@
     border-radius: 6px;
     margin-bottom: 12px;
     font-size: 14px;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .merge-banner span {

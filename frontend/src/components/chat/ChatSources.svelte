@@ -337,7 +337,7 @@
 
   .snippet-toggle:hover {
     background-color: var(--button-hover);
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
   }
 
   .snippet-toggle:focus-visible {

@@ -400,7 +400,7 @@
 
   .speaker-badge {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 3px 8px;
     border-radius: 12px;
     border: 1px solid;

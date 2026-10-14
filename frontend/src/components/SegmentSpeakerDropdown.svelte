@@ -776,7 +776,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn {
-      color: var(--primary-color, #3b82f6);
+      color: var(--primary-on-surface);
     }
 
     .speaker-dropdown-portal .create-speaker-btn:hover {
@@ -795,7 +795,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn svg {
-      color: var(--primary-color, #3b82f6);
+      color: var(--primary-on-surface);
       margin-right: 4px;
     }
 
@@ -1020,7 +1020,7 @@
 
   .segment-speaker {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 2px 8px;
     border-radius: 12px;
     /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to

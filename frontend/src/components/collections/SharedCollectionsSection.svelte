@@ -128,9 +128,7 @@
 
   .section-label {
     font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     padding: 4px 0;
   }
@@ -147,7 +145,7 @@
 
   .badge.shared-permission {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     text-transform: capitalize;
   }
 

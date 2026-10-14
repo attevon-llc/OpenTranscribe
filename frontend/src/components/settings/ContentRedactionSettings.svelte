@@ -460,9 +460,7 @@
   }
   .example-label {
     display: block;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin-bottom: 0.25rem;
   }

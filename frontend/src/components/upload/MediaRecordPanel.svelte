@@ -301,7 +301,7 @@
   .duration-badge {
     font-family: 'Monaco', 'Menlo', monospace;
     font-size: 0.9375rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(59, 130, 246, 0.1);
     padding: 0.1875rem 0.625rem;
@@ -381,7 +381,7 @@
   .settings-link {
     background: none;
     border: none;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-size: 0.6875rem;
     cursor: pointer;
     text-decoration: underline;

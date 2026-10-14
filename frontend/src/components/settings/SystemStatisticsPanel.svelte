@@ -603,17 +603,15 @@
   }
 
   .stat-section h4 {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: 0 0 0.5rem 0;
   }
 
   .stat-section .stat-value {
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: 0.375rem;
   }
@@ -632,17 +630,15 @@
   }
 
   .stat-card h4 {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: 0 0 0.5rem 0;
   }
 
   .stat-value {
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: 0.375rem;
   }
@@ -910,10 +906,8 @@
   }
 
   .model-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 

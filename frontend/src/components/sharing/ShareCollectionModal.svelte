@@ -276,7 +276,7 @@
 
   .collection-name svg {
     flex-shrink: 0;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .share-intro {
@@ -301,10 +301,8 @@
   }
 
   .permission-guide-title {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin-bottom: 0.375rem;
   }
@@ -339,7 +337,7 @@
 
   .permission-badge.editor {
     background: rgba(59, 130, 246, 0.12);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid rgba(59, 130, 246, 0.3);
   }
 

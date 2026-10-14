@@ -165,13 +165,13 @@
 
   .gender-toggle-btn:hover {
     border-color: var(--primary-color, #3b82f6);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .gender-toggle-btn.active {
     border-color: var(--primary-color, #3b82f6);
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .profile-list {
@@ -225,7 +225,7 @@
     justify-content: center;
     font-size: 16px;
     font-weight: 600;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
   }
 
@@ -362,13 +362,13 @@
     padding: 1px 6px;
     border-radius: 8px;
     background: var(--accent-light, #e0e7ff);
-    color: var(--accent, #4f46e5);
+    color: var(--primary-on-surface);
     margin-left: 6px;
     vertical-align: middle;
     white-space: nowrap;
   }
   :global([data-theme='dark']) .shared-badge {
-    background: rgba(99, 102, 241, 0.2);
+    background: rgba(var(--primary-color-rgb), 0.2);
     color: #a5b4fc;
   }
 

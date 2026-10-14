@@ -375,7 +375,7 @@
   .stat-active {
     background: #fff;
     color: var(--primary-color);
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 0 8px;
     border-radius: 999px;
   }

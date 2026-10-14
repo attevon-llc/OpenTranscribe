@@ -374,11 +374,9 @@
 
   .subsection-title {
     font-size: 0.8125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin: 1.25rem 0 0.5rem 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
 
   .empty-notice {

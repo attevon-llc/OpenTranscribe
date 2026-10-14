@@ -91,7 +91,7 @@
   }
 
   .chip-value {
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.85rem;
   }
 

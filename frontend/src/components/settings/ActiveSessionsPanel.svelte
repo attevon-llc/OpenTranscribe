@@ -307,7 +307,7 @@
     text-transform: uppercase;
     letter-spacing: 0.025em;
     background-color: rgba(59, 130, 246, 0.15);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .panel-actions {

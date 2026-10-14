@@ -693,7 +693,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
   }
 
   .mobile-toggle {
@@ -1210,7 +1210,7 @@
 
   .modal-btn:hover svg {
     color: var(--primary-on-surface);
-    stroke: var(--primary-color);
+    stroke: var(--primary-on-surface);
     opacity: 1;
   }
 

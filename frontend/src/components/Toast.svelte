@@ -141,7 +141,7 @@
     color: white;
     border-radius: 50%;
     font-size: 12px;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
     flex-shrink: 0;
   }
 

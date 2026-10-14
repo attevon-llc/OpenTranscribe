@@ -1627,7 +1627,7 @@
 
   .users-table th {
     background-color: var(--table-header-bg);
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
   }
 
   .users-table tr:hover {
@@ -1972,7 +1972,7 @@
   }
 
   .current-role {
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
     text-transform: capitalize;
   }
 

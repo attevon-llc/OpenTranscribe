@@ -328,7 +328,7 @@
   .progress-percent {
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color, #4a9eff);
+    color: var(--primary-on-surface);
   }
 
   .progress-bar-container {

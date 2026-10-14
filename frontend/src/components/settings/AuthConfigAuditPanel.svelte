@@ -225,9 +225,7 @@
 
   .label-text {
     color: var(--color-text-secondary, var(--text-secondary));
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
+    font-size: var(--font-size-xs);
   }
 
   select {

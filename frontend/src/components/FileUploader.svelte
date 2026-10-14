@@ -1196,7 +1196,7 @@
 
   .step-item.visited .step-dot {
     border-color: var(--primary-color, #3b82f6);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .step-number { line-height: 1; }
@@ -1415,7 +1415,7 @@
   .nav-review-defaults {
     background: rgba(59, 130, 246, 0.08);
     border: 1px solid var(--primary-color, #3b82f6);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 

@@ -207,8 +207,6 @@
     margin: 0;
     font-size: 0.875rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--color-text-secondary);
   }
 
@@ -309,9 +307,7 @@
   .result-label {
     min-width: 9rem;
     font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: var(--font-weight-medium);
     color: var(--color-text-secondary);
   }
 

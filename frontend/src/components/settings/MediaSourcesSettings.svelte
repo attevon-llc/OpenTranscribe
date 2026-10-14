@@ -494,10 +494,8 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary, #6b7280);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
     margin-top: 0.5rem;
   }
 

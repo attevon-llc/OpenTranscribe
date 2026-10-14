@@ -255,8 +255,8 @@
   }
 
   .search-input:focus {
-    border-color: var(--primary-color, #4f46e5);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .clear-btn {
@@ -365,8 +365,8 @@
   .operator-hint code {
     font-family: monospace;
     font-size: 0.75rem;
-    background: rgba(99, 102, 241, 0.08);
-    color: var(--primary-color, #4f46e5);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--primary-on-surface);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
   }

@@ -581,10 +581,8 @@
   }
 
   .current-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -651,7 +649,7 @@
     font-size: 18px;
     line-height: 1;
     color: white;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
   }
 
   .search-wrapper {

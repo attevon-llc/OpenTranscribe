@@ -293,10 +293,8 @@
 
   .metadata-label {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
   }
 
   .metadata-value {

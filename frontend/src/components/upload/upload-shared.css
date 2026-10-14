@@ -69,7 +69,7 @@
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
   background: var(--primary-bg, #eff6ff);
-  color: var(--primary-color, #3b82f6);
+  color: var(--primary-on-surface);
   font-size: 0.75rem;
   font-weight: 500;
   border: 1px solid var(--primary-border, #bfdbfe);
@@ -170,7 +170,7 @@
   border: 1px solid var(--primary-color, #3b82f6);
   border-radius: 6px;
   background: transparent;
-  color: var(--primary-color, #3b82f6);
+  color: var(--primary-on-surface);
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;

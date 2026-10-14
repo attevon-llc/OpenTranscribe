@@ -500,7 +500,7 @@
 
   .type-icon.video,
   .type-icon.audio {
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
   }
 
   .list-cell-title {

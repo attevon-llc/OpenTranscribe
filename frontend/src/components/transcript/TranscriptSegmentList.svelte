@@ -715,7 +715,7 @@
 
   .segment-speaker {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 2px 8px;
     border-radius: 12px;
     white-space: nowrap;
@@ -751,7 +751,7 @@
      a highlight, ported from the deleted SearchTranscriptModal. Only populated when the
      parent supplies `segmentClassification` (the search-result view). */
   .segment-text.keyword-segment {
-    border-left: 3px solid var(--primary-color, #6366f1);
+    border-left: 3px solid var(--primary-color);
   }
   .segment-text.semantic-segment {
     border-left: 3px solid var(--text-secondary, #94a3b8);

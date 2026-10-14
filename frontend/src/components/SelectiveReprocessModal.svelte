@@ -887,12 +887,12 @@
   }
 
   .step-label.active {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 
   .step-label.completed {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .step-line {
@@ -974,10 +974,8 @@
   }
 
   .stage-group-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -1095,10 +1093,8 @@
 
   .review-label {
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
     display: block;
     margin-bottom: 0.5rem;
   }
@@ -1117,7 +1113,7 @@
     font-size: 0.78rem;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid rgba(59, 130, 246, 0.2);
   }
 
@@ -1153,7 +1149,7 @@
     padding: 0.6rem 0.75rem;
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     background: rgba(59, 130, 246, 0.06);
     border-bottom: 1px solid rgba(59, 130, 246, 0.1);
   }

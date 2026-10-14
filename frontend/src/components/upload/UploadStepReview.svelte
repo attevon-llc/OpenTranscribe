@@ -157,8 +157,7 @@
 
   .review-label {
     flex-shrink: 0; width: 90px;
-    font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
-    text-transform: uppercase; letter-spacing: 0.02em;
+    font-size: 0.75rem; font-weight: var(--font-weight-medium); color: var(--text-secondary);
     padding-top: 0.125rem;
   }
 
@@ -184,7 +183,7 @@
   :global([data-theme='dark']) .review-chip.tag { background: rgba(22, 163, 74, 0.15); border-color: rgba(22, 163, 74, 0.3); }
 
   .review-chip.collection {
-    background: var(--primary-bg, #eff6ff); color: var(--primary-color, #3b82f6);
+    background: var(--primary-bg, #eff6ff); color: var(--primary-on-surface);
     border: 1px solid var(--primary-border, #bfdbfe);
   }
 

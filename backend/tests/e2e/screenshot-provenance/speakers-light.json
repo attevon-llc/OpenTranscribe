@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/speakers-light.png",
-  "captured_at": "2026-10-12T13:00:55Z",
-  "git_sha": "8e21fb6ce841071b15dcf49baad60f81aa699b02",
+  "captured_at": "2026-10-14T02:45:14Z",
+  "git_sha": "8d64dc87349a45b3dddd38a692bc0611f245f56b",
   "git_branch": "feat/v0.6.0-frontend-ux",
   "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "v0.6.0 UI refresh: filter sidebar, gallery toolbar, settings regroup, pipeline view, processing section (single clean seed)",
+  "reason": "v0.6.0 UI review round 2: type scale and weights, nav and File Status consolidation, list alignment, settings tabs, capability badges, menu icons",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -15,7 +15,7 @@
     "mode": "dev (local source bind-mounted)"
   },
   "change_from_previous": {
-    "status": "changed (within tolerance)",
-    "differing_pixels": "0.0131%"
+    "status": "CHANGED",
+    "differing_pixels": "1.0577%"
   }
 }

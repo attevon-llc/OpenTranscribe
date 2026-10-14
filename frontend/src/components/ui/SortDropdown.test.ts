@@ -30,6 +30,25 @@ const searchSortOptions: SortOption[] = [
 ];
 
 describe('SortDropdown', () => {
+  it('draws a distinct icon in front of every sort field (gallery and search)', async () => {
+    const { container } = render(SortDropdown, {
+      props: {
+        sortOptions: searchSortOptions,
+        sortBy: 'upload_time',
+        sortOrder: 'desc',
+        ariaLabelKey: 'gallery.sort.label',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'gallery.sort.label' }));
+
+    const items = Array.from(container.querySelectorAll('.dropdown-item'));
+    expect(items).toHaveLength(searchSortOptions.length);
+    const glyphs = items.map((item) => item.querySelector('svg.menu-icon')?.innerHTML ?? '');
+    expect(glyphs.every((g) => g.length > 0)).toBe(true);
+    expect(new Set(glyphs).size).toBe(items.length);
+  });
+
   it('renders the current option label and the aria-label from ariaLabelKey', () => {
     render(SortDropdown, {
       props: {

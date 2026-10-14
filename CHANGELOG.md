@@ -496,7 +496,7 @@ off by default.
 - **The Speakers page: Review, groups-only Clusters, one gender badge.** The *Inbox* tab is
   renamed *Review* (old `?tab=inbox` links still work). The Clusters tab lists groups only,
   matching what *Re-cluster All* builds (one-speaker clusters still drive matching but are not
-  listed), and when it is empty while speakers wait for review it points to Review.
+  listed unless they are named or promoted to a profile), and when it is empty while speakers wait for review it points to Review.
 
 #### UI and UX
 

@@ -256,7 +256,7 @@
 
   .cluster-label.suggested {
     font-style: italic;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .suggested-badge {
@@ -265,7 +265,7 @@
     padding: 1px 6px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -400,7 +400,7 @@
 
   /* Split — blue outline → solid blue (matches primary action palette) */
   .action-btn.split {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border-color: var(--primary-color, #3b82f6);
   }
 

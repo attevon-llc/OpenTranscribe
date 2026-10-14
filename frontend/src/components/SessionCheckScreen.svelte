@@ -203,7 +203,7 @@
     border: 1px solid var(--primary-color);
     border-radius: 8px;
     background: transparent;
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font: inherit;
     cursor: pointer;
   }

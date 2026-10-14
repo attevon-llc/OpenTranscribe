@@ -366,7 +366,7 @@
     font-family: monospace;
     font-size: 0.75rem;
     background: rgba(99, 102, 241, 0.08);
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
   }

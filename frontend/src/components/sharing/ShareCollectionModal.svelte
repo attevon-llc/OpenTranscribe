@@ -276,7 +276,7 @@
 
   .collection-name svg {
     flex-shrink: 0;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .share-intro {
@@ -339,7 +339,7 @@
 
   .permission-badge.editor {
     background: rgba(59, 130, 246, 0.12);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid rgba(59, 130, 246, 0.3);
   }
 

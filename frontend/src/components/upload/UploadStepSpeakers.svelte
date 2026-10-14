@@ -127,7 +127,7 @@
     border-radius: 6px;
   }
   :global([data-theme='dark']) .info-note { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); }
-  .info-note svg { flex-shrink: 0; color: var(--primary-color, #3b82f6); }
+  .info-note svg { flex-shrink: 0; color: var(--primary-on-surface); }
   .info-note span { flex: 1; }
 
   .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }

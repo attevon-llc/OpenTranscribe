@@ -1555,7 +1555,7 @@
   }
 
   .detail-row strong {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     margin-right: 0.5rem;
   }
 
@@ -1566,7 +1566,7 @@
   .prompt-text-container strong {
     display: block;
     margin-bottom: 0.75rem;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .prompt-text-display {

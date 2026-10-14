@@ -887,12 +887,12 @@
   }
 
   .step-label.active {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 
   .step-label.completed {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .step-line {
@@ -1117,7 +1117,7 @@
     font-size: 0.78rem;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid rgba(59, 130, 246, 0.2);
   }
 
@@ -1153,7 +1153,7 @@
     padding: 0.6rem 0.75rem;
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     background: rgba(59, 130, 246, 0.06);
     border-bottom: 1px solid rgba(59, 130, 246, 0.1);
   }

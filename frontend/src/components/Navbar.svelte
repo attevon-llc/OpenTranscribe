@@ -1210,7 +1210,7 @@
 
   .modal-btn:hover svg {
     color: var(--primary-on-surface);
-    stroke: var(--primary-color);
+    stroke: var(--primary-on-surface);
     opacity: 1;
   }
 

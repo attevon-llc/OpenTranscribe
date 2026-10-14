@@ -381,7 +381,7 @@
   .settings-link {
     background: none;
     border: none;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-size: 0.6875rem;
     cursor: pointer;
     text-decoration: underline;

@@ -165,13 +165,13 @@
 
   .gender-toggle-btn:hover {
     border-color: var(--primary-color, #3b82f6);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .gender-toggle-btn.active {
     border-color: var(--primary-color, #3b82f6);
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .profile-list {
@@ -225,7 +225,7 @@
     justify-content: center;
     font-size: 16px;
     font-weight: 600;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
   }
 

@@ -177,7 +177,7 @@
     border: none;
     border-radius: 6px;
     background: none;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     cursor: pointer;
     transition: all 0.15s;
     box-shadow: none;
@@ -190,7 +190,7 @@
   }
 
   .preview-toggle.playing {
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     background: color-mix(in srgb, var(--primary-color, #4f46e5) 12%, transparent);
   }
 
@@ -223,7 +223,7 @@
   }
 
   .suggestion-name {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -251,7 +251,7 @@
 
   .source-badge.source-voice {
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .source-badge.source-llm {

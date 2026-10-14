@@ -244,7 +244,7 @@
   }
 
   .auth-link {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     text-decoration: none;
   }
 

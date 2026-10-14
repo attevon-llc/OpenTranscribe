@@ -778,7 +778,7 @@
     margin-bottom: 1.25rem;
     font-size: 0.8125rem;
     background: var(--primary-bg, rgba(var(--primary-color-rgb), 0.08));
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid var(--primary-border, rgba(var(--primary-color-rgb), 0.2));
   }
 

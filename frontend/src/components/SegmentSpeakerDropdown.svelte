@@ -776,7 +776,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn {
-      color: var(--primary-color, #3b82f6);
+      color: var(--primary-on-surface);
     }
 
     .speaker-dropdown-portal .create-speaker-btn:hover {
@@ -795,7 +795,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn svg {
-      color: var(--primary-color, #3b82f6);
+      color: var(--primary-on-surface);
       margin-right: 4px;
     }
 

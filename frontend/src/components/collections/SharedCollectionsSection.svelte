@@ -147,7 +147,7 @@
 
   .badge.shared-permission {
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     text-transform: capitalize;
   }
 

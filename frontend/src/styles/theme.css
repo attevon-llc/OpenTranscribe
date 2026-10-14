@@ -504,7 +504,7 @@ a:visited {
 .nav-links a:hover,
 .navbar a:hover,
 .sidebar a:hover {
-  color: var(--primary-color);
+  color: var(--primary-on-surface);
 }
 
 /* Additional dark mode styles to ensure consistency */

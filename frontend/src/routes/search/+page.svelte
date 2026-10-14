@@ -975,7 +975,7 @@
     align-items: center;
     gap: 0.375rem;
     font-size: 0.75rem;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     opacity: 0.7;
     margin-top: 0.25rem;
   }

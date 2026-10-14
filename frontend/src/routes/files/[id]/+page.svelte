@@ -2653,7 +2653,7 @@
   }
 
   .back-to-gallery-link {
-    color: var(--primary-color);
+    color: var(--primary-on-surface);
     font-size: 14px;
     font-weight: 500;
     text-decoration: none;

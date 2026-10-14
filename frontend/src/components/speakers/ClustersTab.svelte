@@ -518,7 +518,7 @@
     border-radius: 6px;
     margin-bottom: 12px;
     font-size: 14px;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .merge-banner span {

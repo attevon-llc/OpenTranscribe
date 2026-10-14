@@ -231,7 +231,7 @@
   }
 
   .choice-option.selected .choice-header svg {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .choice-title {

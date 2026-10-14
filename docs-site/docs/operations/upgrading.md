@@ -232,6 +232,19 @@ The migration chain progresses through these versions:
 | `v391` | `media_file.recorded_date` and its provenance (#403) |
 | `v392` | `media_file.redaction_coverage` — which detectors a scan actually ran (#403) |
 | `v393` | Timing columns for transcribe-diarize overlap and progressive presentation |
+| `v397` | `user.platform_super_admin_link_authorized` (defaults to false, no behaviour change) (#993) |
+| `v420`, `v422` | Tags and collections belong to one tenant (organization or personal) (#1050, #1051) |
+| `v421` | `media_file.playback_path`: a browser-playable rendition for formats browsers cannot play |
+| `v430` | Per-tenant unique names for speaker profiles, speaker collections and vocabulary (#1110) |
+| `v431` | `media_file.duration_source`: where a file's duration came from (#969) |
+| `v432` | Support-access grants and their use log (#1122) |
+| `v433` | Per-file transcription request (speaker range, skip-diarization); watch-source 1/20 default dropped (#1198, #1202, #1203) |
+| `v434`, `v436` | Settings-only data fixes for speaker-detection choices that could no longer run (#1225, #1228) |
+| `v437` | `media_file.processing_provenance`: which provider and model completed each step (#1229) |
+| `v438` | `speaker_correction_carryover`: speaker corrections survive a re-run of the file (#1233) |
+
+What `v397` to `v438` mean for an existing install, including the few that change data, is
+spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail
 

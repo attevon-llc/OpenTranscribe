@@ -456,26 +456,7 @@
   textarea,
   select {
     width: 100%;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-family: inherit;
-    font-size: 0.85rem;
     resize: vertical;
-  }
-
-  textarea:focus-visible,
-  select:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-    border-color: var(--primary-color);
-  }
-
-  textarea:focus,
-  select:focus {
-    border-color: var(--primary-color);
   }
 
   .char-count {

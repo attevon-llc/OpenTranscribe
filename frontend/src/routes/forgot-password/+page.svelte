@@ -140,16 +140,7 @@
   }
 
   .form-group input {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
     font-size: 1rem;
-    transition: border-color 0.2s;
-  }
-
-  .form-group input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .auth-button {

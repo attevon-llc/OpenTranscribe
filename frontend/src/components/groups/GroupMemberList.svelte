@@ -254,19 +254,8 @@
 
   .role-select {
     padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.75rem;
     cursor: pointer;
-    transition: border-color 0.15s;
-  }
-
-  .role-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px var(--primary-light);
   }
 
   .role-select:disabled {

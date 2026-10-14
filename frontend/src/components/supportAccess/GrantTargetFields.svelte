@@ -182,21 +182,9 @@
   select,
   textarea {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.875rem;
-    font-family: inherit;
   }
   textarea {
     resize: vertical;
-  }
-  select:focus-visible,
-  textarea:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
   .hint {
     display: flex;

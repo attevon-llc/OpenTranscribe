@@ -178,7 +178,7 @@
 <BaseModal
   isOpen={showCreate}
   title={justCreatedToken ? $t('settings.scimTokens.createdTitle') : $t('settings.scimTokens.addToken')}
-  maxWidth="420px"
+  size="sm"
   onClose={closeCreate}
 >
   {#if justCreatedToken}
@@ -317,11 +317,6 @@
   .form-group input[type='text'],
   .form-group input[type='date'] {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-bg);
-    color: var(--color-text);
   }
 
   .warning-box {

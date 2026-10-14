@@ -127,7 +127,7 @@
   }
 </script>
 
-<BaseModal isOpen={visible} title={$t('firstRunWizard.title')} maxWidth="640px" onClose={skip}>
+<BaseModal isOpen={visible} title={$t('firstRunWizard.title')} size="lg" onClose={skip}>
   {#if step === 1}
     <div class="wizard-step">
       <p>{$t('firstRunWizard.welcomeBody')}</p>

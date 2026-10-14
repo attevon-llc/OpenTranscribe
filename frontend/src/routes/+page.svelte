@@ -1572,7 +1572,7 @@
   <BaseModal
       isOpen={showUploadModal}
       title={$t('nav.addMedia')}
-      maxWidth="720px"
+      size="lg"
       height={GALLERY_MODAL_HEIGHT}
       closeOnBackdropClick={false}
       onClose={toggleUploadModal}
@@ -1593,7 +1593,7 @@
   <BaseModal
       isOpen={showTagManagerModal}
       title={$t('tags.manager.title')}
-      maxWidth="720px"
+      size="lg"
       height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showTagManagerModal = false)}
     >
@@ -1606,7 +1606,7 @@
   <BaseModal
       isOpen={showCollectionsModal}
       title={$t('gallery.manageCollections')}
-      maxWidth="720px"
+      size="lg"
       height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showCollectionsModal = false)}
     >

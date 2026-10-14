@@ -339,10 +339,6 @@
     flex-shrink: 1;
     padding: 0.3rem 0.5rem;
     font-size: 0.8125rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-primary);
     cursor: pointer;
   }
 

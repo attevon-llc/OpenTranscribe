@@ -272,13 +272,8 @@
 
   .label-input {
     font-weight: 500;
-    border: 1px solid var(--primary-color, #3b82f6);
-    border-radius: 4px;
     padding: 2px 6px;
     font-size: inherit;
-    background: var(--card-background, #ffffff);
-    color: var(--text-color, #111827);
-    outline: none;
     min-width: 0;
     flex: 1;
     box-sizing: border-box;

@@ -84,8 +84,6 @@ file-detail::dark::label-title-only::1         # BACKLOG #785 #972 — same stru
 file-detail::light::nested-interactive::2      # BACKLOG #785 — an interactive control nested inside another, tracked for #747-#757
 file-detail::dark::nested-interactive::2       # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
-file-status::light::select-name::2             # BACKLOG #785 — two <select> elements without an accessible name
-file-status::dark::select-name::2              # BACKLOG #785 #972 — same structural finding as the light entry above; re-keyed, not independently re-measured
 
 upload::light::aria-input-field-name::4        # BACKLOG #785 — same filter/sort controls rendered behind the upload modal
 upload::dark::aria-input-field-name::2         # BACKLOG #785 #972 — measured 2026-10-11: 2 nodes in dark (light still 4); same structural finding as the light entry above; re-keyed, not independently re-measured

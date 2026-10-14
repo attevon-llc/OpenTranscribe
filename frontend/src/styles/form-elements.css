@@ -1,57 +1,273 @@
-/* Form element styles for both light and dark mode */
-
-/* Input fields */
-input,
-textarea {
-  background-color: var(--input-background);
-  color: var(--text-color);
-  border: 1px solid var(--input-border);
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-family: inherit;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  width: 100%;
-  box-sizing: border-box;
+/*
+ * Form fields - the ONE definition of how text-like inputs, textareas and selects look.
+ *
+ * Every <input> that takes text (text, email, password, search, number, url, tel, date,
+ * time, ...), every <textarea> and every <select> gets this, with no class needed. A
+ * component styles layout only (width, flex, margin); it must not set a field's own
+ * border, radius, padding, background, font-size, focus ring or chevron. The scan in
+ * `styles/formFields.test.ts` fails when one does.
+ *
+ * Why `:where()` everywhere: it keeps the whole sheet at zero specificity, so a
+ * component's deliberate exception (an inline-edit field inside a table cell, a search
+ * box whose icon needs extra padding) still wins with a single class, exactly as the
+ * old `input { ... }` rule allowed. The `:not()` list is what keeps this off
+ * checkboxes, radios, range sliders, file/colour pickers and buttons: the previous bare
+ * `input { width: 100% }` rule stretched a checkbox across its row.
+ *
+ * Variants: `.field-sm` is the compact size for dense toolbars and table cells;
+ * `aria-invalid="true"` (or `.is-invalid`) is the error state.
+ */
+:root {
+  --field-radius: 8px;
+  --field-padding-y: 0.5rem;
+  --field-padding-x: 0.75rem;
+  --field-font-size: 0.875rem;
+  --field-line-height: 1.25rem;
+  --field-bg: var(--input-background);
+  --field-border: var(--input-border);
+  --field-border-hover: var(--text-secondary);
+  --field-focus-ring: 0 0 0 3px rgba(var(--primary-color-rgb), 0.25);
+  --field-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  /* Makes the browser's own widgets (select popup list, date picker, scrollbars,
+     autofill) follow the app theme instead of the OS theme. */
+  color-scheme: light;
 }
 
-/* Select — cross-browser consistent with custom chevron arrow */
-select {
-  background-color: var(--input-background);
-  color: var(--text-color);
-  border: 1px solid var(--input-border);
-  border-radius: 4px;
-  padding: 8px 12px;
-  padding-right: 2.5rem;
-  font-family: inherit;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  width: 100%;
+[data-theme='dark'] {
+  --field-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  color-scheme: dark;
+}
+
+:where(
+    input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='file'],
+        [type='color'],
+        [type='hidden'],
+        [type='image'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+    textarea,
+    select
+  ) {
   box-sizing: border-box;
-  appearance: none;
+  width: 100%;
+  margin: 0;
+  padding: var(--field-padding-y) var(--field-padding-x);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
+  background-color: var(--field-bg);
+  color: var(--text-color);
+  /* Never fall back to the OS control font (system-ui 13.33px on macOS). */
+  font-family: inherit;
+  font-size: var(--field-font-size);
+  font-weight: 400;
+  line-height: var(--field-line-height);
+  letter-spacing: normal;
+  outline: 2px solid transparent;
+  outline-offset: 0;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.625rem center;
-  background-size: 1rem;
-  cursor: pointer;
+  appearance: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
 }
 
-[data-theme='dark'] select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+:where(textarea) {
+  resize: vertical;
 }
 
-select:disabled {
+:where(
+    input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='file'],
+        [type='color'],
+        [type='hidden'],
+        [type='image'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+    textarea,
+    select
+  ):where(:hover:not(:disabled):not(:focus)) {
+  border-color: var(--field-border-hover);
+}
+
+:where(
+    input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='file'],
+        [type='color'],
+        [type='hidden'],
+        [type='image'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+    textarea,
+    select
+  ):where(:focus) {
+  border-color: var(--primary-color);
+  box-shadow: var(--field-focus-ring);
+}
+
+:where(
+    input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='file'],
+        [type='color'],
+        [type='hidden'],
+        [type='image'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+    textarea,
+    select
+  ):where([aria-invalid='true'], .is-invalid) {
+  border-color: var(--error-color);
+}
+
+:where(
+    input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='file'],
+        [type='color'],
+        [type='hidden'],
+        [type='image'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+    textarea,
+    select
+  ):where([aria-invalid='true'], .is-invalid):where(:focus) {
+  box-shadow: 0 0 0 3px rgba(var(--error-color-rgb), 0.25);
+}
+
+:where(
+    input:not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='range'],
+        [type='file'],
+        [type='color'],
+        [type='hidden'],
+        [type='image'],
+        [type='button'],
+        [type='submit'],
+        [type='reset']
+      ),
+    textarea,
+    select
+  ):where(:disabled, [readonly]) {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--primary-color);
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.25);
+:where(input, textarea)::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Compact size for toolbars and dense tables. */
+:where(.field-sm) {
+  --field-padding-y: 0.3125rem;
+  --field-padding-x: 0.625rem;
+  --field-font-size: 0.8125rem;
+  --field-line-height: 1.125rem;
+}
+
+/* The browser paints autofilled fields yellow/blue and ignores `background-color`. */
+:where(input):-webkit-autofill {
+  -webkit-text-fill-color: var(--text-color);
+  box-shadow: 0 0 0 1000px var(--field-bg) inset;
+  caret-color: var(--text-color);
+}
+
+/* Search: no OS-drawn magnifier or cancel glyph (macOS and Windows draw different ones;
+   `ui/SearchBar` has its own clear button). */
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Date and time fields: WebKit gives the inner value its own padding and height, which
+   made a date field a different height from a text field next to it. */
+input[type='date']::-webkit-date-and-time-value,
+input[type='time']::-webkit-date-and-time-value,
+input[type='datetime-local']::-webkit-date-and-time-value,
+input[type='month']::-webkit-date-and-time-value {
+  min-height: var(--field-line-height);
+  margin: 0;
+  text-align: start;
+}
+
+input[type='date']::-webkit-datetime-edit,
+input[type='time']::-webkit-datetime-edit,
+input[type='datetime-local']::-webkit-datetime-edit,
+input[type='month']::-webkit-datetime-edit {
+  padding: 0;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator,
+input[type='datetime-local']::-webkit-calendar-picker-indicator,
+input[type='month']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+/* Select: appearance is removed above, so the chevron is ours and identical everywhere.
+   It sits on the inline-end side and mirrors in RTL. */
+:where(select) {
+  padding-inline-end: 2.25rem;
+  background-image: var(--field-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+[dir='rtl'] :where(select) {
+  background-position: left 0.75rem center;
+}
+
+:where(select)::-ms-expand {
+  display: none;
+}
+
+:where(select[multiple], select[size]:not([size='1'])) {
+  padding-inline-end: var(--field-padding-x);
+  background-image: none;
+  cursor: auto;
+}
+
+/* The popup list. Chromium and Firefox honour colours here, Safari ignores them and
+   follows `color-scheme` above, which is why both are set. */
+:where(select) option,
+:where(select) optgroup {
+  background-color: var(--field-bg);
+  color: var(--text-color);
+  font-family: inherit;
 }
 
 /* Table styling */

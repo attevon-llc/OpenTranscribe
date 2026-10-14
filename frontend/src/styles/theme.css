@@ -507,15 +507,6 @@ a:visited {
   color: var(--primary-on-surface);
 }
 
-/* Additional dark mode styles to ensure consistency */
-[data-theme='dark'] input,
-[data-theme='dark'] select,
-[data-theme='dark'] textarea {
-  background-color: var(--input-background);
-  color: var(--text-color);
-  border-color: var(--input-border);
-}
-
 /* Tables in dark mode */
 [data-theme='dark'] table {
   background-color: var(--card-background);

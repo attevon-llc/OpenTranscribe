@@ -672,18 +672,8 @@
     /* The app's input tokens, not --surface-color/--border-color: matches
        form-elements.css and TagManagerModal, which this panel's search bar
        is converging on (issue #757). */
-    background-color: var(--input-background);
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    color: var(--text-color);
     font-size: 0.875rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
-  }
-
-  .search-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   .search-input::placeholder {

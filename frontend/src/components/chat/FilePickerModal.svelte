@@ -108,7 +108,7 @@
   }
 </script>
 
-<BaseModal {isOpen} title={$t('chat.picker.title')} maxWidth="640px" onClose={close}>
+<BaseModal {isOpen} title={$t('chat.picker.title')} size="lg" onClose={close}>
   <div class="picker">
     <Tabs {tabs} bind:activeId={activeTab} ariaLabel={$t('chat.picker.title')} />
 

@@ -69,30 +69,12 @@
   }
 
   .form-select {
-    padding: 0.625rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.875rem;
     transition:
       border-color 0.15s,
       box-shadow 0.15s;
     cursor: pointer;
     max-width: 300px;
-    appearance: none;
-    -webkit-appearance: none;
     padding-right: 2.5rem;
-  }
-
-  .form-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-light);
-  }
-
-  .form-select:hover {
-    border-color: var(--primary-color);
   }
 
   .input-hint {

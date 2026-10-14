@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { fade } from 'svelte/transition';
   import { page } from '$app/stores';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import ClustersTab from '$components/speakers/ClustersTab.svelte';
   import ProfilesTab from '$components/speakers/ProfilesTab.svelte';
   import InboxTab from '$components/speakers/InboxTab.svelte';
@@ -1032,28 +1032,27 @@
   />
 
   <!-- Promote Modal (inline with text input) -->
-  {#if showPromoteModal}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="modal-backdrop" on:click|self={() => { showPromoteModal = false; }} on:wheel|preventDefault|self on:touchmove|preventDefault|self transition:fade={{ duration: 200 }}>
-      <div class="promote-modal" transition:fade={{ duration: 200, delay: 100 }}>
-        <h3>{$t('speakers.promote.title')}</h3>
-        <p>{$t('speakers.promote.description')}</p>
-        <!-- svelte-ignore a11y-autofocus -->
-        <input
-          class="promote-modal-input"
-          bind:value={promoteNameInput}
-          placeholder={$t('speakers.promote.namePlaceholder')}
-          on:keydown={(e) => { if (e.key === 'Enter') confirmPromote(); if (e.key === 'Escape') { showPromoteModal = false; } }}
-          autofocus
-        />
-        <div class="promote-modal-actions">
-          <button class="btn-cancel" on:click={() => { showPromoteModal = false; }}>{$t('modal.cancel')}</button>
-          <button class="btn-confirm" on:click={confirmPromote} disabled={!promoteNameInput.trim()}>{$t('speakers.promote.confirm')}</button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <BaseModal
+    isOpen={showPromoteModal}
+    title={$t('speakers.promote.title')}
+    size="sm"
+    onClose={() => { showPromoteModal = false; }}
+  >
+    <p class="promote-description">{$t('speakers.promote.description')}</p>
+    <!-- svelte-ignore a11y-autofocus -->
+    <input
+      class="promote-modal-input"
+      bind:value={promoteNameInput}
+      placeholder={$t('speakers.promote.namePlaceholder')}
+      aria-label={$t('speakers.promote.title')}
+      on:keydown={(e) => { if (e.key === 'Enter') confirmPromote(); }}
+      autofocus
+    />
+    <svelte:fragment slot="footer">
+      <button type="button" class="btn btn-secondary" on:click={() => { showPromoteModal = false; }}>{$t('modal.cancel')}</button>
+      <button type="button" class="btn btn-primary" on:click={confirmPromote} disabled={!promoteNameInput.trim()}>{$t('speakers.promote.confirm')}</button>
+    </svelte:fragment>
+  </BaseModal>
 </div>
 
 <!-- Sticky Floating Preview Player -->
@@ -1193,110 +1192,12 @@
     color: white;
   }
 
-  /* Promote modal */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal);
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  .promote-modal {
-    background: var(--card-background);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  }
-
-  .promote-modal h3 {
-    margin: 0 0 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .promote-modal p {
-    margin: 0 0 16px;
-    font-size: 14px;
+  /* Promote modal: chrome comes from ui/BaseModal. */
+  .promote-description {
+    margin: 0 0 1rem;
+    font-size: 0.875rem;
     color: var(--text-secondary);
   }
-
-  .promote-modal-input {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    background: var(--input-background);
-    color: var(--text-color);
-    font-size: 14px;
-    margin-bottom: 8px;
-    box-sizing: border-box;
-  }
-
-  .promote-modal-input:focus {
-    outline: none;
-    border-color: var(--input-focus-border);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
-  }
-
-  .promote-modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
-  }
-
-  .btn-cancel {
-    padding: 8px 16px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 8px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
-    cursor: pointer;
-    font-size: 14px;
-    box-shadow: none;
-  }
-
-  .btn-cancel:hover {
-    background: var(--hover-color, #f3f4f6);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .btn-confirm {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
-    background: var(--primary-color, var(--primary-color));
-    color: white;
-    cursor: pointer;
-    font-size: 14px;
-    box-shadow: none;
-  }
-
-  .btn-confirm:hover:not(:disabled) {
-    background: var(--primary-hover, #2563eb);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .btn-confirm:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* Raise modal above navbar (z-index 1200) on tablet/mobile */
 
   @media (max-width: 768px) {
     .speakers-page {
@@ -1324,11 +1225,6 @@
       font-size: 13px;
       white-space: nowrap;
       flex-shrink: 0;
-    }
-
-    .promote-modal {
-      padding: 16px;
-      width: 92%;
     }
   }
 </style>

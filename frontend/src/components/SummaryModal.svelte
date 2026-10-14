@@ -386,7 +386,7 @@
 </script>
 
 <div class="summary-modal-wrapper">
-<BaseModal {isOpen} onClose={handleClose} maxWidth="1200px">
+<BaseModal {isOpen} onClose={handleClose} size="2xl">
       <svelte:fragment slot="header">
         <h2 class="modal-title">{$t('summary.modalTitle', { fileName })}</h2>
         {#if summary}

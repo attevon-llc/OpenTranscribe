@@ -352,10 +352,6 @@
     flex: 2;
     min-width: 140px;
     padding: 0.45rem 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background: var(--bg-primary, transparent);
-    color: var(--text-color);
     font-size: 0.8125rem;
   }
 
@@ -363,10 +359,6 @@
     flex: 1;
     min-width: 110px;
     padding: 0.45rem 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 5px;
-    background: var(--bg-primary, transparent);
-    color: var(--text-color);
     font-size: 0.8125rem;
   }
 
@@ -609,10 +601,6 @@
   .bulk-textarea {
     width: 100%;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-primary, transparent);
-    color: var(--text-color);
     font-size: 0.8125rem;
     resize: vertical;
     box-sizing: border-box;
@@ -651,11 +639,5 @@
   button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  input:focus, select:focus, textarea:focus {
-    outline: none;
-    border-color: var(--input-focus-border, var(--primary-color));
-    box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.2);
   }
 </style>

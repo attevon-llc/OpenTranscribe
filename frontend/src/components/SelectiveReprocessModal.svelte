@@ -372,7 +372,7 @@
   }
 </script>
 
-<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} maxWidth="540px" zIndex={9999} onClose={handleClose}>
+<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} size="md" zIndex={9999} onClose={handleClose}>
         <!-- Step Indicator -->
         <div class="step-indicator">
           {#each stepLabels as label, i}
@@ -1253,25 +1253,9 @@
     font-size: 0.7rem;
   }
 
-  .setting-field input {
-    padding: 0.45rem 0.6rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-background, var(--card-background));
-    color: var(--text-primary);
-    font-size: 0.85rem;
-  }
-
-  .setting-field input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-
   .setting-field input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    background-color: var(--disabled-background, #f5f5f5);
   }
 
   .setting-field input::placeholder {
@@ -1354,10 +1338,6 @@
     background: var(--button-hover);
     color: var(--text-color);
     border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .setting-field input:disabled {
-    background-color: rgba(255, 255, 255, 0.05);
   }
 
   :global([data-theme='dark']) .validation-error {

@@ -717,23 +717,6 @@
 
   .speaker-item input {
     flex: 1;
-    padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--surface-color);
-    color: var(--text-primary);
-    font-size: 14px;
-  }
-
-
-  .speaker-item input.suggested-high {
-    border-color: var(--success-color);
-    border-width: 2px;
-  }
-
-  .speaker-item input.suggested-medium {
-    border-color: var(--warning-color);
-    border-width: 2px;
   }
 
 

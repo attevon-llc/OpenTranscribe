@@ -138,12 +138,8 @@
 
   .field input[type="number"] {
     padding: 0.4375rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--input-background, var(--card-background)); color: var(--text-primary); font-size: 0.875rem;
-    transition: all 0.15s ease;
   }
-  .field input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
   .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background, #f5f5f5); }
-  :global([data-theme='dark']) .field input:disabled { background: rgba(255, 255, 255, 0.05); }
   .field input::placeholder { color: var(--text-light); }
 
   .validation-error {

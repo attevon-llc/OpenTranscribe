@@ -349,18 +349,7 @@
 
   .edit-input {
     width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 15px;
     box-sizing: border-box;
-  }
-
-  .edit-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   .edit-actions,

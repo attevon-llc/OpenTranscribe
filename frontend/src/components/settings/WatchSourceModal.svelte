@@ -380,7 +380,7 @@
   }
 </script>
 
-<BaseModal isOpen={show} onClose={handleClose} maxWidth="640px">
+<BaseModal isOpen={show} onClose={handleClose} size="lg">
   <svelte:fragment slot="header">
     <h2 class="modal-title">
       {editingSource

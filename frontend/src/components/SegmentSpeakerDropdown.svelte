@@ -824,15 +824,6 @@
       min-width: 0;
       padding: 6px 8px;
       font-size: 13px;
-      color: var(--text-color, #f1f5f9);
-      background: var(--background-color, #0f172a);
-      border: 1px solid var(--border-color, #334155);
-      border-radius: 6px;
-    }
-
-    .speaker-dropdown-portal .inline-name-input:focus {
-      outline: 2px solid var(--primary-color, #3b82f6);
-      outline-offset: -1px;
     }
 
     .speaker-dropdown-portal .inline-name-save {
@@ -947,7 +938,7 @@
   <BaseModal
     isOpen={showCreateModal}
     title={$t('speaker.newSpeakerTitle')}
-    maxWidth="420px"
+    size="sm"
     closeOnBackdropClick={false}
     onClose={closeCreateSpeakerModal}
   >

@@ -85,7 +85,7 @@
 
 <BaseModal
   isOpen
-  maxWidth="520px"
+  size="sm"
   title={$t('tags.manager.share.title', { name: tagName })}
   onClose={() => dispatch('close')}
 >

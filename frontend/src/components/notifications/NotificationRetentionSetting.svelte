@@ -40,10 +40,6 @@
     flex: 0 1 60%;
     min-width: 0;
     padding: 4px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--background-color);
-    color: var(--text-color);
     font-size: 0.8125rem;
   }
 

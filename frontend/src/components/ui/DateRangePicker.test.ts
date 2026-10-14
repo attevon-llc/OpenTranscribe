@@ -1,4 +1,7 @@
 /**
+ * The typed fields now live inside the popover (the trigger opens it), so each test opens
+ * it first and queries `document.body` — the layer is portaled out of the component root.
+ *
  * Issue #750 item 6 — the picker's only affordance used to be a trigger
  * button that opens an inline calendar; there was no keyboard/text entry
  * path at all. These tests cover the two `type="date"` fields added above
@@ -7,7 +10,7 @@
  * test here).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', () => ({
   t: {
@@ -24,24 +27,27 @@ vi.mock('@svelte-plugins/datepicker', () => ({
 
 import DateRangePicker from './DateRangePicker.svelte';
 
+/** Open the popover and return its typed From/To fields. */
+async function openAndGetFields() {
+  await fireEvent.click(screen.getByRole('button', { expanded: false }));
+  await waitFor(() => expect(document.body.querySelector('.drp-layer')).not.toBeNull());
+  return Array.from(document.body.querySelectorAll('input[type="date"]')) as HTMLInputElement[];
+}
+
 describe('DateRangePicker — typed date fields (#750)', () => {
-  it('renders empty typed fields when no range is set', () => {
-    const { container } = render(DateRangePicker, { props: {} });
-    const [fromInput, toInput] = Array.from(
-      container.querySelectorAll('input[type="date"]')
-    ) as HTMLInputElement[];
+  it('renders empty typed fields when no range is set', async () => {
+    render(DateRangePicker, { props: {} });
+    const [fromInput, toInput] = await openAndGetFields();
 
     expect(fromInput.value).toBe('');
     expect(toInput.value).toBe('');
   });
 
-  it('reflects an existing range in both typed fields', () => {
-    const { container } = render(DateRangePicker, {
+  it('reflects an existing range in both typed fields', async () => {
+    render(DateRangePicker, {
       props: { from: new Date(2026, 0, 5), to: new Date(2026, 0, 20) },
     });
-    const [fromInput, toInput] = Array.from(
-      container.querySelectorAll('input[type="date"]')
-    ) as HTMLInputElement[];
+    const [fromInput, toInput] = await openAndGetFields();
 
     expect(fromInput.value).toBe('2026-01-05');
     expect(toInput.value).toBe('2026-01-20');
@@ -49,13 +55,11 @@ describe('DateRangePicker — typed date fields (#750)', () => {
 
   it('typing a from-date dispatches change with a parsed Date', async () => {
     const onChange = vi.fn();
-    const { container } = render(DateRangePicker, {
+    render(DateRangePicker, {
       props: {},
       events: { change: onChange },
     });
-    const [fromInput] = Array.from(
-      container.querySelectorAll('input[type="date"]')
-    ) as HTMLInputElement[];
+    const [fromInput] = await openAndGetFields();
 
     await fireEvent.change(fromInput, { target: { value: '2026-03-01' } });
 
@@ -69,13 +73,11 @@ describe('DateRangePicker — typed date fields (#750)', () => {
 
   it('clearing a typed field dispatches null for that end', async () => {
     const onChange = vi.fn();
-    const { container } = render(DateRangePicker, {
+    render(DateRangePicker, {
       props: { from: new Date(2026, 0, 5) },
       events: { change: onChange },
     });
-    const [fromInput] = Array.from(
-      container.querySelectorAll('input[type="date"]')
-    ) as HTMLInputElement[];
+    const [fromInput] = await openAndGetFields();
 
     await fireEvent.change(fromInput, { target: { value: '' } });
 
@@ -83,13 +85,11 @@ describe('DateRangePicker — typed date fields (#750)', () => {
     expect(onChange.mock.calls[0][0].detail.from).toBeNull();
   });
 
-  it('caps the to-field at today when future dates are disabled', () => {
-    const { container } = render(DateRangePicker, {
+  it('caps the to-field at today when future dates are disabled', async () => {
+    render(DateRangePicker, {
       props: { enableFutureDates: false },
     });
-    const [, toInput] = Array.from(
-      container.querySelectorAll('input[type="date"]')
-    ) as HTMLInputElement[];
+    const [, toInput] = await openAndGetFields();
     const today = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     const expected = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
@@ -97,11 +97,9 @@ describe('DateRangePicker — typed date fields (#750)', () => {
     expect(toInput.max).toBe(expected);
   });
 
-  it('places no max on the to-field when future dates are allowed (the default)', () => {
-    const { container } = render(DateRangePicker, { props: {} });
-    const [, toInput] = Array.from(
-      container.querySelectorAll('input[type="date"]')
-    ) as HTMLInputElement[];
+  it('places no max on the to-field when future dates are allowed (the default)', async () => {
+    render(DateRangePicker, { props: {} });
+    const [, toInput] = await openAndGetFields();
 
     expect(toInput.max).toBe('');
   });

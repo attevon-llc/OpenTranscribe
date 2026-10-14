@@ -46,7 +46,7 @@
   }
 </script>
 
-<BaseModal isOpen={isOpen && videoFiles.length > 0} title={$t('extraction.largeVideosDetected')} onClose={handleCancel} maxWidth="600px">
+<BaseModal isOpen={isOpen && videoFiles.length > 0} title={$t('extraction.largeVideosDetected')} onClose={handleCancel} size="md">
   <div class="info-section">
     <div class="info-icon">
       <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

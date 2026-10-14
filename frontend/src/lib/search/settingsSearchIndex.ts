@@ -44,6 +44,7 @@ export interface SettingsSearchItem {
  */
 const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   'system-statistics': ['settings.statistics'],
+  'file-status': ['settings.fileStatus'],
   billing: ['billing'],
   usage: ['usage'],
   team: ['team'],

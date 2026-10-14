@@ -289,6 +289,12 @@ Each file has a status indicating its current state:
 | `cancelled` | Processing was cancelled by the user |
 | `orphaned` | Processing appears stuck with no active worker |
 
+Each file card in the gallery shows its status inline. For a summary of everything that is
+processing, open **Settings → System → File status** (counts, the files that need attention and
+the last 24 hours of uploads); **Open full screen** there opens the full **My Files Status** page
+(`/file-status`) with the task list, filters and per-file details. There is no File Status button in
+the main navigation.
+
 You can view detailed status information -- including active task ID, last error message, and retry count -- via the **status detail** panel on the file page. **My Files Status** → **Details** also shows how the file was processed; see [What happened to a particular file](#what-happened-to-a-particular-file).
 
 A file whose processing could not work with your settings (for example a choice this deployment

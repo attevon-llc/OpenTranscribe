@@ -110,25 +110,3 @@ export function prefetchSpeakersData(): void {
     )
     .catch(() => {});
 }
-
-/**
- * Prefetch file status data on hover of the File Status nav link.
- * Fires status summary + first page of tasks in parallel, fails silently.
- */
-export function prefetchFileStatusData(): void {
-  apiCache
-    .getOrFetch(
-      cacheKey.status(),
-      () => axiosInstance.get('/my-files/status').then((r) => r.data),
-      CacheTTL.STATUS
-    )
-    .catch(() => {});
-
-  apiCache
-    .getOrFetch(
-      'tasks:page1',
-      () => axiosInstance.get('/tasks?page=1&page_size=25').then((r) => r.data),
-      CacheTTL.STATUS
-    )
-    .catch(() => {});
-}

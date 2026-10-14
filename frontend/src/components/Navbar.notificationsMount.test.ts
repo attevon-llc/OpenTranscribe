@@ -58,14 +58,9 @@ vi.mock('$stores/recording', async () => {
 });
 vi.mock('$stores/uploads', () => ({ uploadsStore: {} }));
 vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
-vi.mock('$stores/gallery', async () => {
-  const { readable } = await import('svelte/store');
-  return { galleryStore: {}, galleryState: readable({}) };
-});
 vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: { open: vi.fn() } }));
 vi.mock('$lib/prefetch', () => ({
   prefetchSpeakersData: vi.fn(),
-  prefetchFileStatusData: vi.fn(),
 }));
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 vi.mock('$lib/cloud', () => ({ refreshUsage: vi.fn(), refreshBilling: vi.fn() }));

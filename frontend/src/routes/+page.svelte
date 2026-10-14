@@ -79,7 +79,6 @@
   import { supportSessionGate } from '$stores/supportSession';
   import CollectionsPanel from '$components/CollectionsPanel.svelte';
   import TagManagerModal from '$components/tags/TagManagerModal.svelte';
-  import UserFileStatus from '$components/UserFileStatus.svelte';
 
   // Media files state
   let files: MediaFile[] = [];
@@ -117,7 +116,6 @@
   let showTagManagerModal = false;
 
   // Use gallery store for state management
-  $: activeTab = $galleryState.activeTab;
   $: isSelecting = $galleryState.isSelecting;
   $: selectedFiles = $galleryState.selectedFiles;
 
@@ -1504,66 +1502,60 @@
 
 <!-- Main container with fixed height -->
 <div class="media-library-container">
-  {#if activeTab === 'gallery'}
-    <div class="gallery-tab-wrapper">
-      <!-- Left Sidebar: Filters (Sticky) -->
-      <GalleryFilterPanel
-        bind:this={filterPanelRef}
-        {showFilters}
-        {searchQuery}
-        {selectedTags}
-        {selectedSpeakers}
-        {selectedCollectionId}
-        {dateRange}
-        {durationRange}
-        {selectedFileTypes}
-        {selectedStatuses}
-        {ownershipFilter}
-        {selectedOwners}
-        on:toggle={toggleFilters}
-        on:filter={applyFilters}
-        on:reset={resetFilters}
-      />
+  <div class="gallery-tab-wrapper">
+    <!-- Left Sidebar: Filters (Sticky) -->
+    <GalleryFilterPanel
+      bind:this={filterPanelRef}
+      {showFilters}
+      {searchQuery}
+      {selectedTags}
+      {selectedSpeakers}
+      {selectedCollectionId}
+      {dateRange}
+      {durationRange}
+      {selectedFileTypes}
+      {selectedStatuses}
+      {ownershipFilter}
+      {selectedOwners}
+      on:toggle={toggleFilters}
+      on:filter={applyFilters}
+      on:reset={resetFilters}
+    />
 
-      <!-- Right Content: Scrollable Media Grid -->
-      <div class="content-area">
-        <div class="scrollable-content" bind:this={scrollableContentEl} on:scroll={onGalleryScroll}>
-          <!-- Gallery Header (sticky) - always visible for action buttons -->
-          <GalleryHeader
-            {files}
-            {sortBy}
-            {sortOrder}
-            {loading}
-            {showFilters}
-            {searchQuery}
-            on:togglefilters={toggleFilters}
-            on:change={handleSortChange}
-            on:search={handleToolbarSearch}
-          />
+    <!-- Right Content: Scrollable Media Grid -->
+    <div class="content-area">
+      <div class="scrollable-content" bind:this={scrollableContentEl} on:scroll={onGalleryScroll}>
+        <!-- Gallery Header (sticky) - always visible for action buttons -->
+        <GalleryHeader
+          {files}
+          {sortBy}
+          {sortOrder}
+          {loading}
+          {showFilters}
+          {searchQuery}
+          on:togglefilters={toggleFilters}
+          on:change={handleSortChange}
+          on:search={handleToolbarSearch}
+        />
 
-          <GalleryGrid
-            {files}
-            {loading}
-            {error}
-            {selectedCollectionId}
-            {isSelecting}
-            {selectedFiles}
-            {pendingNewFiles}
-            {pendingDeletions}
-            {filtersActive}
-            scrollContainer={scrollableContentEl}
-            on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
-            on:retry={() => fetchFiles()}
-            on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
-          />
-        </div>
+        <GalleryGrid
+          {files}
+          {loading}
+          {error}
+          {selectedCollectionId}
+          {isSelecting}
+          {selectedFiles}
+          {pendingNewFiles}
+          {pendingDeletions}
+          {filtersActive}
+          scrollContainer={scrollableContentEl}
+          on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
+          on:retry={() => fetchFiles()}
+          on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
+        />
       </div>
     </div>
-  {:else if activeTab === 'status'}
-    <div class="status-tab-content">
-      <UserFileStatus />
-    </div>
-  {/if}
+  </div>
 </div>
 
 <!-- Upload Modal -->
@@ -1693,15 +1685,10 @@
     padding-top: 0;
   }
 
-  /* Gallery Tab Wrapper */
+  /* Gallery wrapper (formerly one of two navbar tabs; File Status now lives in Settings) */
   .gallery-tab-wrapper {
     display: flex;
     height: 100%;
-    width: 100%;
-  }
-
-  .status-tab-content {
-    padding: 1rem;
     width: 100%;
   }
 

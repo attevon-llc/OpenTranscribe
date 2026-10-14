@@ -974,10 +974,8 @@
   }
 
   .stage-group-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -1095,10 +1093,8 @@
 
   .review-label {
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
     display: block;
     margin-bottom: 0.5rem;
   }

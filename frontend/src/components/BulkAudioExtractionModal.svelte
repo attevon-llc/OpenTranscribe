@@ -255,7 +255,6 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     margin-bottom: 0.5rem;
-    text-transform: uppercase;
     font-weight: 500;
   }
 

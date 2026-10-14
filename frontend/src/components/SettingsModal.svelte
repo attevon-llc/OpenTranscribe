@@ -1492,12 +1492,9 @@
   }
 
   .section-heading {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-tertiary, var(--text-secondary));
-    opacity: 0.7;
+    color: var(--text-secondary);
     margin: 0 1.25rem 0.375rem;
     padding-top: 0;
   }

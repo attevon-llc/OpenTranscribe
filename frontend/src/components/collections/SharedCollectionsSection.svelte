@@ -128,9 +128,7 @@
 
   .section-label {
     font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     padding: 4px 0;
   }

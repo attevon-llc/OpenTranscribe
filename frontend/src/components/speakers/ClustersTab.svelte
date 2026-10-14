@@ -417,10 +417,8 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary, #6b7280);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     margin: 16px 0 4px;
     padding: 4px 4px;
     border: none;

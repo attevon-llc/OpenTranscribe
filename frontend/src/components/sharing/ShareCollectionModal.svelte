@@ -301,10 +301,8 @@
   }
 
   .permission-guide-title {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin-bottom: 0.375rem;
   }

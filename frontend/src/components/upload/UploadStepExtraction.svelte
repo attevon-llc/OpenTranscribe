@@ -152,10 +152,9 @@
   .comparison-item { flex: 1; text-align: center; }
 
   .comparison-label {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: 0.25rem;
-    text-transform: uppercase;
     font-weight: 500;
   }
 

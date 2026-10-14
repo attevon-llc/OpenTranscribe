@@ -157,8 +157,7 @@
 
   .review-label {
     flex-shrink: 0; width: 90px;
-    font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
-    text-transform: uppercase; letter-spacing: 0.02em;
+    font-size: 0.75rem; font-weight: var(--font-weight-medium); color: var(--text-secondary);
     padding-top: 0.125rem;
   }
 

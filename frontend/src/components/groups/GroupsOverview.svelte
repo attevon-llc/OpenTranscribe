@@ -408,10 +408,8 @@
   .groups-section-title {
     margin: 0;
     font-size: 0.8125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
   }
 
   .groups-grid {

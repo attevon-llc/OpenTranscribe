@@ -427,8 +427,6 @@
   .card-label {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     line-height: 1;
   }
 
@@ -551,10 +549,8 @@
   }
 
   .stat-label {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     margin-top: 0.1rem;
   }
 

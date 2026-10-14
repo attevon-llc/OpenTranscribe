@@ -280,10 +280,8 @@
 
   .download-dropdown-label {
     padding: 8px 16px 4px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     border-top: 1px solid var(--border-color);
   }

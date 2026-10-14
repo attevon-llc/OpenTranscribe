@@ -27,6 +27,8 @@ const ALLOWED: Record<string, string> = {
     'mandatory consent interstitial: classification-coloured header, no close button, not dismissible by Escape or backdrop',
   'components/LoginBanner.svelte':
     'mandatory login consent banner: classification-coloured header, no close button, not dismissible',
+  'components/ui/DateRangePicker.svelte':
+    'scrim behind the date range popover when it renders as a mobile bottom sheet; the popover is not a modal dialog',
   'components/Navbar.svelte': 'scrim behind the mobile navigation drawer, not a dialog',
 };
 

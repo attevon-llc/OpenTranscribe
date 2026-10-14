@@ -87,7 +87,7 @@
   }
 </script>
 
-<BaseModal {isOpen} title={$t('gallery.quarantine.title')} onClose={handleClose} maxWidth="520px">
+<BaseModal {isOpen} title={$t('gallery.quarantine.title')} onClose={handleClose} size="sm">
   <div class="quarantine-modal-body">
     <div class="file-list">
       <p class="file-list-label">

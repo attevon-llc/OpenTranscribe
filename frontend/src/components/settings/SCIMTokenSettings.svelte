@@ -178,7 +178,7 @@
 <BaseModal
   isOpen={showCreate}
   title={justCreatedToken ? $t('settings.scimTokens.createdTitle') : $t('settings.scimTokens.addToken')}
-  maxWidth="420px"
+  size="sm"
   onClose={closeCreate}
 >
   {#if justCreatedToken}

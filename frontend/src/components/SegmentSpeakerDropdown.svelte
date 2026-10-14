@@ -947,7 +947,7 @@
   <BaseModal
     isOpen={showCreateModal}
     title={$t('speaker.newSpeakerTitle')}
-    maxWidth="420px"
+    size="sm"
     closeOnBackdropClick={false}
     onClose={closeCreateSpeakerModal}
   >

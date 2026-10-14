@@ -237,7 +237,7 @@
     </div>
   {/if}
 
-  <BaseModal isOpen={showTargetDialog} title={$t('speaker.selectTargetSpeaker')} onClose={closeTargetDialog} maxWidth="500px">
+  <BaseModal isOpen={showTargetDialog} title={$t('speaker.selectTargetSpeaker')} onClose={closeTargetDialog} size="sm">
     <p class="modal-description">
       {$t('speaker.modalDescription', {
         count: selectedSpeakers.size - 1,

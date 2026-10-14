@@ -21,7 +21,15 @@
 
   export let isOpen = false;
   export let title = '';
-  export let maxWidth = '600px';
+  /**
+   * Dialog width on one shared scale, so modals line up instead of each picking its own
+   * pixel value (there were 18 distinct ones): sm 480 (confirmations, short forms),
+   * md 600 (the default form), lg 720 (forms with two columns or a table), xl 960 (editors,
+   * pickers), 2xl 1200 (full workspaces). Below 768px every size is full screen.
+   */
+  export let size: 'sm' | 'md' | 'lg' | 'xl' | '2xl' = 'md';
+  const WIDTHS = { sm: '480px', md: '600px', lg: '720px', xl: '960px', '2xl': '1200px' } as const;
+  $: maxWidth = WIDTHS[size] ?? WIDTHS.md;
   /**
    * Optional fixed dialog height, e.g. `min(90vh, 780px)`.
    *
@@ -56,9 +64,14 @@
   export let closeOnBackdropClick = true;
   export let onClose: () => void = () => {};
 
+  /** Id of the <h2> title. Generated when omitted; pass one only where a test or a
+   *  `aria-labelledby` consumer outside this component needs a stable value. */
+  export let titleId = '';
+
   // Stable id for wiring the dialog's accessible name to its <h2> title (when no
   // custom header slot is supplied). Generated once per instance.
-  const titleId = `modal-title-${Math.random().toString(36).slice(2, 10)}`;
+  const generatedTitleId = `modal-title-${Math.random().toString(36).slice(2, 10)}`;
+  $: resolvedTitleId = titleId || generatedTitleId;
 
   let _wasOpen = false;
   $: if (typeof document !== 'undefined' && isOpen !== _wasOpen) {
@@ -91,7 +104,7 @@
       style="max-width: {maxWidth}{height ? `; height: ${height}` : ''}"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={$$slots.header ? undefined : titleId}
+      aria-labelledby={$$slots.header ? undefined : resolvedTitleId}
       aria-label={$$slots.header ? title || undefined : undefined}
       use:focusTrap={{ enabled: isOpen }}
     >
@@ -101,7 +114,7 @@
             <slot name="header" />
           </div>
         {:else}
-          <h2 id={titleId}>{title}</h2>
+          <h2 id={resolvedTitleId}>{title}</h2>
         {/if}
         <button class="modal-close-button" on:click={onClose} aria-label={$t('modal.closeDialog')}>
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -220,6 +233,28 @@
     justify-content: flex-end;
     border-top: 1px solid var(--border-color, #e0e0e0);
     flex-shrink: 0;
+  }
+
+  /* One footer-button size for every modal. The footer used to inherit whichever of three
+     vocabularies the caller used (`.btn`, `.modal-button`, an ad-hoc class), which made the
+     same Cancel/Save row a different height and radius from modal to modal. Colour stays
+     the caller's (`btn-primary`, `btn-secondary`, `btn-danger`...); size, radius and weight
+     do not. A text-link style button opts out by having "link" in its class name. Order is
+     the callers': dismiss first, the primary action last. */
+  .modal-footer :global(button:not([class*='link'])) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.375rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  :global([data-theme='dark']) .modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.65);
   }
 
   @keyframes slideIn {

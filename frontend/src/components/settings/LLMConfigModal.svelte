@@ -555,7 +555,7 @@
 
 </script>
 
-<BaseModal isOpen={show} onClose={() => closeModal()} maxWidth="600px">
+<BaseModal isOpen={show} onClose={() => closeModal()} size="md">
   <svelte:fragment slot="header">
     <h2 class="modal-title">{editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}</h2>
     {#if isDirty}

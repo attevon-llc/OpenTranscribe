@@ -55,7 +55,7 @@
   }
 </script>
 
-<BaseModal {isOpen} title={$t('groups.createGroup')} maxWidth="500px" zIndex={1300} onClose={handleClose}>
+<BaseModal {isOpen} title={$t('groups.createGroup')} size="sm" zIndex={1300} onClose={handleClose}>
   <form id="group-create-form" on:submit|preventDefault={handleSubmit}>
     <div class="modal-body">
       <div class="form-group">

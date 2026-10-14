@@ -813,7 +813,7 @@
   <BaseModal
     isOpen={showCreateForm}
     onClose={() => closeForm()}
-    maxWidth="600px"
+    size="md"
   >
     <svelte:fragment slot="header">
       <h2 class="modal-title">{editingPrompt ? $t('prompts.editExisting') : $t('prompts.createNew')}</h2>
@@ -952,7 +952,7 @@
     isOpen={showViewModal && !!viewingPrompt}
     title={viewingPrompt?.name ?? ''}
     onClose={closeViewModal}
-    maxWidth="700px"
+    size="lg"
   >
     {#if viewingPrompt}
       <div class="prompt-details">

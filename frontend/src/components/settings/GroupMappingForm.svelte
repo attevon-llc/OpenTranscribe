@@ -95,7 +95,7 @@
   title={mapping
     ? $t('settings.groupMappings.editTitle')
     : $t('settings.groupMappings.addTitle')}
-  maxWidth="560px"
+  size="md"
   zIndex={1300}
   onClose={handleClose}
 >

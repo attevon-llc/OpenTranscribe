@@ -239,7 +239,7 @@
 
 </script>
 
-<BaseModal isOpen={show} onClose={handleClose} maxWidth="520px">
+<BaseModal isOpen={show} onClose={handleClose} size="sm">
   <svelte:fragment slot="header">
     <h2 class="modal-title">{editingConfig ? $t('settings.asrProvider.editConfig') : $t('settings.asrProvider.addConfig')}</h2>
     {#if isDirty}

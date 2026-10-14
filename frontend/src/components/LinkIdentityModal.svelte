@@ -78,7 +78,7 @@
 <BaseModal
   {isOpen}
   title={$t('userManagement.linkIdentity.title')}
-  maxWidth="480px"
+  size="sm"
   zIndex={1300}
   onClose={handleClose}
 >

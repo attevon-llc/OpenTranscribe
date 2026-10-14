@@ -260,7 +260,7 @@
 </script>
 
 <div class="transcript-view-modal-wrapper" class:search-transcript-modal-wrapper={mode === 'search'}>
-<BaseModal {isOpen} maxWidth="1200px" onClose={handleClose}>
+<BaseModal {isOpen} size="2xl" onClose={handleClose}>
   <svelte:fragment slot="header">
     <h2 class="modal-title">
       {mode === 'search' ? $t('searchTranscript.title', { fileName }) : $t('transcriptModal.title', { fileName })}

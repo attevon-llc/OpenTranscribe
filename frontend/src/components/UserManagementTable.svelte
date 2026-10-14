@@ -14,6 +14,7 @@
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import BaseModal from './ui/BaseModal.svelte';
   import LinkIdentityModal from './LinkIdentityModal.svelte';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
@@ -1382,119 +1383,114 @@
 
 <!-- Password Reset Modal -->
 {#if showPasswordResetModal && passwordResetUser}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} on:wheel|preventDefault|self on:touchmove|preventDefault|self role="presentation" on:keydown={(e) => e.key === 'Escape' && closePasswordResetModal()}>
-    <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title" tabindex="0">
-      <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label={$t('common.close')} title={$t('common.close')}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
+  <BaseModal
+    isOpen={true}
+    title={$t('userManagement.resetPassword')}
+    size="sm"
+    onClose={closePasswordResetModal}
+  >
+    <p class="modal-description">
+      {$t('userManagement.setNewPasswordFor')} <strong>{passwordResetUser.full_name || passwordResetUser.email}</strong>
+    </p>
 
-      <h3 id="password-reset-title" class="modal-title">{$t('userManagement.resetPassword')}</h3>
-      <p class="modal-description">
-        {$t('userManagement.setNewPasswordFor')} <strong>{passwordResetUser.full_name || passwordResetUser.email}</strong>
-      </p>
-
-      <form on:submit|preventDefault={executePasswordReset} class="password-reset-form">
-        <div class="form-group">
-          <div class="password-header">
-            <label for="reset-password">{$t('userManagement.newPassword')}</label>
-            <button
-              type="button"
-              class="toggle-password"
-              on:click={() => showResetPassword = !showResetPassword}
-              tabindex="-1"
-              aria-label={showResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-            >
-              {#if showResetPassword}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="m15 18-.722-3.25"/>
-                  <path d="m2 2 20 20"/>
-                  <path d="m9 9-.637 3.181"/>
-                  <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                  <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                  <path d="m18.147 8.476.853 3.524"/>
-                </svg>
-              {/if}
-            </button>
-          </div>
-          <input
-            type={showResetPassword ? 'text' : 'password'}
-            id="reset-password"
-            class="form-control"
-            bind:value={resetPassword}
-            placeholder={$t('userManagement.enterNewPassword')}
-            required
-            minlength={passwordMinLength}
-          />
-          <small class="form-text">{$t('userManagement.minimumCharacters', { min: passwordMinLength })}</small>
-        </div>
-
-        <div class="form-group">
-          <div class="password-header">
-            <label for="confirm-reset-password">{$t('userManagement.confirmPassword')}</label>
-            <button
-              type="button"
-              class="toggle-password"
-              on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
-              tabindex="-1"
-              aria-label={showConfirmResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-            >
-              {#if showConfirmResetPassword}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="m15 18-.722-3.25"/>
-                  <path d="m2 2 20 20"/>
-                  <path d="m9 9-.637 3.181"/>
-                  <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                  <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                  <path d="m18.147 8.476.853 3.524"/>
-                </svg>
-              {/if}
-            </button>
-          </div>
-          <input
-            type={showConfirmResetPassword ? 'text' : 'password'}
-            id="confirm-reset-password"
-            class="form-control"
-            bind:value={confirmResetPassword}
-            placeholder={$t('userManagement.confirmNewPassword')}
-            required
-            minlength={passwordMinLength}
-          />
-        </div>
-
-        <div class="modal-actions">
+    <form id="password-reset-form" on:submit|preventDefault={executePasswordReset} class="password-reset-form">
+      <div class="form-group">
+        <div class="password-header">
+          <label for="reset-password">{$t('userManagement.newPassword')}</label>
           <button
             type="button"
-            class="btn-cancel"
-            on:click={closePasswordResetModal}
-            disabled={passwordResetLoading}
+            class="toggle-password"
+            on:click={() => showResetPassword = !showResetPassword}
+            tabindex="-1"
+            aria-label={showResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
           >
-            {$t('common.cancel')}
-          </button>
-          <button
-            type="submit"
-            class="btn-confirm"
-            disabled={passwordResetLoading || !resetPassword || !confirmResetPassword}
-          >
-            {passwordResetLoading ? $t('userManagement.resetting') : $t('userManagement.resetPasswordButton')}
+            {#if showResetPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
           </button>
         </div>
-      </form>
-    </div>
-  </div>
+        <input
+          type={showResetPassword ? 'text' : 'password'}
+          id="reset-password"
+          class="form-control"
+          bind:value={resetPassword}
+          placeholder={$t('userManagement.enterNewPassword')}
+          required
+          minlength={passwordMinLength}
+        />
+        <small class="form-text">{$t('userManagement.minimumCharacters', { min: passwordMinLength })}</small>
+      </div>
+
+      <div class="form-group">
+        <div class="password-header">
+          <label for="confirm-reset-password">{$t('userManagement.confirmPassword')}</label>
+          <button
+            type="button"
+            class="toggle-password"
+            on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
+            tabindex="-1"
+            aria-label={showConfirmResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+          >
+            {#if showConfirmResetPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
+        <input
+          type={showConfirmResetPassword ? 'text' : 'password'}
+          id="confirm-reset-password"
+          class="form-control"
+          bind:value={confirmResetPassword}
+          placeholder={$t('userManagement.confirmNewPassword')}
+          required
+          minlength={passwordMinLength}
+        />
+      </div>
+    </form>
+
+    <svelte:fragment slot="footer">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        on:click={closePasswordResetModal}
+        disabled={passwordResetLoading}
+      >
+        {$t('common.cancel')}
+      </button>
+      <button
+        type="submit"
+        form="password-reset-form"
+        class="btn btn-primary"
+        disabled={passwordResetLoading || !resetPassword || !confirmResetPassword}
+      >
+        {passwordResetLoading ? $t('userManagement.resetting') : $t('userManagement.resetPasswordButton')}
+      </button>
+    </svelte:fragment>
+  </BaseModal>
 {/if}
 
 <style>
@@ -1519,8 +1515,6 @@
   .search-container input {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
     font-size: 0.8125rem;
   }
 
@@ -1558,8 +1552,6 @@
   .form-group input, .form-group select {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
     font-size: 0.8125rem;
   }
 
@@ -1750,10 +1742,6 @@
   .expiration-editor input[type='date'] {
     height: 32px;
     padding: 0 6px;
-    border: 1px solid var(--border-color, #d1d5db);
-    border-radius: 6px;
-    background-color: var(--bg-secondary, white);
-    color: var(--text-primary, #111827);
     font-size: 0.85rem;
   }
 
@@ -1777,14 +1765,14 @@
     color: white;
   }
 
-  /* Reset password button - purple/indigo */
+  /* Reset password button - brand blue */
   .reset-password-button {
-    background-color: rgba(99, 102, 241, 0.1);
-    color: #6366f1;
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-on-surface);
   }
 
   .reset-password-button:hover:not(:disabled) {
-    background-color: #6366f1;
+    background-color: var(--primary-color);
     color: white;
     transform: scale(1.05);
   }
@@ -1850,14 +1838,14 @@
     color: white;
   }
 
-  /* MFA reset - violet */
+  /* MFA reset - teal */
   .mfa-reset-button {
-    background-color: rgba(168, 85, 247, 0.1);
-    color: #a855f7;
+    background-color: rgba(13, 148, 136, 0.1);
+    color: #0f766e;
   }
 
   .mfa-reset-button:hover:not(:disabled) {
-    background-color: #a855f7;
+    background-color: #0f766e;
     color: white;
     transform: scale(1.05);
   }
@@ -1992,63 +1980,6 @@
     font-size: 0.8125rem;
   }
 
-  /* Password Reset Modal */
-  .password-reset-modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-modal);
-    animation: fadeIn 0.2s ease-out;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  .password-reset-modal {
-    position: relative;
-    width: 90%;
-    max-width: 420px;
-    background-color: var(--surface-color, #fff);
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    padding: 1.5rem;
-    animation: slideUp 0.3s ease-out;
-  }
-
-  .modal-close-btn {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-close-btn:hover {
-    color: var(--text-color);
-    background: var(--button-hover, var(--background-color));
-  }
-
-  .modal-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 0.5rem 0;
-    color: var(--text-color);
-    padding-right: 2rem;
-  }
-
   .modal-description {
     font-size: 0.8125rem;
     color: var(--text-secondary);
@@ -2102,88 +2033,13 @@
 
   .password-reset-form .form-control {
     padding: 0.5rem 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.8125rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
-  }
-
-  .password-reset-form .form-control:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .password-reset-form .form-text {
     font-size: 0.75rem;
     color: var(--text-secondary);
     margin-top: 0.125rem;
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: flex-end;
-    margin-top: 0.5rem;
-  }
-
-  .btn-cancel {
-    background-color: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: var(--card-shadow);
-  }
-
-  .btn-cancel:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    border-color: var(--border-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  }
-
-  .btn-cancel:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-cancel:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-confirm {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-confirm:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-confirm:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-confirm:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .table-scroll-wrapper {
@@ -2213,12 +2069,6 @@
       min-height: 44px;
     }
 
-    .btn-cancel {
-      width: 100%;
-      min-height: 44px;
-      text-align: center;
-    }
-
     .add-user-form input,
     .add-user-form select {
       min-height: 44px;
@@ -2246,15 +2096,5 @@
       height: 36px;
     }
 
-    .modal-actions {
-      flex-direction: column-reverse;
-    }
-
-    .modal-actions .btn-cancel,
-    .modal-actions .btn-confirm {
-      width: 100%;
-      min-height: 44px;
-      text-align: center;
-    }
   }
 </style>

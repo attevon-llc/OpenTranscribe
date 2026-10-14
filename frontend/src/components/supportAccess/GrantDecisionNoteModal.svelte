@@ -35,7 +35,7 @@
   {isOpen}
   {onClose}
   title={mode === 'deny' ? $t('supportAccess.deny.title') : $t('supportAccess.revoke.title')}
-  maxWidth="480px"
+  size="sm"
 >
   {#if mode === 'revoke'}
     <p class="body">{$t('supportAccess.revoke.body', { name })}</p>

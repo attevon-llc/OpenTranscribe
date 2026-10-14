@@ -99,7 +99,7 @@
 <BaseModal
   {isOpen}
   title={project ? $t('chat.projects.editTitle') : $t('chat.projects.newTitle')}
-  maxWidth="560px"
+  size="md"
   onClose={() => dispatch('close')}
 >
   <div class="project-form" data-testid="chat-project-modal">

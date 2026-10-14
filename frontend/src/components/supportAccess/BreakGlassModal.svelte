@@ -103,7 +103,7 @@
   {isOpen}
   onClose={close}
   title={$t('supportAccess.breakGlass.title')}
-  maxWidth="580px"
+  size="md"
   allowOverflow
   closeOnBackdropClick={false}
 >

@@ -34,7 +34,7 @@
   $: if (!isOpen) forGrant = null;
 </script>
 
-<BaseModal {isOpen} {onClose} title={$t('supportAccess.approve.title')} maxWidth="500px">
+<BaseModal {isOpen} {onClose} title={$t('supportAccess.approve.title')} size="sm">
   {#if grant}
     <dl class="facts">
       <dt>{$t('supportAccess.col.grantee')}</dt>

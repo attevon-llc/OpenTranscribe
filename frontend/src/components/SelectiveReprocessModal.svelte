@@ -372,7 +372,7 @@
   }
 </script>
 
-<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} maxWidth="540px" zIndex={9999} onClose={handleClose}>
+<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} size="md" zIndex={9999} onClose={handleClose}>
         <!-- Step Indicator -->
         <div class="step-indicator">
           {#each stepLabels as label, i}

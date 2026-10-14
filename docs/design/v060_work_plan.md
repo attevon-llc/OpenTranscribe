@@ -36,7 +36,7 @@ migration, speaker, caption, redaction, provenance and pipeline tests pass with 
 2. Owner walkthrough at port 5373 in light, dark and Arabic: captions in the player and downloads,
    form controls and the date-range popover, settings prefetch, pipeline arrows, file-status
    back-navigation, no purple, select consistency.
-3. Cloud handoff: send the public-safe downstream list to the downstream session once its name is given.
+3. Downstream adoption is deferred to a later session: the public-safe list and its adoption checklist are in `docs/design/v060_downstream_changes.md`.
 4. AWS go-ahead, then the owner merges: `! gh pr merge 1191 --merge`.
 5. After the merge: confirm #1218, #1221, #1236, #1237, #1243 and #1244 are closed and #1238 to #1240 stay open.
 6. Release through `scripts/release.sh` (never by hand). `preflight 0.6.0` passes; `rehearse` needs the

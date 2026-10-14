@@ -16,6 +16,7 @@ Run:
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 import requests
@@ -53,7 +54,10 @@ def _login(page: Page, base_url: str) -> None:
 
 def _open_pipeline(page: Page) -> None:
     page.locator(".user-button").click()
-    page.locator(".dropdown-menu .dropdown-item", has_text="Settings").first.click()
+    # The menu entry is translated too: the ar run has no English "Settings" to match.
+    page.locator(
+        ".dropdown-menu .dropdown-item", has_text=re.compile("Settings|الإعدادات")
+    ).first.click()
     expect(page.locator(".settings-modal")).to_be_visible(timeout=10000)
     page.locator(".settings-sidebar .nav-item").first.wait_for(timeout=10000)
     # The row is the first of the Transcription group; match it by its position, not its

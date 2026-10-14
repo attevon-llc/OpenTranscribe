@@ -14,6 +14,12 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { getPipelineView, type PipelineView } from '$lib/api/pipeline';
   import { audioVendors, buildPipelineSteps } from '$lib/settings/pipelineSteps';
+  import {
+    loadSectionData,
+    peekSectionData,
+    SectionDataKey,
+    sameSectionData,
+  } from '$lib/settings/sectionData';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { locale, t } from '$stores/locale';
   import Chip from '../ui/Chip.svelte';
@@ -22,8 +28,10 @@
 
   const dispatch = createEventDispatcher<{ navigate: SettingsSection }>();
 
-  let view: PipelineView | null = null;
-  let loading = true;
+  // Stale-while-revalidate: a view seen a moment ago paints at once and is refreshed behind it;
+  // the skeleton is only for a cold miss.
+  let view: PipelineView | null = peekSectionData<PipelineView>(SectionDataKey.pipeline) ?? null;
+  let loading = view === null;
   let failed = false;
 
   $: model = view ? buildPipelineSteps(view) : null;
@@ -32,13 +40,16 @@
   $: vendorList = new Intl.ListFormat($locale, { style: 'long', type: 'conjunction' }).format(vendors);
 
   async function load() {
-    loading = true;
+    // A retry after a failure goes back to the skeleton; a refresh behind a shown view does not.
+    if (view === null) loading = true;
     failed = false;
     try {
-      view = await getPipelineView();
+      const fresh = await loadSectionData(SectionDataKey.pipeline, getPipelineView);
+      if (!sameSectionData(fresh, view)) view = fresh;
     } catch (err) {
       console.error('Failed to load the processing pipeline:', err);
-      failed = true;
+      // A failed refresh keeps the view already on screen; only a cold failure shows the error.
+      if (view === null) failed = true;
     } finally {
       loading = false;
     }
@@ -75,7 +86,20 @@
       <li class="audio-node" aria-hidden="true">{$t('settings.pipeline.audio')}</li>
       {#each model.steps as step, index (step.step)}
         <li class="flow-item">
-          <span class="connector" aria-hidden="true"></span>
+          <span
+            class="connector"
+            class:off={!step.enabled}
+            class:boundary={step.enabled && step.where === 'cloud'}
+            class:caution={step.enabled && step.where !== 'cloud' && step.issues.some((i) => i.severity !== 'info')}
+            data-testid="pipeline-connector"
+            aria-hidden="true"
+          >
+            <svg class="connector-svg" viewBox="0 0 24 48" width="24" height="48" focusable="false">
+              <line class="rail" x1="12" y1="0" x2="12" y2="38" />
+              <line class="flowline" x1="12" y1="0" x2="12" y2="38" />
+              <path class="head" d="M12 47 L4.5 35 L19.5 35 Z" />
+            </svg>
+          </span>
           <article
             class="step-card"
             class:off={!step.enabled}
@@ -213,23 +237,76 @@
     flex-direction: column;
   }
 
-  /* A short vertical rule with an arrow head: reads the same in both writing directions. */
+  /*
+   * The connector into a step: a 48px rail with a filled arrowhead, drawn in SVG so the stroke is
+   * the same weight everywhere. It is vertical in every layout (the cards stack at every width) and
+   * symmetric, so it reads the same in RTL; only its inset follows the writing direction.
+   * Tones: neutral blue for a step that runs on this server, amber where the audio leaves the
+   * server or the step has a problem, grey and still for a step that is off.
+   */
   .connector {
+    --connector-color: var(--primary-on-surface);
     align-self: flex-start;
-    margin-inline-start: 1.6rem;
-    width: 2px;
-    height: 1.25rem;
-    background: var(--border-color);
-    position: relative;
+    /* Centre the 24px rail under the step number (card border + padding + half the number). */
+    margin-inline-start: calc(1px + 1.25rem + 0.75rem - 12px);
+    height: 48px;
+    line-height: 0;
   }
 
-  .connector::after {
-    content: '';
-    position: absolute;
-    inset-inline-start: -4px;
-    bottom: -1px;
-    border-inline: 5px solid transparent;
-    border-top: 6px solid var(--border-color);
+  .connector.boundary,
+  .connector.caution {
+    --connector-color: var(--warning-color);
+  }
+
+  .connector.off {
+    --connector-color: var(--text-secondary);
+  }
+
+  .connector-svg {
+    display: block;
+    overflow: visible;
+  }
+
+  .rail {
+    stroke: var(--connector-color);
+    stroke-width: 2;
+    stroke-linecap: round;
+    opacity: 0.35;
+  }
+
+  /* Dashes that travel toward the step: calm for an ordinary step, a little quicker over a boundary. */
+  .flowline {
+    stroke: var(--connector-color);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 5 9;
+    animation: pipeline-flow 2.8s linear infinite;
+  }
+
+  .connector.boundary .flowline {
+    animation-duration: 1.6s;
+  }
+
+  .connector.off .flowline {
+    animation: none;
+    stroke-dasharray: 2 6;
+    opacity: 0.6;
+  }
+
+  .head {
+    fill: var(--connector-color);
+  }
+
+  @keyframes pipeline-flow {
+    to {
+      stroke-dashoffset: -28;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .flowline {
+      animation: none;
+    }
   }
 
   .step-card {

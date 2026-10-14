@@ -8,6 +8,8 @@
  * Imported by the modal chunk only, never by the root layout: see `settingsModalLoader.ts`.
  */
 import type { SettingsSection } from '$stores/settingsModalStore';
+import { runIdleQueue } from '$lib/settings/idleQueue';
+import { hasSectionPrefetch, prefetchSectionData } from '$lib/settings/sectionData';
 
 /** A dynamic import of a Svelte component module. */
 export type ComponentLoader = () => Promise<{ default: any }>;
@@ -127,4 +129,63 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
 export function prefetchSection(section: SettingsSection): void {
   const key = LEAD_LOADER[section];
   if (key) void sectionLoaders[key]().catch(() => {});
+}
+
+export type PrefetchRole = 'user' | 'admin' | 'super_admin';
+
+/**
+ * Hover / keyboard-focus intent on a sidebar row: warm that section's code and, where it has a
+ * registered cheap read, its data (role-checked), so the click that follows paints from memory.
+ */
+export function prefetchSectionIntent(section: SettingsSection, role: PrefetchRole): void {
+  prefetchSection(section);
+  prefetchSectionData(section, role);
+}
+
+/** Background work is skipped on Data Saver and on connections too slow to spare the bytes. */
+export function connectionAllowsPrefetch(): boolean {
+  const connection =
+    typeof navigator === 'undefined'
+      ? undefined
+      : (
+          navigator as Navigator & {
+            connection?: { saveData?: boolean; effectiveType?: string };
+          }
+        ).connection;
+  if (!connection) return true;
+  if (connection.saveData) return false;
+  return connection.effectiveType !== 'slow-2g' && connection.effectiveType !== '2g';
+}
+
+const PREFETCH_CONCURRENCY = 2;
+
+/**
+ * Warm every other section's code (then the data behind the few that have a cheap read) while the
+ * browser is idle, so clicking through the sidebar finds each chunk already in memory.
+ *
+ * `sections` must already be the ones this user can open (the caller passes the unlocked sidebar
+ * rows): nothing is fetched on behalf of a section the user has no rights to. Nothing starts on
+ * Data Saver / 2g. Returns a cancel function for when the modal closes.
+ */
+export function startIdlePrefetch(
+  sections: SettingsSection[],
+  role: PrefetchRole,
+  skip: SettingsSection | null = null
+): () => void {
+  if (!connectionAllowsPrefetch()) return () => {};
+
+  const seen = new Set<SectionLoaderKey>();
+  const tasks: Array<() => Promise<unknown> | void> = [];
+  for (const section of sections) {
+    if (section === skip) continue;
+    const key = LEAD_LOADER[section];
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    tasks.push(() => sectionLoaders[key]());
+  }
+  // Data last: a few single small GETs, each only if this role may call it.
+  for (const section of sections) {
+    if (hasSectionPrefetch(section, role)) tasks.push(() => prefetchSectionData(section, role));
+  }
+  return runIdleQueue(tasks, PREFETCH_CONCURRENCY);
 }

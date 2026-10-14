@@ -391,6 +391,7 @@
 </script>
 
 <div class="file-status-container">
+  <slot name="top" />
   <div class="header">
     <h2>{$t('fileStatus.title')}</h2>
     <div class="controls">

@@ -478,11 +478,6 @@
     font-weight: var(--font-weight-medium);
   }
 
-  :global([data-theme='dark']) .dual-match-badge {
-    background: rgba(129, 140, 248, 0.15);
-    color: #818cf8;
-  }
-
   .relevance-badge {
     background: var(--hover-color, #f1f5f9);
     color: var(--text-secondary, #6b7280);
@@ -615,7 +610,7 @@
   }
 
   :global([data-theme='dark']) .view-transcript-btn:hover {
-    background: rgba(129, 140, 248, 0.12);
+    background: rgba(var(--primary-color-rgb), 0.12);
   }
 
   .meta-chip {

@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "How it works",
   "settings.engineSettings.intro.details": "Native is the recommended engine and runs as its own service. PyAnnote runs inside the main backend; it is the older fallback and is being phased out. A setting you change here overrides the server default and shows a badge with a Reset button.",
   "settings.engineSettings.diarizerBackendHint": "Native is recommended. PyAnnote is the older fallback.",
-  "settings.engineSettings.advancedToggle": "Advanced re-check tuning"
+  "settings.engineSettings.advancedToggle": "Advanced re-check tuning",
+  "fileStatus.backToSettings": "Back to Settings"
 }

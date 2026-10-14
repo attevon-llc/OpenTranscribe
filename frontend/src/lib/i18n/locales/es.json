@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "Cómo funciona",
   "settings.engineSettings.intro.details": "El motor nativo es el recomendado y se ejecuta como servicio propio. PyAnnote se ejecuta dentro del backend principal; es el respaldo más antiguo y se irá retirando. Un ajuste que cambies aquí anula el valor predeterminado del servidor y muestra una insignia con un botón Restablecer.",
   "settings.engineSettings.diarizerBackendHint": "Se recomienda el motor nativo. PyAnnote es el respaldo más antiguo.",
-  "settings.engineSettings.advancedToggle": "Ajuste avanzado de la reverificación"
+  "settings.engineSettings.advancedToggle": "Ajuste avanzado de la reverificación",
+  "fileStatus.backToSettings": "Volver a Configuración"
 }

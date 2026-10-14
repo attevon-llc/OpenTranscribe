@@ -49,3 +49,10 @@ export const beforeNavigateCallbacks: Array<(navigation: unknown) => void> = [];
 export function beforeNavigate(callback: (navigation: unknown) => void): void {
   beforeNavigateCallbacks.push(callback);
 }
+
+/** Callbacks registered via {@link afterNavigate}. Clear in a `beforeEach` when asserting on it. */
+export const afterNavigateCallbacks: Array<(navigation: { type: string }) => void> = [];
+
+export function afterNavigate(callback: (navigation: { type: string }) => void): void {
+  afterNavigateCallbacks.push(callback);
+}

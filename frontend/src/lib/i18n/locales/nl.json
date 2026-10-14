@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "Hoe het werkt",
   "settings.engineSettings.intro.details": "Native is de aanbevolen engine en draait als aparte dienst. PyAnnote draait in de hoofdbackend; het is de oudere terugvaloptie en wordt uitgefaseerd. Een instelling die je hier wijzigt, overschrijft de serverstandaard en toont een label met een knop Resetten.",
   "settings.engineSettings.diarizerBackendHint": "Native wordt aanbevolen. PyAnnote is de oudere terugvaloptie.",
-  "settings.engineSettings.advancedToggle": "Geavanceerde afstemming van de herbeoordeling"
+  "settings.engineSettings.advancedToggle": "Geavanceerde afstemming van de herbeoordeling",
+  "fileStatus.backToSettings": "Terug naar Instellingen"
 }

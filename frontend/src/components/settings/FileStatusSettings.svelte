@@ -8,8 +8,14 @@
    * "Open full screen": one canonical view, no second copy of it.
    */
   import { onMount, onDestroy } from 'svelte';
-  import axiosInstance from '$lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
+  import {
+    fetchFileStatusSummary,
+    loadSectionData,
+    peekSectionData,
+    SectionDataKey,
+  } from '$lib/settings/sectionData';
+  import { settingsReturnQuery, stampSettingsReturn } from '$lib/settings/returnToSettings';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
   import Badge from '$components/ui/Badge.svelte';
@@ -38,8 +44,9 @@
     { key: 'error', label: 'fileStatus.errors' },
   ] as const;
 
-  let data: StatusPayload | null = null;
-  let loading = true;
+  // Shown at once when the section was seen recently, then refreshed behind it (skeleton on a cold miss only).
+  let data: StatusPayload | null = peekSectionData<StatusPayload>(SectionDataKey.fileStatus) ?? null;
+  let loading = data === null;
   let error: string | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -62,14 +69,17 @@
     if (!silent) loading = true;
     try {
       if (silent) apiCache.invalidate('status:');
-      data = await apiCache.getOrFetch(
-        cacheKey.status(),
-        async () => (await axiosInstance.get('/my-files/status')).data,
-        CacheTTL.STATUS
+      data = await loadSectionData<StatusPayload>(SectionDataKey.fileStatus, () =>
+        apiCache.getOrFetch(
+          cacheKey.status(),
+          () => fetchFileStatusSummary<StatusPayload>(),
+          CacheTTL.STATUS
+        )
       );
       error = null;
     } catch (err: unknown) {
-      if (!silent) error = getErrorMessage(err, $t('fileStatus.loadFailed'));
+      // A failed refresh keeps what is on screen; only a cold failure shows the error.
+      if (!silent && !data) error = getErrorMessage(err, $t('fileStatus.loadFailed'));
     } finally {
       loading = false;
     }
@@ -99,9 +109,10 @@
       <p class="section-description">{$t('settings.fileStatus.description')}</p>
     </div>
     <a
-      href="/file-status"
+      href={`/file-status?${settingsReturnQuery('file-status')}`}
       class="btn btn-secondary open-full"
       data-testid="file-status-open-full"
+      on:click={() => stampSettingsReturn('file-status')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <polyline points="15 3 21 3 21 9"></polyline>

@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "Comment ça marche",
   "settings.engineSettings.intro.details": "Le moteur natif est le moteur recommandé et s’exécute comme service à part. PyAnnote s’exécute dans le backend principal ; c’est l’ancien moteur de secours, en cours de retrait. Un réglage modifié ici remplace la valeur par défaut du serveur et affiche un badge avec un bouton Réinitialiser.",
   "settings.engineSettings.diarizerBackendHint": "Le moteur natif est recommandé. PyAnnote est l’ancien moteur de secours.",
-  "settings.engineSettings.advancedToggle": "Réglage avancé de la revérification"
+  "settings.engineSettings.advancedToggle": "Réglage avancé de la revérification",
+  "fileStatus.backToSettings": "Retour aux paramètres"
 }

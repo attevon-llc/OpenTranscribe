@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "So funktioniert es",
   "settings.engineSettings.intro.details": "Native ist die empfohlene Engine und läuft als eigener Dienst. PyAnnote läuft im Haupt-Backend; es ist der ältere Fallback und wird auslaufen. Eine hier geänderte Einstellung überschreibt den Serverstandard und zeigt ein Etikett mit einer Schaltfläche „Zurücksetzen“.",
   "settings.engineSettings.diarizerBackendHint": "Native wird empfohlen. PyAnnote ist der ältere Fallback.",
-  "settings.engineSettings.advancedToggle": "Erweiterte Feineinstellung der Überprüfung"
+  "settings.engineSettings.advancedToggle": "Erweiterte Feineinstellung der Überprüfung",
+  "fileStatus.backToSettings": "Zurück zu den Einstellungen"
 }

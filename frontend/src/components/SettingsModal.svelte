@@ -3,6 +3,8 @@
   import i18next from 'i18next';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { page } from '$app/stores';
+  import { afterNavigate } from '$app/navigation';
+  import { reopenSettingsAfterBack } from '$lib/settings/returnToSettings';
   import { user as userStore } from '$stores/auth';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
@@ -15,7 +17,13 @@
   // are imported statically.
   import SettingsModalFrame from '$components/settings/SettingsModalFrame.svelte';
   import LazySection from '$components/settings/LazySection.svelte';
-  import { sectionLoaders } from '$lib/settings/sectionLoaders';
+  import {
+    sectionLoaders,
+    startIdlePrefetch,
+    prefetchSectionIntent,
+    type PrefetchRole,
+  } from '$lib/settings/sectionLoaders';
+  import { invalidateSectionData, SectionDataKey } from '$lib/settings/sectionData';
   import type { ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import { SupportAccessApi } from '$lib/api/supportAccess';
   import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
@@ -69,6 +77,13 @@
   let desktopSearchActive = false;
   let mobileSearchActive = false;
   let settingsSearchIndex: FuzzyIndex<SettingsSearchItem> | null = null;
+
+  // Browser Back onto a page this modal was open over (it closes itself on every route change)
+  // reopens it on the section it was left on. Here, not in the root layout: the layout's static
+  // size is budgeted, and the modal is mounted whenever a link could have stamped a history entry.
+  afterNavigate(({ type }) => {
+    if (type === 'popstate') reopenSettingsAfterBack();
+  });
 
   // Close modal when the user navigates to a different page
   let _prevPath = '';
@@ -595,8 +610,47 @@
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
     window.removeEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
+    cancelWarmup?.();
     if (previousOpenState) unlockScroll();
   });
+
+  // Background warm-up of the other sections (code on idle, a few cheap reads), for the sections
+  // this user can open only. Restarts when the visible set changes; cancelled on close/destroy.
+  $: prefetchRole = (isSuperAdmin ? 'super_admin' : isAdmin ? 'admin' : 'user') as PrefetchRole;
+  $: warmKey = isOpen
+    ? `${prefetchRole}|${sidebarSections
+        .flatMap((group) => group.items)
+        .filter((item) => !item.locked)
+        .map((item) => item.id)
+        .join(',')}`
+    : '';
+  let appliedWarmKey = '';
+  let cancelWarmup: (() => void) | null = null;
+  $: syncWarmup(warmKey);
+
+  function syncWarmup(key: string) {
+    if (key === appliedWarmKey) return;
+    appliedWarmKey = key;
+    cancelWarmup?.();
+    cancelWarmup = null;
+    if (!key) return;
+    const ids = key.slice(key.indexOf('|') + 1).split(',') as SettingsSection[];
+    const role = prefetchRole;
+    // Let the section the user opened on paint first.
+    const timer = window.setTimeout(() => {
+      cancelWarmup = startIdlePrefetch(ids, role, activeSection);
+    }, 400);
+    cancelWarmup = () => window.clearTimeout(timer);
+  }
+
+  // The pipeline overview is derived from other sections' settings; a save elsewhere makes the
+  // remembered copy wrong, so drop it (the overview still refreshes on every visit).
+  let hadDirty = false;
+  $: {
+    const anyDirty = settingsModalStore.hasAnyDirty($settingsModalStore);
+    if (hadDirty && !anyDirty) invalidateSectionData(SectionDataKey.pipeline);
+    hadDirty = anyDirty;
+  }
 
   // Track previous open state to detect when modal opens
   let previousOpenState = false;
@@ -933,6 +987,8 @@
                   disabled={item.locked}
                   title={item.locked ? lockReason(item.id) : undefined}
                   on:click={() => switchSection(item.id)}
+                  on:mouseenter={() => !item.locked && prefetchSectionIntent(item.id, prefetchRole)}
+                  on:focus={() => !item.locked && prefetchSectionIntent(item.id, prefetchRole)}
                 >
                   <span class="nav-item-label">{item.label}</span>
                   {#if !item.locked && item.badge > 0}

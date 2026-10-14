@@ -6,7 +6,7 @@
  * fetching the password policy, then unmounting and fetching it again), and replace the whole tab
  * with the words "Loading configuration..." after every save.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
@@ -33,6 +33,8 @@ vi.mock('$stores/locale', () => ({
 import { AuthConfigApi } from '$lib/api/authConfig';
 import { fetchPasswordPolicy } from '$lib/passwordPolicy';
 import AuthenticationSettings from './AuthenticationSettings.svelte';
+import { clearSectionData, setSectionData, SectionDataKey } from '$lib/settings/sectionData';
+import { authTabLoaders } from '$lib/settings/sectionLoaders';
 
 const getAll = vi.mocked(AuthConfigApi.getAllConfigs);
 
@@ -45,8 +47,16 @@ function deferred<T>() {
 const SAVE = { name: 'settings.localAuth.saveConfiguration' };
 
 describe('AuthenticationSettings loading', () => {
+  // The Local panel is a lazy chunk and vitest transforms a cold import on demand: do it once up
+  // front so the first test's 5 s budget measures the component (as SettingsModal.test.ts does).
+  beforeAll(async () => {
+    await authTabLoaders.local();
+  }, 120_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
+    // The remembered configuration is module state: one test's answer must not paint the next.
+    clearSectionData();
   });
 
   it('does not mount the Local form (and its defaults) before the configuration lands', async () => {
@@ -66,6 +76,21 @@ describe('AuthenticationSettings loading', () => {
 
     pending.resolve({ local: [] });
     expect(await screen.findByRole('button', SAVE, { timeout: 5000 })).toBeInTheDocument();
+  });
+
+  it('paints a remembered configuration at once, behind no skeleton, and refreshes it', async () => {
+    setSectionData(SectionDataKey.authConfig, { local: [] });
+    const pending = deferred<Record<string, never[]>>();
+    getAll.mockReturnValue(pending.promise as never);
+    render(AuthenticationSettings);
+
+    expect(await screen.findByRole('button', SAVE, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'settings.authentication.loadingConfig' })
+    ).toBeNull();
+    // The refresh is still in flight behind the painted form.
+    expect(getAll).toHaveBeenCalledTimes(1);
+    pending.resolve({ local: [] });
   });
 
   it('reads the password policy once, not once per mount', async () => {

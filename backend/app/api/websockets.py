@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+from typing import Any
 
 import redis.asyncio as redis
 from fastapi import APIRouter
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.token_service import token_service
+from app.core.capabilities import capability_enabled
 from app.db.session_utils import session_scope
 
 from ..core.config import settings
@@ -33,7 +35,7 @@ class ConnectionManager:
         # Sockets whose user held an admin tier when the connection was opened.
         self.admin_connections: set[WebSocket] = set()
 
-    def connect(self, websocket: WebSocket, user_id: int, is_admin: bool = False):
+    def connect(self, websocket: WebSocket, user_id: int, host_telemetry: bool = False):
         """Register a WebSocket connection for a user (accept() must be called before this).
 
         Bookkeeping only — no I/O — so it is a plain function, mirroring ``disconnect``.
@@ -43,7 +45,7 @@ class ConnectionManager:
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
-        if is_admin:
+        if host_telemetry:
             self.admin_connections.add(websocket)
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
@@ -319,6 +321,20 @@ def _request_origin(websocket: WebSocket) -> str | None:
     return _normalize_origin(f"{scheme}://{host}")
 
 
+def _may_receive_host_telemetry(user: Any) -> bool:
+    """Whether this user's socket may receive host/infrastructure events (``gpu_stats_update``).
+
+    Mirrors ``GET /api/system/stats``, which is gated by the ``system.hardware_stats``
+    capability: on a deployment where that capability is hidden from tenants (platform-audience
+    capability, hidden for organization users) only platform staff (``is_superuser``) pass, so a
+    tenant's own admin never sees another tenant's or the host's telemetry. Where the capability
+    is on (community edition) an admin or super admin passes.
+    """
+    if bool(getattr(user, "is_superuser", False)):
+        return True
+    return user.role in ELEVATED_ROLES and capability_enabled("system.hardware_stats")
+
+
 def _origin_is_allowed(websocket: WebSocket) -> bool:
     """Whether this handshake's ``Origin`` may open a socket (issue #903).
 
@@ -453,7 +469,7 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
     # Register the authenticated connection
-    manager.connect(websocket, user.id, is_admin=user.role in ELEVATED_ROLES)
+    manager.connect(websocket, user.id, host_telemetry=_may_receive_host_telemetry(user))
 
     # Send initial connection status
     await websocket.send_text(

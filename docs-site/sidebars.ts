@@ -106,6 +106,7 @@ const sidebars: SidebarsConfig = {
         'operations/storage-recovery',
         'operations/backup-audit',
         'operations/upgrading',
+        'operations/upgrading-to-0-6-0',
         'operations/monitoring',
         'operations/performance-tuning',
         'operations/prompt-engineering',

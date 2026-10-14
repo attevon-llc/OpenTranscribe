@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { REDACTION_CATEGORY_KEYS, REDACTION_DETECTOR_KEYS, REDACTION_STYLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
@@ -130,7 +131,7 @@
 
 <div class="content-redaction-settings">
   {#if loading}
-    <div class="loading-state">{$t('common.loading')}</div>
+    <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
   {:else}
     <div class="settings-form">
       <p class="intro-desc">{$t('settings.contentRedaction.description')}</p>
@@ -360,13 +361,6 @@
     padding: 0.5rem 0;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    color: var(--text-secondary);
-  }
 
   .settings-form {
     display: flex;

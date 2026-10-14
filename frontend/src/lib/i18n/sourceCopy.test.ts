@@ -66,8 +66,8 @@ describe('English source copy (#1220)', () => {
 
   it('keeps developer vocabulary out of user-facing engine prose', () => {
     const prose = [
-      'settings.engineSettings.intro.routing',
-      'settings.engineSettings.intro.override',
+      'settings.engineSettings.intro.summary',
+      'settings.engineSettings.intro.details',
       'settings.engineSettings.boundaryAcousticScope',
     ];
     for (const key of prose) {

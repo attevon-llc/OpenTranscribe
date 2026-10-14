@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
@@ -105,7 +106,7 @@
   <p class="section-desc">{$t('settings.cache.description')}</p>
 
   {#if loading}
-    <div class="loading-state"><Spinner size="small" /></div>
+    <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
   {:else}
     <!-- Current usage -->
     <div class="status-block">
@@ -188,11 +189,6 @@
     line-height: 1.4;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: 1rem;
-  }
 
   .status-block {
     margin: 0 0 1rem 0;

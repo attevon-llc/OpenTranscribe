@@ -513,7 +513,7 @@ Prometheus scrapes the backend's `/metrics` endpoint; Grafana (`:5185`, default 
 # Mount a backup destination, then configure schedule/destination in the admin UI
 ./opentr.sh start dev --with-backup
 ```
-Built-in scheduled database backups run on the existing `celery-beat` service — **no host cron**. Configure everything in **Settings → System Management → Backups**: cron schedule, GFS retention, optional gpg encryption, and a destination that is either a **mounted folder** or an **S3-compatible bucket** (AWS S3 / MinIO / Backblaze — keeps backups off the host machine). See [Backup & Restore](docs-site/docs/operations/backup-restore.md).
+Built-in scheduled database backups run on the existing `celery-beat` service — **no host cron**. Configure everything in **Settings → Data & Storage → Database Backups**: cron schedule, GFS retention, optional gpg encryption, and a destination that is either a **mounted folder** or an **S3-compatible bucket** (AWS S3 / MinIO / Backblaze — keeps backups off the host machine). See [Backup & Restore](docs-site/docs/operations/backup-restore.md).
 
 If the database is ever lost but the MinIO media survives, [**Storage Recovery**](docs-site/docs/operations/storage-recovery.md) rebuilds the catalog in place (`python -m app.scripts.reingest_minio`) — no re-download, no duplication.
 

@@ -43,9 +43,12 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
     `src/styles/range-slider.css`** (tokens `--slider-*`, `.range-input`). Raw `type="range"` in a
     template, or `::-webkit-slider-thumb`/`::-moz-range-thumb` rules outside that stylesheet and the
     two Plyr player files, fail `rangeSliderStructure.test.ts` (allowlist entries need a written
-    reason). The look is the native slider tinted with `accent-color` on purpose: fill, thumb,
-    keyboard and RTL direction come from the browser. The gallery's dual-thumb filter sliders
+    reason). The input stays native (keyboard, RTL direction) but the track is drawn from
+    `--range-fill` (0..1, set inline by the component) because the native accent-color fill stops at
+    the thumb centre and left a grey cap at the maximum; `--range-dir` mirrors it in RTL. The gallery's dual-thumb filter sliders
     (`svelte-range-slider-pips` in `FilterSidebar.svelte`) are intentionally separate (owner decision).
+- `SettingsSkeleton.svelte` — the loading placeholder every settings panel and `LazySection` uses
+  (`variant` form / rows / chips / dashboard on the shared shimmer; optional `label` makes it a status region).
 - `EmptyState.svelte` — icon -> title -> description -> actions, spaced by the
   `--empty-state-*` tokens. The default slot IS the action row (`.empty-actions`, flex, wraps);
   callers put buttons there with no margin of their own (issue #1243 item 16: a caller-spaced

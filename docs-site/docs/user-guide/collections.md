@@ -83,7 +83,7 @@ Shared collections appear in recipients' collection lists. **Speaker profiles** 
 
 Administrators can configure automatic file cleanup to manage storage:
 
-1. Go to **Settings > File Retention**
+1. Go to **Settings > Data & Storage > File Retention**
 2. Enable automatic file deletion
 3. Configure:
    - **Retention period** (days) -- Files completed more than this many days ago are deleted

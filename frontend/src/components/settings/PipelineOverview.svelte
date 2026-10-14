@@ -10,12 +10,12 @@
   sentences, never from raw server or vendor text.
 -->
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { createEventDispatcher, onMount } from 'svelte';
   import { getPipelineView, type PipelineView } from '$lib/api/pipeline';
   import { audioVendors, buildPipelineSteps } from '$lib/settings/pipelineSteps';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { locale, t } from '$stores/locale';
-  import Spinner from '../ui/Spinner.svelte';
   import Chip from '../ui/Chip.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import IssueRow from './IssueRow.svelte';
@@ -51,9 +51,7 @@
 
 <div class="pipeline-overview" data-testid="pipeline-overview">
   {#if loading}
-    <div class="state-box">
-      <Spinner size="large" />
-    </div>
+    <SettingsSkeleton variant="dashboard" label={$t('common.loading')} />
   {:else if failed || !model}
     <div class="state-box" role="alert">
       <p>{$t('settings.pipeline.loadFailed')}</p>

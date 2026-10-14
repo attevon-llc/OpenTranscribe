@@ -82,8 +82,15 @@ describe('EngineSettings - dirty state, translated options, headings', () => {
     ]);
   });
 
-  it('disables the re-check thresholds while the acoustic re-check is off', async () => {
+  it('keeps the re-check thresholds behind Advanced, and disabled while the re-check is off', async () => {
     render(EngineSettings);
+    await screen.findByLabelText('settings.engineSettings.diarizerBackend');
+    expect(
+      screen.queryByLabelText('settings.engineSettings.boundaryAcousticCosineMargin')
+    ).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'settings.engineSettings.advancedToggle' })
+    );
     const margin = await screen.findByLabelText<HTMLInputElement>(
       'settings.engineSettings.boundaryAcousticCosineMargin'
     );

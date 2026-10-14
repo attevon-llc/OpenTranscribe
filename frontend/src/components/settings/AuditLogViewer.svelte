@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { AdminApi, type AuditLogEntry } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
@@ -203,7 +204,7 @@
     </div>
 
     {#if loading}
-      <div class="loading">{$t('settings.auditLog.loadingShort')}</div>
+      <SettingsSkeleton variant="form" count={4} label={$t('settings.auditLog.loadingShort')} />
     {:else}
       <div class="audit-table-container" bind:this={tableContainer} on:scroll={handleTableScroll}>
         {#if totalLogs > 0}
@@ -246,7 +247,7 @@
         <div class="loading-more">{$t('settings.auditLog.loadingShort')}</div>
       {/if}
       {#if auditLogs.length === 0}
-        <div class="loading">{$t('settings.auditLog.noLogs')}</div>
+        <div class="no-logs">{$t('settings.auditLog.noLogs')}</div>
       {/if}
     {/if}
   {/if}
@@ -560,7 +561,7 @@
     transform: scale(1);
   }
 
-  .loading {
+  .no-logs {
     text-align: center;
     padding: 1rem;
     color: var(--color-text-secondary);

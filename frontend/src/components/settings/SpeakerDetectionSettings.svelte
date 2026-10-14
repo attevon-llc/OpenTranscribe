@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import {
     getTranscriptionSettings,
@@ -24,7 +25,6 @@
   import { speakerSaveErrorKey } from '$lib/settings/pipelineIssues';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import Spinner from '../ui/Spinner.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import InfoTip from './transcription/InfoTip.svelte';
   import FormActions from './transcription/FormActions.svelte';
@@ -239,10 +239,7 @@
 
 <div class="speaker-detection-settings tx-form">
   {#if loading}
-    <div class="loading-state">
-      <Spinner size="large" />
-      <p>{$t('settings.transcription.loading')}</p>
-    </div>
+    <SettingsSkeleton variant="form" count={3} label={$t('settings.transcription.loading')} />
   {:else}
     <div class="settings-form">
       <SpeakerDetectionProviderCard

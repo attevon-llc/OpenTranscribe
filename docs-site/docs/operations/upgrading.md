@@ -328,7 +328,7 @@ When upgrading across the speaker embedding architecture change:
 
 The migration runs through the Admin UI:
 
-1. Navigate to **Settings → Speaker Embedding System** (super admin)
+1. Navigate to **Settings → Data & Storage → Speaker Embedding System** (super admin)
 2. Start the embedding migration -- this re-extracts embeddings for all speakers
 3. Monitor progress in the migration panel
 4. Once complete, the alias swaps atomically to the new index

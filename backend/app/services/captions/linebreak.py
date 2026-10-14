@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from dataclasses import field
 
 from app.services.captions.rules import CaptionRules
+from app.services.captions.scripts import WORD_INTEGRITY
+from app.services.captions.scripts import display_width
+from app.services.captions.scripts import junction_cost
 from app.services.captions.tokens import Token
 
 _SENTENCE_END_RE = re.compile(
@@ -24,6 +27,8 @@ _SENTENCE_END_RE = re.compile(
 )
 _CLAUSE_END_RE = re.compile("(?:[,;:\u2014\u2013\uff0c\u3001\uff1b\uff1a]|--)['\"\u201d\u2019)]*$")
 _INITIALS_RE = re.compile(r"^(?:[A-Za-z]\.)+$")
+# "15." in "am 15. M\u00e4rz": a German/Russian-style ordinal day, not the end of a sentence.
+_ORDINAL_RE = re.compile(r"^\d{1,2}\.$")
 _NUMBER_RE = re.compile(r"^[$\u20ac\u00a3\u00a5#~+\-\u2212]?\d[\d.,:/]*(?:%|st|nd|rd|th|s)?$")
 _PUNCT_STRIP = "\"'\u201c\u201d\u2018\u2019()[]{}.,;:!?\u2026"
 
@@ -65,7 +70,11 @@ def ends_sentence(text: str) -> bool:
     if not _SENTENCE_END_RE.search(text):
         return False
     lowered = text.lower().rstrip("\"'\u201d\u2019)")
-    return lowered not in _ABBREVIATIONS and not _INITIALS_RE.match(lowered)
+    return (
+        lowered not in _ABBREVIATIONS
+        and not _INITIALS_RE.match(lowered)
+        and not _ORDINAL_RE.match(lowered)
+    )
 
 
 def _is_capitalised_word(text: str) -> bool:
@@ -84,7 +93,7 @@ class TokenRun:
         self._chars = [0]
         self._spaces = [0]
         for tok in self.tokens:
-            self._chars.append(self._chars[-1] + len(tok.text))
+            self._chars.append(self._chars[-1] + display_width(tok.text))
             self._spaces.append(self._spaces[-1] + int(tok.space_before))
 
     def length(self, a: int, b: int) -> int:
@@ -114,7 +123,11 @@ class TokenRun:
         tok, prev = self.tokens[i], self.tokens[i - 1]
         if not tok.breakable_before:
             return UNBREAKABLE
-        penalty = 0.0
+        penalty = tok.cost
+        if not tok.space_before:
+            penalty += junction_cost(prev.text, tok.text)
+        if _ORDINAL_RE.match(prev.text):
+            penalty += 0.8
         if ends_sentence(prev.text):
             penalty -= 1.0
         elif _CLAUSE_END_RE.search(prev.text):
@@ -139,6 +152,12 @@ class TokenRun:
         penalty -= min(pause, 1.0) * 0.8
         return penalty
 
+    def splits_a_word(self, i: int) -> bool:
+        """Whether breaking before ``tokens[i]`` cuts a word in two (``scripts.junction_cost``)."""
+        if i <= 0 or i >= len(self.tokens) or self.tokens[i].space_before:
+            return False
+        return junction_cost(self.tokens[i - 1].text, self.tokens[i].text) >= WORD_INTEGRITY
+
     def break_lines(
         self, a: int, b: int, rules: CaptionRules, label_len: int = 0, *, force: bool = False
     ) -> list[tuple[int, int]] | None:
@@ -158,7 +177,7 @@ class TokenRun:
             does not fit and ``force`` is False.
         """
         width = rules.max_line_chars
-        first_width = max(width - label_len, width // 2)
+        first_width = width - label_len
         if self.length(a, b) <= first_width:
             return [(a, b)]
         best: tuple[float, int] | None = None
@@ -166,7 +185,7 @@ class TokenRun:
         n = b - a
         for k in range(a + 1, b):
             penalty = self.break_penalty(k)
-            if penalty == UNBREAKABLE:
+            if penalty == UNBREAKABLE or (not force and self.splits_a_word(k)):
                 continue
             top, bottom = self.length(a, k), self.length(k, b)
             overflow = max(0, top - first_width) + max(0, bottom - width)

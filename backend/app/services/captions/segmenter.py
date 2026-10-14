@@ -31,6 +31,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from dataclasses import field
+from dataclasses import replace
 
 from app.services.captions.linebreak import UNBREAKABLE
 from app.services.captions.linebreak import TokenRun
@@ -42,6 +43,7 @@ from app.services.captions.model import CuePart
 from app.services.captions.rules import CJK_RULES
 from app.services.captions.rules import LATIN_RULES
 from app.services.captions.rules import CaptionRules
+from app.services.captions.scripts import display_width
 from app.services.captions.timing import resolve_overlaps
 from app.services.captions.timing import settle_timing
 from app.services.captions.tokens import Token
@@ -60,18 +62,34 @@ class _Turn:
 
 
 def _label_len(label: str | None) -> int:
-    return len(label) + 2 if label else 0
+    return display_width(label) + 2 if label else 0
 
 
-def _cue_spans(run: TokenRun, rules: CaptionRules, label_len: int) -> list[tuple[int, int]]:
-    """Token ranges, one per cue, for one speaker turn."""
+def label_needs_own_line(label: str | None, rules: CaptionRules) -> bool:
+    """Whether a speaker name is too long to share its line with at least a quarter of one.
+
+    A name that leaves less than ``max_line_chars // 4`` columns for speech would force
+    the first line to either overflow the limit or carry a word or two, so it is shown on
+    a line of its own and the cue's text gets the remaining line(s).
+    """
+    return bool(label) and rules.max_line_chars - _label_len(label) < rules.max_line_chars // 4
+
+
+def _cue_spans(
+    run: TokenRun, rules: CaptionRules, label_len: int, first_rules: CaptionRules | None = None
+) -> list[tuple[int, int]]:
+    """Token ranges, one per cue, for one speaker turn.
+
+    ``first_rules`` replaces ``rules`` for the turn's first cue (a name on its own line
+    leaves it one line fewer for speech).
+    """
     n = len(run.tokens)
 
     def lab(a: int) -> int:
         return label_len if a == 0 else 0
 
     def fits(a: int, b: int) -> bool:
-        return run.fits(a, b, rules, lab(a))
+        return run.fits(a, b, first_rules if a == 0 and first_rules else rules, lab(a))
 
     blocks: list[tuple[int, int]] = []
     start = 0
@@ -228,11 +246,19 @@ def _build_turns(segments: list[CaptionSegment]) -> tuple[list[_Turn], int]:
 def _turn_cues(turn: _Turn) -> list[Cue]:
     rules = CJK_RULES if turn.cjk_chars * 2 > turn.chars else LATIN_RULES
     run = TokenRun(turn.tokens)
+    own_line = label_needs_own_line(turn.speaker_label, rules)
+    first_rules = replace(rules, max_lines=rules.max_lines - 1) if own_line else None
+    label_len = 0 if own_line else _label_len(turn.speaker_label)
     cues: list[Cue] = []
-    for index, (a, b) in enumerate(_cue_spans(run, rules, _label_len(turn.speaker_label))):
+    for index, (a, b) in enumerate(_cue_spans(run, rules, label_len, first_rules)):
         show_label = index == 0 and bool(turn.speaker_label)
-        label_len = _label_len(turn.speaker_label) if show_label else 0
-        layout = run.break_lines(a, b, rules, label_len, force=True) or [(a, b)]
+        layout = run.break_lines(
+            a,
+            b,
+            first_rules if show_label and first_rules else rules,
+            label_len if show_label else 0,
+            force=True,
+        ) or [(a, b)]
         last_word_end = max(t.end for t in run.tokens[a:b])
         cues.append(
             Cue(
@@ -244,6 +270,7 @@ def _turn_cues(turn: _Turn) -> list[Cue]:
                         turn.speaker_label,
                         show_label,
                         [run.text(x, y) for x, y in layout],
+                        label_own_line=show_label and own_line,
                     )
                 ],
                 rules=rules,

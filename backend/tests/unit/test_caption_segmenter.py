@@ -22,6 +22,7 @@ from app.services.captions import to_srt
 from app.services.captions import to_webvtt
 from app.services.captions.linebreak import TokenRun
 from app.services.captions.linebreak import ends_sentence
+from app.services.captions.scripts import display_width
 from app.services.captions.source import render_speaker_label
 from app.services.captions.tokens import tokenize_segment
 
@@ -337,6 +338,20 @@ class TestRendering:
         )
         assert "<b>Eve" not in vtt
 
+    def test_webvtt_has_no_style_block_because_ffmpeg_reads_such_a_file_as_empty(self):
+        track = build_caption_track(
+            [
+                CaptionSegment(0, 2, "First words here.", speaker_key=1, speaker_label="Ann"),
+                CaptionSegment(3, 5, "Second words.", speaker_key=2, speaker_label="Ben"),
+            ]
+        )
+        vtt = to_webvtt(track)
+        blocks = vtt.strip().split("\n\n")
+        assert blocks[0] == "WEBVTT"
+        assert "STYLE" not in vtt
+        assert all(b.startswith("NOTE") or "-->" in b for b in blocks[1:]), blocks
+        assert sum("-->" in b for b in blocks) == len(track.cues) == 2
+
     def test_srt_numbers_cues_and_uses_comma_milliseconds(self):
         track = build_caption_track(
             [
@@ -353,3 +368,170 @@ class TestRendering:
         assert render_speaker_label("SPEAKER_03", "Speaker {number}") == "Speaker 03"
         assert render_speaker_label("SPEAKER_03", None) == "SPEAKER_03"
         assert render_speaker_label("Alice", "Speaker {number}") == "Alice"
+
+
+# Real ASR-style input for the cross-language review (captions i18n pass). Each case below
+# failed against the segmenter that shipped before it, with these exact texts.
+JA_INTRO = (
+    "番組へようこそ。本日のゲストは、CERNでAtlasプロジェクトを12年間率いてこられた佐藤博士です。"
+    "新しい検出器がなぜ450万ユーロもかかるのか、説明していただきます。"
+)
+JA_SCHEDULE = (
+    "なるほど。スケジュールについてもうかがいます。最初の結果は2027年3月に発表される予定です。"
+    "チームはそれまでに準備できますか。それとも前回のように遅れが出ますか？"
+)
+JA_EVENTS = (
+    "古い検出器は毎秒約40件のイベントしか記録できませんでしたが、新しいものは2,000件以上を処理でき、"
+    "初期宇宙についてわかることが変わります。"
+)
+_NO_LINE_START = set("ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶー々、。，．！？」』）】")
+_THAI_LEADING_VOWELS = set("เแโใไ")
+_THAI_DEPENDENT = {chr(c) for c in (*range(0x0E30, 0x0E3B), *range(0x0E45, 0x0E4F))}
+THAI_RUN = (
+    "ยินดีต้อนรับกลับสู่รายการแขกรับเชิญของเราวันนี้คือดร.สุดาผู้นำโครงการแอตลาสที่เซิร์นมา12ปี"
+    "และจะอธิบายว่าทำไมเครื่องตรวจจับใหม่จึงมีราคา4.5ล้านยูโร"
+)
+
+
+def _pair_words(text: str, start: float, end: float) -> list[dict]:
+    """Whisper-style CJK words: two characters each, time shared by length."""
+    chunks = [text[i : i + 2] for i in range(0, len(text), 2)]
+    slot = (end - start) / len(chunks)
+    return [
+        {"word": c, "start": start + i * slot, "end": start + (i + 0.9) * slot}
+        for i, c in enumerate(chunks)
+    ]
+
+
+def _all_lines(track) -> list[str]:
+    return [line for cue in track.cues for line in cue.lines]
+
+
+class TestJapanese:
+    @pytest.mark.parametrize("text", [JA_INTRO, JA_SCHEDULE], ids=["intro", "schedule"])
+    @pytest.mark.parametrize("timed", [True, False], ids=["words", "interpolated"])
+    def test_no_line_starts_with_a_small_kana_a_long_vowel_mark_or_a_closing_mark(
+        self, text, timed
+    ):
+        words = _pair_words(text, 0, 20) if timed else None
+        track = build_caption_track(
+            [CaptionSegment(0, 20, text, speaker_key=1, speaker_label="田中 太郎", words=words)]
+        )
+        _assert_broadcast_shape(track, CJK_RULES)
+        starts = [line[0] for line in _all_lines(track)]
+        assert not [c for c in starts if c in _NO_LINE_START], _all_lines(track)
+
+    @pytest.mark.parametrize("text", [JA_INTRO, JA_SCHEDULE], ids=["intro", "schedule"])
+    def test_a_katakana_word_is_never_broken_across_lines(self, text):
+        track = build_caption_track([CaptionSegment(0, 20, text, speaker_key=1)])
+        lines = _all_lines(track)
+        katakana_words = re.findall(r"[ァ-ヶー]{3,}", text)
+        assert katakana_words
+        for word in katakana_words:
+            assert any(word in line for line in lines), (word, lines)
+
+    @pytest.mark.parametrize("timed", [True, False], ids=["words", "interpolated"])
+    def test_a_katakana_word_too_long_for_the_rest_of_the_line_moves_whole(self, timed):
+        thanks = "お招きいただきありがとうございます。"
+        segments = [
+            CaptionSegment(
+                18.58,
+                22.4,
+                thanks,
+                speaker_key=1,
+                speaker_label="佐藤 さくら",
+                words=_pair_words(thanks, 18.58, 22.4) if timed else None,
+            ),
+            CaptionSegment(
+                22.43,
+                36.7,
+                JA_EVENTS,
+                speaker_key=1,
+                speaker_label="佐藤 さくら",
+                words=_pair_words(JA_EVENTS, 22.43, 36.7) if timed else None,
+            ),
+        ]
+        track = build_caption_track(segments)
+        _assert_broadcast_shape(track, CJK_RULES)
+        assert any("イベント" in line for line in _all_lines(track)), _all_lines(track)
+
+    @pytest.mark.parametrize("text", [JA_INTRO, JA_SCHEDULE], ids=["intro", "schedule"])
+    def test_a_number_is_not_separated_from_its_counter(self, text):
+        track = build_caption_track([CaptionSegment(0, 20, text, speaker_key=1)])
+        lines = _all_lines(track)
+        assert len(lines) > 1
+        for above, below in itertools.pairwise(lines):
+            assert not (above[-1].isdigit() and "぀" <= below[0] <= "鿿"), lines
+
+
+class TestLongNames:
+    def test_a_long_speaker_name_never_pushes_the_first_line_past_the_limit(self):
+        label = "Jürgen Müller-Lüdenscheidt"
+        text = "Willkommen zurück in der Sendung. Unser heutiger Gast ist Frau Dr. Anke Schäfer."
+        track = build_caption_track(
+            [CaptionSegment(0, 6, text, speaker_key=1, speaker_label=label)]
+        )
+        _assert_broadcast_shape(track)
+        assert track.cues[0].lines[0].startswith(f"{label}: ")
+
+    def test_a_name_too_long_to_share_a_line_gets_a_line_of_its_own(self):
+        label = "Prof. Dr. Maximilian von Hohenfels"
+        segments = [
+            CaptionSegment(0, 5, "We should talk about the budget first.", 1, label),
+            CaptionSegment(5.2, 5.8, "Yes.", 2, "Ann"),
+            CaptionSegment(5.9, 6.5, "Agreed.", 1, label),
+        ]
+        track = build_caption_track(segments)
+        _assert_broadcast_shape(track)
+        assert track.cues[0].lines[0] == f"{label}:"
+        assert track.cues[0].lines[1] == "We should talk about the budget first."
+        vtt = to_webvtt(track)
+        assert f"<c.speaker>{label}</c>:\nWe should talk about the budget first." in vtt
+
+
+class TestOrdinalDates:
+    def test_a_german_day_ordinal_is_not_a_sentence_end(self):
+        text = (
+            "Wir liegen im Plan. Wenn alles gut geht, veröffentlichen wir die erste "
+            "Veröffentlichung am 15. März und laden alle zur Einführungsveranstaltung ein."
+        )
+        track = build_caption_track(
+            [CaptionSegment(0, 9, text, speaker_key=1, words=_words(text, 0, 9))]
+        )
+        _assert_broadcast_shape(track)
+        for above, below in itertools.pairwise(_all_lines(track)):
+            assert not (above.endswith(" 15.") or above == "15."), (above, below)
+        assert ends_sentence("done.") and not ends_sentence("15.")
+
+
+class TestThai:
+    @staticmethod
+    def _width(line: str) -> int:
+        return display_width(line)
+
+    def test_an_unspaced_run_is_cut_to_the_line_limit_at_syllable_safe_points(self):
+        track = build_caption_track([CaptionSegment(0, 12, THAI_RUN, speaker_key=1)])
+        lines = _all_lines(track)
+        assert all(self._width(line) <= LATIN_RULES.max_line_chars for line in lines), lines
+        assert "".join(lines) == THAI_RUN
+        assert not [ln for ln in lines if ln[0] in _THAI_DEPENDENT], lines
+        assert not [ln for ln in lines if ln[-1] in _THAI_LEADING_VOWELS], lines
+
+    def test_with_word_timestamps_breaks_fall_on_the_recognizers_word_boundaries(self):
+        cuts = [0, 6, 10, 14, 19, 24, 27, 33, 38, 45, 50, 57, 64, 70, 77, 84, 90, 96, 103]
+        cuts = [c for c in cuts if c < len(THAI_RUN)] + [len(THAI_RUN)]
+        words = [
+            {"word": THAI_RUN[a:b], "start": a * 0.1, "end": b * 0.1 - 0.02}
+            for a, b in itertools.pairwise(cuts)
+        ]
+        track = build_caption_track(
+            [CaptionSegment(0, len(THAI_RUN) * 0.1, THAI_RUN, speaker_key=1, words=words)]
+        )
+        lines = _all_lines(track)
+        assert all(self._width(line) <= LATIN_RULES.max_line_chars for line in lines), lines
+        boundaries = set(cuts)
+        offset = 0
+        for line in lines:
+            assert offset in boundaries, (offset, lines)
+            offset += len(line)
+        assert offset == len(THAI_RUN)

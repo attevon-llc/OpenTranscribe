@@ -52,6 +52,7 @@
   import { transcriptStore, type SpeakerInfo } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
+  import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
@@ -362,7 +363,12 @@
     }
   }
 
-  async function fetchFileDetails(fileIdOrEvent?: string): Promise<void> {
+  /**
+   * @param fromPrefetch First load of the page only. Joins (or consumes) the gallery's hover
+   *   prefetch of `GET /files/{id}` instead of issuing a second identical request; the entry
+   *   is dropped once read so a later reload (reprocess, retry) always hits the server.
+   */
+  async function fetchFileDetails(fileIdOrEvent?: string, fromPrefetch = false): Promise<void> {
     const targetFileId = typeof fileIdOrEvent === 'string' ? fileIdOrEvent : fileId;
 
     if (!targetFileId) {
@@ -378,9 +384,22 @@
       fileNotFound = false;
       videoErrorMessage = '';
 
-      const response = await axiosInstance.get(`/files/${targetFileId}`, {
-        params: showOriginal ? { redact: false } : {},
-      });
+      let response: { data: any };
+      if (fromPrefetch && !showOriginal) {
+        const key = cacheKey.fileDetail(targetFileId);
+        response = {
+          data: await apiCache.getOrFetch(
+            key,
+            () => axiosInstance.get(`/files/${targetFileId}`).then((r) => r.data),
+            CacheTTL.FILES
+          ),
+        };
+        apiCache.invalidate(key);
+      } else {
+        response = await axiosInstance.get(`/files/${targetFileId}`, {
+          params: showOriginal ? { redact: false } : {},
+        });
+      }
 
       if (response.data && typeof response.data === 'object') {
         file = response.data;
@@ -404,7 +423,7 @@
 
         // Set up video URL only if file might have media available
         if (file.status !== 'error' && file.status !== 'cancelled') {
-          setupVideoUrl(targetFileId);
+          setupVideoUrl(targetFileId, fromPrefetch);
         }
 
         // Process transcript data from the file response
@@ -836,7 +855,7 @@
    * - Automatic refresh before expiration for long playback
    * - Cryptographically signed by MinIO
    */
-  async function setupVideoUrl(fileId: string) {
+  async function setupVideoUrl(fileId: string, keepCached = false) {
     try {
       // Stop any existing URL refresher
       if (urlRefresher) {
@@ -844,8 +863,10 @@
         urlRefresher = null;
       }
 
-      // Clear cached URL to ensure fresh presigned URL
-      clearMediaUrlCache(fileId);
+      // Clear cached URL to ensure fresh presigned URL, except on the first load, where the
+      // only entry can be the gallery's hover prefetch (seconds old, and getMediaStreamUrl
+      // already refuses one near expiry); clearing it made a second identical request.
+      if (!keepCached) clearMediaUrlCache(fileId);
 
       // Get presigned URL from backend (authenticated, time-limited)
       const url = await getMediaStreamUrl(fileId, 'video');
@@ -2022,7 +2043,7 @@
 
     if (fileId) {
       // Load file details
-      fetchFileDetails().catch(err => {
+      fetchFileDetails(undefined, true).catch(err => {
         console.error('Error loading file details:', err);
       });
 

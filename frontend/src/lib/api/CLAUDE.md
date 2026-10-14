@@ -25,6 +25,8 @@ call these functions, not `axios` directly.
   pre-fill it; view rules live in `$lib/settings/pyannoteCredential.ts`. `pipeline.ts` covers
   `GET /user-settings/pipeline` (#1227), the server-resolved plan behind Settings > Processing pipeline;
   `getPipelineView` rejects a reply without `steps`/`issues` so no consumer has to.
+  `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
+  (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 
 ## Conventions / patterns
 

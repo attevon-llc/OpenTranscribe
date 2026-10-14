@@ -159,6 +159,36 @@ def test_org_redaction_floor_masks_a_word_the_users_own_prefs_leave_off(
     )
 
 
+@pytest.mark.parametrize("path", ["segments", "captions"])
+def test_org_redaction_floor_masks_the_paged_transcript_and_the_caption_track(
+    client, user_token_headers, normal_user, db_session, org_context, path
+):
+    """The same floor on the two other READ surfaces beside the page's first load.
+
+    ``GET /files/{uuid}/segments`` ("load more") called ``_resolve_redaction_for_request``
+    without ``organization_id``, so a page after the first came back unmasked under a
+    floor the first page applied. ``/captions`` is the player track shown over the video.
+    """
+    org = _org(db_session, normal_user)
+    _set_prefs(db_session, normal_user, redaction_enabled="false")
+    _make_org_file(db_session, normal_user, org)
+    media_file = db_session.query(MediaFile).filter(MediaFile.user_id == normal_user.id).one()
+
+    def _resolver(db, organization_id):
+        if organization_id == org.id:
+            return RedactionFloor(forced_categories=frozenset({"custom"}))
+        return None
+
+    set_redaction_floor_resolver(_resolver)
+    org_context(org_id=org.id, org_role="org:member", only_for=normal_user.id)
+
+    response = client.get(f"/api/files/{media_file.uuid}/{path}", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "quarterly numbers" in response.text
+    assert FORCED_WORD not in response.text, f"/{path} ignored the tenant redaction floor"
+
+
 def test_without_org_context_the_same_users_export_is_unmasked(
     client, user_token_headers, normal_user, db_session
 ):

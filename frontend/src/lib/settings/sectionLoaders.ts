@@ -45,10 +45,36 @@ export const sectionLoaders = {
   embeddingMigration: () => import('$components/settings/EmbeddingMigrationSettings.svelte'),
   embeddingConsistency: () => import('$components/settings/EmbeddingConsistencySettings.svelte'),
   dataIntegrity: () => import('$components/settings/DataIntegritySettings.svelte'),
+  dataManagement: () => import('$components/settings/DataManagementSection.svelte'),
   retention: () => import('$components/settings/RetentionSettings.svelte'),
+  cache: () => import('$components/settings/CacheSettings.svelte'),
   backup: () => import('$components/settings/BackupSettings.svelte'),
-  authentication: () => import('$components/settings/AuthenticationSettings.svelte'),
+  // The shell opens on its Local tab; start that chunk with the shell instead of after it mounts,
+  // so the two arrive together rather than one round trip apart.
+  authentication: () => {
+    void authTabLoaders.local().catch(() => {});
+    return import('$components/settings/AuthenticationSettings.svelte');
+  },
   auditLog: () => import('$components/settings/AuditLogViewer.svelte'),
+} satisfies Record<string, ComponentLoader>;
+
+/**
+ * The Authentication tab panels. Each is fetched when its tab opens, so the section no longer
+ * pulls every IdP form (and their shared modules) before showing the first one.
+ */
+export const authTabLoaders = {
+  local: () => import('$components/settings/LocalAuthSettings.svelte'),
+  ldap: () => import('$components/settings/LDAPSettings.svelte'),
+  oidc: () => import('$components/settings/OIDCSettings.svelte'),
+  pki: () => import('$components/settings/PKISettings.svelte'),
+  proxy: () => import('$components/settings/ProxySettings.svelte'),
+  saml: () => import('$components/settings/SAMLSettings.svelte'),
+  mappings: () => import('$components/settings/GroupMappingSettings.svelte'),
+  scim: () => import('$components/settings/SCIMTokenSettings.svelte'),
+  directorySync: () => import('$components/settings/DirectorySyncSettings.svelte'),
+  session: () => import('$components/settings/SessionSettings.svelte'),
+  mail: () => import('$components/settings/AuthMailDesignation.svelte'),
+  audit: () => import('$components/settings/AuthConfigAuditPanel.svelte'),
 } satisfies Record<string, ComponentLoader>;
 
 export type SectionLoaderKey = keyof typeof sectionLoaders;
@@ -75,7 +101,6 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
   'redaction-policy': 'privacyRedaction',
   chat: 'chat',
   'chat-admin': 'chat',
-  'search-indexing': 'searchIndexing',
   groups: 'groups',
   'admin-users': 'userTable',
   quarantine: 'quarantine',
@@ -87,10 +112,13 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
   billing: 'billing',
   usage: 'usage',
   team: 'team',
-  'embedding-migration': 'embeddingMigration',
-  'data-integrity': 'dataIntegrity',
-  retention: 'retention',
-  backup: 'backup',
+  // Data & Storage: the shell is the lead chunk; its first tab loads on arrival.
+  'data-management': 'dataManagement',
+  'data-integrity': 'dataManagement',
+  retention: 'dataManagement',
+  backup: 'dataManagement',
+  'search-indexing': 'dataManagement',
+  'embedding-migration': 'dataManagement',
   authentication: 'authentication',
   'audit-logs': 'auditLog',
 };

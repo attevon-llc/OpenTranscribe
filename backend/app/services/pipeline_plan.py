@@ -85,10 +85,12 @@ ISSUE_MESSAGES: dict[str, str] = {
         "This speaker detection engine ignores the minimum and maximum speaker count."
     ),
     "diarizer_double_billing": (
-        "That provider charges for a full transcription even though only its speakers are used."
+        "That provider bills a full transcription of every recording and receives the audio, "
+        "but only its speakers are used."
     ),
     "diarizer_same_as_transcription": (
-        "This is your transcription provider, so its own speaker detection is used."
+        "This is your transcription provider, so its own speaker detection is used and "
+        "nothing is billed twice."
     ),
     "source_locked": "Your administrator manages speaker detection for this deployment.",
 }

@@ -96,7 +96,7 @@ def test_sidebar_labels_are_resolved_from_the_real_modal() -> None:
         "speaker identification",
         "auto-labeling (tags & collections)",
         "organization context",
-        "speaker embedding system",
+        "data & storage",
         "ai & chat",
     ):
         assert expected in labels, f"{expected!r} missing from {sorted(labels)}"

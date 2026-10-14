@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import {
@@ -109,20 +110,7 @@
   <p class="section-description">{$t('settings.speakerAttributes.description')}</p>
 
   {#if loading}
-    <div class="skeleton-rows">
-      <div class="skeleton-row">
-        <div class="skeleton-text wide"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-      <div class="skeleton-row sub">
-        <div class="skeleton-text"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-      <div class="skeleton-row sub">
-        <div class="skeleton-text wide"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-    </div>
+    <SettingsSkeleton variant="rows" count={3} label={$t('common.loading')} />
   {:else}
     <div class="settings-group">
       <div class="setting-row">
@@ -384,47 +372,11 @@
     border-radius: 6px;
   }
 
-  .skeleton-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
 
-  .skeleton-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem;
-    border-radius: 8px;
-    background: var(--background-color, #2a2a2a);
-    border: 1px solid var(--border-color);
-  }
 
-  .skeleton-row.sub {
-    margin-left: 1.5rem;
-    background: var(--surface-color, #333);
-  }
 
-  .skeleton-text {
-    height: 14px;
-    width: 140px;
-    border-radius: 4px;
-    background: var(--border-color, #444);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-text.wide {
-    width: 200px;
-  }
 
-  .skeleton-toggle {
-    height: 24px;
-    width: 44px;
-    border-radius: 12px;
-    background: var(--border-color, #444);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
   @media (max-width: 768px) {
     .setting-row.sub-setting {

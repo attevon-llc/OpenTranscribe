@@ -1,9 +1,9 @@
 <!--
-  EngineIntro.svelte — what the Speaker Engine controls actually do, and whether the sidecar is up.
+  EngineIntro.svelte — what the Speaker Engine tab is for, and whether the sidecar is up.
 
-  The switch below is easy to misread as an installer. It is a runtime routing choice between two
-  engines the deployment already has, so this says so up front, with a live read-only sidecar chip
-  (from the engine-settings GET) beside it. Nothing here writes anything.
+  One line says what the switch is (a runtime choice between engines the deployment already has,
+  not an installer) beside a live read-only sidecar chip. The longer explanation and the
+  administrator detail sit behind "How it works", closed by default. Nothing here writes anything.
 -->
 <script context="module" lang="ts">
   export type SidecarStatus = 'reachable' | 'unreachable' | 'unknown';
@@ -12,6 +12,7 @@
 <script lang="ts">
   import { t } from '$stores/locale';
   import StatusChip from '$components/settings/StatusChip.svelte';
+  import ExpandableSection from '$components/ui/ExpandableSection.svelte';
 
   /** Absent on a backend older than the field, which reads as "unknown", never as down. */
   export let sidecarStatus: SidecarStatus | undefined = undefined;
@@ -33,10 +34,11 @@
       status={view[status].color}
     />
   </div>
-  <p>{$t('settings.engineSettings.intro.routing')}</p>
-  <p>{$t('settings.engineSettings.intro.override')}</p>
-  <p class="admin-detail">{$t('settings.engineSettings.intro.overrideAdmin')}</p>
-  <p>{$t('settings.engineSettings.intro.requireSidecar')}</p>
+  <p class="summary">{$t('settings.engineSettings.intro.summary')}</p>
+  <ExpandableSection title={$t('settings.engineSettings.intro.howItWorks')}>
+    <p>{$t('settings.engineSettings.intro.details')}</p>
+    <p class="admin-detail">{$t('settings.engineSettings.intro.overrideAdmin')}</p>
+  </ExpandableSection>
 </div>
 
 <style>
@@ -52,6 +54,16 @@
 
   .engine-intro p {
     margin: 0.5rem 0 0;
+  }
+
+  .engine-intro p.summary {
+    margin-top: 0.5rem;
+    color: var(--text-color);
+  }
+
+  .engine-intro :global(.expandable) {
+    margin-top: 0.5rem;
+    border-bottom: none;
   }
 
   .engine-intro p.admin-detail {

@@ -12,12 +12,14 @@
 -->
 <script lang="ts">
   import { t } from '$stores/locale';
-  import SkeletonLoader from '$components/ui/SkeletonLoader.svelte';
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import type { ComponentLoader } from '$lib/settings/sectionLoaders';
 
   export let load: ComponentLoader;
   /** Skeleton rows while the chunk is in flight. */
-  export let lines = 6;
+  export let lines = 3;
+  /** Shape of the skeleton; match what the panel will look like. */
+  export let variant: 'form' | 'rows' | 'chips' | 'dashboard' = 'form';
 
   let loaded: { loader: ComponentLoader; component: any } | null = null;
   let failedLoader: ComponentLoader | null = null;
@@ -61,7 +63,7 @@
     aria-label={$t('settings.modal.sectionLoading')}
     data-testid="settings-section-loading"
   >
-    <SkeletonLoader {lines} height={18} />
+    <SettingsSkeleton {variant} count={lines} />
   </div>
 {/if}
 

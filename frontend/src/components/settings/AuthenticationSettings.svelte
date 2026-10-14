@@ -1,26 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { AuthConfigApi, type AuthMethodTestResponse } from '$lib/api/authConfig';
-  import LDAPSettings from './LDAPSettings.svelte';
-  import OIDCSettings from './OIDCSettings.svelte';
-  import PKISettings from './PKISettings.svelte';
-  import ProxySettings from './ProxySettings.svelte';
-  import SAMLSettings from './SAMLSettings.svelte';
-  import LocalAuthSettings from './LocalAuthSettings.svelte';
-  import SessionSettings from './SessionSettings.svelte';
-  import AuthConfigAuditPanel from './AuthConfigAuditPanel.svelte';
-  import AuthMailDesignation from './AuthMailDesignation.svelte';
-  import GroupMappingSettings from './GroupMappingSettings.svelte';
-  import SCIMTokenSettings from './SCIMTokenSettings.svelte';
-  import DirectorySyncSettings from './DirectorySyncSettings.svelte';
   import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import Tabs from '$components/ui/Tabs.svelte';
   import { firstRunWizardStore } from '$stores/firstRunWizardStore';
+  import LazySection from './LazySection.svelte';
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
+  import { authTabLoaders } from '$lib/settings/sectionLoaders';
 
   let activeTab = 'local';
-  let loading = false;
+  // True until the first read of the configuration finishes. Reloads after a save do not set it
+  // again: blanking the form (and re-fetching what it fetches on mount) for every save is the
+  // slowness this replaced. Starts true so the Local form is never mounted with coded defaults
+  // while the stored values are still on the way.
+  let configsReady = false;
   let configs: Record<string, any> = {};
   let hasUnsavedChanges = false;
   let policyRefresh = 0;
@@ -192,7 +187,6 @@
   }
 
   async function loadConfigs() {
-    loading = true;
     try {
       const allConfigs = await AuthConfigApi.getAllConfigs();
       // Transform each category's array to key-value dictionary
@@ -204,7 +198,7 @@
       console.error('Failed to load auth config:', error);
       toastStore.error($t('settings.authentication.loadError'));
     } finally {
-      loading = false;
+      configsReady = true;
     }
   }
 
@@ -353,82 +347,124 @@
       ariaLabel={$t('settings.authentication.title')}
     />
 
-    {#if loading}
-      <div class="loading">{$t('settings.authentication.loadingConfig')}</div>
-    {:else}
-      <div class="tab-content">
-        {#if activeTab === 'local'}
-          <LocalAuthSettings
-            config={localTabConfig}
-            refreshKey={policyRefresh}
-            on:save={(e) => handleLocalSave(e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'ldap'}
-          <LDAPSettings
-            config={configs.ldap || {}}
-            on:save={(e) => handleSave('ldap', e.detail)}
-            on:test={(e) => handleTestConnection('ldap', e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'oidc'}
-          <OIDCSettings
-            config={configs.oidc || {}}
-            secretIsSet={configs.oidc?.oidc_client_secret_is_set}
-            testResult={oidcTestResult}
-            on:save={(e) => handleSave('oidc', e.detail)}
-            on:test={(e) => handleTestConnection('oidc', e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'pki'}
-          <PKISettings
-            config={configs.pki || {}}
-            on:save={(e) => handleSave('pki', e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'proxy'}
-          <ProxySettings
-            config={configs.proxy || {}}
-            sharedSecretIsSet={configs.proxy?.proxy_shared_secret_is_set}
-            on:save={(e) => handleSave('proxy', e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'saml'}
-          <SAMLSettings
-            config={configs.saml || {}}
-            privateKeyIsSet={configs.saml?.saml_sp_private_key_is_set}
-            on:save={(e) => handleSave('saml', e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'mappings'}
-          <!-- Self-contained: it owns its own load/save against
-               /admin/group-mappings and does not share the auth-config payload. -->
-          <GroupMappingSettings />
-        {:else if activeTab === 'scim'}
-          <!-- Self-contained CRUD over /admin/scim-tokens; not part of the
-               auth-config payload. -->
-          <SCIMTokenSettings />
-        {:else if activeTab === 'directorySync'}
-          <!-- Self-contained: it owns its own load/save against
-               /admin/directory-sync and does not share the auth-config payload. -->
-          <DirectorySyncSettings />
-        {:else if activeTab === 'session'}
-          <SessionSettings
-            config={configs.session || {}}
-            on:save={(e) => handleSave('session', e.detail)}
-            on:change={handleChange}
-          />
-        {:else if activeTab === 'mail'}
-          {#if emailConfigsLoaded}
-            <AuthMailDesignation configs={emailConfigs} />
+    <div class="tab-content">
+      <!-- The panel chunk and the configuration load in parallel; a panel that takes config
+           waits for it behind the skeleton, a self-contained one renders as soon as it lands. -->
+      {#if activeTab === 'local'}
+        <LazySection load={authTabLoaders.local} let:Component>
+          {#if configsReady}
+            <Component
+              config={localTabConfig}
+              refreshKey={policyRefresh}
+              on:save={(e: CustomEvent<any>) => handleLocalSave(e.detail)}
+              on:change={handleChange}
+            />
           {:else}
-            <div class="loading">{$t('settings.authentication.loadingConfig')}</div>
+            <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
           {/if}
-        {:else if activeTab === 'audit'}
-          <AuthConfigAuditPanel />
-        {/if}
-      </div>
-    {/if}
+        </LazySection>
+      {:else if activeTab === 'ldap'}
+        <LazySection load={authTabLoaders.ldap} let:Component>
+          {#if configsReady}
+            <Component
+              config={configs.ldap || {}}
+              on:save={(e: CustomEvent<any>) => handleSave('ldap', e.detail)}
+              on:test={(e: CustomEvent<any>) => handleTestConnection('ldap', e.detail)}
+              on:change={handleChange}
+            />
+          {:else}
+            <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'oidc'}
+        <LazySection load={authTabLoaders.oidc} let:Component>
+          {#if configsReady}
+            <Component
+              config={configs.oidc || {}}
+              secretIsSet={configs.oidc?.oidc_client_secret_is_set}
+              testResult={oidcTestResult}
+              on:save={(e: CustomEvent<any>) => handleSave('oidc', e.detail)}
+              on:test={(e: CustomEvent<any>) => handleTestConnection('oidc', e.detail)}
+              on:change={handleChange}
+            />
+          {:else}
+            <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'pki'}
+        <LazySection load={authTabLoaders.pki} let:Component>
+          {#if configsReady}
+            <Component
+              config={configs.pki || {}}
+              on:save={(e: CustomEvent<any>) => handleSave('pki', e.detail)}
+              on:change={handleChange}
+            />
+          {:else}
+            <SettingsSkeleton variant="form" count={4} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'proxy'}
+        <LazySection load={authTabLoaders.proxy} let:Component>
+          {#if configsReady}
+            <Component
+              config={configs.proxy || {}}
+              sharedSecretIsSet={configs.proxy?.proxy_shared_secret_is_set}
+              on:save={(e: CustomEvent<any>) => handleSave('proxy', e.detail)}
+              on:change={handleChange}
+            />
+          {:else}
+            <SettingsSkeleton variant="form" count={4} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'saml'}
+        <LazySection load={authTabLoaders.saml} let:Component>
+          {#if configsReady}
+            <Component
+              config={configs.saml || {}}
+              privateKeyIsSet={configs.saml?.saml_sp_private_key_is_set}
+              on:save={(e: CustomEvent<any>) => handleSave('saml', e.detail)}
+              on:change={handleChange}
+            />
+          {:else}
+            <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'mappings'}
+        <!-- Self-contained: it owns its own load/save against
+             /admin/group-mappings and does not share the auth-config payload. -->
+        <LazySection load={authTabLoaders.mappings} let:Component><Component /></LazySection>
+      {:else if activeTab === 'scim'}
+        <!-- Self-contained CRUD over /admin/scim-tokens; not part of the
+             auth-config payload. -->
+        <LazySection load={authTabLoaders.scim} let:Component><Component /></LazySection>
+      {:else if activeTab === 'directorySync'}
+        <!-- Self-contained: it owns its own load/save against
+             /admin/directory-sync and does not share the auth-config payload. -->
+        <LazySection load={authTabLoaders.directorySync} let:Component><Component /></LazySection>
+      {:else if activeTab === 'session'}
+        <LazySection load={authTabLoaders.session} let:Component>
+          {#if configsReady}
+            <Component
+              config={configs.session || {}}
+              on:save={(e: CustomEvent<any>) => handleSave('session', e.detail)}
+              on:change={handleChange}
+            />
+          {:else}
+            <SettingsSkeleton variant="form" count={3} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'mail'}
+        <LazySection load={authTabLoaders.mail} let:Component>
+          {#if emailConfigsLoaded}
+            <Component configs={emailConfigs} />
+          {:else}
+            <SettingsSkeleton variant="form" count={2} label={$t('settings.authentication.loadingConfig')} />
+          {/if}
+        </LazySection>
+      {:else if activeTab === 'audit'}
+        <LazySection load={authTabLoaders.audit} let:Component><Component /></LazySection>
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -452,12 +488,6 @@
 
   .rerun-wizard-button {
     margin-left: auto;
-  }
-
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: var(--color-text-secondary);
   }
 
   .tab-content {

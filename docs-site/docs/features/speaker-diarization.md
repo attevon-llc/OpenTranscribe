@@ -19,7 +19,7 @@ Transcription and speaker detection are two separate choices. Which model transc
 | **pyannote.ai cloud service** | The audio is sent to the hosted pyannote.ai service, with the built-in model or a cloud provider. Needs your own pyannote.ai API key, and pyannote.ai bills that key for every file. This is not the PyAnnote engine that can run on this server. |
 | **Off (one speaker for the whole recording)** | No speaker detection. Every segment is assigned to one speaker, and speaker profiles and cross-file matching do not run. |
 
-The fifth choice is **Another provider's speaker detection**: a saved cloud transcription provider used only for its speakers (it needs the capability that lets users save their own providers, and only providers that return speakers are listed). That provider transcribes the whole file again with speaker detection on; OpenTranscribe keeps only its speaker turns and throws its text away. **The provider still bills a full transcription**, and the pipeline summary warns about this. If you pick the same provider and model that already transcribes the file, its own speakers are used and nothing is billed twice.
+The fifth choice is **Another provider's speaker detection**: a saved cloud transcription provider used only for its speakers (it needs the capability that lets users save their own providers, and only providers that return speakers are listed). That provider transcribes the whole file again with speaker detection on; OpenTranscribe keeps only its speaker turns and throws its text away. **The provider still bills a full transcription of every recording and receives the audio**, so the card and the pipeline summary warn about this before you save. If you pick the same provider and model that already transcribes the file, its own speakers are used and nothing is billed twice.
 
 ### Automatic rules
 
@@ -340,7 +340,7 @@ Automatic detection and repair of inconsistent speaker embeddings:
 
 - Identifies speakers with missing or mismatched embeddings across indices
 - GPU-accelerated batch repair re-extracts embeddings from original audio
-- Admin-triggered via Settings → Speaker Embedding System
+- Admin-triggered via Settings → Data & Storage → Speaker Embedding System
 - Progress tracking with WebSocket notifications
 - Distributed locking prevents concurrent repairs
 
@@ -375,7 +375,16 @@ speaker detection, speaker identification, AI features), where each runs (this s
 vendor), whether audio leaves the server, and every problem with a link to the tab that fixes it. The
 Speaker Detection card and the provider list use the same vocabulary: *Speakers included* or *Text only*,
 *Word timing*, *Segment timing* or *No timing* (speakers cannot be added to text with no timestamps), and
-*Speakers via adapter (extra billing)* for a provider used only for its speaker labels.
+*Speakers via adapter (extra billing)* for a provider used only for its speaker labels. Every place that
+picks a transcription model shows the same labels, so you can see what a model returns before you choose it
+(see [What the labels mean](./transcription.md#what-the-model-labels-mean)).
+
+In the Speaker Detection card, **Another provider's speaker detection** lists all your saved providers with
+their labels and says which ones qualify (only models that return speakers do). It also says, before you
+save, what the choice costs: a provider chosen only for its speakers still transcribes every recording in
+full, bills you for that transcription and receives the audio. When the provider you pick is the one that
+already transcribes, the card says its own speakers are used and nothing is billed twice. With **Automatic**
+and a cloud model that returns speakers, the card says nothing extra is billed.
 
 ### Stored setting values
 

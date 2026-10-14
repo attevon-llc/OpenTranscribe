@@ -308,7 +308,16 @@ In addition to local Whisper models, OpenTranscribe supports cloud ASR providers
 - **pyannote.ai cloud service** runs speaker detection in the cloud alongside the transcription, billed to your pyannote.ai key.
 - **Off** assigns every segment to one speaker.
 
-Another saved provider configuration that returns speakers can also be the speaker detector. That provider charges for a full transcription even though only its speakers are used, and the app warns you about it.
+Another saved provider configuration that returns speakers can also be the speaker detector. That provider bills a full transcription of every recording and receives the audio, even though only its speakers are used, and the app warns you about it before you save. If it is the provider that already transcribes, its own speakers are used and nothing is billed twice.
+
+#### What the model labels mean
+
+Every place that picks a transcription model labels it the same way, taken from the same provider catalog the pipeline plans with:
+
+- **Speakers included** (the model labels who spoke, so no separate speaker detection is needed) or **Text only** (speakers come from this server or from another provider, chosen under Speaker Identification).
+- **Word timing**, **Segment timing** or **No timing**. A model with no timing cannot be combined with speaker detection; with segment timing, a speaker change inside one segment is missed when a different detector adds the speakers.
+
+You see these labels in Settings → Transcription → Provider & Model (this server's model, the transcription now in use with a one-line explanation, each saved provider, and the model and provider lists when you add one), in the upload wizard's Options and Review steps, in the reprocess dialog, and in the Speaker Detection card's list of saved providers. Where a plain dropdown cannot show badges, the labels are part of each option's text.
 
 **A model with no timestamps cannot receive speakers from any detector.** `gpt-4o-transcribe` returns text with no times, so there is nothing to line speaker turns up against. With that model, any speaker-detection choice other than Off is refused before the file is queued; pick a model with word or segment timing, or turn speaker detection off. A model with segment timing only (for example `whisper-1`) gets speakers per segment, so a speaker change inside a segment is not detected.
 

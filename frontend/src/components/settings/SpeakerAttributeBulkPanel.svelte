@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import axiosInstance from '$lib/axios';
@@ -177,10 +178,7 @@
     <p class="bulk-description">{$t('settings.speakerAttributes.bulkDescription')}</p>
 
     {#if loadingMigrationStatus}
-      <div class="skeleton-bulk">
-        <div class="skeleton-bar"></div>
-        <div class="skeleton-btn"></div>
-      </div>
+      <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
     {:else if migrationInProgress}
       <div class="progress-section">
         {#if migrationProcessedFiles === 0}
@@ -263,28 +261,8 @@
   {/if}
 
 <style>
-  .skeleton-bulk {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.5rem 0;
-  }
 
-  .skeleton-bar {
-    height: 32px;
-    width: 100%;
-    border-radius: 6px;
-    background: var(--border-color, #444);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-btn {
-    height: 36px;
-    width: 140px;
-    border-radius: 6px;
-    background: var(--border-color, #444);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
   .bulk-section {
     margin-top: 1rem;

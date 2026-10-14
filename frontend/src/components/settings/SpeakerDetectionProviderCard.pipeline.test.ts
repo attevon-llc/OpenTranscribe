@@ -25,16 +25,22 @@ const CHOICES: DiarizerChoice[] = [
   {
     uuid: 'dg',
     name: 'Deepgram work',
+    provider: 'deepgram',
     providerLabel: 'Deepgram',
     modelName: 'nova-3',
     owner: null,
+    returnsSpeakers: true,
+    timing: 'word',
   },
   {
     uuid: 'oa',
     name: 'OpenAI diarize',
+    provider: 'openai',
     providerLabel: 'OpenAI',
     modelName: 'gpt-4o-transcribe-diarize',
     owner: null,
+    returnsSpeakers: true,
+    timing: 'segment',
   },
 ];
 
@@ -155,7 +161,10 @@ describe('another provider as the speaker detector', () => {
     expect(Array.from(picker.options).map((o) => o.value)).toEqual(['dg', 'oa']);
     expect(picker.value).toBe('dg');
     expect(getByTestId('host-uuid').textContent).toBe('dg');
-    expect(text(container)).toContain('settings.speakerIdentification.source.asrConfigNote');
+    // A different vendor than the one that transcribes: the full transcription it bills for is
+    // said before saving, not discovered on the invoice.
+    expect(codes(container)).toContain('diarizer_double_billing');
+    expect(text(container)).toContain('settings.speakerIdentification.source.asrConfigDesc');
     expect(text(where(container))).toBe('settings.pipeline.where.cloud{"vendor":"Deepgram"}');
   });
 
@@ -223,5 +232,122 @@ describe('before the pipeline view has loaded', () => {
     const { container } = render(Host, { props: { pipeline: null } });
     expect(optionValues(container)).toEqual(['provider', 'local', 'pyannote', 'asr_config', 'off']);
     expect(notices(container)).toHaveLength(0);
+  });
+});
+
+const SAVED = [
+  { ...CHOICES[0], transcribing: false },
+  { ...CHOICES[1], transcribing: false },
+  {
+    uuid: 'ng',
+    name: 'OpenAI plain',
+    provider: 'openai',
+    providerLabel: 'OpenAI',
+    modelName: 'gpt-4o-transcribe',
+    owner: null,
+    returnsSpeakers: false,
+    timing: 'none' as const,
+    transcribing: false,
+  },
+  {
+    uuid: 'now',
+    name: 'Gladia now',
+    provider: 'gladia',
+    providerLabel: 'Gladia',
+    modelName: 'solaria-1',
+    owner: null,
+    returnsSpeakers: true,
+    timing: 'word' as const,
+    transcribing: true,
+  },
+];
+
+describe('which saved providers qualify, and what each returns (#1243)', () => {
+  const saved = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll<HTMLElement>('[data-testid="asr-config-saved-row"]'));
+
+  it('lists every saved provider with its speaker and timing flags and marks who qualifies', () => {
+    const { container } = render(Host, {
+      props: {
+        pipeline: twoVendorView(),
+        choices: CHOICES,
+        saved: SAVED,
+        diarizationSource: 'asr_config',
+      },
+    });
+    const rows = saved(container);
+    expect(rows.map((r) => r.dataset.qualifies)).toEqual(['true', 'true', 'false', 'false']);
+    const flags = (row: HTMLElement) => ({
+      speakers: row.querySelector('[data-testid="badge-speakers"]')?.getAttribute('data-value'),
+      timing: row.querySelector('[data-testid="badge-timing"]')?.getAttribute('data-value'),
+    });
+    expect(flags(rows[0])).toEqual({ speakers: 'included', timing: 'word' });
+    expect(flags(rows[1])).toEqual({ speakers: 'included', timing: 'segment' });
+    expect(flags(rows[2])).toEqual({ speakers: 'text-only', timing: 'none' });
+    // The provider that transcribes is Automatic's job, so it is named but not offered.
+    expect(text(rows[3])).toContain('settings.speakerIdentification.source.asrConfigTranscribing');
+    const picker = container.querySelector('#diarization-asr-config') as HTMLSelectElement;
+    expect(Array.from(picker.options).map((o) => o.value)).toEqual(['dg', 'oa']);
+  });
+
+  it('puts the flags in the native option text, which cannot hold pills', () => {
+    const { container } = render(Host, {
+      props: {
+        pipeline: twoVendorView(),
+        choices: CHOICES,
+        saved: SAVED,
+        diarizationSource: 'asr_config',
+      },
+    });
+    const picker = container.querySelector('#diarization-asr-config') as HTMLSelectElement;
+    const first = picker.options[0].textContent;
+    expect(first).toContain('settings.asrProvider.speakersIncluded');
+    expect(first).toContain('settings.asrProvider.timing.word');
+  });
+
+  it('shows the chosen provider as badges under the picker', () => {
+    const { container } = render(Host, {
+      props: {
+        pipeline: twoVendorView(),
+        choices: CHOICES,
+        saved: SAVED,
+        diarizationSource: 'asr_config',
+      },
+    });
+    const flags = container.querySelector('[data-testid="asr-config-flags"]') as HTMLElement;
+    const timing = flags.querySelector('[data-testid="badge-timing"]');
+    expect(timing?.getAttribute('data-value')).toBe('word');
+  });
+
+  it('says nothing is billed twice when the chosen provider already transcribes', () => {
+    // Transcription is Deepgram nova-3 and the chosen saved config is the same provider and model.
+    const view = liteCloudView({ deployment_mode: 'full' });
+    const { container } = render(Host, {
+      props: {
+        pipeline: view,
+        choices: [CHOICES[0]],
+        saved: SAVED,
+        diarizationSource: 'asr_config',
+      },
+    });
+    expect(codes(container)).toContain('diarizer_same_as_transcription');
+    expect(codes(container)).not.toContain('diarizer_double_billing');
+  });
+
+  it('adds a no-extra-cost line for Automatic with a cloud model that returns its own speakers', () => {
+    const cloud = render(Host, {
+      props: { pipeline: liteCloudView(), diarizationSource: 'provider' },
+    });
+    expect(cloud.container.querySelector('[data-testid="detection-billing-note"]')).not.toBeNull();
+    cloud.unmount();
+    const local = render(Host, {
+      props: { pipeline: fullLocalView(), diarizationSource: 'provider' },
+    });
+    expect(local.container.querySelector('[data-testid="detection-billing-note"]')).toBeNull();
+    local.unmount();
+    const other = render(Host, {
+      props: { pipeline: liteCloudView(), diarizationSource: 'pyannote' },
+    });
+    expect(other.container.querySelector('[data-testid="detection-billing-note"]')).toBeNull();
   });
 });

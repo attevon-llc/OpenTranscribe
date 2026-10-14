@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import {
     getTranscriptionSettings,
@@ -14,12 +15,16 @@
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { getPipelineView, type PipelineView } from '$lib/api/pipeline';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
-  import { diarizerChoices, type DiarizerChoice } from '$lib/settings/asrCapabilities';
+  import {
+    diarizerChoices,
+    savedProviderRows,
+    type DiarizerChoice,
+    type SavedProviderRow
+  } from '$lib/settings/asrCapabilities';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { speakerSaveErrorKey } from '$lib/settings/pipelineIssues';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import Spinner from '../ui/Spinner.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import InfoTip from './transcription/InfoTip.svelte';
   import FormActions from './transcription/FormActions.svelte';
@@ -49,6 +54,7 @@
   // the form works without it, so a failed load shows nothing rather than an error.
   let pipeline: PipelineView | null = null;
   let choices: DiarizerChoice[] = [];
+  let saved: SavedProviderRow[] = [];
   $: sourceLocked = !diarizationSourceEnabled || pipeline?.diarization_source_locked === true;
   // The engine ignoring min/max is reported by the plan, not guessed here.
   $: hintsIgnored = pipeline?.issues.some((issue) => issue.code === 'speaker_hints_ignored') ?? false;
@@ -117,19 +123,26 @@
   async function loadChoices() {
     if (!pyannoteKeyEnabled) return;
     try {
-      const [saved, catalog] = await Promise.all([
+      const [settings, catalog] = await Promise.all([
         ASRSettingsApi.getSettings(),
         ASRSettingsApi.getProviders()
       ]);
-      choices = diarizerChoices(
-        saved.configurations,
-        saved.shared_configurations,
+      saved = savedProviderRows(
+        settings.configurations,
+        settings.shared_configurations,
         catalog.providers,
-        saved.active_configuration_uuid ?? null
+        settings.active_configuration_uuid ?? null
+      );
+      choices = diarizerChoices(
+        settings.configurations,
+        settings.shared_configurations,
+        catalog.providers,
+        settings.active_configuration_uuid ?? null
       );
     } catch (err) {
       console.error('Failed to load the saved ASR providers:', err);
       choices = [];
+      saved = [];
     }
   }
 
@@ -226,10 +239,7 @@
 
 <div class="speaker-detection-settings tx-form">
   {#if loading}
-    <div class="loading-state">
-      <Spinner size="large" />
-      <p>{$t('settings.transcription.loading')}</p>
-    </div>
+    <SettingsSkeleton variant="form" count={3} label={$t('settings.transcription.loading')} />
   {:else}
     <div class="settings-form">
       <SpeakerDetectionProviderCard
@@ -237,6 +247,7 @@
         bind:diarizationAsrConfigUuid
         {pipeline}
         {choices}
+        {saved}
         locked={sourceLocked}
         disabled={saving || resetting}
         keyEnabled={pyannoteKeyEnabled}

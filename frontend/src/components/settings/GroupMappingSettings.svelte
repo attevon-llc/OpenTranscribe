@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { GROUP_MAPPING_ROLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
@@ -119,7 +120,7 @@
   </div>
 
   {#if loading}
-    <div class="loading">{$t('common.loading')}</div>
+    <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
   {:else if mappings.length === 0}
     <EmptyState
       title={$t('settings.groupMappings.emptyTitle')}
@@ -285,11 +286,6 @@
     color: #fff;
   }
 
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: var(--color-text-secondary);
-  }
 
   .table-wrap {
     overflow-x: auto;

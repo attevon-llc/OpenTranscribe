@@ -205,3 +205,75 @@ describe('lite deployment', () => {
     expect(container.querySelector('[data-testid="asr-lite-note"]')).toBeNull();
   });
 });
+
+// This server's own model is a catalog entry too (word timing, speakers from its detector).
+const LOCAL = {
+  id: 'local',
+  provider: 'local',
+  display_name: 'Local (GPU)',
+  name: 'Local (GPU)',
+  supports_diarization: true,
+  speaker_count_hints: ['min', 'max', 'num'],
+  timestamp_granularity: 'word',
+  status: 'tested',
+  models: [{ id: 'large-v3-turbo', name: 'large-v3-turbo', display_name: 'Large V3 Turbo' }],
+};
+
+describe('the transcription in use and this server model share the one badge vocabulary (#1243)', () => {
+  it('draws the local model flags from the catalog, not from the model info', async () => {
+    asrApi.getProviders.mockResolvedValue({ providers: [...PROVIDERS, LOCAL] });
+    // The model info says "no speakers" on purpose: the catalog is the only source.
+    asrApi.getActiveLocalModel.mockResolvedValue({
+      active_model: 'large-v3-turbo',
+      source: 'environment',
+      available_models: [],
+      model_info: {
+        display_name: 'Large v3 Turbo',
+        description: 'd',
+        supports_diarization: false,
+        supports_translation: false,
+        language_support: 'english_optimized',
+      },
+    });
+    const { container } = await renderLoaded();
+    const local = container.querySelector('.local-model-section') as HTMLElement;
+    expect(speakers(local)).toBe('included');
+    expect(timing(local)).toBe('word');
+  });
+
+  it('says what the active saved provider means for speaker detection', async () => {
+    const { container } = await renderLoaded();
+    const inUse = container.querySelector('[data-testid="in-use-flags"]') as HTMLElement;
+    expect(speakers(inUse)).toBe('included');
+    expect(timing(inUse)).toBe('word');
+    const notes = Array.from(inUse.querySelectorAll('[data-testid="capability-note"]')).map((n) =>
+      n.getAttribute('data-key')
+    );
+    expect(notes).toEqual(['settings.asrProvider.implication.speakersIncluded']);
+  });
+
+  it('warns on the status line that a text-only active provider needs another detector', async () => {
+    asrApi.getSettings.mockResolvedValue({
+      configurations: CONFIGS,
+      shared_configurations: [],
+      active_configuration_uuid: 'w1',
+      active_configuration_id: 'w1',
+      total: CONFIGS.length,
+    });
+    const { container } = await renderLoaded();
+    const inUse = container.querySelector('[data-testid="in-use-flags"]') as HTMLElement;
+    expect(speakers(inUse)).toBe('text-only');
+    const notes = Array.from(inUse.querySelectorAll('[data-testid="capability-note"]')).map((n) =>
+      n.getAttribute('data-key')
+    );
+    expect(notes).toEqual([
+      'settings.asrProvider.implication.textOnly',
+      'settings.pipeline.issue.segment_timing_only',
+    ]);
+  });
+
+  it('offers a key to the pills', async () => {
+    const { container } = await renderLoaded();
+    expect(container.querySelector('[data-testid="capability-legend"]')).not.toBeNull();
+  });
+});

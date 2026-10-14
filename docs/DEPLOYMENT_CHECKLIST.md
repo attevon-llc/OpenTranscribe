@@ -29,7 +29,7 @@ Use this checklist when deploying or upgrading to v0.4.0. The PyAnnote-specific 
 - [ ] If upgrading from v0.3.x: confirm `speakers` alias has been swapped to point to `speakers_v4` index
 
 ### File Retention
-- [ ] Configure retention policy via Admin UI: **Settings → File Retention** (GDPR compliance)
+- [ ] Configure retention policy via Admin UI: **Settings → Data & Storage → File Retention** (GDPR compliance)
 
 ### Search Configuration
 - [ ] `SEARCH_MAX_OVERFETCH` (default: 1000) — increase if hybrid search returns too few results

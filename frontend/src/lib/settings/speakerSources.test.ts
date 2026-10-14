@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import en from '$lib/i18n/locales/en.json';
 import {
+  billingNoteKey,
   selectionNotices,
   selectionWhere,
   speakerSourceOptions,
@@ -70,6 +71,8 @@ describe('transcriptionFacts', () => {
     expect(transcriptionFacts(twoVendorView())).toEqual({
       returnsSpeakers: false,
       timing: 'segment',
+      provider: 'openai',
+      model: 'whisper-1',
     });
   });
 
@@ -137,7 +140,16 @@ describe('selectionNotices', () => {
 });
 
 describe('selectionWhere', () => {
-  const choice = { uuid: 'u', name: 'n', providerLabel: 'Deepgram', modelName: 'm', owner: null };
+  const choice = {
+    uuid: 'u',
+    name: 'n',
+    provider: 'deepgram',
+    providerLabel: 'Deepgram',
+    modelName: 'm',
+    owner: null,
+    returnsSpeakers: true,
+    timing: 'word' as const,
+  };
 
   it('says this server for the local source and nothing for off', () => {
     expect(selectionWhere('local', fullLocalView(), undefined)).toEqual({
@@ -178,5 +190,59 @@ describe('selectionWhere', () => {
     const lite = twoVendorView();
     lite.deployment_mode = 'lite';
     expect(selectionWhere('provider', lite, undefined)).toBeNull();
+  });
+});
+
+describe('another provider as the speaker detector, before saving (#1243)', () => {
+  const facts = {
+    returnsSpeakers: true,
+    timing: 'word' as const,
+    provider: 'deepgram',
+    model: 'nova-3',
+  };
+  const other = { provider: 'assemblyai', modelName: 'universal' };
+
+  it('warns that a different provider bills a full transcription', () => {
+    expect(selectionNotices('asr_config', facts, 'full', other)).toEqual([
+      { code: 'diarizer_double_billing', severity: 'warning' },
+    ]);
+  });
+
+  it('says its own detection is used when the saved config is the transcribing provider and model', () => {
+    expect(
+      selectionNotices('asr_config', facts, 'full', { provider: 'deepgram', modelName: 'nova-3' })
+    ).toEqual([{ code: 'diarizer_same_as_transcription', severity: 'info' }]);
+  });
+
+  it('treats the same vendor with another model as another transcription', () => {
+    expect(
+      selectionNotices('asr_config', facts, 'full', {
+        provider: 'deepgram',
+        modelName: 'nova-2',
+      })[0].code
+    ).toBe('diarizer_double_billing');
+  });
+
+  it('adds nothing before a provider is chosen, and nothing for other sources', () => {
+    expect(selectionNotices('asr_config', facts, 'full')).toEqual([]);
+    expect(selectionNotices('pyannote', facts, 'full', other)).toEqual([]);
+  });
+
+  it('still refuses first when the transcription has no timing', () => {
+    expect(
+      selectionNotices('asr_config', { ...facts, timing: 'none' }, 'full', other).map((n) => n.code)
+    ).toEqual(['asr_no_timing_for_speakers']);
+  });
+});
+
+describe('billingNoteKey', () => {
+  it('says nothing extra is billed only for Automatic with cloud speakers included', () => {
+    expect(billingNoteKey('provider', liteCloudView())).toBe(
+      'settings.speakerIdentification.billing.included'
+    );
+    expect(billingNoteKey('provider', fullLocalView())).toBeNull();
+    expect(billingNoteKey('provider', twoVendorView())).toBeNull();
+    expect(billingNoteKey('pyannote', liteCloudView())).toBeNull();
+    expect(billingNoteKey('provider', null)).toBeNull();
   });
 });

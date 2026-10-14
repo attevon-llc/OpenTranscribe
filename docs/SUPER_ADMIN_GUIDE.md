@@ -1297,7 +1297,7 @@ When employee leaves organization:
 
 Configure automatic deletion of old transcriptions to manage storage:
 
-1. Navigate to Settings → Admin → File Retention
+1. Navigate to Settings → Data & Storage → File Retention
 2. Set retention policies (e.g., delete files older than 90 days)
 3. Policies apply per-user or globally
 4. Users receive warnings before their files are deleted

@@ -205,6 +205,6 @@ After upgrading to v0.4.0, verify the following additional items:
 - [ ] Cloud ASR provider connection test passes (Admin UI → Settings → Transcription → Provider & Model)
 
 ### New Features
-- [ ] File retention policy configurable (Admin UI → Settings → File Retention)
+- [ ] File retention policy configurable (Admin UI → Settings → Data & Storage → File Retention)
 - [ ] Selective reprocessing available on file detail page (stage picker)
 - [ ] User groups and collection sharing functional (if enabled)

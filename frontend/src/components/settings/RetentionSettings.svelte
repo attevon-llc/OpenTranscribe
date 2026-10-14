@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
-  import CacheSettings from './CacheSettings.svelte';
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -255,11 +255,6 @@
 
   // ---- Reactive change detection -------------------------------------------
 
-  // The nested cache panel has no section id of its own, so its unsaved state is
-  // folded in here — otherwise closing the modal would skip the confirmation
-  // prompt for a pending cache change.
-  let cacheDirty = false;
-
   $: {
     retentionEnabled;
     retentionDays;
@@ -272,7 +267,7 @@
       runTime !== origRunTime ||
       timezone !== origTimezone ||
       deleteErrorFiles !== origDeleteError;
-    settingsModalStore.setDirty('retention', hasChanges || cacheDirty);
+    settingsModalStore.setDirty('retention', hasChanges);
   }
 
   $: saveDisabled = saving || !hasChanges || (retentionEnabled && showEnableConfirm);
@@ -285,9 +280,7 @@
   <p class="section-desc warning-banner">{$t('settings.retention.warningBanner')}</p>
 
   {#if loading}
-    <div class="loading-state">
-      <Spinner size="small" />
-    </div>
+    <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
   {:else}
     <!-- Enable toggle -->
     <div class="field-row">
@@ -504,22 +497,12 @@
         {saving ? $t('settings.retention.savingButton') : $t('settings.retention.saveButton')}
       </button>
     </div>
-
-    <!-- Derived media cache (regenerable duplicates of originals) -->
-    <hr class="section-divider" />
-    <CacheSettings on:dirty={(e) => (cacheDirty = e.detail)} />
   {/if}
 </div>
 
 <style>
   .retention-settings {
     padding: 0.5rem 0;
-  }
-
-  .section-divider {
-    border: none;
-    border-top: 1px solid var(--border-color);
-    margin: 1.5rem 0 0.5rem 0;
   }
 
   .title-row {
@@ -541,11 +524,6 @@
     margin: 0.25rem 0 1rem 0;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: 1rem;
-  }
 
   .field-row {
     margin-bottom: 0.75rem;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '../../lib/api/prompts';
   import BaseModal from '../ui/BaseModal.svelte';
@@ -451,7 +452,7 @@
 
 <div class="prompt-settings">
   {#if loading}
-    <div class="loading">{$t('prompts.loading')}</div>
+    <SettingsSkeleton variant="form" count={3} label={$t('prompts.loading')} />
   {:else}
 
     <!-- System Prompts -->
@@ -1042,11 +1043,6 @@
   }
 
 
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-light);
-  }
 
   .section-header {
     display: flex;

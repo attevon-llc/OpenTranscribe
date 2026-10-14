@@ -100,20 +100,25 @@ describe('EngineSettings — acoustic re-check scope', () => {
     vi.clearAllMocks();
   });
 
-  it('says on each of the three re-check controls that it applies to local GPU transcription only', async () => {
+  it('states the local-GPU scope once, on the re-check toggle, and keeps the tuning behind Advanced', async () => {
     get.mockResolvedValue({ data: makeSettings() });
     const { container } = render(EngineSettings);
     await screen.findByLabelText('settings.engineSettings.diarizerBackend');
 
     const notes = Array.from(container.querySelectorAll('[data-testid="recheck-scope"]'));
-    expect(notes).toHaveLength(3);
-    for (const note of notes) {
-      expect(note.textContent?.trim()).toBe('settings.engineSettings.boundaryAcousticScope');
-    }
-    // each sits in the same form row as the control it qualifies
-    const rows = notes.map((n) => n.closest('.form-row'));
-    expect(rows[0]?.querySelector('#boundary-acoustic-recheck-input')).not.toBeNull();
-    expect(rows[1]?.querySelector('#boundary-acoustic-cosine-margin')).not.toBeNull();
-    expect(rows[2]?.querySelector('#boundary-acoustic-max-word-dur')).not.toBeNull();
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent?.trim()).toBe('settings.engineSettings.boundaryAcousticScope');
+    expect(
+      notes[0].closest('.form-row')?.querySelector('#boundary-acoustic-recheck-input')
+    ).not.toBeNull();
+
+    // The two thresholds only exist once Advanced is opened, and each is one control with a one-line hint.
+    expect(container.querySelector('#boundary-acoustic-cosine-margin')).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'settings.engineSettings.advancedToggle' })
+    );
+    expect(container.querySelector('#boundary-acoustic-cosine-margin')).not.toBeNull();
+    expect(container.querySelector('#boundary-acoustic-max-word-dur')).not.toBeNull();
+    expect(container.querySelectorAll('[data-testid="recheck-scope"]')).toHaveLength(1);
   });
 });

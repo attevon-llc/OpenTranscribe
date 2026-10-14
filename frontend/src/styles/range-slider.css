@@ -7,11 +7,14 @@
  * can only be reached with vendor pseudo-element selectors, see VideoPlayer.svelte
  * and PlyrMiniPlayer.svelte) read the same values instead of repeating them.
  *
- * The standard slider is deliberately the browser's native one tinted with
- * `accent-color`: the filled portion, thumb, keyboard behaviour and RTL direction
- * all come from the platform, so there are no -webkit/-moz thumb rules to keep in
- * sync here. A structural test (components/ui/rangeSliderStructure.test.ts) fails if
- * such rules reappear anywhere other than this file and the two player components.
+ * The standard slider is the browser's native <input type="range"> (keyboard behaviour
+ * and RTL direction stay the platform's) with a drawn track. The native accent-color
+ * fill stops at the thumb centre, which left a grey cap past the thumb at the maximum,
+ * so the component publishes the position as `--range-fill` (0..1) and the track
+ * paints to the thumb centre from it: full at the maximum, empty at the minimum.
+ * `--range-dir` flips the gradient in RTL, where the native slider runs right to left.
+ * A structural test (components/ui/rangeSliderStructure.test.ts) fails if thumb rules
+ * appear anywhere other than this file and the two player components.
  */
 :root {
   --slider-accent: var(--primary-color);
@@ -33,8 +36,67 @@
 }
 
 .range-input {
+  --range-dir: to right;
+  --range-fill: 0;
   width: 100%;
+  height: var(--slider-thumb-size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
   accent-color: var(--slider-accent);
+}
+
+[dir='rtl'] .range-input,
+.range-input[dir='rtl'] {
+  --range-dir: to left;
+}
+
+.range-input::-webkit-slider-runnable-track {
+  height: var(--slider-track-height);
+  border-radius: var(--slider-track-radius);
+  background: linear-gradient(
+    var(--range-dir),
+    var(--slider-accent)
+      calc(var(--slider-thumb-size) / 2 + var(--range-fill) * (100% - var(--slider-thumb-size))),
+    var(--slider-track) 0
+  );
+}
+
+.range-input::-moz-range-track {
+  height: var(--slider-track-height);
+  border-radius: var(--slider-track-radius);
+  background: linear-gradient(
+    var(--range-dir),
+    var(--slider-accent)
+      calc(var(--slider-thumb-size) / 2 + var(--range-fill) * (100% - var(--slider-thumb-size))),
+    var(--slider-track) 0
+  );
+}
+
+.range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  margin-top: calc((var(--slider-track-height) - var(--slider-thumb-size)) / 2);
+  border: var(--slider-thumb-border);
+  border-radius: 50%;
+  background: var(--slider-accent);
+}
+
+.range-input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  border: var(--slider-thumb-border);
+  border-radius: 50%;
+  background: var(--slider-accent);
 }
 
 .range-input:focus-visible {

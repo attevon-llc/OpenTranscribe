@@ -127,12 +127,15 @@ You cannot change your own role or delete your own account here; your row shows 
 
 Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
 
+The tab opens with the sidecar status and one line saying what the switch is; **How it works** expands the longer explanation. A badge and a **Reset** button appear beside a setting only when its value is overridden (in the database or by an environment variable); a value left at the server default shows neither.
+
 ### Diarization Boundary Correction
 
 - **Boundary smoothing** (default **on**): collapses 1--3 word "wrong-speaker islands" at speaker turn boundaries (pure-CPU, runs at finalize)
 - **Acoustic backchannel re-check** (default **off**, experimental, GPU): re-embeds short disputed/overlap words and reassigns them by voiceprint cosine
-  - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
-  - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
+  - Under **Advanced re-check tuning** (closed by default):
+    - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
+    - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
 
 ### Speaker separation engine
 
@@ -352,7 +355,7 @@ Export filtered logs in **CSV** or **JSON** format using the export buttons. The
 
 ## Search Settings
 
-The **Search & Indexing** section manages OpenSearch neural search and the document index.
+The **Search & Indexing** tab of **Settings → Data & Storage** manages OpenSearch neural search and the document index.
 
 ### Status Dashboard
 
@@ -416,7 +419,7 @@ Re-indexing progress is tracked in real time via WebSocket with a progress bar, 
 
 ## Data Integrity
 
-The **Data Integrity** section verifies consistency between the PostgreSQL database and OpenSearch indices.
+The **Data Integrity** tab of **Settings → Data & Storage** verifies consistency between the PostgreSQL database and OpenSearch indices.
 
 ### Index Overview
 
@@ -461,7 +464,7 @@ before the delete, and a sweep whose PostgreSQL side is empty is refused even wi
 
 ### Orphaned data panel and storage sweep
 
-The top of the Data Integrity section shows an **Orphaned data** panel: a read-only scan of
+The top of the Data Integrity tab shows an **Orphaned data** panel: a read-only scan of
 what has been left behind for files that no longer exist, for both the **search index**
 (orphaned documents per index) and **stored media files** (files, objects and the space they
 take, with the first few file IDs). **Scan again** refreshes it.
@@ -501,7 +504,7 @@ them from backup if a sweep removed something it should not have.
 
 ## Embedding Consistency
 
-The **Embedding Consistency** section ensures all speakers in the PostgreSQL database have corresponding embeddings in the OpenSearch speaker indices.
+The **Speaker Embedding System** tab of **Settings → Data & Storage** shows **Embedding Consistency** first. It ensures all speakers in the PostgreSQL database have corresponding embeddings in the OpenSearch speaker indices.
 
 ### Consistency Counts
 
@@ -519,7 +522,7 @@ Click **Repair** to re-extract missing embeddings. The system processes each fil
 
 ## Embedding Migration (v3 to v4)
 
-The **Embedding Migration** section manages the upgrade from v3 speaker embeddings (512-dim pyannote) to v4 (256-dim WeSpeaker).
+Below it, **Embedding Migration** manages the upgrade from v3 speaker embeddings (512-dim pyannote) to v4 (256-dim WeSpeaker).
 
 ### Migration Benefits
 
@@ -566,7 +569,7 @@ Finalization performs an atomic alias swap. Once finalized, the system uses v4 e
 
 ## File Retention / Auto-Deletion
 
-The **Retention** section configures automatic deletion of old transcription files.
+The **File Retention** tab of **Settings → Data & Storage** configures automatic deletion of old transcription files.
 
 ### Configuration Options
 

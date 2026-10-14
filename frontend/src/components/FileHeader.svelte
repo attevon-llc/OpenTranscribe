@@ -628,22 +628,9 @@
 
   .title-input {
     flex: 1;
-    padding: 8px 12px;
     margin: 0;
     font-size: 28px;
     font-weight: var(--font-weight-semibold);
-    line-height: 1.2;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-primary);
-    transition: border-color 0.2s ease;
-    font-family: inherit;
-  }
-
-  .title-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .title-input:disabled {

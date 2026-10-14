@@ -100,16 +100,6 @@
   }
   select {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.875rem;
-  }
-  select:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
   .hint {
     margin: 0.35rem 0 0 0;

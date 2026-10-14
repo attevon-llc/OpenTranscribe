@@ -1289,10 +1289,6 @@
   .model-select-group .form-select {
     width: 100%;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color, var(--card-bg));
-    color: var(--text-color);
     font-size: 0.8125rem;
     height: 36px;
   }

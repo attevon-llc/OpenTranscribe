@@ -38,34 +38,17 @@
 <style>
   .permission-select {
     padding: 0.35rem 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-bg, var(--background-color));
-    color: var(--text-color);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: border-color 0.2s ease;
     min-width: 90px;
-    appearance: none;
-    -webkit-appearance: none;
   }
 
   .permission-select:hover:not(:disabled) {
     border-color: var(--primary-color);
   }
 
-  .permission-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
-  }
-
   .permission-select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  :global([data-theme='dark']) .permission-select {
-    background-color: var(--input-background);
   }
 </style>

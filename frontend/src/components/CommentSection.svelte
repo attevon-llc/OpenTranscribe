@@ -707,23 +707,8 @@
   textarea {
     width: 100%;
     box-sizing: border-box;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
-    border-radius: 8px;
     resize: vertical;
     min-height: 70px;
-    font-family: inherit;
-    font-size: 0.9rem;
-    line-height: 1.5;
-    background-color: var(--input-background, rgba(255, 255, 255, 0.05));
-    color: var(--text-color);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  }
-
-  textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
 
 

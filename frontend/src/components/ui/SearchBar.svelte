@@ -254,26 +254,26 @@
     gap: 6px;
     width: 100%;
     padding: 0 8px;
-    background: var(--input-background, var(--surface-color));
-    border: 1px solid var(--input-border, var(--border-color));
-    border-radius: 6px;
+    background: var(--field-bg);
+    border: 1px solid var(--field-border);
+    border-radius: var(--field-radius);
     transition:
       border-color 0.15s ease,
       box-shadow 0.15s ease;
   }
 
   .search-bar-md {
-    height: 40px;
+    height: 2.375rem;
   }
 
   .search-bar-sm {
     height: 32px;
   }
 
-  /* Google-style: soft elevation on focus, not a hard colored ring. */
+  /* Same focus treatment as every other field (styles/form-elements.css). */
   .search-bar:focus-within {
-    border-color: var(--border-color);
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+    border-color: var(--primary-color);
+    box-shadow: var(--field-focus-ring);
   }
 
   /* macOS/iOS Settings search: inset, softly filled, no outline until focused. The fill is a tint of

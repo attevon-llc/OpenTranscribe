@@ -661,18 +661,7 @@
   .form-input,
   .form-select {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--input-border);
-    border-radius: 0.375rem;
-    background: var(--input-background);
-    color: var(--text-color);
     font-size: 0.8rem;
-  }
-
-  .form-input:focus,
-  .form-select:focus {
-    outline: none;
-    border-color: var(--primary-color, #3b82f6);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
   }
 
   .toggle-row-inline {

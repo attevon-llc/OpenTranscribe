@@ -198,17 +198,8 @@
   .typed-date-input {
     width: 100%;
     padding: 0.4rem 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--background-color);
-    color: var(--text-color);
     font-size: 0.75rem;
     box-sizing: border-box;
-  }
-
-  .typed-date-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   /* Chromium/WebKit's native calendar-picker-indicator ignores `color`, so it

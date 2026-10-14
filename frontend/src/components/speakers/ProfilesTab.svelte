@@ -344,14 +344,8 @@
     flex: 1;
     min-width: 0;
     padding: 4px 8px;
-    border: 2px solid var(--primary-color, #3b82f6);
-    border-radius: 6px;
-    background: var(--input-background, #fff);
-    color: var(--text-color, #111827);
     font-size: 15px;
     font-weight: 600;
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
     box-sizing: border-box;
   }
 

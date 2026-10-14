@@ -160,25 +160,11 @@
 
   .compact-filter-select {
     padding: 0.375rem 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.8125rem;
     cursor: pointer;
     width: auto;
     min-width: 0;
     height: 30px;
-    transition: border-color 0.15s ease;
-  }
-
-  .compact-filter-select:hover {
-    border-color: var(--primary-color);
-  }
-
-  .compact-filter-select:focus {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
   }
 
   /* Sizing only — the control's appearance is `ui/DateRangePicker`'s, which is

@@ -372,10 +372,6 @@
   .form-select {
     width: 100%;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color, var(--card-bg));
-    color: var(--text-color);
     font-size: 0.8125rem;
     height: 36px;
     cursor: pointer;
@@ -389,18 +385,8 @@
   .form-input {
     width: 100%;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color, var(--card-bg));
-    color: var(--text-color);
     font-size: 0.8125rem;
     box-sizing: border-box;
-  }
-
-  .form-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.15);
   }
 
   .form-input:disabled {

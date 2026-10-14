@@ -649,18 +649,8 @@
     /* The app's input tokens, not --surface-color: the modal body is already
        surface-coloured, so a surface-coloured input read as a grey smear
        rather than a field. Matches form-elements.css and CollectionsPanel. */
-    background-color: var(--input-background);
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    color: var(--text-color);
     font-size: 0.875rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
-  }
-
-  .create-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   /* The controls beside the inputs came in at three different heights and three
@@ -669,8 +659,6 @@
      the input's metrics. */
   .sort-select {
     height: 37.4px;
-    border-radius: 6px;
-    font-size: 0.875rem;
   }
 
 
@@ -709,11 +697,6 @@
     transform: translateY(-50%);
     color: var(--text-secondary);
     pointer-events: none;
-  }
-
-  .search-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   .search-input::placeholder {

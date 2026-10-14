@@ -511,24 +511,12 @@
 
   .form-input, .form-select {
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--input-background);
-    color: var(--text-color);
     font-size: 0.8125rem;
-    outline: none;
-    transition: border-color 0.15s;
   }
 
   .form-select {
-    appearance: none;
-    -webkit-appearance: none;
     padding-right: 2.5rem;
     cursor: pointer;
-  }
-
-  .form-input:focus, .form-select:focus {
-    border-color: var(--primary-color);
   }
 
   .input-with-toggle {

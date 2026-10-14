@@ -252,13 +252,6 @@
 
   textarea {
     width: 100%;
-    padding: 0.5rem 0.7rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-family: inherit;
-    font-size: 0.88rem;
     resize: vertical;
   }
 

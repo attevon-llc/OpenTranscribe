@@ -1467,12 +1467,7 @@
 
   .form-control {
     padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
     font-size: 0.8125rem;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    transition: border-color 0.2s ease;
   }
 
   .form-control.textarea {
@@ -1480,12 +1475,6 @@
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.8rem;
     line-height: 1.5;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
 
   .form-control:disabled {

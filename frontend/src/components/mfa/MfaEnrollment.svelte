@@ -324,20 +324,10 @@
   }
 
   .code-input {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-family: monospace;
     font-size: 1.25rem;
     letter-spacing: 0.25em;
     text-align: center;
-  }
-
-  .code-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .codes-warning {

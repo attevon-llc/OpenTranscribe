@@ -1,7 +1,7 @@
 /**
  * The Quarantine dialog's legal-hold checkbox rendered its text as "a weird narrow column"
- * (issue #1243, item 15): the global `input { width: 100%; padding: 8px 12px }` in
- * styles/form-elements.css also matches a checkbox, so inside the flex row the box claimed
+ * (issue #1243, item 15): a global `input { width: 100%; padding: 8px 12px }` in
+ * styles/form-elements.css matched a checkbox (the rule is now scoped; #1244 item 5), so inside the flex row the box claimed
  * 105-168px and squeezed the label text. jsdom cannot cascade Svelte's scoped CSS, so this
  * reads the style source (as VirtualListHeaderStyle.test.ts does) and pins the rules that
  * override it. The measured proof, in a real browser, was the checkbox at 16px and the text
@@ -22,17 +22,22 @@ function ruleBody(selector: string): string | null {
 }
 
 describe('quarantine dialog legal-hold checkbox row', () => {
-  it('control: the global input rule really does stretch every input to full width', () => {
-    // If this stops being true the overrides below are dead weight and should go.
-    expect(globalForm).toMatch(/\ninput,\s*\ntextarea\s*\{[^}]*width:\s*100%/);
+  it('control: the global field rule is scoped so it cannot stretch a checkbox', () => {
+    // The root cause: a bare `input { width: 100% }`. The shared field rule must exclude
+    // checkboxes (and radios, ranges, ...) rather than each row overriding it.
+    const start = globalForm.indexOf(':where(\n    input:not(');
+    expect(start).toBeGreaterThan(-1);
+    const selector = globalForm.slice(start, globalForm.indexOf('{', start));
+    expect(selector).toContain("[type='checkbox']");
+    expect(selector).toContain("[type='radio']");
+    expect(globalForm).not.toMatch(/\ninput,\s*\ntextarea\s*\{/);
   });
 
-  it('pins the checkbox to its own size so it cannot claim the row', () => {
+  it('keeps the checkbox from shrinking or growing inside the flex row', () => {
     const body = ruleBody('.legal-hold-field input');
     expect(body).not.toBeNull();
-    expect(body).toMatch(/width:\s*1rem/);
     expect(body).toMatch(/flex:\s*0\s+0\s+auto/);
-    expect(body).toMatch(/padding:\s*0\b/);
+    expect(body).not.toMatch(/width:/);
   });
 
   it('lets the label text take the remaining width and wrap', () => {

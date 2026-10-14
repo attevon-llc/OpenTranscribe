@@ -269,16 +269,7 @@
   .edit-input {
     width: 100%;
     padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
     font-size: 13px;
-    background: var(--surface-color);
-    color: var(--text-primary);
-  }
-
-  .edit-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .edit-actions {

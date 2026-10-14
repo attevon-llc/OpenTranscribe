@@ -313,22 +313,12 @@
     width: 100%;
     min-width: 0;
     padding: 8px 32px 8px 12px;
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    background: var(--input-background);
-    color: var(--text-color);
     font-size: 14px;
     box-sizing: border-box;
   }
 
   .search-input::placeholder {
     color: var(--text-secondary);
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--input-focus-border);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
   }
 
   .btn-recluster {

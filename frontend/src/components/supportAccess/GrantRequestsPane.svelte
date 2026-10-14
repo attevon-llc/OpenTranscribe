@@ -276,15 +276,7 @@
   }
   select {
     padding: 0.3rem 0.5rem;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
     font-size: 0.8125rem;
-  }
-  select:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
   .state {
     margin: 1rem 0;

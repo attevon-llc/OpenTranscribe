@@ -60,18 +60,8 @@
   .model-select {
     width: 100%;
     padding: 0.4375rem 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--input-bg, var(--surface-color));
-    color: var(--text-primary);
     font-size: 0.875rem;
     cursor: pointer;
-  }
-
-  .model-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
 
   .model-flags {

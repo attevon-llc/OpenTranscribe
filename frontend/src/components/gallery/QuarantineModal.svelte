@@ -180,11 +180,6 @@
     resize: vertical;
     min-height: 80px;
     padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--input-bg, var(--bg-color));
-    color: var(--text-color);
-    font-family: inherit;
     font-size: 0.8125rem;
     font-weight: normal;
   }
@@ -204,14 +199,10 @@
     color: var(--text-secondary, var(--text-color));
   }
 
-  /* The global `input { width: 100%; padding: 8px 12px }` (styles/form-elements.css) also
-     matches a checkbox: in this flex row it claimed up to 100% of the line, so the box
-     was 105-168px wide and its text was squeezed into the leftover narrow column. */
+  /* styles/form-elements.css no longer styles checkboxes, so the box keeps its native
+     size; it only needs to refuse to shrink or grow inside the flex row. */
   .legal-hold-field input {
     flex: 0 0 auto;
-    width: 1rem;
-    height: 1rem;
-    padding: 0;
     margin: 0.15rem 0 0;
   }
 

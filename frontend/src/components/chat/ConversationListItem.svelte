@@ -292,16 +292,7 @@
   .rename-input {
     width: 100%;
     padding: 0.4rem 0.5rem;
-    border: 1px solid var(--primary-color);
-    border-radius: 6px;
-    background-color: var(--card-background);
-    color: var(--text-color);
     font-size: 0.85rem;
-  }
-
-  .rename-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   .confirm-row {

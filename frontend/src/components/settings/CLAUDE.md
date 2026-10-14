@@ -30,6 +30,11 @@ AdminTaskHealthPanel).
   routing to one panel at a time. Owns `activeSection` (from `settingsModalStore`) and shared
   modals (ConfirmationModal, ProcessingDetailsModal).
 - `UserProfileSettings.svelte` — account/profile section.
+- `FileStatusSettings.svelte` — the condensed File Status (System group, every user): status counts,
+  files needing attention and the last 24 h of uploads from `GET /my-files/status` (same `apiCache`
+  key as the full page), plus an "Open full screen" **anchor** to `/file-status` (an `<a>`, so it
+  middle-clicks and the modal closes itself on the route change). The task grid, filters and detail
+  modal stay on the full page (`UserFileStatus` + `fileStatus/`); never grow a second copy here.
 - `SystemStatisticsPanel.svelte`, `AdminTaskHealthPanel.svelte` — admin dashboards (export
   module-context interfaces consumed by the shell).
 - `*Modal.svelte` (ASRConfigModal, LLMConfigModal) — nested editors opened from a panel.

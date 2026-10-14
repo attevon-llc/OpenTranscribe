@@ -22,7 +22,10 @@ file. They render the task/processing-status dashboard (filters, task grid, deta
 
 ## How it connects
 
-- Parent/coordinator: `$components/UserFileStatus.svelte` (rendered on `/file-status`).
+- Parent/coordinator: `$components/UserFileStatus.svelte` (rendered on `/file-status`). That route has no
+  navbar entry (issue #1243): it is reached from **Settings → System → File status → Open full screen**
+  (`settings/FileStatusSettings.svelte`), a deep link, or a notification link. It is no longer
+  embedded in the gallery.
 
 ## Gotchas
 

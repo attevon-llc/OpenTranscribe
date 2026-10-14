@@ -27,6 +27,11 @@ primitive in the same spirit as this folder.
   descending, up = ascending** (a `noDirection` option is always down); the glyph is drawn
   pointing that way, not rotated by CSS, and the same semantics apply on `/search`. Hand-rolls its own menu with
   `$lib/actions/clickOutside` (there is no generic `Dropdown.svelte` primitive — see Gotchas).
+- `MenuIcon.svelte` — the icon in front of a menu item or button label (glyph data in
+  `$lib/ui/menuIcons.ts`: Feather/Lucide shapes, 14px default, 2px round `currentColor` strokes,
+  `aria-hidden`). **Every `.dropdown-item` carries an icon** (gallery Organize/Process set the
+  convention; `components/menuIcons.convention.test.ts` scans all markup and fails on a bare one).
+  One distinct glyph per transcript export format. Add a glyph to `MENU_ICONS`; do not paste SVG.
 - `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.

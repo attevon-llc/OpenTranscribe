@@ -10,7 +10,8 @@ viewing/editing/export UI and dispatch intent back up.
 - `SpeakerEditorPanel.svelte` — edit/merge speaker labels; emits speaker-rename/merge events.
   **Issue #748**: renders directly on `routes/files/[id]/+page.svelte` now (in `.video-column`,
   replacing Tags/Collections/File-details while open), not inside `TranscriptDisplay`.
-- `TranscriptActionsBar.svelte` — export + download dropdowns; dispatches `exportTranscript` /
+- `TranscriptActionsBar.svelte` — export + download dropdowns (every entry has a `ui/MenuIcon` glyph, one distinct per
+  format; `menuIcons.convention.test.ts` enforces it); dispatches `exportTranscript` /
   `toggleSpeakerEditor` / `download` (the parent owns the actual logic). **Issue #748**: also
   renders directly on the page now, in `.video-column` right below the waveform. Its
   `toggleSpeakerEditor` event flips the page's `isEditingSpeakers` inline

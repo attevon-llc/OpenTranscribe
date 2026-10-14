@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { t } from '$stores/locale';
 
   // Visibility (two-way bound by the page; the page owns the scroll-lock sequencing)
@@ -80,7 +81,8 @@
         </div>
 
         <div class="modal-footer">
-          <button class="btn btn-primary" on:click={confirm}>
+          <button class="btn btn-primary export-confirm" on:click={confirm}>
+            <MenuIcon name="download" size={16} />
             {$t('exportOptions.export')}
           </button>
           <button class="btn btn-cancel" on:click={close}>
@@ -93,6 +95,12 @@
 {/if}
 
 <style>
+  .export-confirm {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .modal-overlay {
     position: fixed;
     top: 0;

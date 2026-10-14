@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
-  import { goto, afterNavigate } from "$app/navigation";
+  import { goto, afterNavigate, preloadCode } from "$app/navigation";
   import { page } from "$app/stores";
   import { get } from 'svelte/store';
 
@@ -15,7 +15,7 @@
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
-  import { capabilities } from "$stores/capabilities";
+  import { capabilities, isCapabilityEnabled } from "$stores/capabilities";
   import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
@@ -74,6 +74,23 @@
   $: if ($isAuthenticated && !lifecycleHold && !settingsPrefetchScheduled) {
     settingsPrefetchScheduled = true;
     whenIdle(() => prefetchSettingsModal());
+  }
+  // Warm the JS of every destination the navbar and the gallery lead to. SvelteKit's own
+  // `data-sveltekit-preload-code="eager"` is not enough here: it scans the DOM once per
+  // navigation, and the navbar only exists after auth resolves, so those links are missed until
+  // the first click, which is the click that needs it. A click on Search/Chat/a file then finds
+  // its route chunks already in the cache instead of fetching them (and their imports) in series.
+  let routePrefetchScheduled = false;
+  $: if ($isAuthenticated && !lifecycleHold && $capabilities.loaded && !routePrefetchScheduled) {
+    routePrefetchScheduled = true;
+    const routes = ["/search", "/speakers", "/files/_", "/file-status"];
+    if (isCapabilityEnabled($capabilities, "chat.rag")) routes.push("/chat");
+    // A short timer, not `whenIdle`: a live page (websocket retries, thumbnails) rarely reports
+    // idle before its 4 s timeout, and the first nav click usually lands sooner than that.
+    setTimeout(() => {
+      // One call per route: `preloadCode` takes a single pathname.
+      for (const route of routes) void preloadCode(route).catch(() => {});
+    }, 600);
   }
   // The wizard only acts for the bootstrap super_admin (it checks completion on mount), and
   // Settings can only re-open it for that same role.

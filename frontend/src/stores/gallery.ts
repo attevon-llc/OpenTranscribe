@@ -28,7 +28,6 @@ interface PaginationMetadata {
 export type ViewMode = 'grid' | 'list';
 
 export interface GalleryState {
-  activeTab: 'gallery' | 'status';
   viewMode: ViewMode;
   isSelecting: boolean;
   selectedFiles: Set<string>; // UUIDs
@@ -59,7 +58,6 @@ export interface GalleryState {
 }
 
 export interface GalleryActions {
-  setActiveTab: (tab: 'gallery' | 'status') => void;
   setViewMode: (mode: ViewMode) => void;
   toggleSelection: () => void;
   setSelecting: (selecting: boolean) => void;
@@ -94,7 +92,6 @@ export interface GalleryActions {
 
 // Initial state
 const initialState: GalleryState = {
-  activeTab: 'gallery',
   viewMode: getPersistedViewMode(),
   isSelecting: false,
   selectedFiles: new Set<string>(), // UUIDs
@@ -146,10 +143,6 @@ function createGalleryStore() {
   return {
     subscribe,
     // State management actions
-    setActiveTab: (tab: 'gallery' | 'status') => {
-      update((state) => ({ ...state, activeTab: tab }));
-    },
-
     setViewMode: (mode: ViewMode) => {
       if (browser) {
         localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
@@ -590,7 +583,6 @@ export const galleryStore = createGalleryStore();
 
 // Derived stores for convenient access
 export const galleryState = derived(galleryStore, ($store) => $store);
-export const isGalleryPage = derived(galleryStore, ($store) => $store.activeTab === 'gallery');
 export const galleryViewMode = derived(galleryStore, ($store) => $store.viewMode);
 export const selectedCount = derived(galleryStore, ($store) => $store.selectedFiles.size);
 export const allFilesSelected = derived(

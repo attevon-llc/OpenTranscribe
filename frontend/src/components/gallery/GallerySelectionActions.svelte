@@ -14,6 +14,7 @@
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let files: MediaFile[] = [];
@@ -317,6 +318,7 @@
               disabled={!hasCompletedSelected}
               title={$t('gallery.bulk.exportSrtTooltip')}
             >
+              <MenuIcon name="format-srt" />
               {$t('gallery.bulk.exportSrt')}
             </button>
             <button
@@ -325,6 +327,7 @@
               disabled={!hasCompletedSelected}
               title={$t('gallery.bulk.exportWebvttTooltip')}
             >
+              <MenuIcon name="format-vtt" />
               {$t('gallery.bulk.exportWebvtt')}
             </button>
             <button
@@ -333,6 +336,7 @@
               disabled={!hasCompletedSelected}
               title={$t('gallery.bulk.exportTxtTooltip')}
             >
+              <MenuIcon name="format-txt" />
               {$t('gallery.bulk.exportTxt')}
             </button>
             {/if}

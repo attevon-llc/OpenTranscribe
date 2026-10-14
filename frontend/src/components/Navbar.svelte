@@ -23,21 +23,15 @@
   import { supportSessionGate } from '$stores/supportSession';
   import { toastStore } from '../stores/toast';
 
-  // Import gallery store for modern state management
-  import { galleryStore, galleryState } from '../stores/gallery';
-
   // Import settings modal store
   import { settingsModalStore } from '../stores/settingsModalStore';
 
   // Import i18n
   import { t } from '../stores/locale';
-  import { prefetchSpeakersData, prefetchFileStatusData } from '$lib/prefetch';
+  import { prefetchSpeakersData } from '$lib/prefetch';
 
   // Capability gating (chat surface)
   import { capabilities, isCapabilityEnabled } from '../stores/capabilities';
-
-  // Gallery state detection based on location
-  $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
 
   // Recording control popup state
   let showRecordingControls = false;
@@ -67,7 +61,6 @@
   // Reactive statements for active page detection
   $: currentPath = $page.url.pathname;
   $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
-  $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
   $: isSpeakersActive = currentPath === '/speakers' || currentPath.startsWith('/speakers/');
   $: isChatActive = currentPath.startsWith('/chat');
   $: isSearchActive = currentPath.startsWith('/search');
@@ -75,7 +68,6 @@
   // backend 404s the whole chat router when the capability is off. The link
   // stays visible when the LLM is merely unconfigured — /chat shows the setup CTA.
   $: chatEnabled = isCapabilityEnabled($capabilities, 'chat.rag');
-  $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
   // User dropdown component reference (state lives in the child)
   let userDropdown: UserDropdown;
@@ -209,11 +201,6 @@
     showRecordingControls = false; // Close popup after delete
   }
 
-  // Gallery control functions using store
-  function handleTabChange(tab: 'gallery' | 'status') {
-    galleryStore.setActiveTab(tab);
-  }
-
   /**
    * Format recording duration for display with consistent width
    */
@@ -290,42 +277,6 @@
   <div class="navbar-container">
     <!-- Far Left: OpenTranscribe Logo -->
     <NavbarBrand on:about={() => showAboutModal = true} />
-
-    <!-- Sub-navigation for the Gallery section: which VIEW of the section you
-         are looking at. It deliberately does not repeat the section name — the
-         primary nav on the right already shows Gallery as the active
-         destination, and two highlighted "Gallery" labels read as a bug. -->
-    {#if isGalleryPage}
-      <div class="gallery-tabs">
-        <button
-          class="tab-button {$galleryState.activeTab === 'gallery' ? 'active' : ''}"
-          on:click={() => handleTabChange('gallery')}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-            <polyline points="21 15 16 10 5 21"></polyline>
-          </svg>
-          <span class="tab-label">{$t('nav.allFiles')}</span>
-        </button>
-        <button
-          class="tab-button {$galleryState.activeTab === 'status' ? 'active' : ''}"
-          on:click={() => handleTabChange('status')}
-          on:mouseenter={prefetchFileStatusData}
-        >
-          <!-- Activity/pulse line (Feather `activity`), not the document glyph
-               that used to sit here: that glyph was a near-twin of the sibling
-               Gallery tab's image icon and the bell panel's file-text icon, and
-               read as "a file", not "status" (issue #754, J9). A pulse line
-               reads as state-over-time and shares no silhouette with any other
-               nav/tab icon. -->
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-          </svg>
-          <span class="tab-label">{$t('nav.fileStatus')}</span>
-        </button>
-      </div>
-    {/if}
 
     <!-- Spacer to push right elements to far right -->
     <div class="navbar-spacer"></div>
@@ -631,59 +582,6 @@
     flex: 1; /* Takes up remaining space to push right elements to the right */
   }
 
-  /* Gallery Controls */
-  .gallery-tabs {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-  }
-
-  /* Tab Button Styles */
-  .tab-button {
-    color: var(--text-color);
-    background: none;
-    border: none;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-family: inherit;
-    font-size: 0.9rem;
-    cursor: pointer;
-    position: relative;
-    font-weight: 500;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .tab-button:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--primary-on-surface);
-  }
-
-  .tab-button.active {
-    /* --primary-on-surface, not --primary-color: the accent is a FILL colour, tuned for
-     * a white background. As 14.4px text on the dark surface it measures 2.83:1 — well
-     * under WCAG AA — while the on-surface token inverts to a light blue in dark mode.
-     * Caught by #972's dark-theme axe scan; the light-only scan had always passed. */
-    color: var(--primary-on-surface);
-    background-color: transparent;
-  }
-
-  .tab-button.active::after {
-    content: '';
-    position: absolute;
-    bottom: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: calc(100% - 1rem);
-    height: 3px;
-    background-color: var(--primary-color);
-    border-radius: 2px;
-  }
-
   .nav-links {
     display: flex;
     align-items: center;
@@ -882,35 +780,12 @@
     .nav-label {
       display: none;
     }
-
-    .tab-button {
-      padding: 0.35rem 0.6rem;
-      font-size: 0.85rem;
-    }
-
-    .gallery-tabs {
-      gap: 0.375rem;
-    }
   }
 
   @media (max-width: 768px) {
     .navbar-container {
       gap: 0.5rem;
       padding: 0.5rem;
-    }
-
-    .gallery-tabs {
-      gap: 0.25rem;
-    }
-
-    .tab-button {
-      padding: 0.3rem 0.5rem;
-      font-size: 0.8rem;
-    }
-
-    .tab-button.active::after {
-      bottom: -6px;
-      height: 2px;
     }
 
     .nav-links {
@@ -1019,15 +894,6 @@
 
   /* Extra-small screens (iPhone SE, 375px and below) */
   @media (max-width: 480px) {
-    /* Hide tab label text, show icon-only tabs */
-    .tab-label {
-      display: none;
-    }
-
-    .tab-button {
-      padding: 0.3rem 0.4rem;
-    }
-
     .navbar-container {
       gap: 0.25rem;
       padding: 0.5rem 0.375rem;

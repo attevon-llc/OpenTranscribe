@@ -48,14 +48,9 @@ vi.mock('$stores/recording', async () => {
 });
 vi.mock('$stores/uploads', () => ({ uploadsStore: {} }));
 vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
-vi.mock('$stores/gallery', async () => {
-  const { readable } = await import('svelte/store');
-  return { galleryStore: {}, galleryState: readable({}) };
-});
 vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: { open: vi.fn() } }));
 vi.mock('$lib/prefetch', () => ({
   prefetchSpeakersData: vi.fn(),
-  prefetchFileStatusData: vi.fn(),
 }));
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 vi.mock('$lib/cloud', () => ({ refreshUsage: vi.fn(), refreshBilling: vi.fn() }));
@@ -92,5 +87,19 @@ describe('Navbar entries under a support session', () => {
     expect(screen.queryByTestId('nav-search')).toBeNull();
     expect(screen.queryByTestId('nav-chat')).toBeNull();
     expect(screen.queryByTestId('nav-speakers')).toBeNull();
+  });
+});
+
+describe('Navbar destinations (issue #1243)', () => {
+  it('has one home control and no File Status or All files tab', () => {
+    const { container } = render(Navbar);
+    const hrefs = Array.from(container.querySelectorAll('a.nav-link')).map((a) =>
+      a.getAttribute('href')
+    );
+    expect(hrefs).toEqual(['/', '/search', '/chat', '/speakers']);
+    expect(container.querySelector('.gallery-tabs')).toBeNull();
+    expect(container.querySelector('a[href="/file-status"]')).toBeNull();
+    expect(screen.queryByText('nav.fileStatus')).toBeNull();
+    expect(screen.queryByText('nav.allFiles')).toBeNull();
   });
 });

@@ -23,6 +23,7 @@ export type SettingsSection =
   | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
+  | 'file-status'
   // Cloud edition — org-admin sections (gated by audience='org_admin')
   | 'billing'
   | 'usage'

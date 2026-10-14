@@ -2,15 +2,21 @@
   What the visitor sees while the first `GET /auth/session` is in flight (or the server is
   unreachable), instead of a blank page.
 
-  `shell` is true on a protected route: an empty app frame (bar + toolbar + card grid) paints at
-  once so the app feels instant. It carries NO account data and none of the real app's selectors
-  (`.navbar`, `.gallery-*`, `.search-page`), so it cannot leak authenticated UI to a logged-out
-  visitor and cannot satisfy an e2e readiness wait. On a public route (/login) only the brand
-  mark shows, since the form itself is the next paint.
+  `shell` is true on a protected route. It paints only what is certainly there and certainly
+  the same for everyone: a bar with the real navbar's height, surface and border and the real
+  brand banner at the real navbar's left offset, over a neutral content area with a centred
+  loader. Nothing else is drawn. Nav links, the notification bell and the user menu depend on
+  role, capabilities and the account, none of which is known yet, so placeholders for them (an
+  earlier version drew a card grid and an avatar) show a page that then re-arranges itself and
+  imply components that may never appear. It carries no account data and none of the real
+  app's selectors (`.navbar`, `.gallery-*`, `.search-page`), so it cannot leak authenticated
+  UI to a logged-out visitor and cannot satisfy an e2e readiness wait. On a public route
+  (/login) only the brand mark shows, since the form itself is the next paint.
 -->
 <script lang="ts">
   import { t } from '$stores/locale';
   import { sessionProbe, retrySessionProbeNow } from '$lib/auth/sessionProbe';
+  import logoBanner from '../assets/logo-banner.png';
 
   export let shell = false;
 </script>
@@ -18,18 +24,12 @@
 {#if shell}
   <div class="check-shell" role="status" aria-busy="true" aria-label={$t('common.loading')}>
     <div class="check-bar">
-      <img src="/icons/icon-192x192.png" alt="" width="32" height="32" />
-      <span class="block" style="width: 7rem"></span>
-      <span class="block" style="width: 5rem"></span>
-      <span class="block avatar"></span>
+      <div class="check-bar-inner">
+        <img src={logoBanner} alt="" class="check-banner" />
+      </div>
     </div>
     <div class="check-body">
-      <span class="block" style="width: min(24rem, 100%); height: 2.25rem"></span>
-      <div class="check-grid">
-        {#each Array(8) as _}
-          <span class="block card"></span>
-        {/each}
-      </div>
+      <div class="bar"><div class="bar-fill"></div></div>
     </div>
   </div>
 {:else}
@@ -54,80 +54,72 @@
     background: var(--bg-color, var(--bg-primary));
   }
 
+  /* Same box as Navbar's `.navbar` / `.navbar-container`: height, surface, padding, max-width. */
   .check-bar {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    height: var(--navbar-height);
-    padding-inline: 1rem;
+    height: calc(60px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
     background: var(--navbar-bg);
     border-bottom: 1px solid var(--navbar-border);
     box-shadow: var(--navbar-shadow);
   }
 
-  .check-bar img {
-    border-radius: 8px;
+  .check-bar-inner {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0.75rem 1.5rem;
   }
 
-  .check-bar .avatar {
-    width: 2rem;
-    height: 2rem;
-    margin-inline-start: auto;
-    border-radius: 50%;
+  /* NavbarBrand: a 36px banner inside a 0.25rem-padded button, stepping down with the viewport. */
+  .check-banner {
+    box-sizing: content-box;
+    height: 36px;
+    width: auto;
+    padding: 0.25rem;
+    object-fit: contain;
+    border-radius: 6px;
   }
 
   .check-body {
     display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem 1rem;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 60px);
+    min-height: calc(100dvh - 60px);
   }
 
-  .check-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1rem;
+  /* Navbar.svelte's own breakpoints for `.navbar-container` padding and the banner height. */
+  @media (max-width: 1560px) {
+    .check-bar-inner {
+      padding: 0.5rem 1rem;
+    }
   }
 
-  .block {
-    position: relative;
-    display: block;
-    height: 1rem;
-    overflow: hidden;
-    border-radius: 6px;
-    background: rgba(100, 116, 139, 0.14);
+  @media (max-width: 1024px) {
+    .check-banner {
+      height: 30px;
+    }
   }
 
-  .block.card {
-    height: 13rem;
-    border-radius: 12px;
+  @media (max-width: 768px) {
+    .check-banner {
+      height: 28px;
+    }
+
+    .check-bar-inner {
+      padding: 0.5rem;
+    }
   }
 
-  .block::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-    transform: translateX(-100%);
-    animation: check-sweep 1.5s linear infinite;
-  }
+  @media (max-width: 480px) {
+    .check-banner {
+      height: 24px;
+    }
 
-  :global([data-theme='dark']) .block {
-    background: rgba(148, 163, 184, 0.16);
-  }
-
-  :global([data-theme='dark']) .block::after {
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
-  }
-
-  /* The sweep is mirrored for RTL so it travels in reading order. */
-  :global([dir='rtl']) .block::after {
-    animation-direction: reverse;
-  }
-
-  @keyframes check-sweep {
-    to {
-      transform: translateX(100%);
+    .check-bar-inner {
+      padding: 0.5rem 0.375rem;
     }
   }
 
@@ -178,6 +170,10 @@
     }
   }
 
+  :global([dir='rtl']) .bar-fill {
+    animation-direction: reverse;
+  }
+
   .notice {
     position: fixed;
     inset-inline: 1rem;
@@ -218,7 +214,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .block::after,
     .logo {
       animation: none;
     }

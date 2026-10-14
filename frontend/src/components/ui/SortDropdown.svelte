@@ -14,6 +14,8 @@
   import { createEventDispatcher } from 'svelte';
   import { scale } from 'svelte/transition';
   import { clickOutside } from '$lib/actions/clickOutside';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { SORT_ICON_BY_VALUE } from '$lib/ui/menuIcons';
 
   /** Available sort fields, in display order. */
   export let sortOptions: SortOption[];
@@ -137,6 +139,9 @@
           class:active={option.value === sortBy}
           on:click={() => selectSort(option)}
         >
+          {#if SORT_ICON_BY_VALUE[option.value]}
+            <MenuIcon name={SORT_ICON_BY_VALUE[option.value]} />
+          {/if}
           <span class="option-label">{$t(option.label)}</span>
           {#if option.value === sortBy}
             <svg
@@ -256,6 +261,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
     width: 100%;
     padding: 0.625rem 0.75rem;
     background: transparent;
@@ -304,7 +310,7 @@
 
   .option-arrow {
     flex-shrink: 0;
-    margin-left: 0.5rem;
+    margin-inline-start: 0.5rem;
   }
 
   /* Hide sort label on tablet and below to save space */

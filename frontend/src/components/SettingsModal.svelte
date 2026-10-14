@@ -417,6 +417,7 @@
       title: $t('settings.sections.system'),
       items: [
         { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
+        { id: 'file-status' as SettingsSection, label: $t('settings.fileStatus.title'), icon: 'activity' },
         ...(isAdmin ? [
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' },
           // File retention, media cache, backups, integrity, search index and speaker embeddings
@@ -1342,6 +1343,13 @@
           on:refresh={refreshStats}
           on:openDetails={(e: CustomEvent<string>) => openProcessingDetails(e.detail)}
         />
+      </LazySection>
+    {/if}
+
+    <!-- File Status (condensed; the full page is /file-status) -->
+    {#if activeSection === 'file-status'}
+      <LazySection load={sectionLoaders.fileStatus} let:Component>
+        <Component />
       </LazySection>
     {/if}
 

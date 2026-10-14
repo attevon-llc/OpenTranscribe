@@ -171,7 +171,7 @@
     color: var(--text-secondary);
   }
   .owner-badge {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(var(--primary-color-rgb), 0.15);
     color: var(--primary-on-surface);
   }
   .badge-success {

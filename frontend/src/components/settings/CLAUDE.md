@@ -19,6 +19,30 @@ AdminTaskHealthPanel).
   New section = add a loader to `sectionLoaders` (and `LEAD_LOADER`), never a static import in the modal;
   keep `settingsModalLoader.ts` free of component imports (root layout budget). Tests that open a
   section should `await` the panel (`waitForOpen` in `SettingsModal.test.ts` waits out the skeleton).
+- **After the modal opens, the rest of Settings is warmed in the background** (#1244). `SettingsModal`
+  hands the sidebar rows the user can OPEN (locked rows are never passed) to
+  `startIdlePrefetch` in `$lib/settings/sectionLoaders`: one idle slice at a time through
+  `$lib/settings/idleQueue` (`requestIdleCallback`, `setTimeout` on Safari), 2 imports in flight, started
+  400 ms after open so the landing section paints first, skipped on `navigator.connection.saveData` /
+  2g, cancelled when the modal closes. Hover/focus on a row (`prefetchSectionIntent`) warms that row at once.
+  Data follows code, and only for the registered cheap reads in `$lib/settings/sectionData`
+  (`PREFETCHERS`: pipeline view, file-status summary; admin: retention; super_admin: auth config).
+  **Never register system statistics, index health or anything a worker computes there.**
+- **Section data is stale-while-revalidate, not a TTL cache.** `sectionData` remembers the last answer of
+  those reads (10 min max age): a panel paints it at once and refreshes behind it, with a skeleton only on
+  a cold miss; a refresh equal to what is shown is skipped, a failed refresh keeps what is shown, and a
+  refresh never overwrites edits (retention checks `hasChanges`). It is cleared by
+  `purgeTenantDataCaches()` (logout, login, support-session edges), a save drops/replaces its key
+  (`invalidateSectionData` / `setSectionData`), and the pipeline key is dropped when any section's dirty
+  flag clears. A new cached read = a key in `SectionDataKey`, a line in `PREFETCHERS` only if it is cheap,
+  and a test that the role gate holds.
+- **Linking out of Settings to a full page** (File status's "Open full screen"): the modal closes on every
+  route change, so the link stamps its history entry (`stampSettingsReturn`) and carries
+  `?from=settings&section=<id>` (`$lib/settings/returnToSettings`). Browser Back is handled by
+  `SettingsModal`'s `afterNavigate` (popstate + stamp reopens the modal; not the root layout, whose static
+  size is budgeted); the page shows a "Back to Settings"
+  control from the query (works after a reload or in a new tab). Any other full page that a panel links
+  to should reuse both halves rather than invent a third.
 - **Loading looks the same everywhere: `ui/SettingsSkeleton`** (`variant` form / rows / chips /
   dashboard, drawn in the shape of the content on the shared shimmer). `LazySection` shows it while a
   chunk loads and panels show it while their data loads, so there is no hand-made `.skeleton-*` box,

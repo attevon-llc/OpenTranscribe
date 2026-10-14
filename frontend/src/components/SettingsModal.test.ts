@@ -67,12 +67,21 @@ vi.mock('$lib/api/redactionSettings', async (importOriginal) => {
   };
 });
 
+// The warm-up is observed, not run: running it would import every panel's module tree mid-test.
+const mockWarmup = vi.hoisted(() => ({ cancel: vi.fn() }));
+vi.mock('$lib/settings/sectionLoaders', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/settings/sectionLoaders')>();
+  return { ...actual, startIdlePrefetch: vi.fn(() => mockWarmup.cancel) };
+});
+
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
-import { sectionLoaders } from '$lib/settings/sectionLoaders';
+import { sectionLoaders, startIdlePrefetch } from '$lib/settings/sectionLoaders';
+import { afterNavigateCallbacks } from '../test-mocks/app-navigation';
+import { stampSettingsReturn } from '$lib/settings/returnToSettings';
 import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 
 function setUser(role: 'user' | 'admin' | 'super_admin' | null) {
@@ -91,6 +100,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   resetAppStores();
+  afterNavigateCallbacks.length = 0;
   settingsModalStore.reset();
   capabilities.set({
     edition: 'community',
@@ -880,5 +890,85 @@ describe('opening the modal fetches each thing once', () => {
 
     await fireEvent.click(navItem(container, 'settings.statistics.title') as HTMLElement);
     await waitFor(() => expect(callsTo('/system/stats')).toBe(1));
+  });
+});
+
+describe('background warm-up of the other sections', () => {
+  const warmed = () => vi.mocked(startIdlePrefetch).mock.calls.at(-1);
+
+  it('is offered only the sections a plain user can open, with the user tier', async () => {
+    setUser('user');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    const [sections, role] = warmed()!;
+    expect(role).toBe('user');
+    expect(sections).toContain('profile');
+    expect(sections).not.toContain('authentication');
+    expect(sections).not.toContain('admin-users');
+    expect(sections).not.toContain('data-management');
+  });
+
+  it('never offers a section the admin sees greyed out (super-admin only)', async () => {
+    setUser('admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    const [sections, role] = warmed()!;
+    expect(role).toBe('admin');
+    expect(sections).toContain('admin-users');
+    expect(sections).not.toContain('authentication');
+    expect(sections).not.toContain('audit-logs');
+  });
+
+  it('offers the super-admin sections to a super admin', async () => {
+    setUser('super_admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    const [sections, role] = warmed()!;
+    expect(role).toBe('super_admin');
+    expect(sections).toContain('authentication');
+  });
+
+  it('cancels the warm-up when the modal closes', async () => {
+    setUser('user');
+    const { container } = openModal();
+    await waitForOpen(container);
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    expect(mockWarmup.cancel).not.toHaveBeenCalled();
+
+    settingsModalStore.close();
+    await waitFor(() => expect(mockWarmup.cancel).toHaveBeenCalled());
+  });
+});
+
+describe('Back from a full page reopens Settings where it was left', () => {
+  it('reopens on the stamped section after a popstate navigation', async () => {
+    setUser('user');
+    const { container } = render(SettingsModal);
+    stampSettingsReturn('file-status');
+
+    for (const cb of afterNavigateCallbacks) cb({ type: 'popstate' });
+
+    await waitFor(() => expect(container.querySelector('.settings-modal')).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector('.settings-sidebar .nav-item.active')?.textContent).toContain(
+        'settings.fileStatus.title'
+      )
+    );
+  });
+
+  it('does nothing for an ordinary link navigation', () => {
+    setUser('user');
+    const { container } = render(SettingsModal);
+    stampSettingsReturn('file-status');
+
+    for (const cb of afterNavigateCallbacks) cb({ type: 'link' });
+
+    expect(container.querySelector('.settings-modal')).toBeNull();
   });
 });

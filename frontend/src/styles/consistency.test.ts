@@ -10,7 +10,7 @@
  *    surface use `--primary-on-surface`.
  * 2. A button variant (`btn-primary` ...) without the base `.btn`. The variants carry colour
  *    only, so without `.btn` the button has no padding -- unless the component defines its own.
- * 3. A stray indigo accent (#4f46e5) next to the app's blue.
+ * 3. (Purple/indigo colours: see noPurple.test.ts.)
  * 4. Panel section headings in shouting-caps micro-labels, where chat uses sentence-case muted.
  *
  * Every allowlist entry carries a written reason and is itself checked for staleness.
@@ -61,23 +61,6 @@ describe('text is never coloured with the button blue', () => {
 
   it('has no stale allowlist entries', () => {
     expect(scan(TEXT_PRIMARY, STYLED, ALLOW).stale).toEqual([]);
-  });
-});
-
-describe('no stray indigo accent', () => {
-  const INDIGO = /#4f46e5|rgba\(\s*79\s*,\s*70\s*,\s*229/gi;
-  const ALLOW: Record<string, string> = {
-    'styles/theme.css':
-      '--link-visited is deliberately a different hue from the link blue so visited links read as visited',
-  };
-  const ALL = walk(SRC);
-
-  it('uses the primary blue token (or its rgb channels) instead', () => {
-    expect(scan(INDIGO, ALL, ALLOW).offenders).toEqual([]);
-  });
-
-  it('has no stale allowlist entries', () => {
-    expect(scan(INDIGO, ALL, ALLOW).stale).toEqual([]);
   });
 });
 

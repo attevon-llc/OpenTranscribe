@@ -9,6 +9,13 @@
   import LazySection from './LazySection.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { authTabLoaders } from '$lib/settings/sectionLoaders';
+  import {
+    invalidateSectionData,
+    loadSectionData,
+    peekSectionData,
+    sameSectionData,
+    SectionDataKey,
+  } from '$lib/settings/sectionData';
 
   let activeTab = 'local';
   // True until the first read of the configuration finishes. Reloads after a save do not set it
@@ -186,17 +193,37 @@
     return result;
   }
 
-  async function loadConfigs() {
+  function applyConfigs(allConfigs: Record<string, unknown>) {
+    // Transform each category's array to key-value dictionary
+    const next: Record<string, any> = {};
+    for (const [category, configArray] of Object.entries(allConfigs)) {
+      next[category] = transformConfigArray(configArray as any[]);
+    }
+    configs = next;
+  }
+
+  /**
+   * Read the configuration. Stale-while-revalidate: a read from a minute ago paints the forms at
+   * once and the refresh only replaces it if the server's answer differs. After a save the cache
+   * is dropped first, so the form always shows what the server now holds.
+   */
+  async function loadConfigs(afterSave = false) {
+    if (afterSave) invalidateSectionData(SectionDataKey.authConfig);
+    const cached = afterSave
+      ? undefined
+      : peekSectionData<Record<string, unknown>>(SectionDataKey.authConfig);
+    if (cached) {
+      applyConfigs(cached);
+      configsReady = true;
+    }
     try {
-      const allConfigs = await AuthConfigApi.getAllConfigs();
-      // Transform each category's array to key-value dictionary
-      configs = {};
-      for (const [category, configArray] of Object.entries(allConfigs)) {
-        configs[category] = transformConfigArray(configArray as any[]);
-      }
+      const allConfigs = await loadSectionData(SectionDataKey.authConfig, () =>
+        AuthConfigApi.getAllConfigs()
+      );
+      if (!cached || !sameSectionData(allConfigs, cached)) applyConfigs(allConfigs);
     } catch (error) {
       console.error('Failed to load auth config:', error);
-      toastStore.error($t('settings.authentication.loadError'));
+      if (!cached) toastStore.error($t('settings.authentication.loadError'));
     } finally {
       configsReady = true;
     }
@@ -207,7 +234,7 @@
       await AuthConfigApi.updateCategory(category, config);
       toastStore.success($t('settings.authentication.configSaved', { category }));
       hasUnsavedChanges = false;
-      await loadConfigs();
+      await loadConfigs(true);
     } catch (error) {
       console.error(`Failed to save ${category} config:`, error);
       toastStore.error($t('settings.authentication.configSaveFailed', { category }));
@@ -254,7 +281,7 @@
       );
     }
 
-    await loadConfigs();
+    await loadConfigs(true);
     policyRefresh += 1;
   }
 

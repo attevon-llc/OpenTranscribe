@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "仕組み",
   "settings.engineSettings.intro.details": "ネイティブが推奨エンジンで、独立したサービスとして動作します。PyAnnote はメインのバックエンド内で動作する従来のフォールバックで、段階的に廃止されます。ここで変更した設定はサーバーの既定値を上書きし、バッジとリセットボタンが表示されます。",
   "settings.engineSettings.diarizerBackendHint": "ネイティブを推奨します。PyAnnote は従来のフォールバックです。",
-  "settings.engineSettings.advancedToggle": "再チェックの詳細設定"
+  "settings.engineSettings.advancedToggle": "再チェックの詳細設定",
+  "fileStatus.backToSettings": "設定に戻る"
 }

@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "Как это работает",
   "settings.engineSettings.intro.details": "Нативный движок рекомендуется и работает как отдельный сервис. PyAnnote работает внутри основного бэкенда; это прежний резервный вариант, от которого постепенно отказываются. Изменённая здесь настройка переопределяет значение сервера по умолчанию и получает метку с кнопкой «Сбросить».",
   "settings.engineSettings.diarizerBackendHint": "Рекомендуется нативный движок. PyAnnote — прежний резервный вариант.",
-  "settings.engineSettings.advancedToggle": "Расширенная настройка перепроверки"
+  "settings.engineSettings.advancedToggle": "Расширенная настройка перепроверки",
+  "fileStatus.backToSettings": "Назад к настройкам"
 }

@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "كيف يعمل",
   "settings.engineSettings.intro.details": "المحرك الأصلي هو الموصى به ويعمل كخدمة مستقلة. أما PyAnnote فيعمل داخل الخلفية الرئيسية؛ وهو البديل الأقدم ويجري التخلي عنه تدريجيًا. أي إعداد تغيّره هنا يتجاوز القيمة الافتراضية للخادم، وتظهر بجانبه شارة وزر إعادة تعيين.",
   "settings.engineSettings.diarizerBackendHint": "يُنصح بالمحرك الأصلي. أما PyAnnote فهو البديل الأقدم.",
-  "settings.engineSettings.advancedToggle": "ضبط متقدم لإعادة الفحص"
+  "settings.engineSettings.advancedToggle": "ضبط متقدم لإعادة الفحص",
+  "fileStatus.backToSettings": "العودة إلى الإعدادات"
 }

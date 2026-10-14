@@ -5796,5 +5796,6 @@
   "settings.engineSettings.intro.howItWorks": "工作原理",
   "settings.engineSettings.intro.details": "原生引擎是推荐引擎，作为独立服务运行。PyAnnote 在主后端内运行，是较早的备用方案，正在逐步淘汰。你在此处更改的设置会覆盖服务器默认值，并显示标记和“重置”按钮。",
   "settings.engineSettings.diarizerBackendHint": "推荐使用原生引擎。PyAnnote 是较早的备用方案。",
-  "settings.engineSettings.advancedToggle": "复核高级调整"
+  "settings.engineSettings.advancedToggle": "复核高级调整",
+  "fileStatus.backToSettings": "返回设置"
 }

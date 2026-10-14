@@ -555,16 +555,11 @@
     font-size: 0.6rem;
     text-transform: uppercase;
     font-weight: 600;
-    background: rgba(99, 102, 241, 0.12);
-    color: #6366f1;
+    background: rgba(var(--primary-color-rgb), 0.12);
+    color: var(--primary-on-surface);
     padding: 0.1rem 0.35rem;
     border-radius: 0.25rem;
     letter-spacing: 0.02em;
-  }
-
-  :global([data-theme='dark']) .admin-badge {
-    background: rgba(99, 102, 241, 0.2);
-    color: #818cf8;
   }
 
   .source-label {

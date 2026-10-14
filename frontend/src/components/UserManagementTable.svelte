@@ -1777,14 +1777,14 @@
     color: white;
   }
 
-  /* Reset password button - purple/indigo */
+  /* Reset password button - app blue */
   .reset-password-button {
-    background-color: rgba(99, 102, 241, 0.1);
-    color: #6366f1;
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-on-surface);
   }
 
   .reset-password-button:hover:not(:disabled) {
-    background-color: #6366f1;
+    background-color: var(--primary-color);
     color: white;
     transform: scale(1.05);
   }
@@ -1850,14 +1850,14 @@
     color: white;
   }
 
-  /* MFA reset - violet */
+  /* MFA reset - amber */
   .mfa-reset-button {
-    background-color: rgba(168, 85, 247, 0.1);
-    color: #a855f7;
+    background-color: rgba(217, 119, 6, 0.1);
+    color: #d97706;
   }
 
   .mfa-reset-button:hover:not(:disabled) {
-    background-color: #a855f7;
+    background-color: #d97706;
     color: white;
     transform: scale(1.05);
   }

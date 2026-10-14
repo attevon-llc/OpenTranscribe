@@ -3,6 +3,15 @@
   import Spinner from '../ui/Spinner.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import axiosInstance from '$lib/axios';
+  import {
+    RETENTION_CONFIG_URL,
+    loadSectionData,
+    peekSectionData,
+    sameSectionData,
+    setSectionData,
+    SectionDataKey,
+    fetchRetentionConfig,
+  } from '$lib/settings/sectionData';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '../../stores/settingsModalStore';
@@ -57,7 +66,7 @@
     'Pacific/Auckland',
   ];
 
-  const BASE = '/admin/settings/retention-config';
+  const BASE = RETENTION_CONFIG_URL;
 
   // ---- State ---------------------------------------------------------------
 
@@ -111,13 +120,21 @@
   // ---- API -----------------------------------------------------------------
 
   async function loadConfig() {
-    loading = true;
+    // Stale-while-revalidate: show the last seen settings at once, refresh behind them.
+    const cached = peekSectionData<RetentionConfig>(SectionDataKey.retention);
+    if (cached) {
+      applyConfig(cached);
+      loading = false;
+    } else loading = true;
     try {
-      const res = await axiosInstance.get<RetentionConfig>(BASE);
-      applyConfig(res.data);
+      const fresh = await loadSectionData(SectionDataKey.retention, () =>
+        fetchRetentionConfig<RetentionConfig>()
+      );
+      // Never overwrite edits made while the refresh was in flight.
+      if (!cached || (!hasChanges && !sameSectionData(fresh, cached))) applyConfig(fresh);
     } catch (err: unknown) {
       console.error('Error loading retention config:', err);
-      toastStore.error($t('settings.retention.loadFailed'));
+      if (!cached) toastStore.error($t('settings.retention.loadFailed'));
     } finally {
       loading = false;
     }
@@ -155,6 +172,7 @@
         delete_error_files: deleteErrorFiles,
       });
       applyConfig(res.data);
+      setSectionData(SectionDataKey.retention, res.data);
       toastStore.success($t('settings.retention.saved'));
     } catch (err: unknown) {
       console.error('Error saving retention config:', err);

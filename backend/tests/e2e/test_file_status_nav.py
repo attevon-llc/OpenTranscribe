@@ -66,7 +66,7 @@ class TestFileStatusPlacement:
         expect(home_page.locator(".settings-content .count-card")).to_have_count(5, timeout=10000)
 
         home_page.get_by_test_id("file-status-open-full").click()
-        expect(home_page).to_have_url(re.compile(r"/file-status$"), timeout=10000)
+        expect(home_page).to_have_url(re.compile(r"/file-status(\?|$)"), timeout=10000)
         expect(home_page.locator(".file-status-page").first).to_be_visible(timeout=15000)
         # The modal closes itself on the route change.
         expect(home_page.locator(".settings-modal")).to_have_count(0, timeout=8000)
@@ -76,3 +76,38 @@ class TestFileStatusPlacement:
         home_page.goto(f"{base_url}/file-status")
         expect(home_page.locator(".file-status-page").first).to_be_visible(timeout=15000)
         expect(home_page.locator(".file-status-container")).to_be_visible(timeout=15000)
+
+    def test_full_page_offers_no_way_back_when_opened_directly(
+        self, home_page: Page, base_url: str
+    ) -> None:
+        """Only a visit that came through Settings gets "Back to Settings" (#1244)."""
+        home_page.goto(f"{base_url}/file-status")
+        expect(home_page.locator(".file-status-container")).to_be_visible(timeout=15000)
+        expect(home_page.get_by_test_id("back-to-settings")).to_have_count(0)
+
+
+class TestReturnToSettings:
+    """The way back from the full-page File status to Settings, where the user left it (#1244)."""
+
+    def test_back_button_reopens_settings_on_file_status(self, home_page: Page) -> None:
+        _open_file_status_section(home_page)
+        home_page.get_by_test_id("file-status-open-full").click()
+        expect(home_page.locator(".settings-modal")).to_have_count(0, timeout=8000)
+
+        home_page.get_by_test_id("back-to-settings").click()
+        expect(home_page.locator(".settings-modal")).to_be_visible(timeout=10000)
+        expect(home_page.locator(".settings-sidebar .nav-item.active")).to_contain_text(
+            "File status", timeout=8000
+        )
+        expect(home_page).not_to_have_url(re.compile(r"/file-status"))
+
+    def test_browser_back_reopens_settings_on_file_status(self, home_page: Page) -> None:
+        _open_file_status_section(home_page)
+        home_page.get_by_test_id("file-status-open-full").click()
+        expect(home_page.locator(".settings-modal")).to_have_count(0, timeout=8000)
+
+        home_page.go_back()
+        expect(home_page.locator(".settings-modal")).to_be_visible(timeout=10000)
+        expect(home_page.locator(".settings-sidebar .nav-item.active")).to_contain_text(
+            "File status", timeout=8000
+        )

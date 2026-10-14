@@ -1191,11 +1191,15 @@
     file = renameSpeakersInFile(file, [
       { uuid: speakerUuid, label: speakerLabel, displayName: newName }
     ]);
-    // Regenerating the WebVTT track is local work with no network call, and it reads the
-    // props we just changed — so wait a tick, but don't make the caller wait on it.
+    // The caption track is NOT refreshed here: it comes from the server, and this runs
+    // before the rename is saved. Callers refresh it once the server has the new name.
+  }
+
+  /** Re-fetch the player's caption track (server-built) after a committed change. */
+  function refreshCaptionTrack(reason: string): void {
     tick()
       .then(() => videoPlayerComponent?.updateSubtitles?.())
-      .catch(error => console.warn('Failed to update subtitles after speaker rename:', error));
+      .catch(error => console.warn(`Failed to update captions after ${reason}:`, error));
   }
 
   // Perform the actual speaker update with the specified action
@@ -1232,6 +1236,7 @@
         : $t('speakerProfile.renamed', { name: newName });
 
       toastStore.success(successMessage);
+      refreshCaptionTrack('speaker rename');
 
       // Move the change-detection baseline with it, or the unsaved-changes indicator
       // lights up for a name that just saved.
@@ -1303,9 +1308,7 @@
           console.warn('Could not clear video cache:', error);
         });
 
-        tick()
-          .then(() => videoPlayerComponent?.updateSubtitles?.())
-          .catch(error => console.warn('Failed to update subtitles after segment edit:', error));
+        refreshCaptionTrack('segment edit');
 
         // Word counts and talk-time are derived from segment text; refresh them.
         handleAnalyticsRefreshNeeded();
@@ -1690,10 +1693,8 @@
     renames.forEach(rename => transcriptStore.updateSpeakerName(rename.uuid, rename.displayName));
     file = renameSpeakersInFile(file, renames);
 
-    // Update subtitles and clear cache (async, don't block)
-    tick()
-      .then(() => videoPlayerComponent?.updateSubtitles?.())
-      .catch(error => console.warn('Failed to update subtitles after saving speaker names:', error));
+    // Update captions and clear cache (async, don't block)
+    refreshCaptionTrack('saving speaker names');
 
     axiosInstance.delete(`/files/${file.uuid}/cache`).catch(error => {
       console.warn('Could not clear video cache:', error);
@@ -2014,6 +2015,7 @@
 
     // Picks up labels the task auto-applied to OTHER speakers in this file.
     loadSpeakers();
+    refreshCaptionTrack('speaker processing');
 
     const autoApplied = detail.auto_applied_count || 0;
     const suggested = detail.suggested_count || 0;
@@ -2320,7 +2322,7 @@
           {isPlayerBuffering}
           {loadProgress}
           errorMessage={videoErrorMessage}
-          {speakerList}
+          {showOriginal}
           on:retry={handleVideoRetry}
           on:timeupdate={handleTimeUpdate}
           on:play={handlePlay}
@@ -2432,7 +2434,11 @@
           on:speakerUpdate={handleSpeakerUpdate}
           on:speakerCreated={handleSpeakerCreated}
           on:speakerDeleted={handleSpeakerDeleted}
-          on:analyticsRefreshNeeded={handleAnalyticsRefreshNeeded}
+          on:analyticsRefreshNeeded={() => {
+            // Fired after a committed segment-speaker change: the cues' names moved too.
+            handleAnalyticsRefreshNeeded();
+            refreshCaptionTrack('segment speaker change');
+          }}
           on:loadMore={loadMoreSegments}
         />
           <!-- Content-redaction controls: kept BELOW the transcript so the video and -->

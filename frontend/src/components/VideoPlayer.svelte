@@ -1,11 +1,9 @@
 <script lang="ts">
-  import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
   import { t } from '$stores/locale';
-  import { translateSpeakerLabel } from '$lib/i18n';
-  import { formatTimeWithMillis } from '$lib/utils/formatting';
+  import { fetchCaptionTrack } from '$lib/api/captions';
   import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
   import { playableSourceType } from '$lib/utils/mediaType';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
@@ -20,7 +18,8 @@
   export let isPlayerBuffering: boolean = false;
   export let loadProgress: number = 0;
   export let errorMessage: string = '';
-  export let speakerList: Speaker[] = [];
+  // The owner/admin revealed the original on the page; the caption track follows that view.
+  export let showOriginal: boolean = false;
 
   const dispatch = createEventDispatcher();
 
@@ -120,88 +119,89 @@
     }
   }
 
-  // External function to update subtitles when transcript becomes available or is edited
+  // Monotonic id of the latest caption fetch: a slow response must not overwrite a newer one.
+  let captionsRequestId = 0;
+  let captionsShownOriginal: boolean | null = null;
+
+  /** Whether the viewer switched captions off in Plyr (its stored preference). */
+  function captionsTurnedOffByUser(): boolean {
+    try {
+      return JSON.parse(localStorage.getItem('plyr') || '{}')?.captions === false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * (Re)load the caption track from the server: on player ready, after a transcript or
+   * speaker edit, and when the page toggles the redacted/original view.
+   *
+   * The cues come from `GET /files/{uuid}/captions` (see `$lib/api/captions`), cut into
+   * broadcast-style cues there. When the server refuses (redaction scan still running,
+   * policy unavailable) the track is emptied rather than left showing older cues.
+   */
   export async function updateSubtitles() {
-    if (!player || !file || !file.transcript_segments || !Array.isArray(file.transcript_segments) || file.transcript_segments.length === 0) {
+    if (!player || !file?.uuid || file.status !== 'completed' || playsAsAudio) {
       return;
     }
     const activePlayer = player;
+    const requestId = ++captionsRequestId;
+    captionsShownOriginal = showOriginal;
+
+    let webvtt = 'WEBVTT\n';
+    try {
+      webvtt = await fetchCaptionTrack({
+        fileUuid: file.uuid,
+        showOriginal,
+        speakerPlaceholder: $t('speaker.localizedLabel', { number: '{number}' })
+      });
+    } catch (error) {
+      console.warn('Captions are unavailable for this file:', error);
+    }
+    if (requestId !== captionsRequestId || player !== activePlayer) {
+      return;
+    }
 
     try {
-      // Find the track element
       const videoElement = (activePlayer as any).media as HTMLVideoElement;
       trackElement = videoElement?.querySelector('track[kind="captions"]') as HTMLTrackElement;
-
       if (!trackElement) {
-        // Track element might not be ready yet, silently return
         return;
       }
 
-      // Create speaker display name mapping
-      const speakerMapping = new Map();
-      speakerList.forEach((speaker: Speaker) => {
-        speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
-      });
-
-      // Generate WebVTT content from transcript segments with speaker mapping
-      const webvttContent = generateWebVTTFromSegments(file.transcript_segments, speakerMapping);
-
-      // Create blob URL for the WebVTT content
-      const blob = new Blob([webvttContent], { type: 'text/vtt' });
-      const vttUrl = URL.createObjectURL(blob);
-
-      // Clean up any existing blob URL to prevent memory leaks
+      const vttUrl = URL.createObjectURL(new Blob([webvtt], { type: 'text/vtt' }));
       if (currentSubtitleBlobUrl) {
         URL.revokeObjectURL(currentSubtitleBlobUrl);
       }
       currentSubtitleBlobUrl = vttUrl;
 
-      // Remove any existing event listeners to prevent duplicates
       if (currentLoadHandler) {
         trackElement.removeEventListener('load', currentLoadHandler);
       }
-
-      // Update the track element's src - this will trigger reload
       trackElement.src = vttUrl;
 
-      // Set up proper track loading
       const textTrack = trackElement.track;
-      if (textTrack) {
-        // First disable the track
-        textTrack.mode = 'disabled';
-
-        // Create and store the load handler for proper cleanup
-        currentLoadHandler = () => {
-          textTrack.mode = 'showing';
-
-          if ((activePlayer as any).captions) {
-            (activePlayer as any).captions.active = true;
-          }
-
-          // Force Plyr to update its caption state
-          if (activePlayer.elements?.buttons?.captions && !(activePlayer as any).captions?.active) {
-            activePlayer.elements.buttons.captions.click();
-          }
-        };
-
-        // Set up load event listener
-        trackElement.addEventListener('load', currentLoadHandler, { once: true });
-
-        // Also try setting up without waiting for load event (fallback)
-        setTimeout(() => {
-          if (textTrack.cues?.length === 0) {
-            textTrack.mode = 'showing';
-
-            if ((activePlayer as any).captions) {
-              (activePlayer as any).captions.active = true;
-            }
-          }
-        }, 1000);
+      if (!textTrack) {
+        return;
       }
-
+      // 'hidden' loads the cues without native rendering; Plyr draws them itself and
+      // shows them only while its CC toggle is on, so the viewer's choice is kept.
+      textTrack.mode = 'hidden';
+      currentLoadHandler = () => {
+        textTrack.mode = 'hidden';
+        const plyrCaptions = (activePlayer as any).captions;
+        if (!captionsTurnedOffByUser() && plyrCaptions && !plyrCaptions.toggled) {
+          activePlayer.toggleCaptions(true);
+        }
+      };
+      trackElement.addEventListener('load', currentLoadHandler, { once: true });
     } catch (error) {
       console.error('Error updating subtitles:', error);
     }
+  }
+
+  $: if (player && captionsShownOriginal !== null && showOriginal !== captionsShownOriginal) {
+    updateSubtitles();
   }
 
   function initializePlyr() {
@@ -273,8 +273,8 @@
         duration = newPlayer.duration;
         dispatch('loadedmetadata', { duration });
 
-        // Initialize subtitles when player is ready
-        if (file && file.status === 'completed' && file.transcript_segments && file.transcript_segments.length > 0) {
+        // Load the caption track once Plyr has finished wiring its own captions UI.
+        if (file?.status === 'completed') {
           setTimeout(() => {
             updateSubtitles();
           }, 500);
@@ -341,41 +341,6 @@
         console.error('Error destroying Plyr player:', error);
       }
     }
-  }
-
-  function generateWebVTTFromSegments(segments: any[], speakerMapping?: Map<string, string>): string {
-    // Ensure proper WebVTT header with NOTE for debugging
-    let webvtt = 'WEBVTT\n\nNOTE Generated from transcript segments\n\n';
-
-    let validCues = 0;
-    segments.forEach((segment, index) => {
-      // Check for required fields with multiple possible field names
-      const startTime = segment.start_time !== undefined ? segment.start_time : segment.start;
-      const endTime = segment.end_time !== undefined ? segment.end_time : segment.end;
-      const text = segment.text;
-
-      if (startTime !== undefined && endTime !== undefined && text && startTime < endTime) {
-        const formattedStartTime = formatTimeWithMillis(startTime);
-        const formattedEndTime = formatTimeWithMillis(endTime);
-
-        // Get original speaker name from segment
-        const originalSpeakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `SPEAKER_${String(index + 1).padStart(2, '0')}`;
-
-        // Use speaker mapping to get display name, fallback to translated speaker label
-        const displaySpeakerName = speakerMapping?.get(originalSpeakerName) ||
-                                  segment.speaker?.display_name ||
-                                  translateSpeakerLabel(originalSpeakerName);
-
-        const displayText = `${displaySpeakerName}: ${text.trim()}`;
-
-        // Add cue with proper WebVTT format
-        webvtt += `${formattedStartTime} --> ${formattedEndTime}\n`;
-        webvtt += `${displayText}\n\n`;
-        validCues++;
-      }
-    });
-
-    return webvtt;
   }
 
   onMount(() => {
@@ -533,6 +498,42 @@
   :global(.plyr--video .plyr__control) {
     background: transparent !important;
     color: white !important;
+  }
+
+  /* Caption cues (server-built, at most two short lines each). The box sits over the
+     video, so it is the same dark backdrop in light and dark themes; text wraps inside
+     the frame and scales with the player. `unicode-bidi: plaintext` gives every line the
+     direction of its own text, so an English cue stays LTR in the Arabic UI and an
+     Arabic cue is RTL in any UI (the per-cue equivalent of dir="auto"). */
+  :global(.plyr__captions) {
+    padding-inline: 4%;
+    font-size: clamp(14px, 2.6cqi, 28px);
+    unicode-bidi: plaintext;
+  }
+
+  :global(.plyr--video) {
+    container-type: inline-size;
+  }
+
+  :global(.plyr__caption) {
+    display: inline;
+    max-width: 100%;
+    background: rgba(0, 0, 0, 0.78);
+    color: #fff;
+    line-height: 1.35;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    unicode-bidi: plaintext;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  /* The name is its own bidi island, so the LINE takes the direction of the speech, not of
+     the name: an Arabic placeholder label must not turn an English line right-to-left. */
+  :global(.plyr__caption .speaker) {
+    font-weight: var(--font-weight-semibold, 600);
+    color: #ffe58a;
+    unicode-bidi: plaintext;
   }
 
   /* Captions (CC) button — override Plyr's pressed/active background */

@@ -385,6 +385,22 @@ def test_the_speaker_api_still_returns_the_llm_suggestion_but_not_as_the_name(
     assert speaker.resolved_display_name == "SPEAKER_00"
 
 
+def test_the_speaker_api_does_not_claim_a_voice_match_for_a_suggestion_of_unknown_source(
+    db_session, normal_user
+):
+    """A legacy suggestion v439 could not attribute stays unattributed on the wire: badging it
+    ``voice_match`` claims the voiceprint evidence the canonical label itself refuses."""
+    from app.api.endpoints.speakers import _process_single_speaker_with_suggestions
+
+    _, speaker = _file_and_speakers(
+        db_session, normal_user, suggested_name="Joe Rogan", confidence=0.95
+    )
+    payload = _process_single_speaker_with_suggestions(speaker, normal_user, 0, [])
+    assert payload["suggested_name"] == "Joe Rogan"
+    assert payload["suggestion_source"] is None
+    assert speaker.resolved_display_name == "SPEAKER_00"
+
+
 def test_the_suggestion_service_still_offers_the_llm_suggestion(db_session, normal_user):
     from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
 

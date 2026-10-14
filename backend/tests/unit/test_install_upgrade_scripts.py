@@ -18,6 +18,7 @@ guard, and a downgrade with no guard rail.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import time
@@ -635,6 +636,43 @@ def test_upgrade_tolerates_the_stale_network_race():
     assert "docker ps -aq" in fn, (
         "must verify no containers remain before continuing past a failed down"
     )
+
+
+@pytest.mark.parametrize("has_backup", [True, False], ids=["with-backup", "no-backup"])
+def test_the_upgrade_teardown_recommends_a_backup_before_anything_goes_down(
+    tmp_path: Path, has_backup: bool
+):
+    """The upgrade migrates the database one way, and `--rollback`'s only remedy is a
+    pre-upgrade backup, so the advice must be printed before `docker compose down` runs.
+
+    Runs the REAL `compose_down_for_upgrade` (both `update` and `update-full` tear down
+    through it) with `docker` and the GPU drain stubbed; the stub prints a marker for the
+    teardown so the order is observable.
+    """
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    if has_backup:
+        (backups / "opentranscribe_backup_20261001_000000.sql").write_text("old")
+        (backups / "opentranscribe_backup_20261013_000000.sql").write_text("new")
+        os.utime(backups / "opentranscribe_backup_20261001_000000.sql", (1, 1))
+    snippet = f"""
+YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+cd {tmp_path}
+ot_drain_gpu_workers() {{ :; }}
+docker() {{ echo "DOCKER $*"; return 0; }}
+{_extract_function(MANAGER, "recommend_pre_upgrade_backup")}
+{_extract_function(MANAGER, "compose_down_for_upgrade")}
+compose_down_for_upgrade "-f docker-compose.yml"
+"""
+    out = _run_shell(snippet)
+
+    assert "./opentranscribe.sh backup" in out, out
+    assert "DOCKER compose -f docker-compose.yml down" in out, out
+    assert out.index("./opentranscribe.sh backup") < out.index("DOCKER compose"), out
+    if has_backup:
+        assert "Newest backup found: ./backups/opentranscribe_backup_20261013_000000.sql" in out
+    else:
+        assert "No backup found in ./backups." in out
 
 
 def test_upgrade_refuses_before_teardown_when_secrets_are_missing():

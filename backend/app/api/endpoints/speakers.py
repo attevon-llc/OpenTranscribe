@@ -498,8 +498,10 @@ def _get_suggestion_source(speaker: Speaker) -> str | None:
     if hasattr(speaker, "_suggestion_source"):
         return str(speaker._suggestion_source)
 
-    # Default assumption for legacy data: embedding match
-    return "voice_match"
+    # Unknown provenance stays unknown: v439 stamped every legacy row that could prove a
+    # voiceprint source, and claiming one here would badge a possible LLM guess as a voice
+    # match that the canonical label itself refuses to trust.
+    return None
 
 
 def _compute_display_flags(

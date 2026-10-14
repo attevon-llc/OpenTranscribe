@@ -78,9 +78,9 @@
   }
 
   .timestamp-link:hover {
-    background: var(--primary-color, #4f46e5);
+    background: var(--primary-color);
     color: white;
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
   }
 
   .snippet {

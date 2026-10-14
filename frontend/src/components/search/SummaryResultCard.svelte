@@ -96,7 +96,7 @@
   }
 
   .summary-result-card:hover {
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 
@@ -149,8 +149,8 @@
   }
 
   .view-summary-btn:hover {
-    background: rgba(79, 70, 229, 0.08);
-    border-color: var(--primary-color, #4f46e5);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    border-color: var(--primary-color);
   }
 
   :global([data-theme='dark']) .view-summary-btn:hover {
@@ -180,8 +180,8 @@
 
   .summary-match-row:hover,
   .summary-match-row:focus-visible {
-    border-color: var(--primary-color, #4f46e5);
-    background: rgba(79, 70, 229, 0.06);
+    border-color: var(--primary-color);
+    background: rgba(var(--primary-color-rgb), 0.06);
   }
 
   :global([data-theme='dark']) .summary-match-row {

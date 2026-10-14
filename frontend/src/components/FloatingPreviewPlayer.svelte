@@ -201,7 +201,7 @@
   }
 
   .preview-detail-link:hover {
-    background: color-mix(in srgb, var(--primary-color, #4f46e5) 8%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
   }
 
   .preview-close {

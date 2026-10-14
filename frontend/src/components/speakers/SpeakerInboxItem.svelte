@@ -184,14 +184,14 @@
   }
 
   .preview-toggle:hover {
-    background: color-mix(in srgb, var(--primary-color, #4f46e5) 10%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
     transform: scale(1.1);
     box-shadow: none;
   }
 
   .preview-toggle.playing {
     color: var(--primary-on-surface);
-    background: color-mix(in srgb, var(--primary-color, #4f46e5) 12%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
   }
 
   .item-info {

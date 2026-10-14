@@ -1052,7 +1052,7 @@
   }
 
   .mode-btn.active {
-    background: var(--primary-color, #4f46e5);
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }

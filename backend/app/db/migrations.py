@@ -90,6 +90,18 @@ def _has_lite_local_source_with_speakers(conn, tables: list[str]) -> bool:
     return bool(conn.execute(text(module.DETECT_SQL)).scalar())
 
 
+def _has_unstamped_voiceprint_suggestion(conn, tables: list[str]) -> bool:
+    """v439's data marker: a legacy suggestion that provably came from a voiceprint match.
+
+    The predicate is read from the revision itself, so detection and the stamp it detects
+    cannot drift apart.
+    """
+    if not {"speaker", "speaker_profile", "speaker_match"} <= set(tables):
+        return False
+    module = _revision_module("v439_infer_legacy_voiceprint_suggestion_source")
+    return bool(conn.execute(text(module.DETECT_SQL)).scalar())
+
+
 def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     """Detect the schema version of an existing untracked database.
 
@@ -621,6 +633,10 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # revision: the table IS the fingerprint.
     has_correction_carryover = "speaker_correction_carryover" in tables
 
+    # v439: data-only (owner decision 2026-10-12). Keyed on the ABSENCE of a legacy
+    # suggestion it would stamp with its voiceprint source, like v434.
+    has_unstamped_voiceprint_suggestion = _has_unstamped_voiceprint_suggestion(conn, tables)
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -678,8 +694,18 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
-    # v438: same as v437 plus the speaker correction carry-over table. The newest revision
-    # on this chain, so this is the top of the ladder.
+    # v439: same as v438, with no provably-voiceprint legacy suggestion left unstamped. The
+    # newest revision on this chain, so this is the top of the ladder.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+        and has_correction_carryover
+        and not has_unstamped_voiceprint_suggestion
+    ):
+        return "v439_infer_legacy_voiceprint_suggestion_source"
+    # v438: same as v437 plus the speaker correction carry-over table.
     if (
         matches_v433
         and not has_unusable_pyannote_source

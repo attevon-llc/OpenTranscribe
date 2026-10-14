@@ -89,7 +89,11 @@ stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created las
 issue #1229; single-marker arm on the column),
 `v438_add_speaker_correction_carryover` (`speaker_correction_carryover`: a user's speaker
 correction kept by its time spans while a re-run replaces the file's speakers, issue #1233;
-every FK `ON DELETE CASCADE`; single-marker arm on the table). **Derive
+every FK `ON DELETE CASCADE`; single-marker arm on the table),
+`v439_infer_legacy_voiceprint_suggestion_source` (data-only: stamps `speaker.suggestion_source`
+on pre-`v091` rows that provably came from a voiceprint, so their canonical label survives the
+2026-10-12 provenance rule; detection keyed on the ABSENCE of rows it would stamp, like v434).
+**Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

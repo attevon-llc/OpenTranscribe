@@ -7,6 +7,10 @@ facts) under the guess. The rule now accepts a suggestion only when a voiceprint
 it (``utils/speaker_labels.EMBEDDING_SUGGESTION_SOURCES``), so those documents hold a label
 Postgres no longer resolves to.
 
+A row with NO source is selected too. Migration ``v439`` has already given its voiceprint
+source to every legacy row that can prove one, so what is left here is a suggestion of unknown
+provenance, and its label correctly falls back to the diarizer's.
+
 ``search_index_maintenance`` only finds files with NO chunks, so it cannot see a merely-wrong
 value (``api/CLAUDE.md``); this module is the arm that does, wired into that same task
 (``search_maintenance_task._run_search_maintenance``) rather than into a mechanism of its own.

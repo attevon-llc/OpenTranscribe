@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tell the two apart. **Existing libraries correct themselves:** the next search-index
   maintenance passes (startup, then every 6 hours, 100 files each) re-index every completed
   file whose speaker label came from an AI suggestion; no manual reindex is needed. Legacy
-  suggestions with no recorded source are treated as AI suggestions.
+  suggestions with no recorded source are treated as AI suggestions, except where the database
+  proves a voice match (the speaker is linked to a profile of that name, or a stored voice match
+  links it to a speaker of that name at the same similarity): the upgrade records those as voice
+  matches, so they keep their name.
 
 ### Added
 

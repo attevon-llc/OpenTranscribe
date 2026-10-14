@@ -359,6 +359,14 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   `speaker.resolved_display_name`, and regenerates `file_facts`. Resumable by an id cursor in
   `SystemSettings`, 100 files per tick, finished by the `speaker_label_provenance_backfill_complete`
   flag. No manual reindex is needed.
+- **Legacy rows with no source** (written before `v091` added the column, when the LLM task and
+  the voiceprint matchers wrote identical `suggested_name`/`confidence` pairs) are stamped by
+  migration `v439` only where Postgres proves a voiceprint: `profile_match` when the speaker is
+  linked to a profile whose name IS the suggestion (no LLM path has ever set `profile_id`), and
+  `voice_match` when a `speaker_match` row pairs it with a same-owner speaker whose
+  `display_name` IS the suggestion at exactly the speaker's own `confidence`. Everything else
+  stays unsourced and falls to the diarizer label (fail closed). The speaker API reports such a
+  row's `suggestion_source` as `null`; it used to default it to `voice_match`.
 
 ## Speaker embeddings: two backends, one model (issue #571)
 

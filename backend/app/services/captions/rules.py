@@ -31,7 +31,19 @@ Choices made where the guides leave room:
   module asked for ~1 s, and BBC's per-word floor lands near it for short cues.
 - One CJK preset (16 characters/line, 10 cps) instead of per-language values: the
   transcript carries no reliable per-segment language, and 16 is the Chinese/Korean
-  figure (Japanese's 13 would wrap Chinese unnecessarily).
+  figure (Japanese's 13 would wrap Chinese unnecessarily). Japanese therefore shows up to
+  16 characters per line, 3 more than Netflix's own Japanese limit: a known deviation,
+  taken because a 13-character line leaves a Japanese speaker label barely any room.
+- A line's length is counted in display columns, not code points: combining marks (Thai
+  vowels and tone marks, Arabic diacritics) take none. A speaker name that would leave
+  less than a quarter of a line for speech is shown on a line of its own above the text
+  (``label_needs_own_line``), so no first line is longer than the limit because of a name.
+- Per-script breaking (kinsoku for Japanese/Chinese, katakana words kept whole, a number
+  kept with its counter, Thai/Lao/Khmer/Myanmar cut only at the recognizer's word
+  boundaries or, for Thai, at syllable-safe points) lives in ``scripts.py``. It is
+  dictionary-free: Chinese and Japanese text can still be cut inside a word, because
+  nothing here knows where words are, and the BBC/Netflix "never split a word" rule is
+  honoured only where a space, punctuation or a script change shows the boundary.
 """
 
 from __future__ import annotations

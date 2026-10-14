@@ -3,8 +3,10 @@
 **WebVTT** marks each speaker's text with a voice span (``<v Name>``) for assistive
 technology and players that understand it, and puts the visible name in a
 ``<c.speaker>`` class span so a player can style it apart from the speech (the
-file-detail player does; a ``STYLE`` block asks native players to embolden it).
-Every piece of transcript text and every name is escaped: speaker names are
+file-detail player does, in CSS). There is deliberately **no ``STYLE`` block**: ffmpeg
+(6.1, and so Plex, Jellyfin and every ffmpeg-based converter) reads a file that has one as
+having no cues at all, which made the download unusable there, and bold names are not worth
+that. Every piece of transcript text and every name is escaped: speaker names are
 user-typed, and a cue is parsed into DOM by the browser.
 
 **SRT** has no voice or class markup that every consumer understands (ffmpeg's burn-in
@@ -32,7 +34,10 @@ def _vtt_cue_text(cue: Cue) -> str:
         lines = [_vtt_escape(line) for line in part.lines]
         if part.show_label and part.speaker_label and lines:
             label = _vtt_escape(part.speaker_label)
-            lines[0] = f"<c.speaker>{label}</c>: {lines[0]}"
+            if part.label_own_line:
+                lines.insert(0, f"<c.speaker>{label}</c>:")
+            else:
+                lines[0] = f"<c.speaker>{label}</c>: {lines[0]}"
         body = "\n".join(lines)
         if part.speaker_label:
             voice = _vtt_escape(part.speaker_label).replace("\n", " ")
@@ -51,7 +56,7 @@ def _ordered(track: CaptionTrack, extra: list[Cue] | None) -> list[Cue]:
 
 def to_webvtt(track: CaptionTrack, extra: list[Cue] | None = None) -> str:
     """Render ``track`` (plus optional ``extra`` cues, e.g. comments) as WebVTT."""
-    out = ["WEBVTT", "", "STYLE", "::cue(.speaker) {", "  font-weight: bold;", "}", ""]
+    out = ["WEBVTT", ""]
     if track.interpolated_segments:
         out += [
             "NOTE",

@@ -25,28 +25,22 @@ from __future__ import annotations
 
 import bisect
 import difflib
+import itertools
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from app.services.captions.scripts import CJK as _CJK
+from app.services.captions.scripts import CLOSE as _CLOSE
+from app.services.captions.scripts import HANGUL as _HANGUL
+from app.services.captions.scripts import NO_LINE_START_LETTERS as _NO_START
+from app.services.captions.scripts import OPEN as _OPEN
+from app.services.captions.scripts import unspaced_cuts
 from app.services.redaction.spans import build_word_offsets
-
-# Han, kana, CJK compatibility ideographs, full-width alphanumerics, half-width katakana.
-_CJK = (
-    "\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
-    "\uff10-\uff19\uff21-\uff3a\uff41-\uff5a\uff66-\uff9f"
-)
-_HANGUL = "\u1100-\u11ff\u3130-\u318f\uac00-\ud7af"
-# A line may not start with a closing mark nor end with an opening one (kinsoku shori).
-_OPEN = "\u300c\u300e\uff08\u3010\u3008\u300a\u201c\u2018\u3014\uff3b\uff5b"
-_CLOSE = (
-    "\u3002\u3001\uff0c\uff0e\uff01\uff1f\uff1a\uff1b"
-    "\u300d\u300f\uff09\u3011\u3009\u300b\u201d\u2019\u2026\u3015\uff3d\uff5d"
-)
 
 _TOKEN_RE = re.compile(
     rf"\[[^\[\]\n]{{1,80}}\]"
-    rf"|[{_OPEN}]*[{_CJK}][{_CLOSE}]*"
+    rf"|[{_OPEN}]*[{_CJK}][{_CLOSE}{_NO_START}]*"
     rf"|[^\s{_CJK}{_OPEN}{_CLOSE}]+[{_CLOSE}]*"
     rf"|[{_OPEN}{_CLOSE}]+"
 )
@@ -68,6 +62,8 @@ class Token:
         end: When it stops being spoken, seconds.
         starts_segment: The first token of a transcript segment (the ASR's own phrase
             boundary, a good place to break when the text has no punctuation).
+        cost: Extra penalty for breaking before this token: a cut inside a space-less
+            run (Thai, ...) is never as good as a break at a space (``scripts.py``).
     """
 
     text: str
@@ -76,6 +72,7 @@ class Token:
     start: float
     end: float
     starts_segment: bool = False
+    cost: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -188,6 +185,10 @@ def tokenize_segment(
     to_source = _offset_map(source, display_text)
     time_at, interpolated = _time_map(source, words, start, end)
 
+    word_starts: list[int] = []
+    if display_text == source:
+        word_starts = [a for a, b in build_word_offsets(source, words) if b > a]
+
     tokens: list[Token] = []
     prev_end = 0
     prev_text = ""
@@ -195,11 +196,20 @@ def tokenize_segment(
         text = match.group(0)
         spaced = match.start() > prev_end and display_text[prev_end : match.start()].isspace()
         cjk_boundary = bool(_CJK_LEADING_RE.match(text) or _CJK_TRAILING_RE.search(prev_text))
-        starts_with_close = text[0] in _CLOSE
+        starts_with_close = text[0] in _CLOSE or text[0] in _NO_START
         breakable = bool(tokens) and not starts_with_close and (spaced or cjk_boundary)
-        t0 = time_at(to_source(match.start()))
-        t1 = max(t0, time_at(to_source(match.end())))
-        tokens.append(Token(text, spaced and bool(tokens), breakable or not tokens, t0, t1))
+        inner = [s - match.start() for s in word_starts if match.start() < s < match.end()]
+        cuts = unspaced_cuts(text, inner)
+        bounds = [(0, 0.0), *cuts, (len(text), 0.0)]
+        for index, ((a, cost), (b, _)) in enumerate(itertools.pairwise(bounds)):
+            t0 = time_at(to_source(match.start() + a))
+            t1 = max(t0, time_at(to_source(match.start() + b)))
+            if index == 0:
+                tokens.append(
+                    Token(text[a:b], spaced and bool(tokens), breakable or not tokens, t0, t1)
+                )
+            else:
+                tokens.append(Token(text[a:b], False, True, t0, t1, cost=cost))
         prev_end = match.end()
-        prev_text = text
+        prev_text = tokens[-1].text
     return SegmentTokens(tokens, is_cjk_text(display_text), interpolated)

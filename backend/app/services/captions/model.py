@@ -40,11 +40,16 @@ class CuePart:
     speaker_label: str | None
     show_label: bool
     lines: list[str]
+    #: The name is too long to share a line with speech (``segmenter.label_needs_own_line``):
+    #: it is shown as a line of its own above the text instead of a prefix to it.
+    label_own_line: bool = False
 
     def rendered_lines(self) -> list[str]:
-        """Plain-text lines, the label prefixed to the first when it is shown."""
+        """Plain-text lines, the label prefixed to the first (or above them) when shown."""
         if not self.show_label or not self.speaker_label or not self.lines:
             return list(self.lines)
+        if self.label_own_line:
+            return [f"{self.speaker_label}:", *self.lines]
         return [f"{self.speaker_label}: {self.lines[0]}", *self.lines[1:]]
 
 

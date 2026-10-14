@@ -60,7 +60,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   masked text (never written back to the ORM), canonical speaker labels. Cue times come from
   word timestamps when the words still match the text, mapped through redaction placeholders
   by a character diff; otherwise they are interpolated by character position and the WebVTT
-  says so in a `NOTE`. **Every plain-text surface masks `blur` as `label`**
+  says so in a `NOTE`. `captions/scripts.py` holds the per-script rules (kinsoku, katakana
+  words and number+counter kept whole, Thai/Lao/Khmer/Myanmar cut only at the recognizer's
+  word boundaries or Thai syllable-safe points, display-column width) — dictionary-free, so a
+  Chinese/Japanese break can still fall inside a word; a speaker name too long to share a line
+  goes on a line of its own (`label_needs_own_line`). **Every plain-text surface masks `blur` as `label`**
   (`redaction/export_policy.plain_text_policy`): `blur`'s placeholder wraps the ORIGINAL word
   for CSS to blur, so in a file it was the original in clear (all six export formats leaked
   it before this).

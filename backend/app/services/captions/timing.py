@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from app.services.captions.model import Cue
 from app.services.captions.model import CuePart
+from app.services.captions.scripts import display_width
 
 
 def _as_dialogue(first: Cue, second: Cue) -> Cue | None:
@@ -28,12 +29,14 @@ def _as_dialogue(first: Cue, second: Cue) -> Cue | None:
     p1, p2 = first.parts[0], second.parts[0]
     if p1.speaker_key == p2.speaker_key or len(p1.lines) != 1 or len(p2.lines) != 1:
         return None
+    if p1.label_own_line or p2.label_own_line:
+        return None  # a name on its own line would make the dialogue cue three lines
     parts = [
         CuePart(p.speaker_key, p.speaker_label, bool(p.speaker_label), list(p.lines))
         for p in (p1, p2)
     ]
     width = first.rules.max_line_chars
-    if any(len(line) > width for part in parts for line in part.rendered_lines()):
+    if any(display_width(line) > width for part in parts for line in part.rendered_lines()):
         return None
     start, end = min(first.start, second.start), max(first.end, second.end)
     if end - start > first.rules.max_duration:

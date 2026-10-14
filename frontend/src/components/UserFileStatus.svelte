@@ -665,7 +665,7 @@
 
   .status-number {
     font-size: 1.5rem;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: 0.25rem;
   }

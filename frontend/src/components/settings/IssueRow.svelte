@@ -90,7 +90,7 @@
     height: 1.1rem;
     border-radius: 50%;
     font-size: 0.7rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: #fff;
   }
 

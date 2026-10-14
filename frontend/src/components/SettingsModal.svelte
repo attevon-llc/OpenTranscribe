@@ -1579,7 +1579,7 @@
     color: #b45309;
     border: 1px solid rgba(245, 158, 11, 0.45);
     font-size: 0.6875rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     text-align: center;
   }

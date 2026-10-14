@@ -693,7 +693,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
   }
 
   .mobile-toggle {

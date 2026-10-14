@@ -613,7 +613,7 @@
 
   .stat-section .stat-value {
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: 0.375rem;
   }
@@ -642,7 +642,7 @@
 
   .stat-value {
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: 0.375rem;
   }

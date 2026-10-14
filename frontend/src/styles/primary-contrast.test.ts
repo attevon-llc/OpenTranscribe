@@ -295,7 +295,9 @@ describe('upload tray header counts clear AA on the primary-blue header (UX revi
   }
 
   it('the active count is the boldest of the three', () => {
-    expect(rule('.stat-active')).toMatch(/font-weight:\s*(6|7|8|9)00/);
+    expect(rule('.stat-active')).toMatch(
+      /font-weight:\s*(?:[6-9]00|var\(--font-weight-semibold\))/
+    );
   });
 
   it('control: the previous amber / grey / green literals fail on the header blue', () => {

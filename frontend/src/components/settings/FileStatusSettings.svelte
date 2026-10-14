@@ -203,7 +203,7 @@
 
   .count-number {
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 

@@ -651,7 +651,7 @@
     font-size: 18px;
     line-height: 1;
     color: white;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
   }
 
   .search-wrapper {

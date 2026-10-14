@@ -1020,7 +1020,7 @@
 
   .segment-speaker {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 2px 8px;
     border-radius: 12px;
     /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to

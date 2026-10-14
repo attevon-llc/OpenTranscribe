@@ -694,7 +694,7 @@
   /* Matches .segment-speaker styling from transcript segments */
   .speaker-original {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 2px 8px;
     border-radius: 12px;
     white-space: nowrap;

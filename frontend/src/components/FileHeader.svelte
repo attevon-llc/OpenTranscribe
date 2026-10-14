@@ -293,7 +293,7 @@
   .file-title h1 {
     margin: 0 0 16px 0;
     font-size: 28px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     line-height: 1.2;
     word-break: break-word;
@@ -389,7 +389,7 @@
 
   .progress-percentage {
     font-size: 14px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.1);
     padding: 4px 8px;
@@ -631,7 +631,7 @@
     padding: 8px 12px;
     margin: 0;
     font-size: 28px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     line-height: 1.2;
     border: 2px solid var(--border-color);
     border-radius: 8px;

@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/chat_trace-light.png",
-  "captured_at": "2026-10-14T02:45:14Z",
-  "git_sha": "8d64dc87349a45b3dddd38a692bc0611f245f56b",
+  "captured_at": "2026-10-14T17:21:18Z",
+  "git_sha": "c87dac7a6ec72afe2bdc2e99108c4eb0a76a4798",
   "git_branch": "feat/v0.6.0-frontend-ux",
   "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "v0.6.0 UI review round 2: type scale and weights, nav and File Status consolidation, list alignment, settings tabs, capability badges, menu icons",
+  "reason": "v0.6.0 round-3 UI (captions, form controls, settings, pipeline)",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -15,7 +15,7 @@
     "mode": "dev (local source bind-mounted)"
   },
   "change_from_previous": {
-    "status": "changed (within tolerance)",
-    "differing_pixels": "0.3012%"
+    "status": "identical",
+    "differing_pixels": "0.0000%"
   }
 }

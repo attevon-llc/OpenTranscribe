@@ -367,16 +367,23 @@
     margin-top: 2px;
   }
 
+  /* The header is --primary-color in BOTH themes, so these are fixed pairs, not theme-split.
+     The old amber/grey/green literals measured 3.10 / 3.51 / 3.68:1 on it (AA needs 4.5).
+     Only near-white text can clear AA on this blue, so the colour cannot carry the emphasis;
+     the active count is a white pill with blue text (--primary-color on #fff = 5.17:1) and
+     the other two stay plain white (5.17:1), distinguished by weight. */
   .stat-active {
-    color: #fbbf24;
+    background: #fff;
+    color: var(--primary-color);
+    font-weight: 700;
+    padding: 0 8px;
+    border-radius: 999px;
   }
 
-  .stat-queued {
-    color: #d1d5db;
-  }
-
+  .stat-queued,
   .stat-completed {
-    color: #86efac;
+    color: #fff;
+    font-weight: 500;
   }
 
   .header-actions {

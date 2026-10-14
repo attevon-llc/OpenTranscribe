@@ -1,6 +1,7 @@
 /**
  * The Tags and Collections steps show the same selection twice: as removable
- * chips, and as checkboxes in the list below. Those two views must never
+ * chips, and as checkboxes in the picker dropdown (the filter sidebar's
+ * SearchableMultiSelect, opened from its toggle). Those two views must never
  * disagree.
  *
  * They did. `checked={isSelected(x)}` names a FUNCTION, not the selection array,
@@ -33,6 +34,12 @@ import UploadStepTags from './UploadStepTags.svelte';
 const boxes = (c: HTMLElement) =>
   Array.from(c.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
 
+/** The dropdown closes on any outside click (a chip's x included), so reopen it to look. */
+async function openPicker(c: HTMLElement) {
+  if (c.querySelector('.options-list')) return;
+  await fireEvent.click(c.querySelector('.multiselect-toggle') as HTMLElement);
+}
+
 describe('upload step selection stays in sync between chips and checkboxes', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -48,6 +55,7 @@ describe('upload step selection stays in sync between chips and checkboxes', () 
       },
     });
 
+    await openPicker(container);
     await waitFor(() => expect(boxes(container).length).toBe(2));
     expect(boxes(container)[0].checked).toBe(true);
 
@@ -55,6 +63,7 @@ describe('upload step selection stays in sync between chips and checkboxes', () 
     expect(remove).toBeTruthy();
     await fireEvent.click(remove);
 
+    await openPicker(container);
     await waitFor(() => expect(boxes(container)[0].checked).toBe(false));
   });
 
@@ -69,6 +78,7 @@ describe('upload step selection stays in sync between chips and checkboxes', () 
       },
     });
 
+    await openPicker(container);
     await waitFor(() => expect(boxes(container).length).toBeGreaterThan(0));
     expect(boxes(container)[0].checked).toBe(true);
 
@@ -76,6 +86,7 @@ describe('upload step selection stays in sync between chips and checkboxes', () 
     expect(remove).toBeTruthy();
     await fireEvent.click(remove);
 
+    await openPicker(container);
     await waitFor(() => expect(boxes(container)[0].checked).toBe(false));
   });
 });

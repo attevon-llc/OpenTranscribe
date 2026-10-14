@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.docker_ops import TEST_ARTIFACT_LABEL
 from tests.integration import throwaway_pg
 
 _INTEGRATION_DIR = Path(throwaway_pg.__file__).resolve().parent
@@ -100,6 +101,10 @@ def test_the_shared_container_is_labelled_so_a_leak_is_findable(
     argv = _docker_run_argv(monkeypatch)
     assert "--label" in argv, f"throwaway containers must be labelled. argv={argv}"
     assert argv[argv.index("--label") + 1] == throwaway_pg.CONTAINER_LABEL
+    labels = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--label"]
+    assert TEST_ARTIFACT_LABEL in labels, (
+        f"throwaway containers must also carry the test-artifact sweep label. argv={argv}"
+    )
 
 
 @pytest.mark.unit

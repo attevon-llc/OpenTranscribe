@@ -9,9 +9,18 @@
   import { toastStore } from '../stores/toast';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
+  import PerFileModelSelect from './PerFileModelSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import {
+    getTranscriptionSettings,
+    getTranscriptionSystemDefaults,
+    speakerPrefill,
+    speakerSubmitRange,
+    type TranscriptionSettings,
+    type TranscriptionSystemDefaults
+  } from '$lib/api/transcriptionSettings';
 
   export let showModal: boolean = false;
   export let file: any = null;
@@ -32,6 +41,10 @@
   let minSpeakers: number | null = null;
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
+  // The user's saved speaker behaviour, so a re-run starts from their range (and a blank field
+  // means what they chose) instead of from nothing.
+  let transcriptionSettings: TranscriptionSettings | null = null;
+  let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
 
   // ASR provider info
   let isCloudASR = false;
@@ -54,8 +67,11 @@
   $: hasWordTimestamps = bulkMode
     ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
     : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
+  // A cloud ASR provider returns its own speakers on a transcription re-run, so the range is
+  // moot there; a re-diarize re-detects with the user's current speaker-detection choice
+  // whichever provider transcribed the file, so its range always applies.
   $: showSpeakerSettings =
-    (selectedStages.has('transcription') || selectedStages.has('rediarize')) && !isCloudASR;
+    selectedStages.has('rediarize') || (selectedStages.has('transcription') && !isCloudASR);
   $: isValid =
     selectedStages.size > 0 &&
     (!showSpeakerSettings ||
@@ -96,8 +112,8 @@
       id: 'rediarize',
       labelKey: 'reprocess.stageRediarize',
       descKey: 'reprocess.stageRediarizeDesc',
-      disabled: !hasWordTimestamps || isCloudASR,
-      disabledReason: isCloudASR ? $t('reprocess.rediarizeCloudDisabled') : $t('reprocess.stageRediarizeDisabled'),
+      disabled: !hasWordTimestamps,
+      disabledReason: $t('reprocess.stageRediarizeDisabled'),
     },
   ] as StageDefinition[];
 
@@ -204,8 +220,14 @@
       };
 
       if (showSpeakerSettings) {
-        if (minSpeakers !== null) requestBody.min_speakers = minSpeakers;
-        if (maxSpeakers !== null) requestBody.max_speakers = maxSpeakers;
+        const range = speakerSubmitRange(
+          transcriptionSettings,
+          transcriptionSystemDefaults,
+          { minSpeakers, maxSpeakers },
+          numSpeakers
+        );
+        if (range.minSpeakers !== null) requestBody.min_speakers = range.minSpeakers;
+        if (range.maxSpeakers !== null) requestBody.max_speakers = range.maxSpeakers;
         if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
       }
 
@@ -275,10 +297,30 @@
     reprocessing = false;
   }
 
+  async function loadSpeakerPrefill() {
+    try {
+      const [settings, defaults] = await Promise.all([
+        getTranscriptionSettings(),
+        getTranscriptionSystemDefaults()
+      ]);
+      transcriptionSettings = settings;
+      transcriptionSystemDefaults = defaults;
+      // Only fill what the user has not already typed while this was loading.
+      const prefill = speakerPrefill(settings);
+      if (minSpeakers === null) minSpeakers = prefill.minSpeakers;
+      if (maxSpeakers === null) maxSpeakers = prefill.maxSpeakers;
+    } catch {
+      // Blank fields still resolve to the user's saved range on the server.
+      transcriptionSettings = null;
+      transcriptionSystemDefaults = null;
+    }
+  }
+
   // Reset state and fetch ASR status when modal opens
   $: if (showModal) {
     resetState();
     selectedReprocessModel = null;
+    void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {
@@ -533,14 +575,11 @@
                     <label for="reprocess-model-select">
                       {$t('uploader.whisperModel')}
                     </label>
-                    <select id="reprocess-model-select" bind:value={selectedReprocessModel} class="model-select">
-                      <option value={null}>
-                        {$t('uploader.highQuality')} ({adminDefaultModel})
-                      </option>
-                      <option value="base">
-                        {$t('uploader.fastProcessing')}
-                      </option>
-                    </select>
+                    <PerFileModelSelect
+                      id="reprocess-model-select"
+                      bind:value={selectedReprocessModel}
+                      adminModel={adminDefaultModel}
+                    />
                     {#if selectedReprocessModel === 'base'}
                       <p class="model-hint-text">{$t('uploader.fastProcessingHint')}</p>
                     {/if}
@@ -1243,23 +1282,6 @@
     color: var(--text-muted);
   }
 
-  .model-select {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-background, var(--card-background));
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    cursor: pointer;
-  }
-
-  .model-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-
   .model-hint-text {
     margin: 0.35rem 0 0;
     font-size: 0.78rem;
@@ -1382,9 +1404,7 @@
       padding: 0.75rem;
     }
 
-    .setting-field input,
-    .setting-field select,
-    .model-select {
+    .setting-field input {
       min-height: 44px;
       font-size: 1rem;
     }

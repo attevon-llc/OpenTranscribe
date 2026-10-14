@@ -53,6 +53,7 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from tests.docker_ops import TEST_ARTIFACT_LABEL
 from tests.integration.throwaway_pg import _READY_TIMEOUT
 
 pytestmark = [
@@ -166,24 +167,26 @@ def throwaway_pg() -> Iterator[dict[str, Any]]:
         "refusing to start a throwaway container that could be mistaken for it"
     )
 
-    started = _run(
-        [
-            "docker",
-            "run",
-            "-d",
-            "--name",
-            name,
-            "-p",
-            f"127.0.0.1:{port}:5432",
-            "-e",
-            f"POSTGRES_PASSWORD={password}",
-            "--tmpfs",
-            "/var/lib/postgresql/data",
-            image,
-        ]
-    )
-    assert started.returncode == 0, f"failed to start throwaway postgres: {started.stderr}"
     try:
+        started = _run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                name,
+                "--label",
+                TEST_ARTIFACT_LABEL,
+                "-p",
+                f"127.0.0.1:{port}:5432",
+                "-e",
+                f"POSTGRES_PASSWORD={password}",
+                "--tmpfs",
+                "/var/lib/postgresql/data",
+                image,
+            ]
+        )
+        assert started.returncode == 0, f"failed to start throwaway postgres: {started.stderr}"
         _wait_ready(port, password)
         yield {"container": name, "port": port, "password": password}
     finally:

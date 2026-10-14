@@ -46,6 +46,8 @@ from typing import Any
 
 import pytest
 
+from tests.docker_ops import TEST_ARTIFACT_LABEL
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not available"),
@@ -236,31 +238,39 @@ def _shared_os_container() -> Iterator[str]:
     name = f"ot-vp658-os-{suffix}"
     image = _opensearch_image_tag()
 
-    created_net = _run(["docker", "network", "create", net_name])
-    assert created_net.returncode == 0, f"failed to create test network: {created_net.stderr}"
+    # Both creations sit INSIDE the try whose finally removes them: `docker network create`
+    # / `docker run` can fail after the daemon has already created the object.
     try:
-        started = _run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--network",
-                net_name,
-                "--name",
-                name,
-                "-e",
-                "discovery.type=single-node",
-                "-e",
-                "DISABLE_SECURITY_PLUGIN=true",
-                "-e",
-                "bootstrap.memory_lock=false",
-                "-e",
-                "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m",
-                image,
-            ]
+        created_net = _run(
+            ["docker", "network", "create", "--label", TEST_ARTIFACT_LABEL, net_name]
         )
-        assert started.returncode == 0, f"failed to start throwaway opensearch: {started.stderr}"
+        assert created_net.returncode == 0, f"failed to create test network: {created_net.stderr}"
         try:
+            started = _run(
+                [
+                    "docker",
+                    "run",
+                    "-d",
+                    "--network",
+                    net_name,
+                    "--name",
+                    name,
+                    "--label",
+                    TEST_ARTIFACT_LABEL,
+                    "-e",
+                    "discovery.type=single-node",
+                    "-e",
+                    "DISABLE_SECURITY_PLUGIN=true",
+                    "-e",
+                    "bootstrap.memory_lock=false",
+                    "-e",
+                    "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m",
+                    image,
+                ]
+            )
+            assert started.returncode == 0, (
+                f"failed to start throwaway opensearch: {started.stderr}"
+            )
             _wait_ready(name)
             yield name
         finally:

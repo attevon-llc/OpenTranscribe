@@ -320,6 +320,14 @@ def _run_search_maintenance() -> dict[str, Any]:
         with session_scope() as db:
             _dispatch_facts_backfill(db, stats)
 
+        # One-time correction of labels indexed from an LLM suggestion (owner decision
+        # 2026-10-12). Independent of the guard below: it queues the debounced per-file
+        # reindex, not a per-user coordinator.
+        with session_scope() as db:
+            from app.services.speaker_label_backfill import backfill_llm_suggested_labels
+
+            backfill_llm_suggested_labels(db, stats)
+
         # Don't dispatch reindex if one is already running
         if _is_reindex_running():
             logger.info("Reindex already in progress, skipping maintenance dispatch")

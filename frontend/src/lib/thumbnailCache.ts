@@ -9,6 +9,8 @@
  * Memory: ~20KB per thumbnail × 2500 files = ~50MB max (acceptable).
  */
 
+import { getSupportAccessHeaders } from '$lib/supportAccess/headers';
+
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
@@ -62,7 +64,8 @@ export function cachedThumbnail(node: HTMLImageElement, params: { uuid: string; 
 }
 
 async function fetchAndCache(uuid: string, url: string): Promise<string> {
-  const response = await fetch(url);
+  // Presigned (absolute) URLs get no header; only the same-origin API fallback does.
+  const response = await fetch(url, { headers: getSupportAccessHeaders(url) });
   if (!response.ok) throw new Error(`Thumbnail fetch failed: ${response.status}`);
   const blob = await response.blob();
   const blobUrl = URL.createObjectURL(blob);

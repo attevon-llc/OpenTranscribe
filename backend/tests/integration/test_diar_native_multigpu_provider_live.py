@@ -61,6 +61,7 @@ import pytest
 import requests
 
 from tests.compose_project import compose_service_container
+from tests.integration.live_file_cleanup import delete_uploaded_file
 
 # `multi_gpu`: this file needs a MULTI-WORKER GPU TOPOLOGY (a running
 # celery-worker-gpu-scaled / celery-worker-gpu-diarize, i.e. `--gpu-scale` or
@@ -214,4 +215,4 @@ def test_diarize_capable_worker_actually_reaches_native_sidecar(
         )
     finally:
         if file_uuid:
-            requests.delete(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=15)
+            delete_uploaded_file(BASE_URL, headers, file_uuid)

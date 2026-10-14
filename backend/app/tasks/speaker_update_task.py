@@ -162,7 +162,9 @@ def process_speaker_update_background(
         speaker_id: Database ID of the speaker
         old_profile_id: Previous profile ID (if any)
         new_profile_id: New profile ID (if any)
-        was_auto_labeled: Whether the speaker was previously auto-labeled
+        was_auto_labeled: Unused since issue #1214 (a profile move rebuilds the old
+            profile whether or not the speaker was auto-labeled). Still accepted so
+            messages already queued by the endpoint unpack.
         display_name_changed: Whether the display_name was changed
         media_file_id: ID of the media file the speaker belongs to
         renamed_profile_id: Set when the request renamed a SpeakerProfile in place
@@ -202,12 +204,13 @@ def process_speaker_update_background(
         #    inside ProfileEmbeddingService — its own short session, not the task's).
         logger.debug(f"Updating profile embeddings for speaker {speaker_uuid}")
         with session_scope() as db:
-            _handle_profile_embedding_updates(
+            # A residual is already logged at ERROR by the shared cleanup; the update
+            # itself committed, so the task carries on and reports it in its status.
+            profile_residual = _handle_profile_embedding_updates(
                 db,
                 speaker_id,
                 old_profile_id,
                 new_profile_id,
-                was_auto_labeled,
                 display_name_changed,
             )
 
@@ -290,11 +293,13 @@ def process_speaker_update_background(
             f"Auto-applied: {auto_applied_count}, Suggested: {suggested_count}"
         )
 
+        cleanup_stages = sorted({str(r.get("stage")) for r in profile_residual or []})
         return {
-            "status": "success",
+            "status": "partial" if cleanup_stages else "success",
             "speaker_uuid": speaker_uuid,
             "auto_applied_count": auto_applied_count,
             "suggested_count": suggested_count,
+            "cleanup_incomplete_stages": cleanup_stages,
         }
 
     except Exception as e:

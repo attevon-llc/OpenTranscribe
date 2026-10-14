@@ -423,10 +423,7 @@ def _dispatch_and_capture(db_session, user, monkeypatch, **kwargs):
     media_file = _file(db_session, user, status=FileStatus.PENDING)
     monkeypatch.setattr(dispatch_module, "session_scope", lambda: _bridged_scope(db_session))
     captured = []
-    with (
-        patch.object(_chain, "apply_async", autospec=True) as apply_async,
-        patch.object(dispatch_module, "_resolve_gpu_queue", return_value="gpu"),
-    ):
+    with patch.object(_chain, "apply_async", autospec=True) as apply_async:
         dispatch_module.dispatch_transcription_pipeline(file_uuid=str(media_file.uuid), **kwargs)
         captured = list(apply_async.call_args[0][0].tasks)
     return captured

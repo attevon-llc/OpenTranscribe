@@ -409,3 +409,28 @@ def apply_sidecar_gender(db: Session, media_file_id: int, speaker_gender: dict |
         speaker.attributes_predicted_at = now
         updated += 1
     return updated
+
+
+def apply_sidecar_gender_for_user(
+    db: Session, media_file_id: int, user_id: int, speaker_gender: dict | None
+) -> int:
+    """``apply_sidecar_gender``, but only when the file's owner allows gender prediction.
+
+    The sidecar classifies gender whether or not the user wants it, so the opt-out has to
+    be honoured here, at the write (issue #1200): both "speaker attribute detection" and
+    "gender detection" must be on. The diarizer's own ``DIAR_NATIVE_GENDER`` env switch
+    stays an additional hard off (nothing arrives in ``speaker_gender`` when it is off).
+    """
+    if not speaker_gender:
+        return 0
+
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+
+    if not resolve_speaker_attribute_flags(db, user_id).gender_prediction_allowed:
+        logger.info(
+            "Not storing sidecar gender for file %d: gender prediction is off for user %d",
+            media_file_id,
+            user_id,
+        )
+        return 0
+    return apply_sidecar_gender(db, media_file_id, speaker_gender)

@@ -103,11 +103,7 @@ def speaker_indices(monkeypatch):
         settings, "OPENSEARCH_SPEAKER_INDEX", f"test_vp_erase_{uuid_pkg.uuid4().hex[:10]}"
     )
     v3, v4, backup = get_speaker_index_v3(), get_speaker_index_v4(), get_speaker_index_v3_backup()
-    _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
-    _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
-    _ensure_versioned_speaker_index(backup, PYANNOTE_EMBEDDING_DIMENSION_V3)
     alias = get_speaker_index()
-    client.indices.put_alias(index=v4, name=alias)
 
     def freeze_searcher() -> None:
         client.indices.put_settings(
@@ -115,6 +111,10 @@ def speaker_indices(monkeypatch):
         )
 
     try:
+        _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
+        _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
+        _ensure_versioned_speaker_index(backup, PYANNOTE_EMBEDDING_DIMENSION_V3)
+        client.indices.put_alias(index=v4, name=alias)
         yield SimpleNamespace(
             client=client, v3=v3, v4=v4, backup=backup, alias=alias, freeze=freeze_searcher
         )

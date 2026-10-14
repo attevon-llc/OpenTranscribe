@@ -32,6 +32,7 @@ import pytest
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from tests.unit._plan_contexts import plan_context
 
 
 def _mk_user(db, *, admin: bool = False) -> User:
@@ -137,6 +138,7 @@ class TestPostprocessWiring:
             "asr_provider": "local",
             "downstream_tasks": None,
             "diarization_disabled": True,
+            "pipeline_plan": plan_context(source="off"),
         }
 
         postprocess.finalize_transcription.__wrapped__(gpu_result)
@@ -512,7 +514,7 @@ class TestSpeakerMergeDisplayNameLeak:
             "app.api.endpoints.speakers._update_opensearch_speaker_merge", lambda *a, **k: None
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._update_profile_embeddings_after_merge",
+            "app.api.endpoints.speakers._reconcile_speakers_after_merge",
             lambda *a, **k: None,
         )
         monkeypatch.setattr(
@@ -569,7 +571,7 @@ class TestSpeakerMergeDisplayNameLeak:
             "app.api.endpoints.speakers._update_opensearch_speaker_merge", lambda *a, **k: None
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._update_profile_embeddings_after_merge",
+            "app.api.endpoints.speakers._reconcile_speakers_after_merge",
             lambda *a, **k: None,
         )
         monkeypatch.setattr(

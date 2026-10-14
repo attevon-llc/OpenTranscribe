@@ -30,6 +30,7 @@ const sidebars: SidebarsConfig = {
       label: 'Installation',
       items: [
         'installation/docker-compose',
+        'installation/deployment-variants',
         'installation/hardware-requirements',
         'installation/gpu-setup',
         'installation/huggingface-setup',
@@ -109,6 +110,7 @@ const sidebars: SidebarsConfig = {
         'operations/performance-tuning',
         'operations/prompt-engineering',
         'operations/security-hardening',
+        'operations/support-access',
         'operations/runbooks',
       ],
     },

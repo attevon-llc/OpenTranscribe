@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
@@ -392,16 +393,7 @@
 </script>
 
 {#if isLoading}
-  <div class="status-chips-row">
-    <div class="skeleton-chip"></div>
-    <div class="skeleton-chip wide"></div>
-    <div class="skeleton-chip"></div>
-  </div>
-  <div class="skeleton-bar"></div>
-  <div class="skeleton-section">
-    <div class="skeleton-line title"></div>
-    <div class="skeleton-line full"></div>
-  </div>
+  <SettingsSkeleton variant="dashboard" />
 {:else}
   <!-- Status Chips Row -->
   {#if indexStatus}
@@ -693,50 +685,12 @@
 
 
 <style>
-  .skeleton-chip {
-    height: 28px;
-    width: 90px;
-    border-radius: 14px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-chip.wide {
-    width: 130px;
-  }
 
-  .skeleton-bar {
-    height: 6px;
-    width: 100%;
-    border-radius: 3px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-    margin-bottom: 1rem;
-  }
 
-  .skeleton-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
 
-  .skeleton-line {
-    height: 14px;
-    border-radius: 4px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-line.title {
-    width: 40%;
-    height: 18px;
-  }
 
-  .skeleton-line.full {
-    width: 100%;
-    height: 36px;
-    border-radius: 6px;
-  }
 
   .subsection-header {
     display: flex;

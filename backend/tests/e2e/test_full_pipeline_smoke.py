@@ -47,6 +47,7 @@ import pytest
 import requests
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
+from conftest import delete_media_file
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -134,37 +135,41 @@ def llm_config(api_session: requests.Session, backend_url: str):
     assert response.ok, f"Could not create LLM config: {response.status_code} {response.text}"
     config_uuid = str(response.json()["uuid"])
 
-    status = api_session.get(f"{backend_url}/api/llm-settings/status", timeout=30)
-    assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
-    active = status.json().get("active_configuration")
-    prior_active_uuid = active["uuid"] if active else None
-
-    activate = api_session.post(
-        f"{backend_url}/api/llm-settings/set-active",
-        json={"configuration_id": config_uuid},
-        timeout=30,
-    )
-    assert activate.ok, f"Could not activate LLM config: {activate.status_code} {activate.text}"
-
-    yield config_uuid
-
+    # Everything after the create sits inside the try: a failed status read or activation
+    # must still delete the config and restore whatever was active.
+    prior_active_uuid = None
     try:
-        api_session.delete(f"{backend_url}/api/llm-settings/config/{config_uuid}", timeout=30)
-    except requests.RequestException:
-        pass
-    if prior_active_uuid:
+        status = api_session.get(f"{backend_url}/api/llm-settings/status", timeout=30)
+        assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
+        active = status.json().get("active_configuration")
+        prior_active_uuid = active["uuid"] if active else None
+
+        activate = api_session.post(
+            f"{backend_url}/api/llm-settings/set-active",
+            json={"configuration_id": config_uuid},
+            timeout=30,
+        )
+        assert activate.ok, f"Could not activate LLM config: {activate.status_code} {activate.text}"
+
+        yield config_uuid
+    finally:
         try:
-            api_session.post(
-                f"{backend_url}/api/llm-settings/set-active",
-                json={"configuration_id": prior_active_uuid},
-                timeout=30,
-            )
+            api_session.delete(f"{backend_url}/api/llm-settings/config/{config_uuid}", timeout=30)
         except requests.RequestException:
             pass
+        if prior_active_uuid:
+            try:
+                api_session.post(
+                    f"{backend_url}/api/llm-settings/set-active",
+                    json={"configuration_id": prior_active_uuid},
+                    timeout=30,
+                )
+            except requests.RequestException:
+                pass
 
 
 @pytest.fixture(scope="module")
-def transcribed_file(api_session: requests.Session, backend_url: str):
+def transcribed_file(api_session: requests.Session, backend_url: str, admin_token: str):
     """Upload the real-speech fixture and wait for the REAL pipeline to finish.
 
     Module-scoped: the three stages (transcribe, search, chat) are one pipeline run,
@@ -230,10 +235,10 @@ def transcribed_file(api_session: requests.Session, backend_url: str):
 
         yield file_uuid, segments
     finally:
-        try:
-            api_session.delete(f"{backend_url}/api/files/{file_uuid}", timeout=15)
-        except requests.RequestException:
-            pass
+        # Not a single unchecked DELETE: a file whose follow-on stages are still running
+        # answers 409, which used to leave this upload in the library. The shared helper
+        # waits those out, retries, and falls back to /force.
+        delete_media_file(backend_url, admin_token, file_uuid)
 
 
 def _distinctive_word(segments: list[dict]) -> str:

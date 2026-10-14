@@ -81,6 +81,37 @@ def test_diversity_never_duplicates_a_chunk():
     assert len(keys) == len(set(keys))
 
 
+def test_diversity_min_file_score_excludes_weak_files():
+    """Issue #975 follow-up: a file must not get a round-1 seat on a weak match.
+
+    Without a floor, every distinct file present gets ONE chunk in round 1
+    regardless of relevance — reproduced live at 41-file scope, where a
+    genuine single-file "needle" question ended up citing evidence from 30+
+    files, each contributing exactly one barely-matching chunk.
+    """
+    hits = [_hit("relevant", 0, score=2.7), _hit("relevant", 1, score=1.6)]
+    hits += [_hit(f"noise-{i}", 0, score=-1.0 - i) for i in range(30)]
+
+    selected = diversity_sample(hits, max_per_file=4, cap=40, min_file_score=0.0)
+
+    files = {hit.file_uuid for hit in selected}
+    assert files == {"relevant"}
+
+
+def test_diversity_min_file_score_is_a_strict_floor():
+    """A file scoring EXACTLY at the floor is excluded, not admitted — `>`, not `>=`."""
+    hits = [_hit("at-floor", 0, score=0.0), _hit("above-floor", 0, score=0.01)]
+    selected = diversity_sample(hits, max_per_file=4, cap=10, min_file_score=0.0)
+    assert {h.file_uuid for h in selected} == {"above-floor"}
+
+
+def test_diversity_min_file_score_none_is_unfiltered():
+    """The default (``None``) is a control: every existing caller is unaffected."""
+    hits = [_hit("negative", 0, score=-5.0), _hit("positive", 0, score=1.0)]
+    selected = diversity_sample(hits, max_per_file=4, cap=10, min_file_score=None)
+    assert {h.file_uuid for h in selected} == {"negative", "positive"}
+
+
 # ---------------------------------------------------------------------------
 # Adaptive RRF window
 # ---------------------------------------------------------------------------
@@ -92,6 +123,95 @@ def test_diversity_never_duplicates_a_chunk():
 )
 def test_dynamic_rrf_window_scales_and_clamps(size, expected):
     assert dynamic_rrf_window(size) == expected
+
+
+# ---------------------------------------------------------------------------
+# Scope-aware candidate pool (issue #975)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("base", "per_file", "scope_size", "expected"),
+    [
+        # Typical small scope: below the floor, so the admin's configured
+        # minimum wins unchanged — byte-identical to pre-#975 behaviour.
+        (48, 12, 4, 48),
+        (48, 12, 1, 48),
+        # Large bounded scope: scales toward per_file candidates for every file.
+        (48, 12, 41, 492),
+        # Clamped at the shared ceiling rather than growing without bound.
+        (48, 12, 500, 500),
+        (48, 12, 10_000, 500),
+    ],
+)
+def test_scope_aware_pool_size_scales_and_clamps(base, per_file, scope_size, expected):
+    from app.services.search.chunk_retrieval import scope_aware_pool_size
+
+    assert scope_aware_pool_size(base, per_file=per_file, scope_size=scope_size) == expected
+
+
+@pytest.mark.parametrize("scope_size", [None, 0])
+def test_scope_aware_pool_size_leaves_unbounded_scope_unscaled(scope_size):
+    """``None``/``0`` means "all accessible" or "not yet known" — never scaled.
+
+    Scaling blindly here would be an unbounded cost: an "all accessible" scope
+    can be arbitrarily large and its size is not known without an extra
+    Postgres query on every turn.
+    """
+    from app.services.search.chunk_retrieval import scope_aware_pool_size
+
+    assert scope_aware_pool_size(48, per_file=12, scope_size=scope_size) == 48
+
+
+def _run_retrieve_context_and_capture_opensearch_size(file_uuids: list[str] | None) -> int:
+    """Drive the REAL ``retrieve_chunks`` through ``retrieve_context`` and return the
+    ``size`` it put on the actual OpenSearch request body — not a mocked call
+    argument, the constructed request, matching ``test_retrieval_always_filters_by_caller``'s
+    pattern below.
+    """
+    from app.services.chat import retrieval
+
+    client = MagicMock()
+    client.search.return_value = {"hits": {"hits": []}}
+    with (
+        patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client),
+        patch("app.services.chat.retrieval_cache.get_cached", return_value=None),
+    ):
+        retrieval.retrieve_context(
+            query="what topics came up across these meetings",
+            user_id=1,
+            organization_id=None,
+            file_uuids=file_uuids,
+            settings=ChatSettings(candidate_pool=48, max_chunks_per_file=12),
+        )
+
+    body = client.search.call_args.kwargs["body"]
+    return int(body["size"])
+
+
+def test_retrieve_context_widens_the_pool_for_a_large_bounded_scope():
+    """Issue #975: a 41-file scope must not still request only 48 candidates.
+
+    This is the literal reproduction of the reported defect — before the fix,
+    `retrieve_chunks` was always called with `size=settings.candidate_pool`
+    regardless of how many files were in scope, which is what let the initial
+    OpenSearch pull concentrate on 1-2 files at corpus scale.
+    """
+    scope = [f"file-{i}" for i in range(41)]
+    assert _run_retrieve_context_and_capture_opensearch_size(scope) == 492
+
+
+def test_retrieve_context_leaves_pool_unscaled_for_a_typical_small_scope():
+    """A 4-file scope — the shipped default's own derivation — is unchanged."""
+    scope = [f"file-{i}" for i in range(4)]
+    assert _run_retrieve_context_and_capture_opensearch_size(scope) == 48
+
+
+def test_retrieve_context_leaves_the_unbounded_scope_unscaled():
+    """``file_uuids=None`` ("all accessible") is not widened — see the docstring
+    on `scope_aware_pool_size` for why: the file count is unknown here without
+    an extra Postgres query, and the scope can be arbitrarily large."""
+    assert _run_retrieve_context_and_capture_opensearch_size(None) == 48
 
 
 # ---------------------------------------------------------------------------

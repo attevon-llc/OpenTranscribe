@@ -6,7 +6,12 @@ vi.mock('$lib/axios', () => ({
 }));
 
 import axiosInstance from '$lib/axios';
-import { capabilities, isCapabilityEnabled, loadCapabilities } from './capabilities';
+import {
+  capabilities,
+  isCapabilityEnabled,
+  loadCapabilities,
+  resetCapabilities,
+} from './capabilities';
 
 const mockedGet = vi.mocked(axiosInstance.get);
 
@@ -108,5 +113,108 @@ describe('capabilities store', () => {
     await loadCapabilities();
 
     expect(get(capabilities).maxUploadBytes).toBeNull();
+  });
+
+  describe('single flight', () => {
+    const body = (edition: string) => ({
+      data: { edition, capabilities: {}, audience: {} },
+    });
+
+    it('concurrent callers share one request', async () => {
+      let release!: (v: unknown) => void;
+      mockedGet.mockReturnValueOnce(new Promise((r) => (release = r)) as never);
+
+      const first = loadCapabilities();
+      const second = loadCapabilities();
+      release(body('cloud'));
+      await Promise.all([first, second]);
+
+      expect(mockedGet).toHaveBeenCalledTimes(1);
+      expect(get(capabilities).edition).toBe('cloud');
+    });
+
+    it('is not a permanent cache: a call after the first settled fetches again', async () => {
+      mockedGet.mockResolvedValueOnce(body('community') as never);
+      mockedGet.mockResolvedValueOnce(body('cloud') as never);
+
+      await loadCapabilities();
+      await loadCapabilities();
+
+      expect(mockedGet).toHaveBeenCalledTimes(2);
+      expect(get(capabilities).edition).toBe('cloud');
+    });
+
+    it('a response that lands after resetCapabilities() is dropped, not applied to the next session', async () => {
+      let release!: (v: unknown) => void;
+      mockedGet.mockReturnValueOnce(new Promise((r) => (release = r)) as never);
+
+      const inFlight = loadCapabilities();
+      resetCapabilities(); // user A logs out while A's request is still in flight
+      release(body('cloud')); // ...and A's tier-scoped answer arrives afterwards
+      await inFlight;
+
+      expect(get(capabilities).edition).toBe('community');
+      expect(get(capabilities).loaded).toBe(false);
+    });
+
+    it('a call made after the reset starts its own request instead of joining the stale one', async () => {
+      let releaseStale!: (v: unknown) => void;
+      mockedGet.mockReturnValueOnce(new Promise((r) => (releaseStale = r)) as never);
+      mockedGet.mockResolvedValueOnce(body('cloud') as never);
+
+      const stale = loadCapabilities();
+      resetCapabilities();
+      await loadCapabilities(); // user B's fetch
+      releaseStale(body('community'));
+      await stale;
+
+      expect(mockedGet).toHaveBeenCalledTimes(2);
+      expect(get(capabilities).edition).toBe('cloud');
+    });
+  });
+
+  describe('tenancyMode (issue #1122, fail closed)', () => {
+    it("is 'multi' only for the exact string 'multi'", async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: 'multi' },
+      });
+      await loadCapabilities();
+      expect(get(capabilities).tenancyMode).toBe('multi');
+    });
+
+    it("is 'single' when the server says single", async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: 'single' },
+      });
+      await loadCapabilities();
+      expect(get(capabilities).tenancyMode).toBe('single');
+    });
+
+    it.each([['MULTI'], ['Multi'], [true], [null], [undefined]])(
+      'is undefined for %s (never a guess)',
+      async (value) => {
+        mockedGet.mockResolvedValueOnce({
+          data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: value },
+        });
+        await loadCapabilities();
+        expect(get(capabilities).tenancyMode).toBeUndefined();
+      }
+    );
+
+    it('stays undefined when the fetch fails, even though visibility fails open', async () => {
+      mockedGet.mockRejectedValueOnce(new Error('network down'));
+      await loadCapabilities();
+      expect(get(capabilities).loaded).toBe(true);
+      expect(get(capabilities).tenancyMode).toBeUndefined();
+    });
+
+    it('is dropped by resetCapabilities', async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: { edition: 'community', capabilities: {}, audience: {}, tenancy_mode: 'multi' },
+      });
+      await loadCapabilities();
+      resetCapabilities();
+      expect(get(capabilities).tenancyMode).toBeUndefined();
+    });
   });
 });

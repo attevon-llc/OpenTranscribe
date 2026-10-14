@@ -108,8 +108,10 @@ class WatchSource(Base):
     skip_files_older_than_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recursive: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auto_transcribe: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    min_speakers: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
-    max_speakers: Mapped[int | None] = mapped_column(Integer, default=20, nullable=True)
+    # NULL = "use my saved range". No column default: a default would be passed as a per-file
+    # override and beat the owner's range on every import (issue #1198).
+    min_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     collection_ids: Mapped[list | None] = mapped_column(
         JSON, nullable=True
     )  # list[str] of collection UUIDs

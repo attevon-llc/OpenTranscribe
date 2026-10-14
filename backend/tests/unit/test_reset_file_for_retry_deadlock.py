@@ -46,6 +46,10 @@ class _FakeQuery:
     def first(self):
         return self._result
 
+    def __iter__(self):
+        """Row iteration (the speaker capture before the delete): no rows."""
+        return iter(())
+
     def delete(self):
         return 0
 

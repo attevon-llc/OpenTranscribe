@@ -31,6 +31,7 @@ from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
+from app.utils.speaker_labels import looks_like_a_person_name
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     from sqlalchemy.orm import Session
@@ -1881,6 +1882,10 @@ class LLMService:
             )
             return False
 
+        if not looks_like_a_person_name(pred.get("predicted_name")):
+            logger.info("Skipping speaker prediction whose predicted_name is not a name")
+            return False
+
         confidence = pred.get("confidence", 0.0)
         return isinstance(confidence, (int, float)) and confidence >= 0.5
 
@@ -2379,12 +2384,25 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         post-transcription recovery sweep: a looser check there dispatches tasks
         that can only skip.
         """
+        return LLMService.describe_for_user(db, user_id) is not None
+
+    @staticmethod
+    def describe_for_user(db: "Session", user_id: int) -> tuple[str, str, str | None] | None:
+        """``(provider, model, base_url)`` of the LLM this user's features would use.
+
+        ``None`` exactly when :meth:`is_configured_for_user` is False; the same DB-only
+        resolution (user config, else system settings), no network.
+        """
         resolved = LLMService._resolve_user_llm_settings(db, user_id)
         if resolved is not None and LLMService._endpoint_resolves(
             resolved.provider, resolved.base_url
         ):
-            return True
-        return LLMService._resolve_system_provider() is not None
+            return resolved.provider.value, str(resolved.settings.model_name), resolved.base_url
+        system = LLMService._resolve_system_provider()
+        if system is None:
+            return None
+        provider, model, _api_key, base_url = system
+        return provider.value, model, base_url
 
     @staticmethod
     def create_from_user_settings(user_id: int) -> Optional["LLMService"]:

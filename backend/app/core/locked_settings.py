@@ -29,6 +29,9 @@ ADVANCED = "transcription.advanced"
 #: The stored ``UserSetting`` key is always ``"transcription_" + field``.
 TRANSCRIPTION_FIELD_CAPABILITY: dict[str, str] = {
     "diarization_source": DIARIZATION_SOURCE,
+    # The saved ASR configuration an ``asr_config`` source points at is part of the same
+    # choice: a locked source must not leave a user-chosen diarizer behind it.
+    "diarization_asr_config_uuid": DIARIZATION_SOURCE,
     "vad_threshold": ADVANCED,
     "vad_min_silence_ms": ADVANCED,
     "vad_min_speech_ms": ADVANCED,

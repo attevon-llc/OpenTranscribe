@@ -12,6 +12,8 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Callable
+from collections.abc import Iterable
 from typing import Any
 
 from app.core.celery import celery_app
@@ -40,6 +42,16 @@ _ORPHAN_DELETE_RATIO_LIMIT = 0.10
 #: three-document index a single genuine orphan is 33% of it, and a guard that
 #: blocks routine cleanup forever would just be turned off.
 _ORPHAN_DELETE_FLOOR_DOCS = 25
+
+#: How many orphaned identifiers one index's result lists by name. The listing is what
+#: makes a dry run reviewable — an operator deciding whether to force a large purge
+#: needs to see WHICH files the documents belong to, not only how many there are — and
+#: the cap keeps a pathological index from turning the result (stored in Redis and
+#: pushed over the WebSocket) into megabytes. ``orphan_keys_truncated`` says when it bit.
+_ORPHAN_KEY_LISTING_CAP = 200
+
+#: Postgres ``IN (...)`` batch for the pre-delete re-check.
+_RECHECK_BATCH = 1000
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +92,45 @@ def _get_all_speaker_uuids_from_db() -> set[str]:
     with session_scope() as db:
         rows = db.query(Speaker.uuid).all()
         return {str(row[0]) for row in rows}
+
+
+def _present_in_db(column: Any, keys: Iterable[Any]) -> set[str]:
+    """Which of ``keys`` exist in Postgres RIGHT NOW, as strings.
+
+    The sweep's valid set is a snapshot taken before the index is aggregated, so a
+    file uploaded and indexed in between is absent from the snapshot while its
+    documents are present — it would be judged an orphan and deleted. Re-asking
+    Postgres about exactly the candidate keys AFTER the aggregation closes that: a
+    document can only exist once its row does, and a row that is absent now (after
+    its documents were observed) was deleted, never yet-to-be-created.
+    """
+    from app.db.session_utils import session_scope
+
+    wanted = list(keys)
+    present: set[str] = set()
+    with session_scope() as db:
+        for i in range(0, len(wanted), _RECHECK_BATCH):
+            batch = wanted[i : i + _RECHECK_BATCH]
+            present.update(str(row[0]) for row in db.query(column).filter(column.in_(batch)))
+    return present
+
+
+def _file_uuids_present(keys: Iterable[Any]) -> set[str]:
+    from app.models.media import MediaFile
+
+    return _present_in_db(MediaFile.uuid, keys)
+
+
+def _file_ids_present(keys: Iterable[Any]) -> set[str]:
+    from app.models.media import MediaFile
+
+    return _present_in_db(MediaFile.id, keys)
+
+
+def _speaker_uuids_present(keys: Iterable[Any]) -> set[str]:
+    from app.models.media import Speaker
+
+    return _present_in_db(Speaker.uuid, keys)
 
 
 def _coerce_bucket_key(key: Any, key_type: type[int] | type[str]) -> int | str | None:
@@ -128,6 +179,7 @@ def _cleanup_index_by_field(
     key_type: type[int] | type[str],
     dry_run: bool = False,
     force: bool = False,
+    still_present: Callable[[Iterable[Any]], set[str]] | None = None,
 ) -> dict[str, Any]:
     """Remove documents from an OpenSearch index where field_name is not in valid_values.
 
@@ -154,16 +206,26 @@ def _cleanup_index_by_field(
         dry_run: If True, count orphans without deleting. The refusals are still
             evaluated and reported, so a dry run shows what a real run would do.
         force: Override the ratio guard. Never overrides the empty-set refusal.
+        still_present: Re-asks Postgres which candidate keys exist NOW (see
+            :func:`_present_in_db`); any it names are dropped from the orphan set
+            before the ratio guard and the delete, and counted in
+            ``rechecked_present``. This is what makes a forced purge unable to
+            delete the documents of a file that exists.
 
     Returns:
-        Dict with total_docs, orphaned_docs, deleted_docs, and ``refused`` —
-        None, ``"empty_valid_set"`` or ``"ratio_guard"``.
+        Dict with total_docs, orphaned_docs, deleted_docs, ``refused`` (None,
+        ``"empty_valid_set"`` or ``"ratio_guard"``), ``orphan_keys`` (the orphaned
+        identifiers, sorted, capped at :data:`_ORPHAN_KEY_LISTING_CAP`),
+        ``orphan_keys_truncated`` and ``rechecked_present``.
     """
     result: dict[str, Any] = {
         "total_docs": 0,
         "orphaned_docs": 0,
         "deleted_docs": 0,
         "refused": None,
+        "orphan_keys": [],
+        "orphan_keys_truncated": False,
+        "rechecked_present": 0,
     }
 
     if not client.indices.exists(index=index_name):
@@ -206,7 +268,8 @@ def _cleanup_index_by_field(
         logger.warning(f"Aggregation on {index_name}.{field_name} failed: {e}")
         return result
 
-    orphan_values: list[Any] = []
+    # (raw bucket key, comparable key, documents behind it)
+    orphans: list[tuple[Any, int | str, int]] = []
     uncomparable = 0
     for bucket in buckets:
         key = bucket["key"]
@@ -220,8 +283,23 @@ def _cleanup_index_by_field(
             uncomparable += 1
             continue
         if comparable_key not in valid_values:
-            orphan_values.append(key)
-            result["orphaned_docs"] += bucket["doc_count"]
+            orphans.append((key, comparable_key, int(bucket["doc_count"])))
+
+    if orphans and still_present is not None:
+        present = still_present([comparable for _, comparable, _ in orphans])
+        if present:
+            logger.warning(
+                f"{index_name}.{field_name}: {len(present)} candidate orphan(s) exist in "
+                "PostgreSQL after all (created after the snapshot) and were kept."
+            )
+        result["rechecked_present"] = len(present)
+        orphans = [o for o in orphans if str(o[1]) not in present]
+
+    orphan_values = [raw for raw, _, _ in orphans]
+    result["orphaned_docs"] = sum(count for _, _, count in orphans)
+    listed = sorted(str(raw) for raw in orphan_values)
+    result["orphan_keys"] = listed[:_ORPHAN_KEY_LISTING_CAP]
+    result["orphan_keys_truncated"] = len(listed) > _ORPHAN_KEY_LISTING_CAP
 
     if uncomparable:
         logger.error(
@@ -320,12 +398,20 @@ def run_orphan_cleanup(
     # speaker was deleted) are also caught — not just orphans from deleted files.
     # The key type is declared here, per index, because it is a property of the
     # index mapping — not something to infer from whatever the DB query returned.
-    index_configs: list[tuple[str, str, set, type[int] | type[str]]] = [
-        (get_speaker_index(), "speaker_uuid", valid_speaker_uuids, str),
-        (get_speaker_index_v4(), "speaker_uuid", valid_speaker_uuids, str),
-        (settings.OPENSEARCH_TRANSCRIPT_INDEX, "file_uuid", valid_file_uuids, str),
-        (settings.OPENSEARCH_CHUNKS_INDEX, "file_uuid", valid_file_uuids, str),
-        (settings.OPENSEARCH_SUMMARY_INDEX, "file_id", valid_file_ids, int),
+    index_configs: list[
+        tuple[str, str, set, type[int] | type[str], Callable[[Iterable[Any]], set[str]]]
+    ] = [
+        (get_speaker_index(), "speaker_uuid", valid_speaker_uuids, str, _speaker_uuids_present),
+        (get_speaker_index_v4(), "speaker_uuid", valid_speaker_uuids, str, _speaker_uuids_present),
+        (
+            settings.OPENSEARCH_TRANSCRIPT_INDEX,
+            "file_uuid",
+            valid_file_uuids,
+            str,
+            _file_uuids_present,
+        ),
+        (settings.OPENSEARCH_CHUNKS_INDEX, "file_uuid", valid_file_uuids, str, _file_uuids_present),
+        (settings.OPENSEARCH_SUMMARY_INDEX, "file_id", valid_file_ids, int, _file_ids_present),
     ]
 
     results: dict[str, Any] = {}
@@ -333,10 +419,10 @@ def run_orphan_cleanup(
     total_deleted = 0
     refusals: dict[str, str] = {}
 
-    for idx, (index_name, field_name, valid_set, key_type) in enumerate(index_configs):
+    for idx, (index_name, field_name, valid_set, key_type, recheck) in enumerate(index_configs):
         logger.info(f"Scanning index {index_name} for orphans...")
         stats = _cleanup_index_by_field(
-            client, index_name, field_name, valid_set, key_type, dry_run, force
+            client, index_name, field_name, valid_set, key_type, dry_run, force, recheck
         )
         results[index_name] = stats
         total_orphans += stats["orphaned_docs"]

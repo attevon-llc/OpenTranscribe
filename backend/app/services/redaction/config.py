@@ -95,6 +95,17 @@ class EffectiveRedactionConfig:
     export_redacted: bool = C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED
     export_locked: bool = False  # admin mandates censored exports
 
+    @property
+    def masks_anything(self) -> bool:
+        """Whether this policy would mask any text at read time.
+
+        The single definition of "redaction is enabled" for the UI and the rescan
+        action: the master switch is on (user preference or admin force) AND at least
+        one category is enabled. Enabled-with-no-categories masks nothing, so offering
+        a scan there is as pointless as with the switch off.
+        """
+        return bool(self.enabled and self.enabled_categories)
+
     def reveal_categories(self, requested: bool, is_owner: bool) -> set[str]:
         """Categories an authorized owner may reveal (everything enabled except forced)."""
         if not requested or not is_owner:

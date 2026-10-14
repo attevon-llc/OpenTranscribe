@@ -85,22 +85,22 @@ def process_speaker_merge_background(
             gone; only the OpenSearch document remains at this point.
         target_speaker_uuid: UUID of the surviving speaker.
         user_id: Owner, for the completion WebSocket event.
-        source_speaker_id: Integer id the absorbed speaker had, needed to detach it
-            from its old profile's consolidated embedding.
-        source_profile_id: Profile the absorbed speaker belonged to, if any.
-        target_profile_id: Profile the surviving speaker belongs to, if any.
+        source_speaker_id: Unused since issue #1214 (the endpoint rebuilds the source's
+            profile and clusters itself); accepted so already-queued messages unpack.
+        source_profile_id: Unused since issue #1214, same reason.
+        target_profile_id: Unused since issue #1214; the target's profile is re-read.
         media_file_ids: Media files touched by the merge (video cache + analytics).
 
     Returns:
-        A status dict; failures are logged and swallowed so a merge is never rolled
-        back by a downstream search/storage hiccup (matching the previous inline
-        behaviour, where every step was individually try/except'd).
+        A status dict. A merge is never rolled back by a downstream search/storage
+        hiccup; an aggregate that may still hold the source's voice is logged at ERROR
+        by ``speaker_cleanup`` and reported as ``status: partial`` with its stages.
     """
     from app.api.endpoints.speakers import _clear_speaker_video_cache
     from app.api.endpoints.speakers import _merge_speaker_embeddings
+    from app.api.endpoints.speakers import _reconcile_speakers_after_merge
     from app.api.endpoints.speakers import _refresh_analytics_after_merge
     from app.api.endpoints.speakers import _update_opensearch_speaker_merge
-    from app.api.endpoints.speakers import _update_profile_embeddings_after_merge
     from app.utils.websocket_notify import send_ws_event
     from app.utils.websocket_notify import send_ws_event_for_file
 
@@ -130,10 +130,11 @@ def process_speaker_merge_background(
         _update_opensearch_speaker_merge(source_speaker_uuid, target_speaker_uuid)
 
         # 4 + 5. Postgres-side follow-ups. Their own short session, after every
-        #        network round trip above has finished.
+        #        network round trip above has finished. The target's clusters and
+        #        profile are rebuilt around the averaged voiceprint (issue #1214).
         with session_scope() as db:
-            _update_profile_embeddings_after_merge(
-                db, source_profile_id, target_profile_id, source_speaker_id
+            cleanup_residual = _reconcile_speakers_after_merge(
+                db, source_speaker_uuid, int(target["id"])
             )
             _refresh_analytics_after_merge(db, affected_media_files)
 
@@ -169,10 +170,12 @@ def process_speaker_merge_background(
         logger.info(
             f"Background merge processing complete {source_speaker_uuid} -> {target_speaker_uuid}"
         )
+        cleanup_stages = sorted({str(r.get("stage")) for r in cleanup_residual or []})
         return {
-            "status": "success",
+            "status": "partial" if cleanup_stages else "success",
             "source_speaker_uuid": source_speaker_uuid,
             "target_speaker_uuid": target_speaker_uuid,
+            "cleanup_incomplete_stages": cleanup_stages,
         }
 
     except Exception as e:

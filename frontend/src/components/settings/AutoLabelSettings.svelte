@@ -1,11 +1,15 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
+  import { llmStatusStore } from '$stores/llmStatus';
   import ProgressBar from '../ui/ProgressBar.svelte';
+  import RangeSlider from '../ui/RangeSlider.svelte';
 
+  let autoTopicExtraction = true;
   let enabled = true;
   let confidenceThreshold = 0.75;
   let tagsEnabled = true;
@@ -22,13 +26,20 @@
   let hasChanges = false;
 
   // Original values for change tracking
+  let originalAutoTopicExtraction = true;
   let originalEnabled = true;
   let originalThreshold = 0.75;
   let originalTagsEnabled = true;
   let originalCollectionsEnabled = true;
   let originalBulkGroupingEnabled = true;
 
-  $: hasChanges = enabled !== originalEnabled ||
+  // Known only after the first status check; until then the switch is not disabled, so it
+  // does not flash greyed-out for users who do have a provider.
+  $: noProvider =
+    !$llmStatusStore.checking && $llmStatusStore.lastChecked !== null && !$llmStatusStore.available;
+
+  $: hasChanges = autoTopicExtraction !== originalAutoTopicExtraction ||
+    enabled !== originalEnabled ||
     confidenceThreshold !== originalThreshold ||
     tagsEnabled !== originalTagsEnabled ||
     collectionsEnabled !== originalCollectionsEnabled ||
@@ -46,12 +57,14 @@
       ]);
 
       const data = settingsRes.data;
+      autoTopicExtraction = data.auto_topic_extraction ?? true;
       enabled = data.enabled ?? true;
       confidenceThreshold = data.confidence_threshold ?? 0.75;
       tagsEnabled = data.tags_enabled ?? true;
       collectionsEnabled = data.collections_enabled ?? true;
       bulkGroupingEnabled = data.bulk_grouping_enabled ?? true;
 
+      originalAutoTopicExtraction = autoTopicExtraction;
       originalEnabled = enabled;
       originalThreshold = confidenceThreshold;
       originalTagsEnabled = tagsEnabled;
@@ -77,6 +90,7 @@
     saving = true;
     try {
       const response = await axiosInstance.put('/user-settings/auto-label', {
+        auto_topic_extraction: autoTopicExtraction,
         enabled,
         confidence_threshold: confidenceThreshold,
         tags_enabled: tagsEnabled,
@@ -85,6 +99,7 @@
       });
 
       const data = response.data;
+      originalAutoTopicExtraction = data.auto_topic_extraction ?? autoTopicExtraction;
       originalEnabled = data.enabled;
       originalThreshold = data.confidence_threshold;
       originalTagsEnabled = data.tags_enabled;
@@ -163,6 +178,7 @@
   }
 
   onMount(() => {
+    void llmStatusStore.initialize();
     loadSettings();
     window.addEventListener('auto-label-status', handleAutoLabelStatus as EventListener);
   });
@@ -174,22 +190,31 @@
 
 <div class="auto-label-settings">
   {#if loading}
-    <div class="skeleton-rows">
-      <div class="skeleton-row">
-        <div class="skeleton-text"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-      <div class="skeleton-row">
-        <div class="skeleton-text wide"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-      <div class="skeleton-row">
-        <div class="skeleton-text"></div>
-        <div class="skeleton-toggle"></div>
-      </div>
-    </div>
+    <SettingsSkeleton variant="rows" count={3} label={$t('common.loading')} />
   {:else}
     <div class="settings-group">
+      <!-- Automatic AI suggestions after transcription (sends transcript text to the AI provider) -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="auto-topic-extraction" class="setting-label">{$t('autoLabel.autoSuggestLabel')}</label>
+          <span class="setting-help">{$t('autoLabel.autoSuggestHelp')}</span>
+          {#if noProvider}
+            <span class="setting-note" data-testid="auto-suggest-no-provider">
+              {$t('autoLabel.autoSuggestNoProvider')}
+            </span>
+          {/if}
+        </div>
+        <label class="toggle-switch">
+          <input
+            type="checkbox"
+            id="auto-topic-extraction"
+            bind:checked={autoTopicExtraction}
+            disabled={noProvider}
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
       <!-- Master Toggle -->
       <div class="setting-row">
         <div class="setting-info">
@@ -204,23 +229,17 @@
 
       {#if enabled}
         <!-- Confidence Threshold -->
-        <div class="setting-row">
-          <div class="setting-info">
-            <label for="confidence-threshold" class="setting-label">{$t('autoLabel.thresholdLabel')}</label>
-            <span class="setting-help">{$t('autoLabel.thresholdHelp')}</span>
-          </div>
-          <div class="slider-container">
-            <input
-              type="range"
-              id="confidence-threshold"
-              min="0.5"
-              max="1.0"
-              step="0.05"
-              bind:value={confidenceThreshold}
-              class="threshold-slider"
-            />
-            <span class="threshold-value">{Math.round(confidenceThreshold * 100)}%</span>
-          </div>
+        <div class="setting-row setting-row--slider">
+          <RangeSlider
+            id="confidence-threshold"
+            label={$t('autoLabel.thresholdLabel')}
+            hint={$t('autoLabel.thresholdHelp')}
+            min={0.5}
+            max={1.0}
+            step={0.05}
+            format={(v) => `${Math.round(v * 100)}%`}
+            bind:value={confidenceThreshold}
+          />
         </div>
 
         <!-- Tags Toggle -->
@@ -361,6 +380,12 @@
     line-height: 1.3;
   }
 
+  .setting-note {
+    font-size: 0.775rem;
+    color: var(--text-muted, var(--text-secondary));
+    line-height: 1.3;
+  }
+
   /* Toggle Switch */
   .toggle-switch {
     position: relative;
@@ -410,54 +435,17 @@
     background-color: var(--primary-color);
   }
 
+  .toggle-switch input:disabled + .toggle-slider {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
   .toggle-switch input:checked + .toggle-slider:before {
     transform: translateX(20px);
   }
 
-  /* Slider */
-  .slider-container {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-shrink: 0;
-    margin-left: 1rem;
-  }
-
-  .threshold-slider {
-    width: 120px;
-    height: 4px;
-    -webkit-appearance: none;
-    appearance: none;
-    border-radius: 2px;
-    background: var(--border-color);
-    outline: none;
-  }
-
-  .threshold-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    cursor: pointer;
-  }
-
-  .threshold-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    cursor: pointer;
-    border: none;
-  }
-
-  .threshold-value {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--primary-on-surface);
-    min-width: 40px;
-    text-align: right;
+  .setting-row--slider {
+    display: block;
   }
 
   /* Save Section */
@@ -580,42 +568,10 @@
   }
 
   /* Skeleton Loading */
-  .skeleton-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 0.5rem 0;
-  }
 
-  .skeleton-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-  }
 
-  .skeleton-text {
-    height: 14px;
-    width: 140px;
-    border-radius: 4px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-text.wide {
-    width: 200px;
-  }
 
-  .skeleton-toggle {
-    height: 24px;
-    width: 44px;
-    border-radius: 12px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
   @media (max-width: 768px) {
     .setting-row {
@@ -626,16 +582,6 @@
 
     .toggle-switch {
       margin-left: 0;
-    }
-
-    .slider-container {
-      margin-left: 0;
-      width: 100%;
-    }
-
-    .threshold-slider {
-      flex: 1;
-      width: auto;
     }
 
     .btn-save,

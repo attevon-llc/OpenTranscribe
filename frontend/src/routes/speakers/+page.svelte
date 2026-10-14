@@ -9,6 +9,7 @@
   import ProfilesTab from '$components/speakers/ProfilesTab.svelte';
   import InboxTab from '$components/speakers/InboxTab.svelte';
   import SpeakerPreviewPlayer from '$components/speakers/SpeakerPreviewPlayer.svelte';
+  import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import {
     listClusters,
@@ -458,8 +459,15 @@
         return;
       }
       try {
-        await mergeClusters(mergeSourceUuid, targetUuid);
-        toastStore.success($t('speakers.merge.success'));
+        const merged = await mergeClusters(mergeSourceUuid, targetUuid);
+        const leftBehind = merged.blocked_speaker_uuids?.length ?? 0;
+        if (leftBehind > 0) {
+          // The merge honoured earlier corrections and says so (#1233): those speakers
+          // stay in the source cluster rather than silently joining the target.
+          toastStore.warning($t('speakers.merge.someLeftBehind', { count: leftBehind }));
+        } else {
+          toastStore.success($t('speakers.merge.success'));
+        }
         mergeMode = false;
         mergeSourceUuid = null;
         clampClusterPage(1); // the source cluster is absorbed into the target
@@ -762,10 +770,22 @@
     if (inboxActionInProgress.has(speaker_uuid)) return;
     inboxActionInProgress.add(speaker_uuid);
     inboxActionInProgress = inboxActionInProgress; // trigger reactivity
+    // A per-speaker Inbox action is the user's explicit decision about THIS speaker, so
+    // it overrides an earlier unassignment of it (#1233) — the Inbox is where an
+    // unassigned speaker lands, and undoing a wrong unassignment happens here. A refusal
+    // still comes back as `failed_count`, which must never read as success.
+    const explicit = true;
     try {
       if (type === 'accept') {
         const item = inboxItems.find(i => i.speaker_uuid === speaker_uuid);
-        await batchVerifySpeakers([speaker_uuid], 'accept', undefined, item?.suggested_name || undefined);
+        const result = await batchVerifySpeakers(
+          [speaker_uuid],
+          'accept',
+          undefined,
+          item?.suggested_name || undefined,
+          explicit
+        );
+        if (result.failed_count > 0) throw new Error('verify refused');
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
         inboxTotal = Math.max(0, inboxTotal - 1);
         toastStore.success($t('speakers.inbox.accepted'));
@@ -775,13 +795,21 @@
         // and the backend already implemented this action; the inbox simply never
         // offered a control for it, so an item with no `suggested_name` could only
         // be skipped (#740-adjacent inbox gap).
-        await batchVerifySpeakers([speaker_uuid], 'assign', profile_uuid);
+        const result = await batchVerifySpeakers(
+          [speaker_uuid],
+          'assign',
+          profile_uuid,
+          undefined,
+          explicit
+        );
+        if (result.failed_count > 0) throw new Error('verify refused');
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
         inboxTotal = Math.max(0, inboxTotal - 1);
         toastStore.success($t('speakers.inbox.assigned'));
         beginRenamePropagation();
       } else if (type === 'skip') {
-        await batchVerifySpeakers([speaker_uuid], 'skip');
+        const result = await batchVerifySpeakers([speaker_uuid], 'skip');
+        if (result.failed_count > 0) throw new Error('verify refused');
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
         inboxTotal = Math.max(0, inboxTotal - 1);
       }
@@ -857,6 +885,11 @@
     {/if}
   </div>
 
+  <!-- Issue #756: clustering quality + gender/attribute metrics are still evolving here;
+       suggestions are never auto-applied. A distinct surface from chat/search (#461) — see
+       RetrievalQualityNotice's header comment. -->
+  <RetrievalQualityNotice surface="speakers" />
+
   <div class="tabs">
     <button class="tab" class:active={activeTab === 'clusters'} on:click={() => switchTab('clusters')}>
       {$t('speakers.tabs.clusters')}
@@ -870,7 +903,12 @@
         <span class="badge">{profiles.length}</span>
       {/if}
     </button>
-    <button class="tab" class:active={activeTab === 'inbox'} on:click={() => switchTab('inbox')}>
+    <button
+      class="tab"
+      class:active={activeTab === 'inbox'}
+      on:click={() => switchTab('inbox')}
+      data-testid="speakers-tab-inbox"
+    >
       {$t('speakers.tabs.inbox')}
       {#if inboxTotal > 0}
         <span class="badge alert">{inboxTotal}</span>
@@ -906,6 +944,8 @@
       {unassignBlacklist}
       {clusterPage}
       {clusterPages}
+      reviewCount={inboxTotal}
+      on:openReview={() => switchTab('inbox')}
       on:search={handleClusterSearch}
       on:recluster={handleRecluster}
       on:toggleSection={(e) => toggleSection(e.detail)}
@@ -1149,7 +1189,7 @@
   }
 
   .badge.alert {
-    background: var(--error-color, #ef4444);
+    background: var(--error-solid, #dc2626);
     color: white;
   }
 

@@ -1,4 +1,4 @@
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived, get, type Readable } from 'svelte/store';
 import i18next from 'i18next';
 import {
   DEFAULT_LANGUAGE,
@@ -70,6 +70,17 @@ const applyLanguage = async (newLocale: string): Promise<void> => {
  */
 const i18nGeneration = writable(0);
 
+/**
+ * True once `locale.initialize()` has settled — successfully or not.
+ *
+ * The root layout gates first render on this as well as on `authReady`, so the shell
+ * never paints against an empty i18next (raw keys for a frame, or for good on any
+ * subscriber the `i18nGeneration` bump cannot reach). Set on failure too: a broken
+ * locale chunk must degrade to raw keys, never to a permanently blank app.
+ */
+const localeReadyStore = writable(false);
+export const localeReady: Readable<boolean> = { subscribe: localeReadyStore.subscribe };
+
 const createLocaleStore = () => {
   const { subscribe, set, update } = writable<string>(getInitialLocale());
   let initialized = false;
@@ -109,20 +120,32 @@ const createLocaleStore = () => {
 
       const currentLocale = get({ subscribe });
 
-      // Import and initialize i18n
-      const { initI18n } = await import('$lib/i18n');
-      await initI18n(currentLocale);
+      try {
+        // Import and initialize i18n
+        const { initI18n } = await import('$lib/i18n');
+        await initI18n(currentLocale);
 
-      // Set up listener for i18next language changes
-      i18next.on('languageChanged', (lng) => {
-        update(() => lng);
-        // Always bump, even when `lng` equals the value the store already holds —
-        // that is the normal case for a user-initiated switch, and it is what makes
-        // every `$t(...)` re-render now that i18next really has the new strings.
+        // Set up listener for i18next language changes
+        i18next.on('languageChanged', (lng) => {
+          update(() => lng);
+          // Always bump, even when `lng` equals the value the store already holds —
+          // that is the normal case for a user-initiated switch, and it is what makes
+          // every `$t(...)` re-render now that i18next really has the new strings.
+          i18nGeneration.update((n) => n + 1);
+        });
+
+        initialized = true;
+
+        // Anything that subscribed to `t` before this point was handed the raw-key
+        // closure, and initialisation changes neither `locale` (it already holds the
+        // code) nor fires a `languageChanged` we can hear (i18next emits it inside
+        // `init()`, before the listener above exists). Without this bump those
+        // subscribers never re-render — the navbar kept `nav.gallery` etc. whenever
+        // auth resolved before the locale chunk (#1131 runs the two concurrently).
         i18nGeneration.update((n) => n + 1);
-      });
-
-      initialized = true;
+      } finally {
+        localeReadyStore.set(true);
+      }
     },
   };
 };

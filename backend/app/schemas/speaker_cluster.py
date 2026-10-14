@@ -137,6 +137,14 @@ class BatchVerifyRequest(BaseModel):
         default="accept",
         description="Action: 'accept' (apply suggestion), 'assign' (assign to profile), 'name' (set display_name), 'skip' (mark as reviewed/skipped)",
     )
+    override_unassignment: bool = Field(
+        default=False,
+        description=(
+            "Lift the user's earlier unassignment or rejection that blocks this speaker. "
+            "Only with exactly one speaker; a batch is refused (422). Without it, a "
+            "blocked speaker is skipped and listed in blocked_speaker_uuids."
+        ),
+    )
 
 
 class ReclusterRequest(BaseModel):

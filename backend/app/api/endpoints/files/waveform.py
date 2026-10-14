@@ -260,9 +260,8 @@ def get_audio_waveform(
         JSON response with waveform data and metadata
     """
     # Get the media file and verify user access (tenant-gated via ctx.org_id)
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=bool(is_admin), organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     file_id = db_file.id
 
@@ -302,9 +301,8 @@ def get_audio_waveform_peaks(
         JSON response with peaks data optimized for display
     """
     # Get the media file and verify user access (tenant-gated via ctx.org_id)
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=bool(is_admin), organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     file_id = db_file.id
 
@@ -355,12 +353,11 @@ def generate_waveform_for_file(
     """
     try:
         # Verify user access to the file (tenant-gated via ctx.org_id)
-        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
             db,
             file_uuid,
             current_user.id,
-            is_admin=bool(is_admin),
+            bypass=ctx.bypass,
             organization_id=ctx.org_id,
             min_permission="editor",
         )

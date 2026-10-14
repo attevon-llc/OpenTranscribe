@@ -115,3 +115,56 @@ describe('FileDetailModal — task progress guard', () => {
     expect(progressRow(container)).toBe('0%');
   });
 });
+
+describe('FileDetailModal — how the file was processed (#1229)', () => {
+  function renderWithSteps(steps: unknown[] | undefined) {
+    const status = detailedStatus();
+    return render(FileDetailModal, {
+      props: {
+        detailedStatus: { ...status, file: { ...status.file, processing_steps: steps } },
+        selectedFile: 'file-1',
+        retryingFiles: new Set<string>(),
+      },
+    });
+  }
+
+  it('shows one line per step from the status payload', () => {
+    const { container } = renderWithSteps([
+      {
+        step: 'transcription',
+        status: 'done',
+        recorded: 'full',
+        provider: 'deepgram',
+        provider_display: 'Deepgram',
+        model: 'nova-3',
+        where: 'cloud',
+        timing: 'word',
+      },
+      {
+        step: 'diarization',
+        status: 'not_recorded',
+        recorded: 'none',
+        provider: null,
+        provider_display: null,
+        model: null,
+        where: null,
+        timing: null,
+      },
+    ]);
+
+    const block = container.querySelector('.processing-provenance');
+    expect(block?.querySelector('h4')?.textContent).toBe('Processing');
+    const rows = Array.from(block?.querySelectorAll('.step-row') ?? []).map(
+      (row) => row.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(rows).toEqual([
+      'Transcription Deepgram nova-3 Cloud Word timing',
+      'Speaker detection Not recorded (processed before this was tracked)',
+    ]);
+  });
+
+  it('leaves the block out for a payload without steps', () => {
+    const { container } = renderWithSteps(undefined);
+    expect(container.querySelector('.processing-provenance')).toBeNull();
+  });
+});

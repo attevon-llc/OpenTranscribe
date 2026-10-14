@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _share_target
 from app.api.endpoints.tags._common import _writable_tag_ids
@@ -59,7 +60,11 @@ def list_tag_shares(
     return [_share_target(share) for share in list_shares(db, tag_id)]
 
 
-@router.post("/{tag_uuid}/shares", response_model=TagShareTarget)
+@router.post(
+    "/{tag_uuid}/shares",
+    response_model=TagShareTarget,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def create_tag_share(
     tag_uuid: UUID,
     payload: TagShareCreate,
@@ -134,7 +139,11 @@ def create_tag_share(
     return _share_target(share)
 
 
-@router.delete("/{tag_uuid}/shares/{share_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{tag_uuid}/shares/{share_uuid}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def revoke_tag_share(
     tag_uuid: UUID,
     share_uuid: UUID,

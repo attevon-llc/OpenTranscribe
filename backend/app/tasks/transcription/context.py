@@ -18,7 +18,9 @@ from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
+from app.services.error_categorization_service import NO_SPEECH_DETECTED_MESSAGE
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.pipeline_plan import PipelinePlan
 from app.transcription import cuda_health
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -27,6 +29,16 @@ if TYPE_CHECKING:
     from app.transcription.diarizer_native import DiarSidecarUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+def plan_of(stage_context: dict) -> PipelinePlan:
+    """The run's pipeline plan, as dispatch computed it (``preprocess_context["pipeline_plan"]``).
+
+    Every stage reads what to run from here (issue #1225); none re-reads the user's
+    speaker-detection setting, so a setting changed mid-run cannot split one run between
+    two plans.
+    """
+    return PipelinePlan.from_context(stage_context["pipeline_plan"])
 
 
 def retry_on_diar_sidecar_unavailable(
@@ -333,11 +345,7 @@ def _validate_transcription_result(
 ) -> dict | None:
     """Validate transcription result has valid content. Returns error dict if invalid, None if valid."""
     if not result or not result.get("segments") or len(result["segments"]) == 0:
-        error_msg = (
-            "No audio content could be detected in this file. "
-            "The file may be corrupted, contain only silence, or be in an unsupported format. "
-            "Please check the file and try uploading again."
-        )
+        error_msg = NO_SPEECH_DETECTED_MESSAGE
         logger.warning(f"No valid audio content found in file {ctx.file_id}: {ctx.file_name}")
         return _handle_transcription_failure(ctx, task_id, error_msg, "no_valid_audio")
 

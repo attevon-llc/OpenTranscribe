@@ -3,6 +3,7 @@
   import type { SpeakerInboxItem as InboxItemType } from '$lib/types/speakerCluster';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { t } from '$stores/locale';
+  import GenderBadge from './GenderBadge.svelte';
 
   export let item: InboxItemType;
   export let actionInProgress = false;
@@ -90,7 +91,7 @@
             <span class="file-title">{item.media_file_title}</span>
           {/if}
           {#if item.predicted_gender}
-            <span class="attribute">{item.predicted_gender}</span>
+            <span class="attribute"><GenderBadge gender={item.predicted_gender} /></span>
           {/if}
           {#if item.cluster_label}
             <span class="cluster-tag">{$t('speakers.inbox.clusterLabel')} {item.cluster_label}</span>

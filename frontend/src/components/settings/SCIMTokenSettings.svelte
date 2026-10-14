@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -108,7 +109,7 @@
   </div>
 
   {#if loading}
-    <div class="loading">{$t('common.loading')}</div>
+    <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
   {:else if tokens.length === 0}
     <EmptyState
       title={$t('settings.scimTokens.emptyTitle')}
@@ -261,11 +262,6 @@
     margin-bottom: 1rem;
   }
 
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: var(--color-text-secondary);
-  }
 
   .table-wrap {
     overflow-x: auto;

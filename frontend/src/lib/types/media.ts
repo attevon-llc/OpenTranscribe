@@ -52,8 +52,34 @@ export type MediaFileStatus =
   | 'orphaned'
   | 'quarantined';
 
+/**
+ * Every value of the backend `UserErrorReason` enum
+ * (`backend/app/services/error_categorization_service.py`) — the user-facing error
+ * vocabulary carried on the wire as `error_reason`. GH #960: this is the closed set
+ * `$lib/i18n/mediaErrors.ts`'s `Record<MediaErrorReason, string>` is exhaustive over, so a
+ * backend reason with no translated copy fails the frontend build rather than rendering a
+ * raw key. Hand-maintained mirror, no codegen — keep in sync with the backend enum.
+ */
+export type MediaErrorReason =
+  | 'file_quality'
+  | 'no_audio_track'
+  | 'no_speech'
+  | 'format_issue'
+  | 'processing_error'
+  | 'network_error'
+  | 'permission_error'
+  | 'interrupted'
+  | 'diarization_not_configured'
+  | 'pipeline_not_runnable'
+  | 'unclassified';
+
 export interface MediaFile {
   uuid: string;
+  /** Authoritative takedown flag (issue #576 §B.3) — honour this over `status`
+   * when rendering the quarantine badge. A file quarantined mid-pipeline can
+   * have `status` overwritten to a terminal value by a running task
+   * (issue #824's documented residual gap) while this flag stays correct. */
+  is_quarantined?: boolean;
   filename: string;
   status: MediaFileStatus;
   upload_time: string;
@@ -76,7 +102,7 @@ export interface MediaFile {
   status_badge_class?: string;
 
   // Error handling fields from backend
-  error_reason?: string;
+  error_reason?: MediaErrorReason | string;
   error_suggestions?: string[];
   user_message?: string;
   is_retryable?: boolean;
@@ -125,6 +151,23 @@ export interface MediaFile {
 }
 
 /**
+ * One row of how a file was processed (#1229), mirroring `schemas/processing_provenance.py:
+ * ProcessingStepOut`. Display-ready: `provider_display` is pre-formatted by the backend and
+ * nothing here is computed client-side. Served on `GET /files/{uuid}` and inside
+ * `GET /my-files/{uuid}/status`'s `file`.
+ */
+export interface ProcessingStep {
+  step: 'transcription' | 'diarization' | 'voiceprints' | 'summary' | 'topics' | 'speaker_names';
+  status: 'done' | 'off' | 'not_run' | 'not_recorded';
+  recorded: 'full' | 'legacy' | 'none';
+  provider: string | null;
+  provider_display: string | null;
+  model: string | null;
+  where: 'server' | 'cloud' | null;
+  timing: 'word' | 'segment' | 'none' | null;
+}
+
+/**
  * What `GET /files/{uuid}` actually returns — `MediaFile` plus everything the
  * detail page needs and the gallery list does not.
  *
@@ -133,6 +176,12 @@ export interface MediaFile {
  * can't silently start depending on a field the list endpoint never sends.
  */
 export interface MediaFileDetail extends MediaFile {
+  /** Detail-only takedown fields (issue #576 §B.3) — kept off the list
+   * schema, matching `is_quarantined`'s backend-side split. */
+  quarantine_reason?: string | null;
+  quarantined_at?: string | null;
+  legal_hold?: boolean;
+
   /**
    * Full tag objects, the same shape `/api/tags` returns (#326). `GET /files`
    * sends no tags, so this deliberately lives here and not on `MediaFile`.
@@ -163,6 +212,8 @@ export interface MediaFileDetail extends MediaFile {
    */
   diarization_provider?: string | null;
   embedding_mode?: string;
+  /** How each step was processed (#1229); rendered by `ProcessingProvenance`. */
+  processing_steps?: ProcessingStep[];
 
   // Source / delivery
   source_url?: string;

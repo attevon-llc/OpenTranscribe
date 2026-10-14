@@ -16,7 +16,7 @@ const mockInstance = vi.hoisted(() => ({
 }));
 vi.mock('../axios', () => ({ default: mockInstance }));
 
-import { ASRSettingsApi, CustomVocabularyApi } from './asrSettings';
+import { ASRSettingsApi, CustomVocabularyApi, type ASRConfigDeleted } from './asrSettings';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,6 +56,47 @@ describe('ASRSettingsApi.getProviders', () => {
     expect(p.supports_base_url).toBe(true); // supports_custom_url -> supports_base_url
     expect(p.sdk_available).toBe(true); // absent in backend -> defaults true
     expect(p.models[0].price_per_min_realtime).toBe(0.0043); // price_per_min_stream -> _realtime
+  });
+
+  it('keeps what each provider and model returns: speakers, hints and timestamp granularity (#1227)', async () => {
+    mockInstance.get.mockResolvedValue({
+      data: {
+        providers: [
+          {
+            id: 'openai',
+            display_name: 'OpenAI',
+            supports_diarization: false,
+            speaker_count_hints: ['num'],
+            timestamp_granularity: 'none',
+            models: [
+              { id: 'gpt-4o-transcribe' },
+              {
+                id: 'gpt-4o-transcribe-diarize',
+                supports_diarization: true,
+                timestamp_granularity: 'segment',
+                speaker_count_hints: [],
+              },
+            ],
+          },
+          { id: 'legacy', display_name: 'Legacy', models: [] },
+        ],
+      },
+    });
+
+    const { providers } = await ASRSettingsApi.getProviders();
+
+    expect(providers[0].timestamp_granularity).toBe('none');
+    expect(providers[0].speaker_count_hints).toEqual(['num']);
+    // A model that does not differ carries nothing of its own, so the provider's value applies.
+    expect(providers[0].models[0].timestamp_granularity).toBeUndefined();
+    expect(providers[0].models[1]).toMatchObject({
+      supports_diarization: true,
+      timestamp_granularity: 'segment',
+      speaker_count_hints: [],
+    });
+    // A catalog that predates the fields cannot be assumed to time its text.
+    expect(providers[1].timestamp_granularity).toBe('none');
+    expect(providers[1].speaker_count_hints).toEqual([]);
   });
 
   it('falls back sensibly when the backend omits optional fields entirely', async () => {
@@ -176,5 +217,42 @@ describe('CustomVocabularyApi.getVocabulary', () => {
     expect(mockInstance.get).toHaveBeenCalledWith('/custom-vocabulary', {
       params: { active_only: false },
     });
+  });
+});
+
+// Issue #1236: the delete answers with the pipeline it leaves (it used to be a bare 204,
+// discarded here), so the settings UI can say when speaker detection is no longer runnable.
+describe('ASRSettingsApi.deleteConfig', () => {
+  it('returns the active config and pipeline issues the delete leaves', async () => {
+    const body: ASRConfigDeleted = {
+      message: 'ASR configuration deleted',
+      config_uuid: null,
+      deleted: true,
+      diarizer_source_reverted: true,
+      pipeline_issues: [
+        {
+          code: 'pyannote_key_missing',
+          severity: 'error',
+          step: 'diarization',
+          message: 'pyannote.ai speaker detection needs a pyannote.ai API key.',
+        },
+      ],
+    };
+    mockInstance.delete.mockResolvedValue({ data: body });
+
+    const result = await ASRSettingsApi.deleteConfig('cfg-uuid');
+
+    expect(mockInstance.delete).toHaveBeenCalledWith('/asr-settings/config/cfg-uuid');
+    expect(result).toEqual(body);
+    expect(result.pipeline_issues[0].code).toBe('pyannote_key_missing');
+  });
+
+  it('propagates a lite refusal (409) to the caller instead of swallowing it', async () => {
+    const refusal = {
+      response: { status: 409, data: { detail: { code: 'local_asr_unavailable', message: 'x' } } },
+    };
+    mockInstance.delete.mockRejectedValue(refusal);
+
+    await expect(ASRSettingsApi.deleteConfig('cfg-uuid')).rejects.toBe(refusal);
   });
 });

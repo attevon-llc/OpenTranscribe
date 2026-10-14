@@ -246,11 +246,15 @@ class TestASRConfigCRUD:
         assert resp.json()["has_api_key"] is False
         assert resp.json()["provider"] == "assemblyai"
 
-    def test_delete_config_204(self, client, user_token_headers):
+    def test_delete_config_200(self, client, user_token_headers):
         created = _create_config(client, user_token_headers, name="Delete Me").json()
         uuid = created["uuid"]
         resp = client.delete(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
-        assert resp.status_code == 204
+        assert resp.status_code == 200
+        body = resp.json()
+        assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+        assert isinstance(body["pipeline_issues"], list)
+        assert resp.json()["message"] == "ASR configuration deleted"
         # Confirm it is gone
         resp2 = client.get(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
         assert resp2.status_code == 404
@@ -266,7 +270,10 @@ class TestASRConfigCRUD:
         _create_config(client, user_token_headers, name="Bulk A")
         _create_config(client, user_token_headers, name="Bulk B")
         resp = client.delete("/api/asr-settings/all", headers=user_token_headers)
-        assert resp.status_code == 204
+        assert resp.status_code == 200
+        body = resp.json()
+        assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+        assert isinstance(body["pipeline_issues"], list)
         data = _list_configs(client, user_token_headers)
         assert len(data["configs"]) == 0
 
@@ -501,7 +508,7 @@ class TestASRSharing:
         )
         # Owner deletes the config
         resp = client.delete(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
-        assert resp.status_code == 204
+        assert resp.status_code == 200
         # Other user's active config should be cleared
         status = client.get("/api/asr-settings/status", headers=other_user_auth_headers)
         assert status.status_code == 200

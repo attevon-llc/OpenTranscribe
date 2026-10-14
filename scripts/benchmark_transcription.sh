@@ -82,6 +82,13 @@ TIMING_PID2=$!
 
 docker compose logs -f celery-worker-gpu-scaled >> "$LOG_FILE" 2>&1 &
 LOG_PID2=$!
+# The followers run until killed. Only the completed/error paths killed them, so the
+# 60-minute timeout fall-through, a `set -e` abort or Ctrl-C left four `logs -f` pipelines
+# running for good (issue #1195). These are this script's own children: plain TERM.
+stop_log_followers() {
+  kill "$TIMING_PID" "$LOG_PID" "$TIMING_PID2" "$LOG_PID2" 2>/dev/null || true
+}
+trap stop_log_followers EXIT
 
 # Give log monitors a moment to attach
 sleep 1

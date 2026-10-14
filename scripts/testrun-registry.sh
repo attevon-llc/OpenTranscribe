@@ -27,10 +27,23 @@
 set -uo pipefail
 
 # Resolve relative to THIS file, not the caller's cwd, so a caller in any directory
-# still finds the same .testruns/ at the repo root. TESTRUN_REGISTRY_DIR overrides this
-# — used only by backend/tests/unit/test_testrun_registry.py's real crash-simulation
-# proof, which needs an isolated throwaway directory rather than the repo's own.
-_TESTRUN_REGISTRY_DIR="${TESTRUN_REGISTRY_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.testruns}"
+# still finds the same .testruns/. It lives in the MAIN checkout (git's common dir), shared
+# by every worktree: two worktrees can target one stack, and a marker in a per-worktree
+# directory is invisible to a sweep started from the other. backend/tests/testrun_marker.py
+# and scripts/cleanup-test-data.py resolve the same path; test_testrun_registry_location.py
+# fails if they diverge. TESTRUN_REGISTRY_DIR overrides this — used by the tests that need an
+# isolated throwaway directory rather than the repo's own.
+_testrun_registry_default_dir() {
+    local here common
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    common="$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common" ]; then
+        printf '%s/.testruns\n' "$(dirname "$common")"
+    else
+        printf '%s/.testruns\n' "$here"
+    fi
+}
+_TESTRUN_REGISTRY_DIR="${TESTRUN_REGISTRY_DIR:-$(_testrun_registry_default_dir)}"
 
 testrun_begin() {
     mkdir -p "$_TESTRUN_REGISTRY_DIR"
@@ -51,4 +64,19 @@ testrun_begin() {
     printf 'started_at=%s\n' "$(date +%s)" >&"$TESTRUN_LOCK_FD"
     export TESTRUN_LOCK_FD
     export TESTRUN_MARKER="$marker"
+}
+
+# End THIS run's liveness before its own end-of-run sweep. A run's marker stays held until
+# the process exits, so a sweep started from the run's own EXIT trap would otherwise take its
+# cutoff from this run's start and protect everything this run leaked. Call it only once
+# every test process the run started has finished. Idempotent; a no-op if testrun_begin was
+# never called.
+testrun_end() {
+    if [ -n "${TESTRUN_MARKER:-}" ]; then
+        rm -f -- "$TESTRUN_MARKER"
+    fi
+    if [ -n "${TESTRUN_LOCK_FD:-}" ]; then
+        exec {TESTRUN_LOCK_FD}>&-
+    fi
+    unset TESTRUN_LOCK_FD TESTRUN_MARKER
 }

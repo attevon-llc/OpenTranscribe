@@ -152,16 +152,23 @@
 
   h1 {
     margin: 0;
-    font-size: 1.4rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
     color: var(--text-color);
   }
 
   p {
     margin: 0;
-    font-size: 0.92rem;
-    line-height: 1.6;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
     color: var(--text-secondary);
+  }
+
+  /* Same title/description -> action rhythm as ui/EmptyState: the hero's own gap plus this
+     margin adds up to --empty-state-action-gap. */
+  .hero > .btn {
+    margin-top: calc(var(--empty-state-action-gap) - 0.75rem);
   }
 
   .suggestions {
@@ -178,9 +185,9 @@
     border-radius: 12px;
     background-color: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.87rem;
-    line-height: 1.45;
-    text-align: left;
+    font-size: var(--font-size-md);
+    line-height: var(--line-height-snug);
+    text-align: start;
     cursor: pointer;
     transition:
       border-color 0.15s ease,

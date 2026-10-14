@@ -84,11 +84,46 @@ def test_get_engine_settings_exposes_all_keys(client, super_admin_token_headers)
         "boundary_acoustic_recheck_enabled",
         "boundary_acoustic_cosine_margin",
         "boundary_acoustic_max_word_dur",
+        "diarizer_sidecar_status",
     }
     assert set(data) == expected
-    for entry in data.values():
+    for field, entry in data.items():
+        if field == "diarizer_sidecar_status":
+            continue
         assert "value" in entry
         assert entry["source"] in ("db", "env", "default")
+
+
+@pytest.mark.parametrize(
+    ("probe", "expected"),
+    [
+        (lambda: True, "reachable"),
+        (lambda: False, "unreachable"),
+    ],
+)
+def test_get_reports_sidecar_status_from_the_readiness_probe(
+    client, super_admin_token_headers, monkeypatch, probe, expected
+):
+    """The chip reflects sidecar_ready(): serving => reachable, not serving => unreachable."""
+    monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", probe)
+    resp = client.get(_BASE, headers=super_admin_token_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["diarizer_sidecar_status"] == expected
+
+
+def test_get_reports_unknown_when_the_probe_errors_without_echoing_it(
+    client, super_admin_token_headers, monkeypatch
+):
+    """A probe that raises degrades to 'unknown' and its text never reaches the response."""
+
+    def boom() -> bool:
+        raise RuntimeError("secret-internal-host:5171 refused")
+
+    monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", boom)
+    resp = client.get(_BASE, headers=super_admin_token_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["diarizer_sidecar_status"] == "unknown"
+    assert "secret-internal-host" not in resp.text
 
 
 def test_get_string_setting_default(client, super_admin_token_headers):

@@ -81,17 +81,16 @@ def object_journal(request, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "ERASURE_JOURNAL_BACKEND", "object_storage")
 
     bucket = f"test-erasure-journal-{uuid_pkg.uuid4().hex[:10]}"
-    if request.param == "real_s3":
-        if _S3_ABSENT:
-            pytest.skip("No S3-compatible server reachable (SKIP_S3)")
-        client = _real_store(bucket)
-    else:
-        client = _InMemoryObjectStore()
-    monkeypatch.setattr(ledger, "_journal_storage", lambda: (client, bucket))
+    real = request.param == "real_s3"
+    if real and _S3_ABSENT:
+        pytest.skip("No S3-compatible server reachable (SKIP_S3)")
+    # Nothing between creating the real bucket and the try that removes it.
+    client = _real_store(bucket) if real else _InMemoryObjectStore()
     try:
+        monkeypatch.setattr(ledger, "_journal_storage", lambda: (client, bucket))
         yield SimpleNamespace(client=client, bucket=bucket)
     finally:
-        if request.param == "real_s3":
+        if real:
             _drop_real_bucket(client, bucket)
 
 

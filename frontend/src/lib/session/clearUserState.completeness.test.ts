@@ -50,10 +50,24 @@ const EXEMPT: Record<string, string> = {
     'Caches the deployment-wide password policy (GET /auth/password-policy, served to ' +
     'unauthenticated visitors on the register page). It is identical for every user, so ' +
     'the previous user cannot leak anything through it.',
+  'lib/auth/sessionProbe':
+    'The only module-level state is `wake`, the resolver of the pending retry-backoff timer ' +
+    'for the session probe, and the `unreachable` flag. Neither holds a user or a response: ' +
+    'the probe runs before any session exists and the flag is cleared by the next answer.',
   'lib/prefetch':
     'inflight / failedCache only hold file UUIDs and timestamps, and every prefetch request ' +
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +
     'before clearUserState() runs. No response body is retained here.',
+  'lib/services/downloadNotifications':
+    'The only module-level state is `unsubscribe`, a handle to its OWN subscription on ' +
+    '`downloadStore` — never user data (issue #569). `downloadStore.reset()` is already ' +
+    'registered above, so on logout the store this bridge mirrors goes to `{}` and the next ' +
+    'tick has zero entries to push. Tearing the subscription itself down on logout would ' +
+    'require re-establishing it on the next login within the same tab, and nothing currently ' +
+    'calls `initDownloadNotifications()` a second time (it only runs once, from ' +
+    "`+layout.svelte`'s `onMount`) — doing so would silently stop bridging downloads for " +
+    'User B after an in-tab logout/login, which is a real regression the always-empty-anyway ' +
+    'teardown would not be worth risking.',
 
   'lib/auth/idleGuard':
     'Pure factory: every timer, listener and channel lives on the instance ' +
@@ -68,10 +82,18 @@ const EXEMPT: Record<string, string> = {
     'node keys and reveal timings, never trace content.',
 
   // ── Covered transitively by a registered module ──
+  'lib/supportAccess/headers':
+    'activeGrantUuid is written only by stores/supportSession, which IS registered: ' +
+    "clearUserState calls supportSession.end('logout'), and end() sets it to null.",
   'lib/services/uploadService':
     'uploadService.reset() is called by uploadsStore.reset(), which IS registered.',
 
   // ── Server-side reset endpoints, not module state ──
+  'lib/api/admin':
+    '`clear_legal_hold` is a POST BODY KEY sent to `/admin/files/{uuid}/release` (issue #576), ' +
+    'matching the backend Pydantic field name verbatim — not a store-teardown API. The ' +
+    'detector matched the object-literal key syntax `clear_legal_hold:`, which happens to ' +
+    'fit the reset/clear-prefix heuristic. AdminApi holds no module-level state at all.',
   'lib/api/downloadSettings': 'resetDownloadSettings() is an HTTP DELETE, not module state.',
   'lib/api/organizationContext': 'resetOrganizationContext() is an HTTP DELETE, not module state.',
   'lib/api/redactionSettings': 'resetRedactionSettings() is an HTTP DELETE, not module state.',
@@ -85,6 +107,12 @@ const EXEMPT: Record<string, string> = {
     'resetWatchdog() is a local closure inside a single stream call; the stream itself is ' +
     'aborted by chatStore.reset(), which IS registered.',
   'lib/services/stallWatchdog': 'Timer handles only, owned by the caller that started them.',
+  'lib/fileDetail/downloadStream':
+    'createDownloadStreamManager() is a FACTORY — the downloadStreams/downloadTimeouts Maps ' +
+    'are created fresh per call inside the function closure, not at module scope. Each ' +
+    'file-detail page mount gets its own manager and calls cleanup() from onDestroy, which ' +
+    'closes every EventSource and clears every timer before the page (and any session) ends. ' +
+    "No previous user's data can survive here between sessions.",
 
   // ── Deployment/system state, identical for every user ──
   'lib/services/llmService':
@@ -102,6 +130,10 @@ const EXEMPT: Record<string, string> = {
 
   // ── Pure UI state with no user data ──
   'lib/scrollLock': 'A nesting counter for overflow:hidden. Reset per navigation by afterNavigate.',
+  'stores/notificationRetention':
+    'The retention choice is a browser UI preference (like theme/locale) and is kept on ' +
+    'purpose: it holds no user data. The only per-session value, the cleared-notice count, ' +
+    'is reset by websocketStore.clearAll(), which clearUserState already calls.',
   'stores/toast': 'toastCounter is a monotonic id source; toastStore.clear() IS registered.',
   'stores/recording':
     'The module-level `toastStore` binding is an imported reference, not state; the recording ' +

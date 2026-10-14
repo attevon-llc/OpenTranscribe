@@ -236,6 +236,46 @@ def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) ->
         errors.append({"stage": "profile_embedding", "profile_uuid": profile_uuid, "error": str(e)})
 
 
+def _delete_profiles(
+    db: Session, profiles: list[SpeakerProfile], summary: dict[str, Any]
+) -> list[str]:
+    """Delete speaker profiles (embedding first) and return their avatar object keys.
+
+    The avatar is an uploaded photo of the person the profile names — personal data in
+    object storage that no row cascade reaches. Its key is read here, while the row
+    still exists, and handed back so the caller can delete the objects with
+    :func:`_erase_avatar_objects` AFTER its transaction commits (the three-phase
+    session rule: no object-storage round trips inside an open transaction). Every
+    erasure scope used to delete the rows and leave the photos in the bucket.
+    """
+    avatar_paths: list[str] = []
+    for profile in profiles:
+        _erase_profile_embedding(str(profile.uuid), summary["errors"])
+        if profile.avatar_path:
+            avatar_paths.append(str(profile.avatar_path))
+        db.delete(profile)
+        summary["speaker_profiles_deleted"] += 1
+    return avatar_paths
+
+
+def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]]) -> None:
+    """Delete profile avatar objects. **Takes no session**; call after the commit.
+
+    A failure is recorded (so the erasure audits PARTIAL), never raised. The entry
+    names the failure class only: ``summary`` is an API response body, and a storage
+    key or driver message is not an authored fact (#914).
+    """
+    from app.services.minio_service import delete_file
+
+    for path in avatar_paths:
+        try:
+            delete_file(path)
+        except Exception as e:  # noqa: BLE001 — record, don't raise; one avatar never blocks the rest
+            errors.append(
+                {"stage": "avatar", "error": f"avatar delete failed ({type(e).__name__})"}
+            )
+
+
 def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
     """Run the canonical per-file destroy for every file, accumulating counters.
 
@@ -275,8 +315,11 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
             )
 
 
-def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]) -> None:
+def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]) -> list[str]:
     """Delete a single user's profile/collection rows that survive file cleanup.
+
+    Returns the deleted profiles' avatar object keys, for :func:`_erase_avatar_objects`
+    to remove once this function's commit has closed the transaction.
 
     ``purge_media_file`` deliberately preserves ``SpeakerProfile`` (and never
     touches empty ``Collection`` shells), so erasure must remove them
@@ -305,10 +348,7 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     schema and requires both paths to account for each one.
     """
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
-    for profile in profiles:
-        _erase_profile_embedding(str(profile.uuid), summary["errors"])
-        db.delete(profile)
-        summary["speaker_profiles_deleted"] += 1
+    avatar_paths = _delete_profiles(db, profiles, summary)
 
     # Organization collections are the tenant's and hold colleagues' files (v422):
     # they survive, de-attributed. Personal collections go with the account.
@@ -351,6 +391,7 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     )
 
     db.commit()
+    return avatar_paths
 
 
 def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
@@ -481,7 +522,8 @@ def erase_user(
 
     files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
     _purge_files(db, files, summary)
-    _delete_owner_scoped_rows(db, user_id, summary)
+    avatar_paths = _delete_owner_scoped_rows(db, user_id, summary)
+    _erase_avatar_objects(avatar_paths, summary["errors"])
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
         user_id=user_id, errors=summary["errors"]
@@ -643,10 +685,7 @@ def erase_org_member_data(
         .filter(SpeakerProfile.user_id == user_id, SpeakerProfile.organization_id == org_id)
         .all()
     )
-    for profile in profiles:
-        _erase_profile_embedding(str(profile.uuid), summary["errors"])
-        db.delete(profile)
-        summary["speaker_profiles_deleted"] += 1
+    avatar_paths = _delete_profiles(db, profiles, summary)
 
     # The member's collections in this org are the TENANT's, shared by every
     # member and holding colleagues' files (v422): they stay, de-attributed.
@@ -699,6 +738,7 @@ def erase_org_member_data(
         .delete(synchronize_session=False)
     )
     db.commit()
+    _erase_avatar_objects(avatar_paths, summary["errors"])
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
         user_id=user_id, organization_id=org_id, errors=summary["errors"]
@@ -790,10 +830,7 @@ def erase_organization(
     # Org-scoped speaker profiles (clear their profile embedding first), then
     # the org's collections — across ALL members of the org.
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.organization_id == org_id).all()
-    for profile in profiles:
-        _erase_profile_embedding(str(profile.uuid), summary["errors"])
-        db.delete(profile)
-        summary["speaker_profiles_deleted"] += 1
+    avatar_paths = _delete_profiles(db, profiles, summary)
 
     speaker_collections = (
         db.query(SpeakerCollection).filter(SpeakerCollection.organization_id == org_id).all()
@@ -813,6 +850,7 @@ def erase_organization(
         db.query(Tag).filter(Tag.organization_id == org_id).delete(synchronize_session=False)
     )
     db.commit()
+    _erase_avatar_objects(avatar_paths, summary["errors"])
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
         organization_id=org_id, errors=summary["errors"]

@@ -9,7 +9,10 @@ rather than on ``celery-redaction``:
    ``redaction_coverage``), so it is reached *more* often than it used to be.
 2. ``services/chat/output_redactor`` — masks what the model writes, gated on
    ``cfg.enabled and cfg.enabled_categories``, which is broader than the egress gate.
-3. ``RedactionService.redetect_edited_segment`` — a segment edit re-detects inline.
+3. ``RedactionService.redetect_edited_segment`` — a segment edit re-detects inline. It
+   runs **every** detector (``detection_config_for_all``), so it also needs the toxicity
+   model: issue #1190 measured the first edit after a restart at ~12 s, all of it the
+   ``unitary/toxic-bert`` load, until :func:`warm_edit_path_detectors` was added.
 
 Measured cost of the first one of those in a fresh process: ~10.1 s to build the
 ``AnalyzerEngine`` plus ~0.22 s for the first ``analyze()``; the second call is
@@ -77,6 +80,47 @@ def warm_pii_analyzer() -> bool:
     return True
 
 
+def warm_edit_path_detectors() -> bool:
+    """Load what ``redetect_edited_segment`` needs beyond Presidio (issue #1190).
+
+    The English toxicity model (measured ~12 s cold, ~0.02 s warm) plus the profanity
+    pattern (a cached regex compile). Runs under the same gate and on the same daemon
+    thread as :func:`warm_pii_analyzer`; ``toxicity._get_pipe`` holds a load lock, so a
+    request arriving mid-warm-up waits for the one load instead of starting a second.
+
+    Only the default English model is warmed. A non-English file's first edit still
+    loads the multilingual model — warming it too would cost ~1 GB for the minority
+    case, and an unwarmed language is the pre-existing cost, not a regression.
+
+    Returns:
+        True if the toxicity model is loaded and usable afterwards.
+    """
+    from app.services.redaction.detectors import toxicity
+    from app.services.redaction.detectors import wordlist
+
+    started = time.perf_counter()
+    try:
+        wordlist.find_profanity_spans(_WARM_SAMPLE, None)
+    except Exception:  # noqa: BLE001 — a warm-up must never be load-bearing
+        logger.warning("Profanity warm-up probe failed", exc_info=True)
+
+    if not toxicity.preload():
+        logger.warning(
+            "Toxicity warm-up could not load the model; segment edits will report it "
+            "unavailable exactly as before"
+        )
+        return False
+
+    try:
+        # The first inference also pays a device placement; take it off the request too.
+        toxicity.score_text(_WARM_SAMPLE, None)
+    except Exception:  # noqa: BLE001
+        logger.warning("Toxicity model loaded, but the warm-up probe failed", exc_info=True)
+
+    logger.info("Edit-path detectors warmed in %.2f s", time.perf_counter() - started)
+    return True
+
+
 def _warm_if_in_use() -> None:
     """Gate on the DB, then warm. Runs entirely on the background thread."""
     from app.db.session_utils import session_scope
@@ -99,10 +143,12 @@ def _warm_if_in_use() -> None:
         )
         return
 
-    try:
-        warm_pii_analyzer()
-    except Exception:  # noqa: BLE001 — an optimisation must not raise into startup
-        logger.warning("PII analyzer warm-up failed", exc_info=True)
+    # Independent try blocks: a missing Presidio must not leave toxicity cold, or the reverse.
+    for warm in (warm_pii_analyzer, warm_edit_path_detectors):
+        try:
+            warm()
+        except Exception:  # noqa: BLE001 — an optimisation must not raise into startup
+            logger.warning("%s failed", warm.__name__, exc_info=True)
 
 
 def start_pii_warmup() -> threading.Thread:

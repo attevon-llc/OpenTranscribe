@@ -1,6 +1,50 @@
 {
   "components": {
     "schemas": {
+      "ASRConfigDeleted": {
+        "description": "Result of deleting one or all ASR configurations: the switch shape plus the reset.\n\n``config_uuid`` is the config active afterwards (``null``: none) and ``pipeline_issues``\nthe caller's pipeline after the delete, as for ``set-active`` (#1236).",
+        "properties": {
+          "config_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Uuid"
+          },
+          "deleted": {
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "diarizer_source_reverted": {
+            "default": false,
+            "description": "The caller's speaker detection was set to a deleted configuration (source asr_config) and has been reset to the default (#1226).",
+            "title": "Diarizer Source Reverted",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pipeline_issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Pipeline Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message",
+          "pipeline_issues"
+        ],
+        "title": "ASRConfigDeleted",
+        "type": "object"
+      },
       "ASRConnectionTestRequest": {
         "properties": {
           "access_key_id": {
@@ -83,6 +127,39 @@
         ],
         "title": "ASRProvider",
         "type": "string"
+      },
+      "ASRSwitchResult": {
+        "description": "Response of the ASR-side switches (``set-active``, ``clear-active``, issue #1225) and of\ndeleting a config (``DELETE /asr-settings/config/{uuid}``, issue #1236).\n\n``pipeline_issues`` is the caller's pipeline AFTER the change: warnings, and errors the\nchange did not introduce (a switch that would introduce a diarization-step error, or on\nlite any switch onto local transcription, #1228, is refused with 409 ``{code, message}``\ninstead). ``config_uuid`` is the config active afterwards (``null``: none).",
+        "properties": {
+          "config_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Uuid"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pipeline_issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Pipeline Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "message",
+          "pipeline_issues"
+        ],
+        "title": "ASRSwitchResult",
+        "type": "object"
       },
       "ActivePromptResponse": {
         "description": "Schema for active prompt response",
@@ -296,6 +373,26 @@
           "approval_status"
         ],
         "title": "ApprovalDecisionResponse",
+        "type": "object"
+      },
+      "ApproveBody": {
+        "description": "An approver may shorten the requested duration, never extend it.",
+        "properties": {
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "maximum": 480.0,
+                "minimum": 15.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          }
+        },
+        "title": "ApproveBody",
         "type": "object"
       },
       "AuthConfigAuditResponse": {
@@ -729,6 +826,12 @@
       "AutoLabelSettingsSchema": {
         "description": "User auto-label settings.",
         "properties": {
+          "auto_topic_extraction": {
+            "default": true,
+            "description": "Automatically ask the configured AI provider for tag and collection suggestions after a file is transcribed. Does not affect the manual extract/auto-label buttons.",
+            "title": "Auto Topic Extraction",
+            "type": "boolean"
+          },
           "bulk_grouping_enabled": {
             "default": true,
             "description": "Group bulk imports by topic",
@@ -1400,6 +1503,12 @@
             ],
             "title": "Display Name"
           },
+          "override_unassignment": {
+            "default": false,
+            "description": "Lift the user's earlier unassignment or rejection that blocks this speaker. Only with exactly one speaker; a batch is refused (422). Without it, a blocked speaker is skipped and listed in blocked_speaker_uuids.",
+            "title": "Override Unassignment",
+            "type": "boolean"
+          },
           "profile_uuid": {
             "anyOf": [
               {
@@ -1606,6 +1715,67 @@
           "file"
         ],
         "title": "Body_upload_profile_avatar_api_speaker_profiles_profiles__profile_uuid__avatar_post",
+        "type": "object"
+      },
+      "BreakGlassBody": {
+        "description": "``POST /support-access/grants/break-glass``. super_admin only; ticket is mandatory.",
+        "properties": {
+          "access_level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Access Level",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "default": 60,
+            "maximum": 240.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          },
+          "ticket_ref": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Ticket Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_level",
+          "reason",
+          "ticket_ref"
+        ],
+        "title": "BreakGlassBody",
         "type": "object"
       },
       "BulkActionRequest": {
@@ -1900,7 +2070,7 @@
             "type": "integer"
           },
           "context_expansion_enabled": {
-            "default": false,
+            "default": true,
             "title": "Context Expansion Enabled",
             "type": "boolean"
           },
@@ -3559,6 +3729,18 @@
             ],
             "title": "Client Put Start Ms"
           },
+          "disable_diarization": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Skip speaker diarization for this file. Overrides what /files/prepare recorded.",
+            "title": "Disable Diarization"
+          },
           "file_hash": {
             "anyOf": [
               {
@@ -4362,6 +4544,79 @@
           }
         },
         "title": "ConversationUpdate",
+        "type": "object"
+      },
+      "CreateGrantBody": {
+        "description": "``POST /support-access/grants``. Exactly one of the two targets must be set.",
+        "properties": {
+          "access_level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Access Level",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "maximum": 480.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          }
+        },
+        "required": [
+          "access_level",
+          "reason",
+          "duration_minutes"
+        ],
+        "title": "CreateGrantBody",
+        "type": "object"
+      },
+      "DecisionNoteBody": {
+        "description": "Deny / revoke. The note goes to the audit event only, never to the grant row.",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "DecisionNoteBody",
         "type": "object"
       },
       "DerivedCandidate": {
@@ -5777,6 +6032,77 @@
         "title": "EmailVerificationResendRequest",
         "type": "object"
       },
+      "EngineSettingValue": {
+        "description": "One engine setting's effective value and where it came from.",
+        "properties": {
+          "source": {
+            "enum": [
+              "db",
+              "env",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "source"
+        ],
+        "title": "EngineSettingValue",
+        "type": "object"
+      },
+      "EngineSettingsResponse": {
+        "description": "Every runtime-tunable engine setting, plus a read-only look at the diarization sidecar.",
+        "properties": {
+          "boundary_acoustic_cosine_margin": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "boundary_acoustic_max_word_dur": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "boundary_acoustic_recheck_enabled": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "boundary_smoothing_enabled": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "diarizer_backend": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "diarizer_require_sidecar": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          },
+          "diarizer_sidecar_status": {
+            "description": "Whether the diar-native sidecar can serve right now, from the cached readiness probe. 'unknown' when the probe itself could not run.",
+            "enum": [
+              "reachable",
+              "unreachable",
+              "unknown"
+            ],
+            "title": "Diarizer Sidecar Status",
+            "type": "string"
+          },
+          "transcriber_backend": {
+            "$ref": "#/components/schemas/EngineSettingValue"
+          }
+        },
+        "required": [
+          "transcriber_backend",
+          "diarizer_backend",
+          "diarizer_require_sidecar",
+          "boundary_smoothing_enabled",
+          "boundary_acoustic_recheck_enabled",
+          "boundary_acoustic_cosine_margin",
+          "boundary_acoustic_max_word_dur",
+          "diarizer_sidecar_status"
+        ],
+        "title": "EngineSettingsResponse",
+        "type": "object"
+      },
       "ExtractTopicsRequest": {
         "description": "Request to extract AI suggestions from transcript\n\nAttributes:\n    force_regenerate: Force re-extraction even if suggestions exist",
         "properties": {
@@ -6096,6 +6422,33 @@
           }
         },
         "title": "GarbageCleanupConfigUpdate",
+        "type": "object"
+      },
+      "GrantPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupportGrantOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "server_time"
+        ],
+        "title": "GrantPage",
         "type": "object"
       },
       "Group": {
@@ -6995,6 +7348,268 @@
         "title": "LinkedCollection",
         "type": "object"
       },
+      "LocalEndpointStatus": {
+        "description": "One row of the fixed local-endpoint discovery table (issue #644).\n\n``base_url`` is always a container-network address (a compose service name\nlike ``llm-test-vllm``), never a host-side ``127.0.0.1:<port>``: inside the\nbackend container ``127.0.0.1`` is the backend itself, and\n``redaction.llm_guard.is_local_provider`` would classify it \"local\" for\nmasking/quota purposes while the config actually points nowhere useful.",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/LLMProvider"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "start_command": {
+            "title": "Start Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "base_url",
+          "provider",
+          "reachable",
+          "start_command"
+        ],
+        "title": "LocalEndpointStatus",
+        "type": "object"
+      },
+      "LocalEndpointsResponse": {
+        "description": "Response for ``GET /llm-settings/local-endpoints``.",
+        "properties": {
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/LocalEndpointStatus"
+            },
+            "title": "Endpoints",
+            "type": "array"
+          },
+          "private_endpoints_allowed": {
+            "title": "Private Endpoints Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "endpoints",
+          "private_endpoints_allowed"
+        ],
+        "title": "LocalEndpointsResponse",
+        "type": "object"
+      },
+      "LockedAccount": {
+        "description": "One entry in the admin locked-accounts listing.\n\nEnrichment (``user_uuid``/``full_name``/``is_active``/``auth_type``) is a\nsingle batched query over the page's identifiers, never a per-row lookup.\nAn identifier resolving to no account is included with these fields\n``None`` (J-A3) -- it is the operationally useful half (a stuck integration\nretrying a dead credential looks exactly like this), and it is excluded\nfrom ``locked_count`` on the wire by virtue of not appearing on a page\nunless ``include_unlocked=true``. These are attacker-supplied strings in\nan admin UI: render as data, never as a link.",
+        "properties": {
+          "admin_unlocked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Unlocked At"
+          },
+          "auth_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Type"
+          },
+          "failed_attempts": {
+            "title": "Failed Attempts",
+            "type": "integer"
+          },
+          "first_failed_attempt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Failed Attempt"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "identifier": {
+            "title": "Identifier",
+            "type": "string"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean"
+          },
+          "last_failed_attempt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failed Attempt"
+          },
+          "locked_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Until"
+          },
+          "lockout_count": {
+            "title": "Lockout Count",
+            "type": "integer"
+          },
+          "user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Uuid"
+          }
+        },
+        "required": [
+          "identifier",
+          "is_locked",
+          "failed_attempts",
+          "lockout_count"
+        ],
+        "title": "LockedAccount",
+        "type": "object"
+      },
+      "LockedAccountsList": {
+        "description": "Paginated locked-accounts listing.\n\n``lockout_enabled`` is on the response, not implied by an empty list -- the\ndeleted ``get_all_locked_accounts`` returned ``[]`` when the feature was\noff, indistinguishable from \"nobody is locked\". ``store_backend`` reports\nwhich storage this PROCESS is reading (issue #810's known-real degraded\nstate) -- a listing built on the in-memory fallback is that replica's view,\nnot the deployment's. ``truncated`` covers a scan that hit its page budget\nwithout exhausting the keyspace, so \"0 locked accounts\" from a truncated\npage is never rendered as \"all clear\".",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/LockedAccount"
+            },
+            "title": "Accounts",
+            "type": "array"
+          },
+          "lockout_enabled": {
+            "title": "Lockout Enabled",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "store_backend": {
+            "title": "Store Backend",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accounts",
+          "lockout_enabled",
+          "store_backend"
+        ],
+        "title": "LockedAccountsList",
+        "type": "object"
+      },
+      "LockoutResetResponse": {
+        "description": "Result of resetting an account's progressive lockout counter.",
+        "properties": {
+          "identifier": {
+            "title": "Identifier",
+            "type": "string"
+          },
+          "previous_lockout_count": {
+            "title": "Previous Lockout Count",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "unlocked": {
+            "title": "Unlocked",
+            "type": "boolean"
+          },
+          "was_locked": {
+            "title": "Was Locked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "identifier",
+          "previous_lockout_count",
+          "was_locked",
+          "unlocked"
+        ],
+        "title": "LockoutResetResponse",
+        "type": "object"
+      },
       "LoginBannerResponse": {
         "description": "Response for login banner endpoint.",
         "properties": {
@@ -7730,6 +8345,11 @@
             ],
             "title": "Imohash"
           },
+          "is_quarantined": {
+            "default": false,
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
           "is_retryable": {
             "anyOf": [
               {
@@ -8363,6 +8983,11 @@
             ],
             "title": "Imohash"
           },
+          "is_quarantined": {
+            "default": false,
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
           "is_retryable": {
             "anyOf": [
               {
@@ -8397,6 +9022,11 @@
             ],
             "title": "Last Modified Date"
           },
+          "legal_hold": {
+            "default": false,
+            "title": "Legal Hold",
+            "type": "boolean"
+          },
           "media_format": {
             "anyOf": [
               {
@@ -8430,6 +9060,37 @@
             ],
             "title": "Preview Url"
           },
+          "processing_steps": {
+            "description": "One display-ready row per processing step, in processing order",
+            "items": {
+              "$ref": "#/components/schemas/ProcessingStepOut"
+            },
+            "title": "Processing Steps",
+            "type": "array"
+          },
+          "quarantine_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantine Reason"
+          },
+          "quarantined_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantined At"
+          },
           "recorded_date": {
             "anyOf": [
               {
@@ -8451,6 +9112,11 @@
                 "type": "null"
               }
             ]
+          },
+          "redaction_enabled": {
+            "default": false,
+            "title": "Redaction Enabled",
+            "type": "boolean"
           },
           "redaction_pending": {
             "default": false,
@@ -9972,6 +10638,65 @@
         "title": "OpenSearchSnapshotStatus",
         "type": "object"
       },
+      "OrgRef": {
+        "description": "An organization as shown in a grant. ``null`` once the organization is gone.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name"
+        ],
+        "title": "OrgRef",
+        "type": "object"
+      },
+      "OrgTargetOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name"
+        ],
+        "title": "OrgTargetOut",
+        "type": "object"
+      },
       "OrganizationContextSettings": {
         "description": "Response schema for user organization context settings.\n\nContains the organization context text and toggle preferences.",
         "examples": [
@@ -10352,6 +11077,239 @@
         "title": "PendingAccount",
         "type": "object"
       },
+      "PipelineIssueOut": {
+        "properties": {
+          "code": {
+            "description": "Stable code; i18n key settings.pipeline.issue.<code>",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "description": "The fixed English sentence for the code",
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "step": {
+            "enum": [
+              "transcription",
+              "diarization",
+              "speaker_id",
+              "llm"
+            ],
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "step",
+          "message"
+        ],
+        "title": "PipelineIssueOut",
+        "type": "object"
+      },
+      "PipelineStepOut": {
+        "properties": {
+          "adapter_billing": {
+            "default": false,
+            "description": "Diarization by another transcription provider, billed as a transcription",
+            "title": "Adapter Billing",
+            "type": "boolean"
+          },
+          "audio_leaves_server": {
+            "title": "Audio Leaves Server",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "engine": {
+            "description": "Stable id: local_gpu|local_cpu|cloud (transcription), asr|local|pyannote_ai|asr_config|off (diarization), inline_native|embedding_stage|none (speaker_id), llm|off (llm)",
+            "title": "Engine",
+            "type": "string"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the step is carried out (diarization only)",
+            "title": "Execution"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "provider_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Display"
+          },
+          "returns_speakers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transcription step: the model returns speaker labels",
+            "title": "Returns Speakers"
+          },
+          "settings_section": {
+            "description": "Settings section id that changes this step",
+            "title": "Settings Section",
+            "type": "string"
+          },
+          "speaker_hints": {
+            "items": {
+              "enum": [
+                "min",
+                "max",
+                "num"
+              ],
+              "type": "string"
+            },
+            "title": "Speaker Hints",
+            "type": "array"
+          },
+          "step": {
+            "enum": [
+              "transcription",
+              "diarization",
+              "speaker_id",
+              "llm"
+            ],
+            "title": "Step",
+            "type": "string"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "word",
+                  "segment",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transcription step: timestamp granularity of the text",
+            "title": "Timing"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "enum": [
+                  "server",
+                  "cloud"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the step runs; null when it does not run",
+            "title": "Where"
+          }
+        },
+        "required": [
+          "step",
+          "enabled",
+          "where",
+          "engine",
+          "provider",
+          "provider_display",
+          "model",
+          "audio_leaves_server",
+          "settings_section"
+        ],
+        "title": "PipelineStepOut",
+        "type": "object"
+      },
+      "PipelineView": {
+        "properties": {
+          "deployment_mode": {
+            "enum": [
+              "full",
+              "lite"
+            ],
+            "title": "Deployment Mode",
+            "type": "string"
+          },
+          "diarization_source_locked": {
+            "title": "Diarization Source Locked",
+            "type": "boolean"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineIssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "steps": {
+            "description": "Always four, in processing order",
+            "items": {
+              "$ref": "#/components/schemas/PipelineStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps",
+          "issues",
+          "deployment_mode",
+          "diarization_source_locked"
+        ],
+        "title": "PipelineView",
+        "type": "object"
+      },
       "PlaylistProcessingResponse": {
         "description": "Response model for YouTube playlist processing requests.",
         "properties": {
@@ -10556,12 +11514,10 @@
                 "type": "null"
               }
             ],
-            "description": "Whisper model to use for this file. None = use admin-configured default. Only applies to local ASR provider.",
+            "description": "Whisper model to use for this file. None = use admin-configured default. Only applies to local ASR provider. Accepts the deployment's model or a lightweight CPU model (tiny, base); anything else is rejected with 422.",
             "examples": [
               "tiny",
-              "medium",
-              "large-v2",
-              "large-v3",
+              "base",
               "large-v3-turbo"
             ],
             "title": "Whisper Model"
@@ -10573,6 +11529,119 @@
           "content_type"
         ],
         "title": "PrepareUploadRequest",
+        "type": "object"
+      },
+      "ProcessingStepOut": {
+        "description": "One step of how a file was processed, ready to render.",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable provider id",
+            "title": "Provider"
+          },
+          "provider_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name",
+            "title": "Provider Display"
+          },
+          "recorded": {
+            "description": "full: recorded by the step; legacy: read from older columns; none",
+            "enum": [
+              "full",
+              "legacy",
+              "none"
+            ],
+            "title": "Recorded",
+            "type": "string"
+          },
+          "status": {
+            "description": "done: the step ran (see provider/model/where); off: skipped by choice; not_run: recorded run, this step has not completed; not_recorded: the file was processed before this was tracked",
+            "enum": [
+              "done",
+              "off",
+              "not_run",
+              "not_recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "enum": [
+              "transcription",
+              "diarization",
+              "voiceprints",
+              "summary",
+              "topics",
+              "speaker_names"
+            ],
+            "title": "Step",
+            "type": "string"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "word",
+                  "segment",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transcription only: timestamp granularity of the text",
+            "title": "Timing"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "enum": [
+                  "server",
+                  "cloud"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the step ran; null when not known or not run",
+            "title": "Where"
+          }
+        },
+        "required": [
+          "step",
+          "status",
+          "recorded"
+        ],
+        "title": "ProcessingStepOut",
         "type": "object"
       },
       "ProjectCreate": {
@@ -10950,6 +12019,170 @@
         "title": "ProviderDefaults",
         "type": "object"
       },
+      "PyannoteConnectionTestRequest": {
+        "description": "``POST /user-settings/diarization/pyannote/test``: omit ``api_key`` to test the saved one.",
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A key to test without saving it. Omit to test the saved key.",
+            "title": "Api Key"
+          }
+        },
+        "title": "PyannoteConnectionTestRequest",
+        "type": "object"
+      },
+      "PyannoteConnectionTestResult": {
+        "description": "Outcome of a connection test. ``message`` is a fixed sentence, never vendor text.",
+        "properties": {
+          "code": {
+            "description": "Stable outcome code for translated UI copy",
+            "enum": [
+              "connected",
+              "rejected",
+              "unreachable",
+              "error"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "response_time_ms": {
+            "title": "Response Time Ms",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "code",
+          "message",
+          "response_time_ms"
+        ],
+        "title": "PyannoteConnectionTestResult",
+        "type": "object"
+      },
+      "PyannoteCredentialDeleted": {
+        "description": "``DELETE /user-settings/diarization/pyannote``.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "diarization_source": {
+            "description": "The user's speaker-detection source after the delete",
+            "title": "Diarization Source",
+            "type": "string"
+          },
+          "source_reverted": {
+            "description": "The source was pyannote and has been reset to the default",
+            "title": "Source Reverted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted",
+          "diarization_source",
+          "source_reverted"
+        ],
+        "title": "PyannoteCredentialDeleted",
+        "type": "object"
+      },
+      "PyannoteCredentialStatus": {
+        "description": "What the client may know about the stored credential. Never the key itself.",
+        "properties": {
+          "configured": {
+            "description": "A key is stored for the current user",
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "last_tested": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested"
+          },
+          "locked": {
+            "description": "The deployment manages the speaker-detection source, so the key cannot be changed here (issue #1109)",
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "test_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Message"
+          },
+          "test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'success' or 'failed' from the last saved-key test",
+            "title": "Test Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "configured",
+          "locked"
+        ],
+        "title": "PyannoteCredentialStatus",
+        "type": "object"
+      },
+      "PyannoteCredentialUpdate": {
+        "description": "``PUT /user-settings/diarization/pyannote``: store (or replace) the key.",
+        "properties": {
+          "api_key": {
+            "description": "pyannote.ai API key. Stored encrypted, never returned.",
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "PyannoteCredentialUpdate",
+        "type": "object"
+      },
       "QuarantineActionResponse": {
         "description": "Result of a quarantine/release action.",
         "properties": {
@@ -11025,7 +12258,7 @@
         "type": "object"
       },
       "QuarantinedFile": {
-        "description": "A file in the admin review list.\n\n``is_quarantined`` distinguishes a currently-quarantined row from a\nreleased-but-still-held one (issue #825) -- both can appear together when\nthe list endpoint is queried with ``include_legal_holds=true``.",
+        "description": "A file in the admin review list.\n\n``is_quarantined`` distinguishes a currently-quarantined row from a\nreleased-but-still-held one (issue #825) -- both can appear together when\nthe list endpoint is queried with ``include_legal_holds=true``.\n\nIssue #576 FINDING 3: the previous shape carried ``user_id`` /\n``organization_id`` / ``quarantined_by`` as raw integer DB ids. No endpoint in\nthe app maps an integer user id back to a person (``UUIDBaseSchema`` strips the\ninteger ``id`` from every user-shaped response), so a review queue built on\nthose fields could show a takedown reason beside the bare number ``7``. This is\na breaking wire change to a route with zero frontend callers before this\nchange -- the cheapest possible moment to fix it.",
         "properties": {
           "filename": {
             "anyOf": [
@@ -11048,16 +12281,24 @@
             "title": "Legal Hold",
             "type": "boolean"
           },
-          "organization_id": {
+          "organization_uuid": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Organization Id"
+            "title": "Organization Uuid"
+          },
+          "owner_email": {
+            "title": "Owner Email",
+            "type": "string"
+          },
+          "owner_uuid": {
+            "title": "Owner Uuid",
+            "type": "string"
           },
           "quarantine_reason": {
             "anyOf": [
@@ -11081,20 +12322,27 @@
             ],
             "title": "Quarantined At"
           },
-          "quarantined_by": {
+          "quarantined_by_email": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Quarantined By"
+            "title": "Quarantined By Email"
           },
-          "user_id": {
-            "title": "User Id",
-            "type": "integer"
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "uuid": {
             "title": "Uuid",
@@ -11103,7 +12351,8 @@
         },
         "required": [
           "uuid",
-          "user_id"
+          "owner_uuid",
+          "owner_email"
         ],
         "title": "QuarantinedFile",
         "type": "object"
@@ -11756,7 +13005,7 @@
                 "type": "null"
               }
             ],
-            "description": "Skip speaker diarization entirely",
+            "description": "Skip speaker diarization for this run. Only meaningful when the transcription stage runs (a full reprocess, or stages containing 'transcription'); any other stage selection is rejected with 422.",
             "title": "Disable Diarization"
           },
           "max_speakers": {
@@ -11821,12 +13070,10 @@
                 "type": "null"
               }
             ],
-            "description": "Whisper model to use for reprocessing. None = use admin-configured default. Only applies to local ASR provider.",
+            "description": "Whisper model to use for reprocessing. None = use admin-configured default. Only applies to local ASR provider. Accepts the deployment's model or a lightweight CPU model (tiny, base); anything else is rejected with 422.",
             "examples": [
               "tiny",
-              "medium",
-              "large-v2",
-              "large-v3",
+              "base",
               "large-v3-turbo"
             ],
             "title": "Whisper Model"
@@ -13216,6 +14463,17 @@
             ],
             "title": "Suggested Name"
           },
+          "suggestion_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion Source"
+          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",
@@ -13250,6 +14508,11 @@
             "title": "Age Detection Enabled",
             "type": "boolean"
           },
+          "auto_llm_speaker_identification": {
+            "default": true,
+            "title": "Auto Llm Speaker Identification",
+            "type": "boolean"
+          },
           "detection_enabled": {
             "default": true,
             "title": "Detection Enabled",
@@ -13282,6 +14545,17 @@
               }
             ],
             "title": "Age Detection Enabled"
+          },
+          "auto_llm_speaker_identification": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Llm Speaker Identification"
           },
           "detection_enabled": {
             "anyOf": [
@@ -13327,6 +14601,10 @@
             "title": "Age Detection Enabled",
             "type": "boolean"
           },
+          "auto_llm_speaker_identification": {
+            "title": "Auto Llm Speaker Identification",
+            "type": "boolean"
+          },
           "detection_enabled": {
             "title": "Detection Enabled",
             "type": "boolean"
@@ -13344,7 +14622,8 @@
           "detection_enabled",
           "gender_detection_enabled",
           "age_detection_enabled",
-          "show_attributes_on_cards"
+          "show_attributes_on_cards",
+          "auto_llm_speaker_identification"
         ],
         "title": "SpeakerAttributeSystemDefaults",
         "type": "object"
@@ -13549,6 +14828,218 @@
           }
         },
         "title": "SpeakerUpdate",
+        "type": "object"
+      },
+      "StorageOrphanFile": {
+        "description": "One file whose row is gone but whose objects remain.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "integer"
+          },
+          "objects": {
+            "title": "Objects",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "user_id",
+          "objects",
+          "bytes"
+        ],
+        "title": "StorageOrphanFile",
+        "type": "object"
+      },
+      "StorageOrphanReport": {
+        "description": "What a storage sweep found (dry run) or did (last run).",
+        "properties": {
+          "deleted_bytes": {
+            "title": "Deleted Bytes",
+            "type": "integer"
+          },
+          "deleted_files": {
+            "title": "Deleted Files",
+            "type": "integer"
+          },
+          "deleted_objects": {
+            "title": "Deleted Objects",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_objects": {
+            "title": "Failed Objects",
+            "type": "integer"
+          },
+          "force": {
+            "title": "Force",
+            "type": "boolean"
+          },
+          "orphan_bytes": {
+            "title": "Orphan Bytes",
+            "type": "integer"
+          },
+          "orphan_files": {
+            "title": "Orphan Files",
+            "type": "integer"
+          },
+          "orphan_objects": {
+            "title": "Orphan Objects",
+            "type": "integer"
+          },
+          "orphans": {
+            "items": {
+              "$ref": "#/components/schemas/StorageOrphanFile"
+            },
+            "title": "Orphans",
+            "type": "array"
+          },
+          "orphans_truncated": {
+            "title": "Orphans Truncated",
+            "type": "boolean"
+          },
+          "rechecked_present": {
+            "title": "Rechecked Present",
+            "type": "integer"
+          },
+          "refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused"
+          },
+          "skipped_recent_files": {
+            "title": "Skipped Recent Files",
+            "type": "integer"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "total_objects": {
+            "title": "Total Objects",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "force",
+          "total_objects",
+          "total_bytes",
+          "orphan_files",
+          "orphan_objects",
+          "orphan_bytes",
+          "orphans",
+          "orphans_truncated",
+          "skipped_recent_files",
+          "rechecked_present",
+          "deleted_files",
+          "deleted_objects",
+          "deleted_bytes",
+          "failed_objects"
+        ],
+        "title": "StorageOrphanReport",
+        "type": "object"
+      },
+      "StorageSweepLastRun": {
+        "properties": {
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "results": {
+            "$ref": "#/components/schemas/StorageOrphanReport"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "number"
+          }
+        },
+        "required": [
+          "timestamp",
+          "duration_seconds",
+          "results"
+        ],
+        "title": "StorageSweepLastRun",
+        "type": "object"
+      },
+      "StorageSweepStarted": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StorageSweepStarted",
+        "type": "object"
+      },
+      "StorageSweepStatus": {
+        "properties": {
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StorageSweepLastRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running"
+        ],
+        "title": "StorageSweepStatus",
         "type": "object"
       },
       "SubtitleValidationResult": {
@@ -14252,6 +15743,257 @@
           }
         },
         "title": "SummaryTaskRequest",
+        "type": "object"
+      },
+      "SupportGrantOut": {
+        "properties": {
+          "access_level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Access Level",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "grant_mode": {
+            "enum": [
+              "approved",
+              "break_glass"
+            ],
+            "title": "Grant Mode",
+            "type": "string"
+          },
+          "grantee": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Expires At"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_duration_minutes": {
+            "title": "Requested Duration Minutes",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "active",
+              "denied",
+              "expired",
+              "revoked",
+              "lapsed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_kind": {
+            "enum": [
+              "organization",
+              "personal"
+            ],
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "ticket_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Ref"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "status",
+          "target_kind",
+          "grant_mode",
+          "access_level",
+          "reason",
+          "requested_duration_minutes",
+          "requested_at"
+        ],
+        "title": "SupportGrantOut",
+        "type": "object"
+      },
+      "SupportGrantUseOut": {
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "need": {
+            "anyOf": [
+              {
+                "enum": [
+                  "read",
+                  "write"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Need"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "resource_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Type"
+          },
+          "resource_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Uuid"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "method",
+          "route"
+        ],
+        "title": "SupportGrantUseOut",
         "type": "object"
       },
       "SupportedProvidersResponse": {
@@ -15411,9 +17153,22 @@
           "vad_threshold": 0.5
         },
         "properties": {
+          "diarization_asr_config_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved ASR configuration used for speakers when the source is asr_config",
+            "title": "Diarization Asr Config Uuid"
+          },
           "diarization_source": {
             "default": "provider",
-            "description": "Diarization source: 'provider' (use ASR provider's diarization), 'local' (always use local PyAnnote on GPU), 'pyannote' (pyannote.ai cloud diarization), 'off' (no diarization)",
+            "description": "Diarization source: 'provider' (Automatic: the transcription provider's speakers, or this server when it returns text only), 'local' (this server's engine), 'pyannote' (pyannote.ai cloud diarization), 'asr_config' (another saved provider's speaker detection, named by diarization_asr_config_uuid), 'off' (no diarization)",
             "title": "Diarization Source",
             "type": "string"
           },
@@ -15425,9 +17180,9 @@
           },
           "garbage_cleanup_threshold": {
             "default": 50,
-            "description": "Confidence threshold (0-100) below which segments are flagged as garbage",
-            "maximum": 100.0,
-            "minimum": 0.0,
+            "description": "Maximum word length in characters (20-200); longer unbroken tokens are replaced with [background noise]. Unset inherits the admin default.",
+            "maximum": 200.0,
+            "minimum": 20.0,
             "title": "Garbage Cleanup Threshold",
             "type": "integer"
           },
@@ -15548,6 +17303,19 @@
           "vad_threshold": 0.3
         },
         "properties": {
+          "diarization_asr_config_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved ASR configuration to use for speakers with source asr_config",
+            "title": "Diarization Asr Config Uuid"
+          },
           "diarization_source": {
             "anyOf": [
               {
@@ -15557,7 +17325,7 @@
                 "type": "null"
               }
             ],
-            "description": "Diarization source: 'provider', 'local', 'pyannote', or 'off'",
+            "description": "Diarization source: 'provider', 'local', 'pyannote', 'asr_config' or 'off'",
             "title": "Diarization Source"
           },
           "garbage_cleanup_enabled": {
@@ -15575,15 +17343,15 @@
           "garbage_cleanup_threshold": {
             "anyOf": [
               {
-                "maximum": 100.0,
-                "minimum": 0.0,
+                "maximum": 200.0,
+                "minimum": 20.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Confidence threshold (0-100) below which segments are flagged as garbage",
+            "description": "Maximum word length in characters (20-200); longer unbroken tokens are replaced with [background noise]. Unset inherits the admin default.",
             "title": "Garbage Cleanup Threshold"
           },
           "hallucination_silence_threshold": {
@@ -15878,6 +17646,7 @@
               "provider",
               "local",
               "pyannote",
+              "asr_config",
               "off"
             ],
             "description": "Valid diarization source options",
@@ -15978,6 +17747,19 @@
             "description": "Collection UUIDs to add the file to after creation",
             "title": "Collection Ids"
           },
+          "max_speakers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maximum speakers for diarization. None = the user's saved range.",
+            "title": "Max Speakers"
+          },
           "media_password": {
             "anyOf": [
               {
@@ -16001,6 +17783,32 @@
             ],
             "description": "Optional username for protected media sources. Used only for authenticated downloads of protected media URLs.",
             "title": "Media Username"
+          },
+          "min_speakers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimum speakers for diarization. None = the user's saved range.",
+            "title": "Min Speakers"
+          },
+          "num_speakers": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fixed speaker count for diarization (overrides min/max when set).",
+            "title": "Num Speakers"
           },
           "skip_summary": {
             "default": false,
@@ -16046,6 +17854,18 @@
             ],
             "description": "Video quality override for this download (e.g., 'best', '1080p', '720p')",
             "title": "Video Quality"
+          },
+          "whisper_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whisper model for this import. None = the deployment's model. Accepts that model or a lightweight CPU model (tiny, base); anything else is rejected with 422.",
+            "title": "Whisper Model"
           }
         },
         "required": [
@@ -16114,6 +17934,33 @@
           "etag"
         ],
         "title": "UploadedPart",
+        "type": "object"
+      },
+      "UsePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupportGrantUseOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "server_time"
+        ],
+        "title": "UsePage",
         "type": "object"
       },
       "User": {
@@ -17230,6 +19077,36 @@
         "title": "UserMediaSourcesList",
         "type": "object"
       },
+      "UserRef": {
+        "description": "A user as shown in a grant. The whole object is ``null`` once the account is gone.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "email"
+        ],
+        "title": "UserRef",
+        "type": "object"
+      },
       "UserSearchResult": {
         "description": "Minimal user info returned by the sharing/group-member-add directory search.\n\nDeliberately carries no full email address (issue #904) — ``masked_email`` is a\ndisplay-only mask (see ``app.auth.utils.mask_email_for_display``), and the field\nis named for what it holds so a stale consumer expecting a real address fails\nloudly (a missing attribute) instead of silently rendering a mask under a field\ncalled ``email``.",
         "properties": {
@@ -17523,7 +19400,6 @@
                 "type": "null"
               }
             ],
-            "default": 20,
             "title": "Max Speakers"
           },
           "min_speakers": {
@@ -17536,7 +19412,6 @@
                 "type": "null"
               }
             ],
-            "default": 1,
             "title": "Min Speakers"
           },
           "multipart_enabled": {
@@ -20180,8 +22055,34 @@
     },
     "/api/admin/data-integrity": {
       "post": {
-        "description": "Start an OpenSearch orphan cleanup task.\n\nScans all OpenSearch indices for documents referencing deleted files\nand removes them.",
+        "description": "Start an OpenSearch orphan cleanup task.\n\nScans all OpenSearch indices for documents referencing deleted files\nand removes them.\n\n**Reconciling a large orphan set.** The sweep refuses (``refused: ratio_guard``)\nto delete more than 10% of an index unasked, because that is what a database\nrestored EMPTY looks like from here. When the orphans are real, the operator path\nis: ``GET /admin/data-integrity/counts`` (a dry run that names every orphaned\nidentifier per index in ``orphan_keys``), review it, then\n``POST /admin/data-integrity?force=true&confirm=true``. The forced run is\naudit-logged (``admin.data_integrity.purge``). It can never delete the documents\nof a file or speaker that exists: every candidate is re-checked against Postgres\nafter the index is read and before anything is deleted, and an EMPTY Postgres\nside is refused outright, force or not.",
         "operationId": "start_data_integrity_check_api_admin_data_integrity_post",
+        "parameters": [
+          {
+            "description": "Override the per-index ratio guard (a sweep may otherwise delete at most 10% of an index). For reconciling a LARGE legitimate orphan set — after a database restore or out-of-band row removal. Requires confirm=true.",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Override the per-index ratio guard (a sweep may otherwise delete at most 10% of an index). For reconciling a LARGE legitimate orphan set — after a database restore or out-of-band row removal. Requires confirm=true.",
+              "title": "Force",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Required with force=true.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Required with force=true.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -20194,6 +22095,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -20262,6 +22173,123 @@
         "summary": "Get Data Integrity Status",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/admin/data-integrity/storage": {
+      "post": {
+        "description": "Delete the storage objects of files that no longer exist.\n\nRefuses without ``confirm=true``. Review ``GET /admin/data-integrity/storage/counts``\nfirst. Every file id is re-checked against Postgres right before its objects are\nremoved, an empty Postgres side is refused outright, and objects younger than the grace\nperiod are never touched. Audit-logged as ``admin.data_integrity.storage_purge`` (at\nrequest, and again on completion with counters).",
+        "operationId": "start_storage_orphan_sweep_api_admin_data_integrity_storage_post",
+        "parameters": [
+          {
+            "description": "Required: this deletes objects. Review the dry run first.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Required: this deletes objects. Review the dry run first.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Override the ratio guard (a sweep may otherwise delete at most 10% of the file-shaped objects). Never overrides the empty-database refusal.",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Override the ratio guard (a sweep may otherwise delete at most 10% of the file-shaped objects). Never overrides the empty-database refusal.",
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSweepStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Start Storage Orphan Sweep",
+        "tags": [
+          "admin-storage-integrity"
+        ]
+      }
+    },
+    "/api/admin/data-integrity/storage/counts": {
+      "get": {
+        "description": "Dry run: list storage objects whose ``media_file`` row no longer exists.\n\nDeletes nothing. The refusals a real run would apply (``empty_valid_set``,\n``ratio_guard``) are evaluated and reported in ``refused``.",
+        "operationId": "get_storage_orphan_counts_api_admin_data_integrity_storage_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageOrphanReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Storage Orphan Counts",
+        "tags": [
+          "admin-storage-integrity"
+        ]
+      }
+    },
+    "/api/admin/data-integrity/storage/status": {
+      "get": {
+        "description": "Whether a storage sweep is running, and the result of the last one.",
+        "operationId": "get_storage_sweep_status_api_admin_data_integrity_storage_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSweepStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Storage Sweep Status",
+        "tags": [
+          "admin-storage-integrity"
         ]
       }
     },
@@ -20516,7 +22544,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Engine Settings Api Admin Engine Settings Get"
+                  "$ref": "#/components/schemas/EngineSettingsResponse"
                 }
               }
             },
@@ -20563,7 +22591,7 @@
     },
     "/api/admin/engine-settings/update": {
       "post": {
-        "description": "Write one or more engine settings to the DB. Only provided (non-None) fields are saved.",
+        "description": "Write one or more engine settings to the DB. Only provided (non-None) fields are saved.\n\nLite has no local transcription or speaker detection engine (#1228): choosing one is\n409 ``local_asr_unavailable`` / ``local_diarization_unavailable``. Boundary smoothing\nstays editable there; it applies to any diarized transcript.",
         "operationId": "update_engine_settings_api_admin_engine_settings_update_post",
         "requestBody": {
           "content": {
@@ -20783,7 +22811,7 @@
     },
     "/api/admin/files/{file_uuid}/release": {
       "post": {
-        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.",
+        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_files_under_legal_hold``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
         "operationId": "release_media_file_api_admin_files__file_uuid__release_post",
         "parameters": [
           {
@@ -21326,6 +23354,186 @@
           }
         ],
         "summary": "Get Imohash Recompute Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/locked-accounts": {
+      "get": {
+        "description": "List locked accounts (issue #570), cursor-paginated over the lockout store.\n\nA **read**, and deliberately not audited per request -- the write below\n(the reset) is. ``admin`` tier, matching the existing lock/unlock pair\n(J-A2): a reset whose target an admin cannot see would be worse than a\nlisting a super_admin-only tier would otherwise require.",
+        "operationId": "admin_list_locked_accounts_api_admin_locked_accounts_get",
+        "parameters": [
+          {
+            "description": "Opaque pagination cursor from a prior page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque pagination cursor from a prior page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Also include recent failed-login records that are not currently locked -- useful for diagnosing a near-threshold account.",
+            "in": "query",
+            "name": "include_unlocked",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also include recent failed-login records that are not currently locked -- useful for diagnosing a near-threshold account.",
+              "title": "Include Unlocked",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedAccountsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Admin List Locked Accounts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/locked-accounts/{identifier}/reset": {
+      "post": {
+        "description": "Reset an account's progressive lockout counter (issue #570).\n\nDistinct from ``POST /admin/users/{uuid}/unlock`` (T8): this clears the\nprogressive ``lockout_count`` and ``failed_attempts`` but, per J-A1, leaves\nan in-progress ``locked_until`` intact -- the single \"unlock now\" verb stays\nthe existing endpoint. 404 for an unknown identifier (nothing is written);\n409 when the compare-and-set budget is exhausted (also nothing written --\nnever a silent partial write).",
+        "operationId": "admin_reset_lockout_counter_api_admin_locked_accounts__identifier__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identifier",
+            "required": true,
+            "schema": {
+              "title": "Identifier",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockoutResetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Admin Reset Lockout Counter",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/media-duration-backfill": {
+      "post": {
+        "description": "Start the issue #969 media-duration provenance backfill. Super-admin only.\n\nRestores the container duration on rows the pre-#969 pipeline overwrote with\nthe transcript's speech extent. ``dry_run=true`` (the default) reports what\nwould change without writing anything or dispatching a reindex — see\n``app.tasks.recovery_tasks.media_duration_backfill`` for the full tiering,\nsafety guarantees, and why quarantined/legal-hold rows are never touched.",
+        "operationId": "start_media_duration_backfill_api_admin_media_duration_backfill_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Media Duration Backfill Api Admin Media Duration Backfill Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Start Media Duration Backfill",
         "tags": [
           "admin"
         ]
@@ -23521,7 +25729,7 @@
         ]
       },
       "post": {
-        "description": "Create a new ASR configuration. Auto-activates if this is the user's first config.",
+        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless that would make their stored speaker\ndetection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards. On lite a ``local``\nconfig is refused (409 ``local_asr_unavailable``, #1228): it could never transcribe.",
         "operationId": "create_asr_config_api_asr_settings_post",
         "requestBody": {
           "content": {
@@ -23568,10 +25776,17 @@
     },
     "/api/asr-settings/all": {
       "delete": {
-        "description": "Delete all ASR configurations for the current user (reverts to system default).",
+        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete. On lite,\nwhere the default is local Whisper, deleting a user's configs is refused (409\n``local_asr_unavailable``, #1228).",
         "operationId": "delete_all_asr_configs_api_asr_settings_all_delete",
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ASRConfigDeleted"
+                }
+              }
+            },
             "description": "Successful Response"
           }
         },
@@ -23588,14 +25803,14 @@
     },
     "/api/asr-settings/clear-active": {
       "post": {
-        "description": "Clear the active ASR configuration, reverting to local GPU default.",
+        "description": "Clear the active ASR configuration, reverting to the deployment default.\n\n409 ``{code, message}`` when that would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "clear_active_asr_config_api_asr_settings_clear_active_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Clear Active Asr Config Api Asr Settings Clear Active Post"
+                  "$ref": "#/components/schemas/ASRSwitchResult"
                 }
               }
             },
@@ -23615,7 +25830,7 @@
     },
     "/api/asr-settings/config/{config_uuid}": {
       "delete": {
-        "description": "Delete an ASR configuration. Auto-promotes another config if this was active.",
+        "description": "Delete an ASR configuration and report the pipeline it leaves (issue #1236).\n\nA speaker-detection choice naming this configuration (source ``asr_config``) is reset\nto the default for every user who held it (#1226); ``diarizer_source_reverted`` says\nwhether the caller's was.\n\nIf it was active, ``choose_after_active_delete`` picks what becomes active: the first\nremaining config that keeps the stored speaker detection choice runnable (#1225), else\nthe cleared pointer. On lite, where clearing means local Whisper, a remaining config\nthat can transcribe is kept instead, and with none the delete is refused (409\n``local_asr_unavailable``, #1228). Otherwise deletion is never refused: a stored choice\nthe remaining state cannot run comes back in ``pipeline_issues`` (as for\n``set-active``), with ``config_uuid`` naming the config now active (``null``: none).",
         "operationId": "delete_asr_config_api_asr_settings_config__config_uuid__delete",
         "parameters": [
           {
@@ -23630,7 +25845,14 @@
           }
         ],
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ASRConfigDeleted"
+                }
+              }
+            },
             "description": "Successful Response"
           },
           "422": {
@@ -23702,7 +25924,7 @@
         ]
       },
       "put": {
-        "description": "Update an existing ASR configuration.",
+        "description": "Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).",
         "operationId": "update_asr_config_api_asr_settings_config__config_uuid__put",
         "parameters": [
           {
@@ -23837,7 +26059,7 @@
     },
     "/api/asr-settings/local-model/restart": {
       "post": {
-        "description": "Gracefully restart the GPU Celery worker to apply a new model (admin only).\n\nSends a warm shutdown signal via Celery's control API.  The worker finishes\nany in-progress tasks before exiting.  Docker ``restart: always`` brings\nthe container back automatically, and the ``worker_ready`` signal handler\npreloads the new model from the database.",
+        "description": "Gracefully restart the GPU Celery worker to apply a new model (admin only).\n\nSends a warm shutdown signal via Celery's control API.  The worker finishes\nany in-progress tasks before exiting.  Docker ``restart: always`` brings\nthe container back automatically, and the ``worker_ready`` signal handler\npreloads the new model from the database. Lite runs no GPU worker: 409\n``local_asr_unavailable`` (#1228) instead of a shutdown broadcast to every worker.",
         "operationId": "restart_gpu_worker_api_asr_settings_local_model_restart_post",
         "responses": {
           "200": {
@@ -23864,7 +26086,7 @@
     },
     "/api/asr-settings/local-model/set": {
       "post": {
-        "description": "Set the active local Whisper model (admin only).\n\nStores the model name in SystemSettings so the GPU worker uses it on\nnext startup.  Does NOT restart the worker — call ``/local-model/restart``\nseparately to apply with graceful drain.",
+        "description": "Set the active local Whisper model (admin only).\n\nStores the model name in SystemSettings so the GPU worker uses it on\nnext startup.  Does NOT restart the worker — call ``/local-model/restart``\nseparately to apply with graceful drain. Lite has no local Whisper: 409\n``local_asr_unavailable`` (#1228).",
         "operationId": "set_active_local_model_api_asr_settings_local_model_set_post",
         "requestBody": {
           "content": {
@@ -23965,7 +26187,7 @@
     },
     "/api/asr-settings/set-active": {
       "post": {
-        "description": "Set the active ASR configuration for the current user.",
+        "description": "Set the active ASR configuration for the current user.\n\n409 ``{code, message}`` when the switch would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "set_active_asr_config_api_asr_settings_set_active_post",
         "requestBody": {
           "content": {
@@ -23982,7 +26204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Set Active Asr Config Api Asr Settings Set Active Post"
+                  "$ref": "#/components/schemas/ASRSwitchResult"
                 }
               }
             },
@@ -28415,6 +30637,28 @@
             }
           },
           {
+            "description": "Filter to specific owner UUID(s); repeatable",
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to specific owner UUID(s); repeatable",
+              "title": "Owner"
+            }
+          },
+          {
             "in": "query",
             "name": "search",
             "required": false,
@@ -29099,6 +31343,28 @@
               "title": "Ownership",
               "type": "string"
             }
+          },
+          {
+            "description": "Filter to specific owner UUID(s); repeatable (issue #966)",
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to specific owner UUID(s); repeatable (issue #966)",
+              "title": "Owner"
+            }
           }
         ],
         "responses": {
@@ -29182,6 +31448,37 @@
         "summary": "Sign Upload Parts",
         "tags": [
           "files",
+          "files"
+        ]
+      }
+    },
+    "/api/files/owners": {
+      "get": {
+        "description": "List the owners of files visible to the caller, for the gallery's\nownership filter (issue #966).\n\n**Closed enumeration, not a directory search.** This deliberately takes\nno free-text query parameter — the caller receives the (capped) list of\nowners of files they can already see and narrows it client-side, the same\nshape ``SearchableMultiSelect`` already uses for tags and collections. A\nfree-text parameter would turn an authorized list into an\naccount-probing oracle, which is exactly what this route must not be.\n\n**Scope is `get_accessible_owners`**, which joins ``User`` against the\nIDENTICAL predicate ``GET /files`` uses to decide what this caller can\nsee (``PermissionService.get_accessible_file_ids_subquery``, or the same\norg-tenant predicate for an admin) — never the tenant-wide scope\n``GET /users/search`` uses for the sharing picker. A user who shares\nnothing with anyone else, and with whom nothing is shared, sees only\nthemselves here.\n\n**Rate-limited** the same way as ``GET /users/search``\n(``RATE_LIMIT_DIRECTORY_PER_MINUTE``), as a volume/noise bound — the\nauthorization boundary is the join predicate above, not this limit.\n\n**Payload-minimized**: reuses ``UserSearchResult`` — the exact wire shape\nthe sharing picker already exposes (``uuid``, ``full_name``,\n``masked_email``) — so this route exposes no more per-owner information\nthan the app already shows elsewhere.",
+        "operationId": "list_file_owners_api_files_owners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserSearchResult"
+                  },
+                  "title": "Response List File Owners Api Files Owners Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List File Owners",
+        "tags": [
           "files"
         ]
       }
@@ -30797,7 +33094,7 @@
     },
     "/api/files/{file_uuid}/stream-url": {
       "get": {
-        "description": "Generate a short-lived presigned URL for secure media streaming.\n\nThis follows AWS/GCS best practices for secure content delivery:\n- Short expiration (5 minutes for video, 15 minutes for thumbnails)\n- Cryptographically signed by MinIO (AWS Signature V4)\n- User must be authenticated and authorized\n\nArgs:\n    file_uuid: UUID of the media file\n    media_type: Type of media to stream - \"video\", \"thumbnail\", or \"audio\"\n\nReturns:\n    url: Presigned URL for direct MinIO access\n    expires_in: Seconds until URL expires\n    content_type: MIME type of the content\n    playback: For media, what the URL serves: \"original\", \"converted\" (a\n        browser-playable copy of an audio original), or \"audio_only\" (the audio\n        track of a video no browser decodes). None for a thumbnail.\n    is_public: Whether the file is public",
+        "description": "Generate a short-lived presigned URL for secure media streaming.\n\nThis follows AWS/GCS best practices for secure content delivery:\n- Bounded expiration (``MEDIA_URL_EXPIRE_SECONDS``, 6 hours by default, for video and audio;\n  ``THUMBNAIL_URL_EXPIRE_SECONDS``, 15 minutes, for thumbnails), capped at 5 minutes under a\n  support-access grant\n- Cryptographically signed by MinIO (AWS Signature V4)\n- User must be authenticated and authorized\n\nArgs:\n    file_uuid: UUID of the media file\n    media_type: Type of media to stream - \"video\", \"thumbnail\", or \"audio\"\n\nReturns:\n    url: Presigned URL for direct MinIO access\n    expires_in: Seconds until URL expires\n    content_type: MIME type of the content\n    playback: For media, what the URL serves: \"original\", \"converted\" (a\n        browser-playable copy of an audio original), or \"audio_only\" (the audio\n        track of a video no browser decodes). None for a thumbnail.\n    is_public: Whether the file is public",
         "operationId": "get_media_file_stream_url_api_files__file_uuid__stream_url_get",
         "parameters": [
           {
@@ -31021,7 +33318,7 @@
         ]
       },
       "get": {
-        "description": "Get AI tag and collection suggestions for a media file\n\nArgs:\n    file_uuid: Media file UUID\n    db: Database session\n    current_user: Authenticated user\n\nReturns:\n    Tag and collection suggestions from AI",
+        "description": "Get AI tag and collection suggestions for a media file\n\nAnswers 204 (no body) when the file has no suggestions yet, so the file page's routine\nprobe is not a failed request; 404 is reserved for a file that does not exist.\n\nArgs:\n    file_uuid: Media file UUID\n    db: Database session\n    current_user: Authenticated user\n\nReturns:\n    Tag and collection suggestions from AI",
         "operationId": "get_topic_suggestions_api_files__file_uuid__suggestions_get",
         "parameters": [
           {
@@ -31044,6 +33341,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "The file exists but has no AI suggestions yet."
           },
           "422": {
             "content": {
@@ -32769,6 +35069,33 @@
         ]
       }
     },
+    "/api/llm-settings/local-endpoints": {
+      "get": {
+        "description": "Report which of this repo's own dev/test LLM overlay services are up right now.\n\nTakes **no** url/host/port parameter and no free parameter of any kind — the set of\nthings it can ever dial is the module-level `_LOCAL_ENDPOINT_TABLE` above, fixed at\nimport time (issue #644). Rate-limited like this file's other outbound-fetch handlers;\nsee `get_llm_outbound_rate_limit`.",
+        "operationId": "get_local_endpoints_api_llm_settings_local_endpoints_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalEndpointsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Local Endpoints",
+        "tags": [
+          "llm-settings"
+        ]
+      }
+    },
     "/api/llm-settings/ollama/models": {
       "get": {
         "description": "Get available models from an Ollama instance\n\nRate-limited (issue #676): fetches a caller-supplied ``base_url`` server-side —\nsee ``get_llm_outbound_rate_limit``.",
@@ -33596,6 +35923,289 @@
         "summary": "Erase Org Member",
         "tags": [
           "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/support-access": {
+      "get": {
+        "operationId": "list_org_grants_api_org_admin_support_access_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "active",
+                    "denied",
+                    "expired",
+                    "revoked",
+                    "lapsed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Grants",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/org-admin/support-access/{grant_uuid}/approve": {
+      "post": {
+        "operationId": "approve_org_grant_api_org_admin_support_access__grant_uuid__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Approve Org Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/org-admin/support-access/{grant_uuid}/deny": {
+      "post": {
+        "operationId": "deny_org_grant_api_org_admin_support_access__grant_uuid__deny_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionNoteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Deny Org Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/org-admin/support-access/{grant_uuid}/uses": {
+      "get": {
+        "operationId": "list_org_grant_uses_api_org_admin_support_access__grant_uuid__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Grant Uses",
+        "tags": [
+          "support-access"
         ]
       }
     },
@@ -34574,15 +37184,36 @@
             }
           },
           {
-            "description": "Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers.",
+            "description": "DEPRECATED — superseded by `sources` (issue #760). Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers. Ignored when `sources` is supplied.",
             "in": "query",
             "name": "result_type",
             "required": false,
             "schema": {
               "default": "transcripts",
-              "description": "Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers.",
+              "description": "DEPRECATED — superseded by `sources` (issue #760). Which result group(s) to return: transcripts, summaries, or all. Defaults to transcripts for byte-identical behavior against existing callers. Ignored when `sources` is supplied.",
               "title": "Result Type",
               "type": "string"
+            }
+          },
+          {
+            "description": "Issue #760 — which result source(s) to search: content, title, speaker, summary (repeat the param for more than one, e.g. `sources=content&sources=title`). Wins over `result_type` when both are supplied. Omitting it entirely preserves `result_type`'s (or its own default's) byte-identical legacy behavior. An explicitly empty or unknown value is a 400.",
+            "in": "query",
+            "name": "sources",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Issue #760 — which result source(s) to search: content, title, speaker, summary (repeat the param for more than one, e.g. `sources=content&sources=title`). Wins over `result_type` when both are supplied. Omitting it entirely preserves `result_type`'s (or its own default's) byte-identical legacy behavior. An explicitly empty or unknown value is a 400.",
+              "title": "Sources"
             }
           }
         ],
@@ -35643,7 +38274,7 @@
     },
     "/api/speaker-clusters/batch-verify": {
       "post": {
-        "description": "Batch verify multiple speakers.",
+        "description": "Batch verify multiple speakers.\n\nA speaker the user unassigned from (or rejected) the identity being applied is\nskipped and listed in ``blocked_speaker_uuids`` (issue #1233). ``override_unassignment``\nlifts that correction, for exactly one speaker; with more it is a 422.",
         "operationId": "batch_verify_api_speaker_clusters_batch_verify_post",
         "requestBody": {
           "content": {
@@ -35883,7 +38514,7 @@
     },
     "/api/speaker-clusters/{cluster_uuid}": {
       "delete": {
-        "description": "Delete a speaker cluster, detaching its members rather than deleting them.\n\nConsumed by the speaker-cluster management UI when the operator rejects a\nproposed grouping. Any active user, but scoped to their own clusters: the lookup\nfilters on ``user_id``, so someone else's cluster is 404.\n\nDestroys only the grouping. Member speakers survive with ``cluster_id`` reset to\nnull, so the transcripts and their labels are untouched and the speakers become\ncandidates for re-clustering. Removing the cluster's centroid embedding from\nOpenSearch is best-effort — a failure there is logged at debug and does not fail\nthe request, because Postgres is the source of truth for cluster membership.",
+        "description": "Delete a speaker cluster, detaching its members rather than deleting them.\n\nConsumed by the speaker-cluster management UI when the operator rejects a\nproposed grouping. Any active user, but scoped to their own clusters: the lookup\nfilters on ``user_id``, so someone else's cluster is 404.\n\nDestroys only the grouping. Member speakers survive with ``cluster_id`` reset to\nnull, so the transcripts and their labels are untouched and the speakers become\ncandidates for re-clustering. The memberships are removed first and the emptied\ncluster is then deleted, row and centroid, by the shared ``speaker_cleanup`` — the\ncentroid is an average of the members' voices, so its erasure is verified, and a\ncentroid that may survive is reported (503 with a fixed message), not logged at\ndebug and forgotten.",
         "operationId": "delete_cluster_api_speaker_clusters__cluster_uuid__delete",
         "parameters": [
           {
@@ -36252,7 +38883,7 @@
     },
     "/api/speaker-clusters/{source_uuid}/merge/{target_uuid}": {
       "post": {
-        "description": "Merge source cluster into target cluster.",
+        "description": "Merge source cluster into target cluster.\n\nA source member the user unassigned from the target (or its profile, or one of its\nmembers) is not moved; it stays in the source, which survives with it, and its UUID\nis listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).",
         "operationId": "merge_clusters_api_speaker_clusters__source_uuid__merge__target_uuid__post",
         "parameters": [
           {
@@ -36543,7 +39174,7 @@
     },
     "/api/speaker-profiles/profiles/{profile_uuid}": {
       "delete": {
-        "description": "Delete a speaker profile.",
+        "description": "Delete a speaker profile, taking its name and voice back from everything it reached.\n\nA linked speaker carries the profile's name as its display name (the invariant\n``services/speaker_profile_rename`` documents), so unlinking alone left every member\nstill labelled as the deleted identity. ``speaker_cleanup.unlink_from_profile`` — the\nsame rule a cluster unassign applies (#1233) — clears a display name or suggestion\nthat IS the profile's name (the label falls back to the diarizer label, and the chunk\nplane is told), and a cluster named after the profile loses that label.\nThe profile's embedding is erased and verified, and every cluster that held a member\nor was promoted to the profile is rebuilt by ``speaker_cleanup`` — an emptied\npromoted cluster is deleted with its centroid instead of being left listed with\nnobody in it (issue #1214). A display name the user set to something else survives.",
         "operationId": "delete_speaker_profile_api_speaker_profiles_profiles__profile_uuid__delete",
         "parameters": [
           {
@@ -37355,7 +39986,7 @@
     },
     "/api/speakers/debug/cross-media-by-name": {
       "get": {
-        "description": "Debug endpoint to test cross-media logic for a specific speaker name.",
+        "description": "Debug endpoint to test cross-media logic for a specific speaker name.\n\nThe route is admin-gated, but in multi-tenant mode the queries stay inside the\ncaller's active tenant: it returns speaker names and file titles.",
         "operationId": "debug_cross_media_by_name_api_speakers_debug_cross_media_by_name_get",
         "parameters": [
           {
@@ -37436,7 +40067,7 @@
     },
     "/api/speakers/{speaker_uuid}": {
       "delete": {
-        "description": "Delete one speaker row from a media file's diarization result.\n\nConsumed by the file-detail speaker panel. Authorization is broader than\nownership: the owner or an admin always passes, and a non-owner needs\n``editor`` on the underlying media file via ``PermissionService`` — a ``viewer``\non a shared file gets 403, since deleting a speaker rewrites the transcript's\nattribution for everyone the file is shared with.\n\nThis removes the per-file speaker, not the cross-media ``SpeakerProfile`` it may\nbe assigned to; the profile and its other occurrences survive. Two follow-up\nsteps are deliberately non-fatal and only logged if they fail — pruning the\nvoiceprint from every OpenSearch speaker index, and invalidating the speaker and\nfile caches — so a degraded search or cache backend cannot block the delete that\nPostgres has already committed. A stale voiceprint left behind can still surface\nin similarity results until it is cleaned up.",
+        "description": "Delete one speaker row from a media file's diarization result.\n\nConsumed by the file-detail speaker panel. Authorization is broader than\nownership: the owner or an admin always passes, and a non-owner needs\n``editor`` on the underlying media file via ``PermissionService`` — a ``viewer``\non a shared file gets 403, since deleting a speaker rewrites the transcript's\nattribution for everyone the file is shared with.\n\nThis removes the per-file speaker, not the cross-media ``SpeakerProfile`` it may\nbe assigned to; the profile and its other occurrences survive. After the row\ndelete commits, ``speaker_cleanup`` removes every copy of the voice (issue #1214):\nthe speaker's voiceprint from every speaker index (verified), its clusters'\ncentroids rebuilt from the remaining members (an emptied cluster is deleted with\nits centroid), its profile's embedding rebuilt from the remaining members, and the\nfile re-indexed so no index plane still names the speaker. An aggregate that can be\nneither rebuilt nor erased answers 503 with a fixed message — the delete itself has\ncommitted — and is logged at ERROR for repair.",
         "operationId": "delete_speaker_api_speakers__speaker_uuid__delete",
         "parameters": [
           {
@@ -37693,7 +40324,7 @@
     },
     "/api/speakers/{speaker_uuid}/merge/{target_speaker_uuid}": {
       "post": {
-        "description": "Merge two speakers into one (target absorbs source).\n\nBoth speakers need editor or better in the active tenant, must belong to the\nsame tenant, and must be in the same file or have the same owner — a merge\nmoves the source's transcript segments onto the target.\n\nPostgres is updated synchronously so the response is authoritative. Everything\ndownstream — averaging the two voiceprints in OpenSearch, deleting the source\ndocument, recomputing both profiles' consolidated embeddings, clearing the MinIO\nvideo cache and refreshing analytics for both files — is handed to\n``process_speaker_merge_background`` (issue #284 A2.6). Inline, that was roughly\n2 + N OpenSearch round trips (N = members of the target profile), a numpy mean,\na MinIO listing per affected file and two analytics recomputations, all before\nthe merge could answer.",
+        "description": "Merge two speakers into one (target absorbs source).\n\nBoth speakers need editor or better in the active tenant, must belong to the\nsame tenant, and must be in the same file or have the same owner — a merge\nmoves the source's transcript segments onto the target.\n\nPostgres is updated synchronously so the response is authoritative, and so are the\nclusters and profile the SOURCE belonged to: it is no longer their member, so\n``speaker_cleanup`` rebuilds (or deletes, if emptied) them before the response\n(issue #1214). Everything downstream of the target — averaging the two voiceprints\nin OpenSearch, deleting the source document, rebuilding the target's clusters and\nprofile, clearing the MinIO video cache and refreshing analytics for both files — is\nhanded to ``process_speaker_merge_background`` (issue #284 A2.6).",
         "operationId": "merge_speakers_api_speakers__speaker_uuid__merge__target_speaker_uuid__post",
         "parameters": [
           {
@@ -37836,6 +40467,452 @@
         "summary": "Verify Speaker Identification",
         "tags": [
           "speakers"
+        ]
+      }
+    },
+    "/api/support-access/grants": {
+      "get": {
+        "description": "The caller's grants, newest first. ``scope=all`` is super_admin only.",
+        "operationId": "list_my_grants_api_support_access_grants_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "mine",
+              "enum": [
+                "mine",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "active",
+                    "denied",
+                    "expired",
+                    "revoked",
+                    "lapsed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Grants",
+        "tags": [
+          "support-access"
+        ]
+      },
+      "post": {
+        "description": "Request access to a tenant. It stays ``pending`` until the tenant decides.",
+        "operationId": "create_grant_api_support_access_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGrantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/break-glass": {
+      "post": {
+        "description": "Open access immediately. super_admin only; the tenant is notified in real time.",
+        "operationId": "create_break_glass_grant_api_support_access_grants_break_glass_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakGlassBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Break Glass Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/{grant_uuid}": {
+      "get": {
+        "operationId": "get_grant_api_support_access_grants__grant_uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/{grant_uuid}/revoke": {
+      "post": {
+        "description": "End a grant now. The grantee, any super_admin, the tenant's org admin or the subject.\n\nIdempotent: revoking a grant that is already over returns it unchanged.",
+        "operationId": "revoke_grant_api_support_access_grants__grant_uuid__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionNoteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revoke Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/grants/{grant_uuid}/uses": {
+      "get": {
+        "operationId": "get_grant_uses_api_support_access_grants__grant_uuid__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Grant Uses",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/support-access/targets/organizations": {
+      "get": {
+        "description": "Active organizations an admin may request access to (a platform operation).",
+        "operationId": "search_target_organizations_api_support_access_targets_organizations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 25,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgTargetOut"
+                  },
+                  "title": "Response Search Target Organizations Api Support Access Targets Organizations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Search Target Organizations",
+        "tags": [
+          "support-access"
         ]
       }
     },
@@ -39933,6 +43010,157 @@
         ]
       }
     },
+    "/api/user-settings/diarization/pyannote": {
+      "delete": {
+        "description": "Delete the current user's key; a ``pyannote`` source reverts to the default.\n\nAllowed even when the deployment locks the source: removing your own secret is always\npermitted.",
+        "operationId": "delete_pyannote_credential_api_user_settings_diarization_pyannote_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteCredentialDeleted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Delete Pyannote Credential",
+        "tags": [
+          "diarization-settings"
+        ]
+      },
+      "get": {
+        "description": "Whether the current user has a pyannote.ai key stored. The key is never returned.",
+        "operationId": "get_pyannote_credential_status_api_user_settings_diarization_pyannote_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Pyannote Credential Status",
+        "tags": [
+          "diarization-settings"
+        ]
+      },
+      "put": {
+        "description": "Store or replace the current user's pyannote.ai key, encrypted at rest.\n\nA replaced key loses its previous test result: that result described a different key.",
+        "operationId": "save_pyannote_credential_api_user_settings_diarization_pyannote_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PyannoteCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Save Pyannote Credential",
+        "tags": [
+          "diarization-settings"
+        ]
+      }
+    },
+    "/api/user-settings/diarization/pyannote/test": {
+      "post": {
+        "description": "Check a key against pyannote.ai's free ``GET /v1/test``. Runs no diarization job.\n\nWith ``api_key`` in the body that key is tested and nothing is stored. Without it the\nsaved key is tested and the outcome is recorded on it.",
+        "operationId": "test_pyannote_credential_api_user_settings_diarization_pyannote_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PyannoteConnectionTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyannoteConnectionTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Test Pyannote Credential",
+        "tags": [
+          "diarization-settings"
+        ]
+      }
+    },
     "/api/user-settings/download": {
       "delete": {
         "description": "Reset user's download settings to defaults.",
@@ -40408,6 +43636,33 @@
         ]
       }
     },
+    "/api/user-settings/pipeline": {
+      "get": {
+        "description": "The four processing steps for the caller's next file, with where each one runs.",
+        "operationId": "get_pipeline_api_user_settings_pipeline_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Pipeline",
+        "tags": [
+          "pipeline-settings"
+        ]
+      }
+    },
     "/api/user-settings/recording": {
       "delete": {
         "description": "Reset user's recording settings to defaults (delete from database)",
@@ -40763,8 +44018,33 @@
     },
     "/api/user-settings/transcription": {
       "delete": {
-        "description": "Reset user's transcription settings to defaults.\n\nDeletes all user-specific transcription settings from the database,\ncausing the system to fall back to default values.\n\nReturns:\n    Message confirming reset and the default settings that will now apply",
+        "description": "Reset user's transcription settings to defaults.\n\nDeletes user-specific transcription settings from the database, causing the\nsystem to fall back to default values. With ``group`` only that group's\nfields are reset; without it, all of them are.\n\nReturns:\n    Message confirming reset and the default settings that will now apply",
         "operationId": "reset_transcription_settings_api_user_settings_transcription_delete",
+        "parameters": [
+          {
+            "description": "Reset only this field group. Omit to reset every transcription setting.",
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "language",
+                    "accuracy",
+                    "speakers"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Reset only this field group. Omit to reset every transcription setting.",
+              "title": "Group"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -40775,6 +44055,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -41020,6 +44310,289 @@
         "summary": "Update Current User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/users/me/support-access": {
+      "get": {
+        "operationId": "list_my_workspace_grants_api_users_me_support_access_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "active",
+                    "denied",
+                    "expired",
+                    "revoked",
+                    "lapsed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Workspace Grants",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/users/me/support-access/{grant_uuid}/approve": {
+      "post": {
+        "operationId": "approve_my_workspace_grant_api_users_me_support_access__grant_uuid__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Approve My Workspace Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/users/me/support-access/{grant_uuid}/deny": {
+      "post": {
+        "operationId": "deny_my_workspace_grant_api_users_me_support_access__grant_uuid__deny_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionNoteBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportGrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Deny My Workspace Grant",
+        "tags": [
+          "support-access"
+        ]
+      }
+    },
+    "/api/users/me/support-access/{grant_uuid}/uses": {
+      "get": {
+        "operationId": "list_my_workspace_grant_uses_api_users_me_support_access__grant_uuid__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_uuid",
+            "required": true,
+            "schema": {
+              "title": "Grant Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Workspace Grant Uses",
+        "tags": [
+          "support-access"
         ]
       }
     },

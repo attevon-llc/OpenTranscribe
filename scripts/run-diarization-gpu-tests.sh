@@ -66,6 +66,15 @@ if ! command -v nvidia-smi >/dev/null 2>&1; then
     echo -e "${YELLOW}      in which case every test skips on 'CUDA not available'.${NC}"
 fi
 
+# `run --rm` removes the test container but not the project's default network, which used
+# to be left behind by every run (issue #1195). `down` on THIS project only, on any exit.
+# The built image is kept on purpose: it is the cache the next run reuses.
+_remove_test_project() {
+    docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" down --remove-orphans \
+        >/dev/null 2>&1 || true
+}
+trap _remove_test_project EXIT
+
 echo -e "${YELLOW}Building ${BASE_IMAGE} + pytest -> opentranscribe-backend-test:latest${NC}"
 docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" build diarization-tests
 

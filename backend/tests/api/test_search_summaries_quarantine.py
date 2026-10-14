@@ -18,9 +18,15 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 import pytest
+from fixtures.summary_plane import sync_summary_plane
 
 from app.models.media import MediaFile
 from app.services.search.hybrid_search_service import HybridSearchService
+
+# The summary leg reads the OpenSearch summary plane (#963). Quarantine is decided from
+# Postgres at query time, so a test flips ``is_quarantined`` AFTER the plane is written --
+# exactly the production order -- and the plane must still be told to hide the file.
+pytestmark = pytest.mark.usefixtures("summary_plane")
 
 SEARCH_PATH = "/api/search"
 
@@ -48,6 +54,7 @@ def _make_file(db_session, user, *, summary: dict) -> MediaFile:
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
+    sync_summary_plane(row)
     return row
 
 

@@ -30,12 +30,15 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `matching`/`profiles`/`clusters` the kNN reads. Its `__init__` re-exports every name the
   old flat module exported), `opensearch_snapshot.py`, `similarity_service.py`.
   (`opensearch_summary_service.py` is **gone** — the `transcript_summaries` index it owned
-  is retired, #67. A summary lives in `media_file.summary_data` and nowhere else; the only
-  code that still names that index purges legacy documents, in `file_cleanup_service.py`
-  and `tasks/opensearch_integrity_task.py`.)
+  is retired, #67. A summary's SOURCE OF TRUTH is `media_file.summary_data` and nowhere
+  else; the only code that still names the retired index purges legacy documents, in
+  `file_cleanup_service.py` and `tasks/opensearch_integrity_task.py`. Since #963 a summary is
+  ALSO indexed as a derived, rebuildable `doc_type: "summary"` plane inside `transcript_chunks`
+  — never a second store of record; see `search/CLAUDE.md`'s "Index v6" section.)
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
-  `metadata_speaker_extractor.py`.
+  `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
+  cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.
@@ -173,6 +176,175 @@ Two judgement calls worth not re-litigating blindly:
   legitimately uploading to that tenant the next day, and acting on it would destroy
   data nobody asked to erase. They are counted as `org_member_manual_review` instead.
 
+## Removing a voice: `speaker_cleanup.py` is the only implementation (issue #1214)
+
+A speaker's voice is copied into more than its own voiceprint document: every cluster it
+belongs to stores a `cluster_<uuid>` centroid (a weighted mean of the members' voiceprints,
+profile-linked members counting double), its profile stores a `profile_<uuid>` embedding (a
+mean of the members'), and the transcript index planes carry its label. Deleting the speaker
+row, or moving it out of a cluster or profile, changes none of those by itself — and the
+`ON DELETE CASCADE` on `speaker_cluster_member` erases the only record of which centroids
+averaged it in. #1211 fixed this for the file purge alone; every per-speaker path kept the
+removed voice inside some aggregate.
+
+Every path now does the same two calls around its own write:
+
+```python
+impact = capture_speaker_impact(db, [speaker_id], removed=True, reindex=True)  # BEFORE
+db.delete(speaker)
+db.commit()
+raise_if_incomplete(reconcile_speaker_impact(db, impact))  # AFTER commit
+```
+
+Callers: `speakers.py` (delete, merge, verify accept/reject/create, profile moves in the
+update task), `transcript_segments.py` (orphan cleanup), `speaker_update.py` (auto-profile
+and retroactive matching), `speaker_profiles.py` (profile delete), `speaker_clusters.py`
+(cluster delete), `speaker_clustering_service` (unassign, split, merge, promote, batch
+assign, upload-time clustering, re-cluster), `speaker_matching_service` (profile
+propagation), `speaker_embedding_task` (segment-reassign voiceprint drift),
+`files/reprocess.py` (transcription and rediarize clears), `task_utils.reset_file_for_retry`,
+`speaker_merge_task` (the target half) and `file_cleanup_service.purge_media_file`.
+
+The same module is also the ONE implementation of **assignment** bookkeeping (#1233): a path
+that ADDS a speaker to a cluster or profile names what it touched in a `SpeakerImpact` and
+hands it to `reconcile_speaker_impact` after its commit, exactly like a removal — so
+membership rows, `Speaker.cluster_id`, `member_count`, the centroid, the profile embedding
+and the speaker's own document's `profile_id`/`display_name` (`relabel_speaker_ids`) agree.
+
+The rules it applies are the product's existing ones, written once:
+
+| After the change | Result |
+|---|---|
+| The removed speaker's own voiceprint | erased from every speaker index, verified by a survivor count |
+| A cluster with 0 members left | row deleted and centroid erased, **promoted or not** (`batch_recluster` rebuilds promoted clusters from profiles; an empty one was listed with nobody in it) |
+| A cluster with 1 member | kept, centroid = that member (upload-time singletons are how matching works; `list_clusters` hides them, Re-cluster All only rebuilds groups of 2+) |
+| Any other cluster | `member_count` and centroid recomputed, `_update_cluster_centroid(strict=True)` |
+| A profile that lost or gained a member | embedding recomputed, `update_profile_embedding(strict=True)` |
+| A centroid or profile embedding that cannot be rebuilt | **erased** (absent is rebuilt later; stale is a copy of the removed voice) |
+| A file whose segments lost their speaker | `dispatch_transcript_reindex` — chunk, digest and summary rosters rebuilt from Postgres |
+
+- **Failures are returned, never swallowed.** `reconcile_speaker_impact` never raises and
+  logs every residual at ERROR; request paths call `raise_if_incomplete`, which raises
+  `SpeakerCleanupIncompleteError` (a `SearchIndexError`, so `main.py` answers **503** with the
+  fixed `CLEANUP_INCOMPLETE_MESSAGE` — no driver text). Background and bulk paths (merge
+  task, update task, retry, reprocess) keep going and report `status: partial` or the log.
+  The change itself has committed either way; the 503 says the cleanup did not finish.
+- **Capture BEFORE the write, reconcile AFTER the commit.** After the delete, Postgres can no
+  longer say which clusters held the speaker; before the commit, a rollback would leave the
+  aggregates rebuilt for a change that never happened.
+- **A merge is split in two on purpose.** The endpoint rebuilds the SOURCE's clusters and
+  profile synchronously but does not erase its voiceprint — `process_speaker_merge_background`
+  reads it to average into the target, then `_reconcile_speakers_after_merge` rebuilds the
+  target's side and verifies the source document is gone.
+- **Deleting a profile restores labels.** A linked speaker carries the profile's name as its
+  display name (`speaker_profile_rename`'s invariant), so members whose display name *is*
+  the profile's name get it cleared and the chunk plane is told through
+  `SpeakerRenameTracker`; a name the user set to something else survives. A cluster labelled
+  with the profile's name loses the label.
+- **A reindex that could not be queued is a residual** (#1233). `_reindex_files` calls
+  `search/reindex_dispatch.queue_transcript_reindex`, which returns `QUEUED`,
+  `ALREADY_PENDING` (the debounce window already holds the reindex this change needs) or
+  `FAILED`; only `FAILED` becomes a `transcript_index` residual. `dispatch_transcript_reindex`
+  is the bool view of the same call for callers that only ask "queued now?". A failed
+  publish also releases the debounce claim it took — keeping it told every later mutation
+  of that file, for the whole window, that a reindex nobody queued was pending.
+
+### Unassigning: the section is no longer that person (issue #1233)
+
+The owner's rule, implemented once, in `speaker_cleanup.detach_from_cluster`:
+
+| Unassigning a speaker from a cluster… | |
+|---|---|
+| membership | both representations removed (`speaker_cluster_member` row and `Speaker.cluster_id`) |
+| the cluster's promoted profile | unlinked by `unlink_from_profile` — the profile-delete rule: `profile_id`/`verified` go, a display name or suggestion that IS the profile's name goes, a name the user typed stays |
+| blacklist (`blacklist=True`, the default) | cannot-link against **every remaining member**, both directions, **and** a profile blacklist row — both halves, promoted or not |
+| the cluster and profile | **remain** for everyone else; centroid and embedding rebuilt from them; an emptied cluster follows the empty-cluster rule above |
+
+`split_cluster` is the same unassignment (the moved group is someone other than those who
+stay), then the group forms a new unpromoted cluster. `blacklist=False` is the UI's explicit
+opt-out: it still unlinks, it records nothing.
+
+**Every assignment path honours the blacklist** through `speaker_blocked_from_cluster` /
+`speaker_blocked_from_profile` (blocked = blacklisted from the profile, or cannot-link with
+any member / any speaker linked to the profile) or, where the path assigns by NAME,
+`blocked_profile_names`:
+
+| Path | Before #1233 | Now |
+|---|---|---|
+| `find_or_create_cluster` (upload) | checked a promoted cluster's profile blacklist; cannot-link one direction only; linked the profile without rebuilding its embedding; dropped stale memberships without rebuilding those clusters | helper check (both directions); joins via `_join` → `join_cluster_identity`; `_settle_assignments` rebuilds the joined cluster, every cluster the speaker was dropped from, and every profile it entered or left |
+| Re-cluster Phase 1 (profiles) | regrouped any linked speaker, including one blacklisted from that profile | a link the user already unassigned (pre-#1233 data) is taken back by `unlink_from_profile` first |
+| Re-cluster Phase 2 (AHC) | cannot-link eviction | unchanged (already honoured) |
+| Re-cluster Phase 2.5 (singleton → profile cluster) | profile/cannot-link check; joined WITHOUT the profile (no label, centroid not rebuilt) | helper check; joining links the profile at the auto-link bar `max(threshold, 0.75)`; centroid + embedding settled after commit |
+| retroactive matching (`speaker_update.trigger_retroactive_matching`) | none | blocked candidates are skipped entirely — neither auto-applied nor suggested |
+| batch verify `assign` / `accept` / `name` | none | a blocked speaker is refused with a per-speaker error and listed in `blocked_speaker_uuids` (a bulk action is where a correction gets swept back in unnoticed); `name` was added in the review pass |
+| `promote_cluster_to_profile` | — | nothing to block: an unassigned speaker is no longer a member |
+| `merge_clusters` | moved every member; target's profile not propagated | a blocked member stays in the source (which survives with it) and is listed in the route's `blocked_speaker_uuids`; moved members take a promoted target's profile |
+| `_propagate_profile_assignment` | none; profile embedding not rebuilt | blocked candidates skipped, and (review pass) so is one named anything but the profile's name; profile + their clusters rebuilt |
+| `_handle_speaker_match` (re-match of an existing speaker) | none | blocked identity is neither suggested nor linked |
+| segment-reassign voiceprint update | rebuilt profiles only (non-strict); clusters drifted | `_rebuild_affected_aggregates` → `reconcile_speaker_impact` over the target's and source's clusters and profiles |
+| speaker merge | source's rows died with it (CASCADE) | `carry_blacklist` copies them to the target first (except the profile the target is already linked to) |
+| `app/scripts/batch_speaker_matching.py` | none | skips a suggestion of a blocked name |
+| LLM speaker ID (`speaker_identification_task._store_speaker_predictions`) | none | skips a blocked name (and a speaker that already carries a voiceprint suggestion). It never moves the canonical label: see "A speaker's label comes from a human or a voiceprint" below |
+
+**The explicit override.** Naming ONE speaker as a profile — typing the name
+(`auto_create_or_assign_profile`), `assign-profile`, verify `accept`, or a `batch-verify`
+of exactly one speaker with `override_unassignment: true` (the Inbox's per-speaker
+accept/assign, which is where an unassigned speaker lands and where a wrong unassignment
+is undone) — calls `lift_profile_blacklist`: it drops the speaker's blacklist row for that
+profile and its cannot-links with the profile's speakers. Only those single-speaker
+explicit actions lift it; `override_unassignment` with more than one speaker is a
+`ValueError` (422 at the route), so a batch can never carry a lift.
+
+**Review pass (#1233, 2026-10-12): rules the first sweep did not cover.**
+
+| Rule | Where |
+|---|---|
+| A bulk action REPORTS what a correction skipped: `batch_verify_speakers` and `merge_clusters` return `blocked_speaker_uuids`, and the SPA shows it (Inbox error toast, merge warning toast `speakers.merge.someLeftBehind`) instead of a success | `speaker_clustering_service`, `routes/speakers/+page.svelte` |
+| Batch `name` honours a correction like `accept` (it used to bypass it) | `batch_verify_speakers` |
+| **An automatic path never overwrites an identity a speaker already has**: `has_other_identity` = linked to another profile, or named (typed, or an accepted suggestion) something other than the profile. `find_or_create_cluster`, Re-cluster Phase 2.5 and profile propagation skip such a speaker; `merge_clusters` leaves it in the source and reports it (except members of the SOURCE's own profile — merging two named clusters says the names are one person) | `speaker_cleanup.has_other_identity` / `identity_conflicts_with_cluster` |
+| **Decision 5: a speaker linked to another profile is no longer in the old profile's cluster.** `reconcile_speaker_impact` releases, from every promoted cluster it refreshes, members linked to a different profile — so renaming, assigning, accepting, batch-assigning or retroactively matching a member away takes it out (no blacklist: the new link already says who it is) | `speaker_cleanup._release_members_of_other_profiles` |
+| **Rejecting an identification is an unassignment**: `verify?action=reject` leaves the linked profile's clusters through `detach_from_cluster` (blacklist both halves) and records a profile blacklist (`rejected_by_user`) for the linked profile and the profile its suggestion named | `speakers._reject_speaker_suggestion` |
+| **A moved segment leaves the old speaker's voiceprint**: the reassignment task removes the segment's embedding from the source by the exact inverse of the weighted add the target gets, and both rewritten documents keep the file's tenant (they were rewritten without `organization_id`, i.e. as personal) | `speaker_embedding_task._remove_segment_from_voiceprint` |
+| **A correction survives a re-run of the file** (rediarize, re-transcribe, retry), which deletes the speakers and, by CASCADE, their corrections: stashed by the corrected speaker's time spans before the delete, re-applied when the re-run saves its segments to every new speaker whose speech is ≥ `INHERIT_SHARE` (0.5) inside them | `speaker_correction_carryover` (table `v438`) |
+| Suggestions never offer a refused identity (speaker list, profile suggestions endpoint), and the voice-match suggestion of `_handle_no_speaker_match` (a >=0.75 voiceprint one moves the canonical label) skips a refused name or cannot-link partner | `SmartSpeakerSuggestionService.without_refused`, `SpeakerMatchingService._refusals` |
+
+Deliberately unchanged: deleting a cluster records nothing (it discards a grouping; it
+is not a statement that the members differ), and `blacklist: false` on unassign records
+nothing (the UI's "Prevent from rejoining" opt-out).
+
+**Autoflush is off.** A caller that sets `profile_id` and rebuilds in the same transaction
+must flush first (`speaker_update._update_profile_embedding` does): the rebuild otherwise
+reads the membership from before the link, and the new voice never reaches the embedding.
+
+## A speaker's label comes from a human or a voiceprint, never from an LLM (owner decision 2026-10-12)
+
+The canonical label (`utils/speaker_labels.canonical_speaker_label`: what the chunk index,
+digests, facts, chat speaker resolution, exports and the speaker API's `resolved_display_name`
+show as the speaker's name) is **(a)** `display_name` — a name a human typed or verified — or
+**(b)** a `suggested_name` whose `suggestion_source` is in `EMBEDDING_SUGGESTION_SOURCES`
+(`voice_match`, `profile_match`: written only by the voiceprint matchers) at
+`confidence >= 0.75`, else the diarizer label. An LLM suggestion (`llm_analysis`) is shown in the
+suggestion UIs with its confidence and nothing more; accepting it writes `display_name`.
+
+- **Allow-list on provenance, fail closed.** A source that is not on the list — `llm_analysis`,
+  `metadata_hint`, `user_skipped`, a new producer, or **no source at all** (legacy rows) — never
+  reaches the label. `test_speaker_label_provenance.py::test_every_source_the_app_writes_is_classified`
+  scans `app/` for every `suggestion_source` literal and fails on an unclassified one.
+- **Pass the source at every call site**, or use `canonical_speaker_label_for_row`. A raw-column
+  query (`reindex_task`, `rename_propagation_task`, the chat roster) must select
+  `Speaker.suggestion_source` too; omitting it silently reads as "unknown source".
+- **The chat roster only finds a speaker through `suggested_name` when a voiceprint wrote it**
+  (`speaker_resolver.build_candidate_roster`): a "who said X" question must not resolve a speaker
+  through a guess.
+- **The LLM task will not overwrite a voiceprint suggestion** — that would replace the evidence
+  the label rests on with a guess.
+- **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
+  `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
+  speaker whose old label was an LLM suggestion, refreshes the persisted
+  `speaker.resolved_display_name`, and regenerates `file_facts`. Resumable by an id cursor in
+  `SystemSettings`, 100 files per tick, finished by the `speaker_label_provenance_backfill_complete`
+  flag. No manual reindex is needed.
+
 ## Speaker embeddings: two backends, one model (issue #571)
 
 `speaker_embedding_service.py` no longer always loads a model. For **v4** (256-d) it prefers
@@ -294,6 +466,17 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   (exposure = `MEDIA_URL_EXPIRE_SECONDS`). `presign_client()` logs ERROR **only** for a MinIO
   provisioning failure — never on S3 or when disabled, where it fired from every process (#1005).
 
+- **Orphaned objects are swept, not assumed gone (#1212).** A file's objects all live under
+  `user_<uid>/file_<fid>/` (original, thumbnails, `.playback.m4a`, derived/masked caches,
+  waveform). The app's delete paths remove them with the row, but a row removed out of band
+  (raw SQL, a restore or reset against a persisted bucket) strands them.
+  `tasks/storage_orphan_sweep_task.py` finds and removes them: dry run first, empty-Postgres
+  refusal, 10% ratio guard (`force`), per-file Postgres re-check immediately before deleting,
+  1 h grace period, and it ignores every key that is not that shape (`media/...`,
+  `user_<uid>/youtube_<id>/...`, exports, avatars, other buckets). A NEW key shape for
+  per-file objects must keep the `user_<uid>/file_<fid>/` prefix or the sweep cannot see it
+  (and a file's objects would outlive it unnoticed).
+
 ## LLM features (optional)
 
 `llm_service.py` is a **synchronous** client on purpose (Celery tasks; no asyncio conflicts).
@@ -305,13 +488,26 @@ deprecated alias for `anthropic`).
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.
-- **"Is an LLM configured?" has ONE answer: `LLMService.is_configured_for_user(db, user_id)`.**
+- **"Is an LLM configured?" has ONE answer: `LLMService.is_configured_for_user(db, user_id)`**
+  (a thin wrapper over `describe_for_user`, which also returns `(provider, model, base_url)` for
+  the pipeline view's AI-features step).
   DB-only, no network, and built from the same helpers the factories use
   (`_resolve_user_llm_settings`, `_resolve_system_provider`, `_endpoint_resolves`), so it is
   true exactly when `create_from_settings` would return a service. Never re-derive it as
   `bool(settings.LLM_PROVIDER)`: a provider with no key or endpoint passes that check while
   every task skips, which made the post-transcription sweep re-dispatch topic extraction for
   every file every 10 minutes (issue #1017).
+- **Automatic LLM steps have per-user opt-outs (#1148).** `auto_llm_speaker_identification` and
+  `auto_topic_extraction` (default ON; `UserSetting` rows, system tier `auto_llm.speaker_identification`
+  / `auto_llm.topic_extraction`) are resolved ONLY by `services/auto_llm_settings.py`
+  (user > system > True). The AUTOMATIC dispatch sites consult it: `_dispatch_llm_speaker_identification`
+  in `speaker_attribute_task.py` (every chain exit, `dispatch_speaker_attribute_pipeline`, and so
+  postprocess/background/rediarize), `trigger_automatic_summarization` in `transcription/downstream.py`
+  (only when `tasks_to_run is None`), and `TaskDetectionService.identify_incomplete_post_transcription_files`
+  (the recovery sweep: a step the user turned off must not be flagged missing, or it is re-queued and
+  re-detected every 10 minutes). Manual triggers and an explicit stage list (`speaker_llm` /
+  `topic_extraction` via `dispatch_task_by_name` or `llm_requested=True`) never consult it. A new
+  automatic dispatch of either step must go through the resolver.
 - **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
   Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
   chain (IAM role, profile, or environment) — and no per-configuration region: both
@@ -490,13 +686,79 @@ token-counting check would duplicate logic `build_messages` already owns.
 
 ## User transcription settings
 
-Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows shaped by
+Per-user prefs (Settings → Transcription and Settings → Speaker Identification; one endpoint, saved per tab group) are `UserSetting` key/value rows shaped by
 `schemas/transcription_settings.py` and served from `api/endpoints/user_settings.py`
 (`GET/PUT /user-settings/transcription`): source language + translate-to-English, LLM output
 language, speaker behavior (`always_prompt` | `use_defaults` | `use_custom`), min/max speakers,
 garbage-segment cleanup + threshold, VAD tuning; recording/audio-extraction live on sibling
-routes. **Per-file overrides win** — `tasks/transcription/dispatch.py` takes `source_language`,
-`translate_to_english`, and speaker counts at upload/reprocess time.
+routes. **Per-file overrides win, for these only**: speaker counts (`resolve_speaker_range` in
+`tasks/transcription/user_settings.py` is the one precedence — per file, then the user's saved
+range, then env), the Whisper model (the deployment's model or tiny/base; anything else is a
+422), and "skip diarization". They are stored on the `media_file.requested_*` columns when a
+file is dispatched, and a retry/recovery replays them (`reuse_requested_options`,
+`tasks/transcription/requested_options.py`). **Language is NOT per file**:
+`dispatch_transcription_pipeline` still accepts `source_language`/`translate_to_english`, but no
+endpoint sets them, so language and translation always come from the user's prefs. Adding them
+to the upload/reprocess requests is a separate decision.
+
+## Pipeline composition: `pipeline_plan.py` is the one decision point (#1224)
+
+Transcription and speaker detection are chosen independently, each local or cloud.
+`pipeline_plan.resolve_pipeline_plan(PlanInputs) -> PipelinePlan` is a **pure** function
+(constants only, no DB) that decides, for every combination of transcription engine
+(`local_gpu` / `local_cpu` / `cloud`), stored speaker-detection source, deployment (full /
+lite) and the model's timestamp granularity: which detector runs (`asr` / `local` /
+`pyannote_ai` / `asr_config` / `off`), how (`inline_asr`, `inline_local`, `parallel_cloud`,
+`post_stage_local`, `post_stage_cloud`), where, on which queue, how turns are merged
+(`word` / `segment`), and the voiceprint step (always this server: `inline_native` after the
+local engine, otherwise `embedding_stage` on `cpu`). Problems are `PlanIssue`s with a stable
+`code` (also the i18n suffix `settings.pipeline.issue.<code>`) and a fixed sentence in
+`ISSUE_MESSAGES`; only `severity == "error"` blocks. `pipeline_plan_inputs.load_plan_inputs`
+gathers the inputs (active ASR via `ASRProviderFactory.resolve_active_config`, the #1109 lock,
+the pyannote.ai key, the catalog capabilities); `plan_for_user` composes the two.
+
+Owner decisions it encodes (do not re-open): lite has no local transcription and no local
+speaker detection; Automatic with a text-only model detects speakers on this server (full only);
+**no forced alignment / wav2vec2** — a model with `timing == "none"` is refused for every speaker
+detector (`asr_no_timing_for_speakers`); voiceprints are never taken from a vendor. Every cell is
+pinned by `tests/unit/test_pipeline_plan.py` (full and lite tables). On lite a local
+detector is never planned to run: the cell keeps `engine: local` and its blocking issue but
+plans `execution: none` (no queue, no voiceprint step), and "this server" is refused even when
+transcription is local too (#1228). Consumers: the settings
+PUT (409 on a NEW selection with a diarization-step error), the ASR-side switches
+(`services/asr_switch_plan`: diarization-step errors the switch introduces, and every
+transcription-step error), `GET /user-settings/pipeline`, and every pipeline
+stage (#1225: dispatch resolves it once and carries it in the chain context; what each cell
+then does is pinned by `tests/unit/test_pipeline_execution_matrix.py`).
+
+## Per-file processing provenance (#1229): one writer, one reader
+
+`media_file.processing_provenance` (JSONB, `v437`, `{"v": 1, "steps": {<step>: {...}}}`, shape
+in `schemas/processing_provenance.py`) records, per step, which provider/model completed it and
+where it ran. Steps: `transcription`, `diarization`, `voiceprints`, `summary`, `topics`,
+`speaker_names`.
+
+- **Write ONLY through `file_provenance.record_stage(db, file_id, stage, **facts)`.** It is one
+  `UPDATE ... jsonb_set` statement (never read-modify-write: the LLM tasks finish concurrently
+  for one file; `tests/unit/test_file_provenance_record.py` holds a row lock to prove it) inside
+  a savepoint, and it logs and swallows a DB error so provenance can never fail the stage write
+  it rides in. Unknown fact names raise `TypeError` (`base_url`, `api_key` are refused by
+  construction); a URL-shaped value is dropped. `new_run=True` (the transcript save) starts a
+  fresh document, so an earlier run's voiceprints/summary never describe a new transcript.
+- The `*_facts` helpers (`transcription_facts`, `diarization_facts`, `voiceprint_facts`,
+  `llm_facts`, `inline_speakers_by`) turn what a stage knows into canonical facts so call sites
+  stay one line. `llm_facts` calls `llm_guard.is_local_provider`, which can resolve a hostname:
+  call it in the no-session phase, never inside a write session.
+- Speaker-detection ids are canonical: `native` / `pyannote` = the local engines (server),
+  `pyannote.ai` = the cloud service, a transcription vendor id = that vendor's own speakers.
+  A legacy `pyannote` cannot be told apart from pyannote.ai, so the reader gives it no location.
+- **Read ONLY through `file_provenance_view.build_processing_steps(media_file)`**, served as
+  `processing_steps` on `MediaFileDetail` and `GET /my-files/{uuid}/status`. Display names are
+  proper nouns, pre-formatted here. `NULL` = processed before recording began: rows are
+  composed from the older columns with `recorded="legacy"` and anything they cannot say is
+  `not_recorded`; a document with a `transcription` entry means a missing step is `not_run`.
+- The scalar columns (`asr_provider`, `diarization_provider`, ...) stay the queryable index and
+  are still written where they were; `record_diarization` updates them for a post stage.
 
 ## Media URL ingestion (yt-dlp)
 

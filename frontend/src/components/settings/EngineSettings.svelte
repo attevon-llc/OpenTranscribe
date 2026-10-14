@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { getPipelineView } from '$lib/api/pipeline';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
+  import EngineIntro, { type SidecarStatus } from '$components/settings/EngineIntro.svelte';
+  import EngineSettingRow from '$components/settings/EngineSettingRow.svelte';
+  import ExpandableSection from '$components/ui/ExpandableSection.svelte';
 
   type SettingSource = 'db' | 'env' | 'default';
 
@@ -20,9 +27,13 @@
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_cosine_margin: EngineSettingValue<number>;
     boundary_acoustic_max_word_dur: EngineSettingValue<number>;
+    /** Read-only probe result; not a setting, so it has no source badge or reset. */
+    diarizer_sidecar_status?: SidecarStatus;
   }
 
-  type EngineSettingKey = keyof EngineSettingsResponse;
+  type EngineSettingKey = Exclude<keyof EngineSettingsResponse, 'diarizer_sidecar_status'>;
+
+  const dispatch = createEventDispatcher<{ change: { hasChanges: boolean } }>();
 
   let loading = false;
   let saving = false;
@@ -39,9 +50,23 @@
   let draftAcousticCosineMargin = 0.05;
   let draftAcousticMaxWordDur = 1.0;
 
+  // Lite has no local speaker detection engine to choose. The plan says so; asked once here
+  // and never fatal, because the panel works without it.
+  let isLite = false;
+  // The re-check tuning (cosine margin, max word length) is detail most admins never open.
+  let advancedOpen = false;
+
   onMount(async () => {
-    await loadData();
+    await Promise.all([loadData(), loadMode()]);
   });
+
+  async function loadMode() {
+    try {
+      isLite = (await getPipelineView()).deployment_mode === 'lite';
+    } catch {
+      isLite = false;
+    }
+  }
 
   async function loadData() {
     loading = true;
@@ -105,7 +130,11 @@
       toastStore.success($t('settings.engineSettings.saved'));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.saveFailed')), 5000);
+      const refusal = pipelineFailureKey(err, 'settings.engineSettings.saveFailed');
+      toastStore.error(
+        refusal ? $t(refusal) : getErrorMessage(err, $t('settings.engineSettings.saveFailed')),
+        5000
+      );
     } finally {
       saving = false;
     }
@@ -118,22 +147,10 @@
       toastStore.success($t('settings.engineSettings.resetToDefault', { key }));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, `Failed to reset ${key}`), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.resetFailed', { key })), 5000);
     } finally {
       resetInProgress = null;
     }
-  }
-
-  function sourceLabel(source: SettingSource): string {
-    if (source === 'db') return $t('settings.engineSettings.sourceDb');
-    if (source === 'env') return $t('settings.engineSettings.sourceEnv');
-    return $t('settings.engineSettings.sourceDefault');
-  }
-
-  function sourceClass(source: SettingSource): string {
-    if (source === 'db') return 'source-db';
-    if (source === 'env') return 'source-env';
-    return 'source-default';
   }
 
   $: isDirty = settings !== null && (
@@ -144,84 +161,53 @@
     Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
     Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value
   );
+
+  $: dispatch('change', { hasChanges: isDirty });
 </script>
 
 <div class="engine-settings">
   {#if loading}
-    <div class="loading">{$t('settings.asrProvider.loading')}</div>
+    <SettingsSkeleton variant="form" count={4} label={$t('settings.asrProvider.loading')} />
   {:else if settings}
-    <!-- Section header -->
-    <div class="section-header">
-      <h4>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-          <line x1="8" y1="21" x2="16" y2="21"/>
-          <line x1="12" y1="17" x2="12" y2="21"/>
-        </svg>
-        {$t('settings.engineSettings.title')}
-      </h4>
-    </div>
-
     <div class="settings-form">
+      <EngineIntro sidecarStatus={settings.diarizer_sidecar_status} />
 
-      <!-- Diarizer Backend -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <label for="diarizer-backend">{$t('settings.engineSettings.diarizerBackend')}</label>
-            <span class="source-badge {sourceClass(settings.diarizer_backend.source)}">
-              {sourceLabel(settings.diarizer_backend.source)}
-            </span>
-            {#if settings.diarizer_backend.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('diarizer_backend')}
-                disabled={resetInProgress === 'diarizer_backend' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'diarizer_backend'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
+      <h3 class="section-title">{$t('settings.engineSettings.diarizerHeading')}</h3>
+
+      {#if isLite}
+        <!-- Lite is cloud-only: the server refuses these two settings (local_diarization_unavailable). -->
+        <p class="lite-note" data-testid="engine-lite-note">
+          {$t(PIPELINE_ISSUE_KEYS.local_diarization_unavailable)}
+        </p>
+      {:else}
+
+        <EngineSettingRow
+          label={$t('settings.engineSettings.diarizerBackend')}
+          labelFor="diarizer-backend"
+          source={settings.diarizer_backend.source}
+          resetting={resetInProgress === 'diarizer_backend'}
+          disabled={saving}
+          hint={$t('settings.engineSettings.diarizerBackendHint')}
+          on:click={() => resetKey('diarizer_backend')}
+        >
           <select
             id="diarizer-backend"
             bind:value={draftDiarizerBackend}
             class="form-select"
             disabled={saving || resetInProgress !== null}
           >
-            <option value="native">native (default)</option>
-            <option value="pyannote">pyannote (failover)</option>
+            <option value="native">{$t('settings.engineSettings.backendNative')}</option>
+            <option value="pyannote">{$t('settings.engineSettings.backendPyannote')}</option>
           </select>
-        </div>
-      </div>
+        </EngineSettingRow>
 
-      <!-- Require Diarization Sidecar -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.diarizerRequireSidecar')}</span>
-            <span class="source-badge {sourceClass(settings.diarizer_require_sidecar.source)}">
-              {sourceLabel(settings.diarizer_require_sidecar.source)}
-            </span>
-            {#if settings.diarizer_require_sidecar.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('diarizer_require_sidecar')}
-                disabled={resetInProgress === 'diarizer_require_sidecar' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'diarizer_require_sidecar'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
+        <EngineSettingRow
+          label={$t('settings.engineSettings.diarizerRequireSidecar')}
+          source={settings.diarizer_require_sidecar.source}
+          resetting={resetInProgress === 'diarizer_require_sidecar'}
+          disabled={saving}
+          on:click={() => resetKey('diarizer_require_sidecar')}
+        >
           <label class="toggle-label" for="diarizer-require-sidecar-input">
             <input
               id="diarizer-require-sidecar-input"
@@ -233,156 +219,100 @@
             <span class="toggle-switch"></span>
             <span class="toggle-text help-text">{$t('settings.engineSettings.diarizerRequireSidecarHelp')}</span>
           </label>
-        </div>
-      </div>
+        </EngineSettingRow>
+      {/if}
 
-      <!-- Boundary Smoothing -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.boundarySmoothing')}</span>
-            <span class="source-badge {sourceClass(settings.boundary_smoothing_enabled.source)}">
-              {sourceLabel(settings.boundary_smoothing_enabled.source)}
-            </span>
-            {#if settings.boundary_smoothing_enabled.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('boundary_smoothing_enabled')}
-                disabled={resetInProgress === 'boundary_smoothing_enabled' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'boundary_smoothing_enabled'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <label class="toggle-label" for="boundary-smoothing-input">
-            <input
-              id="boundary-smoothing-input"
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={draftBoundarySmoothing}
-              disabled={saving || resetInProgress !== null}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.boundarySmoothingHelp')}</span>
-          </label>
-        </div>
-      </div>
+      <h3 class="section-title boundary-heading">{$t('settings.engineSettings.boundaryHeading')}</h3>
 
-      <!-- Acoustic Backchannel Re-check -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.boundaryAcousticRecheck')}</span>
-            <span class="source-badge {sourceClass(settings.boundary_acoustic_recheck_enabled.source)}">
-              {sourceLabel(settings.boundary_acoustic_recheck_enabled.source)}
-            </span>
-            {#if settings.boundary_acoustic_recheck_enabled.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('boundary_acoustic_recheck_enabled')}
-                disabled={resetInProgress === 'boundary_acoustic_recheck_enabled' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'boundary_acoustic_recheck_enabled'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <label class="toggle-label" for="boundary-acoustic-recheck-input">
-            <input
-              id="boundary-acoustic-recheck-input"
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={draftAcousticRecheck}
-              disabled={saving || resetInProgress !== null}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
-          </label>
-        </div>
-      </div>
+      <EngineSettingRow
+        label={$t('settings.engineSettings.boundarySmoothing')}
+        source={settings.boundary_smoothing_enabled.source}
+        resetting={resetInProgress === 'boundary_smoothing_enabled'}
+        disabled={saving}
+        on:click={() => resetKey('boundary_smoothing_enabled')}
+      >
+        <label class="toggle-label" for="boundary-smoothing-input">
+          <input
+            id="boundary-smoothing-input"
+            type="checkbox"
+            class="toggle-input"
+            bind:checked={draftBoundarySmoothing}
+            disabled={saving || resetInProgress !== null}
+          />
+          <span class="toggle-switch"></span>
+          <span class="toggle-text help-text">{$t('settings.engineSettings.boundarySmoothingHelp')}</span>
+        </label>
+      </EngineSettingRow>
 
-      <!-- Re-check Cosine Margin -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <label for="boundary-acoustic-cosine-margin">{$t('settings.engineSettings.boundaryAcousticCosineMargin')}</label>
-            <span class="source-badge {sourceClass(settings.boundary_acoustic_cosine_margin.source)}">
-              {sourceLabel(settings.boundary_acoustic_cosine_margin.source)}
-            </span>
-            {#if settings.boundary_acoustic_cosine_margin.source !== 'default'}
-              <button
-                class="reset-btn"
+      <EngineSettingRow
+        label={$t('settings.engineSettings.boundaryAcousticRecheck')}
+        source={settings.boundary_acoustic_recheck_enabled.source}
+        resetting={resetInProgress === 'boundary_acoustic_recheck_enabled'}
+        disabled={saving}
+        on:click={() => resetKey('boundary_acoustic_recheck_enabled')}
+      >
+        <label class="toggle-label" for="boundary-acoustic-recheck-input">
+          <input
+            id="boundary-acoustic-recheck-input"
+            type="checkbox"
+            class="toggle-input"
+            bind:checked={draftAcousticRecheck}
+            disabled={saving || resetInProgress !== null}
+          />
+          <span class="toggle-switch"></span>
+          <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
+        </label>
+        <p class="field-hint scope-note" data-testid="recheck-scope">
+          {$t('settings.engineSettings.boundaryAcousticScope')}
+        </p>
+        <svelte:fragment slot="after">
+          <ExpandableSection title={$t('settings.engineSettings.advancedToggle')} bind:expanded={advancedOpen}>
+            <div class="advanced-fields">
+              <EngineSettingRow
+                label={$t('settings.engineSettings.boundaryAcousticCosineMargin')}
+                labelFor="boundary-acoustic-cosine-margin"
+                source={settings.boundary_acoustic_cosine_margin.source}
+                resetting={resetInProgress === 'boundary_acoustic_cosine_margin'}
+                disabled={saving}
+                hint={$t('settings.engineSettings.boundaryAcousticCosineMarginHelp')}
                 on:click={() => resetKey('boundary_acoustic_cosine_margin')}
-                disabled={resetInProgress === 'boundary_acoustic_cosine_margin' || saving}
-                title={$t('settings.engineSettings.resetKey')}
               >
-                {#if resetInProgress === 'boundary_acoustic_cosine_margin'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <input
-            id="boundary-acoustic-cosine-margin"
-            type="number"
-            step="0.01"
-            min="0"
-            max="1"
-            class="form-input"
-            bind:value={draftAcousticCosineMargin}
-            disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
-          />
-          <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticCosineMarginHelp')}</p>
-        </div>
-      </div>
+                <input
+                  id="boundary-acoustic-cosine-margin"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  class="form-input"
+                  bind:value={draftAcousticCosineMargin}
+                  disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
+                />
+              </EngineSettingRow>
 
-      <!-- Re-check Max Word Duration -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <label for="boundary-acoustic-max-word-dur">{$t('settings.engineSettings.boundaryAcousticMaxWordDur')}</label>
-            <span class="source-badge {sourceClass(settings.boundary_acoustic_max_word_dur.source)}">
-              {sourceLabel(settings.boundary_acoustic_max_word_dur.source)}
-            </span>
-            {#if settings.boundary_acoustic_max_word_dur.source !== 'default'}
-              <button
-                class="reset-btn"
+              <EngineSettingRow
+                label={$t('settings.engineSettings.boundaryAcousticMaxWordDur')}
+                labelFor="boundary-acoustic-max-word-dur"
+                source={settings.boundary_acoustic_max_word_dur.source}
+                resetting={resetInProgress === 'boundary_acoustic_max_word_dur'}
+                disabled={saving}
+                hint={$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}
                 on:click={() => resetKey('boundary_acoustic_max_word_dur')}
-                disabled={resetInProgress === 'boundary_acoustic_max_word_dur' || saving}
-                title={$t('settings.engineSettings.resetKey')}
               >
-                {#if resetInProgress === 'boundary_acoustic_max_word_dur'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <input
-            id="boundary-acoustic-max-word-dur"
-            type="number"
-            step="0.1"
-            min="0.1"
-            max="5"
-            class="form-input"
-            bind:value={draftAcousticMaxWordDur}
-            disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
-          />
-          <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}</p>
-        </div>
-      </div>
+                <input
+                  id="boundary-acoustic-max-word-dur"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max="5"
+                  class="form-input"
+                  bind:value={draftAcousticMaxWordDur}
+                  disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
+                />
+              </EngineSettingRow>
+            </div>
+          </ExpandableSection>
+        </svelte:fragment>
+      </EngineSettingRow>
 
       <!-- Save button -->
       <div class="form-actions">
@@ -404,136 +334,39 @@
 </div>
 
 <style>
+  .lite-note {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
+  /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
+     beneath left-aligned tabs reads as misaligned. */
   .engine-settings {
     max-width: 800px;
-    margin: 0 auto;
   }
 
-  .loading {
-    text-align: center;
-    padding: 3rem;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .section-header h4 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 500;
+  .section-title {
+    font-size: 1rem;
+    font-weight: 600;
     color: var(--text-color);
+    margin: 0;
   }
+
+  .boundary-heading {
+    margin-top: 0.5rem;
+  }
+
 
   .settings-form {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
-  }
-
-  .form-row {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.875rem 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--card-bg);
-  }
-
-  .field-label-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .field-label-row label,
-  .field-label-row .field-name {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-color);
-    flex: 1;
-    min-width: 0;
-  }
-
-  .source-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.675rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .source-db {
-    background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-on-surface);
-  }
-  :global([data-theme='dark']) .source-db {
-    background: rgba(var(--primary-color-rgb), 0.2);
-    color: #60a5fa;
-  }
-
-  .source-env {
-    background: rgba(245, 158, 11, 0.12);
-    color: #d97706;
-  }
-  :global([data-theme='dark']) .source-env {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-  }
-
-  .source-default {
-    background: var(--card-bg);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-  }
-
-  .reset-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.2rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    cursor: pointer;
-    background: var(--surface-color);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-    transition: all 0.15s;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .reset-btn:hover:not(:disabled) {
-    background: var(--button-hover);
-    color: var(--text-color);
-  }
-
-  .reset-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .form-select {
@@ -575,12 +408,6 @@
     cursor: not-allowed;
   }
 
-  .field-hint {
-    margin: 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    line-height: 1.4;
-  }
 
   /* Toggle switch */
   .toggle-label {
@@ -680,13 +507,25 @@
     transform: none;
   }
 
-  @media (max-width: 768px) {
-    .field-label-row {
-      gap: 0.375rem;
-    }
 
-    .form-field {
-      padding: 0.75rem;
-    }
+  .advanced-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.25rem;
+  }
+
+  /* The tuning rows sit inside the re-check card; a second border box nested in it is noise. */
+  .advanced-fields :global(.form-field) {
+    padding: 0.5rem 0;
+    border: none;
+    background: transparent;
+  }
+
+  .scope-note {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 </style>

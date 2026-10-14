@@ -151,20 +151,6 @@
           </div>
         {/if}
 
-        {#if file && file.asr_provider}
-          <div class="metadata-item">
-            <span class="metadata-label">{$t('metadata.asrEngine')}:</span>
-            <span class="metadata-value">{file.asr_provider}</span>
-          </div>
-        {/if}
-
-        {#if file && file.asr_model}
-          <div class="metadata-item">
-            <span class="metadata-label">{$t('metadata.asrModel')}:</span>
-            <span class="metadata-value">{file.asr_model}</span>
-          </div>
-        {/if}
-
         <!-- When the recording HAPPENED, with its origin and an edit control. Distinct
              from the upload date above and from the container's "created date" below;
              every date-scoped answer in the product now filters on this one. -->
@@ -235,48 +221,6 @@
           </span>
         </div>
       </div>
-
-      {#if file?.whisper_model || file?.diarization_model || file?.diarization_provider || file?.diarization_disabled || file?.embedding_mode}
-        <div class="processing-models-section">
-          <hr class="models-divider" />
-          <div class="models-row">
-            {#if file.whisper_model}
-              <span class="model-badge">
-                <span class="model-label">Whisper:</span>
-                <span class="model-name">{file.whisper_model}</span>
-              </span>
-            {/if}
-            {#if file.diarization_model}
-              <span class="model-badge">
-                <span class="model-label">{$t('metadata.diarizationLabel')}</span>
-                <span class="model-name">{file.diarization_model}</span>
-              </span>
-            {/if}
-            {#if file.diarization_provider}
-              <span class="model-badge">
-                <span class="model-label">{$t('metadata.diarizationEngineLabel')}</span>
-                <span class="model-name">
-                  {file.diarization_provider === 'native'
-                    ? $t('metadata.diarizationEngineNative')
-                    : $t('metadata.diarizationEnginePyannote')}
-                </span>
-              </span>
-            {/if}
-            {#if !file.diarization_model && file.diarization_disabled}
-              <span class="model-badge diarization-disabled">
-                <span class="model-label">{$t('metadata.diarizationLabel')}</span>
-                <span class="model-name">{$t('metadata.diarizationDisabled')}</span>
-              </span>
-            {/if}
-            {#if file.embedding_mode}
-              <span class="model-badge">
-                <span class="model-label">{$t('metadata.embeddingsLabel')}</span>
-                <span class="model-name">{file.embedding_mode}</span>
-              </span>
-            {/if}
-          </div>
-        </div>
-      {/if}
     </div>
   </div>
   {/if}
@@ -399,53 +343,6 @@
   .source-link:hover {
     color: var(--primary-hover);
     text-decoration: underline;
-  }
-
-  .processing-models-section {
-    margin-top: 4px;
-  }
-
-  .models-divider {
-    border: none;
-    border-top: 1px solid var(--border-color);
-    margin: 8px 0 12px 0;
-  }
-
-  .models-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: center;
-  }
-
-  .model-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    background: var(--surface-hover, rgba(0, 0, 0, 0.03));
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    font-size: 12px;
-  }
-
-  .model-badge .model-label {
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    font-size: 10px;
-  }
-
-  .model-badge .model-name {
-    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
-    color: var(--text-primary);
-    font-weight: 500;
-  }
-
-  .model-badge.diarization-disabled .model-name {
-    color: var(--text-secondary);
-    font-style: italic;
   }
 
   @media (max-width: 768px) {

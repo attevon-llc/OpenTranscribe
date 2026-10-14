@@ -1,0 +1,21 @@
+{
+  "baseline": "__screenshots__/gallery-light.png",
+  "captured_at": "2026-10-12T13:00:55Z",
+  "git_sha": "8e21fb6ce841071b15dcf49baad60f81aa699b02",
+  "git_branch": "feat/v0.6.0-frontend-ux",
+  "git_dirty": false,
+  "git_dirty_paths": 0,
+  "reason": "v0.6.0 UI refresh: filter sidebar, gallery toolbar, settings regroup, pipeline view, processing section (single clean seed)",
+  "captured_by": "scripts/e2e/update-visual-baselines.sh",
+  "stack": {
+    "compose_project": "otfresh-visual",
+    "port_offset": 100,
+    "gpu_device": null,
+    "seeded": true,
+    "mode": "dev (local source bind-mounted)"
+  },
+  "change_from_previous": {
+    "status": "CHANGED",
+    "differing_pixels": "13.3627%"
+  }
+}

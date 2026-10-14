@@ -5,6 +5,7 @@
   import { galleryStore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
+  import FileStatusIndicator from './FileStatusIndicator.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -281,28 +282,16 @@
 
           <!-- Status -->
           <div class="list-cell list-cell-status">
-            <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.user_message}>
-              <span class="status-dot"></span>
-              {#if file.status === 'error' && file.user_message}
-                <!-- svelte-ignore a11y-click-events-have-key-events -->
-                <!-- svelte-ignore a11y-no-static-element-interactions -->
-                <span
-                  class="error-details-trigger"
-                  on:click|preventDefault|stopPropagation={() => handleErrorClick(file)}
-                  title={$t('gallery.errorClickForDetails')}
-                >
-                  {$t('common.error')}
-                </span>
-              {:else if file.status === 'completed'}
-                {$t('common.completed')}
-              {:else if file.status === 'processing'}
-                {$t('common.processing')}
-              {:else if file.status === 'pending'}
-                {$t('common.pending')}
-              {:else}
-                {file.display_status || file.status}
-              {/if}
-            </div>
+            <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11): a file
+                 quarantined mid-pipeline can have `status` overwritten to a terminal value
+                 by a running task while this flag stays correct. -->
+            <FileStatusIndicator
+              status={file.is_quarantined ? 'quarantined' : file.status}
+              displayStatus={file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : file.display_status}
+              clickable={file.status === 'error' && !!file.user_message}
+              showLabel
+              on:click={() => handleErrorClick(file)}
+            />
           </div>
         </a>
       </div>
@@ -331,14 +320,12 @@
   .file-list-header {
     display: grid;
     grid-template-columns: var(--file-list-columns);
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: var(--file-list-gap);
+    padding: 0.75rem var(--file-list-pad);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: 500;
     color: var(--text-secondary);
     position: sticky;
     top: 0;
@@ -376,37 +363,33 @@
     background: rgba(59, 130, 246, 0.1);
   }
 
+  /* Selection mode: the row is a grid on the header's own template, and the link is a
+     subgrid over the data tracks (file-list-grid.css), so the checkbox, type, title ...
+     cells share column edges with the header cells by construction. */
   .file-list-row.selecting-mode {
     display: grid;
-    grid-template-columns: 40px 1fr;
+    grid-template-columns: var(--file-list-columns-selecting);
+    column-gap: var(--file-list-gap);
+    padding-inline: var(--file-list-pad);
     user-select: none;
     -webkit-user-select: none;
   }
 
   .file-list-row.selecting-mode .file-list-link {
-    grid-template-columns: var(--file-list-columns);
+    grid-column: 2 / -1;
+    grid-template-columns: subgrid;
+    padding-inline: 0;
   }
 
   .file-list-link {
     display: grid;
     grid-template-columns: var(--file-list-columns);
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--file-list-gap);
+    padding: 0.5rem var(--file-list-pad);
     text-decoration: none;
     color: inherit;
     align-items: center;
     height: 100%;
-  }
-
-  .file-list-row.selecting-mode .file-list-link {
-    padding: 0.5rem 1rem 0.5rem 0;
-  }
-
-  .file-list-row.selecting-mode .list-cell-checkbox {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem 0 0.5rem 1rem;
   }
 
   .file-list-row:hover {
@@ -455,7 +438,7 @@
   }
 
   .list-cell-checkbox {
-    width: 40px;
+    width: var(--file-list-check);
     justify-content: center;
     position: relative;
   }
@@ -527,6 +510,7 @@
 
   .file-title {
     display: block;
+    font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-primary);
     overflow: hidden;
@@ -535,7 +519,7 @@
   }
 
   .list-cell-speakers {
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     color: var(--text-secondary);
     display: flex;
     flex-wrap: nowrap;
@@ -543,6 +527,11 @@
     gap: 0.375rem;
     overflow: hidden;
     min-width: 0;
+    /* 32px gutter before the duration column: the shared 8px grid `gap` (file-list-grid.css)
+       plus 24px here. Column geometry otherwise lives ONLY in file-list-grid.css — this is
+       the one exception, scoped to a single cell's trailing edge rather than the grid gap,
+       which would widen every column boundary. */
+    padding-inline-end: 24px;
   }
 
   .speaker-names {
@@ -581,100 +570,33 @@
     font-size: 0.875rem;
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
+    justify-content: flex-end;
   }
 
   .list-cell-status {
     justify-content: flex-end;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.875rem;
   }
 
-  .list-cell-status .file-status {
-    font-size: 0.7rem;
+  /* The header cells share the body cells' column classes, so the body font sizes above
+     leaked into the labels and made them different sizes. Header labels always take the
+     header's own size. */
+  .file-list-header .list-cell {
+    font-size: inherit;
   }
 
-  .file-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.65rem;
-    font-weight: 500;
-    width: fit-content;
-    white-space: nowrap;
-  }
-
-  .status-pending,
-  .status-processing,
-  .status-cancelling {
-    color: #f59e0b;
-  }
-
-  .status-completed {
-    color: #10b981;
-  }
-
-  .status-error {
-    color: #ef4444;
-  }
-
-  .status-cancelled {
-    color: #6b7280;
-  }
-
-  .status-orphaned {
-    color: #dc2626;
-  }
-
-  /* Abuse / DMCA takedown hold — amber, distinct from the red error states. */
-  .status-quarantined {
-    color: #d97706;
-  }
-
-  .clickable-error {
-    cursor: pointer;
-    transition: opacity 0.2s ease;
-  }
-
-  .clickable-error:hover {
-    opacity: 0.8;
-  }
-
-  .error-details-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    text-decoration: underline;
-    text-decoration-style: dotted;
-  }
-
-  .error-details-trigger:hover {
-    text-decoration-style: solid;
-  }
-
-  .status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: currentColor;
-  }
-
-  @keyframes pulse {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
-  }
-
-  .status-processing .status-dot {
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  /* Hide speakers and size columns on tablets */
-  @media (max-width: 1024px) {
+  /* Cell visibility follows the same container widths as the column template in
+     file-list-grid.css — keep the two lists of breakpoints identical. */
+  @container file-list (max-width: 860px) {
     .list-cell-speakers,
     .list-cell-size {
       display: none;
     }
   }
 
-  @media (max-width: 768px) {
+  @container file-list (max-width: 580px) {
     .list-cell-speakers,
     .list-cell-duration,
     .list-cell-date,

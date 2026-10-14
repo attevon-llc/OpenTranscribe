@@ -50,6 +50,46 @@ def get_alembic_head() -> str | None:
     return head
 
 
+def _revision_module(revision: str):
+    """Load one revision file by path (its module-level constants are the source of truth)."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{revision}.py"
+    spec = importlib.util.spec_from_file_location(revision, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load revision {revision} from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _has_unusable_pyannote_source(conn, tables: list[str]) -> bool:
+    """v434's data marker: a stored pyannote.ai choice with no key and local transcription.
+
+    The predicate is read from the revision itself, so detection and the reset it detects
+    cannot drift apart.
+    """
+    if not {"user_setting", "user_diarization_settings", "user_asr_settings"} <= set(tables):
+        return False
+    module = _revision_module("v434_reset_unusable_pyannote_source")
+    detect = text(module.DETECT_SQL)
+    return bool(conn.execute(detect, {"env_local": module.env_asr_is_local()}).scalar())
+
+
+def _has_lite_local_source_with_speakers(conn, tables: list[str]) -> bool:
+    """v436's data marker: on lite, a stored "this server" choice Automatic would keep.
+
+    Always False on the full image, where the revision is a no-op. The predicate is read
+    from the revision itself, so detection and the rewrite cannot drift apart.
+    """
+    if not {"user_setting", "user_asr_settings"} <= set(tables):
+        return False
+    module = _revision_module("v436_lite_local_speaker_detection_to_automatic")
+    if not module.deployment_is_lite():
+        return False
+    return bool(conn.execute(text(module.DETECT_SQL)).scalar())
+
+
 def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     """Detect the schema version of an existing untracked database.
 
@@ -539,6 +579,48 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE indexname = 'uq_speaker_profile_user_tenant_name')"
     )
 
+    # v431: media_file.duration_source — where `duration` came from (issue #969).
+    # Single-marker revision (one ADD COLUMN plus one CHECK, no backfill), so the
+    # column IS the fingerprint — the same shape v392/v393 use.
+    has_duration_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'duration_source')"
+    )
+
+    # v432: support-access grants (issue #1122). Keyed on the CHECK the revision creates
+    # LAST, so a database interrupted part-way through the revision does not look finished
+    # and is re-run (every statement in it is idempotent).
+    has_support_access_grant = "support_access_grant" in tables and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_support_access_grant_target_kind')"
+    )
+
+    # v433: the per-file transcription request (issues #1203, #1202, #1198). Keyed on the
+    # last column the revision adds; the watch-source default drop has no marker of its own.
+    has_requested_options = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'requested_disable_diarization')"
+    )
+
+    # v434: a data-only revision (issue #1225). No schema marker, so like v379 it keys on
+    # the ABSENCE of the rows it rewrites: a database that still holds a pyannote.ai choice
+    # with no key under local transcription is stamped v433 and re-runs the reset.
+    has_unusable_pyannote_source = _has_unusable_pyannote_source(conn, tables)
+
+    # v436: data-only and lite-only (issue #1228). Keyed on the ABSENCE of a lite user's
+    # stored "this server" choice that Automatic would keep, like v434.
+    has_lite_local_source = _has_lite_local_source_with_speakers(conn, tables)
+    # v437: per-file processing provenance (issue #1229). Single-marker revision: the
+    # column IS the fingerprint.
+    has_processing_provenance = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'processing_provenance')"
+    )
+
+    # v438: speaker corrections carried across a re-run (issue #1233). Single-marker
+    # revision: the table IS the fingerprint.
+    has_correction_carryover = "speaker_correction_carryover" in tables
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -581,8 +663,82 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
-    # v430: same as v422 plus the per-tenant speaker/vocabulary uniqueness. The newest
-    # revision on this chain, so this is the top of the ladder.
+    matches_v433 = (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+        and has_support_access_grant
+        and has_requested_options
+    )
+    # v438: same as v437 plus the speaker correction carry-over table. The newest revision
+    # on this chain, so this is the top of the ladder.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+        and has_correction_carryover
+    ):
+        return "v438_add_speaker_correction_carryover"
+    # v437: same as v436 plus the processing provenance column. The data-only arms below it
+    # do not require the column, so a database without it is stamped v436 or lower and
+    # re-runs it.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+    ):
+        return "v437_add_media_processing_provenance"
+    # v436: same as v434, with no lite "this server" choice left that Automatic would keep.
+    if matches_v433 and not has_unusable_pyannote_source and not has_lite_local_source:
+        return "v436_lite_local_speaker_detection_to_automatic"
+    # v434: same schema as v433, with no unusable pyannote.ai choice left.
+    if matches_v433 and not has_unusable_pyannote_source:
+        return "v434_reset_unusable_pyannote_source"
+    # v433: same as v432 plus the requested per-file transcription options.
+    if matches_v433:
+        return "v433_add_requested_transcription_options"
+    # v432: same as v431 plus the support-access tables.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+        and has_support_access_grant
+    ):
+        return "v432_support_access_grant"
+    # v431: same as v430 plus media_file.duration_source.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+        and has_platform_super_admin_link_authorized
+        and has_tag_org_unique
+        and has_media_playback_path
+        and has_collection_org_unique
+        and has_speaker_profile_tenant_unique
+        and has_duration_source
+    ):
+        return "v431_add_media_duration_provenance"
+    # v430: same as v422 plus the per-tenant speaker/vocabulary uniqueness.
     if (
         matches_v389
         and has_file_facts

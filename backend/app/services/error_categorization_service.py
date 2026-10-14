@@ -20,6 +20,9 @@ Error reasons include:
 - PROCESSING_ERROR: Generic server-side processing failures
 - INTERRUPTED: Server-side interruptions (a worker lost, out of memory) that outlasted
   every automatic retry
+- DIARIZATION_NOT_CONFIGURED: pyannote.ai speaker detection chosen with no usable key
+- PIPELINE_NOT_RUNNABLE: the user's transcription and speaker detection choices cannot run
+  together (a pipeline-plan refusal, ``services/pipeline_plan.py``)
 - UNCLASSIFIED: Unclassified errors with fallback handling
 
 ⚠️ No-raw-echo contract: every ``user_message`` and suggestion this service returns is a
@@ -55,6 +58,7 @@ Classes:
     ErrorCategorizationService: Main service class for error processing.
 """
 
+import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -79,6 +83,8 @@ class UserErrorReason(StrEnum):
     INTERRUPTED = "interrupted"
     NETWORK_ERROR = "network_error"
     PERMISSION_ERROR = "permission_error"
+    DIARIZATION_NOT_CONFIGURED = "diarization_not_configured"
+    PIPELINE_NOT_RUNNABLE = "pipeline_not_runnable"
     UNCLASSIFIED = "unclassified"
 
 
@@ -117,6 +123,72 @@ class FailureClassification:
     retry_category: ErrorCategory
     reason: UserErrorReason
     user_message: str
+
+
+#: Raised when ASR decoded the file fine and found nothing to transcribe. It must classify as
+#: NO_SPEECH: the old wording named "corrupted", which matched FILE_QUALITY first and told the
+#: user a perfectly good silent file was damaged (#1189).
+NO_SPEECH_DETECTED_MESSAGE = (
+    "No speech could be detected in this file. "
+    "It may contain only silence, music or background noise."
+)
+
+#: Raised when the user chose pyannote.ai speaker detection with no usable API key saved
+#: (issue #1204). It replaces a silent fallback that produced a transcript with no speakers.
+#: Must not contain any substring the retry classifier treats as transient.
+DIARIZATION_NOT_CONFIGURED_MESSAGE = (
+    "Speaker detection is set to the pyannote.ai cloud service, but no pyannote.ai API key "
+    "is saved for your account."
+)
+
+#: Raised when the speaker detector a run was planned with cannot be built: another saved
+#: provider named as the detector (``asr_config``, #1226) that is gone, no longer shared,
+#: text-only, untimed or whose key no longer decrypts, or an engine no plan produces.
+#: Must not contain any substring the retry classifier treats as transient.
+DIARIZER_CONFIG_UNUSABLE_MESSAGE = (
+    "The provider chosen for speaker detection cannot be used for this file. Choose another "
+    "speaker detection option in Settings, then retry."
+)
+
+#: Raised (and logged) when a cloud speaker-detection vendor fails. Every pipeline path
+#: treats that as non-fatal (the transcript is kept without speakers); the sentence exists so
+#: the exception's text is fixed wherever it travels, never the vendor's message.
+DIARIZATION_PROVIDER_FAILED_MESSAGE = (
+    "The speaker detection provider could not detect speakers in this file."
+)
+
+#: Raised when the cloud transcription provider a run was planned with cannot be built (a
+#: stored key that no longer decrypts, a refused endpoint, a config that was removed): the
+#: run fails visibly instead of silently transcribing on this server (#1236). Must not
+#: contain any substring the retry classifier treats as transient.
+CLOUD_ASR_UNUSABLE_MESSAGE = (
+    "The cloud transcription provider chosen for this file could not be started. Check its "
+    "settings under Transcription, then retry."
+)
+
+#: User-facing reasons caused by the user's own settings, not the input or the
+#: infrastructure: permanent for the automatic retry paths.
+CONFIGURATION_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
+    {UserErrorReason.DIARIZATION_NOT_CONFIGURED, UserErrorReason.PIPELINE_NOT_RUNNABLE}
+)
+
+
+def _pipeline_refusal_messages() -> tuple[str, ...]:
+    """The fixed sentences a run refused by its pipeline plan can store (issue #1225).
+
+    Every ``error`` code of ``services/pipeline_plan`` (dispatch refuses a run whose plan
+    has one) plus the two stages' own configuration failures (a speaker detector or a
+    cloud transcription provider that cannot be built). Read back by exact match, so a
+    stored refusal keeps its reason and its permanent retry category.
+    """
+    from app.services.pipeline_plan import BLOCKING_CODES
+    from app.services.pipeline_plan import ISSUE_MESSAGES
+
+    return (
+        *(ISSUE_MESSAGES[code] for code in BLOCKING_CODES),
+        DIARIZER_CONFIG_UNUSABLE_MESSAGE,
+        CLOUD_ASR_UNUSABLE_MESSAGE,
+    )
 
 
 class ErrorCategorizationService:
@@ -371,6 +443,32 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
+    def _handle_diarization_not_configured() -> tuple[UserErrorReason, str, list[str]]:
+        """Handle pyannote.ai speaker detection chosen with no usable API key (#1204)."""
+        return (
+            UserErrorReason.DIARIZATION_NOT_CONFIGURED,
+            DIARIZATION_NOT_CONFIGURED_MESSAGE,
+            [
+                "Save your pyannote.ai API key in Settings under Speaker Identification",
+                "Or choose a different speaker detection option",
+                'Then use the "Retry" button to process this file again',
+            ],
+        )
+
+    @staticmethod
+    def _pipeline_not_runnable(message: str) -> tuple[UserErrorReason, str, list[str]]:
+        """A run the pipeline plan refused: the sentence already names what to change."""
+        return (
+            UserErrorReason.PIPELINE_NOT_RUNNABLE,
+            message,
+            [
+                "Open Settings and change the transcription or speaker detection choice "
+                "named above",
+                'Then use the "Retry" button to process this file again',
+            ],
+        )
+
+    @staticmethod
     def _handle_generic_error() -> tuple[UserErrorReason, str, list[str]]:
         """Handle generic processing errors."""
         return (
@@ -442,7 +540,11 @@ class ErrorCategorizationService:
         """
         reason, user_message, _ = ErrorCategorizationService.categorize_error(raw_error)
         retry_category = categorize_retry(raw_error or "")
-        if _is_input_failure(reason, raw_error) and retry_category not in INFRASTRUCTURE_CATEGORIES:
+        if reason in CONFIGURATION_ERROR_REASONS:
+            retry_category = ErrorCategory.CONFIGURATION_REQUIRED
+        elif (
+            _is_input_failure(reason, raw_error) and retry_category not in INFRASTRUCTURE_CATEGORIES
+        ):
             retry_category = ErrorCategory.INVALID_MEDIA
         return FailureClassification(
             retry_category=retry_category,
@@ -537,6 +639,7 @@ _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str
     ErrorCategorizationService._handle_network_error,
     ErrorCategorizationService._handle_permission_error,
     ErrorCategorizationService._handle_interrupted_error,
+    ErrorCategorizationService._handle_diarization_not_configured,
     ErrorCategorizationService._handle_generic_error,
 )
 
@@ -547,3 +650,9 @@ _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str
 _REASON_BY_MESSAGE: dict[str, Callable[[], tuple[UserErrorReason, str, list[str]]]] = {
     handler()[1]: handler for handler in _FIXED_MESSAGE_HANDLERS
 }
+_REASON_BY_MESSAGE.update(
+    {
+        message: functools.partial(ErrorCategorizationService._pipeline_not_runnable, message)
+        for message in _pipeline_refusal_messages()
+    }
+)

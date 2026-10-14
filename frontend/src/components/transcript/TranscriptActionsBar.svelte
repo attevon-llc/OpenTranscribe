@@ -2,6 +2,8 @@
   import type { MediaFileDetail } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { supportSessionGate } from '$stores/supportSession';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
 
   export let file: MediaFileDetail | null = null;
   export let diarizationDisabled: boolean = false;
@@ -54,23 +56,18 @@
 <svelte:window on:click={() => { closeExportDropdown(); closeDownloadDropdown(); }} />
 
 <div class="transcript-actions">
+  <!-- A support session cannot export (the server refuses it, and so does the UI). -->
+  {#if !$supportSessionGate.active}
   <div class="export-dropdown" class:open={showExportDropdown}>
     <button
       class="export-transcript-button"
       title={$t('transcript.exportTitle')}
       on:click={toggleExportDropdown}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="7 10 12 15 17 10"></polyline>
-        <line x1="12" y1="15" x2="12" y2="3"></line>
-      </svg>
+      <MenuIcon name="export-file" size={16} />
       {$t('transcript.export')}
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
-        <line x1="9" y1="9" x2="15" y2="9"></line>
-        <line x1="9" y1="13" x2="15" y2="13"></line>
-        <line x1="9" y1="17" x2="11" y2="17"></line>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="6 9 12 15 18 9"></polyline>
       </svg>
     </button>
     {#if showExportDropdown}
@@ -80,28 +77,44 @@
         <button
           on:click={() => { exportTranscript('txt'); closeExportDropdown(); }}
           title={$t('transcript.exportTextTitle')}
-        >{$t('transcript.exportText')}</button>
+        >
+          <MenuIcon name="format-txt" size={16} />
+          {$t('transcript.exportText')}
+        </button>
         <button
           on:click={() => { exportTranscript('json'); closeExportDropdown(); }}
           title={$t('transcript.exportJsonTitle')}
-        >{$t('transcript.exportJson')}</button>
+        >
+          <MenuIcon name="format-json" size={16} />
+          {$t('transcript.exportJson')}
+        </button>
         <button
           on:click={() => { exportTranscript('csv'); closeExportDropdown(); }}
           title={$t('transcript.exportCsvTitle')}
-        >{$t('transcript.exportCsv')}</button>
+        >
+          <MenuIcon name="format-csv" size={16} />
+          {$t('transcript.exportCsv')}
+        </button>
         <button
           on:click={() => { exportTranscript('srt'); closeExportDropdown(); }}
           title={$t('transcript.exportSrtTitle')}
-        >{$t('transcript.exportSrt')}</button>
+        >
+          <MenuIcon name="format-srt" size={16} />
+          {$t('transcript.exportSrt')}
+        </button>
         <button
           on:click={() => { exportTranscript('vtt'); closeExportDropdown(); }}
           title={$t('transcript.exportVttTitle')}
-        >{$t('transcript.exportVtt')}</button>
+        >
+          <MenuIcon name="format-vtt" size={16} />
+          {$t('transcript.exportVtt')}
+        </button>
       </div>
     {/if}
   </div>
+  {/if}
 
-  {#if !diarizationDisabled}
+  {#if !diarizationDisabled && !$supportSessionGate.readOnly}
   <button
     class="edit-speakers-button"
     on:click={toggleSpeakerEditor}
@@ -119,7 +132,7 @@
   </button>
   {/if}
 
-  {#if file && file.download_url}
+  {#if file && file.download_url && !$supportSessionGate.active}
     <div class="export-dropdown download-dropdown" class:open={showDownloadDropdown}>
       <button
         class="action-button download-button"
@@ -151,15 +164,30 @@
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div class="export-dropdown-content" on:click|stopPropagation>
           {#if canEmbedSubtitles}
-            <button on:click={() => selectDownload('video_subtitles')}>{$t('transcript.downloadVideoSubtitles')}</button>
+            <button on:click={() => selectDownload('video_subtitles')}>
+              <MenuIcon name="video-subtitles" size={16} />
+              {$t('transcript.downloadVideoSubtitles')}
+            </button>
           {/if}
           {#if isVideoFile}
-            <button on:click={() => selectDownload('video_original')}>{$t('transcript.downloadOriginalVideo')}</button>
+            <button on:click={() => selectDownload('video_original')}>
+              <MenuIcon name="video-original" size={16} />
+              {$t('transcript.downloadOriginalVideo')}
+            </button>
           {/if}
           <div class="download-dropdown-label">{$t('transcript.downloadAudio')}</div>
-          <button on:click={() => selectDownload('audio_mp3')}>{$t('transcript.downloadAudioMp3')}</button>
-          <button on:click={() => selectDownload('audio_wav')}>{$t('transcript.downloadAudioWav')}</button>
-          <button on:click={() => selectDownload('audio_original')}>{$t('transcript.downloadAudioOriginal')}</button>
+          <button on:click={() => selectDownload('audio_mp3')}>
+              <MenuIcon name="audio-mp3" size={16} />
+              {$t('transcript.downloadAudioMp3')}
+            </button>
+          <button on:click={() => selectDownload('audio_wav')}>
+              <MenuIcon name="audio-wav" size={16} />
+              {$t('transcript.downloadAudioWav')}
+            </button>
+          <button on:click={() => selectDownload('audio_original')}>
+              <MenuIcon name="audio-original" size={16} />
+              {$t('transcript.downloadAudioOriginal')}
+            </button>
         </div>
       {/if}
     </div>
@@ -218,7 +246,9 @@
   }
 
   .export-dropdown-content button {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     width: 100%;
     padding: 10px 16px;
     background: none;

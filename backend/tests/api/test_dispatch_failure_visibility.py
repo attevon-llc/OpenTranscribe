@@ -36,6 +36,7 @@ from app.core.config import settings
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
+from app.services.pipeline_plan import ISSUE_MESSAGES
 from tests.unit._fake_liveness_redis import install_fake_redis
 
 RECOVER_ALL = "/api/tasks/recover-stuck-tasks"
@@ -243,7 +244,7 @@ def test_recover_task_returns_503_for_a_deliberate_asr_refusal(
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     db_session.refresh(media_file)
     assert media_file.status == FileStatus.ERROR
-    assert "lite" in (media_file.last_error_message or "").lower()
+    assert media_file.last_error_message == ISSUE_MESSAGES["local_asr_unavailable"]
 
 
 # ---------------------------------------------------------------------------

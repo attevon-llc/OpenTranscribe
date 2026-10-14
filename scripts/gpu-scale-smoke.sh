@@ -252,19 +252,29 @@ cleanup_uploaded_files() {
     [[ ${#FILE_UUIDS[@]} -gt 0 ]] || return 0
     echo "Cleaning up ${#FILE_UUIDS[@]} smoke-test file(s)..." >&2
     for uuid in "${FILE_UUIDS[@]}"; do
-        curl -fsS -X DELETE "$BASE_URL/files/$uuid" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
+        # A file still processing answers 409 to a plain DELETE, and a failed run exits while
+        # files ARE still processing, so the plain delete alone left them (issue #1195). The
+        # same fallback the e2e suite and cleanup-test-data.py use: /force.
+        curl -fsS -X DELETE "$BASE_URL/files/$uuid" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 \
+            || curl -fsS -X DELETE "$BASE_URL/files/$uuid/force" -H "Authorization: Bearer $TOKEN" \
+                >/dev/null 2>&1 \
+            || echo "  could not delete $uuid; scripts/cleanup-test-data.py sweeps gpu-scale-smoke-*.wav" >&2
     done
 }
 trap cleanup_uploaded_files EXIT
 
 for i in $(seq 1 "$N_UPLOADS"); do
+    # `;filename=` gives the upload the registered gpu-scale-smoke-<i>-<pid>.wav shape
+    # (cleanup-test-data.py MEDIA_FILENAME_SPECS): the backend stores the multipart filename
+    # and ignores `title`, so without it every upload was named sample_short.wav and a
+    # leftover could never be swept (issue #1195).
     # `;type=audio/wav` is required, not decorative: curl's own MIME-type guess
     # for -F "file=@path" (mime.types-derived) can fall back to
     # application/octet-stream on hosts with no .wav mapping, and the backend's
     # validate_file_type() rejects anything not starting audio/ or video/.
     RESP="$(curl -fsS -X POST "$BASE_URL/files" \
         -H "Authorization: Bearer $TOKEN" \
-        -F "file=@${SAMPLE_AUDIO};type=audio/wav" \
+        -F "file=@${SAMPLE_AUDIO};type=audio/wav;filename=gpu-scale-smoke-${i}-$$.wav" \
         -F "title=gpu-scale-smoke-${i}-$$" || true)"
     UUID="$(echo "$RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("uuid",""))' 2>/dev/null || true)"
     [[ -n "$UUID" ]] && FILE_UUIDS+=("$UUID")

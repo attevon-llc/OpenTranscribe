@@ -14,7 +14,8 @@ there is no server-side rendering of app data.
   player, transcript, comments, export.
 - `speakers/+page.svelte` — speaker clusters/profiles/inbox (coordinator for `$components/speakers/*`).
 - `search/+page.svelte` (+ `+page.ts`, `ssr = false`) — hybrid search.
-- `file-status/+page.svelte` — processing/task dashboard (`$components/UserFileStatus.svelte`).
+- `file-status/+page.svelte` — processing/task dashboard (`$components/UserFileStatus.svelte`). Reached from
+  Settings → System → File status → Open full screen, not from the navbar.
 - `login/`, `register/`, `forgot-password/`, `reset-password/`, `accept-invite/`,
   `verify-email/` — auth pages. `login/` also hosts the OIDC callback landing (the IdP's
   registered redirect URI points **here**, never at `/api/auth/oidc/callback`), the login
@@ -37,6 +38,19 @@ there is no server-side rendering of app data.
   the FastAPI backend through `$lib/api/*`.
 
 ## Gotchas
+
+- **Warm route code from the layout, not with `data-sveltekit-preload-code="eager"`.** SvelteKit scans
+  for those attributes once per navigation, and the navbar only exists after auth resolves, so the
+  scan misses the nav links until the first click, which is the click that needs the chunks.
+  `+layout.svelte` calls `preloadCode(route)` (**one call per route**: it takes a single pathname,
+  extra arguments are ignored) 600 ms after sign-in for search, speakers, chat (capability-gated),
+  a file page and file-status. A short timer, not `whenIdle`: a live page rarely reports idle before
+  its 4 s timeout. Measured on a prod build, Search/Chat click-to-content 160 -> 125 / 164 -> 115 ms.
+- **The file page's first `GET /files/{id}` joins the gallery's hover prefetch** (`apiCache`,
+  `cacheKey.fileDetail`) and consumes the entry; the prefetch used to write a cache nothing read, so
+  hover + click fetched the file twice. Only the first load does this (`fetchFileDetails(id, true)`);
+  reprocess/retry always hit the server. Likewise `setupVideoUrl(id, keepCached)` keeps the prefetched
+  stream URL on first load instead of clearing it and re-requesting.
 
 - **Don't paint a page against placeholder config and then correct it — gate the render on the
   fetch.** `login/+page.svelte` initialises `authMethods` to a local-only deployment

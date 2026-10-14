@@ -283,9 +283,16 @@ class User(Base):
     summary_prompts: Mapped[list["SummaryPrompt"]] = relationship(
         "SummaryPrompt", back_populates="user", foreign_keys="SummaryPrompt.user_id"
     )
-    settings: Mapped[list["UserSetting"]] = relationship("UserSetting", back_populates="user")
+    # passive_deletes="all" on every relationship whose FK is NOT NULL + ON DELETE CASCADE:
+    # the database removes these rows with the account. Without it the ORM first NULLs the
+    # FK of every child (loaded or not) and the delete fails; plain True would still NULL
+    # any child already loaded in the session (tests/unit/test_orm_relationships_respect_
+    # db_cascade.py).
+    settings: Mapped[list["UserSetting"]] = relationship(
+        "UserSetting", back_populates="user", passive_deletes="all"
+    )
     llm_settings: Mapped[list["UserLLMSettings"]] = relationship(
-        "UserLLMSettings", back_populates="user"
+        "UserLLMSettings", back_populates="user", passive_deletes="all"
     )
     asr_settings: Mapped[list["UserASRSettings"]] = relationship(
         "UserASRSettings", back_populates="user", cascade="all, delete-orphan"
@@ -301,7 +308,7 @@ class User(Base):
     )
     # Topic extraction relationships
     topic_suggestions: Mapped[list["TopicSuggestion"]] = relationship(
-        "TopicSuggestion", back_populates="user"
+        "TopicSuggestion", back_populates="user", passive_deletes="all"
     )
     # Refresh tokens for session management (FedRAMP AC-12)
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(

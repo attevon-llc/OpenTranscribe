@@ -54,6 +54,16 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
         media_file.summary_status = "pending"  # type: ignore[assignment]
 
         db.commit()
+
+        # Prune the OpenSearch summary plane to match the now-cleared column
+        # (issue #963). A regeneration that follows re-dispatches this on its
+        # own success (`tasks/summarization.py`); this call is what covers a
+        # reset that is never followed by one (no LLM configured, dispatch
+        # failure).
+        from app.tasks.search_indexing_task import index_file_summary
+
+        index_file_summary.delay(int(file_id))
+
         logger.info(f"Reset summary status for file {file_id}")
         return True
 
@@ -140,6 +150,10 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
             media_file.summary_opensearch_id = previous_summary_opensearch_id  # type: ignore[assignment]
             media_file.summary_status = previous_summary_status  # type: ignore[assignment]
             db.commit()
+
+            from app.tasks.search_indexing_task import index_file_summary
+
+            index_file_summary.delay(int(file_id))
         except Exception as restore_exc:
             logger.error(
                 f"Failed to restore prior summary state for file {file_id} "

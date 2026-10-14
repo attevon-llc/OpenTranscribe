@@ -7,7 +7,7 @@ Tests verify:
 4. Admin can view/create/edit/delete comments on other users' files
 5. Admin can access summaries and AI suggestions on other users' files
 6. Regular user gets 403 on another user's unshared file
-7. get_file_by_uuid_with_permission respects is_admin flag
+7. get_file_by_uuid_with_permission respects the request's PlatformBypass
 
 These tests create MediaFile/Speaker records directly in the DB
 (S3/MinIO not required).
@@ -26,6 +26,7 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.sharing import CollectionShare
 from app.models.user import User
+from app.services.platform_bypass import build_bypass
 
 # ---- Unit tests for User.is_admin property ----
 
@@ -149,7 +150,7 @@ class TestGetFileByUuidWithPermission:
             db_session,
             str(sample_media_file.uuid),
             admin_user.id,
-            is_admin=True,
+            bypass=build_bypass(db_session, admin_user, None),
         )
         assert result.id == sample_media_file.id
 
@@ -163,7 +164,7 @@ class TestGetFileByUuidWithPermission:
                 db_session,
                 str(sample_media_file.uuid),
                 normal_user.id,
-                is_admin=False,
+                bypass=build_bypass(db_session, normal_user, None),
             )
         assert exc.value.status_code == 403
 
@@ -189,7 +190,7 @@ class TestGetFileByUuidWithPermission:
             db_session,
             str(sample_media_file.uuid),
             normal_user.id,
-            is_admin=False,
+            bypass=build_bypass(db_session, normal_user, None),
         )
         assert result.id == sample_media_file.id
 
@@ -206,7 +207,7 @@ class TestGetCollectionByUuidWithPermission:
             db_session,
             str(shared_collection.uuid),
             admin_user.id,
-            is_admin=True,
+            bypass=build_bypass(db_session, admin_user, None),
         )
         assert result.id == shared_collection.id
 
@@ -220,7 +221,7 @@ class TestGetCollectionByUuidWithPermission:
                 db_session,
                 str(shared_collection.uuid),
                 normal_user.id,
-                is_admin=False,
+                bypass=build_bypass(db_session, normal_user, None),
             )
         assert exc.value.status_code == 403
 

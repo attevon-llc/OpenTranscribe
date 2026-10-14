@@ -79,10 +79,13 @@ function storedConfigs() {
 
 async function renderLocalTab() {
   render(AuthenticationSettings);
-  await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'settings.localAuth.saveConfiguration' })
-    ).toBeInTheDocument()
+  await waitFor(
+    () =>
+      expect(
+        screen.getByRole('button', { name: 'settings.localAuth.saveConfiguration' })
+      ).toBeInTheDocument(),
+    // The Local panel is a lazy chunk: allow the first (cold) import.
+    { timeout: 5000 }
   );
 }
 

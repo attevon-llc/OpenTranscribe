@@ -17,6 +17,10 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 
 Skip to [Manual Installation](#manual-installation) if you prefer more control.
 
+:::tip[Choose a variant first]
+The installer sets up the **full** image by default (local transcription and speaker detection, using a GPU when it finds one). Pass `--cpu` to run the full image on CPU only, or `--lite` for the **lite** image, which has no local transcription or local speaker detection and uses cloud providers for both. [Deployment Variants](./deployment-variants.md) explains the differences and gives the exact commands.
+:::
+
 ## Prerequisites
 
 ### Required Software
@@ -66,7 +70,7 @@ See [Hardware Requirements](./hardware-requirements.md) for detailed specs.
 
 ### Optional: NVIDIA GPU
 
-For GPU acceleration (recommended):
+For GPU acceleration with the full image (recommended; the lite image never uses a GPU):
 
 1. **NVIDIA GPU** with CUDA support (GTX 1060 or better)
 2. **NVIDIA Driver** (version 470.x or higher)
@@ -133,7 +137,7 @@ JWT_SECRET_KEY=your-jwt-secret-key
 # Generate secrets with
 openssl rand -hex 32
 
-# HuggingFace Token (REQUIRED for speaker diarization)
+# HuggingFace Token (needed for speaker detection on this server; see Step 4)
 HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Database (use strong passwords in production)
@@ -167,7 +171,7 @@ See [Authentication Overview](../authentication/overview.md) for setup guides.
 
 ### Step 4: Set Up HuggingFace
 
-**This step is CRITICAL for speaker diarization**
+**This step is required for speaker detection on this server** (the full image's default). Speakers detected by a cloud provider (a transcription model that returns speakers, or the pyannote.ai cloud service) do not use this token. The diar-native sidecar's models (speaker detection and voiceprints) are exported on this server from the same gated repository, so a lite install that runs the sidecar for voiceprints needs the token too.
 
 1. **Get a token** at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 2. **Accept the model agreement** for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) — the only repo OpenTranscribe actually gates on
@@ -180,24 +184,16 @@ See [HuggingFace Setup](./huggingface-setup.md) for detailed instructions.
 Pre-download models to avoid first-use delays:
 
 ```bash
-# Using Docker to download models
-docker run --rm \
-  -v ./models:/models \
-  -e HUGGINGFACE_TOKEN=your_token_here \
-  davidamacey/opentranscribe-backend:latest \
-  python -c "from app.tasks.transcription import download_models; download_models()"
+./opentranscribe.sh download-models     # production install
+bash scripts/download-models.sh         # source checkout
 ```
 
-This downloads several GB of AI models. The exact total depends on which
-`WHISPER_MODEL` you selected and how many neural-search models you enable — see
+Either fetches the whole set (transcription, speaker detection, gender classifier,
+NLTK, embeddings, chat reranker, neural search, and content redaction) using the
+**image version your deployment is pinned to**. This downloads several GB of AI
+models. The exact total depends on which `WHISPER_MODEL` you selected and how
+many neural-search models you enable — see
 [HuggingFace setup](./huggingface-setup.md).
-
-:::tip[Prefer the helper script]
-`bash scripts/download-models.sh` fetches the whole set (transcription,
-diarization, gender classifier, NLTK, embeddings, chat reranker, neural search,
-and content redaction) using the **image version your deployment is pinned to**,
-which the raw `docker run` above does not.
-:::
 
 ### Step 6: Start OpenTranscribe
 

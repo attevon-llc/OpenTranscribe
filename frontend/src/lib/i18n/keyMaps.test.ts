@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import * as keyMaps from './keyMaps';
+import * as pipelineKeys from '$lib/settings/pipelineKeys';
 import { keyFor, labelFor } from './keyMaps';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ describe('no dynamically built i18n keys', () => {
   });
 });
 
-const mapKeys = Object.values(keyMaps)
+const mapKeys = [...Object.values(keyMaps), ...Object.values(pipelineKeys)]
   .filter((v): v is Record<string, string> => typeof v === 'object' && v !== null)
   .flatMap((m) => Object.values(m));
 

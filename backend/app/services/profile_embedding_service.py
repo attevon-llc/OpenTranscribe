@@ -27,6 +27,10 @@ from app.services.permission_service import file_ids_in_scope
 logger = logging.getLogger(__name__)
 
 
+class ProfileEmbeddingRecomputeError(RuntimeError):
+    """A strict profile-embedding recompute could not replace the stored embedding."""
+
+
 def _clear_profile_embedding_from_opensearch(profile_uuid: str) -> None:
     """Clear a profile embedding from OpenSearch.
 
@@ -50,22 +54,29 @@ def _store_profile_embedding_to_opensearch(
     speaker_count: int,
     user_id: int,
     organization_id: int | None = None,
-) -> None:
-    """Store a profile embedding to OpenSearch (org-stamped for org profiles)."""
+) -> bool:
+    """Store a profile embedding to OpenSearch (org-stamped for org profiles).
+
+    Returns:
+        Whether OpenSearch accepted the write. A failure is logged, not raised.
+    """
     try:
         from app.services.opensearch_service import store_profile_embedding
 
-        store_profile_embedding(
-            profile_id=profile_id,
-            profile_uuid=profile_uuid,
-            profile_name=profile_name,
-            embedding=embedding,
-            speaker_count=speaker_count,
-            user_id=user_id,
-            organization_id=organization_id,
+        return bool(
+            store_profile_embedding(
+                profile_id=profile_id,
+                profile_uuid=profile_uuid,
+                profile_name=profile_name,
+                embedding=embedding,
+                speaker_count=speaker_count,
+                user_id=user_id,
+                organization_id=organization_id,
+            )
         )
     except Exception as e:
         logger.warning(f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}")
+        return False
 
 
 def _collect_speaker_embeddings(speakers: list[Speaker]) -> dict[int, list[float]]:
@@ -118,7 +129,7 @@ def _process_profile_with_embeddings(
     profile.embedding_count = len(embeddings)  # type: ignore[assignment]
     profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
 
-    _store_profile_embedding_to_opensearch(
+    stored = _store_profile_embedding_to_opensearch(
         profile_id=profile_id,
         profile_uuid=str(profile.uuid),
         profile_name=str(profile.name),
@@ -130,8 +141,11 @@ def _process_profile_with_embeddings(
         organization_id=profile.organization_id,
     )
 
-    logger.info(f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings")
-    return True
+    if stored:
+        logger.info(
+            f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings"
+        )
+    return stored
 
 
 def _check_opensearch_profile_prerequisites(
@@ -310,7 +324,7 @@ class ProfileEmbeddingService:
     """Service for managing profile-level speaker embeddings."""
 
     @staticmethod
-    def update_profile_embedding(db: Session, profile_id: int) -> bool:
+    def update_profile_embedding(db: Session, profile_id: int, *, strict: bool = False) -> bool:
         """
         Update the consolidated embedding for a speaker profile by averaging
         all embeddings from speakers assigned to this profile.
@@ -318,6 +332,12 @@ class ProfileEmbeddingService:
         Args:
             db: Database session
             profile_id: ID of the speaker profile to update
+            strict: Raise :class:`ProfileEmbeddingRecomputeError` whenever the stored
+                embedding was NOT replaced by one computed from the current members (no
+                member left, no readable member voiceprint, a refused or failed write)
+                instead of returning ``False``. A speaker leaving the profile needs this
+                (issue #1214): the old embedding still averages in that speaker's voice,
+                so the caller must erase it rather than keep it.
 
         Returns:
             True if successful, False otherwise
@@ -327,6 +347,8 @@ class ProfileEmbeddingService:
             profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
             if not profile:
                 logger.error(f"Profile {profile_id} not found")
+                if strict:
+                    raise ProfileEmbeddingRecomputeError(f"profile {profile_id} not found")
                 return False
 
             # Get the speakers assigned to this profile whose file is of the
@@ -345,6 +367,10 @@ class ProfileEmbeddingService:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
                 _process_profile_with_no_speakers(profile, profile_id)
                 db.commit()
+                if strict:
+                    # The best-effort clear above swallows its own failure; the strict
+                    # caller erases again and verifies the document is gone.
+                    raise ProfileEmbeddingRecomputeError(f"profile {profile_id} has no members")
                 return True
 
             # Collect embeddings from all speakers
@@ -360,20 +386,34 @@ class ProfileEmbeddingService:
 
             if not embeddings:
                 logger.warning(f"No valid embeddings found for profile {profile_id}")
+                if strict:
+                    raise ProfileEmbeddingRecomputeError(
+                        f"profile {profile_id} has no member voiceprint"
+                    )
                 return False
 
             # Delegate averaging + OpenSearch storage to shared helpers
-            _process_profile_with_embeddings(profile, profile_id, embeddings)
+            stored = _process_profile_with_embeddings(profile, profile_id, embeddings)
             db.commit()
+            if not stored:
+                if strict:
+                    raise ProfileEmbeddingRecomputeError(
+                        f"OpenSearch refused the embedding write for profile {profile_id}"
+                    )
+                return False
 
             logger.info(
                 f"Updated profile {profile_id} embedding with average of {len(embeddings)} speaker embeddings"
             )
             return True
 
+        except ProfileEmbeddingRecomputeError:
+            raise
         except Exception as e:
             logger.error(f"Error updating profile embedding for profile {profile_id}: {e}")
             db.rollback()
+            if strict:
+                raise ProfileEmbeddingRecomputeError(str(e)) from e
             return False
 
     @staticmethod

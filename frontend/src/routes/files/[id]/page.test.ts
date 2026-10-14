@@ -72,7 +72,10 @@ vi.mock('$components/CollectionsSection.svelte', () => ({ default: noopComponent
 vi.mock('$components/SelectiveReprocessModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/ConfirmationModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/SummaryModal.svelte', () => ({ default: noopComponent() }));
-vi.mock('$components/TranscriptModal.svelte', () => ({ default: noopComponent() }));
+vi.mock('$components/transcript/TranscriptViewModal.svelte', () => ({ default: noopComponent() }));
+// Issue #748: these now render directly on the page (moved out of TranscriptDisplay).
+vi.mock('$components/transcript/TranscriptActionsBar.svelte', () => ({ default: noopComponent() }));
+vi.mock('$components/transcript/SpeakerEditorPanel.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/fileDetail/TxtExportOptionsModal.svelte', () => ({
   default: noopComponent(),
 }));
@@ -94,6 +97,7 @@ vi.mock('../../../components/ui/Spinner.svelte', () => ({ default: noopComponent
 import Page from './+page.svelte';
 import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
 import type { MediaFileDetail } from '$lib/types/media';
+import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
 
 function completeFileResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -119,6 +123,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetAISuggestions.mockResolvedValue(null);
   mockGetMediaStreamUrl.mockResolvedValue('https://example.com/stream.mp4');
+  apiCache.invalidate('prefetch:file:');
 });
 
 describe('files/[id]/+page — fetch/loading/error state machine', () => {
@@ -139,6 +144,44 @@ describe('files/[id]/+page — fetch/loading/error state machine', () => {
     // once the success branch is reached.
     expect(container.querySelector('.error-container')).toBeNull();
     expect(container.querySelector('.skeleton-page')).toBeNull();
+  });
+
+  it("consumes the gallery's hover prefetch instead of fetching the file a second time", async () => {
+    // The gallery warms this key on hover; the page used to ignore it, so hover + click was two
+    // identical GET /files/{id}.
+    apiCache.set(cacheKey.fileDetail('file-1'), completeFileResponse().data, CacheTTL.FILES);
+    mockAxios.get.mockImplementation((url: string) =>
+      Promise.resolve(url === '/speakers' ? { data: [] } : { data: {} })
+    );
+
+    render(Page, { props: { data: { id: 'file-1' } } });
+
+    await waitFor(() => expect(document.title).toBe('meeting-notes.mp4'));
+    expect(mockAxios.get.mock.calls.filter(([url]) => url === '/files/file-1')).toHaveLength(0);
+    // Single use: a later reload (reprocess, retry) must reach the server, not a stale entry.
+    expect(apiCache.get(cacheKey.fileDetail('file-1'))).toBeNull();
+  });
+
+  it('joins a prefetch that is still in flight rather than racing it with a second request', async () => {
+    let resolveDetail!: (v: unknown) => void;
+    const detail = new Promise((r) => (resolveDetail = r));
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') return detail;
+      return Promise.resolve(url === '/speakers' ? { data: [] } : { data: {} });
+    });
+    // What prefetchFileDetails does on hover.
+    void apiCache.getOrFetch(
+      cacheKey.fileDetail('file-1'),
+      () => mockAxios.get('/files/file-1').then((r: { data: unknown }) => r.data),
+      CacheTTL.FILES
+    );
+
+    render(Page, { props: { data: { id: 'file-1' } } });
+    await tick();
+    resolveDetail(completeFileResponse());
+
+    await waitFor(() => expect(document.title).toBe('meeting-notes.mp4'));
+    expect(mockAxios.get.mock.calls.filter(([url]) => url === '/files/file-1')).toHaveLength(1);
   });
 
   it.each([404, 403])(

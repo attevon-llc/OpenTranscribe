@@ -8,9 +8,15 @@ description: Deep technical details on transcription and diarization performance
 
 OpenTranscribe invests heavily in pipeline performance engineering. This page documents the optimizations that make the transcription pipeline fast and memory-efficient, including upstream contributions to WhisperX and ongoing work on PyAnnote diarization speed.
 
+:::note Historical performance record
+This page records how the **local GPU path** (the built-in Whisper model with speakers detected on this server) was made fast, with the benchmarks measured at the time. It is not a description of every pipeline. Today each file follows a plan decided before processing starts: transcription and speaker detection are chosen separately and may run on this server or with a cloud provider, and voiceprints are always computed on this server. See [Speaker Diarization](./speaker-diarization.md#where-speakers-are-detected) and [Deployment variants](../installation/deployment-variants.md#which-combinations-are-valid).
+
+The current pipeline has **no WAV2VEC2 forced-alignment step**. Where WAV2VEC2 alignment appears below, it describes the old WhisperX baseline that was removed. (A separate Wav2Vec2-based classifier is still used for speaker gender/age attributes; it does not do alignment.)
+:::
+
 ## Native Pipeline Architecture
 
-OpenTranscribe v0.4.0 replaced the legacy WhisperX pipeline with a **native pipeline** built directly on faster-whisper's `BatchedInferencePipeline` and PyAnnote v4's speaker diarization API. This eliminates several architectural bottlenecks:
+OpenTranscribe v0.4.0 replaced the legacy WhisperX pipeline with a **native pipeline** built directly on faster-whisper's `BatchedInferencePipeline` and PyAnnote v4's speaker diarization API. (Since v0.5.0 the default engine for speaker detection on this server is the diar-native sidecar, a reimplementation of the same PyAnnote community-1 pipeline; in-process PyAnnote remains as the fallback.) This eliminates several architectural bottlenecks. The diagram shows the local GPU path:
 
 ```mermaid
 flowchart TD
@@ -56,7 +62,7 @@ The native pipeline is **2.1x faster** than the old baseline while maintaining 9
 
 ### Sequential VRAM Management
 
-The pipeline loads models sequentially to minimize peak VRAM:
+On the local GPU path, the pipeline loads models sequentially to minimize peak VRAM:
 
 1. Load transcription model (~3-4 GB)
 2. Run transcription
@@ -88,15 +94,7 @@ for word in words:
             break
 ```
 
-Our replacement uses an **interval tree** for O(log n) lookups combined with **NumPy vectorized operations** for batch processing:
-
-```python
-# OpenTranscribe: O(n log m) via interval tree + vectorized NumPy
-from intervaltree import IntervalTree
-tree = IntervalTree.from_tuples(diarization_segments)
-# Vectorized lookup for all words simultaneously
-speakers = np.array([tree[w.start] for w in words])
-```
+The replacement measured below (and contributed upstream) used an **interval tree** for O(log n) lookups combined with **NumPy vectorized operations** for batch processing. The code that ships today goes further: it computes a words-by-turns overlap matrix with NumPy broadcasting, in chunks to bound memory, and gives each word the speaker with the most overlap (a word that overlaps no turn takes the nearest turn's speaker).
 
 ### Results
 
@@ -105,18 +103,18 @@ speakers = np.array([tree[w.start] for w in words])
 | 150 segments, 1,349 words | 10.2 seconds | 0.037 seconds | **273x** |
 | Algorithm complexity | O(n * m) per word | O(n log m) total | -- |
 
-This optimization was contributed upstream as a pull request to the WhisperX repository. The implementation is in `backend/app/transcription/speaker_assigner.py`.
+This optimization was contributed upstream as a pull request to the WhisperX repository. The implementation is in `backend/app/transcription/speaker_assigner.py` (`assign_speakers`). It is now the single place speaker turns are merged into text for every detector (this server's engine, pyannote.ai, or a cloud provider's speakers): per word when the transcription model returns word timestamps, per segment when it returns segment timing only.
 
 ### Vectorized Segment Deduplication
 
 The transcription pipeline produces both coarse VAD-chunked segments and fine-grained subsegments for the same time ranges. The deduplication module (`backend/app/utils/segment_dedup.py`) handles this using vectorized NumPy operations:
 
-1. NLTK punkt sentence splitting (replicates what WAV2VEC2 alignment implicitly provided)
+1. NLTK punkt sentence splitting (takes over the sentence splitting the removed WAV2VEC2 alignment step used to provide)
 2. Containment detection -- removes coarse "parent" segments covered by finer children
 3. Exact text duplicate removal
 4. Time+text overlap merging
 
-**Performance**: Under 0.2 seconds for 3,000+ segments. Quality: 99.5% match to the WAV2VEC2-aligned baseline.
+**Performance**: Under 0.2 seconds for 3,000+ segments. Quality: 99.5% match to the old WAV2VEC2-aligned baseline (measured when alignment was removed).
 
 ## GPU Optimization Patches for PyAnnote
 

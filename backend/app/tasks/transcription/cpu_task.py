@@ -1,6 +1,8 @@
-"""Stage 2 alternative: lightweight Whisper transcription on CPU.
+"""Stage 2 alternative: lightweight Whisper transcription on CPU (full image only).
 
-Diarization is skipped (PyAnnote requires CUDA).
+Transcription only. Speaker detection for a CPU-transcribed file runs AFTER this stage, as
+the post stage the pipeline plan names (``post_stage_local`` on this server's engine, or
+``post_stage_cloud`` on pyannote.ai), dispatched by ``postprocess.finalize_transcription``.
 """
 
 import logging
@@ -26,6 +28,7 @@ from .context import TranscriptionContext
 from .context import _handle_transcription_failure
 from .context import _validate_transcription_result
 from .context import is_cancelled
+from .context import plan_of
 from .context import requeue_after_abort
 from .finalize import _process_and_save_critical
 from .notifications import send_progress_notification
@@ -43,8 +46,9 @@ def _run_cpu_transcription(
     source_language: str | None = None,
     translate_to_english: bool | None = None,
     whisper_model: str | None = None,
+    diarization_off: bool = True,
 ) -> dict:
-    """Run lightweight Whisper transcription on CPU."""
+    """Run lightweight Whisper transcription on CPU (no speaker detection in this stage)."""
     from app.transcription import TranscriptionConfig
     from app.transcription import TranscriptionPipeline
 
@@ -59,8 +63,6 @@ def _run_cpu_transcription(
     overrides = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=1,
-        max_speakers=1,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
@@ -94,9 +96,28 @@ def _run_cpu_transcription(
     if isinstance(raw_result, dict):
         raw_result.setdefault("asr_provider", "local")
         raw_result.setdefault("asr_model", config.model_name)
-        raw_result["diarization_disabled"] = True
+        raw_result["diarization_disabled"] = diarization_off
 
     return raw_result
+
+
+def _refuse_on_lite() -> None:
+    """Lite ships no faster-whisper (#1228, plan A7).
+
+    Dispatch never routes a lite run here; a message that still arrives (queued before an
+    upgrade, or published by hand) fails with the plan's fixed sentence and a permanent
+    configuration category, before any audio is fetched, instead of a
+    ``ModuleNotFoundError`` from inside the transcriber.
+
+    Raises:
+        PipelinePlanRefusedError: on a lite deployment.
+    """
+    if str(settings.DEPLOYMENT_MODE).strip().lower() == "lite":
+        from app.core.exceptions import PipelinePlanRefusedError
+        from app.services.pipeline_plan import ISSUE_MESSAGES
+
+        code = "local_asr_unavailable"
+        raise PipelinePlanRefusedError(code, ISSUE_MESSAGES[code])
 
 
 @celery_app.task(
@@ -113,8 +134,8 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
     """CPU-only: Lightweight Whisper transcription (base/tiny models).
 
     Stage 2 alternative for the 3-stage pipeline chain. Runs on the CPU worker
-    instead of GPU, using a small Whisper model with int8 quantization.
-    Diarization is skipped (PyAnnote requires CUDA).
+    instead of GPU, using a small Whisper model with int8 quantization. Speakers are
+    detected afterwards by the post stage the plan names, unless the plan says off.
     """
     task_id = preprocess_context["task_id"]
     file_uuid = preprocess_context["file_uuid"]
@@ -151,6 +172,7 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             # model warm-up or GPU allocation. The engine's own entry checkpoints cover
             # the stage bodies; this covers everything the task does before reaching one.
             stand_down_if_requested("transcribe_cpu_task.entry")
+            _refuse_on_lite()
 
             from app.services.minio_service import download_temp_audio
 
@@ -167,11 +189,11 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
                     user_id, file_id, 0.25, "Starting fast CPU transcription"
                 )
 
-                # Persist diarization_disabled=True for CPU path
+                diarization_off = plan_of(preprocess_context).diarization.engine == "off"
                 with session_scope() as db:
                     media_file = get_refreshed_object(db, MediaFile, file_id)
                     if media_file:
-                        media_file.diarization_disabled = True
+                        media_file.diarization_disabled = diarization_off
                         db.commit()
 
                 whisper_model = preprocess_context.get("whisper_model")
@@ -182,6 +204,7 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
                     source_language=preprocess_context.get("source_language"),
                     translate_to_english=preprocess_context.get("translate_to_english"),
                     whisper_model=whisper_model,
+                    diarization_off=diarization_off,
                 )
 
                 # Validate result

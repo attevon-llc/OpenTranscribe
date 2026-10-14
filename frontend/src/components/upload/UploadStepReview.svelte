@@ -1,4 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { optionWithFlags } from '$lib/settings/asrCapabilities';
+  import {
+    loadPerFileFacts,
+    optionName,
+    perFileOptions,
+    type PerFileFacts,
+  } from '$lib/settings/perFileModel';
   import { t } from '$stores/locale';
   import type { TranscriptionSystemDefaults } from '$lib/api/transcriptionSettings';
 
@@ -10,6 +18,8 @@
   export let minSpeakers: number | null = null;
   export let maxSpeakers: number | null = null;
   export let numSpeakers: number | null = null;
+  /** Why the speaker count is not used for this file, or null when it is. */
+  export let speakerCountNote: 'off' | 'fast' | null = null;
   export let skipSummary = false;
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
@@ -31,6 +41,8 @@
   }
 
   function getSpeakerLabel(): string {
+    if (speakerCountNote === 'off') return $t('uploader.reviewSpeakersOff');
+    if (speakerCountNote === 'fast') return $t('uploader.reviewSpeakersFast');
     if (numSpeakers !== null) return `${numSpeakers} (fixed)`;
     if (minSpeakers !== null || maxSpeakers !== null) {
       const min = minSpeakers ?? (transcriptionSystemDefaults?.min_speakers ?? 1);
@@ -40,11 +52,18 @@
     return $t('uploader.reviewDefaults');
   }
 
-  function getModelLabel(): string {
-    return selectedWhisperModel === 'base'
-      ? $t('uploader.fastProcessing')
-      : `${$t('uploader.highQuality')} (${adminDefaultModel})`;
-  }
+  // The same option wording as the Model step, so the review names what will really run (a saved
+  // cloud provider, not this server's model) with the same flags.
+  let facts: PerFileFacts | null = null;
+  onMount(() => {
+    void loadPerFileFacts().then((loaded) => (facts = loaded));
+  });
+
+  $: modelLabel = (() => {
+    const options = perFileOptions(facts, adminDefaultModel);
+    const chosen = options.find((option) => option.value === selectedWhisperModel) ?? options[0];
+    return optionWithFlags(optionName(chosen, $t), chosen.capability, $t);
+  })();
 </script>
 
 <div class="step-review">
@@ -108,15 +127,13 @@
 
     <div class="review-row">
       <span class="review-label">{$t('uploader.reviewModel')}</span>
-      <span class="review-value">{getModelLabel()}</span>
+      <span class="review-value">{modelLabel}</span>
     </div>
 
-    {#if skipSummary}
-      <div class="review-row">
-        <span class="review-label">{$t('upload.skipSummary')}</span>
-        <span class="review-value">{$t('common.yes')}</span>
-      </div>
-    {/if}
+    <div class="review-row">
+      <span class="review-label">{$t('upload.aiSummary')}</span>
+      <span class="review-value">{skipSummary ? $t('common.no') : $t('common.yes')}</span>
+    </div>
   </div>
 
 </div>

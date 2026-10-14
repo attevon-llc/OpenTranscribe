@@ -52,7 +52,20 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 
 - **Path params are UUIDs, never DB integers** (`/{file_uuid}`, `/{speaker_uuid}`). Resolve via
   `app/utils/uuid_helpers.py` — `get_file_by_uuid_with_permission` also applies the takedown
-  and tenant gates, `require_resource_owner` replaces copy-pasted 403 checks.
+  and tenant gates, `require_resource_owner` replaces copy-pasted 403 checks. The platform-admin
+  bypass is **evaluated on the loaded row** (`ctx.bypass.allows(org_id=row.organization_id, ...)`),
+  never in front of the lookup; pass `bypass=ctx.bypass` through the chokepoints and never read
+  `current_user.is_admin` to widen content access (`tests/unit/test_platform_bypass_discipline.py`
+  fails on a new site without a reasoned allowlist entry).
+- **Two contexts.** `get_current_context` is the content context: it reads the
+  `X-Support-Access-Grant` header, validates the grant on every request, writes the request-level
+  use row (fail-closed 503) and may assume the granted tenant with `org_role=None`.
+  `get_base_context` never reads the header and is what `require_org_admin`, the grant lifecycle
+  routes and everything that must keep working with a stale header use. A route that depends on
+  `get_current_active_user` but neither context fails `test_platform_bypass_route_coverage.py`
+  unless it is listed there with a reason. `refuse_under_support_grant` is the 403 for surfaces a
+  grant never reaches (content creation, chat, search, every export/download, every `/admin` route
+  by prefix); attach it per route or via `include_router_with_consistency(refuse_under_grant=...)`.
 - Guard with `Depends(get_current_active_user)` / `get_current_admin_user`. `role` is the
   authorization truth; `is_superuser` is only its derived mirror.
 - Endpoints raise `fastapi.HTTPException` **directly** — deliberately NOT `core/exceptions.py`,
@@ -74,8 +87,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 
 **This is a self-hosted app; the non-UI API is a feature.** Homelab users, cron scripts, CI and
 AI agents drive it directly, so "no SPA call site" is not evidence an endpoint is dead.
-`tests/unit/test_route_has_a_caller.py` xfails **78 of 374** routes for having no frontend
-caller; the sections below say what those 78 are *for*, so the xfail list reads as intent.
+`tests/unit/test_route_has_a_caller.py` xfails **80 of 413** routes for having no frontend
+caller (measured 2026-10-11; re-derive with that test rather than trusting the number); the
+sections below say what they are *for*, so the xfail list reads as intent. Backend-first
+routes whose UI is planned (support access #1122, the pipeline view #1224) carry their own
+reason there.
 
 The detector keys on path literals in `frontend/src`, which gives it two blind spots — check
 both before believing it:
@@ -107,7 +123,9 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `POST /search/repair-indices` | Probes 4 indices, repairs only on failure. The speakers branch **recreates the index from Postgres**, so OpenSearch-only docs are lost |
 | `POST /speakers/cleanup-orphaned-embeddings` | `get_current_active_user` — self-scoped by `user_id`, the only unprivileged search-index mutation here |
 | `POST /files/management/cleanup-orphaned` · `GET /files/management/stuck` | Stuck-file recovery, **not** orphan cleanup — see Gotchas |
-| `GET /admin/data-integrity/counts` | `run_orphan_cleanup(dry_run=True)` inline; read-only |
+| `GET /admin/data-integrity/counts` | `run_orphan_cleanup(dry_run=True)` inline; read-only; the SPA's Data Integrity panel calls it |
+| `GET /admin/data-integrity/storage/{counts,status}` · `POST /admin/data-integrity/storage?confirm=true[&force=true]` | Storage-object orphan sweep (#1212; `admin_storage_integrity.py` + `tasks/storage_orphan_sweep_task.py`). Dry run first; the POST refuses without `confirm=true`, dispatches Celery `storage_orphan_sweep` and audits `admin.data_integrity.storage_purge` (request, then completion with counters only). Guards mirror the index sweep: empty Postgres refused (force cannot override), 10%-of-objects ratio guard (`force`), per-file Postgres re-check, 1 h grace period |
+| `POST /admin/media-duration-backfill` | super_admin; dispatches `recovery.media_duration_backfill` (issue #969), `dry_run=true` default |
 | `/speakers/combined-migration/{start,status,stop}` · `DELETE .../progress` | super_admin; `stop` revokes in-flight batches |
 | `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |
 | `GET /embeddings/migration/mode` | super_admin; pure config read (declares an unused `db` dependency) |
@@ -213,6 +231,70 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 ## Gotchas
 
+- **Speaker-detection choices are validated by the pipeline plan, never re-derived here
+  (#1224).** `GET /user-settings/pipeline` (`endpoints/pipeline_settings.py`, capability
+  `transcription.prefs`, read-only, DB reads only) returns the four steps of the caller's next
+  file from `services/pipeline_plan`. `PUT /user-settings/transcription` resolves the plan on
+  the would-be state and answers **409 with `detail: {"code", "message"}`** (stable code + the
+  fixed sentence from `pipeline_plan.ISSUE_MESSAGES`, never exception text) for a NEW
+  `diarization_source` / `diarization_asr_config_uuid` that produces a diarization-step
+  error; re-saving an unchanged stored value is never refused. An endpoint that changes what
+  the plan depends on must ask the plan, not add a `source == "..."` check. The ASR-side
+  switches ask it too (#1225, `services/asr_switch_plan`): `set-active` / `clear-active`
+  answer the same 409 for an error the switch would INTRODUCE and otherwise return
+  `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
+  break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
+  the first remaining config that keeps the choice runnable, else clears, and answers the
+  switch shape too (`config_uuid` + `pipeline_issues`, #1236). A #1109-locked source is never
+  refused on the diarization step. `DELETE /asr-settings/config/{uuid}` and `/all` answer
+  `ASRConfigDeleted` (the switch shape plus `deleted` and `diarizer_source_reverted`, #1226):
+  a deleted config named as someone's speaker detector (`asr_config`) resets that choice for
+  every holder, and `diarizer_source_reverted` says whether the caller's was.
+- **Lite is cloud-only for transcription and speaker detection (#1228): every local option is
+  a 409 with the plan's `{code, message}`**, from `utils/lite_mode.py` (`refuse_on_lite`,
+  `plan_refusal`) or the plan itself. `local_asr_unavailable`: an ASR switch onto local
+  Whisper (`set-active` a local config, `clear-active`, deleting the last config that can
+  transcribe), creating/updating a `local` config, `/asr-settings/local-model/{set,restart}`
+  (restart used to broadcast a shutdown to EVERY worker on lite), engine-settings
+  `transcriber_backend`, and any per-file `whisper_model` (`utils/whisper_model_choice`, the
+  one chokepoint upload/URL/reprocess share). `local_diarization_unavailable`: the settings
+  PUT for "this server", engine-settings `diarizer_backend`/`diarizer_require_sidecar`, and a
+  manual re-detection whose plan resolves to this server's engine (Automatic included).
+  `GET /transcription/system-defaults` omits `local` on lite. Reprocess (single and bulk)
+  refuses an unrunnable plan BEFORE deleting the transcript or clearing speakers
+  (`files/reprocess.refuse_unrunnable_rerun`). Pinned row by row, each with a full-image
+  control, in `tests/api/test_lite_settings_refusals.py`.
+- **A route that deletes a speaker or moves one out of a cluster/profile must use
+  `services/speaker_cleanup`** (issue #1214): `capture_speaker_impact` before the write,
+  `raise_if_incomplete(reconcile_speaker_impact(...))` after the commit. Hand-rolling
+  `remove_speaker_embedding` / `delete_cluster_embedding` / a profile recompute is how every
+  per-speaker path came to leave the removed voice inside a centroid or profile embedding. The routes covered:
+  `DELETE /speakers/{uuid}`, `POST /speakers/{uuid}/merge/{target}`,
+  `POST /speakers/{uuid}/verify`, `PUT /transcripts/segments/{uuid}/speaker` (orphan cleanup),
+  `DELETE /speaker-profiles/profiles/{uuid}`, and `/speaker-clusters` unassign, split, merge,
+  promote, batch-verify and `DELETE`. When the cleanup cannot finish they answer **503** with a
+  fixed message although the change committed — the status reports the privacy cleanup, not
+  the write. A route wrapping its body in `except Exception` must re-raise
+  `SpeakerCleanupIncompleteError` (as `verify_speaker_identification` and
+  `delete_speaker_profile` do) or it becomes a 500.
+- **A route that ASSIGNS a speaker to a cluster or profile must honour the blacklist an
+  unassign recorded** (issue #1233; rule and per-path table in
+  `app/services/CLAUDE.md` → "Unassigning"). `POST /speaker-clusters/{uuid}/unassign` now
+  also unlinks the cluster's promoted profile and records cannot-link + profile blacklist
+  rows; `/split` is the same unassignment, and so is `/speakers/{uuid}/verify?action=reject`
+  on a linked speaker. Bulk routes REFUSE a blocked speaker and say so
+  (`/batch-verify` per-speaker `errors` + `blocked_speaker_uuids`, `/{source}/merge/{target}`'s
+  `blocked_speaker_uuids`); single-speaker explicit routes (`/speaker-profiles/speakers/{uuid}/assign-profile`,
+  `/speakers/{uuid}/verify?action=accept`, a typed display name, and `/batch-verify` with
+  `override_unassignment: true` for exactly ONE speaker — 422 for more) LIFT it via
+  `speaker_cleanup.lift_profile_blacklist`. A 200 from `/batch-verify` can still carry
+  `failed_count > 0`: a client must never read it as success. `POST /speakers/{uuid}/merge/{target}` carries
+  the source's rows to the target (`carry_blacklist`) before the CASCADE drops them. Use the
+  `speaker_cleanup` helpers; a second blacklist check is how the old one-direction cannot-link
+  check came to exist beside a profile-only one.
+- **`main.py`'s `OpenTranscribeError` handler maps by MRO**, so a subclass keeps its family's
+  status (`SpeakerCleanupIncompleteError` → `SearchIndexError` → 503). It matched the exact
+  type only before #1214, which turned every subclass into a 500.
 - **The upload failure boundary is the commit of the row with its `storage_path`** (issue #905).
   Before that commit — bad MIME, magic-byte mismatch, oversized, object never landed — delete the
   row; both `files/upload.py::process_file_upload` (legacy multipart) and

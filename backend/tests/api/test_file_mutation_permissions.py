@@ -334,6 +334,7 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     # Distinct from files/management.py's and user_files.py's same-named endpoints —
     # the module is half the key, so the three never collapse into one row.
     ("tasks.py", "retry_file_processing"),
+    ("tasks.py", "fix_inconsistent_file"),  # admin-only, resolved through the tenant gate (#1122)
     ("topics.py", "batch_extract_topics"),
     ("topics.py", "auto_label_single_file"),
     ("topics.py", "extract_topics"),

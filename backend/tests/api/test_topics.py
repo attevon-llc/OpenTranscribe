@@ -2,7 +2,7 @@
 
 Covers ``topics.py`` (mounted at ``/api/files``):
 
-- ``GET    /api/files/{uuid}/suggestions``   (get; no-suggestion 404)
+- ``GET    /api/files/{uuid}/suggestions``   (get; no-suggestion 204)
 - ``DELETE /api/files/{uuid}/suggestions``   (dismiss → status 'rejected')
 - ``POST   /api/files/{uuid}/extract``       (LLM-gated; not-configured 400)
 - ``POST   /api/files/{uuid}/apply``         (track accepted suggestions)
@@ -90,11 +90,17 @@ def test_get_suggestions_other_user_403(client, other_user_auth_headers, normal_
     assert response.json()["detail"] == "You do not have permission to access this file"
 
 
-def test_get_suggestions_none_404(client, user_token_headers, normal_user, db_session):
+def test_get_suggestions_none_is_204_not_404(client, user_token_headers, normal_user, db_session):
+    """A file with no suggestions yet is a normal state, not a missing resource.
+
+    The file page asks on every open; answering 404 put a failed request in the console and the
+    access log for every file without a summary, hiding real 404s. A file that does not exist
+    (``test_get_suggestions_nonexistent_file_404``) still 404s.
+    """
     mf = _make_file(db_session, normal_user)
     response = client.get(f"/api/files/{mf.uuid}/suggestions", headers=user_token_headers)
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert "No AI suggestions found" in response.json()["detail"]
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert response.content == b""
 
 
 def test_get_suggestions_happy(client, user_token_headers, normal_user, db_session):

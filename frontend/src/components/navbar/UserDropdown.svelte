@@ -13,6 +13,7 @@
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
+  import { prefetchSettingsModal } from '$lib/settings/settingsModalLoader';
   import UserMenuExtras from '$lib/cloud/components/UserMenuExtras.svelte';
 
   /** The currently signed-in user (null when unauthenticated). */
@@ -113,6 +114,8 @@
   <button
     class="user-button"
     on:click={toggleDropdown}
+    on:pointerenter={() => prefetchSettingsModal()}
+    on:focus={() => prefetchSettingsModal()}
     aria-label={$t('nav.userMenuTooltip')}
     aria-haspopup="menu"
     aria-expanded={showDropdown}
@@ -477,8 +480,12 @@
      ⚠️ Coordinated with the identical threshold in ../Navbar.svelte, which
      drops the navbar gap to 1.5rem. Both must move together: raising only the
      Navbar one left the username visible from 1281-1500px, where the bar still
-     needed 1355px and still overflowed. Measured while fixing issue #452. */
-  @media (max-width: 1500px) {
+     needed 1355px and still overflowed. Measured while fixing issue #452.
+     ⚠️ RAISED to 1560px for issue #754 ("Chat" → "AI chat"): the label widened
+     by up to ~45px in the widest translation, so Navbar.svelte's coordinated
+     threshold moved 1500 → 1560px. See that file's comment for the
+     measurement and its offline-estimate caveat. */
+  @media (max-width: 1560px) {
     .username {
       display: none;
     }

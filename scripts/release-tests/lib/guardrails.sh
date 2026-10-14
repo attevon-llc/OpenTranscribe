@@ -200,7 +200,20 @@ gr_check_test_root() {
     esac
     mkdir -p "$resolved"
     TEST_ROOT="$resolved"
+    # Remember it: a later bare `--cleanup` defaults TEST_ROOT to a NEW timestamp, so without
+    # this record it removed this run's containers and volumes but never its TEST_ROOT tree
+    # (issue #1195). Best effort; a missing record only means the tree is left, as before.
+    printf '%s\n' "$TEST_ROOT" >"$(dirname "$TEST_ROOT")/.last-${TEST_PROJECT_NAME}" 2>/dev/null || true
     gr_ok "TEST_ROOT '$TEST_ROOT' passes the path firewall"
+}
+
+# The TEST_ROOT a bare `--cleanup` should remove: the last run's, when the caller did not
+# name one. The candidate is re-checked by gr_cleanup's own path firewall before any rm.
+gr_last_test_root() {
+    local record
+    record="$(dirname "$TEST_ROOT")/.last-${TEST_PROJECT_NAME}"
+    [[ -f "$record" ]] || return 1
+    sed -n '1p' "$record"
 }
 
 gr_check_mount_path() {
@@ -431,6 +444,14 @@ EOF
 gr_cleanup() {
     # Tear down ONLY labeled resources and ONLY files under TEST_ROOT.
     gr_log "beginning labelled cleanup for project '$TEST_PROJECT_NAME'"
+    # $1 = 1 when the caller's TEST_ROOT was only a default (a fresh timestamp nobody ran).
+    if [[ "${1:-0}" == "1" ]]; then
+        local last_root
+        if last_root="$(gr_last_test_root)" && [[ -n "$last_root" && -d "$last_root" ]]; then
+            gr_log "no TEST_ROOT given: cleaning the last run's root $last_root"
+            TEST_ROOT="$last_root"
+        fi
+    fi
 
     # 1. Stop and remove containers matching our label OR our compose project.
     #
@@ -543,6 +564,21 @@ gr_cleanup() {
         esac
         if (( ok == 0 )) && [[ -z "${OT_RELEASE_TEST_ALLOW_PATH:-}" ]]; then
             gr_die "cleanup refused: TEST_ROOT '$resolved' is outside the allowed test areas"
+        fi
+        # test-upgrade.sh's phase 03 registers a `git worktree` under TEST_ROOT. Deleting the
+        # directory alone left a stale registration in the repo for every single-hop run (and
+        # the last hop of a multi-hop one): only the between-hops path removed it (issue
+        # #1195). Remove exactly the registrations under THIS root, before the directory goes.
+        local repo="${REPO_ROOT:-${GR_REPO_ROOT:-}}" wt
+        if [[ -n "$repo" ]]; then
+            while IFS= read -r wt; do
+                case "$wt" in
+                    "worktree $resolved"/*)
+                        git -C "$repo" worktree remove --force "${wt#worktree }" >/dev/null 2>&1 \
+                            || true
+                        ;;
+                esac
+            done < <(git -C "$repo" worktree list --porcelain 2>/dev/null || true)
         fi
         gr_log "removing $resolved"
         rm -rf -- "$resolved"

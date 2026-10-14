@@ -33,6 +33,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.transcription.engine.job import RawTranscriptResult
+from tests.unit._plan_contexts import plan_context
 
 if TYPE_CHECKING:
     from app.transcription.engine.config import EngineConfig
@@ -451,7 +452,7 @@ class TestSplitPathReachesCompletedExactlyOnce:
             "asr_provider": "local",
             "downstream_tasks": None,
             "diarization_disabled": False,
-            "diarization_source": "provider",
+            "pipeline_plan": plan_context(),
             "segment_count": 12,
         }
 
@@ -469,7 +470,11 @@ class TestSplitPathReachesCompletedExactlyOnce:
         # through ERROR on the way (the KeyError-driven regression this fix closes).
         assert task.status == "completed"
         assert task.completed_at is not None
-        mock_completion.assert_called_once_with(normal_user.id, media_file.id)
+        # #753: the notification now carries the task's measured run time. This fixture's Task
+        # has no recorded start, so there is no duration to report.
+        mock_completion.assert_called_once_with(
+            normal_user.id, media_file.id, duration_seconds=None
+        )
 
 
 def _make_raw_transcript_result() -> RawTranscriptResult:

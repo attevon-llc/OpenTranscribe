@@ -17,6 +17,14 @@ export function goto(url: string): Promise<void> {
   return Promise.resolve();
 }
 
+/** URLs passed to {@link preloadCode}. Clear in a `beforeEach` when asserting on it. */
+export const preloadCodeCalls: string[] = [];
+
+export function preloadCode(url: string): Promise<void> {
+  preloadCodeCalls.push(url);
+  return Promise.resolve();
+}
+
 export function invalidate(): Promise<void> {
   return Promise.resolve();
 }

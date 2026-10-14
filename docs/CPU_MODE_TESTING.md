@@ -14,7 +14,8 @@ The CPU-only path covers two scenarios:
    `nvidia-smi`, or no Container Toolkit, or non-Apple-Silicon Mac).
 
 Both should produce a working stack with CPU-friendly defaults
-(`WHISPER_MODEL=base`, `ENABLE_DIARIZATION=false`).
+(`WHISPER_MODEL=base`). Speaker detection is a per-user setting and is not switched
+off by CPU mode.
 
 ---
 
@@ -44,20 +45,18 @@ OPENTRANSCRIBE_UNATTENDED=1 ./setup-opentranscribe.sh --cpu
 - `Skipping NVIDIA GPU detection.`
 - A new CPU-mode advisory block in the summary listing:
   - Whisper model defaulted to `base`.
-  - Diarization disabled.
-  - How to re-enable.
+  - Speaker detection runs on the CPU (slower); choose Off in Settings to skip it.
 
 **Verify `.env` contains:**
 
 ```bash
-grep -E '^(FORCE_CPU_MODE|WHISPER_MODEL|ENABLE_DIARIZATION|DETECTED_DEVICE|USE_NVIDIA_RUNTIME)=' .env
+grep -E '^(FORCE_CPU_MODE|WHISPER_MODEL|DETECTED_DEVICE|USE_NVIDIA_RUNTIME)=' .env
 ```
 
 Expected:
 ```
 FORCE_CPU_MODE=true
 WHISPER_MODEL=base
-ENABLE_DIARIZATION=false
 DETECTED_DEVICE=cpu
 USE_NVIDIA_RUNTIME=false
 ```
@@ -95,14 +94,13 @@ OPENTRANSCRIBE_UNATTENDED=1 ./setup-opentranscribe.sh
 **Verify `.env`:**
 
 ```bash
-grep -E '^(FORCE_CPU_MODE|WHISPER_MODEL|ENABLE_DIARIZATION|DETECTED_DEVICE)=' .env
+grep -E '^(FORCE_CPU_MODE|WHISPER_MODEL|DETECTED_DEVICE)=' .env
 ```
 
 Expected:
 ```
 FORCE_CPU_MODE=false
 WHISPER_MODEL=base
-ENABLE_DIARIZATION=false
 DETECTED_DEVICE=cpu
 ```
 
@@ -149,13 +147,12 @@ container should be present.)
 ## Test 5 — Backend startup warning
 
 **Goal:** Confirm the backend logs a warning when it starts in CPU mode
-with a heavyweight model or diarization on.
+with a heavyweight model.
 
 Manually edit `.env` to simulate a misconfigured CPU host:
 
 ```bash
 sed -i 's/^WHISPER_MODEL=.*/WHISPER_MODEL=large-v3-turbo/' .env
-sed -i 's/^ENABLE_DIARIZATION=.*/ENABLE_DIARIZATION=true/' .env
 ./opentranscribe.sh restart
 ```
 
@@ -164,7 +161,7 @@ docker logs opentranscribe-celery-worker 2>&1 | grep -i 'cpu mode\|cpu-only\|rec
 ```
 
 **Expected:** A single `WARNING` line per worker process recommending
-`WHISPER_MODEL=base` and `ENABLE_DIARIZATION=false`.
+`WHISPER_MODEL=base`.
 
 **Pass criteria:** warning fires once and is human-readable.
 
@@ -172,7 +169,6 @@ Restore safe defaults afterwards:
 
 ```bash
 sed -i 's/^WHISPER_MODEL=.*/WHISPER_MODEL=base/' .env
-sed -i 's/^ENABLE_DIARIZATION=.*/ENABLE_DIARIZATION=false/' .env
 ./opentranscribe.sh restart
 ```
 
@@ -190,8 +186,7 @@ The warning should no longer appear.
 - Amber/orange advisory banner at top of the System Statistics panel.
 - Title: "Running in CPU-only mode".
 - Subtitle: "(set via `--cpu` install flag)".
-- Bullets reflecting `WHISPER_MODEL=base` and "Diarization: OFF
-  (recommended for CPU)".
+- A bullet reflecting `WHISPER_MODEL=base`.
 
 3. Edit `.env` → `FORCE_CPU_MODE=false` (simulate auto-fallback). Restart.
    Reload the Settings panel.
@@ -199,11 +194,9 @@ The warning should no longer appear.
 **Expected:** Banner subtitle changes to "(no GPU acceleration available —
 automatic fallback)".
 
-4. Edit `.env` → `WHISPER_MODEL=large-v3-turbo`,
-   `ENABLE_DIARIZATION=true`. Restart. Reload.
+4. Edit `.env` → `WHISPER_MODEL=large-v3-turbo`. Restart. Reload.
 
-**Expected:** Bullets update to show the new model name and a warning
-that diarization is on but slow on CPU.
+**Expected:** The model bullet updates to show the new model name with the heavy-model hint.
 
 5. (GPU host only) Edit `.env` → `FORCE_CPU_MODE=false`, ensure GPU is
    actually available. Restart.
@@ -227,7 +220,7 @@ test, not a performance test).
 **Expected:**
 - File transitions: `pending → processing → completed`.
 - Transcript is produced (English text reasonably accurate).
-- No "speakers" panel populated (diarization is off — this is correct).
+- Speaker detection ran on the CPU (or was skipped if the user chose Off).
 - Worker logs show `device=cpu`, `compute_type=int8`, `model=base`.
 
 **Pass criteria:** transcription completes without error in a reasonable
@@ -249,7 +242,7 @@ OPENTRANSCRIBE_UNATTENDED=1 ./setup-opentranscribe.sh
 **Verify `.env`:**
 
 ```bash
-grep -E '^(FORCE_CPU_MODE|DETECTED_DEVICE|USE_NVIDIA_RUNTIME|WHISPER_MODEL|ENABLE_DIARIZATION)=' .env
+grep -E '^(FORCE_CPU_MODE|DETECTED_DEVICE|USE_NVIDIA_RUNTIME|WHISPER_MODEL)=' .env
 ```
 
 Expected:
@@ -258,11 +251,10 @@ FORCE_CPU_MODE=false
 DETECTED_DEVICE=cuda
 USE_NVIDIA_RUNTIME=true
 WHISPER_MODEL=large-v3-turbo
-ENABLE_DIARIZATION=true
 ```
 
-(`WHISPER_MODEL` and `ENABLE_DIARIZATION` should be absent or set to the
-GPU defaults — the CPU-defaults branch must NOT have written them.)
+(`WHISPER_MODEL` should be absent or set to the
+GPU default — the CPU-defaults branch must NOT have written it.)
 
 ```bash
 ./opentranscribe.sh start

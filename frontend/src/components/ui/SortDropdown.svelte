@@ -14,6 +14,8 @@
   import { createEventDispatcher } from 'svelte';
   import { scale } from 'svelte/transition';
   import { clickOutside } from '$lib/actions/clickOutside';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { SORT_ICON_BY_VALUE } from '$lib/ui/menuIcons';
 
   /** Available sort fields, in display order. */
   export let sortOptions: SortOption[];
@@ -31,6 +33,14 @@
   let isOpen = false;
 
   $: currentOption = sortOptions.find(opt => opt.value === sortBy) || sortOptions[0];
+
+  // Descending reads as a DOWN arrow, ascending as an UP arrow (UX review item 19).
+  // Fixed-order options (relevance: best first) are descending by definition. The glyph
+  // is drawn pointing the right way rather than flipped with a CSS rotation, so which way
+  // it points is a property of the markup, not of a stylesheet cascade.
+  const isDescending = (option: SortOption, order: 'asc' | 'desc') =>
+    !!option.noDirection || order === 'desc';
+  const ARROW_HEAD = { up: '5 12 12 5 19 12', down: '5 12 12 19 19 12' };
 
   function toggleDropdown() {
     isOpen = !isOpen;
@@ -91,7 +101,8 @@
 
     <span class="sort-label">{$t(currentOption.label)}</span>
 
-    <!-- Direction arrow (fixed-order options always show desc, others show current direction) -->
+    <!-- Direction arrow: a real arrow (shaft + head), not a bare chevron/caret — issue #747
+         §4.3. Down = descending, up = ascending, same on /search (the control is shared). -->
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="14"
@@ -103,9 +114,15 @@
       stroke-linecap="round"
       stroke-linejoin="round"
       class="direction-arrow"
-      class:asc={!currentOption.noDirection && sortOrder === 'asc'}
+      aria-hidden="true"
     >
-      <polyline points="18 15 12 9 6 15"></polyline>
+      {#if isDescending(currentOption, sortOrder)}
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <polyline points={ARROW_HEAD.down}></polyline>
+      {:else}
+        <line x1="12" y1="19" x2="12" y2="5"></line>
+        <polyline points={ARROW_HEAD.up}></polyline>
+      {/if}
     </svg>
   </button>
 
@@ -122,6 +139,9 @@
           class:active={option.value === sortBy}
           on:click={() => selectSort(option)}
         >
+          {#if SORT_ICON_BY_VALUE[option.value]}
+            <MenuIcon name={SORT_ICON_BY_VALUE[option.value]} />
+          {/if}
           <span class="option-label">{$t(option.label)}</span>
           {#if option.value === sortBy}
             <svg
@@ -135,9 +155,15 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               class="option-arrow"
-              class:asc={!option.noDirection && sortOrder === 'asc'}
+              aria-hidden="true"
             >
-              <polyline points="18 15 12 9 6 15"></polyline>
+              {#if isDescending(option, sortOrder)}
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <polyline points={ARROW_HEAD.down}></polyline>
+              {:else}
+                <line x1="12" y1="19" x2="12" y2="5"></line>
+                <polyline points={ARROW_HEAD.up}></polyline>
+              {/if}
             </svg>
           {/if}
         </button>
@@ -200,14 +226,6 @@
     flex-shrink: 0;
   }
 
-  .direction-arrow {
-    transition: transform 0.2s ease;
-  }
-
-  .direction-arrow.asc {
-    transform: rotate(180deg);
-  }
-
   .dropdown-menu {
     position: absolute;
     top: calc(100% + 0.5rem);
@@ -243,6 +261,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
     width: 100%;
     padding: 0.625rem 0.75rem;
     background: transparent;
@@ -291,12 +310,7 @@
 
   .option-arrow {
     flex-shrink: 0;
-    margin-left: 0.5rem;
-    transition: transform 0.2s ease;
-  }
-
-  .option-arrow.asc {
-    transform: rotate(180deg);
+    margin-inline-start: 0.5rem;
   }
 
   /* Hide sort label on tablet and below to save space */

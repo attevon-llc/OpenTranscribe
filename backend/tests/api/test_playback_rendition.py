@@ -30,6 +30,7 @@ from fastapi import status
 from app.models.media import MediaFile
 from app.services import playback_rendition as pr
 from app.services.playback_rendition import PlaybackNeed
+from tests.unit._plan_contexts import plan_context
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -322,7 +323,9 @@ def test_aiff_upload_gets_a_rendition_that_stream_url_serves(
     monkeypatch.setattr(preprocess, "stage_engine_shared_volume_wav", lambda *a, **k: "")
     monkeypatch.setattr(minio_service, "upload_temp_audio", lambda uuid_, path: f"temp/{uuid_}")
     result = preprocess.preprocess_for_transcription.run(
-        file_uuid=file_uuid, task_id=f"t-{uuid.uuid4().hex[:8]}", diarization_source="off"
+        file_uuid=file_uuid,
+        task_id=f"t-{uuid.uuid4().hex[:8]}",
+        pipeline_plan=plan_context("local_gpu", "off"),
     )
     assert result["file_uuid"] == file_uuid
     assert queued == [{"file_uuid": file_uuid}]
@@ -482,7 +485,7 @@ def test_deleting_the_file_deletes_its_rendition(
             pass
 
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
-    monkeypatch.setattr(fcs, "_cleanup_empty_clusters", lambda db, owner_id: None)
+    monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
     monkeypatch.setattr(minio_service, "MinIOService", lambda: None)
     monkeypatch.setattr(video_processing_service, "VideoProcessingService", _NoDerivedCache)
     row = _row(db_session, normal_user, "a.aiff", store, media)

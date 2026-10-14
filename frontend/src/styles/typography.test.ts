@@ -66,6 +66,42 @@ function styleOf(rel: string): string {
 const PHYSICAL =
   /\b(padding-left|padding-right|margin-left|margin-right|border-left|border-right)\s*:|text-align:\s*(left|right)\b/g;
 
+describe('nothing is heavier than semibold', () => {
+  // The heaviest weight in the UI is 600 (`--font-weight-semibold`); 700/bold resolves to Poppins
+  // Bold, which is most of why pages read as all-bold (owner review item 12).
+  const HEAVY = /font-weight:\s*(?:[789]00|bold(?:er)?)\b/g;
+  const ALLOW: Record<string, string> = {
+    'components/LoginBanner.svelte':
+      'classification marking: security banners are bold-caps by regulation convention, not UI emphasis',
+    'lib/components/ClassificationBanner.svelte':
+      'classification marking: security banners are bold-caps by regulation convention, not UI emphasis',
+  };
+  const SRC = path.resolve(FRONTEND, 'src');
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(svelte|css)$/.test(e.name)) files.push(p);
+    }
+  };
+  walk(SRC);
+  const hits = new Map<string, number>();
+  for (const f of files) {
+    const css = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const n = (css.match(HEAVY) ?? []).length;
+    if (n) hits.set(path.relative(SRC, f).split(path.sep).join('/'), n);
+  }
+
+  it('uses --font-weight-semibold (600) as the heaviest weight', () => {
+    expect([...hits].filter(([f]) => !(f in ALLOW)).map(([f, n]) => `${f} (${n})`)).toEqual([]);
+  });
+
+  it('has no stale allowlist entries', () => {
+    expect(Object.keys(ALLOW).filter((f) => !hits.has(f))).toEqual([]);
+  });
+});
+
 describe('RTL-safe chat prose and search snippets', () => {
   const FILES = [
     'src/components/chat/ChatMarkdown.svelte',

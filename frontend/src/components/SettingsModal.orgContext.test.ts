@@ -106,6 +106,8 @@ describe('Organization Context help text', () => {
     const trigger = screen.getByRole('button', { name: 'settings.orgContext.howItWorks' });
     expect(title.parentElement?.contains(trigger)).toBe(true);
 
+    await fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const panel = document.getElementById(trigger.getAttribute('aria-describedby') as string);
     expect(Array.from(panel?.querySelectorAll('li') ?? []).map((li) => li.textContent)).toEqual([
       'settings.orgContext.howItWorks1',
@@ -113,8 +115,5 @@ describe('Organization Context help text', () => {
       'settings.orgContext.howItWorks3',
       'settings.orgContext.howItWorks4',
     ]);
-
-    await fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
   });
 });

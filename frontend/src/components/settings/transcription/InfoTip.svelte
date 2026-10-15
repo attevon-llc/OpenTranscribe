@@ -3,8 +3,9 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
 
   // `inline` is the small icon that sits inside a field label; the default is the card-title icon.
   export let inline = false;
@@ -13,49 +14,19 @@
 
   const panelId = `infotip-${nextId++}`;
   const CLOSE_DELAY_MS = 150;
-  const EDGE_GAP = 8;
+  const PANEL_GAP = 8;
 
   let root: HTMLSpanElement;
-  let panel: HTMLSpanElement;
+  let trigger: HTMLButtonElement;
+  let panel: HTMLSpanElement | undefined;
   let hovering = false;
   let pinned = false;
-  let shift = 0;
-  let flip = false;
   let pointerFocus = false;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let listening = false;
 
   $: open = hovering || pinned;
   $: listen(open);
-  $: if (open) void place();
-
-  /** The nearest ancestor that clips horizontally (the modal's scroll area), else the viewport. */
-  function clipBounds(): { left: number; right: number } {
-    for (let el = root.parentElement; el; el = el.parentElement) {
-      const overflowX = getComputedStyle(el).overflowX;
-      if (overflowX !== 'visible') {
-        const r = el.getBoundingClientRect();
-        return { left: r.left, right: r.right };
-      }
-    }
-    return { left: 0, right: window.innerWidth };
-  }
-
-  /** Keep the panel inside its clip area (flip/clamp), measured in physical px so RTL is covered. */
-  async function place() {
-    shift = 0;
-    flip = false;
-    await tick();
-    if (!panel || !root) return;
-    const box = panel.getBoundingClientRect();
-    const bounds = clipBounds();
-    const left = Math.max(bounds.left, 0) + EDGE_GAP;
-    const right = Math.min(bounds.right, window.innerWidth) - EDGE_GAP;
-    if (box.right > right) shift = right - box.right;
-    if (box.left + shift < left) shift = left - box.left;
-    const anchor = root.getBoundingClientRect();
-    flip = box.bottom > window.innerHeight - EDGE_GAP && anchor.top - box.height - EDGE_GAP > 0;
-  }
 
   function cancelClose() {
     clearTimeout(closeTimer);
@@ -91,7 +62,7 @@
 
   function onFocusOut(e: FocusEvent) {
     const next = e.relatedTarget as Node | null;
-    if (!next || !root.contains(next)) pinned = false;
+    if (!next || (!root.contains(next) && !panel?.contains(next))) pinned = false;
   }
 
   function onKeyCapture(e: KeyboardEvent) {
@@ -102,7 +73,9 @@
   }
 
   function onPointerDownOutside(e: Event) {
-    if (!root.contains(e.target as Node)) close();
+    const target = e.target as Node;
+    // The panel lives on <body> (see anchoredPanel), so it is not inside `root`.
+    if (!root.contains(target) && !panel?.contains(target)) close();
   }
 
   function listen(on: boolean) {
@@ -135,9 +108,10 @@
   <button
     type="button"
     class="trigger"
+    bind:this={trigger}
     aria-label={label || $t('common.moreInformation')}
     aria-expanded={open}
-    aria-describedby={panelId}
+    aria-describedby={open ? panelId : undefined}
     on:pointerdown={() => (pointerFocus = true)}
     on:focus={onFocus}
     on:click={toggle}
@@ -159,17 +133,20 @@
       <line x1="12" y1="8" x2="12.01" y2="8"></line>
     </svg>
   </button>
-  <span
-    id={panelId}
-    class="panel"
-    class:open
-    class:flip
-    role="tooltip"
-    bind:this={panel}
-    style:--tip-shift="{shift}px"
-  >
-    <slot />
-  </span>
+  {#if open}
+    <span
+      id={panelId}
+      class="panel"
+      class:inline
+      role="tooltip"
+      bind:this={panel}
+      use:anchoredPanel={{ anchor: trigger, width: 'content', gap: PANEL_GAP }}
+      on:mouseenter={hoverIn}
+      on:mouseleave={hoverOut}
+    >
+      <slot />
+    </span>
+  {/if}
 </span>
 
 <style>
@@ -213,13 +190,8 @@
     outline-offset: 2px;
   }
 
+  /* Position, z-index and max-height come from the anchoredPanel action: the panel lives on <body>. */
   .panel {
-    visibility: hidden;
-    opacity: 0;
-    position: absolute;
-    inset-inline-start: calc(50% - 140px);
-    top: calc(100% + 8px);
-    transform: translateX(var(--tip-shift, 0px));
     width: min(280px, calc(100vw - 2rem));
     box-sizing: border-box;
     padding: 0.5rem 0.75rem;
@@ -233,23 +205,15 @@
     line-height: 1.4;
     text-align: start;
     white-space: normal;
-    z-index: 1000;
-    transition: opacity 0.1s ease;
+    overflow-y: auto;
   }
 
-  .inline .panel {
-    inset-inline-start: 0;
+  .panel.inline {
     width: min(320px, calc(100vw - 2rem));
     padding: 0.75rem 1rem;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     line-height: 1.5;
-    transition-duration: 0.15s;
-  }
-
-  .panel.flip {
-    top: auto;
-    bottom: calc(100% + 8px);
   }
 
   /* The gap between icon and panel must not end the hover (WCAG 1.4.13 hoverable). */
@@ -261,14 +225,9 @@
     height: 10px;
   }
 
-  .panel.flip::before {
+  .panel[data-side='above']::before {
     top: auto;
     bottom: -10px;
-  }
-
-  .panel.open {
-    visibility: visible;
-    opacity: 1;
   }
 
   .panel :global(strong) {

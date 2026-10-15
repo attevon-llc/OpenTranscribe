@@ -36,8 +36,10 @@ describe('InfoTip', () => {
     expect(trigger('How it works')).toBeInTheDocument();
   });
 
-  it('links the trigger to the panel via aria-describedby, and the panel holds rich content', () => {
+  it('links the trigger to the panel via aria-describedby, and the panel holds rich content', async () => {
     render(Host);
+    expect(trigger()).not.toHaveAttribute('aria-describedby');
+    await fireEvent.click(trigger());
     const p = panel();
     expect(p.id).not.toBe('');
     expect(trigger()).toHaveAttribute('aria-describedby', p.id);
@@ -52,16 +54,16 @@ describe('InfoTip', () => {
 
   it('opens on hover, survives a brief gap before the panel, and closes once the pointer is gone', async () => {
     render(Host);
-    // The trigger and the panel share one wrapper, so the pointer crossing between them never leaves it.
+    // The panel is a body child, so it has its own hover handlers sharing the wrapper's grace period.
     const wrapper = trigger().parentElement as HTMLElement;
     await fireEvent.mouseEnter(wrapper);
     expect(isOpen()).toBe(true);
     await fireEvent.mouseLeave(wrapper);
     expect(isOpen()).toBe(true);
-    await fireEvent.mouseEnter(wrapper);
+    await fireEvent.mouseEnter(panel());
     await new Promise((r) => setTimeout(r, 300));
     expect(isOpen()).toBe(true);
-    await fireEvent.mouseLeave(wrapper);
+    await fireEvent.mouseLeave(panel());
     await new Promise((r) => setTimeout(r, 300));
     expect(isOpen()).toBe(false);
   });
@@ -101,6 +103,15 @@ describe('InfoTip', () => {
     await fireEvent.click(trigger());
     await fireEvent.pointerDown(panel().querySelector('li') as HTMLElement);
     expect(isOpen()).toBe(true);
+  });
+
+  it('renders the panel on <body> through anchoredPanel, not inside the trigger wrapper', async () => {
+    render(Host);
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+    await fireEvent.click(trigger());
+    const p = panel();
+    expect(p.parentElement).toBe(document.body);
+    expect(p.style.position).toBe('fixed');
   });
 
   it('closes when focus leaves to an element outside it', async () => {

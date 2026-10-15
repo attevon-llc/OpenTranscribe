@@ -36,8 +36,6 @@ const ALLOWED: Record<string, string> = {
     'styles the third-party Plyr control menus via :global(); Plyr positions and sizes them',
   'components/transcript/SpeakerEditorPanel.svelte':
     'two hover-only informational popups (legend, match preview) revealed by CSS :hover, not interactive menus',
-  'components/settings/RetrySettings.svelte':
-    'hover-only help tooltip revealed by CSS, not an interactive panel',
   'components/settings/LLMConfigModal.svelte':
     'info-tooltip pseudo-element (::after) revealed on hover, not a panel',
   'components/settings/PromptSettings.svelte':

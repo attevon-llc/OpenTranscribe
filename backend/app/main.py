@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from contextlib import suppress
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from starlette.concurrency import run_in_threadpool
@@ -33,6 +34,7 @@ from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
 from app.core.legacy_auth_env import deprecated_oidc_env_names
 from app.core.logging_config import configure_logging
+from app.core.validation_errors import validation_error_handler
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
@@ -1144,6 +1146,9 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         content={"detail": exc.message},
     )
 
+
+# FastAPI's default 422, with any echoed credential removed from the body (core/validation_errors).
+app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 
 # Include the API router
 app.include_router(api_router, prefix=settings.API_PREFIX)

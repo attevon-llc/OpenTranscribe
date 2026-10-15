@@ -28,9 +28,16 @@ from app.api.endpoints.auth import get_current_active_user
 from app.auth.rate_limit import get_llm_outbound_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
+from app.core.constants import BEDROCK_REGIONS
+from app.core.constants import BEDROCK_SUGGESTED_MODELS
+from app.core.constants import DEFAULT_BEDROCK_MODEL_ID
 from app.db.base import get_db
 from app.services import llm_context_window
 from app.services import llm_reasoning
+from app.services.bedrock_settings import BedrockConnection
+from app.services.bedrock_settings import connection_from_encrypted
+from app.services.bedrock_settings import merge_stored
+from app.services.bedrock_settings import pack_stored
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider as ServiceLLMProvider
 from app.services.llm_service import LLMService
@@ -45,6 +52,48 @@ from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+_AWS_FIELDS = (
+    "aws_region",
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_session_token",
+)
+
+
+def _encrypt_bedrock_fields(
+    settings_in: schemas.UserLLMSettingsCreate | schemas.UserLLMSettingsUpdate,
+    existing: str | None,
+) -> str | None:
+    """The encrypted Bedrock blob after applying the request's aws_* fields to ``existing``.
+
+    Blank credential fields keep what is stored; ``clear_aws_credentials`` drops the stored
+    key pair so the configuration falls back to the server's credential chain. Nothing here
+    is ever logged or returned.
+    """
+    fields_set = settings_in.model_fields_set
+    current = connection_from_encrypted(existing)
+    merged = merge_stored(
+        current,
+        region=settings_in.aws_region,
+        region_given="aws_region" in fields_set,
+        access_key_id=settings_in.aws_access_key_id,
+        secret_access_key=settings_in.aws_secret_access_key,
+        session_token=settings_in.aws_session_token,
+        clear_credentials=bool(getattr(settings_in, "clear_aws_credentials", False)),
+    )
+    if existing and merged == current:
+        return existing  # nothing changed: keep the stored ciphertext as it is
+    plaintext = pack_stored(merged)
+    if plaintext is None:
+        return None
+    if not test_encryption():
+        raise HTTPException(status_code=500, detail="Encryption system is not working properly")
+    encrypted = encrypt_api_key(plaintext)
+    if not encrypted:
+        raise HTTPException(status_code=500, detail="Failed to encrypt AWS credentials")
+    return encrypted
 
 
 def _enrich_with_owner(config, owner, is_own: bool) -> dict:
@@ -62,7 +111,9 @@ def _enrich_with_owner(config, owner, is_own: bool) -> dict:
         "last_tested": config.last_tested,
         "test_status": config.test_status,
         "test_message": config.test_message,
-        "has_api_key": bool(config.api_key),
+        "has_api_key": config.has_api_key,
+        "aws_region": config.aws_region,
+        "has_aws_credentials": config.has_aws_credentials,
         "is_shared": config.is_shared,
         "shared_at": config.shared_at,
         "owner_name": owner.full_name if owner else None,
@@ -240,17 +291,18 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.BEDROCK,
-            default_model="anthropic.claude-haiku-4-5-20251001-v1:0",
+            default_model=DEFAULT_BEDROCK_MODEL_ID,
             default_base_url=None,
             requires_api_key=False,
             supports_custom_url=False,
             max_context_length=None,
             description=(
                 "AWS Bedrock — Converse API access to Claude, Nova, Llama and Mistral "
-                "models. No API key: credentials resolve via the AWS SDK's standard "
-                "chain (IAM role, profile, or environment). The AWS region is set by "
-                "your administrator (BEDROCK_REGION/AWS_REGION), not per configuration."
+                "models. Enter an AWS region and access key, or leave the key blank to use "
+                "the server's own AWS credentials (an IAM role, profile or environment)."
             ),
+            suggested_regions=list(BEDROCK_REGIONS),
+            suggested_models=list(BEDROCK_SUGGESTED_MODELS),
         ),
         # Issue #839: this catalog is the source the admin UI's provider dropdown
         # renders from (GET /llm-settings/providers -> LLMSettings.svelte ->
@@ -735,7 +787,10 @@ def create_user_llm_configuration(
 
     # Encrypt API key if provided
     encrypted_api_key = None
-    if settings_in.api_key:
+    if settings_in.provider == schemas.LLMProvider.BEDROCK:
+        # Bedrock keeps its region and AWS credentials in one encrypted blob in this column.
+        encrypted_api_key = _encrypt_bedrock_fields(settings_in, existing=None)
+    elif settings_in.api_key:
         encrypted_api_key = encrypt_api_key(settings_in.api_key)
         if not encrypted_api_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
@@ -747,7 +802,7 @@ def create_user_llm_configuration(
     # becomes active only via the auto-activate-the-first-config path a few lines down —
     # exactly matching prior behavior for a first config, and fixing it for every one
     # after (previously left at the column's `True` default, never flipped).
-    settings_data = settings_in.model_dump(exclude={"api_key", "is_active"})
+    settings_data = settings_in.model_dump(exclude={"api_key", "is_active", *_AWS_FIELDS})
     settings_data.update(
         {"user_id": current_user.id, "api_key": encrypted_api_key, "is_active": False}
     )
@@ -772,6 +827,45 @@ def create_user_llm_configuration(
         _set_active_configuration(db, current_user.id, user_config.id)
 
     return user_config
+
+
+def _apply_credential_update(
+    settings_in: schemas.UserLLMSettingsUpdate,
+    user_config: models.UserLLMSettings,
+    update_data: dict[str, Any],
+) -> None:
+    """Put the encrypted ``api_key`` column value for an update into ``update_data``.
+
+    Bedrock keeps a credentials blob in the column; every other provider keeps an API key.
+    The two never carry across a provider change, and an empty API key removes the stored one.
+    """
+    effective_provider = str(update_data.get("provider", user_config.provider))
+    if effective_provider != str(user_config.provider) and "bedrock" in (
+        effective_provider,
+        str(user_config.provider),
+    ):
+        update_data["api_key"] = None
+
+    if effective_provider == "bedrock":
+        touched = settings_in.model_fields_set & {*_AWS_FIELDS, "clear_aws_credentials"}
+        if touched or "api_key" in update_data:
+            update_data["api_key"] = _encrypt_bedrock_fields(
+                settings_in,
+                existing=None if "api_key" in update_data else user_config.api_key,
+            )
+        return
+
+    if "api_key" not in settings_in.model_fields_set or settings_in.api_key is None:
+        return
+    if not settings_in.api_key.strip():  # Empty API key means remove it
+        update_data["api_key"] = None
+        return
+    if not test_encryption():
+        raise HTTPException(status_code=500, detail="Encryption system is not working properly")
+    encrypted_api_key = encrypt_api_key(settings_in.api_key)
+    if not encrypted_api_key:
+        raise HTTPException(status_code=500, detail="Failed to encrypt API key")
+    update_data["api_key"] = encrypted_api_key
 
 
 @router.put("/config/{config_uuid}", response_model=schemas.UserLLMSettingsPublic)
@@ -822,21 +916,11 @@ def update_user_llm_configuration(
             )
 
     # Handle API key encryption
-    update_data = settings_in.model_dump(exclude_unset=True, exclude={"api_key"})
+    update_data = settings_in.model_dump(
+        exclude_unset=True, exclude={"api_key", "clear_aws_credentials", *_AWS_FIELDS}
+    )
 
-    if "api_key" in settings_in.model_fields_set and settings_in.api_key is not None:
-        if settings_in.api_key.strip():  # Non-empty API key
-            if not test_encryption():
-                raise HTTPException(
-                    status_code=500, detail="Encryption system is not working properly"
-                )
-
-            encrypted_api_key = encrypt_api_key(settings_in.api_key)
-            if not encrypted_api_key:
-                raise HTTPException(status_code=500, detail="Failed to encrypt API key")
-            update_data["api_key"] = encrypted_api_key
-        else:  # Empty API key means remove it
-            update_data["api_key"] = None
+    _apply_credential_update(settings_in, user_config, update_data)
 
     # Handle is_shared toggle with shared_at timestamp
     if settings_in.is_shared is not None:
@@ -1016,6 +1100,37 @@ def delete_all_user_configurations(
     }
 
 
+def _bedrock_for_test(
+    db: Session, test_request: schemas.ConnectionTestRequest, current_user: models.User
+) -> BedrockConnection:
+    """The connection a Bedrock test runs with: entered values over the stored row's.
+
+    A blank credential field in edit mode means "keep what is saved", so the stored key pair
+    is used; with neither, the server's credential chain applies.
+    """
+    stored = None
+    if test_request.config_id:
+        row = (
+            db.query(models.UserLLMSettings)
+            .filter(
+                models.UserLLMSettings.uuid == test_request.config_id,
+                models.UserLLMSettings.user_id == current_user.id,
+            )
+            .first()
+        )
+        if row is not None and row.api_key and str(row.provider) == "bedrock":
+            stored = connection_from_encrypted(str(row.api_key))
+    return merge_stored(
+        stored or BedrockConnection(),
+        region=test_request.aws_region,
+        region_given="aws_region" in test_request.model_fields_set,
+        access_key_id=test_request.aws_access_key_id,
+        secret_access_key=test_request.aws_secret_access_key,
+        session_token=test_request.aws_session_token,
+        clear_credentials=False,
+    )
+
+
 @router.post("/test", response_model=schemas.ConnectionTestResponse)
 @limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 def test_llm_connection(
@@ -1054,7 +1169,7 @@ def test_llm_connection(
                     )
                     .first()
                 )
-                if config and config.api_key:
+                if config and config.api_key and str(config.provider) != "bedrock":
                     # Decrypt the stored API key
                     effective_api_key = decrypt_api_key(str(config.api_key))
             except Exception as e:
@@ -1065,12 +1180,18 @@ def test_llm_connection(
         # Map schema enum to service enum
         service_provider = ServiceLLMProvider(test_request.provider.value)
 
+        bedrock = None
+        if service_provider == ServiceLLMProvider.BEDROCK:
+            effective_api_key = None
+            bedrock = _bedrock_for_test(db, test_request, current_user)
+
         # Create LLM config for testing
         llm_config = LLMConfig(
             provider=service_provider,
             model=test_request.model_name,
             api_key=effective_api_key,
             base_url=test_request.base_url,
+            bedrock=bedrock,
         )
 
         # Create and test LLM service
@@ -1112,6 +1233,33 @@ def test_llm_connection(
             message="Connection test failed.",
             response_time_ms=response_time,
         )
+
+
+def _test_request_from_row(user_config: models.UserLLMSettings) -> schemas.ConnectionTestRequest:
+    """A test request describing a stored configuration, credentials decrypted in-process.
+
+    The request object lives only for the call that tests it; it is never serialized.
+    """
+    try:
+        api_key, bedrock = LLMService.credentials_from_row(user_config)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Failed to decrypt stored credentials") from exc
+
+    aws: dict[str, str | None] = {}
+    if bedrock is not None:
+        aws = {
+            "aws_region": bedrock.region,
+            "aws_access_key_id": bedrock.access_key_id,
+            "aws_secret_access_key": bedrock.secret_access_key,
+            "aws_session_token": bedrock.session_token,
+        }
+    return schemas.ConnectionTestRequest(
+        provider=schemas.LLMProvider(user_config.provider),
+        model_name=str(user_config.model_name),
+        api_key=api_key,
+        base_url=str(user_config.base_url) if user_config.base_url else None,
+        **aws,
+    )
 
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
@@ -1157,20 +1305,7 @@ def test_active_configuration(
             detail="Active LLM configuration not found.",
         )
 
-    # Decrypt API key
-    api_key = None
-    if user_config.api_key:
-        api_key = decrypt_api_key(str(user_config.api_key))
-        if not api_key and user_config.api_key:  # Decryption failed
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
-
-    # Test connection
-    test_request = schemas.ConnectionTestRequest(
-        provider=schemas.LLMProvider(user_config.provider),
-        model_name=str(user_config.model_name),
-        api_key=api_key,
-        base_url=str(user_config.base_url) if user_config.base_url else None,
-    )
+    test_request = _test_request_from_row(user_config)
 
     # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
@@ -1208,20 +1343,7 @@ def test_specific_configuration(
     current_user = ctx.user
     user_config = _get_accessible_config(db, config_uuid, ctx)
 
-    # Decrypt API key
-    api_key = None
-    if user_config.api_key:
-        api_key = decrypt_api_key(str(user_config.api_key))
-        if not api_key and user_config.api_key:  # Decryption failed
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
-
-    # Test connection
-    test_request = schemas.ConnectionTestRequest(
-        provider=schemas.LLMProvider(user_config.provider),
-        model_name=str(user_config.model_name),
-        api_key=api_key,
-        base_url=str(user_config.base_url) if user_config.base_url else None,
-    )
+    test_request = _test_request_from_row(user_config)
 
     # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
     # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
@@ -1248,11 +1370,10 @@ def test_specific_configuration(
 
 def _config_to_llm_config(db: Session, user_config: models.UserLLMSettings) -> LLMConfig:
     """Build the LLMConfig a stored row describes, decrypting its key."""
-    api_key = None
-    if user_config.api_key:
-        api_key = decrypt_api_key(str(user_config.api_key))
-        if not api_key:
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
+    try:
+        api_key, bedrock = LLMService.credentials_from_row(user_config)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Failed to decrypt stored credentials") from exc
     return LLMConfig(
         provider=ServiceLLMProvider(user_config.provider),
         model=str(user_config.model_name),
@@ -1260,6 +1381,7 @@ def _config_to_llm_config(db: Session, user_config: models.UserLLMSettings) -> L
         base_url=str(user_config.base_url) if user_config.base_url else None,
         max_tokens=int(user_config.max_tokens),
         temperature=float(user_config.temperature),
+        bedrock=bedrock,
     )
 
 
@@ -1425,7 +1547,8 @@ def get_config_api_key(
         forbidden_detail="Not authorized to access this configuration",
     )
 
-    if not user_config.api_key:
+    # A Bedrock row's column holds its credentials blob, which no endpoint ever reveals.
+    if not user_config.api_key or str(user_config.provider) == "bedrock":
         return {"api_key": None}
 
     # Decrypt API key
@@ -1568,7 +1691,7 @@ def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None
             )
             .first()
         )
-        if config and config.api_key:
+        if config and config.api_key and str(config.provider) != "bedrock":
             return decrypt_api_key(str(config.api_key))
     except (ValueError, Exception) as e:
         logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")

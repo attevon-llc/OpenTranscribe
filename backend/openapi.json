@@ -1537,6 +1537,42 @@
         "title": "BatchVerifyRequest",
         "type": "object"
       },
+      "BedrockServerCredentialStatus": {
+        "description": "Whether the SERVER's own AWS credential chain resolves, and the kind of source.\n\nNever a value: no key, secret or token is read, only which provider of the chain answered.",
+        "properties": {
+          "found": {
+            "title": "Found",
+            "type": "boolean"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "title": "BedrockServerCredentialStatus",
+        "type": "object"
+      },
       "Body_batch_extract_topics_api_files_batch_extract_post": {
         "properties": {
           "file_uuids": {
@@ -3896,6 +3932,50 @@
               }
             ],
             "title": "Api Key"
+          },
+          "aws_access_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Access Key Id"
+          },
+          "aws_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Region"
+          },
+          "aws_secret_access_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Secret Access Key"
+          },
+          "aws_session_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Session Token"
           },
           "base_url": {
             "anyOf": [
@@ -12005,6 +12085,22 @@
             "title": "Requires Api Key",
             "type": "boolean"
           },
+          "suggested_models": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggested Models",
+            "type": "array"
+          },
+          "suggested_regions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggested Regions",
+            "type": "array"
+          },
           "supports_custom_url": {
             "default": true,
             "title": "Supports Custom Url",
@@ -18499,6 +18595,50 @@
             ],
             "title": "Api Key"
           },
+          "aws_access_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Access Key Id"
+          },
+          "aws_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Region"
+          },
+          "aws_secret_access_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Secret Access Key"
+          },
+          "aws_session_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Session Token"
+          },
           "base_url": {
             "anyOf": [
               {
@@ -18553,6 +18693,17 @@
       "UserLLMSettingsPublic": {
         "description": "Public schema that excludes sensitive information",
         "properties": {
+          "aws_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Region"
+          },
           "base_url": {
             "anyOf": [
               {
@@ -18572,6 +18723,11 @@
           "has_api_key": {
             "default": false,
             "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "has_aws_credentials": {
+            "default": false,
+            "title": "Has Aws Credentials",
             "type": "boolean"
           },
           "is_active": {
@@ -18719,6 +18875,50 @@
             ],
             "title": "Api Key"
           },
+          "aws_access_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Access Key Id"
+          },
+          "aws_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Region"
+          },
+          "aws_secret_access_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Secret Access Key"
+          },
+          "aws_session_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aws Session Token"
+          },
           "base_url": {
             "anyOf": [
               {
@@ -18729,6 +18929,11 @@
               }
             ],
             "title": "Base Url"
+          },
+          "clear_aws_credentials": {
+            "default": false,
+            "title": "Clear Aws Credentials",
+            "type": "boolean"
           },
           "is_active": {
             "anyOf": [
@@ -34721,6 +34926,33 @@
           }
         ],
         "summary": "Get Anthropic Models",
+        "tags": [
+          "llm-settings"
+        ]
+      }
+    },
+    "/api/llm-settings/bedrock/server-credentials": {
+      "get": {
+        "description": "Whether the server's AWS credential chain resolves, plus its deployment region.",
+        "operationId": "get_bedrock_server_credentials_api_llm_settings_bedrock_server_credentials_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BedrockServerCredentialStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Bedrock Server Credentials",
         "tags": [
           "llm-settings"
         ]

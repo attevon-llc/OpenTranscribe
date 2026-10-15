@@ -532,14 +532,28 @@ deprecated alias for `anthropic`).
   `topic_extraction` via `dispatch_task_by_name` or `llm_requested=True`) never consult it. A new
   automatic dispatch of either step must go through the resolver.
 - **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
-  Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
-  chain (IAM role, profile, or environment) — and no per-configuration region: both
-  `create_from_system_settings` and a per-user `bedrock` row call through to the SAME
-  deployment-wide `settings.BEDROCK_REGION`/`BEDROCK_MODEL_NAME` (system-fallback validated in
-  `_get_provider_config`; the runtime call sites in `llm_service.py` read `settings.BEDROCK_REGION`
-  directly, never `self.config`). A user config only ever supplies the model ID. Reasoning-probe
-  support is deliberately **not** wired (`llm_reasoning.PROBEABLE_PROVIDERS` excludes it) — see
-  that section below for why a provider needs a live measurement first, not just an enum entry.
+  Converse API, not an HTTP endpoint, no `base_url`. A configuration carries its OWN region and
+  optional AWS credentials (access key id, secret, session token), stored as ONE encrypted JSON
+  blob in the row's `api_key` column (no migration; `models.UserLLMSettings.has_api_key` is
+  False for Bedrock and `aws_region` / `has_aws_credentials` are the only things a response
+  sees). `services/bedrock_settings.py` is the ONLY place that decides a Bedrock region and
+  builds boto3 client kwargs (`resolve_region`, `client_kwargs`, `merge_stored`, `scrub`,
+  `describe_failure`); `LLMService.credentials_from_row` is the one decryption point and puts the
+  result on `LLMConfig.bedrock` (`BedrockConnection`, secrets excluded from repr). Blank
+  credentials mean the server's boto3 chain and `settings.BEDROCK_REGION` (which `Settings`
+  already folded from `AWS_REGION` / `AWS_DEFAULT_REGION`); the environment-selected system
+  fallback (`_get_provider_config`) uses `env_region()` and `resolve_default_model()`. Nothing
+  in `bedrock_settings` touches the DB, so a Celery task resolves a config once, closes its
+  session and calls Bedrock with none open. `tests/unit/test_bedrock_connection.py` pins it
+  structurally: no `boto3.client("bedrock...")` outside `llm_bedrock._client`, no
+  `settings.BEDROCK_*` read outside the resolver, no credential kwarg elsewhere. The credentials
+  are write-only on every path: `GET /config/{uuid}/api-key` and the model-discovery key lookup
+  both refuse a Bedrock row, error text is `scrub`bed, a connection test answers
+  `FAILURE_MESSAGES` sentences only, and `core/validation_errors.py` drops `input` from a 422
+  that concerns a sensitive field. `GET /llm-settings/bedrock/server-credentials` (admin) reports
+  whether the server's own chain resolves, by source KIND. Reasoning-probe support is
+  deliberately **not** wired (`llm_reasoning.PROBEABLE_PROVIDERS` excludes it) — see that section
+  below for why a provider needs a live measurement first, not just an enum entry.
 - Per-user keys are AES-encrypted (`utils/encryption.encrypt_api_key`) and never returned;
   edit mode reuses the stored key when the request omits `api_key`.
 - Summarization: BLUF, speaker analysis with talk time, action items, decisions, follow-ups,

@@ -11,9 +11,12 @@
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { user } from '$stores/auth';
   import Spinner from '../ui/Spinner.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
+  import LLMLocalDiscovery from './LLMLocalDiscovery.svelte';
+  import LLMBedrockFields from './LLMBedrockFields.svelte';
 
   export let show = false;
   export let editingConfig: UserLLMSettings | null = null;
@@ -40,7 +43,12 @@
     max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
     temperature: '0.3',
     is_active: true,
-    is_shared: false
+    is_shared: false,
+    aws_region: '',
+    aws_access_key_id: '',
+    aws_secret_access_key: '',
+    aws_session_token: '',
+    clear_aws_credentials: false
   };
 
   // Form state
@@ -57,7 +65,12 @@
     max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
     temperature: '0.3',
     is_active: true,
-    is_shared: false
+    is_shared: false,
+    aws_region: '',
+    aws_access_key_id: '',
+    aws_secret_access_key: '',
+    aws_session_token: '',
+    clear_aws_credentials: false
   };
 
   // Ollama model discovery
@@ -142,6 +155,35 @@
     loadLocalEndpoints();
   }
 
+  // Local detection only helps for the providers that run on a local server, and before a
+  // provider is picked ("Use this" is what sets it).
+  const LOCAL_CAPABLE_PROVIDERS = ['ollama', 'vllm', 'custom'];
+  $: showDiscovery =
+    (!formData.provider || LOCAL_CAPABLE_PROVIDERS.includes(formData.provider)) &&
+    (loadingLocalEndpoints || localEndpoints.length > 0);
+
+  // Expanded by default only when no provider is chosen and something reachable exists; a
+  // user's own toggle wins until the provider changes again.
+  let discoveryExpanded = false;
+  let discoveryTouched = false;
+  let discoverySeenProvider = '';
+  function reconcileDiscovery(provider: string, endpoints: LocalEndpointStatus[]) {
+    if (provider !== discoverySeenProvider) {
+      discoverySeenProvider = provider;
+      discoveryTouched = false;
+    }
+    if (!discoveryTouched) {
+      discoveryExpanded = !provider && endpoints.some((e) => e.reachable);
+    }
+  }
+  $: reconcileDiscovery(formData.provider, localEndpoints);
+
+  // Bedrock account fields: any admin sees whether the server's own AWS credentials resolve.
+  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+  $: bedrockDefaults = getProviderDefaults('bedrock');
+  $: bedrockPairIncomplete =
+    Boolean(formData.aws_access_key_id.trim()) !== Boolean(formData.aws_secret_access_key.trim());
+
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
   let pendingCloseAction: (() => void) | null = null;
@@ -186,6 +228,10 @@
       return false;
     }
 
+    if (formData.provider === 'bedrock' && bedrockPairIncomplete) {
+      return false;
+    }
+
     return true;
   })();
 
@@ -225,7 +271,12 @@
       max_tokens: config.max_tokens,
       temperature: config.temperature,
       is_active: config.is_active,
-      is_shared: config.is_shared || false
+      is_shared: config.is_shared || false,
+      aws_region: config.aws_region || '',
+      aws_access_key_id: '',
+      aws_secret_access_key: '',
+      aws_session_token: '',
+      clear_aws_credentials: false
     };
 
     // Fetch the actual API key if one is stored
@@ -258,9 +309,15 @@
       max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
       temperature: '0.3',
       is_active: true,
-      is_shared: false
+      is_shared: false,
+      aws_region: '',
+      aws_access_key_id: '',
+      aws_secret_access_key: '',
+      aws_session_token: '',
+      clear_aws_credentials: false
     };
     originalFormData = { ...formData };
+    discoveryTouched = false;
     ollamaModels = [];
     showModelSelector = false;
     openaiCompatibleModels = [];
@@ -322,6 +379,40 @@
     pendingCloseAction = null;
   }
 
+  // The AWS fields belong to Bedrock only: every other provider's request carries none of
+  // them, and a blank credential is simply not sent ("leave blank to keep it").
+  function awsFields(): Record<string, string> {
+    if (formData.provider !== 'bedrock') return {};
+    const fields: Record<string, string> = {};
+    const entries: Array<[string, string]> = [
+      ['aws_access_key_id', formData.aws_access_key_id],
+      ['aws_secret_access_key', formData.aws_secret_access_key],
+      ['aws_session_token', formData.aws_session_token]
+    ];
+    for (const [key, value] of entries) {
+      if (value.trim()) fields[key] = value.trim();
+    }
+    return fields;
+  }
+
+  function buildPayload() {
+    const {
+      aws_region,
+      aws_access_key_id: _id,
+      aws_secret_access_key: _secret,
+      aws_session_token: _token,
+      clear_aws_credentials,
+      ...rest
+    } = formData;
+    if (formData.provider !== 'bedrock') return rest;
+    return {
+      ...rest,
+      aws_region,
+      ...awsFields(),
+      ...(editingConfig && clear_aws_credentials ? { clear_aws_credentials: true } : {})
+    };
+  }
+
   async function saveConfiguration() {
     if (!isFormValid) return;
 
@@ -330,10 +421,10 @@
     try {
       let savedConfig;
       if (editingConfig) {
-        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, formData);
+        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, buildPayload());
         toastStore.success($t('llm.configUpdated'), 5000);
       } else {
-        savedConfig = await LLMSettingsApi.createSettings(formData);
+        savedConfig = await LLMSettingsApi.createSettings(buildPayload());
         toastStore.success($t('llm.configCreated'), 5000);
       }
 
@@ -358,7 +449,10 @@
         model_name: formData.model_name,
         api_key: formData.api_key?.trim() || undefined,
         base_url: formData.base_url || undefined,
-        config_id: editingConfig?.uuid  // Pass config UUID for edit mode to use stored key
+        config_id: editingConfig?.uuid, // Pass config UUID for edit mode to use stored key
+        ...(formData.provider === 'bedrock'
+          ? { aws_region: formData.aws_region || undefined, ...awsFields() }
+          : {})
       });
 
       if (result.success) {
@@ -595,84 +689,24 @@
           </select>
         </div>
 
-        <!-- Local endpoint discovery (issue #644). Deliberately OUTSIDE the
-             {#if formData.provider} block below: "Use this" SETS the provider, so a
-             user who has not picked one yet is exactly who needs to see this first. -->
-        {#if loadingLocalEndpoints || localEndpoints.length > 0}
-          <div class="form-group discovery-panel">
-            <div class="discovery-header">
-              <span class="discovery-title">{$t('llm.discovery.title')}</span>
-              <button
-                type="button"
-                class="discovery-rescan-btn"
-                on:click={loadLocalEndpoints}
-                disabled={loadingLocalEndpoints}
-                title={$t('llm.discovery.rescanTooltip')}
-              >
-                {#if loadingLocalEndpoints}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('llm.discovery.rescan')}
-                {/if}
-              </button>
-            </div>
-
-            {#if localEndpoints.length > 0}
-              <ul class="discovery-list">
-                {#each localEndpoints as endpoint (endpoint.id)}
-                  <li class="discovery-row" class:discovery-row-unreachable={!endpoint.reachable}>
-                    <span
-                      class="discovery-status-dot"
-                      class:discovery-status-dot-reachable={endpoint.reachable}
-                      aria-hidden="true"
-                    ></span>
-                    <div class="discovery-row-body">
-                      <div class="discovery-row-label">{endpoint.label}</div>
-                      {#if endpoint.reachable}
-                        <div class="discovery-row-detail">
-                          <code>{endpoint.base_url}</code>
-                          {#if endpoint.models.length > 0}
-                            <span class="discovery-row-models">{endpoint.models.join(', ')}</span>
-                          {/if}
-                        </div>
-                      {:else}
-                        <div class="discovery-row-detail discovery-row-detail-muted">
-                          {$t('llm.discovery.notRunning')}
-                          <code>{endpoint.start_command}</code>
-                        </div>
-                      {/if}
-                    </div>
-                    {#if endpoint.reachable}
-                      <button
-                        type="button"
-                        class="btn btn-secondary discovery-use-btn"
-                        on:click={() => useDiscoveredEndpoint(endpoint)}
-                        disabled={saving}
-                      >
-                        {$t('llm.discovery.useThis')}
-                      </button>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-
-              {#if !localEndpointsPrivateAllowed && localEndpoints.some((e) => e.reachable)}
-                <p class="discovery-warning">{$t('llm.discovery.privateEndpointsDisabledWarning')}</p>
-              {/if}
-            {/if}
-          </div>
+        <!-- Local endpoint discovery (issue #644). Deliberately OUTSIDE the provider block
+             below: "Use this" SETS the provider, so a user who has not picked one yet is
+             exactly who needs to see this first. It is a collapsed disclosure once a local
+             provider is chosen, and absent for providers that never run locally. -->
+        {#if showDiscovery}
+          <LLMLocalDiscovery
+            endpoints={localEndpoints}
+            loading={loadingLocalEndpoints}
+            privateAllowed={localEndpointsPrivateAllowed}
+            disabled={saving}
+            bind:expanded={discoveryExpanded}
+            on:toggle={() => (discoveryTouched = true)}
+            on:rescan={loadLocalEndpoints}
+            on:use={(e) => useDiscoveredEndpoint(e.detail)}
+          />
         {/if}
 
         {#if formData.provider}
-          <!-- Bedrock: no base URL / API key to enter — credentials and region are a
-               deployment-level setting (BEDROCK_REGION / AWS credential chain), not
-               per-configuration. Say so instead of leaving the form looking incomplete. -->
-          {#if formData.provider === 'bedrock'}
-            <div class="form-group">
-              <p class="field-desc">{$t('llm.bedrockInfo')}</p>
-            </div>
-          {/if}
-
           <!-- Base URL (if supported) -->
           {#if getProviderDefaults(formData.provider)?.supports_custom_url}
             <div class="form-group">
@@ -808,8 +842,12 @@
               disabled={saving}
               class="form-control"
               placeholder={getProviderDefaults(formData.provider)?.default_model || $t('llm.modelNamePlaceholder')}
+              list={formData.provider === 'bedrock' ? 'bedrock-model-suggestions' : undefined}
               required
             />
+            {#if formData.provider === 'bedrock'}
+              <p class="field-desc">{$t('llm.bedrock.modelHelp')}</p>
+            {/if}
 
             <!-- Ollama Model Selector -->
             {#if showModelSelector && ollamaModels.length > 0}
@@ -887,6 +925,21 @@
             {/if}
 
           </div>
+
+          {#if formData.provider === 'bedrock'}
+            <LLMBedrockFields
+              bind:region={formData.aws_region}
+              bind:accessKeyId={formData.aws_access_key_id}
+              bind:secretAccessKey={formData.aws_secret_access_key}
+              bind:sessionToken={formData.aws_session_token}
+              bind:clearCredentials={formData.clear_aws_credentials}
+              hasSavedCredentials={Boolean(editingConfig?.has_aws_credentials)}
+              regions={bedrockDefaults?.suggested_regions ?? []}
+              models={bedrockDefaults?.suggested_models ?? []}
+              {isAdmin}
+              disabled={saving}
+            />
+          {/if}
 
           <!-- API Key (if required) -->
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
@@ -1112,128 +1165,6 @@
   .discover-models-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  /* Local endpoint discovery (issue #644) */
-  .discovery-panel {
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--card-bg);
-    padding: 0.75rem 1rem;
-  }
-
-  .discovery-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
-  }
-
-  .discovery-title {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-color);
-  }
-
-  .discovery-rescan-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.75rem;
-    color: var(--text-color);
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-  }
-
-  .discovery-rescan-btn:hover:not(:disabled) {
-    background: var(--hover-color);
-    border-color: var(--primary-color);
-  }
-
-  .discovery-rescan-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .discovery-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .discovery-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.4rem 0;
-  }
-
-  .discovery-row-unreachable {
-    opacity: 0.7;
-  }
-
-  .discovery-status-dot {
-    flex-shrink: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-  }
-
-  .discovery-status-dot-reachable {
-    background: var(--success-color);
-  }
-
-  .discovery-row-body {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .discovery-row-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-color);
-  }
-
-  .discovery-row-detail {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: baseline;
-    word-break: break-all;
-  }
-
-  .discovery-row-detail code {
-    font-size: 0.75rem;
-  }
-
-  .discovery-row-detail-muted {
-    font-style: italic;
-  }
-
-  .discovery-row-models {
-    color: var(--text-color);
-  }
-
-  .discovery-use-btn {
-    flex-shrink: 0;
-    padding: 0.3rem 0.75rem;
-    font-size: 0.75rem;
-  }
-
-  .discovery-warning {
-    margin: 0.75rem 0 0;
-    font-size: 0.75rem;
-    color: var(--warning-color);
   }
 
   .api-key-header {

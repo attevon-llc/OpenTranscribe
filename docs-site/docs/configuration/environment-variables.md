@@ -1180,7 +1180,7 @@ transcription-only mode with no AI features at all.
 | OpenAI | `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL_NAME`, `OPENAI_BASE_URL` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL_NAME`, `ANTHROPIC_BASE_URL` |
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL_NAME`, `OPENROUTER_BASE_URL` |
-| Amazon Bedrock | `bedrock` | `BEDROCK_REGION` only — no API key |
+| Amazon Bedrock | `bedrock` | `BEDROCK_REGION`, `BEDROCK_MODEL_NAME`; credentials come from the AWS chain (no API key variable) |
 | Custom (OpenAI-compatible) | `custom` | user-config only; never resolved from env |
 
 ### Self-hosted models need the SSRF guard opened
@@ -1407,7 +1407,7 @@ AWS_ASR_MODEL=standard
 | `OPENROUTER_API_KEY` | 🖥️ UI | `sk-or-…` | *(empty)* | OpenRouter credential. |
 | `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
 | `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
-| `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
+| `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | The server's own region for Bedrock; falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. A Bedrock configuration made in the UI can set its own region and AWS access key (stored encrypted, write-only); with no key entered, boto3 uses the server's standard credential chain. `BEDROCK_MODEL_NAME` is the model for the environment-selected provider only. |
 | *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider Configuration → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
 
 #### Example — local Ollama on the same host

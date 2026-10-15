@@ -1302,6 +1302,39 @@ BEDROCK_GEO_PREFIX_BY_REGION = {
     "af": "eu.",
 }
 
+# Amazon Bedrock defaults. A Bedrock LLM configuration carries its own region and (optionally)
+# AWS credentials, stored encrypted (services/bedrock_settings.py); a configuration that leaves
+# them blank uses the server's region (BEDROCK_REGION / AWS_REGION) and AWS credential chain.
+# Newer Claude models are offered only through inference profiles (a "global." or geo prefix);
+# their bare on-demand base ids are refused, so the default and the suggestions are profile ids.
+DEFAULT_BEDROCK_MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+BEDROCK_SUGGESTED_MODELS = (
+    DEFAULT_BEDROCK_MODEL_ID,
+    "global.anthropic.claude-sonnet-4-6",
+)
+# Suggestions for the region select. Validation is the strict pattern in
+# schemas/llm_settings.py, not this list, so a region AWS adds later still works.
+BEDROCK_REGIONS = (
+    "us-east-1",
+    "us-east-2",
+    "us-west-2",
+    "ca-central-1",
+    "sa-east-1",
+    "eu-central-1",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-west-3",
+    "eu-north-1",
+    "eu-south-1",
+    "ap-northeast-1",
+    "ap-northeast-2",
+    "ap-south-1",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "us-gov-west-1",
+    "us-gov-east-1",
+)
+
 REDACTION_LLM_FAILSAFE_TEXT = "[redacted — masking unavailable]"
 # How many times an LLM task may defer itself waiting for detection spans before
 # failing. 10 × 60s covers a slow CPU scan; past that something is wrong, and a

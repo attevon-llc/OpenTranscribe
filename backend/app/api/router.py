@@ -14,6 +14,7 @@ from .endpoints import auth
 from .endpoints import auth_config
 from .endpoints import auth_email_delivery
 from .endpoints import backup_settings
+from .endpoints import bedrock_settings
 from .endpoints import chat
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
@@ -236,6 +237,12 @@ include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompt
 include_router_with_consistency(
     llm_settings.router,
     prefix="/llm-settings",
+    tags=["llm-settings"],
+    capability="llm.user_settings",
+)
+include_router_with_consistency(
+    bedrock_settings.router,
+    prefix="/llm-settings/bedrock",
     tags=["llm-settings"],
     capability="llm.user_settings",
 )

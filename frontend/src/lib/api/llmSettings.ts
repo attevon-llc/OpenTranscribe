@@ -31,6 +31,10 @@ export interface UserLLMSettings {
   test_status?: ConnectionStatus;
   test_message?: string;
   has_api_key: boolean;
+  /** Bedrock only: the configuration's AWS region (not a secret). */
+  aws_region?: string | null;
+  /** Bedrock only: whether it stores its own AWS key pair. The key itself is never returned. */
+  has_aws_credentials?: boolean;
   is_shared?: boolean;
   shared_at?: string;
   owner_name?: string;
@@ -49,6 +53,12 @@ export interface UserLLMSettingsCreate {
   max_tokens?: number;
   temperature?: string;
   is_active?: boolean;
+  is_shared?: boolean;
+  /** Bedrock only. Write-only: sent on save/test, never returned by any endpoint. */
+  aws_region?: string;
+  aws_access_key_id?: string;
+  aws_secret_access_key?: string;
+  aws_session_token?: string;
 }
 
 export interface UserLLMSettingsUpdate {
@@ -61,6 +71,13 @@ export interface UserLLMSettingsUpdate {
   temperature?: string;
   is_active?: boolean;
   is_shared?: boolean;
+  /** Bedrock only. Write-only: sent on save/test, never returned by any endpoint. */
+  aws_region?: string;
+  aws_access_key_id?: string;
+  aws_secret_access_key?: string;
+  aws_session_token?: string;
+  /** Bedrock only: drop the stored key pair so the configuration uses the server's credentials. */
+  clear_aws_credentials?: boolean;
 }
 
 export interface ConnectionTestRequest {
@@ -69,6 +86,11 @@ export interface ConnectionTestRequest {
   api_key?: string;
   base_url?: string;
   config_id?: string; // For edit mode - uses stored API key
+  /** Bedrock only. Write-only: sent on save/test, never returned by any endpoint. */
+  aws_region?: string;
+  aws_access_key_id?: string;
+  aws_secret_access_key?: string;
+  aws_session_token?: string;
 }
 
 export interface ConnectionTestResponse {
@@ -87,6 +109,27 @@ export interface ProviderDefaults {
   supports_custom_url: boolean;
   max_context_length?: number;
   description: string;
+  /** Suggestions for free-text fields (Bedrock: AWS regions and model ids). */
+  suggested_regions?: string[];
+  suggested_models?: string[];
+}
+
+/**
+ * Whether the SERVER's own AWS credential chain resolves (admin only). `source` is the KIND of
+ * credential source, never a value; `region` is the deployment's region, if any.
+ */
+export type BedrockCredentialSource =
+  | 'environment'
+  | 'shared_profile'
+  | 'assumed_role'
+  | 'instance_role'
+  | 'container_role'
+  | 'other';
+
+export interface BedrockServerCredentialStatus {
+  found: boolean;
+  source: BedrockCredentialSource | null;
+  region: string | null;
 }
 
 export interface SupportedProvidersResponse {
@@ -232,6 +275,12 @@ export class LLMSettingsApi {
    */
   static async getLocalEndpoints(): Promise<LocalEndpointsResponse> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/local-endpoints`);
+    return response.data;
+  }
+
+  /** Admin only: does the server's own AWS credential chain resolve, and from what kind of source. */
+  static async getBedrockServerCredentials(): Promise<BedrockServerCredentialStatus> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/bedrock/server-credentials`);
     return response.data;
   }
 

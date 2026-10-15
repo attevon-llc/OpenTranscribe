@@ -99,8 +99,31 @@ class UserLLMSettings(Base):
 
     @property
     def has_api_key(self) -> bool:
-        """Indicates whether an API key is stored (computed property for schema compatibility)"""
-        return bool(self.api_key)
+        """Indicates whether an API key is stored (computed property for schema compatibility).
+
+        A Bedrock row keeps its region and AWS credentials in the same column, but they are
+        not an API key: ``has_aws_credentials`` reports those.
+        """
+        return bool(self.api_key) and str(self.provider) != "bedrock"
+
+    @property
+    def aws_region(self) -> str | None:
+        """Bedrock only: the region stored in the encrypted blob (not a secret)."""
+        return self._bedrock_public()[0]
+
+    @property
+    def has_aws_credentials(self) -> bool:
+        """Bedrock only: whether the row stores its own AWS key pair. Never the key itself."""
+        return self._bedrock_public()[1]
+
+    def _bedrock_public(self) -> tuple[str | None, bool]:
+        if str(self.provider) != "bedrock" or not self.api_key:
+            return None, False
+        # Lazy: the blob format lives with the Bedrock service, and this keeps the models
+        # package free of an import-time dependency on it.
+        from app.services.bedrock_settings import public_view
+
+        return public_view(str(self.api_key))
 
     def __repr__(self):
         return f"<UserLLMSettings(user_id={self.user_id}, name={self.name}, provider={self.provider}, model={self.model_name})>"

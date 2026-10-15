@@ -80,6 +80,16 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   plays and a missing one leaves the player at 00:00. ⚠️ `playback_path` is a third media
   object beside `storage_path`/`thumbnail_path`: purge, takedown tag/untag and the startup
   quarantine backfill all handle it. A new path that touches those two must handle it too.
+- **Hugging Face access token** — `huggingface_token.py` is the ONLY reader of the token and
+  `core/config.py` the only declaration of the env var (`tests/unit/test_hf_token_single_reader.py`
+  fails on any other `HUGGINGFACE_TOKEN` access). `get_hf_token()` = token saved in Settings
+  (`SystemSettings` `transcription.hf_access_token_encrypted`, `encrypt_api_key`) > environment >
+  None; it opens its own short session (3 s statement timeout), caches 60 s, falls back to the
+  environment on a DB error without caching that, and exports `HF_TOKEN` (an operator's own
+  `HF_TOKEN` wins). Model loaders call it at load time; never from a fork/init hook (those use
+  `publish_env_token_for_fork`, a dict read). Super_admin routes: `api/endpoints/admin_hf_token.py`
+  (`/admin/hf-token`, write-only, fixed-sentence Test, audit entries carry the action only).
+  Only the process that saved a token busts its cache at once; others see it within the TTL.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).

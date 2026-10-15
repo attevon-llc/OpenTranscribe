@@ -136,6 +136,11 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `DELETE /files/{uuid}/force` · `POST /files/{uuid}/{retry,recover,cancel}` | Recovery verbs on `files/management.py`; see the `get_current_user` gotcha |
 | `GET/POST /admin/settings/media-sources` · `PUT/DELETE .../{source_id}` | Deployment-wide protected-media credentials. Superseded for the SPA by the per-user `/user-settings/media-sources` |
 
+`/admin/hf-token` (GET/PUT/DELETE, `POST /test`) is the one place the platform Hugging Face token is
+set: super_admin (`get_current_active_superuser`) under the `engine.settings` capability, write-only
+(`{is_set, source}` is all any route returns), fixed-sentence test results, audit event
+`admin.settings.change` with the action and never the value.
+
 ### Compliance
 
 Legally significant, audit-logged in the service layer, and deliberately without a

@@ -78,7 +78,6 @@ class LocalDiarizationProvider(DiarizationProvider):
             reuses in ``metadata``: ``diarize_df`` (the frame ``assign_speakers`` reads),
             ``overlap_info`` and ``native_embeddings`` (per-speaker vectors, free).
         """
-        from app.core.config import settings
         from app.transcription.audio import load_audio
         from app.transcription.config import TranscriptionConfig
         from app.transcription.engine.stages import _run_diarize
@@ -91,7 +90,6 @@ class LocalDiarizationProvider(DiarizationProvider):
             min_speakers=config.min_speakers,
             max_speakers=config.max_speakers,
             num_speakers=config.num_speakers,
-            hf_token=settings.HUGGINGFACE_TOKEN,
         )
 
         audio = load_audio(audio_path)

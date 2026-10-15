@@ -124,6 +124,18 @@ off by default.
 
 #### UI and UX
 
+- **The Hugging Face access token can be entered in Settings.** Every other credential for a
+  model or processing step already could; this one was only readable from the server
+  environment. Settings > Speaker Identification > Speaker Engine (super admin) has a
+  "Hugging Face access token" card with a status chip (saved in Settings / from the server
+  environment / not set), Save, Replace, Remove and Test. The token is write-only: stored
+  encrypted, never returned (not even a suffix), never pre-filled, and the audit log records
+  that it was set or removed, not the value. A saved token wins over the server environment's,
+  and a running worker uses a new one at its next model load (within about a minute, no
+  restart). New super-admin endpoints: `GET/PUT/DELETE /api/admin/hf-token` and
+  `POST /api/admin/hf-token/test`. Every model loader now resolves the token through one
+  function (`services/huggingface_token.get_hf_token`), and a structural test fails any other
+  reader of the environment variable.
 - **Rate limits say how long to wait (#788).** A 429 carries the real time until the limit
   resets in `Retry-After` (exposed to the browser), toasts say "Try again in N seconds", the
   login button counts down, chat shows a countdown banner, and a rate-limited retry stays

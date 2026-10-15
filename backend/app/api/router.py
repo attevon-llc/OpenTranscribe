@@ -6,6 +6,7 @@ from . import websockets
 from .endpoints import admin
 from .endpoints import admin_approvals
 from .endpoints import admin_group_mappings
+from .endpoints import admin_hf_token
 from .endpoints import admin_scim_tokens
 from .endpoints import admin_storage_integrity
 from .endpoints import admin_timing
@@ -245,6 +246,12 @@ include_router_with_consistency(
     prefix="/asr-settings",
     tags=["asr-settings"],
     capability="asr.user_providers",
+)
+include_router_with_consistency(
+    admin_hf_token.router,
+    prefix="/admin/hf-token",
+    tags=["admin"],
+    capability="engine.settings",
 )
 include_router_with_consistency(
     engine_settings.router,

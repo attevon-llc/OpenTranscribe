@@ -38,6 +38,10 @@ MODEL_CACHE_DIR=./models
 HUGGINGFACE_TOKEN=hf_your_token_here
 ```
 
+`HUGGINGFACE_TOKEN` is the fallback. A super admin can also save the token in **Settings >
+Speaker Identification > Speaker Engine** (stored encrypted, applied at the next model load
+with no restart); a token saved there takes precedence over this variable.
+
 ### Transcription Performance Options
 
 ```bash

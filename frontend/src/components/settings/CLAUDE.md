@@ -269,6 +269,12 @@ picker and the content router all read it, so a nav entry cannot disagree with t
 - `PyannoteCredentialForm` (the user's pyannote.ai key) renders under the Speaker Detection source select
   when `asr.user_providers` is on. The key is write-only: never pre-fill the input, never log it.
   Its states come from `$lib/settings/pyannoteCredential`.
+- `HuggingFaceTokenCard` (platform Hugging Face access token, super_admin) sits under `EngineSettings`
+  on the Speaker Engine tab, so the tab's lock (admins see it locked, plain users never) is the card's
+  lock. Write-only like the pyannote key: never pre-fill, cleared after save; Remove only for a token
+  saved in Settings (a server-environment one is shown as such, not removable). View rules are in
+  `$lib/settings/hfToken`; copy is `settings.engineSettings.hfToken.*` (found by settings search as part
+  of the engine tab). Calls `/admin/hf-token` (`$lib/api/hfToken`).
 - **Auto-Labeling** (`auto-labeling`) lives in the AI & Chat group; the panel and id are unchanged.
 
 ## Transcription forms

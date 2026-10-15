@@ -679,8 +679,8 @@ class TestSpeakerRenamePropagationAcrossFiles:
         # speaker_a is linked to owned_profile, so the confirmation dialog must
         # appear; picking anything else (or letting it time out) would silently
         # test the wrong path.
-        update_globally_btn = authenticated_page.locator(
-            '.modal-overlay button:has-text("Update Profile Globally")'
+        update_globally_btn = authenticated_page.get_by_role("dialog").get_by_role(
+            "button", name="Update Profile Globally"
         )
         expect(update_globally_btn).to_be_visible(timeout=10000)
         update_globally_btn.click()

@@ -420,7 +420,7 @@ class TestSpeakerRenameRepaint:
         save_btn.click()
 
         # A profile-linked speaker asks how to treat its profile before saving.
-        confirm = detail_page.locator('.modal-overlay button:has-text("Create New Profile")')
+        confirm = detail_page.get_by_role("dialog").get_by_role("button", name="Create New Profile")
         if confirm.count():
             confirm.click()
 

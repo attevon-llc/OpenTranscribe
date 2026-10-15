@@ -500,6 +500,11 @@ off by default.
 
 #### UI and UX
 
+- **Every dropdown and popover opens toward the side with room (#1245).** The gallery owner filter
+  used to open downward and fall below the fold. One shared placement rule now flips a panel above
+  its trigger when there is no room below, caps its height so it scrolls inside, keeps it on screen
+  (right-to-left included) and stops a scrolling sidebar or dialog clipping it. A test fails for a
+  new dropdown that skips it.
 - **A refreshed interface (#1243, #1244).** Every dialog is built on one modal with one width
   scale; one stylesheet styles every text input, textarea and select; the date range picker is a
   popover shared by the gallery and file status; empty states share one layout and action row;
@@ -568,6 +573,15 @@ off by default.
 
 #### Settings
 
+- **File status and the task health monitor are one Settings row with two tabs (#1245).** *Status*
+  (everyone) shows what is happening to your files; *Recovery* (admins) finds stuck work and restarts
+  it. The old Task Health link still opens Recovery. The four recovery actions are standard
+  secondary buttons, each with a title and a one-line explanation of what it does and that it
+  covers every user, and the retry card and the actions card share one card style.
+- **Organization Context help moved into an info icon (#1245).** The large "How it works" card at
+  the bottom is gone; the same four points open from an icon beside the title. The Create and Edit
+  Collection dialogs lose their tinted intro card too. Every info icon is now a real button that
+  opens on hover, focus or tap, closes on Escape and stays on screen.
 - **Settings: Watch Sources tabs and merged Privacy & Redaction.** Watch Sources is split into
   Sources, Email Notifications and Global Settings tabs (the last two for `super_admin` only),
   and its Save button is the standard right-aligned action. *Content Redaction* and *Redaction
@@ -856,6 +870,14 @@ off by default.
 
 #### Pipeline, transcription and media
 
+- **A speaker-gender result with no label or no confidence no longer fails the whole
+  transcription.** The code defaulted a missing confidence, but a present null reached
+  `float(None)` and every such file ended in an error. That speaker is now left to the later
+  attribute step.
+- **The Recovery tab's stuck-task and inconsistent-file counts and lists were always empty.** The
+  panel read the wrong shape from the health endpoint (#1245).
+- **Pressing Enter on a focused button in Settings could confirm a hidden unsaved-changes dialog
+  and close Settings.** Closed confirmation dialogs now ignore the keyboard.
 - **A cloud transcription provider that cannot be started no longer falls back to local
   Whisper (#1236).** A saved key that no longer decrypts, a refused endpoint or a removed
   config used to send the file to this server's Whisper against the user's choice (or, on

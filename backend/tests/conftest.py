@@ -359,6 +359,9 @@ pytest_plugins = [
     # `hf_cache`: an empty temporary Hugging Face hub cache, with builders for complete and
     # interrupted repository layouts (#1246). Opt-in; nothing autouse.
     "fixtures.hf_cache",
+    # `mock_hf_hub`: a loopback stand-in for the Hugging Face hub (model-info API + file
+    # endpoint with ETag/Range) so the real downloader runs with no network (#1246).
+    "fixtures.mock_hf_hub",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

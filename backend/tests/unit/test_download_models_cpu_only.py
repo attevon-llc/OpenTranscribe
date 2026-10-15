@@ -110,30 +110,70 @@ def test_real_torch_mps_empty_cache_is_safe_after_guard(downloader, real_mps_emp
     torch.mps.empty_cache()
 
 
-@pytest.mark.parametrize(
-    ("use_gpu", "cuda_available", "compute_type", "expected"),
-    [
-        # The #1003 case: defaults (USE_GPU=true, float16) on a host with no GPU.
-        ("true", False, "float16", ("cpu", "int8")),
-        ("TRUE", False, "float16", ("cpu", "int8")),
-        ("false", False, "float16", ("cpu", "int8")),
-        ("false", True, "float16", ("cpu", "int8")),
-        ("true", False, "float32", ("cpu", "float32")),
-        ("true", False, "int8", ("cpu", "int8")),
-        # A GPU host keeps exactly what it asked for.
-        ("true", True, "float16", ("cuda", "float16")),
-        ("true", True, "int8_float16", ("cuda", "int8_float16")),
-    ],
-)
-def test_resolve_whisper_device(downloader, use_gpu, cuda_available, compute_type, expected):
-    assert downloader.resolve_whisper_device(use_gpu, cuda_available, compute_type) == expected
+def test_whisperx_group_delegates_to_the_catalog_downloader(downloader):
+    """The whisper group is a thin caller of the shared downloader (#1246).
 
-
-def test_whisperx_step_uses_the_resolver(downloader):
-    """The step itself must route through the resolver, not re-derive the device inline."""
+    There is one implementation of a model download (``local_models.downloader``), used by the
+    Settings page and by this script. The old path loaded the model through ``whisperx`` on a
+    resolved device, which needed torch and a GPU-or-CPU decision just to fetch files.
+    """
     source = inspect.getsource(downloader.download_whisperx_models)
-    assert "resolve_whisper_device(" in source
-    assert "torch.cuda.is_available()" in source
+    assert "download_blocking(" in source
+    assert "canonical_id(" in source
+    assert "whisperx.load_model" not in source
+    assert "torch" not in source
+    assert not hasattr(downloader, "resolve_whisper_device")
+
+
+def test_whisperx_group_refuses_a_model_outside_the_catalog(downloader, monkeypatch):
+    from app.services.local_models import downloader as shared
+
+    monkeypatch.setenv("WHISPER_MODEL", "distil-large-v3")
+    monkeypatch.setattr(
+        shared, "download_blocking", lambda *a, **k: pytest.fail("must not download")
+    )
+
+    result = downloader.download_whisperx_models()
+
+    assert result == {"whisperx": {"status": "failed", "error": "unknown_local_model"}}
+
+
+def test_whisperx_group_downloads_an_aliased_catalog_model(downloader, monkeypatch):
+    from app.services.local_models import downloader as shared
+
+    seen = {}
+
+    def fake_download(entry, token, revision=None, endpoint=None):
+        seen["entry"] = entry.id
+        seen["token"] = token
+        return "/snapshot"
+
+    monkeypatch.setenv("WHISPER_MODEL", "crisperwhisper")
+    monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_script_token")
+    monkeypatch.setattr(shared, "download_blocking", fake_download)
+
+    result = downloader.download_whisperx_models()
+
+    assert seen == {"entry": "nyrahealth/faster_CrisperWhisper", "token": "hf_script_token"}
+    assert result["whisperx"]["status"] == "downloaded"
+    assert result["whisperx"]["model"] == "nyrahealth/faster_CrisperWhisper"
+
+
+def test_whisperx_group_reports_a_fixed_sentence_for_a_failed_download(
+    downloader, monkeypatch, capsys
+):
+    from app.services.local_models import downloader as shared
+
+    def boom(*_a, **_k):
+        raise OSError(28, "No space left on device: /secret/path")
+
+    monkeypatch.setenv("WHISPER_MODEL", "tiny")
+    monkeypatch.setattr(shared, "download_blocking", boom)
+
+    result = downloader.download_whisperx_models()
+
+    assert result == {"whisperx": {"status": "failed", "error": "disk_full"}}
+    assert "/secret/path" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("dockerfile", DOCKERFILES, ids=lambda p: p.name)

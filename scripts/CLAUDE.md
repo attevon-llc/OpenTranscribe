@@ -415,6 +415,15 @@ this file is for.
   source of truth — `Dockerfile.prod` uses `groupadd -r` with no GID pin, so the GID is
   whatever the base image leaves free. `backend/tests/integration/test_chown_scripts_real_tree.py`
   derives it from the built image; a base-image bump that moves it fails there.
+  The `whisperx` group of `download-models.py` (kept as the `--only` key) is a thin caller of
+  `app.services.local_models.downloader.download_blocking` (#1246), the same downloader the
+  Settings page uses. `WHISPER_MODEL` must name a model in
+  `backend/app/core/local_whisper_catalog.py` (aliases such as `crisperwhisper` are applied there,
+  not in the shell wrapper); anything else, e.g. `distil-large-v3` or an arbitrary `org/repo`, is
+  refused with `unknown_local_model`. A downloader image that predates the catalog fails the group
+  with an instruction to use the image matching the script's release (`OT_IMAGE_TAG`); there is no
+  whisperx fallback. The `pyannote` group still loads `WHISPER_MODEL` through whisperx once, as its
+  diarization warm-up.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), and `test-lite-mode.sh` (no

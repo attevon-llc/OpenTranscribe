@@ -404,8 +404,16 @@ def apply_sidecar_gender(db: Session, media_file_id: int, speaker_gender: dict |
         verdict = speaker_gender.get(speaker.name)
         if not verdict:
             continue
-        speaker.predicted_gender = verdict.get("label")
-        speaker.attribute_confidence = {"gender": round(float(verdict.get("confidence", 0.0)), 3)}
+        label = verdict.get("label")
+        confidence = verdict.get("confidence")
+        # A verdict with no label or no confidence is the sidecar declining to classify this
+        # speaker. Claim nothing and leave it to the enrichment task: `.get(key, default)` only
+        # covers an ABSENT key, so a present null used to reach float(None) and fail the whole
+        # transcription.
+        if not label or confidence is None:
+            continue
+        speaker.predicted_gender = label
+        speaker.attribute_confidence = {"gender": round(float(confidence), 3)}
         speaker.attributes_predicted_at = now
         updated += 1
     return updated

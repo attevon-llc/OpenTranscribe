@@ -121,6 +121,64 @@ def test_sidecar_gender_is_stored_only_when_the_user_allows_it(
         assert speaker.attributes_predicted_at is None  # a later opt-in can still run detection
 
 
+@pytest.mark.parametrize(
+    "verdict",
+    [
+        {"label": None, "confidence": None},
+        {"label": "female", "confidence": None},
+        {"label": None, "confidence": 0.5},
+        {},
+    ],
+    ids=["no-label-no-confidence", "label-without-confidence", "confidence-without-label", "empty"],
+)
+def test_a_verdict_the_sidecar_could_not_complete_is_skipped_not_fatal(
+    db_session, normal_user, verdict
+):
+    """`.get("confidence", 0.0)` only defaults an ABSENT key: a present null reached float(None)
+    and failed the whole transcription (every file ended in status=error)."""
+    _, speaker = _file_with_speaker(db_session, normal_user)
+
+    updated = apply_sidecar_gender_for_user(
+        db_session, speaker.media_file_id, normal_user.id, {"SPEAKER_00": verdict}
+    )
+    db_session.commit()
+
+    assert updated == 0
+    db_session.refresh(speaker)
+    assert speaker.predicted_gender is None
+    assert speaker.attributes_predicted_at is None  # the enrichment task can still decide
+
+
+def test_one_incomplete_verdict_does_not_block_the_other_speakers(db_session, normal_user):
+    media_file, first = _file_with_speaker(db_session, normal_user)
+    second = Speaker(
+        uuid=str(uuid_mod.uuid4()),
+        media_file_id=media_file.id,
+        user_id=normal_user.id,
+        name="SPEAKER_01",
+    )
+    db_session.add(second)
+    db_session.commit()
+
+    updated = apply_sidecar_gender_for_user(
+        db_session,
+        media_file.id,
+        normal_user.id,
+        {
+            "SPEAKER_00": {"label": None, "confidence": None},
+            "SPEAKER_01": {"label": "male", "confidence": 0.8},
+        },
+    )
+    db_session.commit()
+
+    assert updated == 1
+    db_session.refresh(first)
+    db_session.refresh(second)
+    assert first.predicted_gender is None
+    assert second.predicted_gender == "male"
+    assert second.attribute_confidence == {"gender": 0.8}
+
+
 # ---------------------------------------------------------------- attribute task
 
 

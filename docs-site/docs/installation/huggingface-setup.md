@@ -144,6 +144,21 @@ If installing from source:
 
 Models will download automatically on first use (~10-30 minutes).
 
+### Set or change the token in Settings
+
+You do not need to edit `.env`, and you can change the token later without restarting. Sign in
+as a super admin and open **Settings > Speaker Identification > Speaker Engine**. The
+**Hugging Face access token** card shows whether a token is saved in Settings, comes from the
+server environment, or is not set. Paste a token, press **Save token**, and use **Test** to ask
+Hugging Face whether it is accepted.
+
+- A token saved in Settings takes precedence over `HUGGINGFACE_TOKEN` in `.env`. **Remove**
+  deletes only the saved one, after which the `.env` token (if any) applies again.
+- The token is stored encrypted and is never shown again, including to super admins. To
+  replace it, paste a new one.
+- A running worker picks up a new token the next time it loads a model, within about a
+  minute. No restart is needed.
+
 ## Verification
 
 ### Method 1: Check Model Cache

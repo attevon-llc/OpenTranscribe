@@ -59,6 +59,11 @@ AdminTaskHealthPanel).
   key as the full page), plus an "Open full screen" **anchor** to `/file-status` (an `<a>`, so it
   middle-clicks and the modal closes itself on the route change). The task grid, filters and detail
   modal stay on the full page (`UserFileStatus` + `fileStatus/`); never grow a second copy here.
+- `FileStatusSection.svelte` — the tab shell of the `file-status` row: **Status** (`FileStatusSettings`, everyone)
+  and **Recovery** (`AdminTaskHealthPanel`, admins with `admin.task_health`; the old Task Health Monitor row).
+  Tabs come from `$lib/settings/fileStatusTabs` (a user with one tab gets no strip); `admin-task-health` is an alias
+  (`statusTabFor`) that opens Recovery. The modal renders the row title; each panel shows only its own
+  description, so never add a second heading in a panel. The shell forwards the Recovery panel's `requestConfirm`.
 - `SystemStatisticsPanel.svelte`, `AdminTaskHealthPanel.svelte` — admin dashboards (export
   module-context interfaces consumed by the shell).
 - `*Modal.svelte` (ASRConfigModal, LLMConfigModal) — nested editors opened from a panel.

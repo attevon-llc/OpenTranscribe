@@ -105,7 +105,6 @@
 <div class="content-section">
   <div class="section-header-row">
     <div>
-      <h3 class="section-title">{$t('settings.fileStatus.title')}</h3>
       <p class="section-description">{$t('settings.fileStatus.description')}</p>
     </div>
     <a

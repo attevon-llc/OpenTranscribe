@@ -49,11 +49,13 @@
   import {
     aliasIdsOf,
     dataTabFor,
+    statusTabFor,
     sidebarRowFor,
     speakerIdTabFor,
     transcriptionTabFor,
   } from '$lib/settings/sectionAliases';
   import { dataManagementTabs, dataManagementVisible } from '$lib/settings/dataManagementTabs';
+  import { fileStatusTabs } from '$lib/settings/fileStatusTabs';
 
   // Import i18n
   import { t, locale } from '$stores/locale';
@@ -117,7 +119,6 @@
     'audit-logs': 'super_admin',
     // admin
     'admin-users': 'admin',
-    'admin-task-health': 'admin',
     quarantine: 'admin',
     'data-management': 'admin',
     'support-access': 'admin',
@@ -298,6 +299,11 @@
     embeddingCap: capOn(capState, 'admin.embedding_migration'),
   };
 
+  $: statusAccess = {
+    isAdmin,
+    taskHealthCap: capOn(capState, 'admin.task_health'),
+  };
+
   $: privacyAccess = {
     isAdmin,
     isSuperAdmin,
@@ -433,8 +439,8 @@
       items: [
         { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
         { id: 'file-status' as SettingsSection, label: $t('settings.fileStatus.title'), icon: 'activity' },
+        // Task health is the Recovery tab of File status (admin-task-health stays as an alias).
         ...(isAdmin ? [
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' },
           // File retention, media cache, backups, integrity, search index and speaker embeddings
           // are tabs of one row (the old ids stay as aliases; see lib/settings/sectionAliases.ts).
           ...(dataManagementVisible(dataAccess) ? [{ id: 'data-management' as SettingsSection, label: $t('settings.dataManagement.title'), icon: 'database' }] : [])
@@ -476,13 +482,14 @@
       : []),
     // Same for the four ids that became tabs: no sidebar row, still searchable, and the
     // hit lands on the tab, but only for users whose tab is present and unlocked.
-    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess, dataAccess),
+    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess, dataAccess, statusAccess),
   ];
 
   function aliasSearchEntries(
     tx: typeof transcriptionAccess,
     spk: typeof speakerIdAccess,
-    data: typeof dataAccess
+    data: typeof dataAccess,
+    status: typeof statusAccess
   ): VisibleSection[] {
     const dataOpen = (id: string) =>
       dataManagementTabs(data).some((tab) => tab.id === id && !tab.locked);
@@ -490,6 +497,7 @@
     const spkOpen = (id: string) =>
       speakerIdentificationTabs(spk).some((tab) => tab.id === id && !tab.locked);
     const entries: VisibleSection[] = [];
+    if (fileStatusTabs(status).some((tab) => tab.id === 'status-recovery')) entries.push({ id: 'admin-task-health', label: $t('settings.taskHealth.title') } as VisibleSection);
     if (txOpen('tx-provider')) entries.push({ id: 'asr-provider', label: $t('settings.asrProvider.title') } as VisibleSection);
     if (txOpen('tx-vocabulary')) entries.push({ id: 'custom-vocabulary', label: $t('settings.customVocabulary.title') } as VisibleSection);
     if (spkOpen('spk-attributes')) entries.push({ id: 'speaker-attributes', label: $t('settings.speakerAttributes.title') } as VisibleSection);
@@ -662,7 +670,7 @@
       lockScroll();
 
       // Load data for the active section when modal opens.
-      // admin-task-health self-loads on its panel's mount.
+      // The file-status tabs self-load on their panel's mount.
       if (activeSection === 'system-statistics') {
         loadStats();
       } else if (activeSection === 'admin-users' && isAdmin) {
@@ -745,7 +753,7 @@
     } else if (sectionId === 'admin-users') {
       loadAdminUsers();
     }
-    // admin-task-health self-loads on its panel's mount.
+    // The Recovery tab of file-status self-loads on its panel's mount.
   }
 
   // Recording settings functions
@@ -1403,17 +1411,18 @@
     {/if}
 
     <!-- File Status (condensed; the full page is /file-status) -->
-    {#if activeSection === 'file-status'}
-      <LazySection load={sectionLoaders.fileStatus} let:Component>
-        <Component />
-      </LazySection>
-    {/if}
-
-    <!-- Admin Task Health Section -->
-    {#if activeSection === 'admin-task-health'}
-      <LazySection load={sectionLoaders.taskHealth} let:Component>
-        <Component on:requestConfirm={handleTaskHealthConfirm} />
-      </LazySection>
+    <!-- Tabs: Status (everyone) and Recovery (admins; the old admin-task-health id opens it). -->
+    {#if sidebarRowFor(activeSection) === 'file-status'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.fileStatus.title')}</h3>
+        <LazySection load={sectionLoaders.fileStatusSection} let:Component>
+          <Component
+            {...statusAccess}
+            initialTab={statusTabFor(activeSection) ?? 'status-files'}
+            on:requestConfirm={handleTaskHealthConfirm}
+          />
+        </LazySection>
+      </div>
     {/if}
 
     <!-- Cloud edition — Billing (org admins only) -->

@@ -637,6 +637,86 @@ describe('Transcription and Speaker Identification sections', () => {
     });
   });
 
+  describe('File status row: Status and Recovery tabs', () => {
+    const STATUS = {
+      status_counts: { total: 3, completed: 2, processing: 1, pending: 0, error: 0 },
+      problem_files: { count: 0, files: [] },
+      recent_files: { count: 0, files: [] },
+      has_problems: false,
+    };
+    async function openStatus(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+      mockAxios.get.mockImplementation(async (url: string) => ({
+        data:
+          url === '/my-files/status'
+            ? STATUS
+            : url === '/tasks/system/health'
+              ? { stuck_tasks: [], inconsistent_files: [] }
+              : {},
+      }));
+      setUser(role);
+      settingsModalStore.open(section);
+      const view = render(SettingsModal);
+      await waitForOpen(view.container);
+      return view;
+    }
+    const statusTab = (container: HTMLElement, id: string) =>
+      container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
+    it('removes the Task Health Monitor row and gives an admin two tabs on File status', async () => {
+      const { container } = await openStatus('admin', 'file-status');
+      expect(navItem(container, 'settings.taskHealth.title')).toBeNull();
+      expect(navItem(container, 'settings.fileStatus.title')).not.toBeNull();
+      const strip = container.querySelector(
+        '[data-testid="file-status-section"] .tabs.sticky'
+      ) as HTMLElement;
+      expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(2);
+      expect(statusTab(container, 'status-files')?.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('opens the Recovery tab of the File status row for the old admin-task-health id', async () => {
+      const { container } = await openStatus('admin', 'admin-task-health');
+      expect(navItem(container, 'settings.fileStatus.title')?.classList.contains('active')).toBe(
+        true
+      );
+      await waitFor(() =>
+        expect(statusTab(container, 'status-recovery')?.getAttribute('aria-selected')).toBe('true')
+      );
+      await waitFor(() =>
+        expect(container.textContent).toContain('settings.taskHealth.systemRecovery')
+      );
+    });
+
+    it('gives a plain user the Status panel with no tab strip and no Recovery panel', async () => {
+      const { container } = await openStatus('user', 'file-status');
+      await waitFor(() => expect(container.textContent).toContain('fileStatus.totalFiles'));
+      expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
+      expect(statusTab(container, 'status-recovery')).toBeNull();
+      expect(container.querySelector('#tabpanel-status-recovery')).toBeNull();
+    });
+
+    it('drops the Recovery tab when the deployment lacks admin.task_health', async () => {
+      capabilities.set({
+        edition: 'community',
+        loaded: true,
+        capabilities: { 'admin.task_health': false },
+        audience: {},
+        maxUploadBytes: undefined,
+      });
+      const { container } = await openStatus('admin', 'file-status');
+      expect(statusTab(container, 'status-recovery')).toBeNull();
+      expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
+    });
+
+    it('keeps the modal heading the first .section-title and shows the title once', async () => {
+      const { container } = await openStatus('admin', 'admin-task-health');
+      const titles = [...container.querySelectorAll('.settings-content .section-title')].map(
+        (e) => e.textContent?.trim()
+      );
+      expect(titles[0]).toBe('settings.fileStatus.title');
+      expect(titles).not.toContain('settings.taskHealth.title');
+    });
+  });
+
   it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
     const { container } = await openAs('admin', 'embedding-migration');
     await waitFor(() =>

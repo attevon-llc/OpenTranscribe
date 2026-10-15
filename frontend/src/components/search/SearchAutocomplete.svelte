@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getErrorCode } from '$lib/utils/apiError';
   import { createDebouncedHandler } from '$lib/utils/debounce';
 
@@ -201,7 +202,12 @@
   {/if}
 
   {#if showSuggestions}
-    <div class="suggestions-dropdown" role="listbox" id="search-suggestions-listbox">
+    <div
+      class="suggestions-dropdown"
+      role="listbox"
+      id="search-suggestions-listbox"
+      use:anchoredPanel={{ anchor: inputEl }}
+    >
       {#each suggestions as suggestion, i}
         <button
           class="suggestion-item"
@@ -273,18 +279,13 @@
     background-color: var(--hover-color, #f1f5f9);
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .suggestions-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 4px;
     background: var(--card-background, var(--surface-color, #fff));
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 8px;
     box-shadow: var(--dropdown-shadow, 0 4px 12px rgba(0, 0, 0, 0.1));
-    z-index: 100;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   .suggestion-item {

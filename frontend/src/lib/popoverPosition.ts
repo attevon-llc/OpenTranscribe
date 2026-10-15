@@ -37,6 +37,10 @@ export interface PlacementOptions {
   sheetBreakpoint?: number;
   /** Right-to-left layout: align the panel to the trigger's right edge. */
   rtl?: boolean;
+  /** Exact panel width (e.g. a menu's own content width) instead of trigger-width/minWidth. */
+  width?: number;
+  /** Physical edge of the trigger the panel aligns to; defaults to the inline-start edge. */
+  edge?: 'left' | 'right';
 }
 
 export function computePopoverPlacement(
@@ -45,7 +49,7 @@ export function computePopoverPlacement(
   viewport: { width: number; height: number },
   options: PlacementOptions = {}
 ): PopoverPlacement {
-  const { gap = 6, margin = 8, minWidth = 300, sheetBreakpoint = 560, rtl = false } = options;
+  const { gap = 6, margin = 8, minWidth = 300, sheetBreakpoint = 560, rtl = false, edge } = options;
 
   if (viewport.width <= sheetBreakpoint) {
     return {
@@ -58,10 +62,12 @@ export function computePopoverPlacement(
     };
   }
 
-  const width = Math.min(Math.max(trigger.width, minWidth), viewport.width - margin * 2);
+  const wanted = options.width ?? Math.max(trigger.width, minWidth);
+  const width = Math.min(wanted, viewport.width - margin * 2);
 
   // Horizontal: align the panel's inline-start edge with the trigger's, then clamp.
-  const aligned = rtl ? trigger.left + trigger.width - width : trigger.left;
+  const alignRight = edge ? edge === 'right' : rtl;
+  const aligned = alignRight ? trigger.left + trigger.width - width : trigger.left;
   const left = Math.round(Math.min(Math.max(aligned, margin), viewport.width - width - margin));
 
   const roomBelow = viewport.height - (trigger.top + trigger.height) - gap - margin;

@@ -28,8 +28,9 @@ afterEach(() => resetCapabilities());
 
 describe('UserDropdown Flower entry', () => {
   it('is offered to admins by default', async () => {
-    const { container } = await openAsAdmin();
-    expect(container.querySelector('[aria-label="nav.flowerDashboard"]')?.textContent?.trim()).toBe(
+    await openAsAdmin();
+    // The menu is portaled to <body> by anchoredPanel.
+    expect(document.querySelector('[aria-label="nav.flowerDashboard"]')?.textContent?.trim()).toBe(
       'nav.flowerDashboard'
     );
   });
@@ -43,7 +44,7 @@ describe('UserDropdown Flower entry', () => {
       maxUploadBytes: undefined,
       apiMediatedUploadEnabled: true,
     });
-    const { container } = await openAsAdmin();
-    expect(container.querySelector('[aria-label="nav.flowerDashboard"]')).toBeNull();
+    await openAsAdmin();
+    expect(document.querySelector('[aria-label="nav.flowerDashboard"]')).toBeNull();
   });
 });

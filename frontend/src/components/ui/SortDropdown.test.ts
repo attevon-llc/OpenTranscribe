@@ -4,7 +4,7 @@
  * Coverage below is the union of both: gallery-style options (no `noDirection` entries)
  * and search-style options (a `relevance` entry with `noDirection: true`).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import SortDropdown, { type SortOption } from './SortDropdown.svelte';
 
@@ -16,6 +16,27 @@ vi.mock('$stores/locale', () => ({
     },
   },
 }));
+
+afterEach(() => vi.restoreAllMocks());
+
+const TRIGGER_LEFT = 600;
+const TRIGGER_WIDTH = 120;
+const MENU_WIDTH = 220;
+
+/** jsdom has no layout: give the trigger and the portaled menu boxes anchoredPanel can read. */
+function layoutMocks() {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280);
+  vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement
+  ) {
+    const menu = this.classList.contains('dropdown-menu');
+    const box = menu
+      ? { top: 0, left: 0, width: MENU_WIDTH, height: 150 }
+      : { top: 100, left: TRIGGER_LEFT, width: TRIGGER_WIDTH, height: 36 };
+    return { ...box, right: box.left + box.width, bottom: box.top + box.height } as DOMRect;
+  });
+}
 
 const gallerySortOptions: SortOption[] = [
   { value: 'upload_time', label: 'gallery.sort.uploadDate' },
@@ -42,7 +63,8 @@ describe('SortDropdown', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'gallery.sort.label' }));
 
-    const items = Array.from(container.querySelectorAll('.dropdown-item'));
+    // The menu is portaled to <body> by anchoredPanel.
+    const items = Array.from(document.querySelectorAll('.dropdown-item'));
     expect(items).toHaveLength(searchSortOptions.length);
     const glyphs = items.map((item) => item.querySelector('svg.menu-icon')?.innerHTML ?? '');
     expect(glyphs.every((g) => g.length > 0)).toBe(true);
@@ -284,8 +306,9 @@ describe('SortDropdown', () => {
     expect(arrowPoints(activeItem?.querySelector('.option-arrow'))).toBe('down');
   });
 
-  it('applies the align-right class to the menu when align="right"', async () => {
-    const { container } = render(SortDropdown, {
+  it('aligns the menu to the trigger right edge when align="right"', async () => {
+    layoutMocks();
+    render(SortDropdown, {
       props: {
         sortOptions: searchSortOptions,
         sortBy: 'relevance',
@@ -296,7 +319,9 @@ describe('SortDropdown', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'search.sort.label' }));
-    expect(container.querySelector('.dropdown-menu.align-right')).not.toBeNull();
+    // Right-aligned: the menu's right edge lands on the trigger's right edge.
+    const menu = document.querySelector('.dropdown-menu') as HTMLElement;
+    expect(menu.style.left).toBe(`${TRIGGER_LEFT + TRIGGER_WIDTH - MENU_WIDTH}px`);
   });
 
   it('closes the menu on an outside click', async () => {
@@ -317,7 +342,7 @@ describe('SortDropdown', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
     // Assert via `aria-expanded` (updates synchronously with `isOpen`) rather than
-    // waiting for the menu's `scale` outro transition to finish removing it from the
+    // waiting for the menu's outro transition to finish removing it from the
     // DOM — the transition itself isn't what this test is about.
     await fireEvent.click(outside);
     expect(trigger).toHaveAttribute('aria-expanded', 'false');

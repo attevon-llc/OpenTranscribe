@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '$stores/gallery';
   import { chatStore } from '$stores/chat';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { toastStore } from '$stores/toast';
   import { user as userStore } from '$stores/auth';
 
@@ -40,6 +41,8 @@
   // Dropdown states
   let showProcessMenu = false;
   let showOrganizeMenu = false;
+  let processBtn: HTMLButtonElement;
+  let organizeBtn: HTMLButtonElement;
 
   function closeAllMenus() {
     showProcessMenu = false;
@@ -144,6 +147,7 @@
       {#if !$supportSessionGate.readOnly}
       <div class="dropdown-container">
         <button
+          bind:this={processBtn}
           class="action-btn process-btn"
           on:click={toggleProcessMenu}
           title={$t('gallery.bulk.processTooltip')}
@@ -161,7 +165,11 @@
         {#if showProcessMenu}
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div class="dropdown-menu" on:click|stopPropagation>
+          <div
+            class="dropdown-menu"
+            use:anchoredPanel={{ anchor: processBtn, width: 'content' }}
+            on:click|stopPropagation
+          >
             <button
               class="dropdown-item"
               on:click={handleReprocess}
@@ -269,6 +277,7 @@
       <!-- Organize dropdown -->
       <div class="dropdown-container">
         <button
+          bind:this={organizeBtn}
           class="action-btn organize-btn"
           on:click={toggleOrganizeMenu}
           title={$t('gallery.bulk.organizeTooltip')}
@@ -284,7 +293,11 @@
         {#if showOrganizeMenu}
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div class="dropdown-menu" on:click|stopPropagation>
+          <div
+            class="dropdown-menu"
+            use:anchoredPanel={{ anchor: organizeBtn, width: 'content' }}
+            on:click|stopPropagation
+          >
             {#if !$supportSessionGate.active}
             <button
               class="dropdown-item"
@@ -554,16 +567,14 @@
     position: relative;
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .dropdown-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
+    overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     min-width: 200px;
-    z-index: 100;
     padding: 0.25rem 0;
   }
 

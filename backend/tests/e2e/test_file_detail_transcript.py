@@ -249,7 +249,10 @@ class TestExportControl:
     def test_export_dropdown_lists_all_formats(self, detail_page: Page) -> None:
         """Opening Export lists txt/json/csv/srt/vtt (guards formatter refactor)."""
         detail_page.locator(".export-transcript-button").click()
-        menu = detail_page.locator(".export-dropdown.open .export-dropdown-content")
+        # The menu is portaled to <body> by the anchoredPanel action, so it is no longer a
+        # descendant of `.export-dropdown`; only one panel is open at a time.
+        expect(detail_page.locator(".export-dropdown.open")).to_have_count(1, timeout=5000)
+        menu = detail_page.locator(".export-dropdown-content")
         expect(menu).to_be_visible(timeout=5000)
 
         options = menu.locator("button")

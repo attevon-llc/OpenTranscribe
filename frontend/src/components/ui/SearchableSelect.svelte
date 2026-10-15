@@ -2,6 +2,7 @@
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { clickOutside } from '$lib/actions/clickOutside';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
 
   /** Placeholder for the search input. Caller should pass translated text. */
   export let placeholder = '';
@@ -29,6 +30,9 @@
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** Guards against stale async responses overwriting newer ones. */
   let requestSeq = 0;
+  let inputEl: HTMLInputElement;
+  /** Portaled to <body> by anchoredPanel, so outside the wrapper. */
+  let panelEl: HTMLDivElement | undefined;
 
   const listboxId = 'searchable-select-listbox';
   const optionId = (i: number) => `searchable-select-option-${i}`;
@@ -119,8 +123,9 @@
   }
 </script>
 
-<div class="searchable-select" use:clickOutside={{ enabled: open }} on:click_outside={close}>
+<div class="searchable-select" use:clickOutside={{ enabled: open, ignore: [panelEl ?? null] }} on:click_outside={close}>
   <input
+    bind:this={inputEl}
     type="text"
     class="searchable-input"
     role="combobox"
@@ -138,7 +143,11 @@
   />
 
   {#if open}
-    <div class="searchable-dropdown">
+    <div
+      class="searchable-dropdown"
+      bind:this={panelEl}
+      use:anchoredPanel={{ anchor: inputEl, maxHeight: 280 }}
+    >
       {#if loading}
         <div class="searchable-status" aria-live="polite">
           <span class="searchable-spinner" aria-hidden="true"></span>
@@ -183,13 +192,8 @@
   .searchable-input::placeholder {
     color: var(--text-secondary);
   }
+  /* Placed by anchoredPanel (fixed on <body>, flips above, max-height capped to the room). */
   .searchable-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 1000;
-    max-height: 280px;
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);

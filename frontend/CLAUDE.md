@@ -209,4 +209,14 @@ another literal size (the tree had ~60 distinct ones).
   never add your own margin to them. Buttons need the base `.btn` class as well as
   `.btn-secondary`/`.btn-primary`, which carry colour only, no padding.
 
+## Floating panels flip and clamp: use the `anchoredPanel` action
+
+Any dropdown, menu, popover or suggestion panel is placed with `use:anchoredPanel` from
+`$lib/actions/anchoredPanel` — never `position: absolute; top: 100%`. It portals the panel to `<body>`
+(`position: fixed`, so no scrolling sidebar/modal body clips it and no transformed ancestor re-roots it),
+opens below, flips above when there is no room below, caps `max-height` so the panel scrolls internally,
+and clamps to the viewport in LTR and RTL. `components/floatingPanel.convention.test.ts` fails on a
+component that skips it; exceptions need a written reason in its `ALLOWED` map. Usage and the click-outside
+caveat: `src/components/ui/CLAUDE.md`.
+
 ## Verify UI changes in a browser (light + dark) — type-check ≠ feature-check.

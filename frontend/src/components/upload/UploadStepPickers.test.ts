@@ -61,7 +61,8 @@ describe('pickers use the sidebar multi-select', () => {
     });
 
     await fireEvent.click(container.querySelector('.multiselect-toggle') as HTMLElement);
-    const box = container.querySelector('.options-list input[type="checkbox"]') as HTMLElement;
+    // Portaled to <body> by anchoredPanel.
+    const box = document.querySelector('.options-list input[type="checkbox"]') as HTMLElement;
     await fireEvent.click(box);
 
     await waitFor(() => expect(container.querySelectorAll('.selected-chips .chip').length).toBe(1));

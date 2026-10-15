@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker, Segment } from '$lib/types/speaker';
   import { t } from '$stores/locale';
@@ -33,6 +34,7 @@
   const dispatch = createEventDispatcher();
   let triggerButton: HTMLButtonElement;
   let portalContainer: HTMLDivElement | null = null;
+  let menuPanel: { destroy: () => void } | null = null;
   let isOpen = false;
   let isCreatingSpeaker = false;
 
@@ -275,6 +277,7 @@
     }
     // `remove()` rather than `document.body.removeChild()`: the node may already be
     // detached (navigation tears the body down), and removeChild throws on a non-child.
+    menuPanel?.destroy();
     portalContainer?.remove();
     portalContainer = null;
     document.removeEventListener('click', handleGlobalClick, true);
@@ -332,35 +335,6 @@
   function isCurrentSpeaker(speakerUuid: string): boolean {
     if (!segment.speaker) return false;
     return segment.speaker.uuid === speakerUuid;
-  }
-
-  function getMenuPosition(): { top: number; left: number; openUpward: boolean } {
-    if (!triggerButton) return { top: 0, left: 0, openUpward: false };
-
-    const rect = triggerButton.getBoundingClientRect();
-    // Estimate menu height: header + no speaker + divider + speakers + divider + create button
-    const itemHeight = 36;
-    const headerHeight = 28;
-    const dividerHeight = 9;
-    const suggestionHeight = pendingSuggestion ? headerHeight + itemHeight + dividerHeight : 0;
-    const inlineNameHeight = wireSpeaker?.uuid ? 52 : 0;
-    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0) + suggestionHeight + inlineNameHeight;
-
-    const viewportHeight = window.innerHeight;
-    const spaceBelow = viewportHeight - rect.bottom - 8;
-    const spaceAbove = rect.top - 8;
-
-    // Open upward if not enough space below and more space above
-    const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
-
-    let top: number;
-    if (openUpward) {
-      top = rect.top - 4;
-    } else {
-      top = rect.bottom + 4;
-    }
-
-    return { top, left: rect.left, openUpward };
   }
 
   // Helper to create SVG checkmark element
@@ -459,6 +433,8 @@
     if (!portalContainer) return;
 
     if (!isOpen) {
+      menuPanel?.destroy();
+      menuPanel = null;
       portalContainer.innerHTML = '';
       inlineSaveButton = inlineHint = inlineMatches = null;
       return;
@@ -472,17 +448,14 @@
       active.classList.contains('inline-name-input') &&
       portalContainer.contains(active);
 
-    const pos = getMenuPosition();
     const currentSpeakerUuid = segment.speaker?.uuid;
+    // After the focus check above: the old menu holds the focus and destroy() removes it.
+    menuPanel?.destroy();
+    menuPanel = null;
 
     // Build menu using DOM methods to prevent XSS
     const menu = document.createElement('div');
-    menu.className = `dropdown-menu${pos.openUpward ? ' open-upward' : ''}`;
-    menu.style.top = `${pos.top}px`;
-    menu.style.left = `${pos.left}px`;
-    if (pos.openUpward) {
-      menu.style.transform = 'translateY(-100%)';
-    }
+    menu.className = 'dropdown-menu';
 
     // Header
     const header = document.createElement('div');
@@ -680,6 +653,16 @@
     // Clear and append
     portalContainer.innerHTML = '';
     portalContainer.appendChild(menu);
+    // The container already lives on <body>; the action only has to place the menu (flip above,
+    // cap the height, clamp to the viewport) and keep it placed as the viewport/content changes.
+    menuPanel = anchoredPanel(menu, {
+      anchor: triggerButton,
+      width: 'content',
+      gap: 4,
+      portal: false,
+      maxHeight: 400,
+      zIndex: 'var(--z-critical, 10000)',
+    });
 
     if (refocusInlineName && inlineInput) {
       inlineInput.focus();
@@ -691,12 +674,10 @@
 <svelte:head>
   <style>
     .speaker-dropdown-portal .dropdown-menu {
-      position: fixed;
       background: var(--surface-color, #1e293b);
       border: 1px solid var(--border-color, #334155);
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-      z-index: 10000;
       min-width: 200px;
       /* A long suggested name used to widen the menu past the viewport edge, where
          the fixed `left` offset left it unreachable and overlapping the transcript.

@@ -12,8 +12,9 @@
 <script lang="ts">
   import { t } from '$stores/locale';
   import { createEventDispatcher } from 'svelte';
-  import { scale } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { clickOutside } from '$lib/actions/clickOutside';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { SORT_ICON_BY_VALUE } from '$lib/ui/menuIcons';
 
@@ -31,6 +32,9 @@
   }>();
 
   let isOpen = false;
+  let buttonEl: HTMLButtonElement;
+  // Portaled to <body> by anchoredPanel, so outside the wrapper.
+  let menuEl: HTMLDivElement | undefined;
 
   $: currentOption = sortOptions.find(opt => opt.value === sortBy) || sortOptions[0];
 
@@ -73,8 +77,12 @@
   }
 </script>
 
-<div class="sort-dropdown" use:clickOutside on:click_outside={handleClickOutside}>
+<div
+  class="sort-dropdown"
+  use:clickOutside={{ ignore: [menuEl ?? null] }}
+  on:click_outside={handleClickOutside}>
   <button
+    bind:this={buttonEl}
     type="button"
     class="sort-button"
     on:click={toggleDropdown}
@@ -129,8 +137,9 @@
   {#if isOpen}
     <div
       class="dropdown-menu"
-      class:align-right={align === 'right'}
-      transition:scale={{ duration: 150, start: 0.95 }}
+      bind:this={menuEl}
+      use:anchoredPanel={{ anchor: buttonEl, width: 'content', edge: align, gap: 8 }}
+      transition:fade={{ duration: 120 }}
     >
       {#each sortOptions as option}
         <button
@@ -226,23 +235,16 @@
     flex-shrink: 0;
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .dropdown-menu {
-    position: absolute;
-    top: calc(100% + 0.5rem);
-    left: 0;
+    overflow-y: auto;
     min-width: 200px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
     padding: 0.5rem;
-    z-index: 50;
     backdrop-filter: blur(12px);
-  }
-
-  .dropdown-menu.align-right {
-    left: auto;
-    right: 0;
   }
 
   :global([data-theme='light']) .dropdown-menu,

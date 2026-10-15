@@ -31,12 +31,15 @@ vi.mock('$stores/locale', () => ({
 import UploadStepCollections from './UploadStepCollections.svelte';
 import UploadStepTags from './UploadStepTags.svelte';
 
-const boxes = (c: HTMLElement) =>
-  Array.from(c.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+// The options panel is portaled to <body> (anchoredPanel), so it is not inside `c`.
+const boxes = (_c: HTMLElement) =>
+  Array.from(
+    document.querySelectorAll('.options-list input[type="checkbox"]')
+  ) as HTMLInputElement[];
 
 /** The dropdown closes on any outside click (a chip's x included), so reopen it to look. */
 async function openPicker(c: HTMLElement) {
-  if (c.querySelector('.options-list')) return;
+  if (document.querySelector('.options-list')) return;
   await fireEvent.click(c.querySelector('.multiselect-toggle') as HTMLElement);
 }
 

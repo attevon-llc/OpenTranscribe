@@ -78,7 +78,6 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # The WebSocket handshake path itself — matched via `new WebSocket(...)`,
     # whose URL this scanner does not parse the same way as an HTTP call.
     "/api/ws": "Real caller: frontend/src/stores/websocket.ts (WebSocket, not axios/fetch)",
-    "/api/admin/asr-providers": "#1246 WP7 lands the settings panel that calls it; remove this entry there",
     # /token is FastAPI's OAuth2PasswordBearer-conventional path (what Swagger's
     # "Authorize" button and any OAuth2-tooling client posts to); /login is the
     # same handler registered a second time "for frontend compatibility"

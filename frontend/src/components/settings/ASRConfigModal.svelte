@@ -29,6 +29,10 @@
   export let deploymentMode: 'full' | 'lite' = 'full';
   /** The user has no saved config yet, so a created one would be auto-activated (if runnable). */
   export let firstConfig = false;
+  /** Create mode only: open with this provider chosen (the policy panel's "Add shared credentials"). */
+  export let presetProvider: ASRProvider | '' = '';
+  /** Create mode only: open with "share with all users" already on. */
+  export let presetShared = false;
 
   const dispatch = createEventDispatcher();
 
@@ -67,6 +71,24 @@
   } else {
     lastEditingConfigId = null;
     testResult = null;
+  }
+
+  let presetApplied = false;
+  $: if (!show) {
+    presetApplied = false;
+  } else if (!editingConfig && !presetApplied && (presetProvider || presetShared)) {
+    presetApplied = true;
+    applyPreset();
+  }
+
+  function applyPreset() {
+    resetForm();
+    formData.is_shared = presetShared;
+    if (presetProvider) {
+      formData.provider = presetProvider;
+      onProviderChange();
+    }
+    originalFormData = { ...formData };
   }
 
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);

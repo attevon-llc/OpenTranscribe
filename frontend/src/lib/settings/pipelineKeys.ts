@@ -24,6 +24,17 @@ export const PIPELINE_ISSUE_KEYS = {
   diarizer_double_billing: 'settings.pipeline.issue.diarizer_double_billing',
   diarizer_same_as_transcription: 'settings.pipeline.issue.diarizer_same_as_transcription',
   source_locked: 'settings.pipeline.issue.source_locked',
+  asr_provider_not_allowed: 'settings.pipeline.issue.asr_provider_not_allowed',
+  diarizer_provider_not_allowed: 'settings.pipeline.issue.diarizer_provider_not_allowed',
+} as const;
+
+/**
+ * Refusals of a config save that are not pipeline issues (cloud provider policy, #1246): the
+ * 409 `detail.code` mapped to its own sentence. `asr_provider_not_allowed` is also a pipeline
+ * issue code and is looked up there.
+ */
+export const POLICY_REFUSAL_KEYS = {
+  own_asr_keys_disabled: 'settings.asrProvider.error.own_asr_keys_disabled',
 } as const;
 
 /** Step engine ids that have a sentence of their own (the rest print the provider name). */

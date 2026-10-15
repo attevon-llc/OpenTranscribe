@@ -8,9 +8,11 @@
     ASRSettingsApi,
     type UserASRSettingsResponse,
     type ASRProviderInfo,
+    type ASRProvider,
   } from '../../lib/api/asrSettings';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import ASRConfigModal from './ASRConfigModal.svelte';
+  import CloudProviderPolicy from './asr/CloudProviderPolicy.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import { modelCapability } from '$lib/settings/asrCapabilities';
   import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
@@ -95,6 +97,15 @@
 
   let showConfigModal = false;
   let editingConfiguration: UserASRSettingsResponse | null = null;
+  // "Add shared credentials" from the provider policy panel opens the editor on that provider, shared.
+  let presetProvider: ASRProvider | '' = '';
+  let presetShared = false;
+  let policyPanel: CloudProviderPolicy | undefined;
+
+  // A plain user only gets the providers the administrator enabled (administrators are exempt).
+  $: enabledIds = new Set(providers.map((p) => p.id));
+  const notEnabled = (providerId: string) => !isAdmin && providers.length > 0 && !enabledIds.has(providerId);
+  $: noCloudEnabled = !isAdmin && providers.length > 0 && providers.every((p) => p.provider === 'local');
 
   let showDeleteModal = false;
   let configToDelete: UserASRSettingsResponse | null = null;
@@ -197,11 +208,22 @@
 
   function openCreateModal() {
     editingConfiguration = null;
+    presetProvider = '';
+    presetShared = false;
+    showConfigModal = true;
+  }
+
+  function openSharedModal(providerId: string) {
+    editingConfiguration = null;
+    presetProvider = providerId as ASRProvider;
+    presetShared = true;
     showConfigModal = true;
   }
 
   function openEditModal(config: UserASRSettingsResponse) {
     editingConfiguration = config;
+    presetProvider = '';
+    presetShared = false;
     showConfigModal = true;
   }
 
@@ -253,6 +275,7 @@
   async function handleConfigSaved(event: CustomEvent<UserASRSettingsResponse>) {
     // Re-fetch canonical state from backend to pick up auto-activation, etc.
     await loadData();
+    void policyPanel?.reload();
     if (onSettingsChange) onSettingsChange();
   }
 
@@ -535,6 +558,10 @@
       {/if}
     </div>
 
+    {#if noCloudEnabled}
+      <p class="lite-note" data-testid="asr-policy-none-enabled">{$t('settings.asrPolicy.noneEnabled')}</p>
+    {/if}
+
     {#if configurations.length > 0}
       <div class="config-list">
         {#each configurations as config (config.uuid)}
@@ -544,6 +571,9 @@
                 <span class="badge provider-badge">{ASRSettingsApi.getProviderDisplayName(config.provider)}</span>
                 {#if isProviderExperimental(config.provider)}
                   <span class="badge experimental-badge">{$t('settings.asrProvider.statusExperimental')}</span>
+                {/if}
+                {#if notEnabled(config.provider)}
+                  <span class="badge experimental-badge" data-testid="asr-not-enabled-badge">{$t('settings.asrPolicy.notEnabled')}</span>
                 {/if}
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
@@ -572,7 +602,7 @@
                 <button
                   class="btn-activate"
                   on:click={() => activateConfiguration(config.uuid)}
-                  disabled={saving}
+                  disabled={saving || notEnabled(config.provider)}
                   title={$t('settings.asrProvider.setActive')}
                 >
                   {$t('settings.asrProvider.setActive')}
@@ -648,6 +678,9 @@
             <div class="config-info">
               <div class="config-badges">
                 <span class="badge provider-badge">{ASRSettingsApi.getProviderDisplayName(config.provider)}</span>
+                {#if notEnabled(config.provider)}
+                  <span class="badge experimental-badge" data-testid="asr-not-enabled-badge">{$t('settings.asrPolicy.notEnabled')}</span>
+                {/if}
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
@@ -664,7 +697,7 @@
             </div>
             <div class="config-actions">
               {#if config.uuid !== activeConfigurationId}
-                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving}>
+                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving || notEnabled(config.provider)}>
                   {$t('settings.asrProvider.setActive')}
                 </button>
               {/if}
@@ -705,6 +738,10 @@
       </div>
     {/if}
   {/if}
+
+  {#if isAdmin}
+    <CloudProviderPolicy bind:this={policyPanel} locked={!isSuperAdmin} on:addshared={(e) => openSharedModal(e.detail.providerId)} />
+  {/if}
 </div>
 
 <ASRConfigModal
@@ -714,6 +751,8 @@
   {diarizationSource}
   deploymentMode={isLite ? 'lite' : 'full'}
   firstConfig={configurations.length === 0 && sharedConfigurations.length === 0}
+  {presetProvider}
+  {presetShared}
   on:saved={handleConfigSaved}
   on:close={() => { showConfigModal = false; editingConfiguration = null; }}
 />

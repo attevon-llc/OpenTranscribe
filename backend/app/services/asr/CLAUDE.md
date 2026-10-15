@@ -44,7 +44,16 @@ deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
   `provider_name == "local"` can be the routing signal.
 - `model_discovery.py` — `resolve_loadable_model_name()` remaps `nyrahealth/CrisperWhisper` (PyTorch
   `model.safetensors`) → `nyrahealth/faster_CrisperWhisper` (CT2); CTranslate2 cannot load the former.
-  `discover_local_models()` only surfaces repos present in its short-name map.
+  `discover_local_models()` only surfaces repos present in its short-name map **and complete**
+  (`services/local_models/cache.is_complete`: `refs/main` -> snapshot with `config.json` and
+  `model.bin`, no `*.incomplete` blob). The short-name map is not an allow-list.
+- `core/local_whisper_catalog.py` (#1246) is the ONE list of local Whisper models: 13 ids with
+  repo, measured size, VRAM hint, language/translation flags. `local.models` in the provider
+  catalog, `schemas/media.VALID_LOCAL_WHISPER_MODELS`, `POST /asr-settings/local-model/set` and
+  `scripts/download-models.py` all read it. `/local-model/set` accepts only a catalog id (or an
+  alias such as `crisperwhisper`) whose repo is complete in the hub cache: 400
+  `unknown_local_model` / 409 `local_model_not_downloaded`. A model already configured outside
+  the catalog keeps loading (resolution is unchanged); it just cannot be newly selected.
 
 ## Adding a provider
 

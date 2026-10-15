@@ -12,29 +12,13 @@ from pydantic import field_validator
 from pydantic import model_validator
 
 from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
+from app.core.local_whisper_catalog import LOCAL_WHISPER_MODEL_IDS
 from app.schemas.base import UUIDBaseSchema
 from app.schemas.processing_provenance import ProcessingStepOut
 from app.schemas.user import UserBrief
 
-VALID_LOCAL_WHISPER_MODELS = frozenset(
-    {
-        "tiny",
-        "tiny.en",
-        "base",
-        "base.en",
-        "small",
-        "small.en",
-        "medium",
-        "medium.en",
-        "large-v1",
-        "large-v2",
-        "large-v3",
-        "large-v3-turbo",
-        # CrisperWhisper: only the CTranslate2 build loads in faster-whisper.
-        # The PyTorch checkpoint (nyrahealth/CrisperWhisper) is deliberately omitted.
-        "nyrahealth/faster_CrisperWhisper",
-    }
-)
+# The catalog is the one list of local Whisper models (#1246).
+VALID_LOCAL_WHISPER_MODELS = LOCAL_WHISPER_MODEL_IDS
 
 
 class TaskStatus(StrEnum):

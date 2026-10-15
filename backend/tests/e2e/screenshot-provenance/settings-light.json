@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/settings-light.png",
-  "captured_at": "2026-10-14T17:21:18Z",
-  "git_sha": "c87dac7a6ec72afe2bdc2e99108c4eb0a76a4798",
+  "captured_at": "2026-10-15T03:11:20Z",
+  "git_sha": "13c708a2bb9dc152216d4dce33cda727d6ed9224",
   "git_branch": "feat/v0.6.0-frontend-ux",
   "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "v0.6.0 round-3 UI (captions, form controls, settings, pipeline)",
+  "reason": "v0.6.0 round 4 UI: tabbed File status, info icons, dropdown placement, Recovery tab",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -16,6 +16,6 @@
   },
   "change_from_previous": {
     "status": "changed (within tolerance)",
-    "differing_pixels": "0.0009%"
+    "differing_pixels": "0.0230%"
   }
 }

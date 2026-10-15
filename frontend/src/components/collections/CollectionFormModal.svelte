@@ -17,7 +17,6 @@
   export let idPrefix: string;
   export let titleId: string;
   export let title: string;
-  export let intro: string;
   export let namePlaceholder: string;
   export let submitLabel: string;
   export let busyLabel: string;
@@ -37,8 +36,6 @@
 
 <BaseModal isOpen={true} {title} {titleId} size="md" onClose={() => dispatch('close')}>
   <form id="{idPrefix}-form" on:submit|preventDefault={() => dispatch('submit')} class="config-form">
-    <p class="modal-intro">{intro}</p>
-
     <div class="form-group">
       <label for={`${idPrefix}-name`}>{$t('collectionsPanel.name')}</label>
       <input
@@ -112,18 +109,6 @@
 <style>
   .config-form {
     margin: 0;
-  }
-
-  .modal-intro {
-    margin: 0 0 1.25rem 0;
-    padding: 0.75rem 0.875rem;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    background: rgba(var(--primary-color-rgb), 0.06);
-    border: 1px solid rgba(var(--primary-color-rgb), 0.15);
-    border-inline-start: 3px solid var(--primary-color);
-    border-radius: 6px;
   }
 
   .form-group {

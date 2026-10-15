@@ -157,7 +157,6 @@
     idPrefix="collection"
     titleId="create-collection-title"
     title={$t('collectionsPanel.createNewCollection')}
-    intro={$t('collectionsPanel.createIntro')}
     namePlaceholder={$t('collectionsPanel.namePlaceholder')}
     submitLabel={$t('collectionsPanel.createCollection')}
     busyLabel={$t('collectionsPanel.creating')}

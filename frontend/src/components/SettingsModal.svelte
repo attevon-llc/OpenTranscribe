@@ -2,6 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import i18next from 'i18next';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import InfoTip from '$components/settings/transcription/InfoTip.svelte';
   import { page } from '$app/stores';
   import { afterNavigate } from '$app/navigation';
   import { reopenSettingsAfterBack } from '$lib/settings/returnToSettings';
@@ -1206,7 +1207,18 @@
     <!-- Organization Context Section -->
     {#if activeSection === 'organization-context'}
       <div class="content-section">
-        <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
+        <div class="section-title-row">
+          <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
+          <InfoTip label={$t('settings.orgContext.howItWorks')}>
+            <strong>{$t('settings.orgContext.howItWorks')}</strong>
+            <ul>
+              <li>{$t('settings.orgContext.howItWorks1')}</li>
+              <li>{$t('settings.orgContext.howItWorks2')}</li>
+              <li>{$t('settings.orgContext.howItWorks3')}</li>
+              <li>{$t('settings.orgContext.howItWorks4')}</li>
+            </ul>
+          </InfoTip>
+        </div>
         <p class="section-description">{$t('settings.orgContext.description')}</p>
         <LazySection load={sectionLoaders.organizationContext} let:Component>
           <Component />
@@ -1676,6 +1688,17 @@
     font-weight: 600;
     margin: 0 0 0.25rem 0;
     color: var(--text-color);
+  }
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.25rem 0;
+  }
+
+  .section-title-row .section-title {
+    margin: 0;
   }
 
   .section-description {

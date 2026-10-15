@@ -510,7 +510,6 @@
       idPrefix="collection"
       titleId="create-collection-title"
       title={$t('collectionsPanel.createNewCollection')}
-      intro={$t('collectionsPanel.createIntro')}
       namePlaceholder={$t('collectionsPanel.namePlaceholder')}
       submitLabel={$t('collectionsPanel.createCollection')}
       busyLabel={$t('collectionsPanel.creating')}
@@ -531,7 +530,6 @@
       idPrefix="edit-collection"
       titleId="edit-collection-title"
       title={$t('collectionsPanel.editCollectionTitle')}
-      intro={$t('collectionsPanel.editIntro')}
       namePlaceholder={$t('collectionsPanel.collectionName')}
       submitLabel={$t('collectionsPanel.updateCollection')}
       busyLabel={$t('collectionsPanel.updating')}

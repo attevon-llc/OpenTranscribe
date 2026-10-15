@@ -34,43 +34,6 @@
   color: var(--text-color);
 }
 
-.tx-form .info-icon {
-  position: relative;
-  color: var(--text-muted);
-  cursor: help;
-  display: flex;
-  align-items: center;
-}
-
-.tx-form .info-icon:hover {
-  color: var(--text-color);
-}
-
-.tx-form .tooltip {
-  visibility: hidden;
-  opacity: 0;
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 8px);
-  transform: translateX(-50%);
-  background-color: var(--surface-color, #333);
-  color: var(--text-color);
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  line-height: 1.4;
-  width: 280px;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  border: 1px solid var(--border-color);
-  transition: opacity 0.1s ease;
-}
-
-.tx-form .info-icon:hover .tooltip {
-  visibility: visible;
-  opacity: 1;
-}
-
 .tx-form .section-desc {
   font-size: 0.8rem;
   color: var(--text-muted);

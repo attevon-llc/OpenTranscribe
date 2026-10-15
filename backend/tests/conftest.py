@@ -362,6 +362,12 @@ pytest_plugins = [
     # `mock_hf_hub`: a loopback stand-in for the Hugging Face hub (model-info API + file
     # endpoint with ETag/Range) so the real downloader runs with no network (#1246).
     "fixtures.mock_hf_hub",
+    # `local_model_redis`: one throwaway redis:7-alpine per xdist worker on a free loopback
+    # port, for the model-download lock/state/supervisor/endpoint suites (#1246). Opt-in.
+    "fixtures.throwaway_redis",
+    # `local_model_redis`: one throwaway redis:7-alpine per xdist worker on a free loopback
+    # port, for the model-download lock/state/supervisor/endpoint suites (#1246). Opt-in.
+    "fixtures.throwaway_redis",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

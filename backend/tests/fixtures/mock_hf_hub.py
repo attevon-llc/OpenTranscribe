@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
 import threading
 from dataclasses import dataclass
 from dataclasses import field
@@ -244,3 +245,42 @@ def mock_hf_hub():
         yield hub
     finally:
         hub.stop()
+
+
+@pytest.fixture
+def loopback_only(monkeypatch, hf_cache):
+    """Refuse any socket or DNS lookup that is not loopback; turn off Xet and use small chunks.
+
+    Every catalog id is a real repository id, so a call that forgets to pass the mock endpoint
+    would otherwise talk to huggingface.co. Name resolution is blocked too, so such a call fails
+    before it sends a byte. (Patching ``constants.ENDPOINT`` instead does not work: the library
+    builds file URLs from a template computed at import and only substitutes ``endpoint=`` when
+    the URL starts with the current ``ENDPOINT``, so a patched value silently sends the request
+    to the real hub.) Xet is disabled through the environment as well, so a child process the
+    test spawns speaks plain HTTP to the mock, and ambient token variables are removed.
+    """
+    from huggingface_hub import constants
+
+    loopback = {"127.0.0.1", "::1", "localhost"}
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if host not in loopback:
+            raise OSError(f"test blocked a lookup of {host!r}")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def guarded_connect(self, address):
+        if isinstance(address, tuple) and address[0] not in loopback:
+            raise OSError(f"test blocked a connection to {address[0]!r}")
+        return real_connect(self, address)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(constants, "HF_HUB_DISABLE_XET", True)
+    monkeypatch.setattr(constants, "DOWNLOAD_CHUNK_SIZE", 64 * 1024)
+    monkeypatch.setenv("HF_HUB_DISABLE_XET", "1")
+    # An ambient token (another test in this worker published one) would make a call that
+    # passed none send an Authorization header, and the token assertions would flap.
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)

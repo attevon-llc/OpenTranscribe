@@ -78,6 +78,11 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # The WebSocket handshake path itself — matched via `new WebSocket(...)`,
     # whose URL this scanner does not parse the same way as an HTTP call.
     "/api/ws": "Real caller: frontend/src/stores/websocket.ts (WebSocket, not axios/fetch)",
+    # #1246 WP3: the backend ships first; WP5 adds frontend/src/lib/api/localModels.ts with the
+    # literal paths and deletes these three entries.
+    "/api/admin/local-models": "#1246 WP5: the Settings model library (lib/api/localModels.ts) is the caller",
+    "/api/admin/local-models/download": "#1246 WP5: the Settings model library (lib/api/localModels.ts) is the caller",
+    "/api/admin/local-models/download/cancel": "#1246 WP5: the Settings model library (lib/api/localModels.ts) is the caller",
     # /token is FastAPI's OAuth2PasswordBearer-conventional path (what Swagger's
     # "Authorize" button and any OAuth2-tooling client posts to); /login is the
     # same handler registered a second time "for frontend compatibility"

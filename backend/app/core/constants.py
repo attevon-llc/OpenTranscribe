@@ -534,6 +534,9 @@ NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"
 NOTIFICATION_TYPE_REINDEX_COMPLETE = "reindex_complete"
 NOTIFICATION_TYPE_REINDEX_STOPPED = "reindex_stopped"
 
+# WebSocket notification type for the local Whisper model download (#1246)
+NOTIFICATION_TYPE_LOCAL_MODEL_DOWNLOAD = "local_model_download"
+
 # WebSocket notification types for embedding migration
 NOTIFICATION_TYPE_MIGRATION_PROGRESS = "migration_progress"
 NOTIFICATION_TYPE_MIGRATION_COMPLETE = "migration_complete"

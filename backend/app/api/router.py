@@ -28,6 +28,7 @@ from .endpoints import first_run_wizard
 from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
+from .endpoints import local_models
 from .endpoints import media_collections
 from .endpoints import media_mirror_settings
 from .endpoints import org_admin
@@ -257,6 +258,12 @@ include_router_with_consistency(
 include_router_with_consistency(
     admin_hf_token.router,
     prefix="/admin/hf-token",
+    tags=["admin"],
+    capability="engine.settings",
+)
+include_router_with_consistency(
+    local_models.router,
+    prefix="/admin/local-models",
     tags=["admin"],
     capability="engine.settings",
 )

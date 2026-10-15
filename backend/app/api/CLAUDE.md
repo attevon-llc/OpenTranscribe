@@ -141,6 +141,13 @@ set: super_admin (`get_current_active_superuser`) under the `engine.settings` ca
 (`{is_set, source}` is all any route returns), fixed-sentence test results, audit event
 `admin.settings.change` with the action and never the value.
 
+`/admin/local-models` (#1246; `GET ""`, `POST /download`, `POST /download/cancel`) is the local Whisper
+model library: super_admin only (`engine.settings`, in `SUPER_ADMIN_PREFIXES`), 409
+`local_asr_unavailable` on lite, catalog ids only (the repo and every path derive from the catalog).
+One download at a time deployment-wide (Redis lock taken here before dispatch; an unreachable Redis is a
+503, fail closed). Errors are `{"code", "message"}` with the fixed sentences in
+`services/local_models/downloader.ERROR_MESSAGES`. Activation stays `/asr-settings/local-model/{set,restart}`.
+
 ### Compliance
 
 Legally significant, audit-logged in the service layer, and deliberately without a

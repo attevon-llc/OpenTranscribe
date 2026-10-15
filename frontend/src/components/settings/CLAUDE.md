@@ -310,3 +310,11 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   element `id` (e2e/unit selectors use it), put a translated `hint` and any `InfoTip` through the
   `label-extra` slot, and pass `defaultValue` to show a "System default: X" line next to the
   control. `ui/rangeSliderStructure.test.ts` fails the build on a raw range input.
+- **Help text: one description line, plus an `InfoTip` for the rest. No tinted "How it works" cards.**
+  `transcription/InfoTip.svelte` is the one tip component (self-styled; it no longer depends on `.tx-form`):
+  a real `<button>` (pass `label`, default `common.moreInformation`), opens on hover, focus and click,
+  closes on Escape (captured, so the surrounding dialog stays open), outside click and blur, keeps the
+  panel hoverable, clamps/flips inside the nearest clipping ancestor (RTL included) and takes rich slot
+  content. Beside a modal-level title, wrap `<h3 class="section-title">` and the tip in `.section-title-row`
+  (Organization Context does). Do not re-add a bottom/top `.info-box` card to a panel; the remaining ones
+  (OIDC, SAML, SCIM token, Group mappings, Audio extraction) are candidates to convert the same way.

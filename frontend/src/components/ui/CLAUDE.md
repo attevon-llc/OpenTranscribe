@@ -32,8 +32,8 @@ primitive in the same spirit as this folder.
   optional `noDirection` entry for fixed-order fields like "relevance"), `ariaLabelKey`, and an
   `align: 'left' | 'right'` prop for menu placement. The direction arrow points **down =
   descending, up = ascending** (a `noDirection` option is always down); the glyph is drawn
-  pointing that way, not rotated by CSS, and the same semantics apply on `/search`. Hand-rolls its own menu with
-  `$lib/actions/clickOutside` (there is no generic `Dropdown.svelte` primitive — see Gotchas).
+  pointing that way, not rotated by CSS, and the same semantics apply on `/search`. Hand-rolls its own menu (placed by
+  `anchoredPanel`, see below; there is no generic `Dropdown.svelte` primitive — see Gotchas).
 - `MenuIcon.svelte` — the icon in front of a menu item or button label (glyph data in
   `$lib/ui/menuIcons.ts`: Feather/Lucide shapes, 14px default, 2px round `currentColor` strokes,
   `aria-hidden`). **Every `.dropdown-item` carries an icon** (gallery Organize/Process set the
@@ -97,6 +97,42 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
   never hardcode hex. Buttons reuse the global classes in `src/styles/form-elements.css`.
 - Export shared types from a `<script context="module" lang="ts">` block (instance `<script>`
   cannot `export interface`).
+
+## Floating panels flip and clamp: use the `anchoredPanel` action
+
+Every dropdown, menu, popover and suggestion list is placed by `$lib/actions/anchoredPanel`
+(geometry: `$lib/popoverPosition.ts`). A hand-rolled `position: absolute; top: 100%` panel opens
+downward whatever the room, leaves the viewport (the owner filter in the scrolling sidebar did) and is
+clipped by any `overflow: auto` ancestor.
+
+```svelte
+<button bind:this={triggerEl} on:click={toggle}>...</button>
+{#if open}
+  <div class="menu" bind:this={panelEl} use:anchoredPanel={{ anchor: triggerEl, width: 'content', edge: 'right' }}>...</div>
+{/if}
+```
+
+- The action **portals the panel to `<body>`** and draws it `position: fixed`. We chose the portal over
+  fixed-in-place because `BaseModal`'s entrance animation and the mobile filter drawer use `transform`,
+  which re-roots `position: fixed` to that ancestor; a body child has the viewport as containing block
+  everywhere (`DateRangePicker` and `SegmentSpeakerDropdown` already do this). It sits at
+  `--z-modal + 10`, so a panel opened inside a dialog is above it.
+- Below by default; **flips above** when it does not fit below and there is more room above; sets
+  `max-height` to the room on the chosen side (the panel must scroll itself: `overflow-y: auto`, or a flex
+  column whose list has `min-height: 0; overflow-y: auto`); clamps horizontally; honours RTL
+  (`document.documentElement.dir`). `data-side="above|below"` is exposed for styling.
+- Re-places on window resize, scroll of any ancestor, and panel size changes. Do not animate `transform` on
+  the panel (it is measured with `getBoundingClientRect`); fade it.
+- Options: `width` (`'anchor'` default, or `'content'`), `edge` (physical `'left' | 'right'`), `minWidth`,
+  `maxHeight` (a stylesheet cap the action must respect), `gap`, `margin`, `zIndex`, `portal: false`.
+- **Because the panel leaves its wrapper, a click-outside check must ignore it**
+  (`use:clickOutside={{ ignore: [panelEl ?? null] }}`, or `panelEl.contains(target)`), and tests find it with
+  `document.querySelector`, not `container`.
+- A native `<select>` is exempt (the browser flips it). The guard
+  `components/floatingPanel.convention.test.ts` fails on a `.svelte` file that styles a
+  dropdown/menu/popover/listbox/suggestion/panel `position: absolute|fixed` without the action; its
+  `ALLOWED` map holds the only exceptions, each with a written reason (viewport-pinned drawers, hover-only
+  tooltips, the third-party Plyr menus, `DateRangePicker`'s own bottom-sheet placement).
 
 ## Gotchas
 

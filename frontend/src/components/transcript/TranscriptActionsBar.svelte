@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
 
   export let file: MediaFileDetail | null = null;
   export let diarizationDisabled: boolean = false;
@@ -17,6 +18,8 @@
 
   // Export dropdown state (click-based for mobile touch support)
   let showExportDropdown = false;
+  let exportButton: HTMLButtonElement;
+  let downloadButton: HTMLButtonElement;
 
   function toggleExportDropdown(event: MouseEvent) {
     event.stopPropagation();
@@ -60,6 +63,7 @@
   {#if !$supportSessionGate.active}
   <div class="export-dropdown" class:open={showExportDropdown}>
     <button
+      bind:this={exportButton}
       class="export-transcript-button"
       title={$t('transcript.exportTitle')}
       on:click={toggleExportDropdown}
@@ -73,7 +77,11 @@
     {#if showExportDropdown}
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="export-dropdown-content" on:click|stopPropagation>
+      <div
+        class="export-dropdown-content"
+        use:anchoredPanel={{ anchor: exportButton, width: 'content' }}
+        on:click|stopPropagation
+      >
         <button
           on:click={() => { exportTranscript('txt'); closeExportDropdown(); }}
           title={$t('transcript.exportTextTitle')}
@@ -135,6 +143,7 @@
   {#if file && file.download_url && !$supportSessionGate.active}
     <div class="export-dropdown download-dropdown" class:open={showDownloadDropdown}>
       <button
+        bind:this={downloadButton}
         class="action-button download-button"
         class:downloading={isDownloading}
         class:processing={currentDownload?.status === 'processing'}
@@ -162,7 +171,11 @@
       {#if showDownloadDropdown && !isDownloading}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div class="export-dropdown-content" on:click|stopPropagation>
+        <div
+          class="export-dropdown-content"
+          use:anchoredPanel={{ anchor: downloadButton, width: 'content', edge: 'right' }}
+          on:click|stopPropagation
+        >
           {#if canEmbedSubtitles}
             <button on:click={() => selectDownload('video_subtitles')}>
               <MenuIcon name="video-subtitles" size={16} />
@@ -233,15 +246,13 @@
     border-color: var(--border-hover);
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .export-dropdown-content {
-    position: absolute;
-    top: 100%;
-    left: 0;
+    overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 100;
     min-width: 200px;
   }
 
@@ -272,11 +283,6 @@
     border-radius: 0 0 6px 6px;
   }
 
-  /* The Download dropdown is the rightmost action — align it to the right edge. */
-  .download-dropdown .export-dropdown-content {
-    left: auto;
-    right: 0;
-  }
 
   .download-dropdown-label {
     padding: 8px 16px 4px;

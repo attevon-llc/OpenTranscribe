@@ -10,6 +10,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
@@ -38,6 +39,9 @@
 
   /** @type {HTMLDivElement | null} */
   let dropdownRef: HTMLDivElement | null = null;
+  let buttonRef: HTMLButtonElement;
+  /** Portaled to <body> by anchoredPanel, so outside `dropdownRef`. */
+  let menuRef: HTMLDivElement | undefined;
 
   /**
    * Toggle the user dropdown menu
@@ -95,7 +99,12 @@
    * @param {MouseEvent} event - The mouse event
    */
   function handleClickOutside(event: MouseEvent) {
-    if (dropdownRef && event.target && !dropdownRef.contains(event.target as Node)) {
+    if (
+      dropdownRef &&
+      event.target &&
+      !dropdownRef.contains(event.target as Node) &&
+      !menuRef?.contains(event.target as Node)
+    ) {
       showDropdown = false;
     }
   }
@@ -112,6 +121,7 @@
 <!-- User profile dropdown -->
 <div class="user-dropdown" bind:this={dropdownRef}>
   <button
+    bind:this={buttonRef}
     class="user-button"
     on:click={toggleDropdown}
     on:pointerenter={() => prefetchSettingsModal()}
@@ -144,7 +154,11 @@
   </button>
 
   {#if showDropdown}
-    <div class="dropdown-menu">
+    <div
+      class="dropdown-menu"
+      bind:this={menuRef}
+      use:anchoredPanel={{ anchor: buttonRef, width: 'content', edge: 'right', gap: 8 }}
+    >
       <div class="dropdown-header">
         <span>{$t('nav.signedInAs')}</span>
         <strong>{user ? user.email : $t('nav.user')}</strong>
@@ -272,18 +286,14 @@
     flex-shrink: 0;
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .dropdown-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
     width: 240px;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-    margin-top: 0.5rem;
-    z-index: 1000;
+    overflow-y: auto;
     padding: 0.5rem 0;
     min-width: 200px;
     display: flex;

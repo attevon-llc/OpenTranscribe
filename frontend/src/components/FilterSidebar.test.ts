@@ -516,7 +516,8 @@ describe('FilterSidebar — owner filter (issue #966)', () => {
     const section = ownerSection(container);
     await waitFor(() => expect(section.querySelector('.multiselect-toggle')).toBeTruthy());
     await fireEvent.click(section.querySelector('.multiselect-toggle') as HTMLElement);
-    await waitFor(() => expect(section.textContent).toContain('Alice'));
+    // The options panel is portaled to <body> (anchoredPanel), so it is not inside the section.
+    await waitFor(() => expect(document.body.textContent).toContain('Alice'));
   });
 
   it('selecting an owner includes their uuid in the dispatched filter event', async () => {
@@ -538,8 +539,8 @@ describe('FilterSidebar — owner filter (issue #966)', () => {
     await waitFor(() => expect(section.querySelector('.multiselect-toggle')).toBeTruthy());
     await fireEvent.click(section.querySelector('.multiselect-toggle') as HTMLElement);
 
-    await waitFor(() => expect(section.querySelectorAll('.option-item').length).toBe(2));
-    const options = Array.from(section.querySelectorAll('.option-item')) as HTMLElement[];
+    await waitFor(() => expect(document.querySelectorAll('.option-item').length).toBe(2));
+    const options = Array.from(document.querySelectorAll('.option-item')) as HTMLElement[];
     // A masked-email-only owner (no full_name) must still render as a legible
     // option — falls back to `masked_email`, never a raw address.
     expect(options.map((o) => o.textContent?.trim())).toEqual(
@@ -587,8 +588,10 @@ describe('FilterSidebar — owner filter (issue #966)', () => {
     const toggle = () => section.querySelector('.multiselect-toggle') as HTMLElement;
     await waitFor(() => expect(toggle()).toBeTruthy());
     await fireEvent.click(toggle());
-    await waitFor(() => expect(section.querySelectorAll('.option-item').length).toBe(1));
-    let checkbox = section.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await waitFor(() => expect(document.querySelectorAll('.option-item').length).toBe(1));
+    let checkbox = document.querySelector(
+      '.options-list input[type="checkbox"]'
+    ) as HTMLInputElement;
     await fireEvent.click(checkbox);
     await waitFor(() => expect(checkbox.checked).toBe(true));
 
@@ -602,7 +605,7 @@ describe('FilterSidebar — owner filter (issue #966)', () => {
     // above pins via `.tag-button.selected`.
     await fireEvent.click(toggle());
     await waitFor(() => {
-      checkbox = section.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      checkbox = document.querySelector('.options-list input[type="checkbox"]') as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
     });
   });

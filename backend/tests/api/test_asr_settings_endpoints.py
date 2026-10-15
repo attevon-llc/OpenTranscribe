@@ -153,10 +153,10 @@ def test_test_saved_config_decrypt_failure_500(client, user_token_headers):
 # ---------------------------------------------------------------------------
 
 
-def test_restart_admin_no_workers_envelope(client, super_admin_token_headers):
-    """When inspect finds no GPU workers, a best-effort broadcast is sent and the
-    envelope reports an empty worker list. Celery control is fully mocked so no
-    real shutdown reaches the live stack."""
+def test_restart_admin_no_workers_is_refused_without_a_broadcast(client, super_admin_token_headers):
+    """When inspect finds no Whisper worker the request is refused (409) and nothing is signalled:
+    a bare ``shutdown`` would reach every worker in the deployment. Celery control is fully
+    mocked so no real shutdown reaches the live stack."""
     fake_inspector = MagicMock()
     fake_inspector.ping.return_value = {}  # no workers
     fake_control = MagicMock()
@@ -165,20 +165,17 @@ def test_restart_admin_no_workers_envelope(client, super_admin_token_headers):
     with patch("app.core.celery.celery_app.control", fake_control):
         resp = client.post(f"{_BASE}/local-model/restart", headers=super_admin_token_headers)
 
-    assert resp.status_code == status.HTTP_200_OK
-    data = resp.json()
-    assert data["status"] == "restart_signaled"
-    assert data["workers"] == []
-    assert "model" in data
-    fake_control.broadcast.assert_called_once_with("shutdown")
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    assert resp.json()["detail"]["code"] == "gpu_worker_not_found"
+    fake_control.broadcast.assert_not_called()
 
 
 def test_restart_admin_with_workers_envelope(client, super_admin_token_headers):
-    """When GPU workers are present, shutdown is targeted at them only and the
+    """When Whisper workers are present, shutdown is targeted at them only and the
     envelope reports the discovered worker names + active task count."""
     fake_inspector = MagicMock()
-    fake_inspector.ping.return_value = {"celery@gpu-worker-1": {"ok": "pong"}}
-    fake_inspector.active.return_value = {"celery@gpu-worker-1": []}
+    fake_inspector.ping.return_value = {"gpu-transcription@w1": {"ok": "pong"}}
+    fake_inspector.active.return_value = {"gpu-transcription@w1": []}
     fake_control = MagicMock()
     fake_control.inspect.return_value = fake_inspector
 
@@ -188,6 +185,7 @@ def test_restart_admin_with_workers_envelope(client, super_admin_token_headers):
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert data["status"] == "restart_signaled"
-    assert data["workers"] == ["celery@gpu-worker-1"]
+    assert data["workers"] == ["gpu-transcription@w1"]
     assert data["active_tasks"] == 0
-    fake_control.broadcast.assert_called_once_with("shutdown", destination=["celery@gpu-worker-1"])
+    assert data["restart_requested_at"]
+    fake_control.broadcast.assert_called_once_with("shutdown", destination=["gpu-transcription@w1"])

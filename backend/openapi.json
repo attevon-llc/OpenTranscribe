@@ -26804,7 +26804,7 @@
     },
     "/api/asr-settings/local-model/restart": {
       "post": {
-        "description": "Gracefully restart the GPU Celery worker to apply a new model (admin only).\n\nSends a warm shutdown signal via Celery's control API.  The worker finishes\nany in-progress tasks before exiting.  Docker ``restart: always`` brings\nthe container back automatically, and the ``worker_ready`` signal handler\npreloads the new model from the database. Lite runs no GPU worker: 409\n``local_asr_unavailable`` (#1228) instead of a shutdown broadcast to every worker.",
+        "description": "Gracefully restart the Whisper worker(s) to apply a new model (super_admin only).\n\nSends a warm shutdown, by name, to the workers in ``WHISPER_WORKER_PREFIXES``.  Each\nfinishes the jobs it is running before exiting (the remote control does not arm the\ncooperative abort), Docker ``restart: always`` brings the container back, and the\n``worker_ready`` hook preloads the stored model and records it\n(``services/local_models/worker_report``).  Clients confirm the switch by waiting for the\nreturned ``workers`` to report the new model after ``restart_requested_at`` via\n``GET /local-model/active``.  Lite runs no GPU worker: 409 ``local_asr_unavailable``\n(#1228).  No worker answering is 409 ``gpu_worker_not_found`` and nothing is signalled;\nit used to broadcast ``shutdown`` to every worker in the deployment.",
         "operationId": "restart_gpu_worker_api_asr_settings_local_model_restart_post",
         "responses": {
           "200": {

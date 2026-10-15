@@ -146,7 +146,14 @@ model library: super_admin only (`engine.settings`, in `SUPER_ADMIN_PREFIXES`), 
 `local_asr_unavailable` on lite, catalog ids only (the repo and every path derive from the catalog).
 One download at a time deployment-wide (Redis lock taken here before dispatch; an unreachable Redis is a
 503, fail closed). Errors are `{"code", "message"}` with the fixed sentences in
-`services/local_models/downloader.ERROR_MESSAGES`. Activation stays `/asr-settings/local-model/{set,restart}`.
+`services/local_models/downloader.ERROR_MESSAGES`. Activation stays `/asr-settings/local-model/{set,restart}`:
+`/set` writes the DB only (running workers are pinned); `/restart` sends a warm shutdown **by name** to
+the workers in `core/constants.WHISPER_WORKER_PREFIXES` (never `gpu-diarize@`, never a broadcast to all;
+nobody answering is 409 `gpu_worker_not_found`) and returns `workers` + `restart_requested_at`;
+`GET /local-model/active` carries `loaded_models` (`{worker, model, ready_at}`, written by each worker's
+`preload_models` via `services/local_models/worker_report`). A switch is confirmed when every worker named in
+the restart response reports the new model with `ready_at` after `restart_requested_at`; never wait on a worker
+that is not in that list (a recreated container's old record lingers up to a week).
 
 ### Compliance
 

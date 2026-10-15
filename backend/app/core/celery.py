@@ -1134,6 +1134,15 @@ def preload_models(**kwargs):
                 # even if the admin changes the DB setting before restarting.
                 TranscriptionConfig.pin_model(config.model_name)
 
+                # Say which model this worker now serves, so the Settings page can confirm a
+                # model switch instead of guessing (#1246). One bounded Redis SET; never raises.
+                from app.services.local_models import worker_report
+
+                worker_report.report_loaded_model(
+                    getattr(kwargs.get("sender"), "hostname", None) or socket.gethostname(),
+                    config.model_name,
+                )
+
                 logger.info(
                     "GPU models preloaded and pinned "
                     f"(model={config.model_name}, "

@@ -282,6 +282,15 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   saved in Settings (a server-environment one is shown as such, not removable). View rules are in
   `$lib/settings/hfToken`; copy is `settings.engineSettings.hfToken.*` (found by settings search as part
   of the engine tab). Calls `/admin/hf-token` (`$lib/api/hfToken`).
+- **Cloud provider policy** (#1246) is `asr/CloudProviderPolicy.svelte` (plus `CloudProviderPolicyRow`), mounted by
+  `ASRSettings` under the saved-provider list on Transcription > Provider: an allow toggle per cloud provider, the
+  "users may add their own keys" switch and one Save (`PUT /admin/asr-providers`; all allowed is `null`). A super
+  administrator edits it; an admin gets it `locked` and **no request is made**; a plain user never gets it, but sees saved
+  configs whose provider is no longer enabled marked "not enabled by your administrator" (activate disabled), and a note
+  when no cloud provider is enabled. Credentials are write-only: the panel shows only "key set" chips, and "Add shared
+  credentials" opens `ASRConfigModal` with `presetProvider` and `presetShared` (create mode only) instead of a second key
+  form. A 409 `own_asr_keys_disabled` or `asr_provider_not_allowed` renders through `pipelineFailureKey`
+  (`POLICY_REFUSAL_KEYS` in `pipelineKeys.ts`), never the server sentence.
 - **Auto-Labeling** (`auto-labeling`) lives in the AI & Chat group; the panel and id are unchanged.
 
 ## Transcription forms

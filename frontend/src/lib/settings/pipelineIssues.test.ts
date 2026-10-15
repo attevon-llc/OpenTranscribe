@@ -16,16 +16,18 @@ const hasKey = (key: string) => EN_KEYS.has(key);
 const conflict = (detail: unknown) => ({ response: { status: 409, data: { detail } } });
 
 describe('PIPELINE_ISSUE_CODES', () => {
-  it('lists the thirteen codes the resolver can emit, each with a sentence in en.json', () => {
+  it('lists the fifteen codes the resolver can emit, each with a sentence in en.json', () => {
     // Mirrors ISSUE_MESSAGES in backend/app/services/pipeline_plan.py.
     expect([...PIPELINE_ISSUE_CODES].sort()).toEqual(
       [
         'asr_no_timing_for_speakers',
+        'asr_provider_not_allowed',
         'automatic_needs_speaker_provider',
         'automatic_uses_server',
         'diarizer_config_missing',
         'diarizer_config_no_speakers',
         'diarizer_double_billing',
+        'diarizer_provider_not_allowed',
         'diarizer_same_as_transcription',
         'local_asr_unavailable',
         'local_diarization_unavailable',
@@ -66,6 +68,15 @@ describe('fixTargets', () => {
     ]);
     expect(fixTargets({ code: 'automatic_needs_speaker_provider', step: 'diarization' })).toEqual([
       'speaker-identification',
+      'asr-provider',
+    ]);
+  });
+
+  it('sends a provider the administrator has not enabled to the provider tab', () => {
+    expect(fixTargets({ code: 'asr_provider_not_allowed', step: 'transcription' })).toEqual([
+      'asr-provider',
+    ]);
+    expect(fixTargets({ code: 'diarizer_provider_not_allowed', step: 'diarization' })).toEqual([
       'asr-provider',
     ]);
   });
@@ -124,6 +135,21 @@ describe('speakerSaveErrorKey', () => {
     ).toBeNull();
     expect(speakerSaveErrorKey(conflict('pyannote.ai needs a key'))).toBeNull();
     expect(speakerSaveErrorKey({ response: { status: 409 } })).toBeNull();
+  });
+});
+
+describe('policy refusals', () => {
+  it('renders a refused own key as a fixed sentence, never the server text', () => {
+    const err = conflict({ code: 'own_asr_keys_disabled', message: 'raw server sentence' });
+    const key = pipelineFailureKey(err, 'g.key');
+    expect(key).toBe('settings.asrProvider.error.own_asr_keys_disabled');
+    expect(hasKey(key as string)).toBe(true);
+  });
+
+  it('renders a refused provider with the pipeline sentence', () => {
+    expect(
+      pipelineFailureKey(conflict({ code: 'asr_provider_not_allowed', message: 'm' }), 'g.key')
+    ).toBe('settings.pipeline.issue.asr_provider_not_allowed');
   });
 });
 

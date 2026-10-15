@@ -86,6 +86,8 @@ export interface ASRProviderInfo {
   /** Quality note about provider's built-in diarization */
   diarization_quality: string;
   models: ASRModelInfo[];
+  /** Admins only: whether plain users may choose this provider (cloud provider policy, #1246). */
+  allowed_for_users?: boolean;
 }
 
 export interface UserASRSettingsCreate {
@@ -240,6 +242,7 @@ interface RawASRModel {
  * Field names differ from the frontend `ASRProviderInfo` interface (see getProviders()).
  */
 interface RawASRProvider {
+  allowed_for_users?: boolean;
   id?: string;
   provider?: string;
   display_name?: string;
@@ -316,6 +319,7 @@ export class ASRSettingsApi {
         status: p.status ?? 'experimental',
         status_note: p.status_note ?? '',
         diarization_quality: p.diarization_quality ?? '',
+        allowed_for_users: p.allowed_for_users,
         // normalise each model entry
         models: (p.models ?? []).map((m: RawASRModel) => ({
           id: m.id,
@@ -377,14 +381,6 @@ export class ASRSettingsApi {
    */
   static async getConfig(uuid: string): Promise<UserASRSettingsResponse> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/config/${uuid}`);
-    return response.data;
-  }
-
-  /**
-   * Get the decrypted API key for a specific configuration
-   */
-  static async getApiKey(uuid: string): Promise<{ api_key: string | null }> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/config/${uuid}/api-key`);
     return response.data;
   }
 

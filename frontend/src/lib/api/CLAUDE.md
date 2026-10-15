@@ -25,6 +25,8 @@ call these functions, not `axios` directly.
   pre-fill it; view rules live in `$lib/settings/pyannoteCredential.ts`. `pipeline.ts` covers
   `GET /user-settings/pipeline` (#1227), the server-resolved plan behind Settings > Processing pipeline;
   `getPipelineView` rejects a reply without `steps`/`issues` so no consumer has to.
+  `asrProviderPolicy.ts` covers `/admin/asr-providers` (#1246, super administrator only): which cloud ASR providers
+  plain users may use; stored keys are never readable (`ASRSettingsApi.getApiKey` was removed).
   `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
   (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 

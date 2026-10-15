@@ -78,7 +78,6 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # The WebSocket handshake path itself — matched via `new WebSocket(...)`,
     # whose URL this scanner does not parse the same way as an HTTP call.
     "/api/ws": "Real caller: frontend/src/stores/websocket.ts (WebSocket, not axios/fetch)",
-    "/api/admin/asr-providers": "#1246 WP7 lands the settings panel that calls it; remove this entry there",
     # #1246 WP3: the backend ships first; WP5 adds frontend/src/lib/api/localModels.ts with the
     # literal paths and deletes these three entries.
     "/api/admin/local-models": "#1246 WP5: the Settings model library (lib/api/localModels.ts) is the caller",

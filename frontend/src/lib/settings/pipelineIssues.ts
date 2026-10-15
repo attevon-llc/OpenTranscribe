@@ -9,7 +9,7 @@
  */
 import type { PipelineIssue } from '$lib/api/pipeline';
 import type { SettingsSection } from '$stores/settingsModalStore';
-import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
+import { PIPELINE_ISSUE_KEYS, POLICY_REFUSAL_KEYS } from '$lib/settings/pipelineKeys';
 import { getErrorStatus } from '$lib/utils/apiError';
 
 export const PIPELINE_ISSUE_CODES = [
@@ -26,6 +26,8 @@ export const PIPELINE_ISSUE_CODES = [
   'diarizer_double_billing',
   'diarizer_same_as_transcription',
   'source_locked',
+  'asr_provider_not_allowed',
+  'diarizer_provider_not_allowed',
 ] as const;
 
 export type PipelineIssueCode = (typeof PIPELINE_ISSUE_CODES)[number];
@@ -60,6 +62,8 @@ const FIX_SECTIONS: Record<PipelineIssueCode, FixSection[]> = {
   diarizer_double_billing: ['speaker-identification'],
   diarizer_same_as_transcription: ['speaker-identification'],
   source_locked: [],
+  asr_provider_not_allowed: ['asr-provider'],
+  diarizer_provider_not_allowed: ['asr-provider'],
 };
 
 const STEP_SECTION: Record<PipelineIssue['step'], FixSection> = {
@@ -104,7 +108,11 @@ export function pipelineErrorCode(err: unknown): string | null {
  */
 export function pipelineRefusalKey(err: unknown): string | null {
   const code = pipelineErrorCode(err);
-  return code !== null && isPipelineIssueCode(code) ? issueKey(code) : null;
+  if (code === null) return null;
+  if (isPipelineIssueCode(code)) return issueKey(code);
+  return code in POLICY_REFUSAL_KEYS
+    ? POLICY_REFUSAL_KEYS[code as keyof typeof POLICY_REFUSAL_KEYS]
+    : null;
 }
 
 /**

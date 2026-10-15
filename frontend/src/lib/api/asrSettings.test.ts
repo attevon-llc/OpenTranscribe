@@ -22,6 +22,28 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('credentials are write-only (#1246)', () => {
+  it('has no way to read a stored key back', () => {
+    expect('getApiKey' in ASRSettingsApi).toBe(false);
+  });
+});
+
+describe('ASRSettingsApi.getProviders policy flag', () => {
+  it('keeps allowed_for_users for administrators and leaves it undefined for users', async () => {
+    mockInstance.get.mockResolvedValue({
+      data: {
+        providers: [
+          { id: 'deepgram', display_name: 'Deepgram', allowed_for_users: false, models: [] },
+          { id: 'openai', display_name: 'OpenAI', models: [] },
+        ],
+      },
+    });
+    const { providers } = await ASRSettingsApi.getProviders();
+    expect(providers[0].allowed_for_users).toBe(false);
+    expect(providers[1].allowed_for_users).toBeUndefined();
+  });
+});
+
 describe('ASRSettingsApi.getProviders', () => {
   it('normalizes backend field names to the frontend interface, including nested models', async () => {
     mockInstance.get.mockResolvedValue({

@@ -131,6 +131,15 @@
   transform: translateX(16px);
 }
 
+[dir='rtl'] .tx-form .toggle-switch::after {
+  left: auto;
+  right: 2px;
+}
+
+[dir='rtl'] .tx-form .toggle-input:checked + .toggle-switch::after {
+  transform: translateX(-16px);
+}
+
 .tx-form .toggle-text {
   font-size: 0.875rem;
   color: var(--text-color);

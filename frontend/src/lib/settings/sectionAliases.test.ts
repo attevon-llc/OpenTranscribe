@@ -5,6 +5,7 @@ import {
   dataTabFor,
   sidebarRowFor,
   speakerIdTabFor,
+  statusTabFor,
   transcriptionTabFor,
 } from './sectionAliases';
 
@@ -47,6 +48,24 @@ describe('Data & Storage aliases', () => {
   it('is null for the row id itself, so the shell default tab applies', () => {
     expect(dataTabFor('data-management')).toBeNull();
     expect(sidebarRowFor('data-management')).toBe('data-management');
+  });
+});
+
+describe('File status alias', () => {
+  it('admin-task-health opens the Recovery tab of the file-status row', () => {
+    expect(SECTION_ALIASES['admin-task-health']).toEqual({
+      row: 'file-status',
+      tab: 'status-recovery',
+    });
+    expect(sidebarRowFor('admin-task-health')).toBe('file-status');
+    expect(statusTabFor('admin-task-health')).toBe('status-recovery');
+    expect(dataTabFor('admin-task-health')).toBeNull();
+    expect(aliasIdsOf('file-status')).toEqual(['admin-task-health']);
+  });
+
+  it('is null for the row id itself, so the Status tab applies', () => {
+    expect(statusTabFor('file-status')).toBeNull();
+    expect(sidebarRowFor('file-status')).toBe('file-status');
   });
 });
 

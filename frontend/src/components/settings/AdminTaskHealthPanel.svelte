@@ -176,7 +176,6 @@
 <div class="content-section">
   <div class="section-header-row">
     <div>
-      <h3 class="section-title">{$t('settings.taskHealth.title')}</h3>
       <p class="section-description">{$t('settings.taskHealth.description')}</p>
     </div>
     <button
@@ -296,19 +295,6 @@
 </div>
 
 <style>
-  .section-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
-    color: var(--text-color);
-  }
-
-  .section-description {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin: 0 0 1.25rem 0;
-  }
-
   .btn {
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -403,7 +389,7 @@
     align-items: flex-start;
     gap: 1rem;
     margin-bottom: 1rem;
-    padding-right: 2rem;
+    padding-inline-end: 2rem;
   }
 
   .section-header-row .section-description {
@@ -556,7 +542,7 @@
     .section-header-row {
       flex-direction: column;
       align-items: flex-start;
-      padding-right: 0;
+      padding-inline-end: 0;
       gap: 0.5rem;
     }
 

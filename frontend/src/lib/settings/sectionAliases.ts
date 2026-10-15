@@ -3,19 +3,21 @@
  *
  * `asr-provider`, `custom-vocabulary`, `engine-settings` and `speaker-attributes`
  * became tabs of the Transcription and Speaker Identification sections; `retention`, `backup`,
- * `data-integrity`, `search-indexing` and `embedding-migration` became tabs of Data & Storage. Their ids
+ * `data-integrity`, `search-indexing` and `embedding-migration` became tabs of Data & Storage; `admin-task-health` became the Recovery tab of File status. Their ids
  * stay valid so settings search, deep links and fixtures keep working: opening one
  * selects its row and its tab.
  */
 import type { SettingsSection } from '$stores/settingsModalStore';
 import type { DataTabId } from './dataManagementTabs';
+import type { StatusTabId } from './fileStatusTabs';
 import type { SpeakerIdTabId } from './speakerIdentificationTabs';
 import type { TranscriptionTabId } from './transcriptionTabs';
 
 export type AliasTarget =
   | { row: 'transcription'; tab: TranscriptionTabId }
   | { row: 'speaker-identification'; tab: SpeakerIdTabId }
-  | { row: 'data-management'; tab: DataTabId };
+  | { row: 'data-management'; tab: DataTabId }
+  | { row: 'file-status'; tab: StatusTabId };
 
 export const SECTION_ALIASES: Record<
   | 'asr-provider'
@@ -26,7 +28,8 @@ export const SECTION_ALIASES: Record<
   | 'backup'
   | 'data-integrity'
   | 'search-indexing'
-  | 'embedding-migration',
+  | 'embedding-migration'
+  | 'admin-task-health',
   AliasTarget
 > = {
   'asr-provider': { row: 'transcription', tab: 'tx-provider' },
@@ -38,6 +41,7 @@ export const SECTION_ALIASES: Record<
   'data-integrity': { row: 'data-management', tab: 'data-integrity' },
   'search-indexing': { row: 'data-management', tab: 'data-search' },
   'embedding-migration': { row: 'data-management', tab: 'data-embeddings' },
+  'admin-task-health': { row: 'file-status', tab: 'status-recovery' },
 };
 
 /** The ids that open a tab of a row, so the row can show their unsaved-changes dot. */
@@ -80,4 +84,10 @@ export function speakerIdTabFor(section: SettingsSection): SpeakerIdTabId | null
 export function dataTabFor(section: SettingsSection): DataTabId | null {
   const target = tabAlias(section);
   return target?.row === 'data-management' ? target.tab : null;
+}
+
+/** The File status tab an alias id opens, or null when the row's default applies. */
+export function statusTabFor(section: SettingsSection): StatusTabId | null {
+  const target = tabAlias(section);
+  return target?.row === 'file-status' ? target.tab : null;
 }

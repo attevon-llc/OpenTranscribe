@@ -13,6 +13,7 @@
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import ASRConfigModal from './ASRConfigModal.svelte';
   import CloudProviderPolicy from './asr/CloudProviderPolicy.svelte';
+  import LocalModelLibrary from './localModels/LocalModelLibrary.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import { modelCapability } from '$lib/settings/asrCapabilities';
   import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
@@ -82,8 +83,6 @@
 
   // Local model state (visible to all users; admin can change)
   let activeLocalModel = '';
-  let activeLocalModelSource: 'database' | 'environment' = 'environment';
-  let availableLocalModels: { short_name: string; repo_id: string; downloaded: boolean }[] = [];
   let localModelInfo: {
     display_name: string;
     description: string;
@@ -91,9 +90,6 @@
     supports_diarization: boolean;
     language_support: string;
   } | null = null;
-  let selectedLocalModel = '';
-  let modelChangeInProgress = false;
-  let restartInProgress = false;
 
   let showConfigModal = false;
   let editingConfiguration: UserASRSettingsResponse | null = null;
@@ -139,10 +135,7 @@
       // Load local model info (visible to all users)
       if (localModelResp) {
         activeLocalModel = localModelResp.active_model;
-        activeLocalModelSource = localModelResp.source;
-        availableLocalModels = localModelResp.available_models || [];
         localModelInfo = localModelResp.model_info || null;
-        selectedLocalModel = activeLocalModel;
       }
     } catch (err: unknown) {
       console.error('Error loading ASR settings:', err);
@@ -349,35 +342,13 @@
     return '';
   }
 
-  // Admin: set local model and restart worker
-  async function handleSetLocalModel() {
-    if (!selectedLocalModel || selectedLocalModel === activeLocalModel) return;
-    modelChangeInProgress = true;
-    try {
-      await ASRSettingsApi.setLocalModel(selectedLocalModel);
-      activeLocalModel = selectedLocalModel;
-      activeLocalModelSource = 'database';
-      toastStore.success($t('settings.asrProvider.localModelSet', { model: selectedLocalModel }));
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.setLocalModelFailed')), 5000);
-    } finally {
-      modelChangeInProgress = false;
-    }
+  /** After a model switch: re-read the model card without the page-level loading state. */
+  async function refreshLocalModel() {
+    const resp = await ASRSettingsApi.getActiveLocalModel().catch(() => null);
+    if (!resp) return;
+    activeLocalModel = resp.active_model;
+    localModelInfo = resp.model_info || null;
   }
-
-  async function handleRestartGpuWorker() {
-    restartInProgress = true;
-    try {
-      const result = await ASRSettingsApi.restartGpuWorker();
-      toastStore.success(result.message, 8000);
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.restartWorkerFailed')), 5000);
-    } finally {
-      restartInProgress = false;
-    }
-  }
-
-  $: localModelChanged = selectedLocalModel && selectedLocalModel !== activeLocalModel;
 
   let _asrModalWasOpen = false;
   $: {
@@ -442,63 +413,10 @@
           </div>
         </div>
 
-        {#if isAdmin}
-          <!-- Admin controls -->
-          <p class="admin-description">
-            {$t('settings.asrProvider.localModelDescription')}
-          </p>
-          {#if !isSuperAdmin}
-            <p class="locked-hint" data-testid="local-model-locked-hint">
-              {$t('settings.asrProvider.localModelLockedHint')}
-            </p>
-          {/if}
-          <div class="model-control-row">
-            <div class="model-select-group">
-              <label for="local-model-select">{$t('settings.asrProvider.activeModel')}</label>
-              <div class="model-select-with-source">
-                <select id="local-model-select" bind:value={selectedLocalModel} disabled={!isSuperAdmin || modelChangeInProgress || restartInProgress} title={isSuperAdmin ? undefined : $t('settings.nav.requiresSuperAdmin')} class="form-select">
-                  {#if availableLocalModels.length > 0}
-                    {#each availableLocalModels as model}
-                      <option value={model.short_name}>{model.short_name}</option>
-                    {/each}
-                    {#if !availableLocalModels.find(m => m.short_name === activeLocalModel)}
-                      <option value={activeLocalModel}>{activeLocalModel} {$t('settings.asrProvider.notDownloaded')}</option>
-                    {/if}
-                  {:else}
-                    <option value={activeLocalModel}>{activeLocalModel}</option>
-                  {/if}
-                </select>
-                <span class="model-source">{$t('settings.asrProvider.modelSource', { source: activeLocalModelSource === 'database' ? $t('settings.asrProvider.sourceDatabase') : $t('settings.asrProvider.sourceEnvironment') })}</span>
-              </div>
-            </div>
-            <div class="model-actions">
-              {#if localModelChanged}
-                <button class="btn btn-primary" on:click={handleSetLocalModel} disabled={!isSuperAdmin || modelChangeInProgress}>
-                  {#if modelChangeInProgress}
-                    <Spinner size="small" /> {$t('common.saving')}
-                  {:else}
-                    {$t('settings.asrProvider.saveModel')}
-                  {/if}
-                </button>
-              {/if}
-              <button class="btn btn-warning" on:click={handleRestartGpuWorker} disabled={!isSuperAdmin || restartInProgress || modelChangeInProgress} title={isSuperAdmin ? undefined : $t('settings.nav.requiresSuperAdmin')}>
-                {#if restartInProgress}
-                  <Spinner size="small" /> {$t('settings.asrProvider.restarting')}
-                {:else}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
-                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                  </svg>
-                  {$t('settings.asrProvider.restartGpuWorker')}
-                {/if}
-              </button>
-            </div>
-          </div>
-          {#if availableLocalModels.length > 0}
-            <div class="downloaded-count">{$t('settings.asrProvider.downloadedLocally', { count: availableLocalModels.length })}</div>
-          {/if}
-        {/if}
       </div>
+      {#if isAdmin}
+        <LocalModelLibrary locked={!isSuperAdmin} on:activated={refreshLocalModel} />
+      {/if}
     {/if}
 
     <!-- Active provider status bar -->
@@ -1286,110 +1204,6 @@
     color: #fbbf24;
   }
 
-  .locked-hint {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin: 0 0 0.75rem;
-  }
-
-  .admin-description {
-    margin: 0 0 0.875rem;
-    font-size: 0.775rem;
-    color: var(--text-muted);
-    line-height: 1.5;
-  }
-
-  .model-control-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.875rem;
-    flex-wrap: wrap;
-  }
-
-  .model-select-group {
-    flex: 1;
-    min-width: 200px;
-  }
-
-  .model-select-group label {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    margin-bottom: 0.375rem;
-  }
-
-  .model-select-with-source {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .model-select-group .form-select {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
-    height: 36px;
-  }
-
-  .model-source {
-    font-size: 0.675rem;
-    color: var(--text-muted);
-    font-style: italic;
-  }
-
-  .model-actions {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-shrink: 0;
-    /* Align with the select element: skip past the label height */
-    margin-top: 1.25rem;
-  }
-
-  .model-actions .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-    border: none;
-    white-space: nowrap;
-  }
-
-  .model-actions .btn-primary {
-    background: var(--primary-color, var(--primary-color));
-    color: white;
-  }
-
-  .model-actions .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover, #2563eb);
-  }
-
-  .model-actions .btn-warning {
-    background: var(--warning-color, #f59e0b);
-    color: white;
-  }
-
-  .model-actions .btn-warning:hover:not(:disabled) {
-    background: #d97706;
-  }
-
-  .model-actions .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .downloaded-count {
-    margin-top: 0.625rem;
-    font-size: 0.725rem;
-    color: var(--text-muted);
-  }
-
   @media (max-width: 768px) {
     .status-bar {
       flex-wrap: wrap;
@@ -1403,20 +1217,6 @@
     .config-actions {
       width: 100%;
       justify-content: flex-start;
-    }
-
-    .model-control-row {
-      flex-direction: column;
-    }
-
-    .model-actions {
-      margin-top: 0;
-      width: 100%;
-    }
-
-    .model-actions .btn {
-      flex: 1;
-      min-height: 44px;
     }
 
     .model-info-row {

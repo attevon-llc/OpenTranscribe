@@ -485,6 +485,8 @@ export class ASRSettingsApi {
       supports_diarization: boolean;
       language_support: string;
     };
+    /** What each Whisper worker reports it has loaded (empty when none has reported). */
+    loaded_models: { worker: string; model: string; ready_at: string }[];
   }> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/local-model/active`);
     return response.data;
@@ -508,6 +510,7 @@ export class ASRSettingsApi {
     model: string;
     workers: string[];
     active_tasks?: number;
+    restart_requested_at: string;
     message: string;
   }> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/local-model/restart`);

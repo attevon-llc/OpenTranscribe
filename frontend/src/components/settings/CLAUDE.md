@@ -291,6 +291,17 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   credentials" opens `ASRConfigModal` with `presetProvider` and `presetShared` (create mode only) instead of a second key
   form. A 409 `own_asr_keys_disabled` or `asr_provider_not_allowed` renders through `pipelineFailureKey`
   (`POLICY_REFUSAL_KEYS` in `pipelineKeys.ts`), never the server sentence.
+- **Local models** (#1246) is `localModels/LocalModelLibrary.svelte` (+ `LocalModelRow`, `ActivateModelDialog`), mounted by
+  `ASRSettings` under the model card for admins; it replaced the old select / Save / Restart controls, so no second path
+  to set or restart the worker exists. Every route is super_admin: `locked` (an admin) renders the explanation and makes
+  NO request. Row rules and every error sentence live in `$lib/settings/localModelView` (errors are fixed i18n sentences
+  chosen by `detail.code`, never server text; keys are literal maps, not built from variables). Progress arrives on the
+  `local-model-download` window event (`stores/websocket.ts`); while a download runs and the socket has been quiet for 4 s
+  the catalog is re-read every 3 s (this also covers a reload mid-download). Activation (`$lib/settings/localModelActivation`)
+  is set -> restart -> poll `GET /asr-settings/local-model/active` until EVERY worker named in the restart reply reports the
+  new model with `ready_at` after `restart_requested_at`; the dialog states the worker restarts and requires confirmation, the
+  in-flight job count (`active_tasks`) is only known from the restart reply, so it is shown after confirming, not in the dialog.
+  `ASRSettings` refreshes only its model card on `activated` (a page-level `loadData` would unmount the library mid-message).
 - **Auto-Labeling** (`auto-labeling`) lives in the AI & Chat group; the panel and id are unchanged.
 
 ## Transcription forms

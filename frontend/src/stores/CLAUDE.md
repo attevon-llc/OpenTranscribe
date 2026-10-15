@@ -39,7 +39,9 @@ caches of API responses.
 ## Gotchas
 
 - `websocket.ts` dispatches custom events some pages listen for (e.g. clustering progress);
-  keep event names stable when refactoring.
+  keep event names stable when refactoring. `local_model_download` (#1246, sent only to the admin who started the
+  download) becomes the `local-model-download` window event and creates NO notification: the model library toasts on a
+  finish itself.
 - `supportSession.ts` is the tab-scoped (sessionStorage) support-access session: it owns the grant
   header, the skew-corrected countdown and the purge/flip ordering on start and end. Do not mirror
   it in another store; read `supportSessionGate` for hide/readonly decisions (#1122).

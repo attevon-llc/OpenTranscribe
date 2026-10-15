@@ -1,5 +1,6 @@
 <script lang="ts">
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
+  import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
   import { onMount } from 'svelte';
   import { AdminSettingsApi, type RetryConfig } from '../../lib/api/adminSettings';
   import { toastStore } from '../../stores/toast';
@@ -78,20 +79,11 @@
   }
 </script>
 
-<div class="retry-settings">
-  <div class="title-row">
-    <h3 class="section-title">{$t('settings.retry.title')}</h3>
-    <span class="info-icon">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="16" x2="12" y2="12"></line>
-        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-      </svg>
-      <span class="tooltip">{$t('settings.retry.tooltip')}</span>
-    </span>
-  </div>
-  <p class="section-desc">{$t('settings.retry.desc')}</p>
-
+<SettingsCard
+  title={$t('settings.retry.title')}
+  description={$t('settings.retry.desc')}
+  tooltip={$t('settings.retry.tooltip')}
+>
   {#if loading}
     <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
   {:else}
@@ -124,70 +116,9 @@
       </div>
     </div>
   {/if}
-</div>
+</SettingsCard>
 
 <style>
-  .retry-settings {
-    padding: 0.5rem 0;
-  }
-
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .section-title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    margin: 0;
-    color: var(--text-color);
-  }
-
-  .info-icon {
-    position: relative;
-    color: var(--text-muted);
-    cursor: help;
-    display: flex;
-    align-items: center;
-  }
-
-  .info-icon:hover {
-    color: var(--text-color);
-  }
-
-  .tooltip {
-    visibility: hidden;
-    opacity: 0;
-    position: absolute;
-    left: 50%;
-    top: calc(100% + 8px);
-    transform: translateX(-50%);
-    background-color: var(--surface-color, #333);
-    color: var(--text-color);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    line-height: 1.4;
-    width: 260px;
-    z-index: 100;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--border-color);
-    transition: opacity 0.1s ease;
-  }
-
-  .info-icon:hover .tooltip {
-    visibility: visible;
-    opacity: 1;
-  }
-
-  .section-desc {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin: 0 0 1rem 0;
-  }
-
-
   .setting-row {
     display: flex;
     align-items: center;

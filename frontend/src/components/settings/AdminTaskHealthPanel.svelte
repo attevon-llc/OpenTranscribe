@@ -14,10 +14,35 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
+  import RecoveryActionRow from '$components/settings/RecoveryActionRow.svelte';
+  import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
+  import Badge from '$components/ui/Badge.svelte';
+  import '$components/settings/transcription/formLayout.css';
 
   const dispatch = createEventDispatcher<{ requestConfirm: ConfirmRequest }>();
 
-  let taskHealthData: any = null;
+  // The API reports each list as `{ count, items }`.
+  interface HealthList<T> {
+    count: number;
+    items: T[];
+  }
+  interface StuckTask {
+    id: number;
+    task_type: string;
+    status: string;
+    created_at: string;
+  }
+  interface InconsistentFile {
+    uuid: string;
+    filename: string;
+    status: string | null;
+  }
+  interface TaskHealth {
+    stuck_tasks?: HealthList<StuckTask>;
+    inconsistent_files?: HealthList<InconsistentFile>;
+  }
+
+  let taskHealthData: TaskHealth | null = null;
   let taskHealthLoading = false;
 
   onMount(() => {
@@ -143,11 +168,37 @@
     }
   }
 
+  $: stuckTasks = taskHealthData?.stuck_tasks?.items ?? [];
+  $: inconsistentFiles = taskHealthData?.inconsistent_files?.items ?? [];
+  $: stuckCount = taskHealthData?.stuck_tasks?.count ?? stuckTasks.length;
+  $: inconsistentCount = taskHealthData?.inconsistent_files?.count ?? inconsistentFiles.length;
+
+  type BadgeVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
+  function badgeVariant(status: string | null): BadgeVariant {
+    switch ((status ?? '').toLowerCase()) {
+      case 'completed':
+      case 'success':
+        return 'success';
+      case 'running':
+      case 'processing':
+      case 'in_progress':
+        return 'info';
+      case 'pending':
+        return 'warning';
+      case 'failed':
+      case 'error':
+        return 'error';
+      default:
+        return 'default';
+    }
+  }
+
   // Helper function for formatting status text
   // Uses compact symbols on small screens
   const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
 
-  function formatStatus(status: string): string {
+  function formatStatus(rawStatus: string | null): string {
+    const status = rawStatus ?? '';
     if (isMobileView) {
       const compactMap: Record<string, string> = {
         'completed': '✓',
@@ -173,56 +224,66 @@
   }
 </script>
 
-<div class="content-section">
+<div class="recovery-tab tx-form">
   <div class="section-header-row">
-    <div>
-      <p class="section-description">{$t('settings.taskHealth.description')}</p>
-    </div>
+    <p class="section-description">{$t('settings.taskHealth.description')}</p>
     <button
       type="button"
       class="btn btn-secondary btn-refresh"
       on:click={refreshTaskHealth}
       disabled={taskHealthLoading}
     >
-      <svg class="refresh-icon" class:spinning={taskHealthLoading} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg class="refresh-icon" class:spinning={taskHealthLoading} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
       </svg>
       {taskHealthLoading ? $t('settings.taskHealth.loading') : $t('settings.taskHealth.refresh')}
     </button>
   </div>
 
-  <!-- Retry Settings (task retry configuration) -->
-  <div class="settings-subsection">
+  <div class="settings-form">
     <RetrySettings />
-  </div>
 
-  {#if taskHealthLoading}
-    <SettingsSkeleton variant="dashboard" label={$t('settings.taskHealth.loadingMessage')} />
-  {:else if taskHealthData}
-    <div class="task-health-grid">
-      <!-- Recovery Actions -->
-      <div class="health-card">
-        <h4>{$t('settings.taskHealth.systemRecovery')}</h4>
-        <div class="action-buttons">
-          <button class="btn btn-warning" on:click={recoverStuckTasks}>
-            {$t('settings.taskHealth.recoverStuck')} ({taskHealthData.stuck_tasks?.length || 0})
-          </button>
-          <button class="btn btn-warning" on:click={fixInconsistentFiles}>
-            {$t('settings.taskHealth.fixInconsistent')} ({taskHealthData.inconsistent_files?.length || 0})
-          </button>
-          <button class="btn btn-primary" on:click={startupRecovery}>
-            {$t('settings.taskHealth.startupRecovery')}
-          </button>
-          <button class="btn btn-primary" on:click={recoverAllUserFiles}>
-            {$t('settings.taskHealth.recoverAllUsers')}
-          </button>
+    {#if taskHealthLoading}
+      <SettingsSkeleton variant="dashboard" label={$t('settings.taskHealth.loadingMessage')} />
+    {:else if taskHealthData}
+      <SettingsCard
+        title={$t('settings.taskHealth.systemRecovery')}
+        description={$t('settings.taskHealth.systemRecoveryDesc')}
+      >
+        <div class="recovery-actions">
+        <RecoveryActionRow
+          id="stuck"
+          title={$t('settings.taskHealth.recoverStuck')}
+          help={$t('settings.taskHealth.recoverStuckHelp')}
+          buttonLabel={`${$t('settings.taskHealth.recoverStuckButton')} (${stuckCount})`}
+          on:run={recoverStuckTasks}
+        />
+        <RecoveryActionRow
+          id="inconsistent"
+          title={$t('settings.taskHealth.fixInconsistent')}
+          help={$t('settings.taskHealth.fixInconsistentHelp')}
+          buttonLabel={`${$t('settings.taskHealth.fixInconsistentButton')} (${inconsistentCount})`}
+          on:run={fixInconsistentFiles}
+        />
+        <RecoveryActionRow
+          id="startup"
+          title={$t('settings.taskHealth.startupRecovery')}
+          help={$t('settings.taskHealth.startupRecoveryHelp')}
+          buttonLabel={$t('settings.taskHealth.startupRecoveryButton')}
+          on:run={startupRecovery}
+        />
+        <RecoveryActionRow
+          id="all-users"
+          title={$t('settings.taskHealth.recoverAllUsers')}
+          help={$t('settings.taskHealth.recoverAllUsersHelp')}
+          buttonLabel={$t('settings.taskHealth.recoverAllUsersButton')}
+          on:run={recoverAllUserFiles}
+        />
         </div>
-      </div>
+      </SettingsCard>
 
-      <!-- Stuck Tasks -->
-      {#if taskHealthData.stuck_tasks && taskHealthData.stuck_tasks.length > 0}
-        <div class="health-card">
-          <h4>{$t('settings.taskHealth.stuckTasks')}</h4>
+      {#if stuckTasks.length > 0}
+        <SettingsCard title={$t('settings.taskHealth.stuckTasks')}>
           <div class="table-container">
             <table class="data-table">
               <thead>
@@ -235,14 +296,14 @@
                 </tr>
               </thead>
               <tbody>
-                {#each taskHealthData.stuck_tasks as task}
+                {#each stuckTasks as task (task.id)}
                   <tr>
                     <td>{task.id}</td>
                     <td>{task.task_type}</td>
-                    <td><span class="status-badge status-{task.status}">{formatStatus(task.status)}</span></td>
+                    <td><Badge variant={badgeVariant(task.status)}>{formatStatus(task.status)}</Badge></td>
                     <td>{new Date(task.created_at).toLocaleString()}</td>
                     <td>
-                      <button class="btn-small btn-primary" on:click={() => retryTask(task.id)}>
+                      <button type="button" class="btn btn-secondary btn-small" on:click={() => retryTask(task.id)}>
                         {$t('settings.taskHealth.retry')}
                       </button>
                     </td>
@@ -251,13 +312,11 @@
               </tbody>
             </table>
           </div>
-        </div>
+        </SettingsCard>
       {/if}
 
-      <!-- Inconsistent Files -->
-      {#if taskHealthData.inconsistent_files && taskHealthData.inconsistent_files.length > 0}
-        <div class="health-card">
-          <h4>{$t('settings.taskHealth.inconsistentFiles')}</h4>
+      {#if inconsistentFiles.length > 0}
+        <SettingsCard title={$t('settings.taskHealth.inconsistentFiles')}>
           <div class="table-container">
             <table class="data-table">
               <thead>
@@ -269,13 +328,13 @@
                 </tr>
               </thead>
               <tbody>
-                {#each taskHealthData.inconsistent_files as file}
+                {#each inconsistentFiles as file (file.uuid)}
                   <tr>
                     <td>{file.uuid}</td>
                     <td>{file.filename}</td>
-                    <td><span class="status-badge status-{file.status}">{formatStatus(file.status)}</span></td>
+                    <td><Badge variant={badgeVariant(file.status)}>{formatStatus(file.status)}</Badge></td>
                     <td>
-                      <button class="btn-small btn-primary" on:click={() => retryFile(file.uuid)}>
+                      <button type="button" class="btn btn-secondary btn-small" on:click={() => retryFile(file.uuid)}>
                         {$t('settings.taskHealth.retry')}
                       </button>
                     </td>
@@ -284,105 +343,17 @@
               </tbody>
             </table>
           </div>
-        </div>
+        </SettingsCard>
       {/if}
-    </div>
-  {:else}
-    <div class="placeholder-message">
-      <p>{$t('settings.taskHealth.clickRefresh')}</p>
-    </div>
-  {/if}
+    {:else}
+      <div class="placeholder-message">
+        <p>{$t('settings.taskHealth.clickRefresh')}</p>
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style>
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  }
-
-  .btn-secondary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-warning {
-    background-color: var(--warning-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
-  }
-
-  .btn-warning:hover:not(:disabled) {
-    background-color: #d97706;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
-  }
-
-  .btn-warning:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-small {
-    padding: 0.25rem 0.625rem;
-    font-size: 0.75rem;
-  }
-
-  .btn-refresh {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .refresh-icon {
-    flex-shrink: 0;
-    transition: transform 0.3s ease;
-  }
-
-  .refresh-icon.spinning {
-    animation: spin 1s linear infinite;
-  }
-
   .section-header-row {
     display: flex;
     justify-content: space-between;
@@ -393,10 +364,8 @@
   }
 
   .section-header-row .section-description {
-    margin-bottom: 0;
+    margin: 0;
   }
-
-
 
   .table-container {
     overflow-x: auto;
@@ -407,180 +376,47 @@
   .data-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
-  }
-
-  .data-table thead {
-    background-color: var(--background-color);
+    margin: 0;
+    font-size: var(--font-size-sm);
   }
 
   .data-table th {
     padding: 0.5rem 0.75rem;
-    text-align: left;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    text-align: start;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-secondary);
-    border-bottom: 1px solid var(--border-color);
   }
 
   .data-table td {
     padding: 0.625rem 0.75rem;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-color);
-  }
-
-  .data-table tbody tr:last-child td {
-    border-bottom: none;
-  }
-
-  .data-table tbody tr:hover {
-    background-color: var(--background-color);
-  }
-
-  .status-badge {
-    display: inline-block;
-    padding: 0.125rem 0.5rem;
-    border-radius: 10px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-
-  .status-completed,
-  .status-success {
-    background-color: #d1fae5;
-    color: #065f46;
-  }
-
-  .status-running,
-  .status-processing,
-  .status-in_progress {
-    background-color: #dbeafe;
-    color: #1e40af;
-  }
-
-  .status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-  }
-
-  .status-failed,
-  .status-error {
-    background-color: #fee2e2;
-    color: #991b1b;
-  }
-
-  :global([data-theme='dark']) .status-completed,
-  :global([data-theme='dark']) .status-success {
-    background-color: #064e3b;
-    color: #6ee7b7;
-  }
-
-  :global([data-theme='dark']) .status-running,
-  :global([data-theme='dark']) .status-processing,
-  :global([data-theme='dark']) .status-in_progress {
-    background-color: #1e3a8a;
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .status-pending {
-    background-color: #78350f;
-    color: #fde68a;
-  }
-
-  :global([data-theme='dark']) .status-failed,
-  :global([data-theme='dark']) .status-error {
-    background-color: #7f1d1d;
-    color: #fca5a5;
-  }
-
-  .task-health-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .health-card {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem;
-  }
-
-  .health-card h4 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-color);
-    margin: 0 0 0.75rem 0;
-  }
-
-  .action-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
   }
 
   .placeholder-message {
     text-align: center;
     padding: 2rem;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
-  .settings-subsection {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-  }
-
-  /* Responsive Design */
   @media (max-width: 768px) {
     .section-header-row {
       flex-direction: column;
-      align-items: flex-start;
+      align-items: stretch;
       padding-inline-end: 0;
       gap: 0.5rem;
     }
 
     .section-header-row .btn-refresh {
-      width: 100%;
       justify-content: center;
       min-height: 44px;
-    }
-
-    .action-buttons {
-      flex-direction: column;
-    }
-
-    .action-buttons .btn {
-      width: 100%;
-      min-height: 44px;
-      justify-content: center;
-    }
-
-    .task-health-grid .health-card {
-      padding: 0.75rem;
-    }
-
-    .status-badge {
-      padding: 0.1rem 0.35rem;
-      font-size: 0.75rem;
-      min-width: 24px;
-      text-align: center;
     }
 
     .data-table th,
     .data-table td {
       padding: 0.4rem 0.5rem;
-      font-size: 0.75rem;
-    }
-
-    .settings-subsection {
-      padding: 0.75rem;
+      font-size: var(--font-size-xs);
     }
   }
 </style>

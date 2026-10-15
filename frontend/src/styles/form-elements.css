@@ -414,6 +414,10 @@ button:disabled {
   font-family: inherit;
   white-space: nowrap;
 }
+.btn-small {
+  padding: 0.25rem 0.625rem;
+  font-size: var(--font-size-xs);
+}
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;

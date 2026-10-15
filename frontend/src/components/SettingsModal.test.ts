@@ -650,7 +650,10 @@ describe('Transcription and Speaker Identification sections', () => {
           url === '/my-files/status'
             ? STATUS
             : url === '/tasks/system/health'
-              ? { stuck_tasks: [], inconsistent_files: [] }
+              ? {
+                  stuck_tasks: { count: 0, items: [] },
+                  inconsistent_files: { count: 0, items: [] },
+                }
               : {},
       }));
       setUser(role);

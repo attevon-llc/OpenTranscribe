@@ -27,6 +27,9 @@ call these functions, not `axios` directly.
   `getPipelineView` rejects a reply without `steps`/`issues` so no consumer has to.
   `asrProviderPolicy.ts` covers `/admin/asr-providers` (#1246, super administrator only): which cloud ASR providers
   plain users may use; stored keys are never readable (`ASRSettingsApi.getApiKey` was removed).
+  `localModels.ts` covers `/admin/local-models` (+ `/download`, `/download/cancel`; #1246, super administrator only): the
+  Whisper model catalog with what is on disk and the one download. Literal URLs on purpose: the route-has-a-caller scanner
+  reads them.
   `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
   (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 

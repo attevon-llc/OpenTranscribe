@@ -509,6 +509,28 @@ describe('websocket → window CustomEvents', () => {
     expect(handler).toHaveBeenCalledTimes(1);
     window.removeEventListener(eventName, handler);
   });
+
+  it('local_model_download hands its payload to the model library and creates no notification', () => {
+    // The library toasts by itself on a finish; a bell entry per progress tick would flood it.
+    const socket = openSocket();
+    const handler = vi.fn();
+    window.addEventListener('local-model-download', handler);
+    const payload = {
+      model_id: 'large-v3',
+      status: 'downloading',
+      bytes_done: 40,
+      bytes_total: 100,
+      percent: 40,
+      error_code: null,
+    };
+
+    socket.deliver({ type: 'local_model_download', data: payload });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual(payload);
+    expect(notifications()).toHaveLength(0);
+    window.removeEventListener('local-model-download', handler);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

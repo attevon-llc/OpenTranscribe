@@ -384,6 +384,15 @@ function createWebSocketStore() {
                 window.dispatchEvent(new CustomEvent('gpu-stats-updated', { detail: data.data }));
               }
               return;
+            } else if (data.type === 'local_model_download') {
+              // Model-library progress (#1246), sent only to the admin who started it. The
+              // library toasts on a finish itself; no bell entry per tick.
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('local-model-download', { detail: data.data })
+                );
+              }
+              return;
             } else if (data.type === 'watch_source_scan') {
               // Watch-source scan completed — dispatch event for WatchSourcesSettings
               if (typeof window !== 'undefined') {

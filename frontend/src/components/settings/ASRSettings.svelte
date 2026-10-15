@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
+  import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { onMount } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import Spinner from '../ui/Spinner.svelte';
@@ -7,15 +8,25 @@
     ASRSettingsApi,
     type UserASRSettingsResponse,
     type ASRProviderInfo,
+    type ASRProvider,
   } from '../../lib/api/asrSettings';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import ASRConfigModal from './ASRConfigModal.svelte';
+  import CloudProviderPolicy from './asr/CloudProviderPolicy.svelte';
+  import LocalModelLibrary from './localModels/LocalModelLibrary.svelte';
+  import CapabilityBadges from './CapabilityBadges.svelte';
+  import { modelCapability } from '$lib/settings/asrCapabilities';
+  import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
+  import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
+  import { getTranscriptionSettings, type DiarizationSource } from '$lib/api/transcriptionSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin = false;
+  // The local-model endpoints are super_admin only; admins see them locked.
+  export let isSuperAdmin = false;
 
   let loading = false;
   let saving = false;
@@ -26,6 +37,44 @@
   let activeConfigurationId: string | null = null;
   let providers: ASRProviderInfo[] = [];
   let usingLocalDefault = true;
+  // Lite has no GPU: transcription is a cloud provider or nothing, so the local controls go.
+  let isLite = false;
+  // The user's speaker detection choice, for the badges and the notice in the config editor.
+  let diarizationSource: DiarizationSource | null = null;
+  let diarizerConfigUuid: string | null = null;
+
+  // A refused change names its reason by code; anything else keeps the generic message.
+  function failure(err: unknown, fallbackKey: string): string {
+    const key = pipelineFailureKey(err, fallbackKey);
+    return key ? $t(key) : getErrorMessage(err, $t(fallbackKey));
+  }
+
+  // What a change did to the pipeline, as fixed translated sentences (never server text).
+  function announce(messages: ChangeMessage[]) {
+    for (const m of messages) {
+      const text = m.key ? $t(m.key) : (m.fallbackText ?? '');
+      if (m.severity === 'error') toastStore.error(text, 8000);
+      else if (m.severity === 'warning') toastStore.warning(text, 8000);
+      else toastStore.info(text, 8000);
+    }
+  }
+
+  // A deleted config that was the speaker detector sends the source back to Automatic.
+  function applyReset(reverted: boolean) {
+    if (!reverted) return;
+    diarizationSource = 'provider';
+    diarizerConfigUuid = null;
+  }
+
+  /** Speakers and timing badges for a saved config; null when the catalog does not list it. */
+  function capabilitiesFor(config: UserASRSettingsResponse) {
+    const capability = modelCapability(providers, config.provider, config.model_name);
+    return {
+      returnsSpeakers: capability?.returnsSpeakers ?? null,
+      timing: capability?.timing ?? null,
+      adapterBilling: diarizationSource === 'asr_config' && diarizerConfigUuid === config.uuid
+    };
+  }
 
   function isProviderExperimental(providerId: string): boolean {
     const p = providers.find(pr => pr.id === providerId);
@@ -34,8 +83,6 @@
 
   // Local model state (visible to all users; admin can change)
   let activeLocalModel = '';
-  let activeLocalModelSource: 'database' | 'environment' = 'environment';
-  let availableLocalModels: { short_name: string; repo_id: string; downloaded: boolean }[] = [];
   let localModelInfo: {
     display_name: string;
     description: string;
@@ -43,12 +90,18 @@
     supports_diarization: boolean;
     language_support: string;
   } | null = null;
-  let selectedLocalModel = '';
-  let modelChangeInProgress = false;
-  let restartInProgress = false;
 
   let showConfigModal = false;
   let editingConfiguration: UserASRSettingsResponse | null = null;
+  // "Add shared credentials" from the provider policy panel opens the editor on that provider, shared.
+  let presetProvider: ASRProvider | '' = '';
+  let presetShared = false;
+  let policyPanel: CloudProviderPolicy | undefined;
+
+  // A plain user only gets the providers the administrator enabled (administrators are exempt).
+  $: enabledIds = new Set(providers.map((p) => p.id));
+  const notEnabled = (providerId: string) => !isAdmin && providers.length > 0 && !enabledIds.has(providerId);
+  $: noCloudEnabled = !isAdmin && providers.length > 0 && providers.every((p) => p.provider === 'local');
 
   let showDeleteModal = false;
   let configToDelete: UserASRSettingsResponse | null = null;
@@ -63,11 +116,16 @@
   async function loadData() {
     loading = true;
     try {
-      const [providersResp, settingsResp, localModelResp] = await Promise.all([
+      const [providersResp, settingsResp, localModelResp, statusResp, speakerSettings] = await Promise.all([
         ASRSettingsApi.getProviders(),
         ASRSettingsApi.getSettings().catch(() => ({ configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 })),
         ASRSettingsApi.getActiveLocalModel().catch(() => null),
+        ASRSettingsApi.getStatus().catch(() => null),
+        getTranscriptionSettings().catch(() => null),
       ]);
+      isLite = statusResp?.deployment_mode === 'lite';
+      diarizationSource = speakerSettings?.diarization_source ?? null;
+      diarizerConfigUuid = speakerSettings?.diarization_asr_config_uuid ?? null;
       providers = providersResp.providers;
       configurations = settingsResp.configurations;
       sharedConfigurations = settingsResp.shared_configurations || [];
@@ -77,10 +135,7 @@
       // Load local model info (visible to all users)
       if (localModelResp) {
         activeLocalModel = localModelResp.active_model;
-        activeLocalModelSource = localModelResp.source;
-        availableLocalModels = localModelResp.available_models || [];
         localModelInfo = localModelResp.model_info || null;
-        selectedLocalModel = activeLocalModel;
       }
     } catch (err: unknown) {
       console.error('Error loading ASR settings:', err);
@@ -94,13 +149,14 @@
     if (uuid === activeConfigurationId) return;
     saving = true;
     try {
-      await ASRSettingsApi.setActive(uuid);
+      const result = await ASRSettingsApi.setActive(uuid);
       activeConfigurationId = uuid;
       usingLocalDefault = false;
       toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.activateFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.activateFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -110,13 +166,14 @@
     if (usingLocalDefault) return;
     saving = true;
     try {
-      await ASRSettingsApi.clearActive();
+      const result = await ASRSettingsApi.clearActive();
       activeConfigurationId = null;
       usingLocalDefault = true;
       toastStore.success($t('settings.asrProvider.switchedToLocal'));
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.switchToLocalFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.switchToLocalFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -144,11 +201,22 @@
 
   function openCreateModal() {
     editingConfiguration = null;
+    presetProvider = '';
+    presetShared = false;
+    showConfigModal = true;
+  }
+
+  function openSharedModal(providerId: string) {
+    editingConfiguration = null;
+    presetProvider = providerId as ASRProvider;
+    presetShared = true;
     showConfigModal = true;
   }
 
   function openEditModal(config: UserASRSettingsResponse) {
     editingConfiguration = config;
+    presetProvider = '';
+    presetShared = false;
     showConfigModal = true;
   }
 
@@ -162,15 +230,17 @@
     saving = true;
     try {
       const deletedName = configToDelete.name;
-      await ASRSettingsApi.deleteConfig(configToDelete.uuid);
+      const result = await ASRSettingsApi.deleteConfig(configToDelete.uuid);
       configToDelete = null;
       showDeleteModal = false;
       // Re-fetch canonical state to pick up auto-promoted active config
       await loadData();
       toastStore.success(`"${deletedName}" deleted`);
+      applyReset(result.diarizer_source_reverted);
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.deleteFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -179,15 +249,17 @@
   async function deleteAllConfigurations() {
     saving = true;
     try {
-      await ASRSettingsApi.deleteAll();
+      const result = await ASRSettingsApi.deleteAll();
       configurations = [];
       activeConfigurationId = null;
       usingLocalDefault = true;
       showDeleteAllModal = false;
       toastStore.success($t('settings.asrProvider.deletedAll'));
+      applyReset(result.diarizer_source_reverted);
+      announce(changeMessages(result));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteAllFailed')), 5000);
+      toastStore.error(failure(err, 'settings.asrProvider.deleteAllFailed'), 5000);
     } finally {
       saving = false;
     }
@@ -196,6 +268,7 @@
   async function handleConfigSaved(event: CustomEvent<UserASRSettingsResponse>) {
     // Re-fetch canonical state from backend to pick up auto-activation, etc.
     await loadData();
+    void policyPanel?.reload();
     if (onSettingsChange) onSettingsChange();
   }
 
@@ -203,6 +276,21 @@
     return configurations.find(c => c.uuid === activeConfigurationId)
       || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
   }
+
+  // What this server's model returns, and what the transcription now in use returns, both from
+  // the catalog; the status bar spells out what the second means for speaker detection.
+  $: localCapability = activeLocalModel ? modelCapability(providers, 'local', activeLocalModel) : null;
+  $: activeSaved =
+    configurations.find((c) => c.uuid === activeConfigurationId) ??
+    sharedConfigurations.find((c) => c.uuid === activeConfigurationId) ??
+    null;
+  $: inUse = usingLocalDefault
+    ? isLite
+      ? null
+      : localCapability
+    : activeSaved
+      ? modelCapability(providers, activeSaved.provider, activeSaved.model_name)
+      : null;
 
   async function handleShareToggle(config: UserASRSettingsResponse) {
     const newShared = !config.is_shared;
@@ -254,35 +342,13 @@
     return '';
   }
 
-  // Admin: set local model and restart worker
-  async function handleSetLocalModel() {
-    if (!selectedLocalModel || selectedLocalModel === activeLocalModel) return;
-    modelChangeInProgress = true;
-    try {
-      await ASRSettingsApi.setLocalModel(selectedLocalModel);
-      activeLocalModel = selectedLocalModel;
-      activeLocalModelSource = 'database';
-      toastStore.success($t('settings.asrProvider.localModelSet', { model: selectedLocalModel }));
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.setLocalModelFailed')), 5000);
-    } finally {
-      modelChangeInProgress = false;
-    }
+  /** After a model switch: re-read the model card without the page-level loading state. */
+  async function refreshLocalModel() {
+    const resp = await ASRSettingsApi.getActiveLocalModel().catch(() => null);
+    if (!resp) return;
+    activeLocalModel = resp.active_model;
+    localModelInfo = resp.model_info || null;
   }
-
-  async function handleRestartGpuWorker() {
-    restartInProgress = true;
-    try {
-      const result = await ASRSettingsApi.restartGpuWorker();
-      toastStore.success(result.message, 8000);
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.restartWorkerFailed')), 5000);
-    } finally {
-      restartInProgress = false;
-    }
-  }
-
-  $: localModelChanged = selectedLocalModel && selectedLocalModel !== activeLocalModel;
 
   let _asrModalWasOpen = false;
   $: {
@@ -298,8 +364,10 @@
   {#if loading}
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else}
-    <!-- Local GPU Model Info (all users) / Controls (admin only) -->
-    {#if activeLocalModel}
+    <!-- Local GPU Model Info (all users) / Controls (admin only). Lite cannot transcribe here. -->
+    {#if isLite}
+      <p class="lite-note" data-testid="asr-lite-note">{$t(PIPELINE_ISSUE_KEYS.local_asr_unavailable)}</p>
+    {:else if activeLocalModel}
       <div class="local-model-section" class:admin-mode={isAdmin}>
         <div class="admin-section-header">
           <h4>
@@ -327,89 +395,67 @@
           </div>
           <div class="model-capabilities">
             {#if localModelInfo}
-              <span class="cap-badge" class:cap-yes={localModelInfo.supports_diarization} class:cap-no={!localModelInfo.supports_diarization}>
-                {localModelInfo.supports_diarization ? '✓' : '✗'} {$t('settings.asrProvider.diarizationQuality')}
-              </span>
+              {#if localCapability}
+                <CapabilityBadges
+                  returnsSpeakers={localCapability.returnsSpeakers}
+                  timing={localCapability.timing}
+                />
+              {/if}
               <span class="cap-badge" class:cap-yes={localModelInfo.supports_translation} class:cap-no={!localModelInfo.supports_translation}>
                 {localModelInfo.supports_translation ? '✓' : '✗'} {$t('settings.asrProvider.capTranslation')}
               </span>
               <span class="cap-badge cap-neutral">
-                {localModelInfo.language_support === 'english_optimized' ? 'English optimized' : 'Multilingual'}
+                {localModelInfo.language_support === 'english_optimized'
+                  ? $t('settings.asrProvider.capEnglishOptimized')
+                  : $t('settings.asrProvider.capMultilingual')}
               </span>
             {/if}
           </div>
         </div>
 
-        {#if isAdmin}
-          <!-- Admin controls -->
-          <p class="admin-description">
-            {$t('settings.asrProvider.localModelDescription')}
-          </p>
-          <div class="model-control-row">
-            <div class="model-select-group">
-              <label for="local-model-select">{$t('settings.asrProvider.activeModel')}</label>
-              <div class="model-select-with-source">
-                <select id="local-model-select" bind:value={selectedLocalModel} disabled={modelChangeInProgress || restartInProgress} class="form-select">
-                  {#if availableLocalModels.length > 0}
-                    {#each availableLocalModels as model}
-                      <option value={model.short_name}>{model.short_name}</option>
-                    {/each}
-                    {#if !availableLocalModels.find(m => m.short_name === activeLocalModel)}
-                      <option value={activeLocalModel}>{activeLocalModel} {$t('settings.asrProvider.notDownloaded')}</option>
-                    {/if}
-                  {:else}
-                    <option value={activeLocalModel}>{activeLocalModel}</option>
-                  {/if}
-                </select>
-                <span class="model-source">{$t('settings.asrProvider.modelSource', { source: activeLocalModelSource === 'database' ? $t('settings.asrProvider.sourceDatabase') : $t('settings.asrProvider.sourceEnvironment') })}</span>
-              </div>
-            </div>
-            <div class="model-actions">
-              {#if localModelChanged}
-                <button class="btn btn-primary" on:click={handleSetLocalModel} disabled={modelChangeInProgress}>
-                  {#if modelChangeInProgress}
-                    <Spinner size="small" /> {$t('common.saving')}
-                  {:else}
-                    {$t('settings.asrProvider.saveModel')}
-                  {/if}
-                </button>
-              {/if}
-              <button class="btn btn-warning" on:click={handleRestartGpuWorker} disabled={restartInProgress || modelChangeInProgress}>
-                {#if restartInProgress}
-                  <Spinner size="small" /> {$t('settings.asrProvider.restarting')}
-                {:else}
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
-                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                  </svg>
-                  {$t('settings.asrProvider.restartGpuWorker')}
-                {/if}
-              </button>
-            </div>
-          </div>
-          {#if availableLocalModels.length > 0}
-            <div class="downloaded-count">{$t('settings.asrProvider.downloadedLocally', { count: availableLocalModels.length })}</div>
-          {/if}
-        {/if}
       </div>
+      {#if isAdmin}
+        <LocalModelLibrary locked={!isSuperAdmin} on:activated={refreshLocalModel} />
+      {/if}
     {/if}
 
     <!-- Active provider status bar -->
-    <div class="status-bar" class:local={usingLocalDefault}>
+    <div class="status-bar" class:local={usingLocalDefault && !isLite}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
       </svg>
-      {#if usingLocalDefault}
+      {#if usingLocalDefault && isLite}
+        {$t(PIPELINE_ISSUE_KEYS.local_asr_unavailable)}
+      {:else if usingLocalDefault}
         {$t('settings.asrProvider.usingLocalDefault')}{#if activeLocalModel} — <strong>{activeLocalModel}</strong>{/if}
       {:else}
         <span class="status-text">
           {$t('settings.asrProvider.currentProvider')}: <strong>{getActiveConfig()?.name || ''}</strong>
           ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
         </span>
-        <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
-          {$t('settings.asrProvider.useLocal')}
-        </button>
+        {#if !isLite}
+          <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
+            {$t('settings.asrProvider.useLocal')}
+          </button>
+        {/if}
       {/if}
+    </div>
+
+    <!-- What the transcription in use returns, what that means, and the key to the pills -->
+    <div class="in-use-flags" data-testid="in-use-flags">
+      {#if inUse}
+        <CapabilityBadges
+          returnsSpeakers={inUse.returnsSpeakers}
+          timing={inUse.timing}
+          local={usingLocalDefault}
+          lite={isLite}
+          explain
+        />
+      {/if}
+      <details class="flags-legend">
+        <summary>{$t('settings.asrProvider.legend.title')}</summary>
+        <CapabilityBadges legend />
+      </details>
     </div>
 
     <!-- Section header -->
@@ -430,6 +476,10 @@
       {/if}
     </div>
 
+    {#if noCloudEnabled}
+      <p class="lite-note" data-testid="asr-policy-none-enabled">{$t('settings.asrPolicy.noneEnabled')}</p>
+    {/if}
+
     {#if configurations.length > 0}
       <div class="config-list">
         {#each configurations as config (config.uuid)}
@@ -440,9 +490,13 @@
                 {#if isProviderExperimental(config.provider)}
                   <span class="badge experimental-badge">{$t('settings.asrProvider.statusExperimental')}</span>
                 {/if}
+                {#if notEnabled(config.provider)}
+                  <span class="badge experimental-badge" data-testid="asr-not-enabled-badge">{$t('settings.asrPolicy.notEnabled')}</span>
+                {/if}
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
+                <CapabilityBadges {...capabilitiesFor(config)} />
                 {#if config.test_status && config.test_status !== 'untested'}
                   <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(config.test_status === 'success' ? ASR_TEST_STATUS_KEYS.connected : ASR_TEST_STATUS_KEYS.failed)}</span>
                 {/if}
@@ -466,7 +520,7 @@
                 <button
                   class="btn-activate"
                   on:click={() => activateConfiguration(config.uuid)}
-                  disabled={saving}
+                  disabled={saving || notEnabled(config.provider)}
                   title={$t('settings.asrProvider.setActive')}
                 >
                   {$t('settings.asrProvider.setActive')}
@@ -542,9 +596,13 @@
             <div class="config-info">
               <div class="config-badges">
                 <span class="badge provider-badge">{ASRSettingsApi.getProviderDisplayName(config.provider)}</span>
+                {#if notEnabled(config.provider)}
+                  <span class="badge experimental-badge" data-testid="asr-not-enabled-badge">{$t('settings.asrPolicy.notEnabled')}</span>
+                {/if}
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
+                <CapabilityBadges {...capabilitiesFor(config)} />
                 {#if config.owner_role === 'admin' || config.owner_role === 'super_admin'}
                   <span class="badge admin-badge">{$t('settings.sharing.adminBadge')}</span>
                 {/if}
@@ -557,7 +615,7 @@
             </div>
             <div class="config-actions">
               {#if config.uuid !== activeConfigurationId}
-                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving}>
+                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving || notEnabled(config.provider)}>
                   {$t('settings.asrProvider.setActive')}
                 </button>
               {/if}
@@ -598,12 +656,21 @@
       </div>
     {/if}
   {/if}
+
+  {#if isAdmin}
+    <CloudProviderPolicy bind:this={policyPanel} locked={!isSuperAdmin} on:addshared={(e) => openSharedModal(e.detail.providerId)} />
+  {/if}
 </div>
 
 <ASRConfigModal
   bind:show={showConfigModal}
   editingConfig={editingConfiguration}
   {providers}
+  {diarizationSource}
+  deploymentMode={isLite ? 'lite' : 'full'}
+  firstConfig={configurations.length === 0 && sharedConfigurations.length === 0}
+  {presetProvider}
+  {presetShared}
   on:saved={handleConfigSaved}
   on:close={() => { showConfigModal = false; editingConfiguration = null; }}
 />
@@ -635,9 +702,21 @@
 />
 
 <style>
+  .lite-note {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
+  /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
+     beneath left-aligned tabs reads as misaligned. */
   .asr-settings {
     max-width: 800px;
-    margin: 0 auto;
   }
 
   .loading {
@@ -656,7 +735,7 @@
     margin-bottom: 1.25rem;
     font-size: 0.8125rem;
     background: var(--primary-bg, rgba(var(--primary-color-rgb), 0.08));
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid var(--primary-border, rgba(var(--primary-color-rgb), 0.2));
   }
 
@@ -667,6 +746,26 @@
   }
 
   .status-text { flex: 1; }
+
+  .in-use-flags {
+    margin: -0.5rem 0 1.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .flags-legend {
+    margin-top: 0.5rem;
+  }
+
+  .flags-legend summary {
+    cursor: pointer;
+    width: fit-content;
+    color: var(--primary-on-surface);
+  }
+
+  .flags-legend[open] summary {
+    margin-bottom: 0.5rem;
+  }
 
   .btn-use-local {
     margin-left: auto;
@@ -1105,108 +1204,6 @@
     color: #fbbf24;
   }
 
-  .admin-description {
-    margin: 0 0 0.875rem;
-    font-size: 0.775rem;
-    color: var(--text-muted);
-    line-height: 1.5;
-  }
-
-  .model-control-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.875rem;
-    flex-wrap: wrap;
-  }
-
-  .model-select-group {
-    flex: 1;
-    min-width: 200px;
-  }
-
-  .model-select-group label {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    margin-bottom: 0.375rem;
-  }
-
-  .model-select-with-source {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .model-select-group .form-select {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color, var(--card-bg));
-    color: var(--text-color);
-    font-size: 0.8125rem;
-    height: 36px;
-  }
-
-  .model-source {
-    font-size: 0.675rem;
-    color: var(--text-muted);
-    font-style: italic;
-  }
-
-  .model-actions {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-shrink: 0;
-    /* Align with the select element: skip past the label height */
-    margin-top: 1.25rem;
-  }
-
-  .model-actions .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-    border: none;
-    white-space: nowrap;
-  }
-
-  .model-actions .btn-primary {
-    background: var(--primary-color, var(--primary-color));
-    color: white;
-  }
-
-  .model-actions .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover, #2563eb);
-  }
-
-  .model-actions .btn-warning {
-    background: var(--warning-color, #f59e0b);
-    color: white;
-  }
-
-  .model-actions .btn-warning:hover:not(:disabled) {
-    background: #d97706;
-  }
-
-  .model-actions .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .downloaded-count {
-    margin-top: 0.625rem;
-    font-size: 0.725rem;
-    color: var(--text-muted);
-  }
-
   @media (max-width: 768px) {
     .status-bar {
       flex-wrap: wrap;
@@ -1220,20 +1217,6 @@
     .config-actions {
       width: 100%;
       justify-content: flex-start;
-    }
-
-    .model-control-row {
-      flex-direction: column;
-    }
-
-    .model-actions {
-      margin-top: 0;
-      width: 100%;
-    }
-
-    .model-actions .btn {
-      flex: 1;
-      min-height: 44px;
     }
 
     .model-info-row {

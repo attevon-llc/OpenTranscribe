@@ -322,9 +322,11 @@ was finding nothing at all.
   helper (prefix `E2E_CONVERSATION_PREFIX = "e2e-chat-"`) — deliberately its own helper, not
   a reuse of `test_chat.py`'s `_unique()`, which also names LLM provider configs and would be
   wrong to prefix the same way. Both scripts are unconditionally invoked (Tier A only, via
-  `cleanup-test-data.py --execute-unambiguous`) at the start of
-  `scripts/run-integration-tests.sh` and `scripts/e2e/run-e2e.sh`, degrading rather than
-  blocking the run on failure; `OT_SKIP_TEST_DATA_SWEEP=1` is the escape hatch.
+  `cleanup-test-data.py --execute-unambiguous`) at the start AND, from an EXIT trap, at the
+  end of `scripts/run-integration-tests.sh` and `scripts/e2e/run-e2e.sh` (and once, after all
+  phases, by `scripts/run-dev-tests.sh`), degrading rather than blocking the run on failure
+  and never changing its exit code; `OT_SKIP_TEST_DATA_SWEEP=1` is the escape hatch. See
+  "Cleaning up after tests" below for the rest of the rule.
 - **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`,
   `nosuchuser-e2e@example.com`, `ldap-nosuchuser-e2e`), never a wrong password for
   `admin@example.com` — lockout is keyed on the **resolved account** (`canonical_identifier`
@@ -345,6 +347,67 @@ was finding nothing at all.
   either — it would exercise the relaxation, not the cap; that control is covered at unit/API
   level only (`backend/tests/unit/test_session_ceiling.py`,
   `backend/tests/unit/test_session_cap_sweep.py`).
+
+## Cleaning up after tests (issue #1195)
+
+**A test leaves nothing behind — not on success, not on failure, not when its worker is
+killed.** That covers everything OUTSIDE the `db_session` savepoint: OpenSearch indexes,
+pipelines and documents, MinIO buckets and objects, Postgres databases and live-committed
+rows, docker containers/networks/volumes, Redis keys and `/tmp` trees. Audit and per-file
+status: `docs/design/v060_test_hygiene_audit.md`.
+
+Three layers, each needed:
+
+1. **Teardown on every failure path** — enforced by `unit/test_test_artifact_teardown_discipline.py`
+   (AST). A creation (`indices.create`, `put_pipeline`, `make_bucket`, `CREATE DATABASE`,
+   `docker run -d` / `network create`, `mkdtemp`/`mkstemp`/`NamedTemporaryFile(delete=False)`)
+   must sit inside a `try` whose `finally` removes it, or be the statement IMMEDIATELY before
+   that `try`. "Create, seed, then try" is the defect it exists for: eight index fixtures
+   bulk-seeded between the create and the `try`, so a failed seed leaked the index. A helper
+   that creates and returns hands the obligation to its caller. Its `_ALLOWED` dict needs a
+   reason per entry and is empty.
+2. **A registered shape for everything a killed run can leave** — enforced by
+   `unit/test_test_artifact_sweep.py` (every index/pipeline/bucket/tmp-prefix name a test mints
+   must match a shape in `scripts/lib/test_artifact_sweep.py`) and
+   `unit/test_cleanup_test_data_safety.py` (every uniquified name an e2e test mints — f-strings
+   included, not just `_PREFIX` constants — must start with a registered prefix; the leaked
+   profile `E2E Propagated <hex8>` was an inline f-string no constant scan could see). Use a
+   lowercase registered prefix plus `uuid4().hex[:N]`, never a title-case literal.
+   Docker resources a test starts carry `--label ot-test-artifact=1` (`tests/docker_ops.py`
+   `TEST_ARTIFACT_LABEL`).
+3. **Liveness**: every pytest controller registers a flock marker in the main checkout's
+   `.testruns/` (`tests/testrun_marker.py`, via `conftest.py`), so a concurrent sweep never
+   removes a store a running test is using, even a bare `pytest` run from another worktree.
+
+Four more rules from issue #1222:
+
+- **Corpus-injected files tear down through `purge_injected`**, not raw ORM deletes (those
+  orphan the OpenSearch chunks and speaker embeddings). Mint the seed as `pytest-<hex>`,
+  `pytest-synth-<hex10>`, `pytest-searchqual-<hex10>` or `e2e-owned-<hex10>`:
+  `INJECTED_TEST_SEED_SHAPE` in `cleanup-test-data.py` is how a killed run's files are found, and
+  `unit/test_cleanup_test_data_injected_and_bench.py` fails on an unregistered `seed = f"..."`.
+- **An overlay the stack already runs is not the test's to stop** (`e2e/idp_overlay.py`): a
+  fixture that starts LLDAP/Keycloak records whether it did, and teardown stops or removes only
+  those (`unit/test_idp_overlay_lifecycle.py`).
+- **A docker build in a test labels its image** (`ot-test-artifact=1` plus a per-test
+  `ot-test-build=<hex>`) and removes images by that label in a `finally`: never by bare name,
+  never a prune.
+- **Test a bash cleanup trap by running the real script in a throwaway layout** with stub
+  `docker`/`opentr.sh` on PATH (`unit/test_pki_leg_teardown.py`); a trap you only read is not a
+  trap you have seen fire.
+
+**The sweep** — `scripts/cleanup-test-data.py` (dry run by default; `--execute-unambiguous`
+Tier A; `--execute` adds Tier B; `--planes` selects; `--min-age-minutes N`). Rows go through the
+app's own DELETE endpoints; store planes re-check each name at the point of deletion and refuse
+production names, unregistered names, anything younger than the liveness cutoff, and a run whose
+exported `*_PORT`s point at different stacks. Unattended: `./opentr.sh test-cleanup --fresh
+<name> [--background]` (scripts/CLAUDE.md). Against an isolated stack always export every port:
+
+```bash
+POSTGRES_PORT=5376 OPENSEARCH_PORT=5380 MINIO_PORT=5378 E2E_BACKEND_URL=http://localhost:5374 \
+  backend/venv/bin/python scripts/cleanup-test-data.py            # read the dry run first
+./opentr.sh test-cleanup --fresh v060 --dry-run                     # same, ports resolved for you
+```
 
 ## Before you debug a "flaky" E2E test, rule out the STACK (issue #431)
 
@@ -405,6 +468,38 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   Before #297 `gpu` was unregistered and silenced by a `PytestUnknownMarkWarning` filter, so
   those 17 tests ran in the fast suite *and* CPU-only CI, passing only on their own runtime skip
   guards, while the gate selected none of them.
+- **`integration/test_deletion_residue_live.py` is the "does delete really delete" gate.** It
+  seeds a synthetic, fully-indexed file into every store (`deletion_seed.py` — the real
+  indexing task writes the OpenSearch planes), deletes it through each entry point (single,
+  pending/requeued, force, bulk, retention, admin/users account delete, GDPR erasure), then
+  scans Postgres/OpenSearch/MinIO/Redis GENERICALLY (`deletion_residue.py`: the FK closure
+  from `pg_constraint`, every non-system index, every bucket). Before each delete it asserts
+  every scan FIRES and every table depending on `media_file` was populated — a new table the
+  seed does not fill fails the test by name. Two transports: `inprocess` (this checkout's app)
+  and `live` (`DELETION_RESIDUE_BACKEND_URL`, else `E2E_BACKEND_URL`, else :5174 — it must
+  share the Postgres named by `POSTGRES_PORT`, and refuses a mixed stack). The GDPR legs leave
+  id-only `erasure_ledger` rows behind by design (the ledger outlives what it records).
+  ⚠️ **`live` measures the code the backend at that URL serves**, which on an isolated
+  `--fresh` stack is whatever checkout started it — not your branch. To run the live legs
+  against a branch, serve that checkout's app on a free port with the suite's own environment
+  (`TESTING=True`, so no startup task runs) and point `DELETION_RESIDUE_BACKEND_URL` at it;
+  Celery work it publishes is still consumed by the stack's workers, which run the stack's
+  code. `teardown_seed` attempts every step whatever an earlier one did and raises
+  `TeardownIncompleteError` listing every failure (#1233) — a transient
+  `search_context_missing` used to abort it and leak the `e2e-delres-*` rows of every later
+  step. `test_delete_of_a_requeued_file_leaves_no_residue[live]` races the stack's own
+  workers, which move a seeded PENDING file on before the precondition reads it.
+- **`integration/test_orphan_sweep_storage.py` proves the storage orphan sweep (#1212) on a
+  THROWAWAY bucket**, never the real media bucket: a fixture makes `e2e-orphan-sweep-<hex>`,
+  points `settings.MEDIA_BUCKET_NAME` at it, and empties and removes it in `finally`. The
+  "existing file" is a real committed `media_file` row named with `DELRES_PREFIX` (so
+  `cleanup-test-data.py` already covers a leaked row); orphan ids are far above any real
+  sequence value and asserted absent. The sweep skips objects younger than its grace period,
+  so tests that expect deletion move `storage_orphan_sweep_task._now` forward (`old_clock`)
+  instead of waiting an hour, and `test_recent_objects_are_skipped` is the control that
+  proves the clock shift is what makes the others delete. Needs `MINIO_PORT` exported for an
+  isolated stack (`SKIP_S3` otherwise skips it). The route contract (confirm gate, authz,
+  audit) is `api/endpoints/test_admin_storage_integrity_routes.py`, with the task replaced.
 - **The three diarization `gpu` suites do NOT run in the gate's `-m gpu` phase — they need a
   container, and the gate runs the venv.** `test_diarizer_lifecycle.py`,
   `test_diarization_perf_gates.py` and `test_diarization_regression.py` each open with an

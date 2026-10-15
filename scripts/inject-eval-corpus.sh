@@ -11,6 +11,8 @@
 #   ./scripts/inject-eval-corpus.sh --fresh rag403 --corpus qmsum
 #   ./scripts/inject-eval-corpus.sh --fresh rag403 --corpus qmsum --limit 10 --dry-run
 #   ./scripts/inject-eval-corpus.sh --port-offset 100 --corpus synthetic
+#   ./scripts/inject-eval-corpus.sh --fresh rag403 --corpus synthetic --seed run1 --purge --dry-run
+#   ./scripts/inject-eval-corpus.sh --fresh rag403 --corpus synthetic --seed run1 --purge --yes
 #
 # Anything after the recognised flags is passed straight through to the Python
 # CLI (`--help` for the full list).
@@ -45,11 +47,12 @@ DATA_DIR="${RAG_EVAL_DATA_DIR:-/mnt/nas/opentranscribe-benchmarks}"
 NO_WAIT=false
 SETTLE_TIMEOUT=1800
 DRY_RUN=false
+PURGE=false
 DISPATCH_MODE="celery"
 PASSTHROUGH=()
 
 usage() {
-    sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -62,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         --no-wait)        NO_WAIT=true; shift ;;
         --skip-settle)    NO_WAIT=true; shift ;;
         --settle-timeout) SETTLE_TIMEOUT="$2"; shift 2 ;;
+        --purge)          PURGE=true; PASSTHROUGH+=("$1"); shift ;;
         --dry-run)        DRY_RUN=true; PASSTHROUGH+=("$1"); shift ;;
         --dispatch)       DISPATCH_MODE="$2"; PASSTHROUGH+=("$1" "$2"); shift 2 ;;
         -h|--help)        usage 0 ;;
@@ -140,6 +144,11 @@ set -e
 if [[ "$INJECT_EXIT" -ne 0 ]]; then
     echo "Injection failed (exit ${INJECT_EXIT}) — not attempting a settle check." >&2
     exit "$INJECT_EXIT"
+fi
+
+if $PURGE; then
+    # Nothing was injected, so there is no manifest and nothing to settle.
+    exit 0
 fi
 
 if $DRY_RUN; then

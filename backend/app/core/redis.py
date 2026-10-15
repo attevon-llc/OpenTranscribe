@@ -7,7 +7,9 @@ per process via ``@lru_cache`` and reused for the lifetime of the
 worker / API server.
 
 ``get_probe_redis()`` is the one sanctioned second client: same URL, but with
-short socket timeouts, for the readiness probe only. The shared client keeps
+short socket timeouts, for the readiness probe and for the few callers that must
+never block (the worker's loaded-model report, which runs on ``worker_ready`` in
+the MainProcess main thread). The shared client keeps
 redis-py's unbounded defaults on purpose — blocking reads and pub/sub waits
 use it, and a global socket timeout would break them.
 

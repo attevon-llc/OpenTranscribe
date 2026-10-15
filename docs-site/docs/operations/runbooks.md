@@ -12,7 +12,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 ## Runbook: Stuck Transcription Tasks
 
-**Symptoms**: Files remain in "Processing" or "Transcribing" status indefinitely. The progress bar stops updating. No new files are being processed.
+**Symptoms**: Files remain in "Processing" status indefinitely. The progress bar stops updating. No new files are being processed.
 
 **Diagnosis**:
 1. Open the Flower dashboard at `http://localhost:5175/flower`
@@ -29,7 +29,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
    from app.models.media import MediaFile, FileStatus
    db = SessionLocal()
    stuck = db.query(MediaFile).filter(
-       MediaFile.status.in_([FileStatus.PROCESSING, FileStatus.TRANSCRIBING])
+       MediaFile.status == FileStatus.PROCESSING
    ).all()
    for f in stuck:
        print(f'{f.id}: {f.filename} - {f.status} (updated: {f.updated_at})')
@@ -56,20 +56,10 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 *Option C: Cancel and retry individual files*
 
-1. In the Flower dashboard, revoke the stuck Celery task
-2. Update the file status in the database:
-   ```bash
-   ./opentr.sh shell backend
-   python -c "
-   from app.db.session import SessionLocal
-   from app.models.media import MediaFile, FileStatus
-   db = SessionLocal()
-   file = db.query(MediaFile).get(<FILE_ID>)
-   file.status = FileStatus.UPLOADED
-   db.commit()
-   "
-   ```
-3. Reprocess the file from the UI
+1. In the UI, click **Cancel** on the stuck file and wait for it to reach `cancelled`
+2. Click **Retry** to queue it again. A retry keeps the file's own upload options (model,
+   speaker counts) and is otherwise planned from the owner's current transcription and
+   speaker-detection settings
 
 **Prevention**:
 - The `TaskRecoveryService` runs automatically on a schedule and handles most stuck task scenarios
@@ -79,6 +69,37 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 - Recovery thresholds are environment variables — see
   [Task Recovery](../configuration/environment-variables.md#task-recovery)
 - Monitor the Flower dashboard regularly for long-running tasks
+
+---
+
+## Runbook: File Refused Before Processing
+
+**Symptoms**: A file goes to `error` right after upload or retry, without any transcription
+progress. Its error message is a plain sentence about settings, for example *"This deployment has
+no local speaker detection. Choose pyannote.ai or a provider that returns speakers."* or
+*"pyannote.ai speaker detection needs a pyannote.ai API key. Save your key first, then choose
+this option."*
+
+**Cause**: Before anything is queued, OpenTranscribe works out how the file will be processed
+from the owner's transcription and speaker-detection settings. A combination that cannot run on
+this deployment is refused at that point, so no worker is involved and there is nothing stuck to
+recover.
+
+**Resolution**:
+1. Read the file's error message; it names what to change.
+2. Have the file owner fix the setting under **Settings → Transcription** or **Settings → Speaker
+   Identification → Speaker Detection** (for example pick a cloud provider on a lite deployment,
+   or save a pyannote.ai key).
+3. Retry the file.
+
+On a lite (cloud-only) deployment the GPU worker `celery-worker` is scaled to zero, so its logs
+are empty. Cloud transcription and cloud speaker detection run in `celery-cloud-asr-worker`, and
+voiceprints in `celery-cpu-worker`:
+
+```bash
+./opentr.sh logs celery-cloud-asr-worker
+./opentr.sh logs celery-cpu-worker
+```
 
 ---
 
@@ -397,7 +418,7 @@ docker image prune -a -f --filter "until=168h"
 
 ```bash
 # Clean backend temp files
-docker compose exec backend rm -rf /tmp/yt-dlp-* /tmp/whisperx-*
+docker compose exec backend rm -rf /tmp/yt-dlp-*
 
 # Check MinIO for orphaned files
 # (files in storage but not referenced in the database)
@@ -775,8 +796,12 @@ services:
 # Clear Whisper models
 rm -rf ${MODEL_CACHE_DIR:-./models}/huggingface/hub/models--Systran--faster-whisper-*
 
-# Clear PyAnnote speaker models
+# Clear PyAnnote speaker models (the in-process fallback engine)
 rm -rf ${MODEL_CACHE_DIR:-./models}/torch/pyannote/
+
+# Clear the diar-native speaker engine's exported models (DIAR_NATIVE_MODELS_DIR if set);
+# the backend exports them again on its next start
+rm -rf ${MODEL_CACHE_DIR:-./models}/diar-native/
 
 # Clear sentence transformer models
 rm -rf ${MODEL_CACHE_DIR:-./models}/sentence-transformers/

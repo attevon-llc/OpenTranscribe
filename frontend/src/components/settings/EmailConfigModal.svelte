@@ -126,7 +126,7 @@
   }
 </script>
 
-<BaseModal isOpen={show} onClose={() => dispatch('close')} maxWidth="560px">
+<BaseModal isOpen={show} onClose={() => dispatch('close')} size="md">
   <svelte:fragment slot="header">
     <h2 class="modal-title">
       {editingConfig

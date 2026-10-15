@@ -39,6 +39,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # ─── Tunables (overridable via env) ─────────────────────────────────────────
 TEST_SCENARIO="fresh-install"
 TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-fresh}"
+# Defaulted = "this run picks a fresh timestamped root". `--cleanup` then means the LAST
+# run's root, which gr_check_test_root records (issue #1195); see gr_cleanup.
+TEST_ROOT_DEFAULTED=0
+[[ -n "${TEST_ROOT:-}" ]] || TEST_ROOT_DEFAULTED=1
 TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S)}"
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
@@ -162,7 +166,7 @@ gr_log "version under test: $LOCAL_IMAGE_TAG (from ${TO_VERSION:+TO_VERSION}${TO
 # ─── Cleanup mode ───────────────────────────────────────────────────────────
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
-    gr_cleanup
+    gr_cleanup "$TEST_ROOT_DEFAULTED"
     exit 0
 fi
 

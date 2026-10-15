@@ -510,7 +510,6 @@
       idPrefix="collection"
       titleId="create-collection-title"
       title={$t('collectionsPanel.createNewCollection')}
-      intro={$t('collectionsPanel.createIntro')}
       namePlaceholder={$t('collectionsPanel.namePlaceholder')}
       submitLabel={$t('collectionsPanel.createCollection')}
       busyLabel={$t('collectionsPanel.creating')}
@@ -531,7 +530,6 @@
       idPrefix="edit-collection"
       titleId="edit-collection-title"
       title={$t('collectionsPanel.editCollectionTitle')}
-      intro={$t('collectionsPanel.editIntro')}
       namePlaceholder={$t('collectionsPanel.collectionName')}
       submitLabel={$t('collectionsPanel.updateCollection')}
       busyLabel={$t('collectionsPanel.updating')}
@@ -581,10 +579,8 @@
   }
 
   .current-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -651,7 +647,7 @@
     font-size: 18px;
     line-height: 1;
     color: white;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
   }
 
   .search-wrapper {
@@ -661,7 +657,7 @@
 
   .search-icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -671,19 +667,11 @@
   .search-input {
     width: 100%;
     padding: 0.5rem 2rem 0.5rem 2.25rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
+    /* The app's input tokens, not --surface-color/--border-color: matches
+       form-elements.css and TagManagerModal, which this panel's search bar
+       is converging on (issue #757). */
     font-size: 0.875rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
   }
 
   .search-input::placeholder {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import BaseModal from '$components/ui/BaseModal.svelte';
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { AdminApi, type AuditLogEntry } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
@@ -141,18 +143,6 @@
     detailsModalOpen = false;
     detailsJson = '';
   }
-
-  function handleDetailsKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      closeDetails();
-    }
-  }
-
-  function handleDetailsBackdrop(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      closeDetails();
-    }
-  }
 </script>
 
 <div class="audit-log-viewer">
@@ -203,7 +193,7 @@
     </div>
 
     {#if loading}
-      <div class="loading">{$t('settings.auditLog.loadingShort')}</div>
+      <SettingsSkeleton variant="form" count={4} label={$t('settings.auditLog.loadingShort')} />
     {:else}
       <div class="audit-table-container" bind:this={tableContainer} on:scroll={handleTableScroll}>
         {#if totalLogs > 0}
@@ -246,40 +236,20 @@
         <div class="loading-more">{$t('settings.auditLog.loadingShort')}</div>
       {/if}
       {#if auditLogs.length === 0}
-        <div class="loading">{$t('settings.auditLog.noLogs')}</div>
+        <div class="no-logs">{$t('settings.auditLog.noLogs')}</div>
       {/if}
     {/if}
   {/if}
 </div>
 
-{#if detailsModalOpen}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="details-modal-backdrop"
-    on:click={handleDetailsBackdrop}
-    on:wheel|preventDefault|self
-    on:touchmove|preventDefault|self
-    on:keydown={handleDetailsKeydown}
-    tabindex="-1"
-    role="dialog"
-    aria-modal="true"
-    aria-label={$t('settings.auditLog.eventDetails')}
-  >
-    <div class="details-modal">
-      <div class="details-modal-header">
-        <h3>{$t('settings.auditLog.eventDetails')}</h3>
-        <button class="details-modal-close" on:click={closeDetails} aria-label={$t('settings.auditLog.close')}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-      <pre class="details-modal-body">{detailsJson}</pre>
-    </div>
-  </div>
-{/if}
+<BaseModal
+  isOpen={detailsModalOpen}
+  title={$t('settings.auditLog.eventDetails')}
+  size="md"
+  onClose={closeDetails}
+>
+  <pre class="details-modal-body">{detailsJson}</pre>
+</BaseModal>
 
 <style>
   .audit-log-viewer {
@@ -351,18 +321,12 @@
 
   .label-text {
     color: var(--color-text-secondary);
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
+    font-size: var(--font-size-xs);
   }
 
   .filter-row input,
   .filter-row select {
     padding: 0.25rem 0.375rem;
-    border: 1px solid var(--color-border);
-    border-radius: 3px;
-    background: var(--color-bg);
-    color: var(--color-text);
     font-size: 0.75rem;
     height: 1.75rem;
   }
@@ -560,7 +524,7 @@
     transform: scale(1);
   }
 
-  .loading {
+  .no-logs {
     text-align: center;
     padding: 1rem;
     color: var(--color-text-secondary);
@@ -595,80 +559,10 @@
     color: var(--text-secondary);
   }
 
-  /* Details Modal */
-  .details-modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1200;
-    padding: 1rem;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  :global([data-theme='dark']) .details-modal-backdrop {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  .details-modal {
-    background: var(--color-bg, #fff);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    max-width: 600px;
-    width: 100%;
-    max-height: 70vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  }
-
-  .details-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .details-modal-header h3 {
-    margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .details-modal-close {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    cursor: pointer;
-    padding: 0.25rem;
-    color: var(--text-secondary);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    transition: all 0.2s ease;
-  }
-
-  .details-modal-close:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-    transform: scale(1.02);
-  }
-
-  .details-modal-close:active {
-    transform: scale(1);
-  }
-
+  /* Details modal: chrome comes from ui/BaseModal; only the JSON block is styled here. */
   .details-modal-body {
     padding: 1rem;
     margin: 0;
-    overflow: auto;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.75rem;
     line-height: 1.5;
@@ -676,7 +570,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     background: var(--color-bg-secondary, #f9fafb);
-    border-radius: 0 0 8px 8px;
+    border-radius: 6px;
   }
 
   @media (max-width: 768px) {
@@ -694,7 +588,6 @@
       height: auto;
       min-height: 44px;
       font-size: 1rem;
-      padding: 0.5rem 0.75rem;
     }
 
     .filter-row input[type="date"] {

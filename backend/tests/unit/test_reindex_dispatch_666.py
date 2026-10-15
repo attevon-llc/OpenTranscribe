@@ -41,6 +41,9 @@ class _FakeRedis:
         self._store[key] = (value, expires_at)
         return True
 
+    def delete(self, key) -> int:
+        return 1 if self._store.pop(key, None) is not None else 0
+
     def expire_now(self, key) -> None:
         """Test helper: force a key past its TTL without sleeping."""
         if key in self._store:
@@ -134,3 +137,47 @@ def test_a_redis_failure_degrades_to_no_dispatch_rather_than_raising():
         queued = dispatch_transcript_reindex(file_id=1, file_uuid="file-f", user_id=7)
 
     assert queued is False
+
+
+def test_a_failed_publish_releases_its_claim_so_the_next_mutation_queues(fake_redis):
+    """A claim kept after a failed publish told every caller for the whole window that a
+    reindex nobody queued was already pending (issue #1233)."""
+    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+
+    broken = MagicMock()
+    broken.apply_async.side_effect = RuntimeError("broker unreachable")
+    working = MagicMock()
+
+    p1, p2 = _patched(fake_redis, broken)
+    with p1, p2:
+        assert dispatch_transcript_reindex(file_id=1, file_uuid="file-g", user_id=7) is False
+    p1, p2 = _patched(fake_redis, working)
+    with p1, p2:
+        assert dispatch_transcript_reindex(file_id=1, file_uuid="file-g", user_id=7) is True
+
+    working.apply_async.assert_called_once()
+    assert "transcript_reindex_debounce:file-g" in fake_redis._store
+
+
+def test_failed_and_already_pending_are_told_apart(fake_redis):
+    """The two used to be the same ``False``; a caller reporting residuals needs both."""
+    from app.services.search.reindex_dispatch import ReindexDispatch
+    from app.services.search.reindex_dispatch import queue_transcript_reindex
+
+    broken = MagicMock()
+    broken.apply_async.side_effect = RuntimeError("broker unreachable")
+    p1, p2 = _patched(fake_redis, broken)
+    with p1, p2:
+        failed = queue_transcript_reindex(file_id=1, file_uuid="file-h", user_id=7)
+    working = MagicMock()
+    p1, p2 = _patched(fake_redis, working)
+    with p1, p2:
+        queued = queue_transcript_reindex(file_id=1, file_uuid="file-h", user_id=7)
+        pending = queue_transcript_reindex(file_id=1, file_uuid="file-h", user_id=7)
+
+    assert (failed, queued, pending) == (
+        ReindexDispatch.FAILED,
+        ReindexDispatch.QUEUED,
+        ReindexDispatch.ALREADY_PENDING,
+    )
+    working.apply_async.assert_called_once()

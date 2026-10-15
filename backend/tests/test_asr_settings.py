@@ -8,9 +8,11 @@ savepoint rollback — no mocks for the data layer.
 """
 
 import pytest
+from fixtures.hf_cache import make_complete_repo
 from pydantic import ValidationError
 
 from app import models
+from app.core.local_whisper_catalog import LOCAL_WHISPER_MODELS
 from app.models.user_asr_settings import UserASRSettings
 from app.schemas.asr_settings import ASRProvider
 from app.schemas.asr_settings import UserASRSettingsCreate
@@ -246,11 +248,15 @@ class TestASRConfigCRUD:
         assert resp.json()["has_api_key"] is False
         assert resp.json()["provider"] == "assemblyai"
 
-    def test_delete_config_204(self, client, user_token_headers):
+    def test_delete_config_200(self, client, user_token_headers):
         created = _create_config(client, user_token_headers, name="Delete Me").json()
         uuid = created["uuid"]
         resp = client.delete(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
-        assert resp.status_code == 204
+        assert resp.status_code == 200
+        body = resp.json()
+        assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+        assert isinstance(body["pipeline_issues"], list)
+        assert resp.json()["message"] == "ASR configuration deleted"
         # Confirm it is gone
         resp2 = client.get(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
         assert resp2.status_code == 404
@@ -266,12 +272,17 @@ class TestASRConfigCRUD:
         _create_config(client, user_token_headers, name="Bulk A")
         _create_config(client, user_token_headers, name="Bulk B")
         resp = client.delete("/api/asr-settings/all", headers=user_token_headers)
-        assert resp.status_code == 204
+        assert resp.status_code == 200
+        body = resp.json()
+        assert (body["deleted"], body["diarizer_source_reverted"]) == (True, False)
+        assert isinstance(body["pipeline_issues"], list)
         data = _list_configs(client, user_token_headers)
         assert len(data["configs"]) == 0
 
-    def test_get_api_key_owner_only(self, client, user_token_headers, other_user_auth_headers):
-        """The /api-key endpoint must only return keys to the owning user."""
+    def test_no_route_reveals_a_stored_key(
+        self, client, user_token_headers, other_user_auth_headers
+    ):
+        """Credentials are write-only (#1246): the owner-only reveal route no longer exists."""
         created = _create_config(
             client,
             user_token_headers,
@@ -281,17 +292,16 @@ class TestASRConfigCRUD:
             api_key="dg_secret_key_xyz",
         ).json()
         uuid = created["uuid"]
+        assert created["has_api_key"] is True
 
-        # Owner can retrieve
-        resp = client.get(f"/api/asr-settings/config/{uuid}/api-key", headers=user_token_headers)
-        assert resp.status_code == 200
-        assert resp.json()["api_key"] == "dg_secret_key_xyz"
+        for headers in (user_token_headers, other_user_auth_headers):
+            resp = client.get(f"/api/asr-settings/config/{uuid}/api-key", headers=headers)
+            assert resp.status_code == 404
+            assert "dg_secret_key_xyz" not in resp.text
 
-        # Other user cannot
-        resp2 = client.get(
-            f"/api/asr-settings/config/{uuid}/api-key", headers=other_user_auth_headers
-        )
-        assert resp2.status_code == 404
+        detail = client.get(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
+        assert detail.status_code == 200
+        assert "dg_secret_key_xyz" not in detail.text
 
     def test_create_config_unauthenticated(self, client):
         resp = client.post(
@@ -501,7 +511,7 @@ class TestASRSharing:
         )
         # Owner deletes the config
         resp = client.delete(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
-        assert resp.status_code == 204
+        assert resp.status_code == 200
         # Other user's active config should be cleared
         status = client.get("/api/asr-settings/status", headers=other_user_auth_headers)
         assert status.status_code == 200
@@ -868,6 +878,12 @@ class TestLocalModelDiscovery:
 class TestAdminLocalModelControl:
     """Tests for admin-only local Whisper model management."""
 
+    @pytest.fixture(autouse=True)
+    def _every_catalog_model_on_disk(self, hf_cache):
+        """Activation requires the model to be downloaded (#1246); put them all in the cache."""
+        for entry in LOCAL_WHISPER_MODELS:
+            make_complete_repo(hf_cache, entry.repo_id)
+
     def test_get_active_local_model(self, client, user_token_headers):
         """Any user can view the active local model."""
         resp = client.get("/api/asr-settings/local-model/active", headers=user_token_headers)
@@ -876,6 +892,7 @@ class TestAdminLocalModelControl:
         assert "active_model" in data
         assert data["source"] in ("database", "environment")
         assert "available_models" in data
+        assert isinstance(data["loaded_models"], list)
 
     def test_set_local_model_requires_admin(self, client, user_token_headers):
         """Regular users cannot change the local model."""
@@ -1018,12 +1035,13 @@ class TestTranscriptionConfigResolvesModel:
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_admin_set_model_reflected_in_get(self, client, super_admin_token_headers):
+    def test_admin_set_model_reflected_in_get(self, client, super_admin_token_headers, hf_cache):
         """Full round-trip: admin sets model, GET endpoint returns it."""
         # This test exercises the full DB path (set + get both use API sessions)
+        make_complete_repo(hf_cache, "Systran/faster-whisper-small")
         client.post(
             "/api/asr-settings/local-model/set",
-            json={"model_name": "distil-large-v3"},
+            json={"model_name": "small"},
             headers=super_admin_token_headers,
         )
         resp = client.get(
@@ -1031,5 +1049,5 @@ class TestTranscriptionConfigResolvesModel:
             headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["active_model"] == "distil-large-v3"
+        assert resp.json()["active_model"] == "small"
         assert resp.json()["source"] == "database"

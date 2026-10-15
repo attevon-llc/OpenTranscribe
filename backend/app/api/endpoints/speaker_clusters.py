@@ -17,6 +17,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
+from app.models.media import SpeakerClusterMember
 from app.models.user import User
 from app.schemas.speaker_cluster import BatchVerifyRequest
 from app.schemas.speaker_cluster import ClusterPromoteRequest
@@ -27,6 +28,9 @@ from app.schemas.speaker_cluster import SpeakerClusterUpdate
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.playback_rendition import resolve_playback
+from app.services.speaker_cleanup import SpeakerImpact
+from app.services.speaker_cleanup import raise_if_incomplete
+from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_clustering_service import SpeakerClusteringService
 
 logger = logging.getLogger(__name__)
@@ -165,7 +169,7 @@ def get_unverified_inbox(
         user_id=current_user.id,
         page=page,
         per_page=per_page,
-        include_quarantined=current_user.is_admin,
+        include_quarantined=ctx.bypass.user_is_admin,
         organization_id=ctx.org_id,
     )
 
@@ -177,16 +181,28 @@ def batch_verify(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Batch verify multiple speakers."""
+    """Batch verify multiple speakers.
+
+    A speaker the user unassigned from (or rejected) the identity being applied is
+    skipped and listed in ``blocked_speaker_uuids`` (issue #1233). ``override_unassignment``
+    lifts that correction, for exactly one speaker; with more it is a 422.
+    """
     service = SpeakerClusteringService(db)
-    return service.batch_verify_speakers(
-        speaker_uuids=[str(u) for u in data.speaker_uuids],
-        user_id=current_user.id,
-        action=data.action,
-        profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
-        display_name=data.display_name,
-        organization_id=ctx.org_id,
-    )
+    try:
+        return service.batch_verify_speakers(
+            speaker_uuids=[str(u) for u in data.speaker_uuids],
+            user_id=current_user.id,
+            action=data.action,
+            profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
+            display_name=data.display_name,
+            organization_id=ctx.org_id,
+            override_unassignment=data.override_unassignment,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail="An unassignment can only be overridden for one speaker at a time",
+        ) from e
 
 
 @router.get("/speakers/{speaker_uuid}/media-preview")
@@ -227,7 +243,7 @@ def get_speaker_media_preview(
     # 404 not 403: "it exists but you may not see it" is itself a disclosure.
     from app.services.takedown_service import is_hidden_for
 
-    if is_hidden_for(media_file, is_admin=current_user.is_admin):
+    if is_hidden_for(media_file, is_admin=ctx.bypass.user_is_admin):
         raise HTTPException(status_code=404, detail="Speaker not found")
 
     # Presigned URL for source media (shared media-streaming TTL)
@@ -243,7 +259,7 @@ def get_speaker_media_preview(
         try:
             media_presigned_url = get_file_url(
                 source.object_name,
-                expires=settings.MEDIA_URL_EXPIRE_SECONDS,
+                expires=ctx.bypass.presign_ttl(settings.MEDIA_URL_EXPIRE_SECONDS),
                 content_type=source.content_type,
             )
         except Exception as e:
@@ -445,9 +461,11 @@ def delete_cluster(
 
     Destroys only the grouping. Member speakers survive with ``cluster_id`` reset to
     null, so the transcripts and their labels are untouched and the speakers become
-    candidates for re-clustering. Removing the cluster's centroid embedding from
-    OpenSearch is best-effort — a failure there is logged at debug and does not fail
-    the request, because Postgres is the source of truth for cluster membership.
+    candidates for re-clustering. The memberships are removed first and the emptied
+    cluster is then deleted, row and centroid, by the shared ``speaker_cleanup`` — the
+    centroid is an average of the members' voices, so its erasure is verified, and a
+    centroid that may survive is reported (503 with a fixed message), not logged at
+    debug and forgotten.
     """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
@@ -463,18 +481,10 @@ def delete_cluster(
         if not cluster:
             raise HTTPException(status_code=404, detail="Cluster not found")
 
-        # Clear speaker cluster_id references
         db.query(Speaker).filter(Speaker.cluster_id == cluster.id).update({"cluster_id": None})
-
-        # Remove from OpenSearch
-        try:
-            from app.services.opensearch_service import delete_cluster_embedding
-
-            delete_cluster_embedding(str(cluster.uuid))
-        except Exception:
-            logger.debug("Failed to remove cluster embedding from OpenSearch")
-
-        db.delete(cluster)
+        db.query(SpeakerClusterMember).filter(SpeakerClusterMember.cluster_id == cluster.id).delete(
+            synchronize_session=False
+        )
         db.commit()
 
     except HTTPException:
@@ -483,6 +493,12 @@ def delete_cluster(
         logger.exception("Error deleting cluster: %s", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
+
+    raise_if_incomplete(
+        reconcile_speaker_impact(
+            db, SpeakerImpact(owner_ids={int(current_user.id)}, cluster_uuids={cluster_uuid})
+        )
+    )
 
 
 @router.post("/{cluster_uuid}/promote", response_model=dict[str, Any])
@@ -521,7 +537,12 @@ def merge_clusters(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Merge source cluster into target cluster."""
+    """Merge source cluster into target cluster.
+
+    A source member the user unassigned from the target (or its profile, or one of its
+    members) is not moved; it stays in the source, which survives with it, and its UUID
+    is listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).
+    """
     if source_uuid == target_uuid:
         raise HTTPException(status_code=400, detail="Cannot merge cluster with itself")
 
@@ -537,6 +558,7 @@ def merge_clusters(
     return {
         "uuid": str(result.uuid),
         "member_count": int(result.member_count or 0),
+        "blocked_speaker_uuids": list(service.blocked_speaker_uuids),
         "message": "Clusters merged successfully",
     }
 

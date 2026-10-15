@@ -441,18 +441,10 @@
   .form-group input[type='number'],
   .form-group select {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-size: 0.875rem;
-    font-family: inherit;
   }
 
   .form-group input:disabled,
   .form-group select:disabled {
-    background: var(--color-bg-tertiary);
     cursor: not-allowed;
   }
 

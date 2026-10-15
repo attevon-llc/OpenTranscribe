@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { supportSessionGate } from '$stores/supportSession';
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData, SummaryResponse } from '$lib/types/summary';
   import axiosInstance from '$lib/axios';
@@ -385,11 +386,12 @@
 </script>
 
 <div class="summary-modal-wrapper">
-<BaseModal {isOpen} onClose={handleClose} maxWidth="1200px">
+<BaseModal {isOpen} onClose={handleClose} size="2xl">
       <svelte:fragment slot="header">
         <h2 class="modal-title">{$t('summary.modalTitle', { fileName })}</h2>
         {#if summary}
           <div class="header-actions">
+              {#if !$supportSessionGate.active}
               <button
                 class="copy-button-header"
                 class:copied={copyStatus === 'copied'}
@@ -411,6 +413,7 @@
                   {copyButtonText}
                 {/if}
               </button>
+              {/if}
 
               <!-- Reprocess button when summary exists and LLM is available -->
               {#if llmAvailable}

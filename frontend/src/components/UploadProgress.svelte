@@ -168,7 +168,7 @@
 
   .upload-icon {
     font-size: 16px;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
     min-width: 20px;
     text-align: center;
   }

@@ -16,6 +16,11 @@
   $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
   $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
   $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
+  // What a blank field means on the server: the system range under "use system defaults",
+  // otherwise the user's own saved range.
+  $: useSystemRange = transcriptionSettings?.speaker_prompt_behavior === 'use_defaults';
+  $: blankMin = useSystemRange ? transcriptionSystemDefaults?.min_speakers : transcriptionSettings?.min_speakers;
+  $: blankMax = useSystemRange ? transcriptionSystemDefaults?.max_speakers : transcriptionSettings?.max_speakers;
   $: hasValidationError = minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers;
 
   function emitChange() {
@@ -58,7 +63,7 @@
         id="min-speakers"
         type="number"
         min="1"
-        placeholder={transcriptionSystemDefaults ? `${$t('uploader.default')}: ${transcriptionSystemDefaults.min_speakers}` : $t('uploader.usesDefault')}
+        placeholder={blankMin != null ? `${$t('uploader.default')}: ${blankMin}` : $t('uploader.usesDefault')}
         bind:value={minSpeakers}
         on:change={emitChange}
         disabled={numSpeakers !== null}
@@ -73,7 +78,7 @@
         id="max-speakers"
         type="number"
         min="1"
-        placeholder={transcriptionSystemDefaults ? `${$t('uploader.default')}: ${transcriptionSystemDefaults.max_speakers}` : $t('uploader.usesDefault')}
+        placeholder={blankMax != null ? `${$t('uploader.default')}: ${blankMax}` : $t('uploader.usesDefault')}
         bind:value={maxSpeakers}
         on:change={emitChange}
         disabled={numSpeakers !== null}
@@ -122,7 +127,7 @@
     border-radius: 6px;
   }
   :global([data-theme='dark']) .info-note { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); }
-  .info-note svg { flex-shrink: 0; color: var(--primary-color, #3b82f6); }
+  .info-note svg { flex-shrink: 0; color: var(--primary-on-surface); }
   .info-note span { flex: 1; }
 
   .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -133,12 +138,8 @@
 
   .field input[type="number"] {
     padding: 0.4375rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--input-background, var(--card-background)); color: var(--text-primary); font-size: 0.875rem;
-    transition: all 0.15s ease;
   }
-  .field input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
   .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background, #f5f5f5); }
-  :global([data-theme='dark']) .field input:disabled { background: rgba(255, 255, 255, 0.05); }
   .field input::placeholder { color: var(--text-light); }
 
   .validation-error {

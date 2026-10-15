@@ -360,18 +360,7 @@
 
   .form-input {
     padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
     font-size: 0.8125rem;
-    background: var(--background-color);
-    color: var(--text-color);
-    transition: all 0.2s ease;
-  }
-
-  .form-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .input-hint {

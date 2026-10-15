@@ -42,8 +42,8 @@ import pytest
 import redis
 
 from app.services.migration_progress_service import MigrationProgressService
+from tests.docker_ops import remove_container
 from tests.docker_ops import run_container
-from tests.docker_ops import stop_container
 
 # All tests in this file share ONE module-scoped throwaway Redis container
 # (see redis_container below). Without xdist_group, pytest-xdist's default
@@ -71,25 +71,29 @@ def redis_container():
 
     port = _free_port()
     name = f"ot-test-redis-mps-{uuid.uuid4().hex[:10]}"
-    # No try/except here: the precondition check above is the intended skip path
+    # No `except` here: the precondition check above is the intended skip path
     # (docker missing entirely). If the docker CLI IS present but this invocation
     # fails for some other reason, that is a real environment problem worth
     # failing loudly on, not masking as a skip.
-    run_container(
-        [
-            "run",
-            "-d",
-            "--rm",
-            "--name",
-            name,
-            "-p",
-            f"127.0.0.1:{port}:6379",
-            "redis:7-alpine",
-        ],
-    )
-
-    client = redis.Redis(host="127.0.0.1", port=port, db=0)
+    # The try opens BEFORE run_container: a client-side timeout followed by the retry can
+    # leave a running container even though run_container raised, so teardown must
+    # remove it by name regardless of how far setup got.
+    client: redis.Redis | None = None
     try:
+        run_container(
+            [
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                name,
+                "-p",
+                f"127.0.0.1:{port}:6379",
+                "redis:7-alpine",
+            ],
+        )
+
+        client = redis.Redis(host="127.0.0.1", port=port, db=0)
         deadline = time.time() + 15
         ready = False
         while time.time() < deadline:
@@ -103,8 +107,9 @@ def redis_container():
             pytest.fail("throwaway redis container did not become ready in time")
         yield client
     finally:
-        client.close()
-        stop_container(name)
+        if client is not None:
+            client.close()
+        remove_container(name)
 
 
 @pytest.fixture

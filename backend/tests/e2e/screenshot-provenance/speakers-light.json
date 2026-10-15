@@ -1,0 +1,21 @@
+{
+  "baseline": "__screenshots__/speakers-light.png",
+  "captured_at": "2026-10-15T03:11:20Z",
+  "git_sha": "13c708a2bb9dc152216d4dce33cda727d6ed9224",
+  "git_branch": "feat/v0.6.0-frontend-ux",
+  "git_dirty": false,
+  "git_dirty_paths": 0,
+  "reason": "v0.6.0 round 4 UI: tabbed File status, info icons, dropdown placement, Recovery tab",
+  "captured_by": "scripts/e2e/update-visual-baselines.sh",
+  "stack": {
+    "compose_project": "otfresh-visual",
+    "port_offset": 100,
+    "gpu_device": null,
+    "seeded": true,
+    "mode": "dev (local source bind-mounted)"
+  },
+  "change_from_previous": {
+    "status": "changed (within tolerance)",
+    "differing_pixels": "0.3909%"
+  }
+}

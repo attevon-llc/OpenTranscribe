@@ -11,6 +11,11 @@
 
   export let showRedactionToggle = false;
   export let canViewOriginal = false;
+  // Backend-decided (`redaction_enabled`): with redaction off, a scan changes nothing the
+  // viewer can see, so neither the "not redacted" status nor the run button is offered.
+  export let redactionEnabled = false;
+  // `done` with no spans means the scan ran and found nothing for the enabled categories.
+  export let redactionStatus = '';
   export let showOriginal = false;
   export let redactionToggleBusy = false;
 
@@ -25,7 +30,7 @@
         : $t('settings.contentRedaction.showingRedacted')}
     </span>
     <div class="redaction-bar-actions">
-      {#if canViewOriginal}
+      {#if canViewOriginal && redactionEnabled}
         <button
           type="button"
           class="redaction-link-btn"
@@ -53,9 +58,13 @@
       </button>
     </div>
   </div>
-{:else if canViewOriginal}
+{:else if canViewOriginal && redactionEnabled}
   <div class="redaction-footer">
-    <span class="redaction-status">{$t('settings.contentRedaction.notRedacted')}</span>
+    <span class="redaction-status">
+      {redactionStatus === 'done'
+        ? $t('settings.contentRedaction.scanNothingFound')
+        : $t('settings.contentRedaction.notRedacted')}
+    </span>
     <button
       type="button"
       class="redaction-link-btn"

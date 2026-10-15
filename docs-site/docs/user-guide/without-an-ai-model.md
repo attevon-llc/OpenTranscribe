@@ -7,8 +7,15 @@ description: What OpenTranscribe does when no LLM provider is configured — and
 # Working Without an AI Model
 
 OpenTranscribe runs perfectly well with **no language model configured at all**. That is a
-supported deployment, not a degraded one: transcription, diarization, speaker matching and the
-full search stack — including semantic search — are local models that never call a provider.
+supported deployment, not a degraded one: transcription, speaker detection, speaker matching and
+the full search stack — including semantic search — work without one.
+
+On the full image, transcription and speaker detection can run entirely on your server with the
+built-in models. Sending audio to a cloud transcription provider or to pyannote.ai is a separate,
+optional choice in **Settings → Transcription** and **Settings → Speaker Identification**; it is
+not an AI (language model) provider. The cloud-only (lite) image has no local transcription or
+speaker detection, so it always needs a cloud speech provider, but still no language model.
+Voiceprints and speaker matching always run on your server.
 
 What needs an LLM is the small set of features that *write prose*: summaries, topic suggestions,
 and chat answers.
@@ -17,8 +24,8 @@ and chat answers.
 
 | You want to | Needs an AI provider? |
 |---|---|
-| Transcribe audio and video | No |
-| Separate and identify speakers | No |
+| Transcribe audio and video | No (a cloud speech provider on the lite image) |
+| Separate and identify speakers | No (a cloud speech provider or pyannote.ai on the lite image) |
 | Match a speaker across recordings by voice | No |
 | Keyword search | No |
 | **Semantic / hybrid search** | **No** |
@@ -31,7 +38,7 @@ and chat answers.
 | Suggest who a speaker is from what they said | Yes |
 | **Ask a question in Chat** | **Yes** |
 
-Leave `LLM_PROVIDER` empty (or simply never configure a provider in **Settings → AI**) and
+Leave `LLM_PROVIDER` empty (or simply never configure a provider in **Settings → LLM Provider Configuration**) and
 everything in the first group works normally. Nothing is disabled, hidden behind a paywall, or
 degraded — the features that need a model tell you so, and the rest do not mention it.
 
@@ -87,7 +94,7 @@ tool, not a deployment mode. Details in
 
 ## Turning a model on later
 
-Adding a provider is retroactive. Configure one in **Settings → AI** and every recording you
+Adding a provider is retroactive. Configure one in **Settings → LLM Provider Configuration** and every recording you
 already have becomes summarizable and chattable immediately — there is no re-processing step,
 because summaries and chat read the transcripts and the search index that already exist.
 

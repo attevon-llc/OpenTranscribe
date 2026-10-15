@@ -1,8 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
-  import CacheSettings from './CacheSettings.svelte';
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import axiosInstance from '$lib/axios';
+  import {
+    loadSectionData,
+    peekSectionData,
+    sameSectionData,
+    setSectionData,
+    SectionDataKey,
+    fetchRetentionConfig,
+  } from '$lib/settings/sectionData';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '../../stores/settingsModalStore';
@@ -57,6 +65,8 @@
     'Pacific/Auckland',
   ];
 
+  // Kept as a literal: backend/tests/unit/test_route_has_a_caller.py finds a route's frontend
+  // caller by scanning for its URL string, which an imported constant would hide.
   const BASE = '/admin/settings/retention-config';
 
   // ---- State ---------------------------------------------------------------
@@ -111,13 +121,21 @@
   // ---- API -----------------------------------------------------------------
 
   async function loadConfig() {
-    loading = true;
+    // Stale-while-revalidate: show the last seen settings at once, refresh behind them.
+    const cached = peekSectionData<RetentionConfig>(SectionDataKey.retention);
+    if (cached) {
+      applyConfig(cached);
+      loading = false;
+    } else loading = true;
     try {
-      const res = await axiosInstance.get<RetentionConfig>(BASE);
-      applyConfig(res.data);
+      const fresh = await loadSectionData(SectionDataKey.retention, () =>
+        fetchRetentionConfig<RetentionConfig>()
+      );
+      // Never overwrite edits made while the refresh was in flight.
+      if (!cached || (!hasChanges && !sameSectionData(fresh, cached))) applyConfig(fresh);
     } catch (err: unknown) {
       console.error('Error loading retention config:', err);
-      toastStore.error($t('settings.retention.loadFailed'));
+      if (!cached) toastStore.error($t('settings.retention.loadFailed'));
     } finally {
       loading = false;
     }
@@ -155,6 +173,7 @@
         delete_error_files: deleteErrorFiles,
       });
       applyConfig(res.data);
+      setSectionData(SectionDataKey.retention, res.data);
       toastStore.success($t('settings.retention.saved'));
     } catch (err: unknown) {
       console.error('Error saving retention config:', err);
@@ -255,11 +274,6 @@
 
   // ---- Reactive change detection -------------------------------------------
 
-  // The nested cache panel has no section id of its own, so its unsaved state is
-  // folded in here — otherwise closing the modal would skip the confirmation
-  // prompt for a pending cache change.
-  let cacheDirty = false;
-
   $: {
     retentionEnabled;
     retentionDays;
@@ -272,7 +286,7 @@
       runTime !== origRunTime ||
       timezone !== origTimezone ||
       deleteErrorFiles !== origDeleteError;
-    settingsModalStore.setDirty('retention', hasChanges || cacheDirty);
+    settingsModalStore.setDirty('retention', hasChanges);
   }
 
   $: saveDisabled = saving || !hasChanges || (retentionEnabled && showEnableConfirm);
@@ -285,9 +299,7 @@
   <p class="section-desc warning-banner">{$t('settings.retention.warningBanner')}</p>
 
   {#if loading}
-    <div class="loading-state">
-      <Spinner size="small" />
-    </div>
+    <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
   {:else}
     <!-- Enable toggle -->
     <div class="field-row">
@@ -504,22 +516,12 @@
         {saving ? $t('settings.retention.savingButton') : $t('settings.retention.saveButton')}
       </button>
     </div>
-
-    <!-- Derived media cache (regenerable duplicates of originals) -->
-    <hr class="section-divider" />
-    <CacheSettings on:dirty={(e) => (cacheDirty = e.detail)} />
   {/if}
 </div>
 
 <style>
   .retention-settings {
     padding: 0.5rem 0;
-  }
-
-  .section-divider {
-    border: none;
-    border-top: 1px solid var(--border-color);
-    margin: 1.5rem 0 0.5rem 0;
   }
 
   .title-row {
@@ -541,11 +543,6 @@
     margin: 0.25rem 0 1rem 0;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: 1rem;
-  }
 
   .field-row {
     margin-bottom: 0.75rem;
@@ -644,16 +641,7 @@
 
   .form-input {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--background-color);
-    color: var(--text-color);
     font-size: 0.875rem;
-  }
-
-  .form-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .form-input:disabled {

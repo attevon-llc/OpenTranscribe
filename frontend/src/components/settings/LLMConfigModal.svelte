@@ -1,13 +1,22 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { createEventDispatcher, onDestroy, tick } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
+  import {
+    LLMSettingsApi,
+    llmProviderDisplayName,
+    type UserLLMSettings,
+    type ProviderDefaults,
+    type LocalEndpointStatus
+  } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { user } from '$stores/auth';
   import Spinner from '../ui/Spinner.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
+  import LLMLocalDiscovery from './LLMLocalDiscovery.svelte';
+  import LLMBedrockFields from './LLMBedrockFields.svelte';
 
   export let show = false;
   export let editingConfig: UserLLMSettings | null = null;
@@ -34,7 +43,12 @@
     max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
     temperature: '0.3',
     is_active: true,
-    is_shared: false
+    is_shared: false,
+    aws_region: '',
+    aws_access_key_id: '',
+    aws_secret_access_key: '',
+    aws_session_token: '',
+    clear_aws_credentials: false
   };
 
   // Form state
@@ -51,7 +65,12 @@
     max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
     temperature: '0.3',
     is_active: true,
-    is_shared: false
+    is_shared: false,
+    aws_region: '',
+    aws_access_key_id: '',
+    aws_secret_access_key: '',
+    aws_session_token: '',
+    clear_aws_credentials: false
   };
 
   // Ollama model discovery
@@ -86,6 +105,84 @@
   }> = [];
   let showAnthropicModelSelector = false;
 
+
+  // Local endpoint discovery (issue #644) — a fixed-allowlist reachability probe over
+  // this repo's own dev/test LLM overlay services, surfaced as one-click fill-ins.
+  let localEndpoints: LocalEndpointStatus[] = [];
+  // Defaults to `true` (no nag) until the first probe response actually says otherwise —
+  // a deployment that never enabled any of these overlays must not see a warning about a
+  // setting that is irrelevant to it.
+  let localEndpointsPrivateAllowed = true;
+  let loadingLocalEndpoints = false;
+
+  async function loadLocalEndpoints() {
+    loadingLocalEndpoints = true;
+    try {
+      const result = await LLMSettingsApi.getLocalEndpoints();
+      localEndpoints = result.endpoints;
+      localEndpointsPrivateAllowed = result.private_endpoints_allowed;
+    } catch {
+      // Best-effort discovery convenience, never a hard requirement of the form —
+      // fail silently and leave the section empty rather than toasting an error over
+      // a feature the user did not explicitly ask to run.
+      localEndpoints = [];
+    } finally {
+      loadingLocalEndpoints = false;
+    }
+  }
+
+  // Issue #644 — the "Use this" ordering trap. `formData.provider = X` reactively
+  // triggers `$: if (formData.provider) {...}` below, whose `providerChanged` branch
+  // OVERWRITES `formData.base_url`/`formData.model_name` from the provider catalog's
+  // defaults. That reactive block does not run synchronously with this assignment —
+  // Svelte batches it — so setting `base_url` immediately afterward in the same
+  // function would still get silently wiped out once the batched update finally runs.
+  // `await tick()` forces that reactive block to run and settle FIRST (which also
+  // syncs its internal `previousProvider` tracker to the new provider), so the
+  // base_url/model_name assignment below lands last and sticks.
+  async function useDiscoveredEndpoint(endpoint: LocalEndpointStatus) {
+    formData.provider = endpoint.provider;
+    formData = { ...formData };
+    await tick();
+    formData.base_url = endpoint.base_url;
+    if (endpoint.models.length > 0) {
+      formData.model_name = endpoint.models[0];
+    }
+    formData = { ...formData };
+  }
+
+  $: if (show) {
+    loadLocalEndpoints();
+  }
+
+  // Local detection only helps for the providers that run on a local server, and before a
+  // provider is picked ("Use this" is what sets it).
+  const LOCAL_CAPABLE_PROVIDERS = ['ollama', 'vllm', 'custom'];
+  $: showDiscovery =
+    (!formData.provider || LOCAL_CAPABLE_PROVIDERS.includes(formData.provider)) &&
+    (loadingLocalEndpoints || localEndpoints.length > 0);
+
+  // Expanded by default only when no provider is chosen and something reachable exists; a
+  // user's own toggle wins until the provider changes again.
+  let discoveryExpanded = false;
+  let discoveryTouched = false;
+  let discoverySeenProvider = '';
+  function reconcileDiscovery(provider: string, endpoints: LocalEndpointStatus[]) {
+    if (provider !== discoverySeenProvider) {
+      discoverySeenProvider = provider;
+      discoveryTouched = false;
+    }
+    if (!discoveryTouched) {
+      discoveryExpanded = !provider && endpoints.some((e) => e.reachable);
+    }
+  }
+  $: reconcileDiscovery(formData.provider, localEndpoints);
+
+  // Bedrock account fields: any admin sees whether the server's own AWS credentials resolve.
+  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+  $: bedrockDefaults = getProviderDefaults('bedrock');
+  $: bedrockPairIncomplete =
+    Boolean(formData.aws_access_key_id.trim()) !== Boolean(formData.aws_secret_access_key.trim());
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -131,6 +228,10 @@
       return false;
     }
 
+    if (formData.provider === 'bedrock' && bedrockPairIncomplete) {
+      return false;
+    }
+
     return true;
   })();
 
@@ -170,7 +271,12 @@
       max_tokens: config.max_tokens,
       temperature: config.temperature,
       is_active: config.is_active,
-      is_shared: config.is_shared || false
+      is_shared: config.is_shared || false,
+      aws_region: config.aws_region || '',
+      aws_access_key_id: '',
+      aws_secret_access_key: '',
+      aws_session_token: '',
+      clear_aws_credentials: false
     };
 
     // Fetch the actual API key if one is stored
@@ -203,9 +309,15 @@
       max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
       temperature: '0.3',
       is_active: true,
-      is_shared: false
+      is_shared: false,
+      aws_region: '',
+      aws_access_key_id: '',
+      aws_secret_access_key: '',
+      aws_session_token: '',
+      clear_aws_credentials: false
     };
     originalFormData = { ...formData };
+    discoveryTouched = false;
     ollamaModels = [];
     showModelSelector = false;
     openaiCompatibleModels = [];
@@ -267,6 +379,40 @@
     pendingCloseAction = null;
   }
 
+  // The AWS fields belong to Bedrock only: every other provider's request carries none of
+  // them, and a blank credential is simply not sent ("leave blank to keep it").
+  function awsFields(): Record<string, string> {
+    if (formData.provider !== 'bedrock') return {};
+    const fields: Record<string, string> = {};
+    const entries: Array<[string, string]> = [
+      ['aws_access_key_id', formData.aws_access_key_id],
+      ['aws_secret_access_key', formData.aws_secret_access_key],
+      ['aws_session_token', formData.aws_session_token]
+    ];
+    for (const [key, value] of entries) {
+      if (value.trim()) fields[key] = value.trim();
+    }
+    return fields;
+  }
+
+  function buildPayload() {
+    const {
+      aws_region,
+      aws_access_key_id: _id,
+      aws_secret_access_key: _secret,
+      aws_session_token: _token,
+      clear_aws_credentials,
+      ...rest
+    } = formData;
+    if (formData.provider !== 'bedrock') return rest;
+    return {
+      ...rest,
+      aws_region,
+      ...awsFields(),
+      ...(editingConfig && clear_aws_credentials ? { clear_aws_credentials: true } : {})
+    };
+  }
+
   async function saveConfiguration() {
     if (!isFormValid) return;
 
@@ -275,10 +421,10 @@
     try {
       let savedConfig;
       if (editingConfig) {
-        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, formData);
+        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, buildPayload());
         toastStore.success($t('llm.configUpdated'), 5000);
       } else {
-        savedConfig = await LLMSettingsApi.createSettings(formData);
+        savedConfig = await LLMSettingsApi.createSettings(buildPayload());
         toastStore.success($t('llm.configCreated'), 5000);
       }
 
@@ -303,7 +449,10 @@
         model_name: formData.model_name,
         api_key: formData.api_key?.trim() || undefined,
         base_url: formData.base_url || undefined,
-        config_id: editingConfig?.uuid  // Pass config UUID for edit mode to use stored key
+        config_id: editingConfig?.uuid, // Pass config UUID for edit mode to use stored key
+        ...(formData.provider === 'bedrock'
+          ? { aws_region: formData.aws_region || undefined, ...awsFields() }
+          : {})
       });
 
       if (result.success) {
@@ -500,7 +649,7 @@
 
 </script>
 
-<BaseModal isOpen={show} onClose={() => closeModal()} maxWidth="600px">
+<BaseModal isOpen={show} onClose={() => closeModal()} size="md">
   <svelte:fragment slot="header">
     <h2 class="modal-title">{editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}</h2>
     {#if isDirty}
@@ -540,16 +689,24 @@
           </select>
         </div>
 
-        {#if formData.provider}
-          <!-- Bedrock: no base URL / API key to enter — credentials and region are a
-               deployment-level setting (BEDROCK_REGION / AWS credential chain), not
-               per-configuration. Say so instead of leaving the form looking incomplete. -->
-          {#if formData.provider === 'bedrock'}
-            <div class="form-group">
-              <p class="field-desc">{$t('llm.bedrockInfo')}</p>
-            </div>
-          {/if}
+        <!-- Local endpoint discovery (issue #644). Deliberately OUTSIDE the provider block
+             below: "Use this" SETS the provider, so a user who has not picked one yet is
+             exactly who needs to see this first. It is a collapsed disclosure once a local
+             provider is chosen, and absent for providers that never run locally. -->
+        {#if showDiscovery}
+          <LLMLocalDiscovery
+            endpoints={localEndpoints}
+            loading={loadingLocalEndpoints}
+            privateAllowed={localEndpointsPrivateAllowed}
+            disabled={saving}
+            bind:expanded={discoveryExpanded}
+            on:toggle={() => (discoveryTouched = true)}
+            on:rescan={loadLocalEndpoints}
+            on:use={(e) => useDiscoveredEndpoint(e.detail)}
+          />
+        {/if}
 
+        {#if formData.provider}
           <!-- Base URL (if supported) -->
           {#if getProviderDefaults(formData.provider)?.supports_custom_url}
             <div class="form-group">
@@ -685,8 +842,12 @@
               disabled={saving}
               class="form-control"
               placeholder={getProviderDefaults(formData.provider)?.default_model || $t('llm.modelNamePlaceholder')}
+              list={formData.provider === 'bedrock' ? 'bedrock-model-suggestions' : undefined}
               required
             />
+            {#if formData.provider === 'bedrock'}
+              <p class="field-desc">{$t('llm.bedrock.modelHelp')}</p>
+            {/if}
 
             <!-- Ollama Model Selector -->
             {#if showModelSelector && ollamaModels.length > 0}
@@ -764,6 +925,21 @@
             {/if}
 
           </div>
+
+          {#if formData.provider === 'bedrock'}
+            <LLMBedrockFields
+              bind:region={formData.aws_region}
+              bind:accessKeyId={formData.aws_access_key_id}
+              bind:secretAccessKey={formData.aws_secret_access_key}
+              bind:sessionToken={formData.aws_session_token}
+              bind:clearCredentials={formData.clear_aws_credentials}
+              hasSavedCredentials={Boolean(editingConfig?.has_aws_credentials)}
+              regions={bedrockDefaults?.suggested_regions ?? []}
+              models={bedrockDefaults?.suggested_models ?? []}
+              {isAdmin}
+              disabled={saving}
+            />
+          {/if}
 
           <!-- API Key (if required) -->
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
@@ -955,19 +1131,6 @@
 
   .form-control {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--input-bg);
-    color: var(--text-color);
-    font-size: 0.875rem;
-    transition: border-color 0.2s ease;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
   .form-label-row {

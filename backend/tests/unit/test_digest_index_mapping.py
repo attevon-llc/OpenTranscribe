@@ -141,11 +141,16 @@ def _matches(clause: dict, document: dict) -> bool:
 
 
 def test_the_discriminator_is_doc_type_and_the_value_set_covers_documents():
-    """#403 D1: ``doc_type`` wins over #362's ``source_type``. One field, one value set."""
+    """#403 D1: ``doc_type`` wins over #362's ``source_type``. One field, one value set.
+
+    Extended by issue #963: a third doc_type, ``summary``, joined the set —
+    still a single field, still one compat helper per plane.
+    """
     assert target.DOC_TYPE_FIELD == "doc_type"
     assert set(target.DOC_TYPES) == {
         "chunk",
         "digest",
+        "summary",
     }
     assert set(target.VERBATIM_DOC_TYPES) == {"chunk"}
 

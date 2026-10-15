@@ -4,15 +4,19 @@ sidebar_position: 4
 
 # HuggingFace Token Setup
 
-Speaker diarization in OpenTranscribe requires access to gated PyAnnote models on HuggingFace. This page guides you through obtaining a free token and accepting the necessary model agreements.
+Detecting speakers **on this server** requires access to a gated PyAnnote model on HuggingFace. This page guides you through obtaining a free token and accepting the model agreement.
 
-:::warning[Critical Requirement]
-**Speaker diarization will NOT work** without a valid HuggingFace token and acceptance of the `pyannote/speaker-diarization-community-1` model agreement. Transcription will still work, but speakers will not be identified.
+:::warning[Required for speaker detection on this server]
+**Speaker detection on this server will NOT work** without a valid HuggingFace token and acceptance of the `pyannote/speaker-diarization-community-1` model agreement. Transcription will still work, but speakers will not be identified.
+:::
+
+:::note[When you do not need it for speakers]
+Speakers detected by a cloud provider do not use this token: a cloud transcription model that returns speakers, or the pyannote.ai cloud service (a separate pyannote.ai API key, not a HuggingFace token). The lite image never detects speakers on this server. The diar-native sidecar's models, which also compute the voiceprints used for cross-file speaker matching, are exported from the same gated repository, so a lite install that runs the sidecar still needs the token. See [Deployment Variants](./deployment-variants.md).
 :::
 
 ## Why is HuggingFace Required?
 
-OpenTranscribe uses PyAnnote.audio for speaker diarization (identifying "who spoke when"). PyAnnote's pre-trained models are hosted on HuggingFace as "gated" repositories, meaning you must:
+When speakers are detected on this server, OpenTranscribe uses the PyAnnote `speaker-diarization-community-1` weights (identifying "who spoke when"), either through the diar-native sidecar or the in-process PyAnnote engine. PyAnnote's pre-trained models are hosted on HuggingFace as "gated" repositories, meaning you must:
 
 1. Create a free HuggingFace account
 2. Accept the model license agreements
@@ -129,7 +133,7 @@ If installing from source:
 
 2. Edit `.env` and add your token:
    ```bash
-   # Required for speaker diarization
+   # Required for speaker detection on this server
    HUGGINGFACE_TOKEN=hf_your_token_here
    ```
 
@@ -139,6 +143,21 @@ If installing from source:
    ```
 
 Models will download automatically on first use (~10-30 minutes).
+
+### Set or change the token in Settings
+
+You do not need to edit `.env`, and you can change the token later without restarting. Sign in
+as a super admin and open **Settings > Speaker Identification > Speaker Engine**. The
+**Hugging Face access token** card shows whether a token is saved in Settings, comes from the
+server environment, or is not set. Paste a token, press **Save token**, and use **Test** to ask
+Hugging Face whether it is accepted.
+
+- A token saved in Settings takes precedence over `HUGGINGFACE_TOKEN` in `.env`. **Remove**
+  deletes only the saved one, after which the `.env` token (if any) applies again.
+- The token is stored encrypted and is never shown again, including to super admins. To
+  replace it, paste a new one.
+- A running worker picks up a new token the next time it loads a model, within about a
+  minute. No restart is needed.
 
 ## Verification
 
@@ -256,7 +275,7 @@ practical result is a healthy-looking stack with **no working diarizer**, not a 
 - [ ] HuggingFace token configured in `.env`
 - [ ] `speaker-diarization-community-1` agreement accepted — by the token's own account
 - [ ] Models downloaded successfully (check logs)
-- [ ] Speaker diarization enabled in UI settings
+- [ ] Speaker detection in Settings → Speaker Identification is set to Automatic (with a local transcription model, or a text-only cloud model on the full image) or to this server, not Off, and was not skipped for the file
 - [ ] Audio file has multiple speakers
 - [ ] MIN_SPEAKERS and MAX_SPEAKERS configured correctly
 
@@ -305,7 +324,7 @@ PLDA weights bundled together — **~500MB total**.
 Plus, downloaded by `scripts/download-models.sh`:
 - WhisperX transcription models — the largest single item, and the one that
   varies most with `WHISPER_MODEL`
-- Wav2Vec2 alignment and the gender classifier
+- The wav2vec2 gender classifier (speaker attributes; OpenTranscribe runs no alignment model)
 - NLTK tokenizers and sentence-transformers embeddings
 - Chat reranker (cross-encoder, used by RAG chat)
 - OpenSearch neural-search models
@@ -362,7 +381,7 @@ See [Offline Installation](./offline-installation.md) for complete airgapped set
 ### Environment Variables
 
 ```bash
-# Required for speaker diarization
+# Required for speaker detection on this server
 HUGGINGFACE_TOKEN=hf_your_token_here
 
 # Model cache location

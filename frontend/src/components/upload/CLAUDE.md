@@ -17,10 +17,26 @@ the three media-source panels (file / URL / record) and the wizard steps of the 
 - `UploadStepExtraction.svelte` — large-video "extract audio vs upload full" choice. The parent
   splices this step into/out of the `steps` array when a video crosses `extraction_threshold_mb`.
 - `UploadStepTags.svelte` / `UploadStepCollections.svelte` — the optional/skippable steps; both
-  import `upload-shared.css` (unscoped, so `.step-hint`/`.previous-banner` are global). Collections
-  is the one child that calls the API itself (`POST /collections`).
+  import `upload-shared.css` (unscoped, so `.step-hint`/`.previous-banner` are global). Both are
+  **pickers**, so they use `$components/SearchableMultiSelect.svelte` (the filter sidebar's
+  dropdown) plus a removable-chip row for the selection. The dropdown closes on any outside click,
+  chip-remove included. Collections is the one child that calls the API itself
+  (`GET /prompts` on opening the create modal, `POST /collections`), and its **Create collection**
+  button opens the gallery's `$components/collections/CollectionFormModal.svelte` — don't
+  re-add an inline name input. Tags still has a create-by-name row (a tag has no form modal).
+  The manager UIs (`TagManagerModal`, `CollectionsPanel`) are not pickers and keep their own search
+  bars; they were brought to the same style tokens, not onto this component.
 - `UploadStepSpeakers.svelte` — min/max/num speaker inputs; clamps to ≥1 and flags `min > max`.
-- `UploadStepModel.svelte`, `UploadStepReview.svelte` — model/summary toggles and final summary.
+  **The parent drops this step (and sends no range) when speaker detection is off in the user's
+  settings or the Fast model is chosen** — the server discards the range in both cases — so the
+  Model step now comes BEFORE Speakers. Prefill and the "blank means system range under _use
+  system defaults_" rule live in `$lib/api/transcriptionSettings` (`speakerPrefill`,
+  `speakerSubmitRange`), shared with `SelectiveReprocessModal`.
+- `UploadStepModel.svelte`, `UploadStepReview.svelte` — model/summary toggles and final summary. The model
+  choice is `$components/PerFileModelSelect.svelte` (shared with the reprocess dialog): each option names what
+  will really run (the user's saved cloud provider, else this server's model; no Fast option on lite) and
+  carries its speaker/timing flags from the ASR catalog (#1243). The Review row reads the same options so the
+  two steps agree.
 
 ## Conventions / patterns
 
@@ -45,6 +61,12 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
   `UploadStepSpeakers`. The same suite guards the parent's `.uploader-container`,
   `.step-indicator`, `.tab-navigation .tab-button`, `.message.error-msg`, and
   `.nav-btn.nav-next` / `.nav-submit` / `.nav-review-defaults`.
+- **The forward button names its destination.** On the step directly before Review it reads
+  `uploader.stepReview`, and the "Review with defaults" jump is hidden there (it would be a second
+  button doing the same thing). `UploadManager.svelte`'s header sits on `--primary-color` in BOTH
+  themes, so its count colours are fixed pairs, not theme-split; only near-white clears AA on that
+  blue, which is why the active count is a white pill with blue text rather than a colour.
+  `styles/primary-contrast.test.ts` reads the rules and fails if any drops under 4.5:1.
 - **Size limits live in `$lib/utils/uploadLimits.ts` — never re-declare one in a component.**
   The hard reject is `getMaxUploadBytes()` — the LIVE, admin-configurable value from
   `GET /system/capabilities` (`settings.MAX_UPLOAD_BYTES` on the backend, `$stores/capabilities`
@@ -64,3 +86,6 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
   `UploadStepCollections` and `UploadStepSpeakers`). Keep it that way — only the active locale is
   loaded at runtime, so a bare English literal here is a live regression for 11 of 12 languages.
   New copy needs a key in all 12 locale files (`npm run check:i18n` gates it).
+  Never build one visible string from two keys (the model options once appended a leading
+  " – " suffix key): word order differs by language, so each option is one self-contained
+  key, with `{{model}}` interpolated (#1220; `lib/i18n/sourceCopy.test.ts` guards it).

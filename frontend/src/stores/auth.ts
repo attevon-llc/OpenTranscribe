@@ -5,6 +5,7 @@ import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
 import { retryAfterFromHeaders } from '$lib/utils/retryAfter';
+import { probeSessionWithRetry, SESSION_PROBE_TIMEOUT_MS } from '$lib/auth/sessionProbe';
 
 /**
  * Minimal shape of an axios error used for status- and detail-based message
@@ -391,6 +392,7 @@ async function initAuthExternal(): Promise<void> {
       if (userData) {
         authStore.setToken('external');
         authStore.setReady(true);
+        void loadCapabilities();
         return;
       }
     }
@@ -416,26 +418,34 @@ export async function initAuth() {
     return;
   }
 
-  try {
-    // Probe /auth/session — returns 200 whether or not a session exists, so
-    // anonymous page loads don't produce 401 console errors or side effects.
-    const { data } = await axiosInstance.get('/auth/session');
+  // Capabilities are loaded HERE, once the session is known to exist, rather than by the layout
+  // in parallel: an anonymous visitor (the login page) uses none of them, and the login flow
+  // fetches them itself for the NEW user, so a parallel fetch at boot was a guaranteed duplicate.
+  // A failed attempt is retried, never read as "logged out" (see `probeSessionWithRetry`).
+  // Probe /auth/session — returns 200 whether or not a session exists, so anonymous page
+  // loads don't produce 401 console errors or side effects.
+  const { data } = await probeSessionWithRetry(() =>
+    axiosInstance.get('/auth/session', { timeout: SESSION_PROBE_TIMEOUT_MS })
+  );
 
+  try {
     if (data.authenticated) {
       authStore.setUser(data.user);
       authStore.setToken('cookie');
       authStore.setReady(true);
+      void loadCapabilities();
       return;
     }
 
     if (data.refreshable) {
       // Access token expired but a refresh cookie is present — restore the
       // session silently instead of bouncing the user to the login page.
-      await axiosInstance.post('/auth/token/refresh', {});
+      await axiosInstance.post('/auth/token/refresh', {}, { timeout: SESSION_PROBE_TIMEOUT_MS });
       const userData = await fetchUserInfo();
       if (userData) {
         authStore.setToken('cookie');
         authStore.setReady(true);
+        void loadCapabilities();
         return;
       }
     }
@@ -841,11 +851,36 @@ export async function logout(reason: SessionEndReason | null = null) {
   sessionEndReason.set(endReason);
 }
 
+// `/auth/methods` is public config, wanted by the layout (login banner), the login page, the
+// register page and the idle-timeout guard — within a second of each other on a page load. They
+// share one request, and a successful answer stays fresh for a short window so the login page
+// mounting just after the layout's boot call does not ask again. Failures are never remembered.
+const AUTH_METHODS_FRESH_MS = 15_000;
+let authMethodsCache: { at: number; promise: Promise<AuthMethods> } | null = null;
+
+/** Drop the shared answer, e.g. after an admin edits the auth configuration. */
+export function invalidateAuthMethods(): void {
+  authMethodsCache = null;
+}
+
 // Get available authentication methods
-export async function getAuthMethods(): Promise<AuthMethods> {
+export function getAuthMethods(): Promise<AuthMethods> {
+  if (authMethodsCache && Date.now() - authMethodsCache.at < AUTH_METHODS_FRESH_MS) {
+    return authMethodsCache.promise;
+  }
+  const request = fetchAuthMethods();
+  const entry = { at: Date.now(), promise: request.then((r) => r.methods) };
+  authMethodsCache = entry;
+  void request.then((r) => {
+    if (!r.ok && authMethodsCache === entry) authMethodsCache = null;
+  });
+  return entry.promise;
+}
+
+async function fetchAuthMethods(): Promise<{ methods: AuthMethods; ok: boolean }> {
   try {
     const response = await axiosInstance.get('/auth/methods');
-    return response.data;
+    return { methods: response.data, ok: true };
   } catch (error) {
     console.error('Failed to fetch auth methods:', error);
     // Fail-closed defaults when the probe fails. The two new flags are
@@ -861,17 +896,20 @@ export async function getAuthMethods(): Promise<AuthMethods> {
     //     fills the whole form, or advertises an open-registration surface the
     //     operator deliberately turned off. Both are worse than hiding it.
     return {
-      methods: ['local'],
-      oidc_enabled: false,
-      pki_enabled: false,
-      ldap_enabled: false,
-      local_enabled: true,
-      allow_registration: false,
-      mfa_enabled: false,
-      mfa_required: false,
-      login_banner_enabled: false,
-      login_banner_text: '',
-      login_banner_classification: 'UNCLASSIFIED',
+      ok: false,
+      methods: {
+        methods: ['local'],
+        oidc_enabled: false,
+        pki_enabled: false,
+        ldap_enabled: false,
+        local_enabled: true,
+        allow_registration: false,
+        mfa_enabled: false,
+        mfa_required: false,
+        login_banner_enabled: false,
+        login_banner_text: '',
+        login_banner_classification: 'UNCLASSIFIED',
+      },
     };
   }
 }

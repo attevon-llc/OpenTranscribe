@@ -76,8 +76,10 @@ def format_srt_timestamp(seconds: float) -> str:
     Returns:
         Formatted SRT timestamp string (e.g. "00:03:45,123").
     """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int((seconds % 1) * 1000)
+    # Integer milliseconds: float `% 1 * 1000` truncation turned 0.29 into ",289", and a
+    # cue boundary one millisecond off can make two adjacent cues overlap on paper.
+    total_ms = max(0, int(round(seconds * 1000))) if seconds == seconds else 0
+    hours, rem = divmod(total_ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    secs, milliseconds = divmod(rem, 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"

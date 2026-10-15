@@ -23,6 +23,34 @@ logger = logging.getLogger(__name__)
 # time — peak VRAM stays bounded to a single inference even under concurrency. No-op on CPU.
 _gpu_inference_lock = threading.Lock()
 
+# A CUDA context that hit a sticky fault ("unspecified launch failure", illegal memory
+# access, device-side assert) fails every later call in this process, including the move back
+# to CPU. Once seen, this process stays on CPU until the worker is restarted.
+_cuda_faulted = False
+_CUDA_FAULT_MARKERS = (
+    "unspecified launch failure",
+    "illegal memory access",
+    "device-side assert",
+    "cuda error",
+)
+
+
+def is_cuda_fault(exc: BaseException) -> bool:
+    """True if ``exc`` is a CUDA runtime error rather than a model/data error."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _CUDA_FAULT_MARKERS)
+
+
+def mark_cuda_faulted(exc: BaseException) -> None:
+    """Pin this process to CPU after a sticky CUDA fault (logged once)."""
+    global _cuda_faulted  # noqa: PLW0603
+    if not _cuda_faulted:
+        logger.error(
+            "Redaction: CUDA fault (%s) — this worker now runs redaction on CPU until restarted",
+            exc,
+        )
+    _cuda_faulted = True
+
 
 def _cuda_available() -> bool:
     try:
@@ -61,7 +89,7 @@ def resolve_device() -> str:
     Re-evaluated on every call (cheap), so the choice tracks live GPU availability.
     """
     policy = (C.REDACTION_DEVICE or "auto").lower()
-    if policy == "cpu":
+    if policy == "cpu" or _cuda_faulted:
         return "cpu"
     if not _cuda_available():
         return "cpu"

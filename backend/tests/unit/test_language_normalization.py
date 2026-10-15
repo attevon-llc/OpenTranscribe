@@ -294,8 +294,8 @@ def test_an_unidentifiable_provider_language_is_stored_as_null(db_session, norma
 def test_the_result_object_itself_carries_the_normalized_value(db_session, normal_user) -> None:
     """The normalization is at the provider boundary, not only at the DB write.
 
-    ``diarization_merge.py`` rebuilds an ``ASRResult`` from another one's ``.language``, and
-    ``cloud_asr.py`` reads it into the result dict — both see the normalized value.
+    ``cloud_asr.py`` reads ``ASRResult.language`` into the result dict, so it sees the
+    normalized value.
     """
     assert ASRResult(segments=[], language="eng").language == "en"
     assert ASRResult(segments=[], language="Klingon").language is None

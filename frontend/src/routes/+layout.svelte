@@ -1,43 +1,58 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
-  import { goto, afterNavigate } from "$app/navigation";
+  import { goto, afterNavigate, preloadCode } from "$app/navigation";
   import { page } from "$app/stores";
   import { get } from 'svelte/store';
 
   // Import theme styles
   import "../styles/theme.css";
   import "../styles/form-elements.css";
+  import "../styles/range-slider.css";
   import "../styles/tables.css";
   import "../styles/animations.css";
   import "../styles/search.css";
+  import "../styles/support-access.css";
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
-  import { loadCapabilities } from "$stores/capabilities";
+  import { capabilities, isCapabilityEnabled } from "$stores/capabilities";
+  import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
-  import { locale } from "../stores/locale";
+  import { locale, localeReady, t } from "$stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
   import { resetScrollLock } from '$lib/scrollLock';
   import { initMonitoring } from '$lib/monitoring';
+  import { initDownloadNotifications } from '$lib/services/downloadNotifications';
   import { runStartup } from '$lib/startup';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import {
+    loadSettingsModal,
+    loadSettingsModalShell,
+    prefetchSettingsModal,
+    whenIdle,
+  } from '$lib/settings/settingsModalLoader';
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
+  import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
-  import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
+  import SessionCheckScreen from "../components/SessionCheckScreen.svelte";
 
   // Heavy, conditionally shown components are loaded with a dynamic import so every visitor
   // (the login page included) doesn't download them before first paint. Each one is fetched
   // the moment its condition is known, never on a click, so behaviour is unchanged.
   let SettingsModal: Component<any> | null = null;
+  // Painted while SettingsModal's chunk is still in flight, so the dialog opens at once and its
+  // sidebar and content fill in afterwards. Small enough to be prefetched on idle (below).
+  let SettingsModalShell: Component<any> | null = null;
+  let shellShown = false;
   let FirstRunWizard: Component<any> | null = null;
   let QuotaExceededModal: Component<any> | null = null;
   let LegalGateModal: Component<any> | null = null;
@@ -46,7 +61,36 @@
   // The modal renders itself only while the store says open, and mounts already open, so a
   // deep link or event that opens settings before the chunk lands is not lost.
   $: if ($isAuthenticated && !lifecycleHold && $settingsModalStore.isOpen && !SettingsModal) {
-    void import("../components/SettingsModal.svelte").then((m) => (SettingsModal = m.default));
+    void loadSettingsModal().then((m) => (SettingsModal = m.default));
+    if (!SettingsModalShell) void loadSettingsModalShell().then((m) => (SettingsModalShell = m.default));
+  }
+  // The real modal skips its enter animation when it takes over from the shell.
+  $: if ($settingsModalStore.isOpen && SettingsModalShell && !SettingsModal) shellShown = true;
+  $: if (!$settingsModalStore.isOpen) shellShown = false;
+
+  // Warm the shell, the modal and the default section once the browser is idle after sign-in, so
+  // the first open does not wait on the network. The user menu warms them again on hover/focus.
+  let settingsPrefetchScheduled = false;
+  $: if ($isAuthenticated && !lifecycleHold && !settingsPrefetchScheduled) {
+    settingsPrefetchScheduled = true;
+    whenIdle(() => prefetchSettingsModal());
+  }
+  // Warm the JS of every destination the navbar and the gallery lead to. SvelteKit's own
+  // `data-sveltekit-preload-code="eager"` is not enough here: it scans the DOM once per
+  // navigation, and the navbar only exists after auth resolves, so those links are missed until
+  // the first click, which is the click that needs it. A click on Search/Chat/a file then finds
+  // its route chunks already in the cache instead of fetching them (and their imports) in series.
+  let routePrefetchScheduled = false;
+  $: if ($isAuthenticated && !lifecycleHold && $capabilities.loaded && !routePrefetchScheduled) {
+    routePrefetchScheduled = true;
+    const routes = ["/search", "/speakers", "/files/_", "/file-status"];
+    if (isCapabilityEnabled($capabilities, "chat.rag")) routes.push("/chat");
+    // A short timer, not `whenIdle`: a live page (websocket retries, thumbnails) rarely reports
+    // idle before its 4 s timeout, and the first nav click usually lands sooner than that.
+    setTimeout(() => {
+      // One call per route: `preloadCode` takes a single pathname.
+      for (const route of routes) void preloadCode(route).catch(() => {});
+    }, 600);
   }
   // The wizard only acts for the bootstrap super_admin (it checks completion on mount), and
   // Settings can only re-open it for that same role.
@@ -99,9 +143,24 @@
     llmStatusStore.initialize();
   }
 
+  // A support-access session lives in this tab's sessionStorage (issue #1122). Re-validate it
+  // once the session and the tenancy mode are both known; it clears silently if the grant
+  // is no longer active or the deployment is not multi-tenant.
+  let supportRestoreTried = false;
+  $: if ($isAuthenticated && $capabilities.loaded && !supportRestoreTried) {
+    supportRestoreTried = true;
+    void supportSession.restore();
+  }
+
   // Classification banner state
   let bannerEnabled = false;
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
+  // Needed only on deployments that enable the banner, so it is fetched when that is known
+  // rather than shipped to every visitor with the layout.
+  let ClassificationBanner: Component<any> | null = null;
+  $: if (bannerEnabled && $isAuthenticated && !ClassificationBanner) {
+    void import("$lib/components/ClassificationBanner.svelte").then((m) => (ClassificationBanner = m.default));
+  }
 
   /**
    * Handle bfcache (back-forward cache) restoration.
@@ -147,9 +206,8 @@
       // Initialize network connectivity monitoring
       networkStore.initialize();
 
-      // Edition capabilities (cloud hides platform/self-host surfaces).
-      // Fail-open: errors leave community defaults (everything visible).
-      void loadCapabilities();
+      // Edition capabilities are loaded by initAuth() once it knows there is a session (and by
+      // each login path for the new user) — a parallel fetch here duplicated both.
 
       // Locale, auth methods (banner settings) and the session check are independent, so
       // they run concurrently instead of as three serial round trips.
@@ -158,6 +216,10 @@
         getAuthMethods,
         initAuth,
       });
+
+      // Bridges downloadStore transitions into the persistent bell (#569). Needs the
+      // locale initialised first so its notification copy isn't built pre-translation.
+      initDownloadNotifications();
 
       if (authMethods?.login_banner_enabled) {
         bannerEnabled = true;
@@ -221,26 +283,37 @@
 
 </script>
 
-{#if $authReady}
+<!-- Locale and auth start concurrently (runStartup), so wait for both: rendering on
+     auth alone painted the shell against an uninitialised i18next (raw nav keys). -->
+{#if $authReady && $localeReady}
   <!-- PUBLIC_PATHS is defined once, in the script block, and shared with the
        imperative guard above. Do not reintroduce a second copy here. -->
   {@const isPublicPath = PUBLIC_PATHS.includes($page.url.pathname)}
 
   <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->
-  {#if bannerEnabled && $isAuthenticated}
-    <ClassificationBanner
+  {#if bannerEnabled && $isAuthenticated && ClassificationBanner}
+    <svelte:component this={ClassificationBanner}
       classification={bannerClassification}
       position="top"
     />
   {/if}
 
-  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} class:has-support-banner={$supportSession.active} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
+    <!-- First focusable element in the app. Visually hidden until :focus-visible so it
+         doesn't disturb sighted layout, but never display:none/visibility:hidden — that
+         would remove it from the focus order and defeat the point (issue #785). -->
+    <a href="#main-content" class="skip-link">{$t('a11y.skipToContent')}</a>
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
+      {#if $supportSession.active}<SupportAccessBanner />{/if}
       <NotificationsPanel />
       <UploadManager />
-      {#if SettingsModal}<svelte:component this={SettingsModal} />{/if}
+      {#if SettingsModal}
+        <svelte:component this={SettingsModal} skipEnter={shellShown} />
+      {:else if SettingsModalShell && $settingsModalStore.isOpen}
+        <svelte:component this={SettingsModalShell} />
+      {/if}
       {#if FirstRunWizard}<svelte:component this={FirstRunWizard} />{/if}
       <ConnectionStatusBanner />
       {#if isCloudEdition}
@@ -259,17 +332,22 @@
            remedy, so render /login bare — chrome would only offer dead links.
            `password_change_required` keeps the session; `account_expired` has
            already torn it down. -->
-      <main class="content no-navbar">
+      <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
-    {:else if $isAuthenticated && !isPublicPath}
+    {:else if $isAuthenticated && !isPublicPath && !$supportSession.restoring}
       <!-- Authenticated user on a protected route — render the app -->
-      <AppContent>
-        <slot />
-      </AppContent>
+      <!-- A support session switches which tenant the same login reads. Keying on the grant
+           remounts the page on both edges, so nothing rendered under one scope survives into
+           the other (a same-route goto would not refetch). -->
+      {#key $supportSession.grantUuid}
+        <AppContent>
+          <slot />
+        </AppContent>
+      {/key}
     {:else if !$isAuthenticated && isPublicPath}
       <!-- Unauthenticated user on a public page (login/register/forgot-password) — render it -->
-      <main class="content no-navbar">
+      <main id="main-content" tabindex="-1" class="content no-navbar">
         <slot />
       </main>
     {:else}
@@ -280,22 +358,15 @@
         Show loading screen while the redirect is in flight to prevent
         Flash of Authenticated Content (FOAC) / protected content leakage.
       -->
-      <div class="loading-app">
-        <div class="loading-brand">
-          <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
-          <div class="loading-bar"><div class="loading-bar-fill"></div></div>
-        </div>
-      </div>
+      <SessionCheckScreen />
     {/if}
   </div>
 {:else}
-  <!-- Initial auth verification still in progress — block all rendering -->
-  <div class="loading-app">
-    <div class="loading-brand">
-      <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
-      <div class="loading-bar"><div class="loading-bar-fill"></div></div>
-    </div>
-  </div>
+  <!-- Initial auth verification still in progress. A protected route gets the app frame as a
+       skeleton (no account data, none of the real app's selectors); /login gets the brand mark.
+       The real app and the login form still render only once authReady, so nothing
+       authenticated can reach a logged-out visitor. -->
+  <SessionCheckScreen shell={!PUBLIC_PATHS.includes($page.url.pathname)} />
 {/if}
 
 <style>
@@ -306,9 +377,42 @@
     min-height: 100dvh;
   }
 
+  /* Clipped off-screen rather than display:none/visibility:hidden, which would remove it
+     from the focus order and defeat the point (issue #785). Revealed on :focus-visible. */
+  .skip-link {
+    position: absolute;
+    top: -9999px;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    background: var(--color-primary);
+    color: white;
+    z-index: var(--z-critical, 10000);
+  }
+
+  .skip-link:focus-visible {
+    top: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    height: auto;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
   /* Offset for classification banner (approx 28px) */
   .app.has-banner {
     padding-top: 28px;
+  }
+
+  /* A support-access banner sits fixed under the navbar; its measured height (it wraps on narrow
+     screens) is published as --support-banner-height, and every page that sizes itself from
+     --content-top follows. */
+  .app.has-support-banner {
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px));
   }
 
   /* Push navbar down when banner is present */
@@ -334,57 +438,5 @@
     .content {
       --content-padding: 2rem;
     }
-  }
-
-  .loading-app {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    min-height: 100dvh;
-    background-color: var(--bg-primary, #f8fafc);
-  }
-
-  .loading-brand {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1.5rem;
-  }
-
-  .loading-logo {
-    border-radius: 16px;
-    animation: loading-pulse 1.8s ease-in-out infinite;
-  }
-
-  .loading-bar {
-    width: 120px;
-    height: 3px;
-    background: var(--border-color, #e2e8f0);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .loading-bar-fill {
-    width: 40%;
-    height: 100%;
-    background: var(--primary-color, var(--primary-color));
-    border-radius: 3px;
-    animation: loading-slide 1.2s ease-in-out infinite;
-  }
-
-  @keyframes loading-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-  }
-
-  @keyframes loading-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(350%); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .loading-logo { animation: none; }
-    .loading-bar-fill { animation: none; width: 100%; }
   }
 </style>

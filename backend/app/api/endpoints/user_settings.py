@@ -15,11 +15,13 @@ from datetime import UTC
 from typing import Any
 from typing import Literal
 from typing import cast
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
@@ -57,6 +59,7 @@ from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
 from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import DEFAULT_VIDEO_QUALITY
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.core.constants import TRANSCRIPTION_SETTING_GROUPS
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_RECORDING_DURATIONS
@@ -84,6 +87,12 @@ from app.schemas.topic import AutoLabelSettingsSchema
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
+from app.services import system_settings_service
+from app.services.auto_llm_settings import SPEAKER_ID_SYSTEM_KEY
+from app.services.auto_llm_settings import SPEAKER_ID_USER_KEY
+from app.services.auto_llm_settings import resolve_auto_llm_flags
+from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+from app.utils.lite_mode import is_lite_deployment
 from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
@@ -601,6 +610,61 @@ def _upsert_user_setting(
         db.add(new_setting)
 
 
+def _refuse_unusable_speaker_selection(
+    request: Request, db: Session, user_id: int, update_data: dict[str, Any]
+) -> None:
+    """409 a NEW speaker-detection choice the pipeline plan cannot run (issue #1224).
+
+    The plan is resolved on the would-be state (stored settings with this update applied),
+    so every rule lives in ``services/pipeline_plan`` and none is restated here. The
+    response carries the stable ``code`` and its fixed sentence, never exception text.
+
+    Only a change is refused: the settings form re-sends every field on save, and a
+    selection stored earlier (e.g. pyannote.ai before #1204 required a key) must not make
+    the user's other settings unsaveable. A stored selection's problems are reported by
+    ``GET /user-settings/pipeline`` and per file by the pipeline instead.
+    """
+    from app.services.pipeline_plan_inputs import DIARIZER_CONFIG_KEY
+    from app.services.pipeline_plan_inputs import SOURCE_KEY
+    from app.services.pipeline_plan_inputs import plan_for_user
+
+    stored = {
+        str(key): str(value)
+        for key, value in db.query(models.UserSetting.setting_key, models.UserSetting.setting_value)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key.in_([SOURCE_KEY, DIARIZER_CONFIG_KEY]),
+        )
+        .all()
+        if value
+    }
+    stored_source = stored.get(SOURCE_KEY, DEFAULT_DIARIZATION_SOURCE)
+    source = str(update_data.get("diarization_source", stored_source))
+    config_uuid = (
+        str(update_data["diarization_asr_config_uuid"])
+        if update_data.get("diarization_asr_config_uuid") is not None
+        else stored.get(DIARIZER_CONFIG_KEY)
+    )
+    changed = source != stored_source or (
+        source == "asr_config" and config_uuid != stored.get(DIARIZER_CONFIG_KEY)
+    )
+    if not changed:
+        return
+    plan = plan_for_user(
+        db,
+        user_id,
+        request=request,
+        diarization_source=source,
+        diarization_asr_config_uuid=config_uuid,
+    )
+    refused = [issue for issue in plan.blocking() if issue.step == "diarization"]
+    if refused:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": refused[0].code, "message": refused[0].message},
+        )
+
+
 @router.get("/transcription", response_model=TranscriptionSettings)
 def get_transcription_settings(
     request: Request,
@@ -641,6 +705,7 @@ def get_transcription_settings(
                     "transcription_hallucination_silence_threshold",
                     "transcription_repetition_penalty",
                     "transcription_diarization_source",
+                    "transcription_diarization_asr_config_uuid",
                 ]
             ),
         )
@@ -669,9 +734,10 @@ def get_transcription_settings(
         "transcription_speaker_prompt_behavior",
         str(DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"]),
     )
-    garbage_threshold_value = settings_map.get(
-        "transcription_garbage_cleanup_threshold",
-        str(DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"]),
+    # Unset means "inherit the deployment default" (admin garbage-cleanup setting), which
+    # is also what the pipeline applies, so the form shows the value that will actually run.
+    garbage_effective = system_settings_service.get_effective_garbage_cleanup_config(
+        db, current_user.id
     )
     source_language_value = settings_map.get(
         "transcription_source_language",
@@ -690,11 +756,8 @@ def get_transcription_settings(
             Literal["always_prompt", "use_defaults", "use_custom"],
             speaker_behavior_value,
         ),
-        garbage_cleanup_enabled=settings_map.get(
-            "transcription_garbage_cleanup_enabled", "true"
-        ).lower()
-        == "true",
-        garbage_cleanup_threshold=int(garbage_threshold_value),
+        garbage_cleanup_enabled=garbage_effective["garbage_cleanup_enabled"],
+        garbage_cleanup_threshold=garbage_effective["max_word_length"],
         source_language=source_language_value,
         translate_to_english=settings_map.get("transcription_translate_to_english", "false").lower()
         == "true",
@@ -722,7 +785,20 @@ def get_transcription_settings(
         diarization_source=settings_map.get(
             "transcription_diarization_source", DEFAULT_DIARIZATION_SOURCE
         ),
+        diarization_asr_config_uuid=_stored_uuid(
+            settings_map.get("transcription_diarization_asr_config_uuid")
+        ),
     )
+
+
+def _stored_uuid(value: str | None) -> UUID | None:
+    """A stored UUID setting, or ``None`` when unset or unreadable (never a 500)."""
+    if not value:
+        return None
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
 
 
 @router.put("/transcription", response_model=TranscriptionSettings)
@@ -816,21 +892,20 @@ def update_transcription_settings(
         ),
         "repetition_penalty": ("transcription_repetition_penalty", None),
         "diarization_source": ("transcription_diarization_source", None),
+        "diarization_asr_config_uuid": ("transcription_diarization_asr_config_uuid", str),
     }
 
-    # Validate diarization_source value
     diarization_src = update_data.get("diarization_source")
-    if diarization_src is not None:
-        from app.core.constants import VALID_DIARIZATION_SOURCES
-
-        if diarization_src not in VALID_DIARIZATION_SOURCES:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Invalid diarization_source: '{diarization_src}'. "
-                    f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
-                ),
-            )
+    if diarization_src is not None and diarization_src not in VALID_DIARIZATION_SOURCES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Invalid diarization_source: '{diarization_src}'. "
+                f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
+            ),
+        )
+    if update_data.keys() & {"diarization_source", "diarization_asr_config_uuid"}:
+        _refuse_unusable_speaker_selection(request, db, current_user.id, update_data)
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():
@@ -845,41 +920,33 @@ def update_transcription_settings(
 
 @router.delete("/transcription")
 def reset_transcription_settings(
+    group: Literal["language", "accuracy", "speakers"] | None = Query(
+        None,
+        description="Reset only this field group. Omit to reset every transcription setting.",
+    ),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Reset user's transcription settings to defaults.
 
-    Deletes all user-specific transcription settings from the database,
-    causing the system to fall back to default values.
+    Deletes user-specific transcription settings from the database, causing the
+    system to fall back to default values. With ``group`` only that group's
+    fields are reset; without it, all of them are.
 
     Returns:
         Message confirming reset and the default settings that will now apply
     """
+    fields = (
+        TRANSCRIPTION_SETTING_GROUPS[group]
+        if group is not None
+        else tuple(f for grp in TRANSCRIPTION_SETTING_GROUPS.values() for f in grp)
+    )
     deleted_count = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "transcription_min_speakers",
-                    "transcription_max_speakers",
-                    "transcription_speaker_prompt_behavior",
-                    "transcription_garbage_cleanup_enabled",
-                    "transcription_garbage_cleanup_threshold",
-                    "transcription_source_language",
-                    "transcription_translate_to_english",
-                    "transcription_llm_output_language",
-                    "transcription_vad_threshold",
-                    "transcription_vad_min_silence_ms",
-                    "transcription_vad_min_speech_ms",
-                    "transcription_vad_speech_pad_ms",
-                    "transcription_hallucination_silence_threshold",
-                    "transcription_repetition_penalty",
-                    "transcription_diarization_source",
-                ]
-            ),
+            models.UserSetting.setting_key.in_([f"transcription_{f}" for f in fields]),
         )
         .delete(synchronize_session=False)
     )
@@ -887,12 +954,13 @@ def reset_transcription_settings(
     db.commit()
 
     # Return defaults including system-level speaker settings
+    garbage_default = system_settings_service.get_garbage_cleanup_config(db)
     default_settings = {
         "min_speakers": app_settings.MIN_SPEAKERS,
         "max_speakers": app_settings.MAX_SPEAKERS,
         "speaker_prompt_behavior": DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"],
-        "garbage_cleanup_enabled": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_enabled"],
-        "garbage_cleanup_threshold": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"],
+        "garbage_cleanup_enabled": garbage_default["garbage_cleanup_enabled"],
+        "garbage_cleanup_threshold": garbage_default["max_word_length"],
         "source_language": DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
         "translate_to_english": DEFAULT_TRANSCRIPTION_SETTINGS["translate_to_english"],
         "llm_output_language": DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
@@ -912,6 +980,7 @@ def reset_transcription_settings(
 
 @router.get("/transcription/system-defaults", response_model=TranscriptionSystemDefaults)
 def get_transcription_system_defaults(
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> TranscriptionSystemDefaults:
     """
@@ -930,11 +999,12 @@ def get_transcription_system_defaults(
         TranscriptionSystemDefaults containing system min/max speakers,
         garbage cleanup defaults, valid behavior options, and language options
     """
+    garbage_default = system_settings_service.get_garbage_cleanup_config(db)
     return TranscriptionSystemDefaults(
         min_speakers=app_settings.MIN_SPEAKERS,
         max_speakers=app_settings.MAX_SPEAKERS,
-        garbage_cleanup_enabled=DEFAULT_GARBAGE_CLEANUP_ENABLED,
-        garbage_cleanup_threshold=DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
+        garbage_cleanup_enabled=garbage_default["garbage_cleanup_enabled"],
+        garbage_cleanup_threshold=garbage_default["max_word_length"],
         valid_speaker_prompt_behaviors=list(VALID_SPEAKER_PROMPT_BEHAVIORS),
         available_source_languages=WHISPER_LANGUAGES,
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
@@ -946,7 +1016,12 @@ def get_transcription_system_defaults(
         hallucination_silence_threshold=DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
         repetition_penalty=DEFAULT_REPETITION_PENALTY,
         diarization_source_default=DEFAULT_DIARIZATION_SOURCE,
-        valid_diarization_sources=list(VALID_DIARIZATION_SOURCES),
+        # Lite has no local speaker detection (#1228): never offer "this server" there.
+        valid_diarization_sources=[
+            source
+            for source in VALID_DIARIZATION_SOURCES
+            if not (source == "local" and is_lite_deployment())
+        ],
     )
 
 
@@ -1213,6 +1288,7 @@ _SPEAKER_ATTR_DB_KEYS = [
     "speaker_attribute_gender_detection_enabled",
     "speaker_attribute_age_detection_enabled",
     "speaker_attribute_show_on_cards",
+    SPEAKER_ID_USER_KEY,
 ]
 
 
@@ -1232,20 +1308,21 @@ def get_speaker_attribute_settings(
     )
 
     settings_map: dict[str, str] = {str(s.setting_key): str(s.setting_value) for s in user_settings}
+    # The same resolver the pipeline uses (user > system default > default), so the form
+    # shows what will actually happen.
+    flags = resolve_speaker_attribute_flags(db, current_user.id)
 
     return SpeakerAttributeSettings(
-        detection_enabled=settings_map.get("speaker_attribute_detection_enabled", "true").lower()
-        == "true",
-        gender_detection_enabled=settings_map.get(
-            "speaker_attribute_gender_detection_enabled", "true"
-        ).lower()
-        == "true",
+        detection_enabled=flags.detection_enabled,
+        gender_detection_enabled=flags.gender_detection_enabled,
         age_detection_enabled=settings_map.get(
             "speaker_attribute_age_detection_enabled", "true"
         ).lower()
         == "true",
-        show_attributes_on_cards=settings_map.get("speaker_attribute_show_on_cards", "true").lower()
-        == "true",
+        show_attributes_on_cards=flags.show_on_cards,
+        auto_llm_speaker_identification=resolve_auto_llm_flags(
+            db, current_user.id
+        ).speaker_identification,
     )
 
 
@@ -1267,6 +1344,7 @@ def update_speaker_attribute_settings(
         "gender_detection_enabled": "speaker_attribute_gender_detection_enabled",
         "age_detection_enabled": "speaker_attribute_age_detection_enabled",
         "show_attributes_on_cards": "speaker_attribute_show_on_cards",
+        "auto_llm_speaker_identification": SPEAKER_ID_USER_KEY,
     }
 
     for frontend_key, value in update_data.items():
@@ -1323,6 +1401,7 @@ def get_speaker_attribute_system_defaults(
             "speaker_attribute.gender_detection_enabled",
             "speaker_attribute.age_detection_enabled",
             "speaker_attribute.show_on_cards",
+            SPEAKER_ID_SYSTEM_KEY,
         ],
     )
 
@@ -1335,6 +1414,7 @@ def get_speaker_attribute_system_defaults(
         gender_detection_enabled=_b("speaker_attribute.gender_detection_enabled", True),
         age_detection_enabled=_b("speaker_attribute.age_detection_enabled", True),
         show_attributes_on_cards=_b("speaker_attribute.show_on_cards", True),
+        auto_llm_speaker_identification=_b(SPEAKER_ID_SYSTEM_KEY, True),
     )
 
 
@@ -1494,7 +1574,10 @@ def update_auto_label_settings(
     from app.services.auto_label_service import AutoLabelService
 
     service = AutoLabelService(db)
-    service.save_user_auto_label_settings(current_user.id, settings_data.model_dump())
+    # exclude_unset: a client that predates a field must not reset it to its default.
+    service.save_user_auto_label_settings(
+        current_user.id, settings_data.model_dump(exclude_unset=True)
+    )
     return service.get_user_auto_label_settings(current_user.id)
 
 

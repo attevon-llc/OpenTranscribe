@@ -14,6 +14,7 @@ import time
 from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
+from dataclasses import field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 from typing import Any
@@ -25,12 +26,16 @@ from urllib3.util.retry import Retry
 
 from app.core.config import settings
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.services.bedrock_settings import BedrockConnection
+from app.services.bedrock_settings import connection_from_encrypted
+from app.services.bedrock_settings import resolve_region
 from app.services.llm_stream import TRANSIENT_HTTP_STATUSES
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
+from app.utils.speaker_labels import looks_like_a_person_name
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     from sqlalchemy.orm import Session
@@ -129,6 +134,9 @@ class LLMConfig:
     max_tokens: int = 8192  # User-configured context window
     temperature: float = 0.3
     response_tokens: int = 4000  # Max tokens for response
+    #: Bedrock only: the configuration's own region and AWS credentials (None = the server's
+    #: region and credential chain). Secrets are excluded from repr.
+    bedrock: BedrockConnection | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -139,6 +147,7 @@ class _ResolvedUserLLM:
     provider: LLMProvider
     api_key: str | None
     base_url: str | None
+    bedrock: BedrockConnection | None = None
 
 
 class LLMEndpointBlockedError(Exception):
@@ -246,9 +255,7 @@ class LLMService:
             # exists only so `self.endpoints[...]` (validate_connection, the
             # /llm-settings/test endpoint) has something descriptive to read instead of
             # raising KeyError or logging a bare "None".
-            LLMProvider.BEDROCK: (
-                f"boto3 bedrock-runtime (region={settings.BEDROCK_REGION or 'NOT CONFIGURED'})"
-            ),
+            LLMProvider.BEDROCK: "boto3 bedrock-runtime",
         }
 
     @staticmethod
@@ -789,13 +796,15 @@ class LLMService:
             Exception: The stream reported an error (``llm_bedrock.BedrockStreamError``)
                 or the response was empty, mirroring the HTTP path's behaviour.
         """
+        from app.services.bedrock_settings import resolve_region
         from app.services.llm_bedrock import BedrockStreamError
         from app.services.llm_bedrock import converse
 
         try:
             content, usage_tokens, finish_reason = converse(
                 model=self.config.model,
-                region=settings.BEDROCK_REGION,
+                region=resolve_region(self.config.bedrock),
+                connection=self.config.bedrock,
                 messages=messages,
                 max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
                 temperature=kwargs.get("temperature"),
@@ -863,11 +872,13 @@ class LLMService:
         # The generator it returns is synchronous and honours the same cancel_event,
         # so the caller's iterate_in_threadpool driver is unchanged.
         if self.config.provider == LLMProvider.BEDROCK:
+            from app.services.bedrock_settings import resolve_region
             from app.services.llm_bedrock import stream_converse
 
             yield from stream_converse(
                 model=self.config.model,
-                region=settings.BEDROCK_REGION,
+                region=resolve_region(self.config.bedrock),
+                connection=self.config.bedrock,
                 messages=messages,
                 max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
                 temperature=kwargs.get("temperature"),
@@ -1687,16 +1698,25 @@ class LLMService:
                 "Add one in Settings before testing the connection."
             )
 
+        if self.config.provider == LLMProvider.BEDROCK:
+            # An SDK call with its own failure modes (credentials, model access, region);
+            # answered with fixed sentences, never exception text.
+            from app.services.llm_bedrock import check_connection
+
+            return check_connection(
+                model=self.config.model,
+                region=resolve_region(self.config.bedrock),
+                connection=self.config.bedrock,
+            )
+
         try:
             headers = self._get_headers()
 
-            # Claude/Anthropic and Bedrock have no models endpoint to probe (Bedrock has no
-            # HTTP endpoint at all — it's an SDK call), so all three test with a simple request
-            # instead, exercising the exact code path a real chat turn would take.
+            # Claude/Anthropic have no models endpoint to probe, so both test with a simple
+            # request instead, exercising the exact code path a real chat turn would take.
             if self.config.provider in [
                 LLMProvider.CLAUDE,
                 LLMProvider.ANTHROPIC,
-                LLMProvider.BEDROCK,
             ]:
                 # No local guard here: this branch reaches the network through
                 # `chat_completion`, which now validates and PINS the URL it actually
@@ -1879,6 +1899,10 @@ class LLMService:
             logger.warning(
                 "Skipping speaker prediction with missing fields (has: %s)", sorted(pred.keys())
             )
+            return False
+
+        if not looks_like_a_person_name(pred.get("predicted_name")):
+            logger.info("Skipping speaker prediction whose predicted_name is not a name")
             return False
 
         confidence = pred.get("confidence", 0.0)
@@ -2251,7 +2275,6 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         """
         from app.db.base import SessionLocal
         from app.models.user_llm_settings import UserLLMSettings
-        from app.utils.encryption import decrypt_api_key
         from app.utils.tenant_sharing import shared_usable_by
 
         db = SessionLocal()
@@ -2268,12 +2291,11 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 logger.warning(f"LLM config {config_id} not available to user {user_id}")
                 return None
 
-            api_key = None
-            if user_settings.api_key:
-                api_key = decrypt_api_key(str(user_settings.api_key))
-                if not api_key:
-                    logger.error(f"Failed to decrypt API key for LLM config {config_id}")
-                    return None
+            try:
+                api_key, bedrock = LLMService.credentials_from_row(user_settings)
+            except ValueError:
+                logger.error(f"Failed to decrypt stored credentials for LLM config {config_id}")
+                return None
 
             from app.services import llm_context_window
 
@@ -2291,6 +2313,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                     declared=declared_window,
                 ),
                 temperature=float(user_settings.temperature),
+                bedrock=bedrock,
             )
             return LLMService(config)
         except Exception as e:  # noqa: BLE001
@@ -2310,7 +2333,6 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         """
         from app import models
         from app.models.user_llm_settings import UserLLMSettings
-        from app.utils.encryption import decrypt_api_key
         from app.utils.tenant_sharing import shared_usable_by
 
         active_config_setting = (
@@ -2352,21 +2374,53 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             )
             return None
 
-        api_key = None
-        if user_settings.api_key:
-            api_key = decrypt_api_key(str(user_settings.api_key))
-            if not api_key:
-                logger.error(f"Failed to decrypt API key for user {user_id}")
-                return None
-
         try:
             provider = LLMProvider(user_settings.provider)
         except ValueError as e:
             logger.error(f"Configuration error for user {user_id}: {e}")
             return None
 
+        try:
+            api_key, bedrock = LLMService.credentials_from_row(user_settings)
+        except ValueError:
+            logger.error(f"Failed to decrypt stored credentials for user {user_id}")
+            return None
+
+        if provider == LLMProvider.BEDROCK and not resolve_region(bedrock):
+            logger.warning(
+                f"Bedrock configuration for user {user_id} has no region and the server has "
+                "none either, checking system settings"
+            )
+            return None
+
         base_url = str(user_settings.base_url) if user_settings.base_url else None
-        return _ResolvedUserLLM(user_settings, provider, api_key, base_url)
+        return _ResolvedUserLLM(user_settings, provider, api_key, base_url, bedrock)
+
+    @staticmethod
+    def credentials_from_row(
+        user_settings: "UserLLMSettings",
+    ) -> tuple[str | None, BedrockConnection | None]:
+        """``(api_key, bedrock_connection)`` for a stored configuration row.
+
+        The single decryption point for a row's ``api_key`` column. For ``bedrock`` the column
+        holds an encrypted JSON blob of region and AWS credentials, so it is unpacked into a
+        :class:`BedrockConnection` and ``api_key`` is ``None``; for every other provider it is
+        the key itself. A blob or key that will not decrypt raises ``ValueError``.
+        """
+        stored = user_settings.api_key
+        if str(user_settings.provider) == LLMProvider.BEDROCK.value:
+            connection = connection_from_encrypted(str(stored)) if stored else BedrockConnection()
+            if stored and not (connection.region or connection.has_credentials):
+                raise ValueError("stored Bedrock credentials could not be decrypted")
+            return None, connection
+        if not stored:
+            return None, None
+        from app.utils.encryption import decrypt_api_key
+
+        api_key = decrypt_api_key(str(stored))
+        if not api_key:
+            raise ValueError("stored API key could not be decrypted")
+        return api_key, None
 
     @staticmethod
     def is_configured_for_user(db: "Session", user_id: int) -> bool:
@@ -2379,12 +2433,25 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         post-transcription recovery sweep: a looser check there dispatches tasks
         that can only skip.
         """
+        return LLMService.describe_for_user(db, user_id) is not None
+
+    @staticmethod
+    def describe_for_user(db: "Session", user_id: int) -> tuple[str, str, str | None] | None:
+        """``(provider, model, base_url)`` of the LLM this user's features would use.
+
+        ``None`` exactly when :meth:`is_configured_for_user` is False; the same DB-only
+        resolution (user config, else system settings), no network.
+        """
         resolved = LLMService._resolve_user_llm_settings(db, user_id)
         if resolved is not None and LLMService._endpoint_resolves(
             resolved.provider, resolved.base_url
         ):
-            return True
-        return LLMService._resolve_system_provider() is not None
+            return resolved.provider.value, str(resolved.settings.model_name), resolved.base_url
+        system = LLMService._resolve_system_provider()
+        if system is None:
+            return None
+        provider, model, _api_key, base_url = system
+        return provider.value, model, base_url
 
     @staticmethod
     def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
@@ -2410,6 +2477,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 model=str(user_settings.model_name),
                 api_key=resolved.api_key,
                 base_url=resolved.base_url,
+                bedrock=resolved.bedrock,
                 max_tokens=llm_context_window.effective_window(
                     db,
                     provider=str(user_settings.provider),
@@ -2499,14 +2567,12 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             # things that actually gate a Bedrock call: a model ID, and a region for
             # boto3 to construct the client against (`_client` in `llm_bedrock.py` raises
             # `BedrockNotConfiguredError` without one).
-            model = str(settings.BEDROCK_MODEL_NAME or "").strip()
-            if not model:
-                logger.info("Bedrock provider configured but no model ID set (BEDROCK_MODEL_NAME)")
-                return None
-            if not settings.BEDROCK_REGION:
-                logger.info(
-                    "Bedrock provider configured but no AWS region set (BEDROCK_REGION/AWS_REGION)"
-                )
+            from app.services.bedrock_settings import env_region
+            from app.services.bedrock_settings import resolve_default_model
+
+            model = resolve_default_model()
+            if not env_region():
+                logger.info("Bedrock provider configured but no AWS region set")
                 return None
             return model, None, None
 

@@ -116,10 +116,10 @@ def chunk_index(monkeypatch):
 
     name = f"test_chunk_prune_{uuid.uuid4().hex[:12]}"
     client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
-    monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-    svc.reset_neural_pipeline_state()
     try:
+        monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
+        monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
+        svc.reset_neural_pipeline_state()
         yield client
     finally:
         client.indices.delete(index=name, ignore=[404])

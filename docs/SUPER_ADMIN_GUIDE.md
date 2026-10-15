@@ -1297,7 +1297,7 @@ When employee leaves organization:
 
 Configure automatic deletion of old transcriptions to manage storage:
 
-1. Navigate to Settings → Admin → File Retention
+1. Navigate to Settings → Data & Storage → File Retention
 2. Set retention policies (e.g., delete files older than 90 days)
 3. Policies apply per-user or globally
 4. Users receive warnings before their files are deleted
@@ -1306,7 +1306,7 @@ Configure automatic deletion of old transcriptions to manage storage:
 
 The super admin pins a single ASR model that all workers share (GPU VRAM is loaded once at worker startup):
 
-1. Navigate to Settings → ASR → Local Model
+1. Navigate to Settings → Transcription → Provider & Model
 2. Select the desired model (e.g., `large-v3-turbo`, `large-v3`)
 3. Click "Set Model" — the setting is saved immediately
 4. Click "Restart GPU Worker" to perform a graceful drain restart

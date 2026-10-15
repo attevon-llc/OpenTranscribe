@@ -153,15 +153,6 @@ if [[ -n "${OPENTRANSCRIBE_LITE:-}" ]]; then
     FORCE_CPU="true"
 fi
 
-# CPU-friendly diarization default written into .env when
-# DETECTED_DEVICE=cpu (either forced via --cpu or auto-detected on a host
-# with no GPU). PyAnnote diarization requires CUDA — running it on CPU
-# would either fail or be unusably slow — so we default it to off at
-# install time. The Whisper model recommendation is handled separately by
-# select_whisper_model() which already proposes "base" for CPU. Users can
-# edit .env afterwards to override either choice.
-ENABLE_DIARIZATION_CPU_DEFAULT="false"
-
 #######################
 # HARDWARE DETECTION
 #######################
@@ -1060,14 +1051,6 @@ _write_hardware_settings() {
     # into a stack running the lite image while the code believes a local model is available.
     if [[ "$LITE_MODE" == "true" ]]; then
         _upsert_env "DEPLOYMENT_MODE" "lite"
-    fi
-
-    if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
-        if grep -q '^ENABLE_DIARIZATION=' .env; then
-            sed -i.bak "s|^ENABLE_DIARIZATION=.*|ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}|" .env && rm -f .env.bak
-        else
-            echo "ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}" >> .env
-        fi
     fi
 
     echo "✓ Environment configured for $DETECTED_DEVICE with $COMPUTE_TYPE precision"
@@ -2212,11 +2195,8 @@ display_summary() {
         fi
         echo "   • Whisper model: ${WHISPER_MODEL}"
         echo "       (CPU is too slow for large-v3-turbo — base/small recommended)"
-        echo "   • Diarization (speaker labels): DISABLED"
-        echo "       (PyAnnote requires CUDA — leaving it on would crash workers)"
-        echo ""
-        echo "   To re-enable diarization later (slow but functional on a"
-        echo "   strong CPU): edit .env, set ENABLE_DIARIZATION=true, restart."
+        echo "   • Speaker detection: runs on the CPU here (slower). To skip it,"
+        echo "       choose Off in Settings > Speaker Identification."
         echo "   To switch this install to GPU later: edit .env, set"
         echo "   FORCE_CPU_MODE=false, ensure nvidia-smi works, restart."
         echo ""

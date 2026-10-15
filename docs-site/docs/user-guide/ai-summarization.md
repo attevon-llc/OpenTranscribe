@@ -98,7 +98,7 @@ Create custom summarization prompts for specific use cases:
 
 ### Organization Context
 
-Administrators can configure **organization context** (Settings > Organization Context) that is automatically injected into AI prompts. This provides the LLM with background information about your organization, improving summary relevance:
+Administrators can configure **organization context** (Settings → Organization Context) that is automatically injected into AI prompts. This provides the LLM with background information about your organization, improving summary relevance:
 
 - Describe your organization, team structure, or domain
 - Choose whether to include context in default prompts, custom prompts, or both
@@ -120,7 +120,7 @@ This is useful for organizing different types of content (e.g., interviews vs. m
 Automatic AI summarization can be turned off:
 
 - **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for that file
-- **User default**: Go to Settings → Transcription & AI → LLM Provider Configuration → AI Summary Settings and disable it to skip automatic summarization on all uploads by default
+- **User default**: Go to Settings → LLM Provider Configuration → AI Summary Settings and disable it to skip automatic summarization on all uploads by default
 - When disabled, summaries can still be generated manually by clicking "Generate Summary" on any completed transcript
 
 ### Auto-Label Pipeline
@@ -143,7 +143,7 @@ When an LLM provider is configured, OpenTranscribe can automatically analyze com
 - **Auto-collect**: AI suggests relevant collections based on content
 - **Bulk grouping**: When uploading multiple files, AI can group them into collections by topic
 
-Configure auto-labeling in **Settings > Auto-Label**:
+Configure auto-labeling in **Settings → Auto-Labeling (Tags & Collections)**:
 - Enable/disable the feature globally
 - Set confidence threshold for suggestions
 - Toggle tags and collections independently
@@ -227,7 +227,7 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx
 ### Custom Prompts
 
 Create custom prompts in UI:
-1. Go to Settings → AI Prompts
+1. Go to Settings → AI Summarization Prompts
 2. Click "New Prompt"
 3. Configure:
    - Name

@@ -22,12 +22,14 @@
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
-  import ConfirmationModal from '../components/ConfirmationModal.svelte';
-  import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
+  import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
   import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
+  import QuarantineModal from '$components/gallery/QuarantineModal.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
   import type { BulkTagAction } from '$lib/types/tag';
@@ -44,6 +46,8 @@
   // Bulk tag modal state
   let showBulkTagModal = false;
   let bulkTagAction: BulkTagAction = 'add_tag';
+  let showQuarantineModal = false;
+  let quarantineTargetFiles: MediaFile[] = [];
 
   // Bulk reprocess modal state
   let showBulkReprocessModal = false;
@@ -59,22 +63,22 @@
       collectionId: string | null;  // UUID
       dates: DateRange;
       durationRange?: DurationRange;
-      fileSizeRange?: { min: number | null; max: number | null };
       fileTypes?: string[];
       statuses?: string[];
       ownership?: 'all' | 'mine' | 'shared';
+      owners?: string[]; // Owner UUIDs (issue #966)
     };
   }
 
 
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { apiCache } from '$lib/apiCache';
 
   // Import components
-  import FileUploader from '../components/FileUploader.svelte';
-  import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import FileUploader from '$components/FileUploader.svelte';
+  import { supportSessionGate } from '$stores/supportSession';
+  import CollectionsPanel from '$components/CollectionsPanel.svelte';
   import TagManagerModal from '$components/tags/TagManagerModal.svelte';
-  import UserFileStatus from '../components/UserFileStatus.svelte';
 
   // Media files state
   let files: MediaFile[] = [];
@@ -112,7 +116,6 @@
   let showTagManagerModal = false;
 
   // Use gallery store for state management
-  $: activeTab = $galleryState.activeTab;
   $: isSelecting = $galleryState.isSelecting;
   $: selectedFiles = $galleryState.selectedFiles;
 
@@ -135,11 +138,25 @@
   let selectedSpeakers: string[] = [...$galleryState.filterSelectedSpeakers];
   let dateRange = { ...$galleryState.filterDateRange };
   let durationRange = { ...$galleryState.filterDurationRange };
-  let fileSizeRange = { ...$galleryState.filterFileSizeRange };
   let selectedFileTypes: string[] = [...$galleryState.filterSelectedFileTypes];
   let selectedStatuses: string[] = [...$galleryState.filterSelectedStatuses];
   let ownershipFilter: 'all' | 'mine' | 'shared' = $galleryState.filterOwnershipFilter;
+  let selectedOwners: string[] = [...$galleryState.filterSelectedOwners];
   $: showFilters = $galleryState.showFilters;
+
+  // Whether any filter is currently narrowing the list — including the toolbar
+  // search box (issue #747). Drives GalleryGrid's empty-state copy: an empty
+  // result set with a filter active means "no matches", not "your library is
+  // empty" (§4.1 defect 3).
+  $: filtersActive =
+    searchQuery !== '' ||
+    selectedTags.length > 0 ||
+    selectedSpeakers.length > 0 ||
+    selectedFileTypes.length > 0 ||
+    selectedStatuses.length > 0 ||
+    dateRange.from !== null || dateRange.to !== null ||
+    durationRange.min !== null || durationRange.max !== null ||
+    ownershipFilter !== 'all';
 
   // Sort state — restore from gallery store
   let sortBy: string = $galleryState.filterSortBy;
@@ -254,14 +271,6 @@
       params.append('max_duration', durationRange.max.toString());
     }
 
-    // File size range
-    if (fileSizeRange.min !== null) {
-      params.append('min_file_size', fileSizeRange.min.toString());
-    }
-    if (fileSizeRange.max !== null) {
-      params.append('max_file_size', fileSizeRange.max.toString());
-    }
-
     // File types
     if (selectedFileTypes.length > 0) {
       selectedFileTypes.forEach(fileType => params.append('file_type', fileType));
@@ -275,6 +284,11 @@
     // Ownership filter (backend defaults to 'mine' if omitted)
     if (ownershipFilter) {
       params.append('ownership', ownershipFilter);
+    }
+
+    // Specific owner(s) (issue #966) — orthogonal to the ownership bucket above
+    if (selectedOwners.length > 0) {
+      selectedOwners.forEach(ownerUuid => params.append('owner', ownerUuid));
     }
 
     return params;
@@ -563,7 +577,7 @@
 
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, ownership } = event.detail;
+    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileTypes, statuses, ownership, owners } = event.detail;
 
     searchQuery = search;
     selectedTags = tags;
@@ -573,11 +587,19 @@
 
     // Handle advanced filters if provided
     if (duration !== undefined) durationRange = duration;
-    if (fileSize !== undefined) fileSizeRange = fileSize;
     if (fileTypes !== undefined) selectedFileTypes = fileTypes;
     if (statuses !== undefined) selectedStatuses = statuses;
     if (ownership !== undefined) ownershipFilter = ownership;
+    if (owners !== undefined) selectedOwners = owners;
 
+    fetchFiles();
+  }
+
+  // Handle the toolbar's filename/title search (issue #747 — moved out of the
+  // filter sidebar into GalleryHeader). Debouncing is owned by the shared
+  // `SearchBar` primitive GalleryHeader renders, not duplicated here.
+  function handleToolbarSearch(event: CustomEvent<{ value: string }>) {
+    searchQuery = event.detail.value;
     fetchFiles();
   }
 
@@ -616,6 +638,10 @@
   }
 
   // Toggle upload modal
+  // Upload, URL import and recording are refused under a support grant. Every way of opening
+  // the modal (button, drop, recorded-file event) funnels through this one flag.
+  $: if ($supportSessionGate.active && showUploadModal) showUploadModal = false;
+
   function toggleUploadModal() {
     showUploadModal = !showUploadModal;
   }
@@ -629,10 +655,10 @@
     selectedCollectionId = null;
     dateRange = { from: null, to: null };
     durationRange = { min: null, max: null };
-    fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
     ownershipFilter = 'all';
+    selectedOwners = [];
     sortBy = 'upload_time';
     sortOrder = 'desc';
 
@@ -751,6 +777,26 @@
     if ($galleryState.selectedFiles.size === 0) return;
     bulkTagAction = action;
     showBulkTagModal = true;
+  }
+
+  /** Opens the takedown modal over every currently-selected file, whatever its
+   * status (issue #576 §B.5 — quarantining a still-downloading file is exactly
+   * the case that matters, so this is NOT gated on completed status). */
+  function openQuarantineModal() {
+    const selected = $galleryState.selectedFiles;
+    quarantineTargetFiles = files.filter((f) => selected.has(f.uuid));
+    if (quarantineTargetFiles.length === 0) return;
+    showQuarantineModal = true;
+  }
+
+  /**
+   * Update rows locally; do NOT remove them (§B.6 E5) — a quarantined row
+   * legitimately stays in an admin's gallery. Optimistically removing it looks
+   * like it works until the next refetch puts it back.
+   */
+  function handleQuarantined(event: CustomEvent<{ uuids: string[] }>) {
+    const changed = new Set(event.detail.uuids);
+    files = files.map((f) => (changed.has(f.uuid) ? { ...f, is_quarantined: true } : f));
   }
 
   function handleBulkTagApplied(event: CustomEvent<{ changed: number }>) {
@@ -1031,9 +1077,15 @@
     // Use backend-provided error categorization
     if (file.error_reason && file.error_suggestions) {
       const suggestions = file.error_suggestions.map(s => `• ${s}`).join('\n');
+      // GH #960: translate the fixed backend reason client-side; fall back to the
+      // server-authored English `user_message` only for a reason this client doesn't know.
+      const mediaErrorI18nKey = resolveMediaErrorI18nKey(file.error_reason);
+      const message = mediaErrorI18nKey
+        ? $t(mediaErrorI18nKey)
+        : file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename });
       toastStore.error(
         $t('gallery.processingFailedWithSuggestions', {
-          message: file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename }),
+          message,
           suggestions: suggestions
         }),
         file.error_reason === 'file_quality' ? 10000 : 8000
@@ -1319,10 +1371,10 @@
       selectedCollectionId,
       dateRange,
       durationRange,
-      fileSizeRange,
       selectedFileTypes,
       selectedStatuses,
       ownershipFilter,
+      selectedOwners,
       sortBy,
       sortOrder,
     });
@@ -1391,6 +1443,10 @@
       openBulkTagModal('remove_tag');
     });
 
+    const unsubscribeQuarantine = galleryStore.onQuarantineTrigger(() => {
+      openQuarantineModal();
+    });
+
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();
     });
@@ -1439,69 +1495,67 @@
       unsubscribeExport();
       unsubscribeSpeakerId();
       unsubscribeCancelProcessing();
+      unsubscribeQuarantine();
     };
   });
 </script>
 
 <!-- Main container with fixed height -->
 <div class="media-library-container">
-  {#if activeTab === 'gallery'}
-    <div class="gallery-tab-wrapper">
-      <!-- Left Sidebar: Filters (Sticky) -->
-      <GalleryFilterPanel
-        bind:this={filterPanelRef}
-        {showFilters}
-        {searchQuery}
-        {selectedTags}
-        {selectedSpeakers}
-        {selectedCollectionId}
-        {dateRange}
-        {durationRange}
-        {fileSizeRange}
-        {selectedFileTypes}
-        {selectedStatuses}
-        {ownershipFilter}
-        on:toggle={toggleFilters}
-        on:filter={applyFilters}
-        on:reset={resetFilters}
-      />
+  <div class="gallery-tab-wrapper">
+    <!-- Left Sidebar: Filters (Sticky) -->
+    <GalleryFilterPanel
+      bind:this={filterPanelRef}
+      {showFilters}
+      {searchQuery}
+      {selectedTags}
+      {selectedSpeakers}
+      {selectedCollectionId}
+      {dateRange}
+      {durationRange}
+      {selectedFileTypes}
+      {selectedStatuses}
+      {ownershipFilter}
+      {selectedOwners}
+      on:toggle={toggleFilters}
+      on:filter={applyFilters}
+      on:reset={resetFilters}
+    />
 
-      <!-- Right Content: Scrollable Media Grid -->
-      <div class="content-area">
-        <div class="scrollable-content" bind:this={scrollableContentEl} on:scroll={onGalleryScroll}>
-          <!-- Gallery Header (sticky) - always visible for action buttons -->
-          <GalleryHeader
-            {files}
-            {sortBy}
-            {sortOrder}
-            {loading}
-            {showFilters}
-            on:togglefilters={toggleFilters}
-            on:change={handleSortChange}
-          />
+    <!-- Right Content: Scrollable Media Grid -->
+    <div class="content-area">
+      <div class="scrollable-content" bind:this={scrollableContentEl} on:scroll={onGalleryScroll}>
+        <!-- Gallery Header (sticky) - always visible for action buttons -->
+        <GalleryHeader
+          {files}
+          {sortBy}
+          {sortOrder}
+          {loading}
+          {showFilters}
+          {searchQuery}
+          on:togglefilters={toggleFilters}
+          on:change={handleSortChange}
+          on:search={handleToolbarSearch}
+        />
 
-          <GalleryGrid
-            {files}
-            {loading}
-            {error}
-            {selectedCollectionId}
-            {isSelecting}
-            {selectedFiles}
-            {pendingNewFiles}
-            {pendingDeletions}
-            scrollContainer={scrollableContentEl}
-            on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
-            on:retry={() => fetchFiles()}
-            on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
-          />
-        </div>
+        <GalleryGrid
+          {files}
+          {loading}
+          {error}
+          {selectedCollectionId}
+          {isSelecting}
+          {selectedFiles}
+          {pendingNewFiles}
+          {pendingDeletions}
+          {filtersActive}
+          scrollContainer={scrollableContentEl}
+          on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
+          on:retry={() => fetchFiles()}
+          on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
+        />
       </div>
     </div>
-  {:else if activeTab === 'status'}
-    <div class="status-tab-content">
-      <UserFileStatus />
-    </div>
-  {/if}
+  </div>
 </div>
 
 <!-- Upload Modal -->
@@ -1518,7 +1572,7 @@
   <BaseModal
       isOpen={showUploadModal}
       title={$t('nav.addMedia')}
-      maxWidth="720px"
+      size="lg"
       height={GALLERY_MODAL_HEIGHT}
       closeOnBackdropClick={false}
       onClose={toggleUploadModal}
@@ -1539,7 +1593,7 @@
   <BaseModal
       isOpen={showTagManagerModal}
       title={$t('tags.manager.title')}
-      maxWidth="720px"
+      size="lg"
       height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showTagManagerModal = false)}
     >
@@ -1552,7 +1606,7 @@
   <BaseModal
       isOpen={showCollectionsModal}
       title={$t('gallery.manageCollections')}
-      maxWidth="720px"
+      size="lg"
       height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showCollectionsModal = false)}
     >
@@ -1603,6 +1657,14 @@
   on:close={() => (showBulkTagModal = false)}
 />
 
+<!-- Quarantine (takedown) Modal — admin-only (issue #576) -->
+<QuarantineModal
+  isOpen={showQuarantineModal}
+  files={quarantineTargetFiles}
+  on:quarantined={handleQuarantined}
+  on:close={() => (showQuarantineModal = false)}
+/>
+
 <!-- Bulk Selective Reprocess Modal -->
 <SelectiveReprocessModal
   bind:showModal={showBulkReprocessModal}
@@ -1623,15 +1685,10 @@
     padding-top: 0;
   }
 
-  /* Gallery Tab Wrapper */
+  /* Gallery wrapper (formerly one of two navbar tabs; File Status now lives in Settings) */
   .gallery-tab-wrapper {
     display: flex;
     height: 100%;
-    width: 100%;
-  }
-
-  .status-tab-content {
-    padding: 1rem;
     width: 100%;
   }
 

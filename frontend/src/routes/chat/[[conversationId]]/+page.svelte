@@ -405,7 +405,9 @@
       ></button>
     {/if}
 
-    <main class="chat-main">
+    <!-- `<div>`, not `<main>`: this nests inside AppContent.svelte's `<main id="main-content">`
+         landmark, and two nested `main` landmarks is itself an axe finding (issue #785). -->
+    <div class="chat-main">
       <header class="chat-header">
         <button
           type="button"
@@ -597,7 +599,7 @@
           on:stop={() => chatStore.stopGeneration()}
         />
       </div>
-    </main>
+    </div>
   </div>
 
   <FilePickerModal
@@ -692,8 +694,8 @@
   .chat-title {
     flex: 1;
     margin: 0;
-    font-size: 0.98rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;

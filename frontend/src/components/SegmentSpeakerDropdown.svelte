@@ -1,11 +1,14 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker, Segment } from '$lib/types/speaker';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
+  import { listProfiles } from '$lib/api/speakerClusters';
+  import { apiCache, CacheTTL } from '$lib/apiCache';
   import { toastStore } from '$stores/toast';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import { portal } from '$lib/actions/portal';
@@ -23,10 +26,15 @@
   // are the shared highlight classes from src/styles/search.css.
   export let highlighted: boolean = false;
   export let isCurrentMatch: boolean = false;
+  // Read-only presentation (e.g. the search-result / "view transcript" modal, issue
+  // #755): renders the same chip, but the dropdown never opens and no mutation is
+  // possible. Those surfaces may be opened by a viewer-only user.
+  export let readOnly: boolean = false;
 
   const dispatch = createEventDispatcher();
   let triggerButton: HTMLButtonElement;
   let portalContainer: HTMLDivElement | null = null;
+  let menuPanel: { destroy: () => void } | null = null;
   let isOpen = false;
   let isCreatingSpeaker = false;
 
@@ -43,10 +51,10 @@
   //
   // Deliberately NOT part of this chain: `speaker.resolved_display_name` and
   // `segment.resolved_speaker_name`. Both are `canonical_speaker_label(...)`, which
-  // returns `suggested_name` once confidence >= 0.75 — i.e. they intentionally
-  // collapse "confirmed" and "guessed" into one string. Rendering either one here
-  // would put an unverified LLM guess in the name slot, which is exactly what the
-  // repo rule "LLM speaker-ID suggestions are never auto-applied" forbids (#741).
+  // returns a voiceprint-matched `suggested_name` (>= 0.75) as well as a typed one,
+  // so they cover "confirmed" and "matched by voice" in one string. An LLM guess
+  // never reaches them, but this chain is the one that shows a human-confirmed
+  // name only, so it stays on `display_name` (#741).
   $: confirmedName = (wireSpeaker?.display_name ?? '').trim();
   $: speakerNumberLabel = wireSpeaker?.name || segment.speaker_label || '';
   $: triggerLabel = translateSpeakerLabel(
@@ -63,6 +71,91 @@
           confidence: wireSpeaker.confidence ?? 0
         }
       : null;
+
+  // --- Name THIS speaker, inline (#1086) ---------------------------------------
+  // The common case is "this SPEAKER_02 is Laura": a rename of the speaker the segment
+  // already has, for the whole file. It used to need the expanded Edit Speakers section,
+  // while the only text field reachable from here was "Add speaker" -- which creates a
+  // SECOND speaker. Submitting goes through the same `speakerUpdate` contract the
+  // suggestion row and the editor use, so the parent's validation, linked-profile
+  // confirmation and rename propagation all apply; this component never writes a name.
+  let inlineName = '';
+  let profileNames: string[] = [];
+  // The field, its Save button, hint and match list live in the imperatively built menu.
+  // Typing updates those in place (`refreshInlineNameUi`) rather than rebuilding the menu:
+  // replacing the <input> on each keystroke would drop focus and abort an IME composition
+  // (Japanese, Korean and Chinese input), which is most of what typing a name is for them.
+  let inlineSaveButton: HTMLButtonElement | null = null;
+  let inlineHint: HTMLElement | null = null;
+  let inlineMatches: HTMLElement | null = null;
+
+  function inlineNameCheck(raw: string): 'ok' | 'empty' | 'placeholder' | 'unchanged' {
+    const name = raw.trim();
+    if (name === '') return 'empty';
+    // `SPEAKER_NN` is a diarization slot, not an identity -- same rule as "Add speaker".
+    if (isPlaceholderSpeakerName(name)) return 'placeholder';
+    if (name === confirmedName) return 'unchanged';
+    return 'ok';
+  }
+
+  function submitInlineName(raw: string = inlineName) {
+    if (!wireSpeaker?.uuid || inlineNameCheck(raw) !== 'ok') return;
+    dispatch('speakerUpdate', { speakerId: wireSpeaker.uuid, newName: raw.trim() });
+    closeDropdown();
+  }
+
+  function loadProfileNames() {
+    // Same cache key and shape `prefetchSpeakersData` fills, so a warm cache costs nothing.
+    // Autocomplete is a convenience: a failed fetch leaves the field fully usable.
+    apiCache
+      .getOrFetch('speakers:profiles', () => listProfiles(), CacheTTL.SPEAKERS)
+      .then((profiles) => {
+        profileNames = [...new Set((profiles ?? []).map((p) => p.name).filter(Boolean))];
+        if (isOpen) refreshInlineNameUi();
+      })
+      .catch(() => {
+        profileNames = [];
+      });
+  }
+
+  function refreshInlineNameUi() {
+    const check = inlineNameCheck(inlineName);
+    if (inlineSaveButton) inlineSaveButton.disabled = check !== 'ok';
+    if (inlineHint) {
+      inlineHint.textContent = check === 'placeholder' ? $t('speaker.placeholderNameRejected') : '';
+      inlineHint.hidden = check !== 'placeholder';
+    }
+    if (!inlineMatches) return;
+
+    const typed = inlineName.trim().toLowerCase();
+    const matches =
+      typed === ''
+        ? []
+        : profileNames
+            .filter((name) => name.toLowerCase().includes(typed))
+            // The API's order is unspecified; a stable one keeps the list from shuffling.
+            .sort((a, b) => a.localeCompare(b))
+            .slice(0, 5);
+    inlineMatches.replaceChildren();
+    inlineMatches.hidden = matches.length === 0;
+    if (matches.length === 0) return;
+
+    const label = document.createElement('div');
+    label.className = 'dropdown-header inline-name-matches-label';
+    label.textContent = $t('speaker.nameThisSpeakerMatches');
+    inlineMatches.appendChild(label);
+    for (const name of matches) {
+      const pick = document.createElement('button');
+      pick.className = 'dropdown-item inline-name-match';
+      pick.dataset.action = 'pick-profile';
+      pick.textContent = name; // textContent is XSS-safe
+      pick.addEventListener('click', (e) => {
+        e.stopPropagation();
+        submitInlineName(name);
+      });
+      inlineMatches.appendChild(pick);
+    }
+  }
 
   // The next free diarization SLOT for this file (e.g. SPEAKER_03). It is never a
   // name on its own — see `$lib/utils/speakerNames` for the shared contract.
@@ -184,6 +277,7 @@
     }
     // `remove()` rather than `document.body.removeChild()`: the node may already be
     // detached (navigation tears the body down), and removeChild throws on a non-child.
+    menuPanel?.destroy();
     portalContainer?.remove();
     portalContainer = null;
     document.removeEventListener('click', handleGlobalClick, true);
@@ -193,6 +287,7 @@
   function closeDropdown() {
     if (isOpen) {
       isOpen = false;
+      inlineName = '';
       unlockScroll();
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('resize', closeDropdown);
@@ -210,10 +305,13 @@
   function toggleDropdown(event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
+    if (readOnly) return;
 
     isOpen = !isOpen;
 
     if (isOpen) {
+      inlineName = '';
+      loadProfileNames();
       lockScroll();
       document.addEventListener('click', handleGlobalClick, true);
       window.addEventListener('resize', closeDropdown);
@@ -237,34 +335,6 @@
   function isCurrentSpeaker(speakerUuid: string): boolean {
     if (!segment.speaker) return false;
     return segment.speaker.uuid === speakerUuid;
-  }
-
-  function getMenuPosition(): { top: number; left: number; openUpward: boolean } {
-    if (!triggerButton) return { top: 0, left: 0, openUpward: false };
-
-    const rect = triggerButton.getBoundingClientRect();
-    // Estimate menu height: header + no speaker + divider + speakers + divider + create button
-    const itemHeight = 36;
-    const headerHeight = 28;
-    const dividerHeight = 9;
-    const suggestionHeight = pendingSuggestion ? headerHeight + itemHeight + dividerHeight : 0;
-    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0) + suggestionHeight;
-
-    const viewportHeight = window.innerHeight;
-    const spaceBelow = viewportHeight - rect.bottom - 8;
-    const spaceAbove = rect.top - 8;
-
-    // Open upward if not enough space below and more space above
-    const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
-
-    let top: number;
-    if (openUpward) {
-      top = rect.top - 4;
-    } else {
-      top = rect.bottom + 4;
-    }
-
-    return { top, left: rect.left, openUpward };
   }
 
   // Helper to create SVG checkmark element
@@ -363,27 +433,105 @@
     if (!portalContainer) return;
 
     if (!isOpen) {
+      menuPanel?.destroy();
+      menuPanel = null;
       portalContainer.innerHTML = '';
+      inlineSaveButton = inlineHint = inlineMatches = null;
       return;
     }
 
-    const pos = getMenuPosition();
+    // The menu is rebuilt from scratch on every external change (a refetched speaker list, a
+    // rename landing). If the user is mid-name, put the cursor back where it was afterwards.
+    const active = document.activeElement;
+    const refocusInlineName =
+      active instanceof HTMLInputElement &&
+      active.classList.contains('inline-name-input') &&
+      portalContainer.contains(active);
+
     const currentSpeakerUuid = segment.speaker?.uuid;
+    // After the focus check above: the old menu holds the focus and destroy() removes it.
+    menuPanel?.destroy();
+    menuPanel = null;
 
     // Build menu using DOM methods to prevent XSS
     const menu = document.createElement('div');
-    menu.className = `dropdown-menu${pos.openUpward ? ' open-upward' : ''}`;
-    menu.style.top = `${pos.top}px`;
-    menu.style.left = `${pos.left}px`;
-    if (pos.openUpward) {
-      menu.style.transform = 'translateY(-100%)';
-    }
+    menu.className = 'dropdown-menu';
 
     // Header
     const header = document.createElement('div');
     header.className = 'dropdown-header';
     header.textContent = $t('speaker.assignSpeaker');
     menu.appendChild(header);
+
+    // Name THIS speaker (#1086): a field first, because it is the common action.
+    let inlineInput: HTMLInputElement | null = null;
+    if (wireSpeaker?.uuid) {
+      const row = document.createElement('div');
+      row.className = 'inline-name-row';
+
+      inlineInput = document.createElement('input');
+      inlineInput.type = 'text';
+      inlineInput.className = 'inline-name-input';
+      inlineInput.maxLength = 255;
+      inlineInput.autocomplete = 'off';
+      // A name typed in Arabic must align right even inside an LTR page, and vice versa.
+      inlineInput.dir = 'auto';
+      inlineInput.placeholder = $t('speaker.nameThisSpeakerPlaceholder', {
+        label: translateSpeakerLabel(speakerNumberLabel || $t('common.unknown'))
+      });
+      inlineInput.setAttribute('aria-label', $t('speaker.nameThisSpeakerLabel'));
+      inlineInput.value = inlineName;
+      const input = inlineInput;
+      input.addEventListener('input', () => {
+        inlineName = input.value;
+        refreshInlineNameUi();
+      });
+      input.addEventListener('keydown', (e) => {
+        // Typing must not reach the page's own shortcuts (play/pause, seek, ...).
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitInlineName();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeDropdown();
+        }
+      });
+      row.appendChild(input);
+
+      const save = document.createElement('button');
+      save.className = 'inline-name-save';
+      save.dataset.action = 'save-inline-name';
+      save.setAttribute('aria-label', $t('speaker.nameThisSpeakerSave'));
+      save.title = $t('speaker.nameThisSpeakerSave');
+      save.appendChild(createCheckmarkSvg());
+      save.addEventListener('click', (e) => {
+        e.stopPropagation();
+        submitInlineName();
+      });
+      row.appendChild(save);
+      inlineSaveButton = save;
+      menu.appendChild(row);
+
+      const hint = document.createElement('div');
+      hint.className = 'inline-name-hint';
+      hint.hidden = true;
+      menu.appendChild(hint);
+      inlineHint = hint;
+
+      const matchList = document.createElement('div');
+      matchList.className = 'inline-name-matches';
+      matchList.hidden = true;
+      menu.appendChild(matchList);
+      inlineMatches = matchList;
+
+      const nameDivider = document.createElement('div');
+      nameDivider.className = 'dropdown-divider';
+      menu.appendChild(nameDivider);
+      refreshInlineNameUi();
+    } else {
+      inlineSaveButton = inlineHint = inlineMatches = null;
+    }
 
     // Unconfirmed LLM / voice-match suggestion — offered HERE, with its confidence
     // score, and never in the name slot (#741). One affirmative click accepts it.
@@ -435,7 +583,7 @@
       createOption.appendChild(createPlusSvg());
 
       const createSpan = document.createElement('span');
-      createSpan.textContent = $t('speaker.addSpeaker');
+      createSpan.textContent = $t('speaker.newSpeakerForSegment');
       createOption.appendChild(createSpan);
 
       createBtn.appendChild(createOption);
@@ -505,18 +653,31 @@
     // Clear and append
     portalContainer.innerHTML = '';
     portalContainer.appendChild(menu);
+    // The container already lives on <body>; the action only has to place the menu (flip above,
+    // cap the height, clamp to the viewport) and keep it placed as the viewport/content changes.
+    menuPanel = anchoredPanel(menu, {
+      anchor: triggerButton,
+      width: 'content',
+      gap: 4,
+      portal: false,
+      maxHeight: 400,
+      zIndex: 'var(--z-critical, 10000)',
+    });
+
+    if (refocusInlineName && inlineInput) {
+      inlineInput.focus();
+      inlineInput.setSelectionRange(inlineInput.value.length, inlineInput.value.length);
+    }
   }
 </script>
 
 <svelte:head>
   <style>
     .speaker-dropdown-portal .dropdown-menu {
-      position: fixed;
       background: var(--surface-color, #1e293b);
       border: 1px solid var(--border-color, #334155);
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-      z-index: 10000;
       min-width: 200px;
       /* A long suggested name used to widen the menu past the viewport edge, where
          the fixed `left` offset left it unreachable and overlapping the transcript.
@@ -596,7 +757,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn {
-      color: var(--primary-color, #3b82f6);
+      color: var(--primary-on-surface);
     }
 
     .speaker-dropdown-portal .create-speaker-btn:hover {
@@ -615,7 +776,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn svg {
-      color: var(--primary-color, #3b82f6);
+      color: var(--primary-on-surface);
       margin-right: 4px;
     }
 
@@ -632,6 +793,65 @@
       background: var(--surface-hover, #334155);
     }
 
+    .speaker-dropdown-portal .inline-name-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px 6px 8px;
+    }
+
+    .speaker-dropdown-portal .inline-name-input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      font-size: 13px;
+    }
+
+    .speaker-dropdown-portal .inline-name-save {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      /* The global button rules add padding; on a 28px square that leaves the icon no
+         content box at all (computed width 0) and it vanishes. */
+      padding: 0;
+      box-sizing: border-box;
+      color: #fff;
+      background: var(--primary-color, #3b82f6);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .speaker-dropdown-portal .inline-name-save:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .speaker-dropdown-portal .inline-name-save svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    .speaker-dropdown-portal .inline-name-hint {
+      padding: 0 12px 6px 12px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: var(--warning-color, #f59e0b);
+    }
+
+    .speaker-dropdown-portal .inline-name-matches[hidden],
+    .speaker-dropdown-portal .inline-name-hint[hidden] {
+      display: none;
+    }
+
+    .speaker-dropdown-portal .inline-name-match {
+      justify-content: flex-start;
+    }
+
     .speaker-dropdown-portal .suggestion-confidence {
       flex-shrink: 0;
       margin-left: 8px;
@@ -646,9 +866,11 @@
 <div class="speaker-dropdown-container">
   <button
     class="speaker-trigger"
+    class:read-only={readOnly}
     bind:this={triggerButton}
     on:click={toggleDropdown}
-    title={$t('speaker.clickToChangeSpeaker')}
+    aria-disabled={readOnly}
+    title={readOnly ? triggerLabel : $t('speaker.clickToChangeSpeaker')}
   >
     <div
       class="segment-speaker"
@@ -658,7 +880,7 @@
     >
       {triggerLabel}
     </div>
-    {#if pendingSuggestion}
+    {#if pendingSuggestion && !readOnly}
       <!-- The suggestion exists but is unconfirmed: a marker, not a name. -->
       <span class="suggestion-marker" title={$t('speaker.unconfirmedSuggestion')} aria-hidden="true">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
@@ -666,6 +888,7 @@
         </svg>
       </span>
     {/if}
+    {#if !readOnly}
     <svg
       class="dropdown-arrow"
       class:open={isOpen}
@@ -678,6 +901,7 @@
     >
       <polyline points="6 9 12 15 18 9"></polyline>
     </svg>
+    {/if}
   </button>
 </div>
 
@@ -695,7 +919,7 @@
   <BaseModal
     isOpen={showCreateModal}
     title={$t('speaker.newSpeakerTitle')}
-    maxWidth="420px"
+    size="sm"
     closeOnBackdropClick={false}
     onClose={closeCreateSpeakerModal}
   >
@@ -762,19 +986,25 @@
     min-width: 0;
   }
 
+  .speaker-trigger.read-only {
+    cursor: default;
+  }
+
   .segment-speaker {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 2px 8px;
     border-radius: 12px;
-    white-space: nowrap;
-    max-width: 150px;
+    /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to
+       "UNKNOWN (NOT …" (#1149). `overflow-wrap: anywhere` also breaks an unbroken token. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+    max-width: 180px;
     /* Pairs with the flex parent: `max-width` alone caps growth but a flex item's
        automatic minimum size is its content, so the pill still refused to shrink
        and the arrow was pushed out of the row. */
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;

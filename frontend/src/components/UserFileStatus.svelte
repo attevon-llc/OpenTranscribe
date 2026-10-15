@@ -7,7 +7,7 @@
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import SkeletonLoader from './ui/SkeletonLoader.svelte';
@@ -104,7 +104,11 @@
   });
 
   // Refetch tasks when filters change (reset to page 1)
-  $: if (filtersReady && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
+  // Only a change since the last fetch refetches: `filtersReady` flips true right AFTER the first
+  // fetch, and the block used to re-run on that flip and request the identical page again.
+  $: tasksFilterKey = [taskFilter, taskTypeFilter, taskAgeFilter, taskDateFrom, taskDateTo].join('|');
+  let fetchedFilterKey: string | null = null;
+  $: if (filtersReady && tasksFilterKey !== fetchedFilterKey) {
     taskPage = 1;
     fetchTasks(true);
   }
@@ -145,6 +149,7 @@
       tasksLoading = true;
     }
     tasksError = null;
+    fetchedFilterKey = tasksFilterKey;
 
     try {
       // Build query parameters for backend filtering + pagination
@@ -269,7 +274,25 @@
     } catch (err: unknown) {
       console.error('Error retrying file:', err);
       const errorMsg = getErrorMessage(err, $t('fileStatus.retryFailed'));
-      showMessage(errorMsg, 'error');
+      // Issue #788: the retry-spam guard (`POST /my-files/{uuid}/retry`) is
+      // itself rate-limited. Rather than a plain error toast, offer the
+      // "Retry" action right there -- disabled until the window elapses
+      // (Toast.svelte drives that off `retryAfterSeconds`), so the user does
+      // not have to leave the toast to try the same button again. Absent or
+      // unparseable Retry-After (no `retryAfterSeconds` on the error) falls
+      // back to today's plain error toast.
+      const retryAfterSeconds =
+        getErrorStatus(err) === 429
+          ? (err as { retryAfterSeconds?: number })?.retryAfterSeconds
+          : undefined;
+      if (typeof retryAfterSeconds === 'number') {
+        toastStore.warning(errorMsg, undefined, {
+          retryAfterSeconds,
+          action: { label: $t('fileStatus.retry'), onClick: () => retryFile(fileId) },
+        });
+      } else {
+        showMessage(errorMsg, 'error');
+      }
     } finally {
       retryingFiles.delete(fileId);
       retryingFiles = retryingFiles; // Trigger reactivity
@@ -368,6 +391,7 @@
 </script>
 
 <div class="file-status-container">
+  <slot name="top" />
   <div class="header">
     <h2>{$t('fileStatus.title')}</h2>
     <div class="controls">
@@ -642,13 +666,15 @@
 
   .status-number {
     font-size: 1.5rem;
-    font-weight: bold;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: 0.25rem;
   }
 
   .status-label {
-    color: var(--text-light);
+    /* These labels sit on per-status tinted cards; on the error tint --text-light
+     * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
+    color: var(--text-on-tint);
     font-size: 0.8rem;
     font-weight: 500;
   }

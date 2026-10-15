@@ -154,9 +154,9 @@
     align-items: flex-end;
     gap: 0.5rem;
     padding: 0.5rem 0.5rem 0.5rem 0.9rem;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--field-border);
     border-radius: 24px;
-    background-color: var(--surface-color);
+    background-color: var(--field-bg);
     transition:
       border-color 0.15s ease,
       box-shadow 0.15s ease;
@@ -164,7 +164,7 @@
 
   .input-shell:focus-within {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.15);
+    box-shadow: var(--field-focus-ring);
   }
 
   .input-shell.too-long {

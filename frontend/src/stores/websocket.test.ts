@@ -22,6 +22,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
+const DYNAMIC_IMPORT_BUDGET_MS = 10_000;
+
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 
 vi.mock('$lib/axios', () => ({
@@ -218,6 +220,31 @@ describe('websocket message dispatch', () => {
     expect(notifications()).toEqual([]);
   });
 
+  it.each([
+    'support_access_requested',
+    'support_access_break_glass',
+    'support_access_decided',
+    'support_access_revoked',
+  ])('routes %s to the support-access handler and makes no generic notification', async (type) => {
+    // A renamed type on either side would otherwise fall into the generic branch and
+    // surface as an unrecognised toast while the open panels never reload (issue #1122).
+    const handler = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('$lib/supportAccess/wsHandlers', () => ({ handleSupportAccessMessage: handler }));
+    const socket = openSocket();
+
+    socket.deliver({ type, data: { grant_uuid: 'g1' } });
+    // The handler is reached through a dynamic import. vi.waitFor's 1 s default passed
+    // alone (3.2 s file run) and failed 2 of 4 cases inside the full pre-commit vitest run
+    // on this host, where the import resolves under 337-file contention.
+    await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1), {
+      timeout: DYNAMIC_IMPORT_BUDGET_MS,
+    });
+
+    expect(handler).toHaveBeenCalledWith({ type, data: { grant_uuid: 'g1' } });
+    expect(notifications()).toEqual([]);
+    vi.doUnmock('$lib/supportAccess/wsHandlers');
+  });
+
   it('survives a malformed frame instead of tearing down the socket', () => {
     const socket = openSocket();
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -370,11 +397,39 @@ describe('websocket message dispatch', () => {
     expect(get(unreadCount)).toBe(1);
   });
 
-  it('caps the notification list at 100', () => {
+  it('caps the clearable notification list at 100', () => {
+    const socket = openSocket();
+
+    for (let i = 0; i < 120; i += 1) {
+      socket.deliver({
+        type: 'file_upload',
+        data: { file_id: `f${i}`, message: 'done' },
+      });
+    }
+
+    expect(notifications()).toHaveLength(100);
+  });
+
+  it('never caps away actionable notices (issue #1217): 120 takedowns all survive', () => {
     const socket = openSocket();
 
     for (let i = 0; i < 120; i += 1) {
       socket.deliver({ type: 'file_takedown', data: { file_id: `f${i}`, filename: 'a.mp4' } });
+    }
+
+    expect(notifications()).toHaveLength(120);
+  });
+
+  it('caps the list at 100 for addNotification too (issue #569 — the WS-delivered paths capped, this client-originated one did not)', () => {
+    for (let i = 0; i < 120; i += 1) {
+      websocketStore.addNotification({
+        type: 'audio_extraction_status',
+        title: 'Audio Extraction',
+        message: `clip-${i}.mp3`,
+        progressId: `extract-${i}`, // distinct progressId per call — each is a genuine append, not an in-place update
+        status: 'completed',
+        dismissible: true,
+      });
     }
 
     expect(notifications()).toHaveLength(100);
@@ -453,6 +508,28 @@ describe('websocket → window CustomEvents', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
     window.removeEventListener(eventName, handler);
+  });
+
+  it('local_model_download hands its payload to the model library and creates no notification', () => {
+    // The library toasts by itself on a finish; a bell entry per progress tick would flood it.
+    const socket = openSocket();
+    const handler = vi.fn();
+    window.addEventListener('local-model-download', handler);
+    const payload = {
+      model_id: 'large-v3',
+      status: 'downloading',
+      bytes_done: 40,
+      bytes_total: 100,
+      percent: 40,
+      error_code: null,
+    };
+
+    socket.deliver({ type: 'local_model_download', data: payload });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual(payload);
+    expect(notifications()).toHaveLength(0);
+    window.removeEventListener('local-model-download', handler);
   });
 });
 

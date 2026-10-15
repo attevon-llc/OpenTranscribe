@@ -36,10 +36,75 @@ flowchart LR
     C & D & E --> F[Choose Collections & Tags]
     F --> G[Upload to Storage]
     G --> H[Preprocess]
-    H --> I[Transcribe & Diarize]
-    I --> J[Post-Process]
+    H --> I[Transcribe]
+    I --> J[Detect Speakers & Voiceprints]
     J --> K[Ready to View]
 ```
+
+## How Your Files Are Processed
+
+Every recording goes through the same steps: **transcription** (the words), **speaker
+detection** (who spoke when), **voiceprints** (used to recognise the same voice in other
+recordings) and, if an AI provider is set up, **AI features** such as summaries, topics and
+speaker name suggestions. You choose who does the first two in Settings; voiceprints are always
+computed on this server.
+
+### Choosing who transcribes and who detects speakers
+
+Open **Settings** and look under **Transcription & Speakers**:
+
+- **Transcription → Provider & Model** chooses who transcribes: the built-in model on this
+  server, or a cloud provider you have configured. The other tabs (**Language**,
+  **Vocabulary**, **Accuracy & Cleanup**) tune how it transcribes.
+- **Speaker Identification → Speaker Detection** chooses who detects speakers. The
+  **Speaker detection** list offers:
+
+  | Option | What it does |
+  |---|---|
+  | **Automatic (recommended)** | With the built-in model, speakers are detected on this server. With a cloud provider, that provider detects speakers, or this server does when the model returns text only. |
+  | **Always on this server's GPU** | Speakers are detected on this server whichever model transcribes. |
+  | **pyannote.ai cloud service** | Audio is sent to pyannote.ai to detect speakers. It needs your own pyannote.ai API key, and pyannote.ai bills that key. This is not the PyAnnote engine an administrator can pick for this server. |
+  | **Off (one speaker for the whole recording)** | No speaker detection. Speaker profiles and cross-file speaker matching do not run. |
+
+Some combinations cannot work, for example a cloud model that returns no timestamps together with
+any speaker detection, or pyannote.ai without a saved key. OpenTranscribe refuses such a choice
+when you save it and explains why, and a file that would hit one is stopped before processing
+starts, with the same explanation as its error message.
+
+:::info[Cloud-only (lite) deployments]
+A lite deployment has no local transcription and no local speaker detection. Choose a cloud
+provider for transcription, and either a cloud model that returns speakers or pyannote.ai for
+speaker detection. Voiceprints are still computed on the server. See
+[Deployment Variants](../installation/deployment-variants.md).
+:::
+
+### The processing pipeline summary
+
+Settings also shows a read-only **processing pipeline** summary of how your next recording will
+be processed. It lists the four steps (transcription, speaker detection, speaker identification
+with voiceprints, and AI features), says where each one runs (this server or a named cloud
+provider), and lists any problem with your current choices together with a link to the setting
+that fixes it. It changes nothing; it reflects your settings.
+
+### What happened to a particular file
+
+Each file records how it was actually processed. Open the file and expand the **Processing**
+section (next to **File Details**), or open **My Files Status** and click **Details** on a file.
+One row per step:
+
+| Row | Shows |
+|---|---|
+| **Transcription** | The provider and model, and whether it ran on **This server** or in the **Cloud** |
+| **Speaker detection** | Who detected speakers and where (or **Off**) |
+| **Voiceprints** | The voiceprint engine or model, always on **This server** |
+| **Summary**, **Topics**, **Speaker name suggestions** | The AI provider and model used, and where it ran |
+
+The transcription row also shows the timing the transcript has (**Word timing**, **Segment
+timing** or **No timing**). A step that did not run says **Not run** or **Off**. Files processed
+before OpenTranscribe started keeping this record show what the older records can say and
+**Not recorded (processed before this was tracked)** for the rest, rather than a guess; where an
+old record cannot tell whether speakers were detected on this server or by pyannote.ai, the row
+says **Location not recorded**.
 
 ## Upload Methods
 
@@ -81,7 +146,7 @@ If a video fails to download, OpenTranscribe provides helpful error messages wit
 
 ### URL Download Quality Settings
 
-You can configure download quality preferences in **Settings > Downloads**:
+You can configure download quality preferences in **Settings → URL Import Quality**:
 
 - **Video Quality**: Choose resolution (e.g., 1080p, 720p, 480p, or best available)
 - **Audio Only**: Download only the audio track (faster, saves storage)
@@ -101,7 +166,7 @@ When uploading files, you can assign them to **collections** and **tags** direct
 This saves time compared to organizing files after upload. Tags and collections can also be managed later from the file detail page.
 
 :::tip[Auto-Labeling]
-If auto-labeling is enabled (Settings > Auto-Label), OpenTranscribe can automatically suggest tags and collections based on AI topic analysis after transcription completes. See [AI Summarization](./ai-summarization.md#auto-labeling) for details.
+If auto-labeling is enabled (Settings → AI & Chat → Auto-Labeling), OpenTranscribe can automatically suggest tags and collections based on AI topic analysis after transcription completes. See [AI Summarization](./ai-summarization.md#auto-labeling) for details.
 :::
 
 ## Selective Reprocessing
@@ -111,17 +176,21 @@ Already-transcribed files can be reprocessed with a stage picker that lets you r
 1. Open a file's detail page
 2. Click **Reprocess** (or select multiple files in the gallery and use bulk reprocess)
 3. Choose which stages to re-run:
-   - **Transcription** -- Full re-transcription with current Whisper model
-   - **Re-diarize** -- Re-run speaker diarization only (keeps existing transcript)
+   - **Transcription & Diarization** -- Full re-transcription with speaker detection, using your current transcription and speaker detection settings. Replaces all transcript data.
+   - **Re-diarize Only (v4)** -- Re-run speaker detection on the existing transcript text without re-transcribing. It uses your current **Speaker detection** choice; when that choice is the transcription provider's own speakers (or Off), speakers are detected on this server instead, because a provider's speakers cannot be re-run without transcribing again. Needs word-level timestamps.
    - **Search Indexing** -- Rebuild the search index entry
    - **Analytics** -- Recalculate speaker analytics
-   - **Speaker LLM** -- Re-run AI speaker identification
-   - **Summarization** -- Regenerate AI summary
-   - **Topic Extraction** -- Re-run AI topic analysis
+   - **Speaker Identification (AI)** -- Re-run AI speaker name suggestions
+   - **AI Summary** -- Regenerate AI summary
+   - **Topic & Tag Extraction** -- Re-run AI topic analysis
 4. Optionally adjust speaker settings (min/max speakers)
 5. Confirm and process
 
-This is useful when you want to update just the summary with a new prompt without re-transcribing, or re-diarize with different speaker count settings.
+This is useful when you want to update just the summary with a new prompt without re-transcribing, or re-detect speakers with different speaker count settings.
+
+If a re-run cannot work with your current settings (for example, re-detecting speakers on this
+server in a cloud-only deployment), it is refused before anything is deleted, with an
+explanation.
 
 ## Export Options
 
@@ -213,14 +282,25 @@ Each file has a status indicating its current state:
 | `pending` | File uploaded, waiting to be queued |
 | `queued` | In the processing queue |
 | `downloading` | URL-sourced file is being downloaded |
-| `processing` | Transcription/diarization in progress |
+| `processing` | Transcription or speaker detection in progress |
 | `completed` | Processing finished successfully |
 | `error` | Processing failed (check the error message for details) |
 | `cancelling` | Cancellation requested, waiting for worker |
 | `cancelled` | Processing was cancelled by the user |
 | `orphaned` | Processing appears stuck with no active worker |
 
-You can view detailed status information -- including active task ID, last error message, and retry count -- via the **status detail** panel on the file page.
+Each file card in the gallery shows its status inline. For a summary of everything that is
+processing, open **Settings → System → File status** (counts, the files that need attention and
+the last 24 hours of uploads); **Open full screen** there opens the full **My Files Status** page
+(`/file-status`) with the task list, filters and per-file details. There is no File Status button in
+the main navigation.
+
+You can view detailed status information -- including active task ID, last error message, and retry count -- via the **status detail** panel on the file page. **My Files Status** → **Details** also shows how the file was processed; see [What happened to a particular file](#what-happened-to-a-particular-file).
+
+A file whose processing could not work with your settings (for example a choice this deployment
+cannot run) goes straight to `error` with a plain explanation of which setting to change. Fix
+the setting under **Settings → Transcription** or **Settings → Speaker Identification**, then
+retry.
 
 ### Bulk Operations
 

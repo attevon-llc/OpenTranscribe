@@ -1,9 +1,11 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { REDACTION_CATEGORY_KEYS, REDACTION_DETECTOR_KEYS, REDACTION_STYLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
   import {
     getRedactionSettings,
     updateRedactionSettings,
@@ -129,7 +131,7 @@
 
 <div class="content-redaction-settings">
   {#if loading}
-    <div class="loading-state">{$t('common.loading')}</div>
+    <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
   {:else}
     <div class="settings-form">
       <p class="intro-desc">{$t('settings.contentRedaction.description')}</p>
@@ -263,20 +265,15 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.toxicity')}</h3>
         <div class="form-group">
-          <label class="form-label" for="tox-threshold">
-            {$t('settings.contentRedaction.toxicityThreshold')}
-            <span class="value-badge">{settings.toxicity_threshold.toFixed(2)}</span>
-          </label>
-          <input
+          <RangeSlider
             id="tox-threshold"
-            class="range-input"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
+            label={$t('settings.contentRedaction.toxicityThreshold')}
+            min={0}
+            max={1}
+            step={0.05}
+            hint={$t('settings.contentRedaction.toxicityThresholdHelp')}
             bind:value={settings.toxicity_threshold}
           />
-          <p class="input-hint">{$t('settings.contentRedaction.toxicityThresholdHelp')}</p>
         </div>
       </div>
 
@@ -364,13 +361,6 @@
     padding: 0.5rem 0;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    color: var(--text-secondary);
-  }
 
   .settings-form {
     display: flex;
@@ -432,38 +422,9 @@
   .form-select,
   .form-textarea {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    font-size: 0.875rem;
-    font-family: inherit;
   }
   .form-textarea {
     resize: vertical;
-    line-height: 1.5;
-  }
-  .form-select:focus,
-  .form-textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
-  }
-
-  .input-hint {
-    margin: 0.5rem 0 0 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .value-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--primary-on-surface);
-    background: rgba(var(--primary-color-rgb), 0.12);
-    padding: 0.1rem 0.45rem;
-    border-radius: 999px;
   }
 
   .perf-note {
@@ -485,9 +446,7 @@
   }
   .example-label {
     display: block;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin-bottom: 0.25rem;
   }
@@ -501,11 +460,6 @@
     background: var(--surface-hover, rgba(127, 127, 127, 0.15));
     border-radius: 3px;
     user-select: none;
-  }
-
-  .range-input {
-    width: 100%;
-    accent-color: var(--primary-color);
   }
 
   /* Chip multiselect */

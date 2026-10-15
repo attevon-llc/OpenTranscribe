@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from tests.unit._plan_contexts import plan_context
+
 # Patch paths — these are imported at the top of postprocess.py
 _POSTPROCESS = "app.tasks.transcription.postprocess"
 _INDEX_TRANSCRIPT = f"{_POSTPROCESS}._index_transcript"
@@ -361,7 +363,7 @@ class TestSpeakerEmbeddingQueueRouting:
             "asr_provider": "deepgram",
             "downstream_tasks": None,
             "diarization_disabled": False,
-            "diarization_source": "provider",
+            "pipeline_plan": plan_context("cloud_speakers", "provider"),
         }
         base.update(overrides)
         return base
@@ -430,7 +432,9 @@ class TestSpeakerEmbeddingQueueRouting:
         from app.core.constants import CeleryQueues
         from app.tasks.transcription.postprocess import finalize_transcription
 
-        result = finalize_transcription.__wrapped__(self._gpu_result(diarization_source="local"))
+        result = finalize_transcription.__wrapped__(
+            self._gpu_result(pipeline_plan=plan_context("cloud_speakers", "local"))
+        )
 
         # Real outcome, not mock bookkeeping: still reports success even though
         # completion is deferred to rediarize_task.

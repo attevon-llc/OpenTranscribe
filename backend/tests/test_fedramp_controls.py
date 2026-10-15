@@ -20,6 +20,7 @@ import tempfile
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -445,7 +446,7 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
         assert settings.AUDIT_LOG_FALLBACK_PATH
         assert settings.AUDIT_LOG_FALLBACK_PATH.endswith(".jsonl")
 
-    def test_audit_logger_writes_to_fallback_on_opensearch_failure(self):
+    def test_audit_logger_writes_to_fallback_on_opensearch_failure(self, tmp_path):
         """Test that audit logger writes to fallback file when OpenSearch fails."""
         from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
@@ -453,97 +454,86 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
         from app.core.config import settings
 
         # Create temp file for fallback
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            temp_path = f.name
+        temp_path = str(tmp_path / "audit-fallback.jsonl")
+        Path(temp_path).touch()
 
-        try:
-            with (
-                patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
-                patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
-                patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
-                patch.object(settings, "AUDIT_LOG_ENABLED", True),
-            ):
-                logger = AuditLogger()
+        with (
+            patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
+            patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
+            patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
+            patch.object(settings, "AUDIT_LOG_ENABLED", True),
+        ):
+            logger = AuditLogger()
 
-                # Mock OpenSearch client to fail
-                mock_client = MagicMock()
-                mock_client.index.side_effect = Exception("OpenSearch connection failed")
-                mock_client.indices.exists.return_value = True
+            # Mock OpenSearch client to fail
+            mock_client = MagicMock()
+            mock_client.index.side_effect = Exception("OpenSearch connection failed")
+            mock_client.indices.exists.return_value = True
 
-                with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
-                    # Attempt to log an event
-                    logger.log(
-                        event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
-                        outcome=AuditOutcome.SUCCESS,
-                        user_id=123,
-                        username="test@example.com",
-                        source_ip="192.168.1.1",
-                        user_agent="Test Agent",
-                    )
+            with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
+                # Attempt to log an event
+                logger.log(
+                    event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+                    outcome=AuditOutcome.SUCCESS,
+                    user_id=123,
+                    username="test@example.com",
+                    source_ip="192.168.1.1",
+                    user_agent="Test Agent",
+                )
 
-            # Verify fallback file was written
-            with open(temp_path) as f:
-                content = f.read()
-                assert content.strip()  # File should not be empty
-                # Parse and verify JSON
-                log_entry = json.loads(content.strip())
-                assert log_entry["event_type"] == "auth.login.success"
-                assert log_entry["user_id"] == 123
+        # Verify fallback file was written
+        with open(temp_path) as f:
+            content = f.read()
+            assert content.strip()  # File should not be empty
+            # Parse and verify JSON
+            log_entry = json.loads(content.strip())
+            assert log_entry["event_type"] == "auth.login.success"
+            assert log_entry["user_id"] == 123
 
-        finally:
-            # Cleanup temp file
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-
-    def test_audit_fallback_writes_valid_jsonl_format(self):
+    def test_audit_fallback_writes_valid_jsonl_format(self, tmp_path):
         """Test that fallback logs are written in valid JSON Lines format."""
         from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
         from app.auth.audit import AuditOutcome
         from app.core.config import settings
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            temp_path = f.name
+        temp_path = str(tmp_path / "audit-fallback.jsonl")
+        Path(temp_path).touch()
 
-        try:
-            logger = AuditLogger()
+        logger = AuditLogger()
 
-            with (
-                patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
-                patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
-                patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
-                patch.object(settings, "AUDIT_LOG_ENABLED", True),
-            ):
-                # Mock OpenSearch to fail
-                mock_client = MagicMock()
-                mock_client.index.side_effect = Exception("Connection refused")
-                mock_client.indices.exists.return_value = True
+        with (
+            patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
+            patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
+            patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
+            patch.object(settings, "AUDIT_LOG_ENABLED", True),
+        ):
+            # Mock OpenSearch to fail
+            mock_client = MagicMock()
+            mock_client.index.side_effect = Exception("Connection refused")
+            mock_client.indices.exists.return_value = True
 
-                with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
-                    # Write multiple log entries
-                    for i in range(3):
-                        logger.log(
-                            event_type=AuditEventType.AUTH_LOGIN_FAILURE,
-                            outcome=AuditOutcome.FAILURE,
-                            username=f"user{i}@example.com",
-                            source_ip=f"192.168.1.{i}",
-                            user_agent="Test Agent",
-                            error_code="INVALID_CREDENTIALS",
-                        )
+            with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
+                # Write multiple log entries
+                for i in range(3):
+                    logger.log(
+                        event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+                        outcome=AuditOutcome.FAILURE,
+                        username=f"user{i}@example.com",
+                        source_ip=f"192.168.1.{i}",
+                        user_agent="Test Agent",
+                        error_code="INVALID_CREDENTIALS",
+                    )
 
-            # Verify each line is valid JSON
-            with open(temp_path) as f:
-                lines = [line for line in f.readlines() if line.strip()]
-                assert len(lines) == 3
-                for line in lines:
-                    entry = json.loads(line)
-                    assert "timestamp" in entry
-                    assert "event_type" in entry
-                    assert "outcome" in entry
-
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+        # Verify each line is valid JSON
+        with open(temp_path) as f:
+            lines = [line for line in f.readlines() if line.strip()]
+            assert len(lines) == 3
+            for line in lines:
+                entry = json.loads(line)
+                assert "timestamp" in entry
+                assert "event_type" in entry
+                assert "outcome" in entry
 
     def test_audit_fallback_creates_directory_if_missing(self):
         """Test that fallback creates parent directory if it doesn't exist."""
@@ -572,87 +562,73 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
                 content = f.read()
                 assert "test.event" in content
 
-    def test_audit_opensearch_unavailable_triggers_fallback(self):
+    def test_audit_opensearch_unavailable_triggers_fallback(self, tmp_path):
         """Test that None OpenSearch client triggers fallback logging."""
         from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
         from app.auth.audit import AuditOutcome
         from app.core.config import settings
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            temp_path = f.name
+        temp_path = str(tmp_path / "audit-fallback.jsonl")
+        Path(temp_path).touch()
 
-        try:
-            logger = AuditLogger()
+        logger = AuditLogger()
 
-            with (
-                patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
-                patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
-                patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
-                patch.object(settings, "AUDIT_LOG_ENABLED", True),
-            ):
-                # Return None client (simulates OpenSearch completely unavailable)
-                with patch.object(logger, "_get_opensearch_client", return_value=None):
-                    logger.log(
-                        event_type=AuditEventType.AUTH_LOGOUT,
-                        outcome=AuditOutcome.SUCCESS,
-                        user_id=456,
-                        username="testuser@example.com",
-                        source_ip="10.0.0.1",
-                        user_agent="Mozilla/5.0",
-                    )
+        with (
+            patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
+            patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
+            patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
+            patch.object(settings, "AUDIT_LOG_ENABLED", True),
+        ):
+            # Return None client (simulates OpenSearch completely unavailable)
+            with patch.object(logger, "_get_opensearch_client", return_value=None):
+                logger.log(
+                    event_type=AuditEventType.AUTH_LOGOUT,
+                    outcome=AuditOutcome.SUCCESS,
+                    user_id=456,
+                    username="testuser@example.com",
+                    source_ip="10.0.0.1",
+                    user_agent="Mozilla/5.0",
+                )
 
-            # Verify fallback was used
-            with open(temp_path) as f:
-                content = f.read()
-                assert "auth.logout" in content
+        # Verify fallback was used
+        with open(temp_path) as f:
+            content = f.read()
+            assert "auth.logout" in content
 
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-
-    def test_audit_fallback_disabled_no_file_written(self):
+    def test_audit_fallback_disabled_no_file_written(self, tmp_path):
         """Test that no fallback file is written when fallback is disabled."""
         from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
         from app.auth.audit import AuditOutcome
         from app.core.config import settings
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            temp_path = f.name
+        temp_path = str(tmp_path / "audit-fallback.jsonl")
 
-        # Remove the file so we can check if it gets created
-        os.unlink(temp_path)
+        logger = AuditLogger()
 
-        try:
-            logger = AuditLogger()
+        with (
+            patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", False),
+            patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
+            patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
+            patch.object(settings, "AUDIT_LOG_ENABLED", True),
+        ):
+            mock_client = MagicMock()
+            mock_client.index.side_effect = Exception("Connection failed")
+            mock_client.indices.exists.return_value = True
 
-            with (
-                patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", False),
-                patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
-                patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
-                patch.object(settings, "AUDIT_LOG_ENABLED", True),
-            ):
-                mock_client = MagicMock()
-                mock_client.index.side_effect = Exception("Connection failed")
-                mock_client.indices.exists.return_value = True
+            with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
+                logger.log(
+                    event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+                    outcome=AuditOutcome.SUCCESS,
+                    user_id=789,
+                    username="nofallback@example.com",
+                    source_ip="127.0.0.1",
+                    user_agent="Test",
+                )
 
-                with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
-                    logger.log(
-                        event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
-                        outcome=AuditOutcome.SUCCESS,
-                        user_id=789,
-                        username="nofallback@example.com",
-                        source_ip="127.0.0.1",
-                        user_agent="Test",
-                    )
-
-            # Verify no fallback file was created
-            assert not os.path.exists(temp_path)
-
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+        # Verify no fallback file was created
+        assert not os.path.exists(temp_path)
 
 
 class TestAtomicLockoutMechanism:
@@ -843,50 +819,45 @@ class TestAuditLoggerFallbackBehavior:
             except Exception:
                 pytest.fail("Fallback should handle write errors gracefully")
 
-    def test_audit_log_includes_required_fields(self):
+    def test_audit_log_includes_required_fields(self, tmp_path):
         """Test that audit log entries include all required FedRAMP fields."""
         from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
         from app.auth.audit import AuditOutcome
         from app.core.config import settings
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            temp_path = f.name
+        temp_path = str(tmp_path / "audit-fallback.jsonl")
+        Path(temp_path).touch()
 
-        try:
-            logger = AuditLogger()
+        logger = AuditLogger()
 
-            with (
-                patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
-                patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
-                patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
-                patch.object(settings, "AUDIT_LOG_ENABLED", True),
-            ):
-                with patch.object(logger, "_get_opensearch_client", return_value=None):
-                    logger.log(
-                        event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
-                        outcome=AuditOutcome.SUCCESS,
-                        user_id=100,
-                        username="auditfields@example.com",
-                        source_ip="192.168.1.100",
-                        user_agent="Mozilla/5.0 Test",
-                        details={"auth_method": "local"},
-                    )
+        with (
+            patch.object(settings, "AUDIT_LOG_FALLBACK_ENABLED", True),
+            patch.object(settings, "AUDIT_LOG_FALLBACK_PATH", temp_path),
+            patch.object(settings, "AUDIT_LOG_TO_OPENSEARCH", True),
+            patch.object(settings, "AUDIT_LOG_ENABLED", True),
+        ):
+            with patch.object(logger, "_get_opensearch_client", return_value=None):
+                logger.log(
+                    event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+                    outcome=AuditOutcome.SUCCESS,
+                    user_id=100,
+                    username="auditfields@example.com",
+                    source_ip="192.168.1.100",
+                    user_agent="Mozilla/5.0 Test",
+                    details={"auth_method": "local"},
+                )
 
-            with open(temp_path) as f:
-                entry = json.loads(f.read().strip())
+        with open(temp_path) as f:
+            entry = json.loads(f.read().strip())
 
-                # Required FedRAMP AU-3 fields
-                assert "timestamp" in entry
-                assert "event_type" in entry
-                assert "outcome" in entry
-                assert "user_id" in entry
-                assert "source_ip" in entry
-                assert "request_id" in entry  # For correlation
-
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
+            # Required FedRAMP AU-3 fields
+            assert "timestamp" in entry
+            assert "event_type" in entry
+            assert "outcome" in entry
+            assert "user_id" in entry
+            assert "source_ip" in entry
+            assert "request_id" in entry  # For correlation
 
 
 # Run with: pytest tests/test_fedramp_controls.py -v

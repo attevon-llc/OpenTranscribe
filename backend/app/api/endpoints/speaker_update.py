@@ -96,22 +96,20 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             .first()
         )
 
+        old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         if existing_profile:
+            # The user typed this name on this one speaker: that overrides an earlier
+            # unassignment from the same profile (issue #1233).
+            from app.services.speaker_cleanup import lift_profile_blacklist
+
+            lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
             # Assign speaker to existing profile
             speaker.profile_id = existing_profile.id
             logger.info(
                 f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
             )
 
-            # Update profile embedding
-            try:
-                from app.services.profile_embedding_service import ProfileEmbeddingService
-
-                ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, speaker.id, existing_profile.id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to update profile embedding: {e}")
+            _update_profile_embedding(db, int(speaker.id), old_profile_id, int(existing_profile.id))
 
             # Sync profile assignment to OpenSearch
             try:
@@ -151,15 +149,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
             )
 
-            # Initialize profile embedding
-            try:
-                from app.services.profile_embedding_service import ProfileEmbeddingService
-
-                ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, speaker.id, new_profile.id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to initialize profile embedding: {e}")
+            _update_profile_embedding(db, int(speaker.id), old_profile_id, int(new_profile.id))
 
             # Sync new profile assignment to OpenSearch
             try:
@@ -241,14 +231,26 @@ def _push_speaker_documents(documents: list[dict[str, Any]]) -> None:
             logger.exception(f"Failed to sync speaker {document['speaker_id']} to OpenSearch: {e}")
 
 
-def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> None:
-    """Update the profile embedding when a speaker is added to a profile."""
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
+def _update_profile_embedding(
+    db: Session, speaker_id: int, old_profile_id: int | None, profile_id: int
+) -> None:
+    """Rebuild the profiles a speaker moved between, and the clusters it belongs to.
 
-        ProfileEmbeddingService.add_speaker_to_profile_embedding(db, speaker_id, profile_id)
-    except Exception as e:
-        logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
+    The new profile gains the voice; a profile the speaker had before loses it, which
+    used to be skipped here, so the old profile kept averaging a voice that had been
+    reassigned away from it (issue #1214). Delegates to ``speaker_cleanup``, which logs
+    any residual at ERROR; the label that triggered this has already committed.
+    """
+    from app.services.speaker_cleanup import capture_speaker_impact
+    from app.services.speaker_cleanup import reconcile_speaker_impact
+
+    # Both callers set ``profile_id`` a moment ago and autoflush is off: without the flush
+    # the rebuild reads the membership from before the link, and the profile embedding
+    # never contains the voice that just joined it (issue #1233).
+    db.flush()
+    impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
+    impact.profile_ids |= {p for p in (old_profile_id, profile_id) if p}
+    reconcile_speaker_impact(db, impact)
 
 
 def _apply_high_confidence_match(
@@ -283,8 +285,9 @@ def _apply_high_confidence_match(
     speaker.verified = True  # type: ignore[assignment]
 
     if trigger["profile_id"]:
+        old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
-        _update_profile_embedding(db, speaker.id, int(trigger["profile_id"]))
+        _update_profile_embedding(db, speaker.id, old_profile_id, int(trigger["profile_id"]))
 
     tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))
 
@@ -496,6 +499,36 @@ def _send_bulk_update_notification(
         logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
 
 
+def _blocked_candidate_ids(
+    db: Session, trigger: dict[str, Any], candidate_ids: list[int]
+) -> set[int]:
+    """Candidates a user's correction forbids from taking the trigger's identity (#1233).
+
+    A speaker unassigned from the trigger's profile, cannot-link with the trigger, or
+    blocked from a profile carrying the trigger's name (``blocked_profile_names``, which
+    also covers a profile its cannot-link partners hold) is skipped entirely — neither
+    auto-applied nor suggested — so a matching pass never silently re-labels a section
+    the user said is someone else.
+    """
+    from app.services.speaker_cleanup import blacklisted_profile_ids
+    from app.services.speaker_cleanup import blocked_profile_names
+    from app.services.speaker_cleanup import cannot_link_partners
+
+    if not candidate_ids:
+        return set()
+    partners = cannot_link_partners(db, [trigger["id"]])[trigger["id"]]
+    by_profile = blacklisted_profile_ids(db, candidate_ids)
+    by_name = blocked_profile_names(db, candidate_ids)
+    name = (trigger["display_name"] or "").casefold()
+    return {
+        cid
+        for cid in candidate_ids
+        if cid in partners
+        or (trigger["profile_id"] is not None and trigger["profile_id"] in by_profile[cid])
+        or (name and name in by_name[cid])
+    }
+
+
 def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[str, int]:
     """
     Apply retroactive voice matching when a speaker is labeled.
@@ -590,6 +623,8 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
             )
             .all()
         ]
+        blocked = _blocked_candidate_ids(db, trigger, [c["id"] for c in candidates])
+        candidates = [c for c in candidates if c["id"] not in blocked]
         db.commit()
 
         logger.info(

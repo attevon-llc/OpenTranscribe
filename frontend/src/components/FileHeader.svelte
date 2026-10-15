@@ -4,12 +4,18 @@
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { t } from '$stores/locale';
+  import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
 
   const dispatch = createEventDispatcher();
 
   export let file: MediaFileDetail | null = null;
   export let currentProcessingStep: string = '';
   export let sharedPermission: string | null = null;
+
+  // GH #960: the backend's fixed `error_reason` vocabulary is translated client-side;
+  // `file.user_message` (server-authored English) is only the fallback for a reason this
+  // client does not recognize, matching the pre-#960 behavior for that case.
+  $: mediaErrorI18nKey = resolveMediaErrorI18nKey(file?.error_reason);
 
   let isExpanded = false;
   let isEditingTitle = false;
@@ -179,7 +185,7 @@
   {#if file?.status === 'error'}
     <div class="status-message error" role="alert">
       <p class="error-heading"><strong>{$t('fileDetail.errorTitle')}</strong></p>
-      <p>{file.user_message || $t('fileDetail.errorGeneric')}</p>
+      <p>{mediaErrorI18nKey ? $t(mediaErrorI18nKey) : file.user_message || $t('fileDetail.errorGeneric')}</p>
       {#if file.error_suggestions?.length}
         <p class="error-suggestions-title">{$t('fileDetail.errorSuggestionsTitle')}</p>
         <ul class="error-suggestions">
@@ -287,7 +293,7 @@
   .file-title h1 {
     margin: 0 0 16px 0;
     font-size: 28px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     line-height: 1.2;
     word-break: break-word;
@@ -383,7 +389,7 @@
 
   .progress-percentage {
     font-size: 14px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.1);
     padding: 4px 8px;
@@ -622,22 +628,9 @@
 
   .title-input {
     flex: 1;
-    padding: 8px 12px;
     margin: 0;
     font-size: 28px;
-    font-weight: 700;
-    line-height: 1.2;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-primary);
-    transition: border-color 0.2s ease;
-    font-family: inherit;
-  }
-
-  .title-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
+    font-weight: var(--font-weight-semibold);
   }
 
   .title-input:disabled {

@@ -360,7 +360,7 @@ run_phase_watching_skips() {
     fi
     local rc=0
     local out
-    out=$(mktemp)
+    out=$(mktemp "${RUN_SCRATCH:-${TMPDIR:-/tmp}}/phase.XXXXXX")
     echo -e "${BLUE}--- $title ---${NC}"
     # `|| true` here would CLOBBER PIPESTATUS — it becomes the status of `true`,
     # so a genuinely failing phase was recorded as neither failed nor skipped.
@@ -400,6 +400,15 @@ run_phase_watching_skips() {
 # suite's data.
 source "$PROJECT_ROOT/scripts/testrun-registry.sh"
 testrun_begin
+# ...and again at the END (issue #1195), from an EXIT trap so a failed phase, a `set -e` abort
+# or Ctrl-C still sweeps. It never changes this script's exit code. The same trap removes
+# RUN_SCRATCH, where run_phase_watching_skips keeps its per-phase output (a bare `mktemp`
+# there leaked one /tmp file per interrupted phase).
+RUN_SCRATCH="$(mktemp -d -t ot-integration-scratch.XXXXXX)"
+_rit_remove_scratch() { rm -rf -- "$RUN_SCRATCH"; }
+# shellcheck source=scripts/lib/test-data-sweep.sh
+source "$PROJECT_ROOT/scripts/lib/test-data-sweep.sh"
+tds_sweep_at_exit "$VENV_PY" "$PROJECT_ROOT" _rit_remove_scratch
 if [ "${OT_SKIP_TEST_DATA_SWEEP:-}" = "1" ]; then
     echo -e "${YELLOW}--- Test-data sweep: skipped (OT_SKIP_TEST_DATA_SWEEP=1) ---${NC}\n"
 else

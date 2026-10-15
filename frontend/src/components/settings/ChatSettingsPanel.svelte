@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { t } from '$stores/locale';
+  import Tabs from '$components/ui/Tabs.svelte';
   import ChatSettings from '$components/settings/ChatSettings.svelte';
   import ChatAdminSettings from '$components/settings/ChatAdminSettings.svelte';
 
@@ -18,7 +19,8 @@
   export let initialTab: 'general' | 'advanced' = 'general';
   export let isAdmin = false;
 
-  let activeTab: 'general' | 'advanced' = initialTab;
+  // string, not the id union: <Tabs bind:activeId> is string-typed.
+  let activeTab: string = initialTab;
 
   // A non-admin can never sit on a tab that does not exist for them.
   $: if (!isAdmin && activeTab === 'advanced') activeTab = 'general';
@@ -31,21 +33,7 @@
 
 <div class="chat-settings-panel" data-testid="chat-settings-panel">
   {#if tabs.length > 1}
-    <div class="tabs" role="tablist">
-      {#each tabs as tab (tab.id)}
-        <button
-          type="button"
-          class="tab"
-          class:active={activeTab === tab.id}
-          role="tab"
-          aria-selected={activeTab === tab.id}
-          on:click={() => (activeTab = tab.id)}
-          data-testid="chat-settings-tab-{tab.id}"
-        >
-          {tab.label}
-        </button>
-      {/each}
-    </div>
+    <Tabs sticky {tabs} bind:activeId={activeTab} ariaLabel={$t('chat.settings.title')} />
   {/if}
 
   <div class="tab-content">
@@ -64,45 +52,6 @@
     flex-direction: column;
   }
 
-  .tabs {
-    display: flex;
-    gap: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 1.25rem;
-  }
-
-  .tab {
-    padding: 0.5rem 1rem;
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    cursor: pointer;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    /* form-elements.css styles every bare <button>; without these the tab grows
-       a surface fill, a shadow and a hover scale. */
-    box-shadow: none;
-  }
-
-  .tab:hover {
-    color: var(--text-color);
-    background: none;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .tab.active {
-    color: var(--primary-on-surface);
-    border-bottom-color: var(--primary-color);
-  }
-
-  .tab:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-  }
-
   .tab-intro {
     margin: 0 0 1.25rem;
     padding: 0.7rem 0.85rem;
@@ -112,13 +61,5 @@
     font-size: 0.82rem;
     line-height: 1.5;
     color: var(--text-secondary);
-  }
-
-  @media (max-width: 640px) {
-    .tab {
-      min-height: 44px;
-      flex: 1;
-      text-align: center;
-    }
   }
 </style>

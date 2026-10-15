@@ -10,7 +10,7 @@
  * ~40 child settings panels themselves are out of scope here (each is/should be
  * tested independently, and Playwright already exercises this modal end to end).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -54,11 +54,35 @@ vi.mock('$lib/api/userApprovals', () => ({
   isAlreadyDecided: () => false,
 }));
 
+// The redaction panels' own loading is out of scope here; a request that never settles
+// keeps them in their loading state so only the tab shell is under test.
+vi.mock('$lib/api/redactionSettings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/api/redactionSettings')>();
+  const pending = () => new Promise(() => {});
+  return {
+    ...actual,
+    getRedactionSettings: pending,
+    getRedactionDefaults: pending,
+    getRedactionPolicy: pending,
+  };
+});
+
+// The warm-up is observed, not run: running it would import every panel's module tree mid-test.
+const mockWarmup = vi.hoisted(() => ({ cancel: vi.fn() }));
+vi.mock('$lib/settings/sectionLoaders', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/settings/sectionLoaders')>();
+  return { ...actual, startIdlePrefetch: vi.fn(() => mockWarmup.cancel) };
+});
+
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
-import { settingsModalStore } from '$stores/settingsModalStore';
+import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
 import { resetAppStores } from '../test-mocks/app-stores';
+import { sectionLoaders, startIdlePrefetch } from '$lib/settings/sectionLoaders';
+import { afterNavigateCallbacks } from '../test-mocks/app-navigation';
+import { stampSettingsReturn } from '$lib/settings/returnToSettings';
+import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 
 function setUser(role: 'user' | 'admin' | 'super_admin' | null) {
   (mockUser as unknown as { set: (value: { role: string } | null) => void }).set(
@@ -66,9 +90,17 @@ function setUser(role: 'user' | 'admin' | 'super_admin' | null) {
   );
 }
 
+// Sections load lazily, so vitest would otherwise transform each panel's module tree inside the
+// test that first opens it. Do that once up front (it used to happen while collecting the static
+// imports), so test timeouts measure the component, not the transformer.
+beforeAll(async () => {
+  await Promise.all(Object.values(sectionLoaders).map((load) => load()));
+}, 180_000);
+
 beforeEach(() => {
   vi.clearAllMocks();
   resetAppStores();
+  afterNavigateCallbacks.length = 0;
   settingsModalStore.reset();
   capabilities.set({
     edition: 'community',
@@ -100,6 +132,12 @@ function openModal() {
 async function waitForOpen(container: HTMLElement) {
   await waitFor(() =>
     expect(container.querySelector('.settings-content .section-title')).not.toBeNull()
+  );
+  // Section panels load lazily: the heading is there at once, the panel a moment later.
+  // Generous: under vitest each lazily imported panel is transformed on demand, not prebuilt.
+  await waitFor(
+    () => expect(container.querySelector('[data-testid="settings-section-loading"]')).toBeNull(),
+    { timeout: 10_000 }
   );
 }
 
@@ -158,7 +196,7 @@ describe('privilege-gated sidebar sections', () => {
 
     // Absent entirely — distinct from a privilege-gated item, which stays
     // present, disabled, and carrying a lock icon (checked in the test above).
-    expect(navItem(container, 'settings.asrProvider.title')).toBeNull();
+    expect(navItem(container, 'settings.aiPrompts.title')).toBeNull();
   });
 
   // Issue #1141: the URL Import Quality entry was gated on `exports`, so it showed
@@ -190,6 +228,575 @@ describe('privilege-gated sidebar sections', () => {
 
       expect(navItem(container, 'settings.download.title')).not.toBeNull();
     });
+  });
+});
+
+describe('merged Privacy & Redaction section', () => {
+  function sectionOf(container: HTMLElement, label: string): string | null {
+    const item = navItem(container, label);
+    return (
+      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+      null
+    );
+  }
+
+  it('lists ONE redaction row, not separate Content Redaction and Redaction Policy rows', async () => {
+    setUser('super_admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.privacyRedaction.title')).not.toBeNull();
+    expect(navItem(container, 'settings.contentRedaction.title')).toBeNull();
+    expect(navItem(container, 'settings.redactionPolicy.title')).toBeNull();
+  });
+
+  it('files the redaction row under AI & Chat right after Chat, not under Account', async () => {
+    setUser('user');
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'chat.rag': true },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(sectionOf(container, 'settings.privacyRedaction.title')).toBe(
+      'settings.sections.aiChat'
+    );
+    const labels = Array.from(
+      navItem(container, 'settings.privacyRedaction.title')!
+        .closest('.sidebar-section')!
+        .querySelectorAll('.nav-item-label')
+    ).map((el) => el.textContent?.trim());
+    expect(labels.indexOf('settings.privacyRedaction.title')).toBe(
+      labels.indexOf('chat.settings.title') + 1
+    );
+    const account = navItem(container, 'settings.profile.title')!.closest('.sidebar-section')!;
+    expect(account.textContent).not.toContain('settings.privacyRedaction.title');
+  });
+
+  it('pins the Privacy & Redaction and Watch Sources tab strips', async () => {
+    for (const section of ['content-redaction', 'watch-sources'] as const) {
+      setUser('super_admin');
+      settingsModalStore.open(section);
+      const { container, unmount } = render(SettingsModal);
+      await waitFor(
+        () => expect(container.querySelector('.settings-content [role="tablist"]')).not.toBeNull(),
+        { timeout: 10_000 }
+      );
+      expect(container.querySelector('.settings-content [role="tablist"]')).toHaveClass('sticky');
+      unmount();
+      settingsModalStore.reset();
+    }
+  }, 30_000);
+
+  it('gives a plain user the redaction row but no tab strip (a single panel)', async () => {
+    setUser('user');
+    settingsModalStore.open('content-redaction');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.privacyRedaction.title')).not.toBeNull();
+    expect(container.querySelector('[data-testid="privacy-redaction-panel"]')).not.toBeNull();
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+  });
+
+  it('shows an admin the policy tab disabled with the super-admin reason', async () => {
+    setUser('admin');
+    settingsModalStore.open('content-redaction');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    const policyTab = container.querySelector('#tab-policy') as HTMLButtonElement | null;
+    expect(policyTab).not.toBeNull();
+    expect(policyTab?.disabled).toBe(true);
+    expect(policyTab?.getAttribute('title')).toBe('settings.nav.requiresSuperAdmin');
+    expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('opens the policy tab for a super admin via the legacy redaction-policy id', async () => {
+    setUser('super_admin');
+    settingsModalStore.open('redaction-policy');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(container.querySelector('#tab-policy')?.getAttribute('aria-selected')).toBe('true');
+    // the alias highlights the merged row rather than leaving the sidebar blank
+    expect(
+      navItem(container, 'settings.privacyRedaction.title')?.classList.contains('active')
+    ).toBe(true);
+  });
+
+  it('lands a plain admin deep-linking to redaction-policy on the personal tab, not a blank pane', async () => {
+    setUser('admin');
+    settingsModalStore.open('redaction-policy');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(container.querySelector('#tab-personal')?.getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+describe('Transcription and Speaker Identification sections', () => {
+  function sectionOf(container: HTMLElement, label: string): string | null {
+    const item = navItem(container, label);
+    return (
+      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+      null
+    );
+  }
+
+  const engineValue = (value: unknown) => ({ value, source: 'default' });
+  async function openAs(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+    mockAxios.get.mockImplementation(async (url: string) => ({
+      data:
+        url === '/admin/engine-settings'
+          ? {
+              diarizer_backend: engineValue('native'),
+              diarizer_require_sidecar: engineValue(false),
+              boundary_smoothing_enabled: engineValue(true),
+              boundary_acoustic_recheck_enabled: engineValue(false),
+              boundary_acoustic_cosine_margin: engineValue(0.05),
+              boundary_acoustic_max_word_dur: engineValue(1.0),
+            }
+          : url === '/embeddings/migration/status'
+            ? { current_mode: 'v4', migration_needed: false }
+            : url === '/admin/backup/list'
+              ? { backups: [] }
+              : {},
+    }));
+    setUser(role);
+    settingsModalStore.open(section);
+    const view = render(SettingsModal);
+    await waitForOpen(view.container);
+    return view;
+  }
+  const tab = (container: HTMLElement, id: string) =>
+    container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
+  it('has no engine-settings, asr-provider, vocabulary or attributes row, for any role', async () => {
+    for (const role of ['user', 'admin', 'super_admin'] as const) {
+      const { container, unmount } = await openAs(role, 'recording');
+      for (const key of [
+        'settings.engineSettings.title',
+        'settings.asrProvider.title',
+        'settings.customVocabulary.title',
+        'settings.speakerAttributes.navTitle',
+      ]) {
+        expect(navItem(container, key)).toBeNull();
+      }
+      unmount();
+    }
+  });
+
+  it('lists the two rows under one group, and Auto-Labeling under AI & Chat', async () => {
+    const { container } = await openAs('user', 'recording');
+    expect(sectionOf(container, 'settings.transcription.title')).toBe(
+      'settings.sections.transcription'
+    );
+    expect(sectionOf(container, 'settings.speakerIdentification.title')).toBe(
+      'settings.sections.transcription'
+    );
+    expect(sectionOf(container, 'autoLabel.title')).toBe('settings.sections.aiChat');
+  });
+
+  it('shows a plain user the speaker-identification row but not the engine or maintenance tabs', async () => {
+    const { container } = await openAs('user', 'speaker-identification');
+    expect(
+      container.querySelector('[data-testid="speaker-identification-section"]')
+    ).not.toBeNull();
+    expect(tab(container, 'spk-detection')).not.toBeNull();
+    expect(tab(container, 'spk-attributes')).not.toBeNull();
+    expect(tab(container, 'spk-engine')).toBeNull();
+    expect(tab(container, 'spk-maintenance')).toBeNull();
+  });
+
+  it('opens engine-settings as an admin on the section, with the engine tab locked and not selected', async () => {
+    const { container } = await openAs('admin', 'engine-settings');
+    expect(
+      navItem(container, 'settings.speakerIdentification.title')?.classList.contains('active')
+    ).toBe(true);
+    const engine = tab(container, 'spk-engine');
+    expect(engine?.disabled).toBe(true);
+    expect(engine?.getAttribute('aria-selected')).toBe('false');
+    expect(engine?.getAttribute('title')).toBe('settings.nav.requiresSuperAdmin');
+  });
+
+  it.each([
+    ['super_admin', 'engine-settings', 'spk-engine'],
+    ['user', 'speaker-attributes', 'spk-attributes'],
+    ['user', 'asr-provider', 'tx-provider'],
+    ['user', 'custom-vocabulary', 'tx-vocabulary'],
+    ['user', 'transcription', 'tx-language'],
+    ['user', 'speaker-identification', 'spk-detection'],
+  ] as const)('%s opening %s lands on tab %s', async (role, section, tabId) => {
+    const { container } = await openAs(role, section as SettingsSection);
+    expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps each old id working in the mobile picker with a matching option', async () => {
+    const { container } = await openAs('user', 'asr-provider');
+    const select = container.querySelector('.mobile-nav-select') as HTMLSelectElement;
+    expect(select.value).toBe('transcription');
+  });
+
+  it('drops the provider tab, not the whole row, when the ASR capability is off', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'asr.user_providers': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = await openAs('user', 'transcription');
+    expect(navItem(container, 'settings.transcription.title')).not.toBeNull();
+    expect(tab(container, 'tx-provider')).toBeNull();
+    expect(tab(container, 'tx-language')).not.toBeNull();
+  });
+
+  it('follows the Maintenance link card to the Speaker Embedding tab of Data & Storage', async () => {
+    const { container } = await openAs('super_admin', 'speaker-identification');
+    await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+    const button = await waitFor(() => {
+      const el = container.querySelector('[data-testid="embedding-link-card"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(
+        navItem(container, 'settings.dataManagement.title')?.classList.contains('active')
+      ).toBe(true)
+    );
+    await waitFor(() =>
+      expect(tab(container, 'data-embeddings')?.getAttribute('aria-selected')).toBe('true')
+    );
+  });
+
+  it('jumps from the Automatic detection line to Transcription > Provider & Model', async () => {
+    const { container } = await openAs('admin', 'speaker-identification');
+    const link = await waitFor(() => {
+      const el = container.querySelector('[data-testid="detection-credential-line"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(link);
+
+    await waitFor(() =>
+      expect(navItem(container, 'settings.transcription.title')?.classList.contains('active')).toBe(
+        true
+      )
+    );
+    await waitFor(
+      () => expect(tab(container, 'tx-provider')?.getAttribute('aria-selected')).toBe('true'),
+      { timeout: 10_000 }
+    );
+  });
+
+  describe('revealing the active sidebar row', () => {
+    const scrolled: { row: Element | null; opts: ScrollIntoViewOptions | undefined }[] = [];
+
+    beforeEach(() => {
+      scrolled.length = 0;
+      Element.prototype.scrollIntoView = function (
+        this: Element,
+        opts?: boolean | ScrollIntoViewOptions
+      ) {
+        scrolled.push({ row: this, opts: opts as ScrollIntoViewOptions | undefined });
+      };
+    });
+
+    afterEach(() => {
+      // jsdom ships no scrollIntoView, so removing the stub restores the original state.
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      vi.unstubAllGlobals();
+    });
+
+    async function followMaintenanceLink(container: HTMLElement) {
+      await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+      const button = await waitFor(() => {
+        const el = container.querySelector('[data-testid="embedding-link-card"] button');
+        expect(el).not.toBeNull();
+        return el as HTMLElement;
+      });
+      await fireEvent.click(button);
+    }
+
+    it('scrolls the Data & Storage row into view when the link card jumps there', async () => {
+      const { container } = await openAs('super_admin', 'speaker-identification');
+      scrolled.length = 0;
+      await followMaintenanceLink(container);
+
+      const embedding = navItem(container, 'settings.dataManagement.title');
+      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+      expect(embedding?.classList.contains('active')).toBe(true);
+      const call = scrolled.find((c) => c.row === embedding);
+      expect(call?.opts?.block).toBe('nearest');
+    });
+
+    it('does not animate the scroll when the user prefers reduced motion', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('prefers-reduced-motion'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      const { container } = await openAs('super_admin', 'speaker-identification');
+      scrolled.length = 0;
+      await followMaintenanceLink(container);
+
+      const embedding = navItem(container, 'settings.dataManagement.title');
+      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+      expect(scrolled.find((c) => c.row === embedding)?.opts?.behavior).toBe('auto');
+    });
+  });
+
+  describe('Data & Storage row (#1243 item 8)', () => {
+    const TABS = [
+      'data-retention',
+      'data-cache',
+      'data-backup',
+      'data-integrity',
+      'data-search',
+      'data-embeddings',
+    ];
+
+    it('replaces the five System rows with one row of six tabs for a super_admin', async () => {
+      const { container } = await openAs('super_admin', 'data-management');
+      for (const key of [
+        'settings.retention.title',
+        'settings.backup.title',
+        'settings.dataIntegrity.title',
+        'settings.searchIndexing.title',
+        'settings.embeddingMigration.title',
+      ]) {
+        expect(navItem(container, key), key).toBeNull();
+      }
+      expect(navItem(container, 'settings.dataManagement.title')).not.toBeNull();
+      for (const id of TABS) expect(tab(container, id), id).not.toBeNull();
+      expect(tab(container, 'data-retention')?.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('uses the shared sticky tab strip, one tab per topic', async () => {
+      const { container } = await openAs('super_admin', 'data-management');
+      const strip = container.querySelector(
+        '[data-testid="data-management-section"] .tabs.sticky'
+      ) as HTMLElement;
+      expect(strip.getAttribute('aria-label')).toBe('settings.dataManagement.tabs.ariaLabel');
+      expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(6);
+    });
+
+    it('shows an admin the backups tab locked, not missing', async () => {
+      const { container } = await openAs('admin', 'data-management');
+      const backup = tab(container, 'data-backup');
+      expect(backup).not.toBeNull();
+      expect(backup?.disabled).toBe(true);
+      expect(tab(container, 'data-integrity')?.disabled).toBe(false);
+    });
+
+    it('gives a plain user no row', async () => {
+      const { container } = await openAs('user', 'recording');
+      expect(navItem(container, 'settings.dataManagement.title')).toBeNull();
+    });
+
+    it.each([
+      ['retention', 'data-retention'],
+      ['backup', 'data-backup'],
+      ['data-integrity', 'data-integrity'],
+      ['embedding-migration', 'data-embeddings'],
+      // search-indexing is covered by sectionAliases.test.ts: its panel needs a full search-index
+      // API fixture that this suite's blanket axios mock does not provide.
+    ] as const)('the old id %s opens the %s tab of the Data & Storage row', async (id, tabId) => {
+      const { container } = await openAs('super_admin', id);
+      expect(
+        navItem(container, 'settings.dataManagement.title')?.classList.contains('active')
+      ).toBe(true);
+      await waitFor(() =>
+        expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true')
+      );
+    });
+
+    it('keeps the modal heading the first .section-title in the content area', async () => {
+      const { container } = await openAs('super_admin', 'retention');
+      const first = container.querySelector('.settings-content .section-title');
+      expect(first?.textContent?.trim()).toBe('settings.dataManagement.title');
+    });
+
+    it('shows the unsaved-changes dot on the row when a legacy-id panel is dirty', async () => {
+      const { container } = await openAs('super_admin', 'data-management');
+      settingsModalStore.setDirty('retention', true);
+      await waitFor(() =>
+        expect(
+          navItem(container, 'settings.dataManagement.title')?.classList.contains('dirty')
+        ).toBe(true)
+      );
+      settingsModalStore.setDirty('retention', false);
+    });
+  });
+
+  describe('File status row: Status and Recovery tabs', () => {
+    const STATUS = {
+      status_counts: { total: 3, completed: 2, processing: 1, pending: 0, error: 0 },
+      problem_files: { count: 0, files: [] },
+      recent_files: { count: 0, files: [] },
+      has_problems: false,
+    };
+    async function openStatus(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+      mockAxios.get.mockImplementation(async (url: string) => ({
+        data:
+          url === '/my-files/status'
+            ? STATUS
+            : url === '/tasks/system/health'
+              ? {
+                  stuck_tasks: { count: 0, items: [] },
+                  inconsistent_files: { count: 0, items: [] },
+                }
+              : {},
+      }));
+      setUser(role);
+      settingsModalStore.open(section);
+      const view = render(SettingsModal);
+      await waitForOpen(view.container);
+      return view;
+    }
+    const statusTab = (container: HTMLElement, id: string) =>
+      container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
+    it('removes the Task Health Monitor row and gives an admin two tabs on File status', async () => {
+      const { container } = await openStatus('admin', 'file-status');
+      expect(navItem(container, 'settings.taskHealth.title')).toBeNull();
+      expect(navItem(container, 'settings.fileStatus.title')).not.toBeNull();
+      const strip = container.querySelector(
+        '[data-testid="file-status-section"] .tabs.sticky'
+      ) as HTMLElement;
+      expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(2);
+      expect(statusTab(container, 'status-files')?.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('opens the Recovery tab of the File status row for the old admin-task-health id', async () => {
+      const { container } = await openStatus('admin', 'admin-task-health');
+      expect(navItem(container, 'settings.fileStatus.title')?.classList.contains('active')).toBe(
+        true
+      );
+      await waitFor(() =>
+        expect(statusTab(container, 'status-recovery')?.getAttribute('aria-selected')).toBe('true')
+      );
+      await waitFor(() =>
+        expect(container.textContent).toContain('settings.taskHealth.systemRecovery')
+      );
+    });
+
+    it('gives a plain user the Status panel with no tab strip and no Recovery panel', async () => {
+      const { container } = await openStatus('user', 'file-status');
+      await waitFor(() => expect(container.textContent).toContain('fileStatus.totalFiles'));
+      expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
+      expect(statusTab(container, 'status-recovery')).toBeNull();
+      expect(container.querySelector('#tabpanel-status-recovery')).toBeNull();
+    });
+
+    it('drops the Recovery tab when the deployment lacks admin.task_health', async () => {
+      capabilities.set({
+        edition: 'community',
+        loaded: true,
+        capabilities: { 'admin.task_health': false },
+        audience: {},
+        maxUploadBytes: undefined,
+      });
+      const { container } = await openStatus('admin', 'file-status');
+      expect(statusTab(container, 'status-recovery')).toBeNull();
+      expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
+    });
+
+    it('keeps the modal heading the first .section-title and shows the title once', async () => {
+      const { container } = await openStatus('admin', 'admin-task-health');
+      const titles = [...container.querySelectorAll('.settings-content .section-title')].map(
+        (e) => e.textContent?.trim()
+      );
+      expect(titles[0]).toBe('settings.fileStatus.title');
+      expect(titles).not.toContain('settings.taskHealth.title');
+    });
+  });
+
+  it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
+    const { container } = await openAs('admin', 'embedding-migration');
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="embedding-migration-locked"]')).not.toBeNull()
+    );
+    expect(mockAxios.get).not.toHaveBeenCalledWith('/embeddings/migration/status');
+  });
+
+  it('leaves the embedding migration unlocked and loaded for a super admin (#1208)', async () => {
+    const { container } = await openAs('super_admin', 'embedding-migration');
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/embeddings/migration/status'));
+    expect(container.querySelector('[data-testid="embedding-migration-locked"]')).toBeNull();
+  });
+
+  it('keeps the modal heading the first .section-title in the content area', async () => {
+    const { container } = await openAs('super_admin', 'speaker-attributes');
+    const first = container.querySelector('.settings-content .section-title');
+    expect(first?.textContent?.trim()).toBe('settings.speakerIdentification.title');
+  });
+
+  it('passes the unsaved flag of a child form up to the section row', async () => {
+    const { container } = await openAs('user', 'speaker-identification');
+    await waitFor(() =>
+      expect(container.querySelector('#diarization-source, #speaker-behavior')).not.toBeNull()
+    );
+    const select = container.querySelector('#speaker-behavior') as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: 'use_custom' } });
+    await waitFor(() =>
+      expect(
+        navItem(container, 'settings.speakerIdentification.title')?.classList.contains('dirty')
+      ).toBe(true)
+    );
+  });
+});
+
+describe('settings search placement', () => {
+  it('keeps the search outside the scrolling nav list so a scrollbar cannot overlap it', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    const sidebar = container.querySelector('.settings-sidebar') as HTMLElement;
+    const scroller = sidebar.querySelector('.sidebar-scroll') as HTMLElement;
+    const search = sidebar.querySelector('#settings-search-desktop-input') as HTMLElement;
+
+    expect(scroller).not.toBeNull();
+    expect(scroller.contains(search)).toBe(false);
+    expect(scroller.querySelectorAll('.nav-item').length).toBeGreaterThan(0);
+    expect(sidebar.querySelectorAll('.nav-item').length).toBe(
+      scroller.querySelectorAll('.nav-item').length
+    );
+    // Search first, list after: the search is a fixed header, not part of the scrolled content.
+    expect(sidebar.firstElementChild?.contains(search)).toBe(true);
+    expect(sidebar.firstElementChild).not.toBe(scroller);
+  });
+
+  it('raises the search header only once the nav list has scrolled', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    const scroller = container.querySelector('.settings-sidebar .sidebar-scroll') as HTMLElement;
+    const header = () =>
+      container.querySelector('.settings-sidebar .settings-search') as HTMLElement;
+
+    expect(header().classList.contains('raised')).toBe(false);
+    scroller.scrollTop = 120;
+    await fireEvent.scroll(scroller);
+    expect(header().classList.contains('raised')).toBe(true);
+    scroller.scrollTop = 0;
+    await fireEvent.scroll(scroller);
+    expect(header().classList.contains('raised')).toBe(false);
+  });
+
+  it('gives the mobile instance the same landmark and search input', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    const mobile = container.querySelector('.mobile-section-nav') as HTMLElement;
+    expect(mobile.querySelector('[role="search"]')).not.toBeNull();
+    expect(mobile.querySelector('input[type="search"]')).not.toBeNull();
   });
 });
 
@@ -262,7 +869,7 @@ describe('unsaved-changes close confirmation', () => {
 
     expect(container.querySelector('.settings-modal')).not.toBeNull();
     let dirty = false;
-    settingsModalStore.subscribe((s) => (dirty = s.dirtyState.recording))();
+    settingsModalStore.subscribe((s) => (dirty = !!s.dirtyState.recording))();
     expect(dirty).toBe(true);
   });
 });
@@ -278,5 +885,173 @@ describe('section-switch data loading', () => {
     await fireEvent.click(statsItem);
 
     await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/system/stats'));
+  });
+});
+
+describe('Processing pipeline row (#1227)', () => {
+  const rowsOfTranscriptionGroup = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.sidebar-section'))
+      .find(
+        (group) =>
+          group.querySelector('.section-heading')?.textContent === 'settings.sections.transcription'
+      )
+      ?.querySelectorAll('.nav-item-label') ?? [];
+
+  it('is the first row of the Transcription group, above Transcription itself', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    const labels = Array.from(rowsOfTranscriptionGroup(container)).map(
+      (el) => el.textContent?.trim()
+    );
+    expect(labels[0]).toBe('settings.pipeline.title');
+    expect(labels).toContain('settings.transcription.title');
+  });
+
+  it('is absent when the deployment turns transcription preferences off', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'transcription.prefs': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    expect(navItem(container, 'settings.pipeline.title')).toBeNull();
+  });
+
+  it('opens the read-only view, which asks the server for the plan', async () => {
+    const { container } = openModal();
+    await waitForOpen(container);
+    mockAxios.get.mockClear();
+    mockAxios.get.mockImplementation(async (url: string) => ({
+      data: url === '/user-settings/pipeline' ? fullLocalView() : {},
+    }));
+
+    await fireEvent.click(navItem(container, 'settings.pipeline.title') as HTMLElement);
+
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/user-settings/pipeline'));
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-testid="pipeline-step"]')).toHaveLength(4)
+    );
+  });
+});
+
+describe('opening the modal fetches each thing once', () => {
+  // The modal is mounted already open (the layout imports it on demand), so BOTH the onMount
+  // loaders and the "just opened" block ran and each endpoint was requested twice.
+  const callsTo = (path: string) => mockAxios.get.mock.calls.filter(([url]) => url === path).length;
+
+  it('requests the statistics bundle once when the statistics section is the landing section', async () => {
+    setUser('admin');
+    settingsModalStore.open('system-statistics');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+    await waitFor(() => expect(callsTo('/system/stats')).toBeGreaterThan(0));
+
+    expect(callsTo('/system/stats')).toBe(1);
+    expect(callsTo('/search/reindex/status')).toBe(1);
+    expect(callsTo('/search/index-health')).toBe(1);
+  });
+
+  it('requests the pending-approval count once for an admin', async () => {
+    setUser('admin');
+    settingsModalStore.open('system-statistics');
+    const { container } = render(SettingsModal);
+    await waitForOpen(container);
+
+    expect(mockUserApprovalsApi.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later section switch still refetches (single-flight is not a cache)', async () => {
+    setUser('admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+    mockAxios.get.mockClear();
+
+    await fireEvent.click(navItem(container, 'settings.statistics.title') as HTMLElement);
+    await waitFor(() => expect(callsTo('/system/stats')).toBe(1));
+  });
+});
+
+describe('background warm-up of the other sections', () => {
+  const warmed = () => vi.mocked(startIdlePrefetch).mock.calls.at(-1);
+
+  it('is offered only the sections a plain user can open, with the user tier', async () => {
+    setUser('user');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    const [sections, role] = warmed()!;
+    expect(role).toBe('user');
+    expect(sections).toContain('profile');
+    expect(sections).not.toContain('authentication');
+    expect(sections).not.toContain('admin-users');
+    expect(sections).not.toContain('data-management');
+  });
+
+  it('never offers a section the admin sees greyed out (super-admin only)', async () => {
+    setUser('admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    const [sections, role] = warmed()!;
+    expect(role).toBe('admin');
+    expect(sections).toContain('admin-users');
+    expect(sections).not.toContain('authentication');
+    expect(sections).not.toContain('audit-logs');
+  });
+
+  it('offers the super-admin sections to a super admin', async () => {
+    setUser('super_admin');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    const [sections, role] = warmed()!;
+    expect(role).toBe('super_admin');
+    expect(sections).toContain('authentication');
+  });
+
+  it('cancels the warm-up when the modal closes', async () => {
+    setUser('user');
+    const { container } = openModal();
+    await waitForOpen(container);
+    await waitFor(() => expect(startIdlePrefetch).toHaveBeenCalled());
+    expect(mockWarmup.cancel).not.toHaveBeenCalled();
+
+    settingsModalStore.close();
+    await waitFor(() => expect(mockWarmup.cancel).toHaveBeenCalled());
+  });
+});
+
+describe('Back from a full page reopens Settings where it was left', () => {
+  it('reopens on the stamped section after a popstate navigation', async () => {
+    setUser('user');
+    const { container } = render(SettingsModal);
+    stampSettingsReturn('file-status');
+
+    for (const cb of afterNavigateCallbacks) cb({ type: 'popstate' });
+
+    await waitFor(() => expect(container.querySelector('.settings-modal')).not.toBeNull());
+    await waitFor(() =>
+      expect(container.querySelector('.settings-sidebar .nav-item.active')?.textContent).toContain(
+        'settings.fileStatus.title'
+      )
+    );
+  });
+
+  it('does nothing for an ordinary link navigation', () => {
+    setUser('user');
+    const { container } = render(SettingsModal);
+    stampSettingsReturn('file-status');
+
+    for (const cb of afterNavigateCallbacks) cb({ type: 'link' });
+
+    expect(container.querySelector('.settings-modal')).toBeNull();
   });
 });

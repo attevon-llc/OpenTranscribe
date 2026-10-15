@@ -474,8 +474,9 @@ def test_the_two_exit_contracts_are_read_separately(
 def _interleg_cleanup_block() -> str:
     """The stage-3 inter-leg cleanup loop, lifted verbatim from the real script."""
     source = _matrix_source()
-    opener = '            _clean_log="$(mktemp)"'
-    closer = '            rm -f "$_clean_log"\n'
+    opener = "            local _clean_log _scenario\n"
+    # The per-scenario loop ends at the `done` that follows the warn branch's closing `fi`.
+    closer = "                fi\n            done\n"
     assert opener in source, (
         "the stage-3 inter-leg cleanup loop is gone or was reshaped; re-point this "
         "extractor at it rather than deleting these tests — a `--cleanup` whose output "
@@ -520,6 +521,7 @@ def test_a_failed_interleg_cleanup_is_reported_not_discarded(tmp_path: Path):
         f'cd "{tmp_path}"\n'
         'info() { echo -e "$*" >&2; }\n'
         "YELLOW=''; NC=''\n"
+        f'LEDGER_DIR="{tmp_path}/ledger"\n'
         "run() {\n" + _interleg_cleanup_block() + "}\n"
         "run\n"
     )
@@ -550,6 +552,7 @@ def test_a_clean_interleg_cleanup_stays_quiet(tmp_path: Path):
         f'cd "{tmp_path}"\n'
         'info() { echo -e "$*" >&2; }\n'
         "YELLOW=''; NC=''\n"
+        f'LEDGER_DIR="{tmp_path}/ledger"\n'
         "run() {\n" + _interleg_cleanup_block() + "}\n"
         "run\n"
     )

@@ -81,7 +81,19 @@ speaker collections and vocabulary terms with their tenant where unambiguous, an
 unique names per user per tenant via `COALESCE(organization_id, 0)` expression indexes;
 numbered v430 to stay clear of parallel branches; its stamping SQL is re-used by
 `app/services/tenant_stamp_backfill.py`, so keep `STAMP_STATEMENTS`/`AMBIGUOUS_REPORT_SQL`
-stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created last). **Derive
+stable; detection arm keys on `uq_speaker_profile_user_tenant_name`, created last),
+`v434_reset_unusable_pyannote_source` and `v436_lite_local_speaker_detection_to_automatic`
+(both data-only, detection keyed on the ABSENCE of the rows they rewrite; v436 acts only when
+`DEPLOYMENT_MODE=lite` at migration time and is a no-op on the full image, issue #1228),
+`v437_add_media_processing_provenance` (nullable JSONB `media_file.processing_provenance`,
+issue #1229; single-marker arm on the column),
+`v438_add_speaker_correction_carryover` (`speaker_correction_carryover`: a user's speaker
+correction kept by its time spans while a re-run replaces the file's speakers, issue #1233;
+every FK `ON DELETE CASCADE`; single-marker arm on the table),
+`v439_infer_legacy_voiceprint_suggestion_source` (data-only: stamps `speaker.suggestion_source`
+on pre-`v091` rows that provably came from a voiceprint, so their canonical label survives the
+2026-10-12 provenance rule; detection keyed on the ABSENCE of rows it would stamp, like v434).
+**Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
 

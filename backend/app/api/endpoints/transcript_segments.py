@@ -20,6 +20,10 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
+from app.services.platform_bypass import PlatformBypass
+from app.services.speaker_cleanup import capture_speaker_impact
+from app.services.speaker_cleanup import raise_if_incomplete
+from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import _resource_in_tenant_scope
 from app.utils.uuid_helpers import get_by_uuid
@@ -30,7 +34,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> bool:
+def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> tuple[bool, list[dict]]:
     """
     Delete a speaker if it has no remaining segments.
 
@@ -38,47 +42,40 @@ def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> bool:
     that are no longer used. This keeps the speaker list clean and
     prevents accumulation of unused speakers.
 
+    The deletion goes through ``speaker_cleanup`` like every other speaker removal
+    (issue #1214): the voiceprint is erased and verified, the clusters and profile the
+    speaker belonged to are rebuilt from their remaining members, and the file is
+    re-indexed.
+
     Args:
         db: Database session
         speaker_id: ID of the speaker to check
 
     Returns:
-        True if the speaker was deleted, False otherwise
+        ``(deleted, residual)``: whether the speaker was deleted, and the cleanup's
+        residuals (empty when every copy of the voice is gone).
     """
     if not speaker_id:
-        return False
+        return False, []
 
     # Check if speaker has any remaining segments
     segment_count = (
         db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == speaker_id).count()
     )
+    if segment_count:
+        return False, []
 
-    if segment_count == 0:
-        # Speaker has no segments - delete it
-        speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
-        if speaker:
-            speaker_uuid = str(speaker.uuid)
-            speaker_name = speaker.name
-            db.delete(speaker)
-            db.commit()
-
-            # Also remove embedding from OpenSearch
-            try:
-                from app.services.opensearch_service import remove_speaker_embedding
-
-                remove_speaker_embedding(speaker_uuid)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to remove OpenSearch embedding for orphaned speaker "
-                    f"{speaker_uuid}: {e}"
-                )
-
-            logger.info(
-                f"Deleted orphaned speaker {speaker_uuid} ({speaker_name}) - no remaining segments"
-            )
-            return True
-
-    return False
+    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    if not speaker:
+        return False, []
+    speaker_uuid = str(speaker.uuid)
+    speaker_name = speaker.name
+    impact = capture_speaker_impact(db, [speaker_id], removed=True, reindex=True)
+    db.delete(speaker)
+    db.commit()
+    residual = reconcile_speaker_impact(db, impact)
+    logger.info(f"Deleted orphaned speaker {speaker_uuid} ({speaker_name}) - no remaining segments")
+    return True, residual
 
 
 def _get_new_speaker_id(
@@ -87,6 +84,8 @@ def _get_new_speaker_id(
     segment: TranscriptSegment,
     current_user: User,
     organization_id: OrgScope = UNSCOPED,
+    *,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> int | None:
     """
     Resolve and validate the new speaker ID from the update request.
@@ -119,8 +118,14 @@ def _get_new_speaker_id(
             detail="Speaker does not belong to the same media file as this segment",
         )
 
-    # Verify the user owns this speaker (admins and shared editors bypass)
-    if not current_user.is_admin and speaker.user_id != current_user.id:
+    # Verify the user owns this speaker (the platform role and shared editors bypass)
+    if speaker.user_id != current_user.id and not bypass.allows(
+        org_id=speaker.organization_id,
+        owner_id=speaker.user_id,
+        need="write",
+        resource_type="speaker",
+        resource_uuid=str(speaker.uuid),
+    ):
         from app.services.permission_service import PermissionService
 
         perm = PermissionService.get_file_permission(
@@ -143,7 +148,7 @@ def _handle_speaker_change(
     segment_uuid: str | None = None,
     media_file_uuid: str | None = None,
     user_id: int | None = None,
-) -> None:
+) -> list[dict]:
     """
     Handle side effects of speaker assignment change.
 
@@ -158,9 +163,13 @@ def _handle_speaker_change(
         segment_uuid: UUID of the reassigned segment (for embedding update)
         media_file_uuid: UUID of the media file (for embedding update)
         user_id: ID of the current user (for embedding update)
+
+    Returns:
+        The orphan cleanup's residuals, for the caller to report once the rest of the
+        reassignment's side effects have run.
     """
     if original_speaker_id == new_speaker_id:
-        return
+        return []
 
     # Capture source speaker UUID before orphan cleanup might delete it
     source_speaker_uuid: str | None = None
@@ -179,8 +188,9 @@ def _handle_speaker_change(
     # Check if the old speaker is now orphaned (no remaining segments)
     # and delete it if so - this keeps the speaker list clean
     orphan_deleted = False
+    cleanup_residual: list[dict] = []
     if original_speaker_id:
-        orphan_deleted = _cleanup_orphaned_speaker(db, original_speaker_id)
+        orphan_deleted, cleanup_residual = _cleanup_orphaned_speaker(db, original_speaker_id)
 
     try:
         from app.services.analytics_service import AnalyticsService
@@ -231,6 +241,7 @@ def _handle_speaker_change(
                 segment_uuid,
                 target_speaker_uuid,
             )
+    return cleanup_residual
 
 
 @router.put("/segments/{segment_uuid}/speaker", response_model=TranscriptSegmentSchema)
@@ -283,7 +294,7 @@ def update_segment_speaker(
     # `get_file_by_uuid_with_permission`).
     from app.services.takedown_service import is_hidden_for
 
-    if is_hidden_for(media_file, is_admin=current_user.is_admin):
+    if is_hidden_for(media_file, is_admin=ctx.bypass.user_is_admin):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )
@@ -308,7 +319,7 @@ def update_segment_speaker(
 
     # Resolve and validate the new speaker (tenant-gated via ctx.org_id)
     new_speaker_id = _get_new_speaker_id(
-        db, update, segment, current_user, organization_id=ctx.org_id
+        db, update, segment, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
     )
 
     # Update the segment's speaker
@@ -317,7 +328,7 @@ def update_segment_speaker(
     db.refresh(segment)
 
     # Handle side effects of speaker change (cleanup orphans, refresh analytics, embeddings)
-    _handle_speaker_change(
+    cleanup_residual = _handle_speaker_change(
         db,
         original_speaker_id,
         new_speaker_id,
@@ -339,6 +350,9 @@ def update_segment_speaker(
             file_uuid=str(media_file.uuid),
             user_id=int(media_file.user_id),
         )
+
+    # Reported last: the reassignment and its reindex have already gone through.
+    raise_if_incomplete(cleanup_residual)
 
     # Format the response with speaker details
     response_data = TranscriptSegmentSchema(

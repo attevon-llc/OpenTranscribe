@@ -227,7 +227,8 @@ class TestCollectionMembership:
         multiselect_toggle = page.locator(".collections-filter .multiselect-toggle")
         expect(multiselect_toggle).to_be_visible(timeout=10000)
         multiselect_toggle.click()
-        option = page.locator(".collections-filter .option-item").filter(has_text=created["name"])
+        # The options panel is portaled to <body> (anchoredPanel), outside `.collections-filter`.
+        option = page.locator(".option-item").filter(has_text=created["name"])
         expect(option).to_be_visible(timeout=10000)
         option.locator("input[type=checkbox]").click()
 

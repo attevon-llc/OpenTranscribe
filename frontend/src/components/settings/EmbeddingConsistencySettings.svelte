@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { getErrorStatus } from '$lib/utils/apiError';
@@ -199,8 +200,7 @@
       <!-- Status Chips -->
       <div class="status-chips-row">
         {#if loading}
-          <div class="skeleton-chip"></div>
-          <div class="skeleton-chip wide"></div>
+          <SettingsSkeleton variant="chips" />
         {:else}
           <StatusChip
             label={$t('settings.embeddingConsistency.chipStatus')}
@@ -310,7 +310,9 @@
               {processedFiles}/{totalFiles}
               ({Math.round((processedFiles / totalFiles) * 100)}%)
               {#if etaSeconds != null && etaSeconds > 0}
-                {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
+                <span class="progress-eta">
+                  {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
+                </span>
               {/if}
             </span>
           </div>
@@ -370,17 +372,7 @@
     color: var(--error-color);
   }
 
-  .skeleton-chip {
-    height: 28px;
-    width: 90px;
-    border-radius: 14px;
-    background: var(--border-color, #e5e7eb);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-chip.wide {
-    width: 130px;
-  }
 
   .settings-section {
     background: var(--surface-color);
@@ -532,6 +524,12 @@
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--primary-on-surface);
+  }
+
+  .progress-eta {
+    margin-inline-start: 0.5rem;
+    font-weight: 400;
+    color: var(--text-secondary);
   }
 
   .progress-bar-container {

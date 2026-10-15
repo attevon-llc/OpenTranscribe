@@ -37,6 +37,25 @@ _needs_cluster = pytest.mark.skipif(
 )
 
 
+def _repoint_speaker_indices(monkeypatch) -> list[str]:
+    """Point the speaker plane at throwaway names; return every index it could create.
+
+    The writer and the speaker reader both call ``ensure_indices_exist()``, which bootstraps
+    the speaker indices (v3, v4, the alias, and a v3-backup restore) from
+    ``OPENSEARCH_SPEAKER_INDEX``. Left at the real name, a run against a cluster without them
+    would create production-named ``speakers_v3``/``speakers_v4`` and a ``speakers`` alias.
+    """
+    from app.core.config import settings
+    from app.core.constants import get_speaker_index_v3
+    from app.core.constants import get_speaker_index_v3_backup
+    from app.core.constants import get_speaker_index_v4
+
+    monkeypatch.setattr(
+        settings, "OPENSEARCH_SPEAKER_INDEX", f"test_tenancy_speakers_{uuid_pkg.uuid4().hex[:10]}"
+    )
+    return [get_speaker_index_v3(), get_speaker_index_v4(), get_speaker_index_v3_backup()]
+
+
 class _RecordingClient:
     """Captures the bodies the writer and reader send; answers a search with no hits."""
 
@@ -102,33 +121,32 @@ def world(db_session, normal_user, monkeypatch):
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
     index_name = f"test_transcripts_tenancy_{uuid_pkg.uuid4().hex[:10]}"
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", index_name)
+    speaker_indices = _repoint_speaker_indices(monkeypatch)
     client.indices.create(index=index_name, body=transcript_index_body())
-
-    org_a = Organization(name="tenant-a", slug=f"tenant-a-{uuid_pkg.uuid4().hex[:8]}")
-    org_b = Organization(name="tenant-b", slug=f"tenant-b-{uuid_pkg.uuid4().hex[:8]}")
-    db_session.add_all([org_a, org_b])
-    db_session.flush()
-    org_ids = {"org_a": org_a.id, "org_b": org_b.id, "personal": None}
-
-    files = {}
-    for scope, org_id in org_ids.items():
-        file_uuid = uuid_pkg.uuid4()
-        media_file = MediaFile(
-            uuid=file_uuid,
-            filename=f"{scope}.wav",
-            storage_path=f"media/test/{file_uuid}.wav",
-            content_type="audio/wav",
-            file_size=4096,
-            status="completed",
-            user_id=normal_user.id,
-            organization_id=org_id,
-        )
-        db_session.add(media_file)
-        db_session.flush()
-        files[scope] = media_file
-    db_session.commit()
-
     try:
+        org_a = Organization(name="tenant-a", slug=f"tenant-a-{uuid_pkg.uuid4().hex[:8]}")
+        org_b = Organization(name="tenant-b", slug=f"tenant-b-{uuid_pkg.uuid4().hex[:8]}")
+        db_session.add_all([org_a, org_b])
+        db_session.flush()
+        org_ids = {"org_a": org_a.id, "org_b": org_b.id, "personal": None}
+
+        files = {}
+        for scope, org_id in org_ids.items():
+            file_uuid = uuid_pkg.uuid4()
+            media_file = MediaFile(
+                uuid=file_uuid,
+                filename=f"{scope}.wav",
+                storage_path=f"media/test/{file_uuid}.wav",
+                content_type="audio/wav",
+                file_size=4096,
+                status="completed",
+                user_id=normal_user.id,
+                organization_id=org_id,
+            )
+            db_session.add(media_file)
+            db_session.flush()
+            files[scope] = media_file
+        db_session.commit()
         yield SimpleNamespace(
             client=client,
             index=index_name,
@@ -138,7 +156,8 @@ def world(db_session, normal_user, monkeypatch):
             all_file_ids=[f.id for f in files.values()],
         )
     finally:
-        client.indices.delete(index=index_name, ignore=[404])
+        for name in (index_name, *speaker_indices):
+            client.indices.delete(index=name, ignore=[404])
 
 
 def _write_through_the_writer(world, scopes=SCOPES) -> None:
@@ -298,10 +317,11 @@ def test_a_pre_tenant_index_gets_the_field_on_bootstrap_and_the_gate_then_holds(
     client = _client.opensearch_client
     assert client is not None
     index_name = f"test_transcripts_pre_tenant_{uuid_pkg.uuid4().hex[:10]}"
-    client.indices.create(index=index_name, body=_pre_tenant_body())
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", index_name)
+    speaker_indices = _repoint_speaker_indices(monkeypatch)
     monkeypatch.setattr(indices, "_tenant_mapping_checked", set())
     ensure_transcript_tenant_mapping = indices.ensure_transcript_tenant_mapping
+    client.indices.create(index=index_name, body=_pre_tenant_body())
     try:
         indices.ensure_indices_exist()
         mapping = client.indices.get_mapping(index=index_name)[index_name]["mappings"]
@@ -333,4 +353,5 @@ def test_a_pre_tenant_index_gets_the_field_on_bootstrap_and_the_gate_then_holds(
         assert hits(8) == set()
         assert hits(None) == {"personal-doc"}
     finally:
-        client.indices.delete(index=index_name, ignore=[404])
+        for name in (index_name, *speaker_indices):
+            client.indices.delete(index=name, ignore=[404])

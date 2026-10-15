@@ -75,6 +75,7 @@ def get_speaker_name(segment) -> str:
         display_name=speaker.display_name,
         suggested_name=getattr(speaker, "suggested_name", None),
         confidence=getattr(speaker, "confidence", None),
+        suggestion_source=getattr(speaker, "suggestion_source", None),
     )
 
 

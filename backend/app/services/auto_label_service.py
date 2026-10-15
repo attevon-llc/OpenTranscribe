@@ -25,6 +25,8 @@ from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
+from app.services.auto_llm_settings import TOPIC_USER_KEY
+from app.services.auto_llm_settings import resolve_auto_llm_flags
 from app.services.permission_service import PermissionService
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
@@ -572,6 +574,10 @@ class AutoLabelService:
                 except (ValueError, AttributeError):
                     logger.debug(f"Invalid value for setting {setting.setting_key}, using default")
 
+        # Resolved (user > system default > on) rather than read raw, so the form shows
+        # what the pipeline will actually do.
+        result["auto_topic_extraction"] = resolve_auto_llm_flags(self.db, user_id).topic_extraction
+
         return result
 
     def save_user_auto_label_settings(self, user_id: int, settings_data: dict) -> None:
@@ -601,6 +607,7 @@ class AutoLabelService:
             "tags_enabled": "auto_label_tags_enabled",
             "collections_enabled": "auto_label_collections_enabled",
             "bulk_grouping_enabled": "auto_label_bulk_grouping_enabled",
+            "auto_topic_extraction": TOPIC_USER_KEY,
         }
 
         for field, db_key in key_map.items():

@@ -349,18 +349,7 @@
 
   .edit-input {
     width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 15px;
     box-sizing: border-box;
-  }
-
-  .edit-input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
   }
 
   .edit-actions,
@@ -374,10 +363,8 @@
 
   .touches-title {
     margin: 0;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -437,10 +424,8 @@
   }
 
   .fact dt {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 

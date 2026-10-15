@@ -19,12 +19,12 @@ The Admin Panel is role-gated. The dividing rule is:
 |------|--------|
 | **User** | Profile, recording, transcription, personal settings, own MFA, own active sessions |
 | **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
-| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, engine configuration, backups, media mirror, watch sources, and the redaction policy floor |
+| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, speech processing (formerly engine configuration), backups, media mirror, watch sources, and the redaction policy floor |
 
 :::warning[Changed in v0.5.0]
-Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
+Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a plain
-`admin` administers any of them today, promote that account (Settings → Users → Role) before
+`admin` administers any of them today, promote that account (Settings → User Management → Role) before
 upgrading, or hand the work to an existing super admin.
 :::
 
@@ -121,25 +121,51 @@ You cannot change your own role or delete your own account here; your row shows 
 **The last remaining super admin cannot be demoted or deleted.**
 :::
 
-## Engine Configuration
+## Speaker Engine
+
+(Formerly **Engine Configuration**, then **Speech Processing**. It is now the **Speaker Engine** tab of **Settings → Speaker Identification**: the tab is visible to admins but locked, and only a super admin can change it. Nothing on it affects the transcribed words.)
 
 Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
+
+The tab opens with the sidecar status and one line saying what the switch is; **How it works** expands the longer explanation. A badge and a **Reset** button appear beside a setting only when its value is overridden (in the database or by an environment variable); a value left at the server default shows neither.
 
 ### Diarization Boundary Correction
 
 - **Boundary smoothing** (default **on**): collapses 1--3 word "wrong-speaker islands" at speaker turn boundaries (pure-CPU, runs at finalize)
 - **Acoustic backchannel re-check** (default **off**, experimental, GPU): re-embeds short disputed/overlap words and reassigns them by voiceprint cosine
-  - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
-  - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
+  - Under **Advanced re-check tuning** (closed by default):
+    - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
+    - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
 
-### Backend Selection
+### Speaker separation engine
 
-- **Transcriber backend**: select the active transcription engine
-- **Diarizer backend**: select the active diarization engine
+These choose **which local engine** detects speakers when speakers are detected on this server.
+They do not decide *where* speakers are detected: each user chooses that under **Settings →
+Speaker Identification → Speaker Detection** (this server, the transcription provider, the
+pyannote.ai cloud service, or off).
+
+- **Diarizer Backend**: **Native engine (default)** runs the diar-native sidecar as its own
+  service; **PyAnnote fallback engine** runs PyAnnote inside the backend and is being phased
+  out. Stored as the `engine.diarizer_backend` setting, with `ENGINE_DIARIZER_BACKEND` as the
+  server default. The choice applies from the next file processed.
+- **Require Diarization Sidecar** (only matters for the native engine): off (default), a file
+  whose sidecar request fails is processed with PyAnnote instead; on, the file fails so you
+  notice the broken sidecar.
+
+The native engine counts speakers itself and ignores the minimum and maximum speaker counts; the
+PyAnnote engine honours them. With the native engine, the read-only processing pipeline summary
+in each user's Settings reports this as a warning.
+
+:::note[Lite deployments]
+The lite (cloud-only) image has no local speaker detection, so saving **Diarizer Backend** or
+**Require Diarization Sidecar** there is refused with *"This deployment has no local speaker
+detection. Choose pyannote.ai or a provider that returns speakers."* Boundary correction stays
+editable there.
+:::
 
 ## Redaction Policy
 
-The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
+The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Privacy & Redaction → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
 
 - **Force categories**: force **PII**, **toxicity**, and/or **profanity** redaction on for every user (cannot be disabled per-user)
 - **Mandate censored exports**: require masked output for all subtitle/transcript exports
@@ -261,11 +287,11 @@ security policy lives in the Authentication section above.
 - **External IdP users**: PKI and OIDC users bypass local MFA **only when they authenticated
   with their native method**. If such an account falls back to a local password, local MFA
   applies
-- **Admin reset**: Settings → Users → Reset MFA clears a user's enrolment so they can re-enrol
+- **Admin reset**: Settings → User Management → Reset MFA clears a user's enrolment so they can re-enrol
 
 ### Active sessions
 
-Every user sees their own sessions (device, IP, last activity) in **Settings → Profile** and can
+Every user sees their own sessions (device, IP, last activity) in **Settings → Profile & Security** and can
 revoke any of them. Admins can list and revoke another account's sessions from the Users
 section; changing a credential or a privilege revokes sessions automatically.
 
@@ -286,7 +312,9 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Banner** | `auth.banner.acknowledged` |
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` |
+| **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
+| **User credentials** | `user.credential.set`, `user.credential.delete` (a user saved or removed their own pyannote.ai key; the key itself is never recorded) |
 
 A few of these are worth knowing about specifically:
 
@@ -327,7 +355,7 @@ Export filtered logs in **CSV** or **JSON** format using the export buttons. The
 
 ## Search Settings
 
-The **Search & Indexing** section manages OpenSearch neural search and the document index.
+The **Search & Indexing** tab of **Settings → Data & Storage** manages OpenSearch neural search and the document index.
 
 ### Status Dashboard
 
@@ -391,7 +419,7 @@ Re-indexing progress is tracked in real time via WebSocket with a progress bar, 
 
 ## Data Integrity
 
-The **Data Integrity** section verifies consistency between the PostgreSQL database and OpenSearch indices.
+The **Data Integrity** tab of **Settings → Data & Storage** verifies consistency between the PostgreSQL database and OpenSearch indices.
 
 ### Index Overview
 
@@ -415,9 +443,68 @@ Click **Run Check** to scan all indices for orphaned documents -- records in Ope
 
 Results show per-index totals: documents scanned, orphans found, and orphans cleaned.
 
+#### Reconciling a large orphan set
+
+A sweep refuses to delete more than **10%** of an index in one run (`refused: ratio_guard`
+in the result), because that is exactly what a database restored empty looks like from
+OpenSearch's side. When the orphans are real — documents left behind by a database
+restore or by rows removed directly in Postgres — reconcile them through the API:
+
+1. `GET /api/admin/data-integrity/counts` — a dry run. Each index reports `orphaned_docs`,
+   `refused`, and `orphan_keys`: the file (or speaker) identifiers whose documents would
+   be deleted (the first 200; `orphan_keys_truncated` says when there are more).
+2. Check those identifiers really are gone from the application.
+3. `POST /api/admin/data-integrity?force=true&confirm=true` — the forced run. It is
+   recorded in the audit log as `admin.data_integrity.purge`.
+
+A forced run still cannot delete the documents of a file or speaker that exists: every
+candidate is re-checked against PostgreSQL after the index is read and immediately
+before the delete, and a sweep whose PostgreSQL side is empty is refused even with
+`force`. Index documents are derived data — a mistaken purge is repaired by a reindex.
+
+### Orphaned data panel and storage sweep
+
+The top of the Data Integrity tab shows an **Orphaned data** panel: a read-only scan of
+what has been left behind for files that no longer exist, for both the **search index**
+(orphaned documents per index) and **stored media files** (files, objects and the space they
+take, with the first few file IDs). **Scan again** refreshes it.
+
+**Remove orphaned data** deletes what the scan found, after a confirmation that states exactly
+how many search documents and stored files (objects and size) will go. It is disabled, with
+the reason shown, when nothing is orphaned or when everything found is held back by a safety
+limit. If a limit refused the sweep, the panel explains why and offers **I understand, remove
+anyway**, which asks for a second, final confirmation before it sends `force=true`. An empty
+database is never overridable.
+
+Storage objects are orphaned when their `media_file` row is gone (a database restore or reset
+against a persisted object store, or rows removed with raw SQL). The app's own delete paths
+already remove a file's objects, so this only reclaims space after out-of-band removal. The
+same sweep is available through the API:
+
+1. `GET /api/admin/data-integrity/storage/counts` -- a dry run. It reports `orphan_files`,
+   `orphan_objects`, `orphan_bytes`, the first 200 `orphans` (file ID, owner ID, objects,
+   bytes) and `refused` (`ratio_guard` or `empty_valid_set`) when a real run would decline.
+2. `POST /api/admin/data-integrity/storage?confirm=true` -- the deletion. It runs as a
+   background task and is refused without `confirm=true`. `GET .../storage/status` reports
+   whether it is running and the result of the last run.
+3. `POST /api/admin/data-integrity/storage?confirm=true&force=true` -- overrides the ratio
+   guard only.
+
+Only keys of the shape `user_<id>/file_<id>/...` are considered: the original, thumbnails,
+the browser playback copy, derived and masked caches and the waveform. Bulk exports, avatars,
+`media/` objects, other buckets and everything belonging to a file that still exists are never
+touched. Safeguards, matching the index sweep: the sweep refuses when PostgreSQL holds no
+files at all (even with `force`), refuses to delete more than **10%** of the file objects in
+one run without `force` (above a floor of 25 objects), re-checks each file ID against
+PostgreSQL immediately before removing its objects, and skips any file with an object newer
+than one hour (so an upload in progress is safe). Each confirmed sweep is recorded in the audit
+log as `admin.data_integrity.storage_purge` (at request time and again on completion) with
+counters only, never object keys or error text. Deleted objects cannot be recovered; restore
+them from backup if a sweep removed something it should not have.
+
 ## Embedding Consistency
 
-The **Embedding Consistency** section ensures all speakers in the PostgreSQL database have corresponding embeddings in the OpenSearch speaker indices.
+The **Speaker Embedding System** tab of **Settings → Data & Storage** shows **Embedding Consistency** first. It ensures all speakers in the PostgreSQL database have corresponding embeddings in the OpenSearch speaker indices.
 
 ### Consistency Counts
 
@@ -435,7 +522,7 @@ Click **Repair** to re-extract missing embeddings. The system processes each fil
 
 ## Embedding Migration (v3 to v4)
 
-The **Embedding Migration** section manages the upgrade from v3 speaker embeddings (512-dim pyannote) to v4 (256-dim WeSpeaker).
+Below it, **Embedding Migration** manages the upgrade from v3 speaker embeddings (512-dim pyannote) to v4 (256-dim WeSpeaker).
 
 ### Migration Benefits
 
@@ -482,7 +569,7 @@ Finalization performs an atomic alias swap. Once finalized, the system uses v4 e
 
 ## File Retention / Auto-Deletion
 
-The **Retention** section configures automatic deletion of old transcription files.
+The **File Retention** tab of **Settings → Data & Storage** configures automatic deletion of old transcription files.
 
 ### Configuration Options
 

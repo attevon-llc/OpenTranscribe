@@ -106,4 +106,44 @@ describe('SearchableSelect', () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(fetchFn).not.toHaveBeenCalled();
   });
+
+  describe('placement', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function layout(inputTop: number) {
+      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(600);
+      vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280);
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement
+      ) {
+        const box = this.classList.contains('searchable-dropdown')
+          ? { top: 0, left: 0, width: 300, height: 220 }
+          : { top: inputTop, left: 40, width: 300, height: 38 };
+        return { ...box, right: box.left + box.width, bottom: box.top + box.height } as DOMRect;
+      });
+    }
+
+    async function openList() {
+      const fetchFn = vi.fn(async () => items);
+      render(SearchableSelect, { props: { fetchFn, getLabel, debounceMs: 0, minChars: 1 } });
+      await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'a' } });
+      await vi.advanceTimersByTimeAsync(5);
+      return screen.getByRole('listbox').parentElement as HTMLElement;
+    }
+
+    it('opens ABOVE (data-side="above") when the input is near the viewport bottom', async () => {
+      layout(540);
+      const panel = await openList();
+      expect(panel.dataset.side).toBe('above');
+      expect(parseFloat(panel.style.top) + 220).toBeLessThanOrEqual(540);
+    });
+
+    it('opens below when there is room', async () => {
+      layout(100);
+      const panel = await openList();
+      expect(panel.dataset.side).toBe('below');
+    });
+  });
 });

@@ -4,26 +4,27 @@
   "meta": {
     "title": "OpenTranscribe — Celery Queues (inside \"Celery Workers\")",
     "quality_profile": "showcase",
+    "repository": { "url": "https://github.com/attevon-llc/OpenTranscribe", "revision": "d2586b493458490684744045a24ebeed9277349d" },
     "views": [
-      { "id": "gpu-work", "label": "GPU-bound", "focus": ["dispatch", "gpu", "cloud_asr"], "note": "ASR + diarization: local GPU work, or routed to the dynamic cloud-asr/cpu-transcribe queues per provider." },
-      { "id": "cpu-work", "label": "CPU post-processing", "focus": ["dispatch", "cpu", "redaction", "utility", "minio"], "note": "Embeddings-from-known-segments, gender detection, thumbnails, reindex maintenance, backups — several of these read/write MinIO directly." },
+      { "id": "gpu-work", "label": "Transcription + speakers", "focus": ["dispatch", "gpu", "cloud_asr", "cpu"], "note": "The pipeline plan picks the queue per run: gpu for local work, cloud-asr for any vendor, cpu-transcribe for tiny/base." },
+      { "id": "cpu-work", "label": "CPU post-processing", "focus": ["dispatch", "cpu", "redaction", "utility", "minio"], "note": "Voiceprint stage, gender detection, thumbnails, reindex maintenance, backups; several read/write MinIO directly." },
       { "id": "enrichment", "label": "LLM + search enrichment", "focus": ["dispatch", "nlp", "embedding"], "note": "Summaries/topics/speaker-ID call an LLM; chunk-level search indexing needs its own embedding-model queue." }
     ]
   },
   "components": [
-    { "id": "dispatch", "type": "messagebus", "label": "Task Router", "sublabel": "celery.py task_routes", "pos": [40, 300], "size": [150, 60] },
-    { "id": "gpu", "type": "backend", "label": "gpu", "sublabel": "ASR, diarization", "tag": "concurrency=1", "pos": [280, 120], "size": [170, 64] },
-    { "id": "cloud_asr", "type": "cloud", "label": "cloud-asr", "sublabel": "+ cpu-transcribe, dynamic", "pos": [280, 220], "size": [170, 64] },
-    { "id": "cpu", "type": "backend", "label": "cpu", "sublabel": "embeddings, thumbnails, reindex", "tag": "concurrency=8", "pos": [280, 320], "size": [170, 64] },
-    { "id": "download", "type": "backend", "label": "download", "sublabel": "yt-dlp URL/playlist fetch", "tag": "concurrency=3", "pos": [280, 420], "size": [170, 64] },
-    { "id": "nlp", "type": "external", "label": "nlp", "sublabel": "summary, topics, speaker-ID", "tag": "concurrency=4", "pos": [560, 120], "size": [170, 64] },
-    { "id": "embedding", "type": "database", "label": "embedding", "sublabel": "chunk-level search indexing", "tag": "concurrency=1", "pos": [560, 220], "size": [170, 64] },
-    { "id": "redaction", "type": "security", "label": "redaction", "sublabel": "PII/toxicity detection", "pos": [560, 320], "size": [170, 64] },
-    { "id": "utility", "type": "backend", "label": "utility", "sublabel": "backups, pipeline errors, index writes", "pos": [560, 420], "size": [170, 64] },
+    { "id": "dispatch", "type": "messagebus", "label": "Task Router", "sublabel": "task_routes + plan", "pos": [40, 300], "size": [150, 60], "sources": [{ "path": "backend/app/core/celery.py", "line": 441, "label": "task_routes" }, { "path": "backend/app/services/pipeline_plan.py", "line": 329, "label": "_queues" }] },
+    { "id": "gpu", "type": "backend", "label": "gpu", "sublabel": "local Whisper + speakers", "tag": "concurrency=1", "pos": [280, 120], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 390, "label": "celery-worker -Q gpu" }, { "path": "backend/app/core/celery.py", "line": 131, "label": "GPU_PREFERRED_TASKS" }] },
+    { "id": "cloud_asr", "type": "cloud", "label": "cloud-asr", "sublabel": "cloud ASR + cloud speakers", "tag": "concurrency=16", "pos": [280, 220], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 716, "label": "celery-cloud-asr-worker" }, { "path": "backend/app/services/pipeline_plan.py", "line": 228, "label": "post_stage_queue" }] },
+    { "id": "cpu", "type": "backend", "label": "cpu", "sublabel": "voiceprints, cpu-transcribe", "tag": "concurrency=8", "pos": [280, 320], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 526, "label": "-Q cpu,utility,cpu-transcribe" }, { "path": "backend/app/core/celery.py", "line": 511, "label": "extract_speaker_embeddings" }] },
+    { "id": "download", "type": "backend", "label": "download", "sublabel": "yt-dlp URL/playlist fetch", "tag": "concurrency=5", "pos": [280, 420], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 466, "label": "celery-download-worker" }] },
+    { "id": "nlp", "type": "external", "label": "nlp", "sublabel": "summary, topics, speaker-ID", "tag": "concurrency=4", "pos": [560, 120], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 765, "label": "-Q nlp,celery" }] },
+    { "id": "embedding", "type": "database", "label": "embedding", "sublabel": "chunk-level search indexing", "tag": "concurrency=1", "pos": [560, 220], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 818, "label": "-Q embedding" }] },
+    { "id": "redaction", "type": "security", "label": "redaction", "sublabel": "PII/toxicity detection", "pos": [560, 320], "size": [170, 64], "sources": [{ "path": "docker-compose.yml", "line": 644, "label": "celery-redaction" }] },
+    { "id": "utility", "type": "backend", "label": "utility", "sublabel": "backups, pipeline errors, index writes", "pos": [560, 420], "size": [170, 64], "sources": [{ "path": "backend/app/core/constants.py", "line": 40, "label": "CeleryQueues.UTILITY" }] },
     { "id": "minio", "type": "database", "label": "MinIO", "sublabel": "audio, thumbnails, waveforms", "pos": [850, 270], "size": [170, 64] }
   ],
   "boundaries": [
-    { "kind": "region", "label": "Celery Workers (docker-compose.gpu-scale.yml can multiply the gpu queue across cards)", "wraps": ["gpu", "cloud_asr", "cpu", "download", "nlp", "embedding", "redaction", "utility"] }
+    { "kind": "region", "label": "Celery Workers (lite: both gpu workers at replicas 0; gpu-scale can multiply gpu)", "wraps": ["gpu", "cloud_asr", "cpu", "download", "nlp", "embedding", "redaction", "utility"] }
   ],
   "connections": [
     { "id": "route-gpu", "from": "dispatch", "to": "gpu", "variant": "emphasis" },
@@ -37,8 +38,8 @@
     { "id": "workers-minio", "from": "dispatch", "to": "minio", "label": "gpu/cpu/download read+write media", "variant": "default", "fromSide": "top", "toSide": "top", "via": [[115, 50], [935, 50]] }
   ],
   "cards": [
-    { "dot": "cyan", "title": "task_routes is the single source of truth", "items": ["task_create_missing_queues=False — an unrouted task raises at dispatch, it never silently lands somewhere wrong", "cloud-asr / cpu-transcribe are dynamic: dispatch.py picks the queue per request, not a static route"] },
-    { "dot": "rose", "title": "Why extract_speaker_embeddings is CPU, not GPU", "items": ["It only reads already-known segments — no diarization model pass needed", "Lite mode scales the gpu queue to zero workers; pinning this to gpu left it stuck forever (issue #584)"] },
-    { "dot": "emerald", "title": "Workers hit MinIO directly", "items": ["gpu/cpu/download tasks read source audio and write thumbnails/waveforms straight to MinIO — not proxied through the backend", "gpu: one physical card, one job at a time; embedding: the embedding model itself is the bottleneck, not hardware"] }
+    { "dot": "cyan", "title": "The plan picks the pipeline queues", "items": ["task_create_missing_queues=False: an unknown queue raises at dispatch instead of creating a phantom queue", "pipeline_plan._queues: gpu (or gpu-transcribe/gpu-diarize when split), cpu-transcribe, cloud-asr; the speaker post stage goes to cloud-asr for a vendor, gpu for this server"] },
+    { "dot": "rose", "title": "Voiceprints run on cpu", "items": ["The voiceprint stage (extract_speaker_embeddings) only embeds known speaker turns, so it needs no GPU", "It runs after every cloud or post-stage detector, on full and lite alike"] },
+    { "dot": "emerald", "title": "Lite has no gpu consumers", "items": ["docker-compose.lite.yml sets DEPLOYMENT_MODE=lite and scales both gpu workers to 0; gpu_preferred_queue() then resolves to cpu", "The plan never routes local transcription or local speaker detection on lite: it refuses them before dispatch"] }
   ]
 }

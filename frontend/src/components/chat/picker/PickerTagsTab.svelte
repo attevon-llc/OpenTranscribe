@@ -98,17 +98,6 @@
 
   .tag-filter {
     width: 100%;
-    padding: 0.45rem 0.7rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.87rem;
-  }
-
-  .tag-filter:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .tag-cloud {

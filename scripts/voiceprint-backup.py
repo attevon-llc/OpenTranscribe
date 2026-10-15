@@ -136,7 +136,7 @@ class _Client:
                 'authenticates with nothing, which is correct for the shipped '
                 'DISABLE_SECURITY_PLUGIN=true configuration. This deployment has the '
                 'security plugin enabled, so voiceprints cannot be exported this way — '
-                'use the in-app scheduled backup (Settings -> Backups), which holds the '
+                'use the in-app scheduled backup (Settings -> Database Backups), which holds the '
                 'OpenSearch credentials.'
             )
         if status >= 400:

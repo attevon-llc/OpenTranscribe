@@ -39,6 +39,7 @@ from app.tasks.transcription import run_ownership
 from tests.unit._fake_liveness_redis import BrokenRedis
 from tests.unit._fake_liveness_redis import FakeRedis
 from tests.unit._fake_liveness_redis import install_fake_redis
+from tests.unit._plan_contexts import plan_context
 
 
 class _PipelineReachedError(Exception):
@@ -101,14 +102,14 @@ def _context(task: Task, media_file: MediaFile) -> dict:
         "storage_path": media_file.storage_path,
         "file_name": media_file.filename,
         "content_type": media_file.content_type,
-        "diarization_source": "provider",
+        "pipeline_plan": plan_context(),
     }
 
 
 def _run_gpu_task(context: dict, reached: list[str]) -> dict:
     """Run the real ``transcribe_gpu_task`` body up to its first piece of real work."""
 
-    def _reach(user_id):
+    def _reach(user_id, plan):
         reached.append(context["task_id"])
         raise _PipelineReachedError
 
@@ -117,7 +118,7 @@ def _run_gpu_task(context: dict, reached: list[str]) -> dict:
 
     with (
         patch.object(core_module, "update_task_status"),
-        patch.object(core_module, "_resolve_asr_provider_or_none", _reach),
+        patch.object(core_module, "_cloud_asr_provider_or_none", _reach),
         patch.object(core_module, "_finish_failed_or_aborted", _reraise),
     ):
         result: dict = core_module.transcribe_gpu_task.run(context)
@@ -202,7 +203,7 @@ def test_preprocess_stands_down_for_a_superseded_run(
 
     with patch("app.utils.uuid_helpers.get_file_by_uuid", side_effect=_PipelineReachedError):
         result = preprocess_module.preprocess_for_transcription.run(
-            file_uuid=str(media_file.uuid), task_id=failed.id
+            file_uuid=str(media_file.uuid), task_id=failed.id, pipeline_plan=plan_context()
         )
 
     assert result["status"] == "superseded"
@@ -275,8 +276,6 @@ def test_dispatch_records_the_run_as_queued(db_session, normal_user, fake_redis,
     monkeypatch.setattr(dispatch_module, "chain", lambda *a, **k: chain_stub)
     media_file = _file(db_session, normal_user)
 
-    task_id = dispatch_module.dispatch_transcription_pipeline(
-        file_uuid=str(media_file.uuid), gpu_queue="gpu"
-    )
+    task_id = dispatch_module.dispatch_transcription_pipeline(file_uuid=str(media_file.uuid))
 
     assert probe_runs([task_id])[task_id].state == RunState.QUEUED

@@ -33,6 +33,7 @@ assertions are always by id, never by list length.
 
 from __future__ import annotations
 
+import sys
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -61,6 +62,17 @@ CONFIG = TaskRecoveryConfig(
     ORPHANED_TASK_THRESHOLD=1,
     OOM_BACKOFF_BASE_MINUTES=10,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-read the clock per test: the service compares against the real clock.
+
+    ``NOW`` is fixed at import, and CI collects this module ~17 minutes before xdist runs the
+    OOM-backoff test — so "5 minutes old" was really 22+, past the 20-minute window, and the
+    too-soon file came back as eligible.
+    """
+    monkeypatch.setattr(sys.modules[__name__], "NOW", datetime.now(UTC))
 
 
 @pytest.fixture

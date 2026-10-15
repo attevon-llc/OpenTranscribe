@@ -141,3 +141,4 @@ pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 pytest-xdist==3.8.0
 pytest-timeout==2.4.0  # pyproject addopts passes --timeout; absence is a collection error
+pytest-base-url==2.1.0  # unit/test_e2e_base_url_precedence.py proves the REAL plugin/ini interaction (#965); without it the --base-url flag does not exist

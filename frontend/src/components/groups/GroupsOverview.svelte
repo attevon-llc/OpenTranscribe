@@ -347,19 +347,8 @@
   .search-input {
     width: 100%;
     padding: 0.5rem 2rem 0.5rem 2.25rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.8125rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
     box-sizing: border-box;
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
   }
 
   .search-input::placeholder {
@@ -408,10 +397,8 @@
   .groups-section-title {
     margin: 0;
     font-size: 0.8125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
   }
 
   .groups-grid {

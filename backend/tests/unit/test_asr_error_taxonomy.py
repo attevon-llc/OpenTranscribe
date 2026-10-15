@@ -26,6 +26,7 @@ from app.services.asr.errors import ASRRateLimitedError
 from app.services.asr.errors import http_status_of
 from app.services.asr.errors import is_rate_limit_status
 from app.services.asr.errors import retry_after_of
+from tests.unit._plan_contexts import plan_context
 
 
 class _FakeSDKError(Exception):
@@ -175,7 +176,7 @@ def gpu_task_preprocess_context():
         "storage_path": "files/test.mp3",
         "file_name": "test.mp3",
         "content_type": "audio/mpeg",
-        "diarization_source": "provider",
+        "pipeline_plan": plan_context("cloud_speakers"),
     }
 
 
@@ -207,7 +208,7 @@ def _run_gpu_task_with_cloud_pipeline_raising(preprocess_context, error: Excepti
         patch.object(core_module, "session_scope") as mock_scope,
         patch.object(core_module, "get_refreshed_object", return_value=None),
         patch.object(core_module, "send_progress_notification"),
-        patch.object(core_module, "_resolve_asr_provider_or_none", return_value=_FakeProvider()),
+        patch.object(core_module, "_cloud_asr_provider_or_none", return_value=_FakeProvider()),
         patch.object(core_module, "_run_cloud_asr_pipeline", side_effect=error),
         patch.object(core_module, "update_task_status"),
         patch.object(core_module, "_handle_transcription_failure"),

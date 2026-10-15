@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$lib/api/authConfig', () => ({
@@ -31,6 +31,8 @@ vi.mock('$stores/locale', () => ({
 import { AuthConfigApi } from '$lib/api/authConfig';
 import { toastStore } from '$stores/toast';
 import AuthenticationSettings from './AuthenticationSettings.svelte';
+import { clearSectionData } from '$lib/settings/sectionData';
+import { authTabLoaders } from '$lib/settings/sectionLoaders';
 
 const mockedGetAll = vi.mocked(AuthConfigApi.getAllConfigs);
 const mockedUpdate = vi.mocked(AuthConfigApi.updateCategory);
@@ -79,10 +81,13 @@ function storedConfigs() {
 
 async function renderLocalTab() {
   render(AuthenticationSettings);
-  await waitFor(() =>
-    expect(
-      screen.getByRole('button', { name: 'settings.localAuth.saveConfiguration' })
-    ).toBeInTheDocument()
+  await waitFor(
+    () =>
+      expect(
+        screen.getByRole('button', { name: 'settings.localAuth.saveConfiguration' })
+      ).toBeInTheDocument(),
+    // The Local panel is a lazy chunk: allow the first (cold) import.
+    { timeout: 5000 }
   );
 }
 
@@ -101,8 +106,16 @@ function payloadFor(category: string) {
 }
 
 describe('Local auth tab — split save', () => {
+  // The Local panel is a lazy chunk and vitest transforms a cold import on demand. Do it once up
+  // front so the first test's 5 s budget measures the component, not the transformer (the same
+  // fix SettingsModal.test.ts uses); under a loaded machine that test used to time out.
+  beforeAll(async () => {
+    await authTabLoaders.local();
+  }, 120_000);
+
   beforeEach(() => {
     vi.clearAllMocks();
+    clearSectionData();
     mockedGetAll.mockResolvedValue(storedConfigs() as never);
     mockedUpdate.mockResolvedValue(undefined as never);
   });

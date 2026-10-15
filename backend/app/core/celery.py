@@ -126,8 +126,8 @@ from app.core.task_config import task_recovery_config  # noqa: E402
 # Named as a set so the family and its routing rule live in ONE place;
 # `tests/unit/test_lite_mode_queue_consumers.py` reads it and asserts that in lite
 # every routed queue actually has a live consumer, which no per-line route could be
-# checked for. `transcription.process_file` is deliberately NOT here — see
-# gpu_preferred_queue()'s docstring for why a task that REQUIRES a GPU must stay put.
+# checked for. Local transcription is deliberately NOT here — see
+# gpu_preferred_queue()'s docstring for why work that REQUIRES a GPU must stay put.
 GPU_PREFERRED_TASKS: tuple[str, ...] = (
     "rediarize",
     "update_speaker_embedding_on_reassignment",
@@ -231,6 +231,7 @@ celery_app = Celery(
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
         "app.tasks.media_download",
+        "app.tasks.local_model_download",
         # Re-export shim (NOT dead) — keeps legacy task-name routing working by
         # re-exporting from speaker_{identification,update,embedding}_task. See
         # app/tasks/speaker_tasks.py. Must stay in this include list.
@@ -245,6 +246,7 @@ celery_app = Celery(
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
+        "app.tasks.storage_orphan_sweep_task",
         "app.tasks.search_indexing_task",
         "app.tasks.search_index_sweep_task",
         "app.tasks.search_reembed_task",
@@ -438,9 +440,6 @@ celery_app.conf.update(
         "retry_on_timeout": False,
     },
     task_routes={
-        # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
-        # See priority comment above for priority scheme
-        "transcription.process_file": {"queue": CeleryQueues.GPU},
         # Pipeline chain tasks (3-stage: CPU preprocess → GPU transcribe → CPU postprocess)
         # NOTE: "transcription.gpu_transcribe" is intentionally NOT listed here so
         # dispatch.py can route it to either "gpu" or "cloud-asr" at call time.
@@ -462,6 +461,7 @@ celery_app.conf.update(
         "download.media_playlist": {"queue": CeleryQueues.DOWNLOAD},
         "download.prepare_media": {"queue": CeleryQueues.DOWNLOAD},
         "download.prepare_bulk_subtitles": {"queue": CeleryQueues.DOWNLOAD},
+        "asr.download_local_model": {"queue": CeleryQueues.DOWNLOAD},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},
@@ -480,11 +480,13 @@ celery_app.conf.update(
         "reindex_transcripts": {"queue": CeleryQueues.CPU},
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
+        "index_file_summary": {"queue": CeleryQueues.CPU},
         # Bounded DB read plus a handful of dispatches; never needs a CPU/GPU slot.
         "search_index_sweep": {"queue": CeleryQueues.UTILITY},
         "search.reembed_degraded": {"queue": CeleryQueues.CPU},
         "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
+        "storage_orphan_sweep": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         # speaker_embedding_consistency_repair_batch is in GPU_PREFERRED_TASKS above.
         "process_speaker_update_background": {"queue": CeleryQueues.CPU},
@@ -840,37 +842,27 @@ def start_watch_source_fs_events(**kwargs):
 
 
 def publish_hf_token_to_environment() -> bool:
-    """Make ``HUGGINGFACE_TOKEN`` visible to ``huggingface_hub``, without any network I/O.
+    """Make the server-environment Hugging Face token visible to ``huggingface_hub``.
 
-    ``huggingface_hub.get_token()`` resolves in the order Colab secret -> environment
-    (``HF_TOKEN``, then ``HUGGING_FACE_HUB_TOKEN``) -> the on-disk token file, so
-    exporting ``HF_TOKEN`` gives every un-parameterised Hub call the same token that
-    ``huggingface_hub.login()`` used to install — at the cost of one dict write instead
-    of a blocking HTTPS round trip.
+    Runs inside every forked prefork child against celery's ``worker_proc_alive_timeout``
+    kill timer (issue #631), so it is a dict write and nothing else: no network, no DB, no
+    locks. That is why it publishes only the ENVIRONMENT token
+    (``services.huggingface_token.publish_env_token_for_fork``); a token saved in Settings
+    is resolved, and published the same way, by ``get_hf_token()`` at the first model load.
 
-    ⚠️ **Never call ``huggingface_hub.login()`` from here.** ``login()`` -> ``_login()``
-    -> ``whoami()`` issues ``GET {endpoint}/api/whoami-v2`` through
-    ``requests`` **with no ``timeout=``**, so a degraded network path blocks for as long
-    as the kernel's TCP/DNS retries take (the sibling fix in
-    ``app/utils/hf_hub_offline.py`` measured 23-30 s). This function runs inside every
-    forked prefork child against celery's ``worker_proc_alive_timeout`` kill timer, which
-    is what made issue #631 unrecoverable. The token round trip only *validated* the
-    token; it was never what made it usable, and every model loader in this codebase
-    already threads ``hf_token=settings.HUGGINGFACE_TOKEN`` explicitly.
+    ⚠️ **Never call ``huggingface_hub.login()`` from here.** ``login()`` -> ``whoami()``
+    issues an HTTPS request through ``requests`` **with no ``timeout=``**, so a degraded
+    network path blocks for as long as the kernel's TCP/DNS retries take (23-30 s measured),
+    which is what made issue #631 unrecoverable. Exporting ``HF_TOKEN`` gives every
+    un-parameterised Hub call the same credential at the cost of one dict write.
 
     Returns:
         True when this call exported the token, False when there was nothing to export
         or the operator had already published one.
     """
-    hf_token = os.getenv("HUGGINGFACE_TOKEN")
-    if not hf_token:
-        return False
-    # An operator-supplied HF_TOKEN/HUGGING_FACE_HUB_TOKEN wins — overriding it would
-    # silently swap which credential gated-model downloads authenticate with.
-    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"):
-        return False
-    os.environ["HF_TOKEN"] = hf_token
-    return True
+    from app.services.huggingface_token import publish_env_token_for_fork
+
+    return publish_env_token_for_fork()
 
 
 def _pool_concurrency() -> int:
@@ -1141,6 +1133,15 @@ def preload_models(**kwargs):
                 # Pin the model name so subsequent tasks use the loaded model,
                 # even if the admin changes the DB setting before restarting.
                 TranscriptionConfig.pin_model(config.model_name)
+
+                # Say which model this worker now serves, so the Settings page can confirm a
+                # model switch instead of guessing (#1246). One bounded Redis SET; never raises.
+                from app.services.local_models import worker_report
+
+                worker_report.report_loaded_model(
+                    getattr(kwargs.get("sender"), "hostname", None) or socket.gethostname(),
+                    config.model_name,
+                )
 
                 logger.info(
                     "GPU models preloaded and pinned "

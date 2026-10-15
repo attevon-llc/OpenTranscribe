@@ -3,6 +3,7 @@
   import type { SpeakerInboxItem as InboxItemType } from '$lib/types/speakerCluster';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { t } from '$stores/locale';
+  import GenderBadge from './GenderBadge.svelte';
 
   export let item: InboxItemType;
   export let actionInProgress = false;
@@ -90,7 +91,7 @@
             <span class="file-title">{item.media_file_title}</span>
           {/if}
           {#if item.predicted_gender}
-            <span class="attribute">{item.predicted_gender}</span>
+            <span class="attribute"><GenderBadge gender={item.predicted_gender} /></span>
           {/if}
           {#if item.cluster_label}
             <span class="cluster-tag">{$t('speakers.inbox.clusterLabel')} {item.cluster_label}</span>
@@ -176,21 +177,21 @@
     border: none;
     border-radius: 6px;
     background: none;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     cursor: pointer;
     transition: all 0.15s;
     box-shadow: none;
   }
 
   .preview-toggle:hover {
-    background: color-mix(in srgb, var(--primary-color, #4f46e5) 10%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
     transform: scale(1.1);
     box-shadow: none;
   }
 
   .preview-toggle.playing {
-    color: var(--primary-color, #4f46e5);
-    background: color-mix(in srgb, var(--primary-color, #4f46e5) 12%, transparent);
+    color: var(--primary-on-surface);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
   }
 
   .item-info {
@@ -222,7 +223,7 @@
   }
 
   .suggestion-name {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -250,7 +251,7 @@
 
   .source-badge.source-voice {
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .source-badge.source-llm {
@@ -338,10 +339,6 @@
     flex-shrink: 1;
     padding: 0.3rem 0.5rem;
     font-size: 0.8125rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-primary);
     cursor: pointer;
   }
 

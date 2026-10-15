@@ -57,7 +57,7 @@ export async function deleteCluster(uuid: string): Promise<void> {
 export async function mergeClusters(
   sourceUuid: string,
   targetUuid: string
-): Promise<SpeakerCluster> {
+): Promise<SpeakerCluster & { blocked_speaker_uuids?: string[] }> {
   const response = await axiosInstance.post(`/speaker-clusters/${sourceUuid}/merge/${targetUuid}`);
   return response.data;
 }
@@ -102,17 +102,27 @@ export async function getUnverifiedSpeakers(
   return response.data;
 }
 
+/**
+ * Accept / assign / name / skip speakers in one request.
+ *
+ * A speaker the user earlier unassigned from (or rejected) the identity being applied is
+ * skipped and listed in `blocked_speaker_uuids`. `overrideUnassignment` lifts that
+ * correction and is only accepted for exactly ONE speaker (the backend answers 422
+ * otherwise): it is the per-speaker, deliberate "this unassignment was wrong" action.
+ */
 export async function batchVerifySpeakers(
   speakerUuids: string[],
   action: 'accept' | 'assign' | 'name' | 'skip',
   profileUuid?: string,
-  displayName?: string
+  displayName?: string,
+  overrideUnassignment = false
 ): Promise<BatchVerifyResponse> {
   const response = await axiosInstance.post('/speaker-clusters/batch-verify', {
     speaker_uuids: speakerUuids,
     action,
     profile_uuid: profileUuid,
     display_name: displayName,
+    override_unassignment: overrideUnassignment,
   });
   return response.data;
 }

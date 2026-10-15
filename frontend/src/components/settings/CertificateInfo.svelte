@@ -178,11 +178,9 @@
   }
 
   .cert-item .cert-label {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    font-weight: 600;
-    letter-spacing: 0.05em;
+    font-weight: var(--font-weight-medium);
   }
 
   .cert-item span,

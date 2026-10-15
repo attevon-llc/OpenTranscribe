@@ -328,18 +328,7 @@
 
   input[type='number'] {
     width: 100%;
-    padding: 0.45rem 0.65rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.88rem;
     font-variant-numeric: tabular-nums;
-  }
-
-  input[type='number']:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   input[type='number']:disabled {

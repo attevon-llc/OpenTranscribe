@@ -106,7 +106,6 @@ def _resolve_explicit_files(db: Session, ctx: RequestContext, file_uuids: list[s
                 db,
                 file_uuid,
                 ctx.user.id,
-                is_admin=False,
                 organization_id=ctx.org_id,
             )
         except HTTPException:

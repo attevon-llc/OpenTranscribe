@@ -35,7 +35,10 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
+    // The listener is on window and the component stays mounted while closed: without this guard
+    // Enter on any button anywhere "confirmed" a dialog nobody could see (Settings' unsaved-changes
+    // one force-closed Settings).
+    if (isOpen && event.key === 'Enter') {
       // Don't intercept Enter when user is typing in an input/textarea
       const target = event.target as HTMLElement;
       if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') {
@@ -48,7 +51,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<BaseModal {isOpen} title={resolvedTitle} onClose={handleClose} maxWidth="500px" zIndex={1300}>
+<BaseModal {isOpen} title={resolvedTitle} onClose={handleClose} size="sm" zIndex={1300}>
   <p id="modal-message" class="modal-message">{resolvedMessage}</p>
 
   <svelte:fragment slot="footer">

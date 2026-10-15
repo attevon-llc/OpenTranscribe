@@ -147,6 +147,7 @@ def test_finalize_chain_writes_usage_event():
     from app.services.usage_service import record_event
     from app.tasks.transcription.hooks import register_transcription_complete
     from app.tasks.transcription.postprocess import finalize_transcription
+    from tests.unit._plan_contexts import plan_context
 
     run_id = f"meter-test-{uuidlib.uuid4().hex[:12]}"
 
@@ -210,6 +211,7 @@ def test_finalize_chain_writes_usage_event():
             "asr_provider": "local",
             "diarization_disabled": True,  # forces the local single-task terminus
             "downstream_tasks": [],
+            "pipeline_plan": plan_context("local_gpu", "off"),
         }
 
         finalize_transcription.apply(args=[gpu_result]).get()

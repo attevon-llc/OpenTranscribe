@@ -364,26 +364,6 @@
           {/each}
         </div>
       {/if}
-
-      <!-- Info Box -->
-      <div class="info-box">
-        <div class="info-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-        </div>
-        <div class="info-content">
-          <p><strong>{$t('settings.orgContext.howItWorks')}</strong></p>
-          <ul>
-            <li>{$t('settings.orgContext.howItWorks1')}</li>
-            <li>{$t('settings.orgContext.howItWorks2')}</li>
-            <li>{$t('settings.orgContext.howItWorks3')}</li>
-            <li>{$t('settings.orgContext.howItWorks4')}</li>
-          </ul>
-        </div>
-      </div>
     </div>
   {/if}
 </div>
@@ -432,22 +412,10 @@
 
   .form-textarea {
     padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
     font-size: 0.8125rem;
-    font-family: inherit;
-    background: var(--background-color);
-    color: var(--text-color);
     resize: vertical;
     min-height: 120px;
-    transition: all 0.2s ease;
     line-height: 1.5;
-  }
-
-  .form-textarea:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .form-textarea::placeholder {
@@ -760,43 +728,6 @@
     cursor: not-allowed;
   }
 
-  /* Info box */
-  .info-box {
-    display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    background: rgba(var(--primary-color-rgb), 0.05);
-    border: 1px solid rgba(var(--primary-color-rgb), 0.2);
-    border-radius: 8px;
-    margin-top: 1rem;
-  }
-
-  .info-icon {
-    flex-shrink: 0;
-    color: var(--primary-on-surface);
-  }
-
-  .info-content {
-    flex: 1;
-  }
-
-  .info-content p {
-    margin: 0 0 0.5rem 0;
-    color: var(--text-color);
-  }
-
-  .info-content ul {
-    margin: 0;
-    padding-left: 1.25rem;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-    line-height: 1.6;
-  }
-
-  .info-content li {
-    margin-bottom: 0.25rem;
-  }
-
   /* Dark mode */
   :global([data-theme='dark']) .toggle-slider:before {
     background-color: #e5e7eb;
@@ -820,10 +751,6 @@
       width: 100%;
       justify-content: center;
       min-height: 44px;
-    }
-
-    .info-box {
-      flex-direction: column;
     }
 
     .using-shared-banner {

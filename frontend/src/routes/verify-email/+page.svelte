@@ -195,18 +195,7 @@
   }
 
   .form-group input {
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 1rem;
-    transition: border-color 0.2s;
-  }
-
-  .form-group input:focus {
-    outline: none;
-    border-color: var(--primary-color);
   }
 
   .auth-button {
@@ -244,7 +233,7 @@
   }
 
   .auth-link {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     text-decoration: none;
   }
 

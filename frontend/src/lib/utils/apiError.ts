@@ -4,6 +4,10 @@ import { readAccountLifecycle } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
 
+interface RateLimitedError {
+  retryAfterSeconds?: number;
+}
+
 /**
  * Standardized API error handling. OPT-IN — use in new / refactored code; the existing
  * ~600 hand-rolled try/catch→toast sites are migrated opportunistically, not en masse.
@@ -88,7 +92,19 @@ export function handleApiError(
   const message = getErrorMessage(error, fallback);
   if (isRequestCancelled(error)) return message;
   if (readAccountLifecycle(error)) return message;
-  if (!opts.silent) toastStore.error(message);
+  if (!opts.silent) {
+    // Issue #788: a rate-limited request carries a wait time ($lib/axios's
+    // response interceptor already parsed `Retry-After` onto the error) —
+    // render it via the toast's own hint slot instead of a generic error,
+    // so "please wait a moment" becomes "please wait a moment, try again in
+    // 12 seconds".
+    const retryAfterSeconds = (error as RateLimitedError | null)?.retryAfterSeconds;
+    if (getErrorStatus(error) === 429 && typeof retryAfterSeconds === 'number') {
+      toastStore.warning(message, undefined, { retryAfterSeconds });
+    } else {
+      toastStore.error(message);
+    }
+  }
   return message;
 }
 

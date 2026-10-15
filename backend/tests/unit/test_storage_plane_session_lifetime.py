@@ -58,6 +58,7 @@ from app.services import cache_management_service as cms
 from app.services import file_cleanup_service as fcs
 from app.services import media_download_service as mds
 from app.services import video_processing_service as vps
+from app.services.platform_bypass import PlatformBypass
 from app.tasks import imohash_recompute as imo
 from app.tasks import thumbnail_migration as thumb
 
@@ -385,7 +386,7 @@ def purge_env(db_session, monkeypatch):
 
     monkeypatch.setattr(fcs, "delete_file_storage_artifacts", _storage)
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", _opensearch)
-    monkeypatch.setattr(fcs, "_cleanup_empty_clusters", lambda db, owner_id: None)
+    monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
     tracker.captured = captured  # type: ignore[attr-defined]
     return tracker
 
@@ -568,7 +569,7 @@ def test_clear_video_cache_endpoint_purges_after_ending_the_read(
         str(media_file.uuid),
         db_session,
         normal_user,
-        SimpleNamespace(org_id=None),
+        SimpleNamespace(org_id=None, bypass=PlatformBypass.none()),
     )
 
     assert result is None  # 204, unchanged response contract

@@ -21,9 +21,11 @@ Run (visible on XRDP):
 
 import os
 import uuid
+import warnings
 
 import pytest
 import requests
+from conftest import delete_media_file
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import DATA_AFTER_RELOAD_MS
@@ -93,12 +95,58 @@ def owned_profile(api_session: requests.Session, backend_url: str):
     finally:
         # In a `finally`: a cleanup on the happy path is the one that does not run
         # when the assertion above it fails.
-        try:
-            api_session.delete(
-                f"{backend_url}/api/speaker-profiles/profiles/{profile_uuid}", timeout=15
-            )
-        except requests.RequestException:
-            pass
+        _delete_profile(api_session, backend_url, profile_uuid)
+
+
+def _delete_profile(api_session: requests.Session, backend_url: str, profile_uuid: str) -> None:
+    """Delete one speaker profile through the app's own delete path.
+
+    ``DELETE /speaker-profiles/profiles/{uuid}`` also removes the ``profile_<uuid>``
+    OpenSearch document and detaches linked speakers, which a direct row delete would
+    not. A 404 means it is already gone (another teardown got there first). Never
+    raises — it runs in teardown and must not mask the test's own failure — but a
+    failure is surfaced as a warning naming the profile rather than swallowed.
+    """
+    try:
+        resp = api_session.delete(
+            f"{backend_url}/api/speaker-profiles/profiles/{profile_uuid}", timeout=15
+        )
+        if resp.status_code in (200, 204, 404):
+            return
+        outcome = f"DELETE -> {resp.status_code} {resp.text[:200]}"
+    except requests.RequestException as exc:
+        outcome = f"DELETE raised {exc!r}"
+    warnings.warn(
+        f"speaker profile {profile_uuid} is LEFT on the stack: {outcome}",
+        stacklevel=2,
+    )
+
+
+def _delete_profiles_named(api_session: requests.Session, backend_url: str, name: str) -> None:
+    """Delete every speaker profile called ``name`` (case-insensitive), by uuid.
+
+    For profiles a test CAUSES rather than creates: a speaker rename queues
+    ``process_speaker_update_background``, whose labeling step calls
+    ``auto_create_or_assign_profile`` — and if no profile of that name exists when the
+    task runs (e.g. the owned profile was already torn down), it mints a new one. That
+    is how ``E2E Propagated <hex8>`` profiles were left on stacks. ``name`` must carry
+    a uuid suffix, so this can only ever match the test's own objects.
+    """
+    try:
+        resp = api_session.get(f"{backend_url}/api/speaker-profiles/profiles", timeout=15)
+    except requests.RequestException as exc:
+        warnings.warn(f"could not list profiles to remove {name!r}: {exc!r}", stacklevel=2)
+        return
+    if resp.status_code != 200:
+        warnings.warn(
+            f"could not list profiles to remove {name!r}: {resp.status_code} {resp.text[:200]}",
+            stacklevel=2,
+        )
+        return
+    wanted = name.strip().casefold()
+    for profile in resp.json():
+        if str(profile.get("name", "")).strip().casefold() == wanted:
+            _delete_profile(api_session, backend_url, str(profile["uuid"]))
 
 
 @pytest.fixture
@@ -514,6 +562,34 @@ class TestSpeakerClustersAPI:
         assert result["updated_count"] == 0
 
 
+@pytest.fixture
+def propagation_cleanup(api_session: requests.Session, backend_url: str, api_token: str):
+    """The rename target name, plus a list the test records its uploads into.
+
+    A real speaker rename CREATES state beyond the test's own fixtures: the queued
+    ``process_speaker_update_background`` re-runs ``auto_create_or_assign_profile``
+    with the new name, which mints a fresh profile whenever no profile of that name
+    exists when the task runs — e.g. after ``owned_profile`` was torn down first. That
+    is how ``E2E Propagated <hex8>`` profiles were left on stacks. Fixture teardown
+    order is not something to rely on, so this teardown fixes the order itself:
+    delete the uploads first (``delete_media_file`` waits out live follow-on tasks, and
+    once the speakers are gone the labeling step has nothing to attach a profile to),
+    THEN delete every profile carrying the new name.
+
+    Yields:
+        ``(new_name, media_uuids)`` — the uuid-suffixed name to rename to, and the list
+        the test appends each upload's uuid to as soon as it exists.
+    """
+    new_name = f"e2e-propagated-{uuid.uuid4().hex[:8]}"
+    media_uuids: list[str] = []
+    try:
+        yield new_name, media_uuids
+    finally:
+        for file_uuid in media_uuids:
+            delete_media_file(backend_url, api_token, file_uuid)
+        _delete_profiles_named(api_session, backend_url, new_name)
+
+
 class TestSpeakerRenamePropagationAcrossFiles:
     """A rename that updates a shared profile must repaint EVERY linked file (issue #432).
 
@@ -534,17 +610,22 @@ class TestSpeakerRenamePropagationAcrossFiles:
 
     def test_rename_via_transcript_editor_propagates_to_other_file(
         self,
+        propagation_cleanup: tuple[str, list[str]],
+        owned_profile: str,
         authenticated_page: Page,
         base_url: str,
         backend_url: str,
         api_session: requests.Session,
         api_token: str,
         owned_media_factory,
-        owned_profile: str,
     ) -> None:
+        new_name, media_uuids = propagation_cleanup
+
         # Two independently uploaded clips -> two independently diarized speakers.
         media_a = owned_media_factory(api_token)
+        media_uuids.append(str(media_a["uuid"]))
         media_b = owned_media_factory(api_token)
+        media_uuids.append(str(media_b["uuid"]))
 
         def _first_speaker(file_uuid: str) -> dict:
             resp = api_session.get(
@@ -572,8 +653,6 @@ class TestSpeakerRenamePropagationAcrossFiles:
                 f"assign-profile failed for {speaker['uuid']}: {assign_resp.text[:300]}"
             )
 
-        new_name = f"E2E Propagated {uuid.uuid4().hex[:8]}"
-
         # Rename speaker_a via File A's real transcript editor, choosing the
         # "Update Profile Globally" decision so the propagation actually fires.
         authenticated_page.goto(f"{base_url}/files/{media_a['uuid']}")
@@ -600,8 +679,8 @@ class TestSpeakerRenamePropagationAcrossFiles:
         # speaker_a is linked to owned_profile, so the confirmation dialog must
         # appear; picking anything else (or letting it time out) would silently
         # test the wrong path.
-        update_globally_btn = authenticated_page.locator(
-            '.modal-overlay button:has-text("Update Profile Globally")'
+        update_globally_btn = authenticated_page.get_by_role("dialog").get_by_role(
+            "button", name="Update Profile Globally"
         )
         expect(update_globally_btn).to_be_visible(timeout=10000)
         update_globally_btn.click()

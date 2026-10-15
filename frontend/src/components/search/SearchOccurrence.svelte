@@ -28,7 +28,7 @@
     </a>
   </div>
   {#if occurrence.snippet}
-    <div class="snippet" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'} class:semantic-snippet={occurrence.highlight_type === 'semantic'}>
+    <div class="snippet" dir="auto" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'} class:semantic-snippet={occurrence.highlight_type === 'semantic'}>
       {@html sanitizeHighlightHtml(occurrence.snippet)}
     </div>
   {/if}
@@ -52,28 +52,23 @@
     margin-bottom: 0.25rem;
   }
 
+  /* Speaker and timestamp are metadata above the snippet: link colour that reads on both
+     themes (`--primary-color` is 2.9:1 on the dark card), medium weight, not bold. */
   .speaker {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--primary-color, #4f46e5);
-    background: rgba(79, 70, 229, 0.12);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--primary-on-surface);
+    background: rgba(var(--primary-color-rgb), 0.1);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
     overflow-wrap: break-word;
     word-break: break-word;
   }
 
-  .speaker :global(mark) {
-    background: rgba(250, 204, 21, 0.5);
-    color: inherit;
-    padding: 0 0.1em;
-    border-radius: 2px;
-  }
-
   .timestamp-link {
-    font-size: 0.75rem;
-    font-family: monospace;
-    color: var(--primary-color, #4f46e5);
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--primary-on-surface);
     text-decoration: none;
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
@@ -83,25 +78,25 @@
   }
 
   .timestamp-link:hover {
-    background: var(--primary-color, #4f46e5);
+    background: var(--primary-color);
     color: white;
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
   }
 
   .snippet {
-    font-size: 0.8125rem;
-    line-height: 1.5;
+    font-size: var(--font-size-md);
+    line-height: var(--line-height-body);
     color: var(--text-color, #374151);
     overflow-wrap: break-word;
     word-break: break-word;
   }
 
   .snippet :global(mark) {
-    background: rgba(250, 204, 21, 0.4);
+    background: var(--highlight-bg);
     color: inherit;
     padding: 0.05em 0.15em;
     border-radius: 2px;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .snippet.context-only {
@@ -114,7 +109,7 @@
     color: inherit;
     padding: 0.05em 0.15em;
     border-radius: 2px;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   :global([data-theme='dark']) .snippet :global(mark.semantic) {
@@ -123,14 +118,16 @@
 
   .snippet.semantic-snippet {
     background: rgba(245, 158, 11, 0.08);
-    border-left: 3px solid rgba(245, 158, 11, 0.4);
+    border-inline-start: 3px solid rgba(245, 158, 11, 0.4);
     padding: 0.25rem 0.5rem;
-    border-radius: 0 4px 4px 0;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    border-start-end-radius: 4px;
+    border-end-end-radius: 4px;
   }
 
   :global([data-theme='dark']) .snippet.semantic-snippet {
     background: rgba(251, 191, 36, 0.1);
-    border-left-color: rgba(251, 191, 36, 0.35);
+    border-inline-start-color: rgba(251, 191, 36, 0.35);
   }
-
 </style>

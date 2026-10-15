@@ -408,7 +408,7 @@ class ChatAdminSettings(BaseModel):
     planner_max_parallel_legs: int = Field(4, ge=1, le=8)
     enrichment_enabled: bool = False
     trace_enabled: bool = False
-    context_expansion_enabled: bool = False
+    context_expansion_enabled: bool = True
     overview_citable: bool = False
     overview_block_rule: bool = False
     overview_after_excerpts: bool = False

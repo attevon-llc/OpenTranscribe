@@ -359,6 +359,9 @@ class SmartSpeakerSuggestionService:
             type_counts[stype] = type_counts.get(stype, 0) + 1
             filtered_suggestions.append(suggestion)
 
+        filtered_suggestions = SmartSpeakerSuggestionService.without_refused(
+            db, {int(speaker_id): filtered_suggestions}
+        )[int(speaker_id)]
         logger.info(
             f"Returning {len(filtered_suggestions)} suggestions for speaker {speaker_id} "
             f"(LLM: {len([s for s in filtered_suggestions if s.suggestion_type == 'llm_analysis'])}, "
@@ -561,6 +564,24 @@ class SmartSpeakerSuggestionService:
             result[sid] = filtered
 
         return result
+
+    @staticmethod
+    def without_refused(
+        db: Session, suggestions_by_speaker: dict[int, list[ConsolidatedSuggestion]]
+    ) -> dict[int, list[ConsolidatedSuggestion]]:
+        """Drop every suggestion of an identity the user ruled out for that speaker.
+
+        A speaker unassigned from (or that rejected) a profile is never offered it again —
+        the same rule retroactive matching applies (issue #1233). A short read, no
+        OpenSearch: call it from the read phase, after the batch's round trips.
+        """
+        from app.services.speaker_cleanup import blocked_profile_names
+
+        refused = blocked_profile_names(db, list(suggestions_by_speaker))
+        return {
+            sid: [s for s in items if s.name.casefold() not in refused.get(sid, set())]
+            for sid, items in suggestions_by_speaker.items()
+        }
 
     @staticmethod
     def format_for_api(suggestions: list[ConsolidatedSuggestion]) -> list[dict[str, Any]]:

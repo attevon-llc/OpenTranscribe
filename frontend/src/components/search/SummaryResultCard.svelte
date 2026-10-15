@@ -96,7 +96,7 @@
   }
 
   .summary-result-card:hover {
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 
@@ -109,9 +109,9 @@
   }
 
   .summary-result-title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--primary-color, #4f46e5);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--primary-on-surface);
     text-decoration: none;
     line-height: 1.3;
     display: inline-flex;
@@ -142,19 +142,19 @@
     background: none;
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 6px;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .view-summary-btn:hover {
-    background: rgba(79, 70, 229, 0.08);
-    border-color: var(--primary-color, #4f46e5);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    border-color: var(--primary-color);
   }
 
   :global([data-theme='dark']) .view-summary-btn:hover {
-    background: rgba(129, 140, 248, 0.12);
+    background: rgba(var(--primary-color-rgb), 0.12);
   }
 
   .summary-match-list {
@@ -173,15 +173,15 @@
     background: var(--hover-color, #f8fafc);
     border: 1px solid transparent;
     border-radius: 6px;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .summary-match-row:hover,
   .summary-match-row:focus-visible {
-    border-color: var(--primary-color, #4f46e5);
-    background: rgba(79, 70, 229, 0.06);
+    border-color: var(--primary-color);
+    background: rgba(var(--primary-color-rgb), 0.06);
   }
 
   :global([data-theme='dark']) .summary-match-row {
@@ -190,12 +190,12 @@
 
   :global([data-theme='dark']) .summary-match-row:hover,
   :global([data-theme='dark']) .summary-match-row:focus-visible {
-    background: rgba(129, 140, 248, 0.1);
+    background: rgba(var(--primary-color-rgb), 0.1);
   }
 
   .summary-match-path {
     font-size: 0.6875rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-secondary, #9ca3af);

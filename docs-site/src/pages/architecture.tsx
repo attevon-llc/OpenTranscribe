@@ -45,7 +45,7 @@ const GROUPS: Group[] = [
         id: 'celery-queues',
         title: 'Celery Queues',
         description:
-          'The 8 real queues behind "Celery Workers": gpu, cpu, nlp, embedding, redaction, utility, download, and the dynamic cloud-asr/cpu-transcribe queues, with what runs on each and why.',
+          'The queues behind "Celery Workers": gpu, cpu, nlp, embedding, redaction, utility, download, and cloud-asr/cpu-transcribe, which the pipeline plan picks per file, plus what lite runs without the gpu workers.',
       },
     ],
   },
@@ -57,25 +57,25 @@ const GROUPS: Group[] = [
         id: 'transcription-pipeline',
         title: 'Transcription Pipeline',
         description:
-          'Upload through GPU-queue ASR/diarization to post-processing, indexing, and delivery.',
+          'Upload, the per-file pipeline plan, transcription on the queue it picks, speaker detection inline or in a post stage, voiceprints on this server, indexing and delivery.',
       },
       {
         id: 'transcription-enrichment',
         title: 'Post-Transcription Enrichment',
         description:
-          'What happens after a transcript is finalized: voiceprinting, gender/age detection, LLM speaker-ID suggestions, summarization, topic extraction, and analytics.',
+          'What happens after a transcript is finalized: voiceprinting, gender/age detection, LLM speaker-ID suggestions, summarization, topic extraction, analytics, and the per-file record of what ran where.',
       },
       {
         id: 'cloud-asr',
-        title: 'Cloud ASR + Voiceprinting',
+        title: 'Cloud ASR, Speakers & Voiceprints',
         description:
-          'How the 8 supported cloud ASR providers plug into one factory, and how voiceprinting still happens when a provider supplies no native embeddings.',
+          'How cloud transcription gets its speakers (the vendor itself, pyannote.ai, or another provider through the adapter), how timing decides the merge, and why voiceprints are still computed on this server.',
       },
       {
         id: 'speaker-clustering',
         title: 'Speaker Clustering & Naming',
         description:
-          'From a raw voiceprint to automatic profile matching, cross-file clustering, and human-reviewed promotion to a named speaker.',
+          'From a raw voiceprint to automatic profile matching, cross-file clustering, human-reviewed promotion to a named speaker, and the unassign rules that keep a correction from being undone.',
       },
       {
         id: 'search-indexing',

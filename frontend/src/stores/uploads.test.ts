@@ -351,6 +351,43 @@ describe('uploadsStore', () => {
       expect(id).toBe('new-id');
     });
 
+    it("addRecording hands the wizard's transcription params to the queue (#1201)", async () => {
+      const { uploadsStore } = await loadStore();
+      const blob = new Blob(['x']);
+      mockUploadService.addUpload.mockReturnValue('rec-id');
+      const params = { minSpeakers: 3, maxSpeakers: 5, whisperModel: 'base', skipSummary: true };
+
+      const id = uploadsStore.addRecording(blob, 'rec.webm', ['col-1'], ['tag-1'], params);
+
+      expect(mockUploadService.addUpload).toHaveBeenCalledWith(
+        'recording',
+        blob,
+        'rec.webm',
+        params,
+        ['col-1'],
+        ['tag-1']
+      );
+      expect(id).toBe('rec-id');
+    });
+
+    it('addUrl hands the transcription params to the queue (#1201)', async () => {
+      const { uploadsStore } = await loadStore();
+      mockUploadService.addUpload.mockReturnValue('url-id');
+      const params = { minSpeakers: 2, numSpeakers: null };
+
+      const id = uploadsStore.addUrl('https://example.com/v', undefined, undefined, params);
+
+      expect(mockUploadService.addUpload).toHaveBeenCalledWith(
+        'url',
+        'https://example.com/v',
+        undefined,
+        params,
+        undefined,
+        undefined
+      );
+      expect(id).toBe('url-id');
+    });
+
     it('cancel() delegates to uploadService.cancelUpload and refreshes uploads', async () => {
       const { uploadsStore } = await loadStore();
       getAllUploadsReturn = [makeUpload({ id: 'u-1', status: 'cancelled' })];

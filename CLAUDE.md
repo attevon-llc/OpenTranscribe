@@ -513,7 +513,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
 | **RAG design: the standard patterns and what runs them** | `docs-site/docs/developer-guide/rag-design-and-validation.md` |
 | **RAG evaluation: how quality is measured, and the traps** | `docs-site/docs/developer-guide/rag-evaluation.md` |
-| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — CLOSED, but still the map: read its phased execution order before touching retrieval. The measurements it deferred are the six open `epic:rag-quality` issues on **v0.6.0** (#462, #464, #506, #523, #526, #532); four of those are already BUILT behind default-off flags, so the work is running the measurement that decides whether the flag flips on. |
+| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — CLOSED, but still the map: read its phased execution order before touching retrieval. Of the six `epic:rag-quality` issues #461 deferred (#462, #464, #506, #523, #526, #532), five are now CLOSED with real measured outcomes (#464/#506/#523 shipped or correctly evaluated-negative; #462/#526 closed earlier). **#532 is the only one still open** — fully implemented and unit/oracle-tested (`docs/design/532_hybrid_summary_synthesis_plan.md`), with only its GPU validation measurement remaining, deliberately deferred pending GPU-2 capacity. |
 | **Release themes: what each version is FOR, and its exit criteria** | `docs-site/docs/developer-guide/roadmap.md` (Developer Guide → Release Themes). The **live** issue/milestone view is the generated `/roadmap` page — never hand-edit its data, run `python3 scripts/generate-roadmap.py`. |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
@@ -525,6 +525,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
 | Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
 | Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
+| Docs site, generated tables + architecture diagram drift checks | `docs-site/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. **It applies to WRITES too** (issue #674): a threshold sent *into* OpenSearch (`min_score`) needs the inverse, `(1 + raw_cosine) / 2`, and no read-site audit can find a bad one. Both directions are named functions in `backend/app/utils/cosine_space.py` — call them. Full table: `backend/app/services/search/CLAUDE.md`.
 
@@ -676,13 +677,15 @@ subsystem, and put new subsystem detail **there**, not in this file.
   a window where a stash can capture the reverted state, and races every other writer:
 
   ```bash
-  git archive HEAD | (mkdir -p /tmp/redcheck && tar -x -C /tmp/redcheck)
-  cp backend/tests/.../test_the_new_one.py /tmp/redcheck/backend/tests/.../   # new tests, old source
-  cd /tmp/redcheck/backend && <run them; expect red>
+  RED="$(mktemp -d -t ot-redcheck.XXXXXX)" && git archive HEAD | tar -x -C "$RED"
+  cp backend/tests/.../test_the_new_one.py "$RED/backend/tests/.../"   # new tests, old source
+  cd "$RED/backend" && <run them; expect red>
   ```
 
   Immune to stash windows, costs no reloads, disturbs nobody, and the tree you are testing is
-  provably HEAD rather than "what I think I reverted".
+  provably HEAD rather than "what I think I reverted". Use that `ot-redcheck.` name: hand-named
+  `/tmp/redcheck*` trees reached **4.1 GB** on this host, and `scripts/cleanup-test-data.py`'s
+  tmp plane (`./opentr.sh test-cleanup`) removes only registered shapes (issue #1195).
 - **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
   in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
   in the worktree, including commits that do not touch it — twice in one day a lane's own

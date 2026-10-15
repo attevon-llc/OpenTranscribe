@@ -17,6 +17,14 @@ export function goto(url: string): Promise<void> {
   return Promise.resolve();
 }
 
+/** URLs passed to {@link preloadCode}. Clear in a `beforeEach` when asserting on it. */
+export const preloadCodeCalls: string[] = [];
+
+export function preloadCode(url: string): Promise<void> {
+  preloadCodeCalls.push(url);
+  return Promise.resolve();
+}
+
 export function invalidate(): Promise<void> {
   return Promise.resolve();
 }
@@ -40,4 +48,11 @@ export const beforeNavigateCallbacks: Array<(navigation: unknown) => void> = [];
  */
 export function beforeNavigate(callback: (navigation: unknown) => void): void {
   beforeNavigateCallbacks.push(callback);
+}
+
+/** Callbacks registered via {@link afterNavigate}. Clear in a `beforeEach` when asserting on it. */
+export const afterNavigateCallbacks: Array<(navigation: { type: string }) => void> = [];
+
+export function afterNavigate(callback: (navigation: { type: string }) => void): void {
+  afterNavigateCallbacks.push(callback);
 }

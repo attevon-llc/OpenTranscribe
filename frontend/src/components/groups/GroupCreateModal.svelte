@@ -55,7 +55,7 @@
   }
 </script>
 
-<BaseModal {isOpen} title={$t('groups.createGroup')} maxWidth="500px" zIndex={1300} onClose={handleClose}>
+<BaseModal {isOpen} title={$t('groups.createGroup')} size="sm" zIndex={1300} onClose={handleClose}>
   <form id="group-create-form" on:submit|preventDefault={handleSubmit}>
     <div class="modal-body">
       <div class="form-group">
@@ -126,18 +126,7 @@
 
   .form-control {
     padding: 0.5rem 0.625rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.8125rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-light);
   }
 
   .form-control::placeholder {
@@ -148,7 +137,6 @@
   .form-textarea {
     resize: vertical;
     min-height: 60px;
-    font-family: inherit;
   }
 
   .modal-button {

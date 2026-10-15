@@ -1,0 +1,193 @@
+{
+  "applied_check_violations": {},
+  "arms": {
+    "arm-d": {
+      "content_turns": 140,
+      "files_cited": 304,
+      "files_in_scope": 548,
+      "files_offered": 544,
+      "mean_content": 0.292857,
+      "mean_offered": 0.992857,
+      "mean_used": 0.555952,
+      "pooled_used": 0.554745,
+      "turns": 140
+    },
+    "control": {
+      "content_turns": 140,
+      "files_cited": 398,
+      "files_in_scope": 548,
+      "files_offered": 544,
+      "mean_content": 0.304762,
+      "mean_offered": 0.992857,
+      "mean_used": 0.727381,
+      "pooled_used": 0.726277,
+      "turns": 140
+    },
+    "hybrid": {
+      "content_turns": 140,
+      "files_cited": 161,
+      "files_in_scope": 548,
+      "files_offered": 544,
+      "mean_content": 0.28631,
+      "mean_offered": 0.992857,
+      "mean_used": 0.293452,
+      "pooled_used": 0.293796,
+      "turns": 140
+    },
+    "repeat-control": {
+      "content_turns": 140,
+      "files_cited": 414,
+      "files_in_scope": 548,
+      "files_offered": 544,
+      "mean_content": 0.304167,
+      "mean_offered": 0.992857,
+      "mean_used": 0.756548,
+      "pooled_used": 0.755474,
+      "turns": 140
+    }
+  },
+  "baseline": "mean(control, repeat-control)",
+  "category": "multi_file",
+  "comparisons": {
+    "aa_content": {
+      "ci_high": 0.023214,
+      "ci_low": -0.024405,
+      "delta_mean": -0.000595,
+      "metric": "content",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "control",
+        "repeat-control"
+      ],
+      "seed": 0
+    },
+    "aa_used": {
+      "ci_high": 0.069643,
+      "ci_low": -0.008333,
+      "delta_mean": 0.029167,
+      "metric": "used",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "control",
+        "repeat-control"
+      ],
+      "seed": 0
+    },
+    "arm_d_vs_baseline_content": {
+      "ci_high": 0.03244,
+      "ci_low": -0.055357,
+      "delta_mean": -0.011607,
+      "metric": "content",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "baseline",
+        "arm-d"
+      ],
+      "seed": 0
+    },
+    "arm_d_vs_baseline_used": {
+      "ci_high": -0.117262,
+      "ci_low": -0.254464,
+      "delta_mean": -0.186012,
+      "metric": "used",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "baseline",
+        "arm-d"
+      ],
+      "seed": 0
+    },
+    "hybrid_vs_arm_d_content": {
+      "ci_high": 0.036905,
+      "ci_low": -0.05119,
+      "delta_mean": -0.006548,
+      "metric": "content",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "arm-d",
+        "hybrid"
+      ],
+      "seed": 0
+    },
+    "hybrid_vs_arm_d_used": {
+      "ci_high": -0.182738,
+      "ci_low": -0.341071,
+      "delta_mean": -0.2625,
+      "metric": "used",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "arm-d",
+        "hybrid"
+      ],
+      "seed": 0
+    },
+    "hybrid_vs_baseline_content": {
+      "ci_high": 0.024405,
+      "ci_low": -0.059821,
+      "delta_mean": -0.018155,
+      "metric": "content",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "baseline",
+        "hybrid"
+      ],
+      "seed": 0
+    },
+    "hybrid_vs_baseline_offered": {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "delta_mean": 0.0,
+      "metric": "offered",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "baseline",
+        "hybrid"
+      ],
+      "seed": 0
+    },
+    "hybrid_vs_baseline_used": {
+      "ci_high": -0.380357,
+      "ci_low": -0.516667,
+      "delta_mean": -0.448512,
+      "metric": "used",
+      "n": 140,
+      "n_resamples": 20000,
+      "pair": [
+        "baseline",
+        "hybrid"
+      ],
+      "seed": 0
+    }
+  },
+  "composition_checked": true,
+  "decision": {
+    "criteria": {
+      "content_ci_low_above_minus_3_points": false,
+      "sanity_hybrid_beats_arm_d": false,
+      "used_delta_at_least_5_points_ci_low_above_zero": false
+    },
+    "reasons": [
+      "used_coverage_below_threshold_or_ci_includes_zero",
+      "content_coverage_lost",
+      "hybrid_does_not_beat_arm_d"
+    ],
+    "verdict": "FAIL",
+    "void_reasons": []
+  },
+  "schema_version": 1,
+  "thresholds": {
+    "confidence": 0.95,
+    "content_non_inferiority": -0.03,
+    "n_resamples": 20000,
+    "seed": 0,
+    "used_min_delta": 0.05
+  }
+}

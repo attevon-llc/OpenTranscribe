@@ -93,11 +93,11 @@
             <line x1="8" y1="23" x2="16" y2="23"></line>
           </svg>
         {/if}
-        {#if hit.title_highlighted}
-          {@html sanitizeHighlightHtml(hit.title_highlighted)}
-        {:else}
-          {hit.title}
-        {/if}
+        <span dir="auto"
+          >{#if hit.title_highlighted}{@html sanitizeHighlightHtml(
+              hit.title_highlighted
+            )}{:else}{hit.title}{/if}</span
+        >
       </a>
       <button
         class="view-transcript-btn"
@@ -245,7 +245,7 @@
   }
 
   .result-card:hover {
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 
@@ -260,19 +260,22 @@
     gap: 0.75rem;
   }
 
+  /* A result title is one run of text (search-engine convention: medium weight, link
+     colour), not a flex row — as inline-flex every highlighted <mark> became its own flex
+     item and a narrow viewport broke a word across two of them. */
   .result-title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--primary-color, #4f46e5);
+    min-width: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--primary-on-surface);
     text-decoration: none;
-    line-height: 1.3;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
+    line-height: var(--line-height-tight);
+    overflow-wrap: break-word;
   }
 
   .media-type-icon {
-    flex-shrink: 0;
+    vertical-align: -2px;
+    margin-inline-end: 0.375rem;
     opacity: 0.7;
   }
 
@@ -343,7 +346,7 @@
   .showing-of-total {
     font-size: 0.6875rem;
     color: var(--text-secondary, #9ca3af);
-    margin-left: 4px;
+    margin-inline-start: 4px;
   }
 
   .occurrence-row {
@@ -368,13 +371,13 @@
     border: none;
     border-radius: 6px;
     background: none;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .preview-btn:hover {
-    background: rgba(79, 70, 229, 0.1);
+    background: rgba(var(--primary-color-rgb), 0.1);
     transform: scale(1.1);
   }
 
@@ -393,7 +396,7 @@
     margin-top: 0.25rem;
     background: none;
     border: none;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
     cursor: pointer;
     text-align: center;
@@ -406,7 +409,7 @@
   .match-sources {
     display: inline-flex;
     gap: 4px;
-    margin-left: 6px;
+    margin-inline-start: 6px;
     flex-wrap: wrap;
   }
 
@@ -470,14 +473,9 @@
   }
 
   .dual-match-badge {
-    background: rgba(79, 70, 229, 0.12);
-    color: #4f46e5;
-    font-weight: 600;
-  }
-
-  :global([data-theme='dark']) .dual-match-badge {
-    background: rgba(129, 140, 248, 0.15);
-    color: #818cf8;
+    background: rgba(var(--primary-color-rgb), 0.12);
+    color: var(--primary-on-surface);
+    font-weight: var(--font-weight-medium);
   }
 
   .relevance-badge {
@@ -496,7 +494,7 @@
     padding: 1px 5px;
     border-radius: 3px;
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     line-height: 1.4;
@@ -561,7 +559,7 @@
     }
 
     .match-sources {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
 
     .meta-item.tags {
@@ -600,19 +598,19 @@
     background: none;
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 6px;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     font-size: 0.8125rem;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .view-transcript-btn:hover {
-    background: rgba(79, 70, 229, 0.08);
-    border-color: var(--primary-color, #4f46e5);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    border-color: var(--primary-color);
   }
 
   :global([data-theme='dark']) .view-transcript-btn:hover {
-    background: rgba(129, 140, 248, 0.12);
+    background: rgba(var(--primary-color-rgb), 0.12);
   }
 
   .meta-chip {
@@ -621,7 +619,7 @@
     border-radius: 4px;
     padding: 1px 6px;
     font-size: 0.75rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary, #6b7280);
     gap: 0.25rem;
   }

@@ -37,7 +37,11 @@ vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 // about i18next bootstrapping.
 vi.mock('$lib/i18n', () => ({ translateSpeakerLabel: (name: string) => name }));
 
+const mockListProfiles = vi.hoisted(() => vi.fn());
+vi.mock('$lib/api/speakerClusters', () => ({ listProfiles: mockListProfiles }));
+
 import SegmentSpeakerDropdown from './SegmentSpeakerDropdown.svelte';
+import { apiCache } from '$lib/apiCache';
 
 function speaker(overrides: Partial<Speaker> = {}): Speaker {
   return { uuid: 'spk-1', name: 'SPEAKER_00', ...overrides };
@@ -64,6 +68,8 @@ function trigger(container: HTMLElement): HTMLElement {
 beforeEach(() => {
   vi.clearAllMocks();
   document.body.innerHTML = '';
+  apiCache.clear();
+  mockListProfiles.mockResolvedValue([]);
 });
 
 describe('trigger label', () => {
@@ -559,5 +565,190 @@ describe('reassigning to an existing speaker', () => {
     });
 
     expect(trigger(container).textContent).toContain('Bob Kowalski');
+  });
+});
+
+// Issue #1086: naming a speaker used to mean leaving the transcript for the expanded
+// "Edit Speakers" section, and the only text field in the dropdown path was "Add speaker" --
+// which creates ANOTHER speaker, so "this SPEAKER_02 is Laura" read as the wrong action.
+describe('naming the speaker inline (#1086)', () => {
+  const unnamed = { uuid: 'spk-2', name: 'SPEAKER_02' } as Speaker;
+  const named = { uuid: 'spk-3', name: 'SPEAKER_03', display_name: 'Rui Fernandes' } as Speaker;
+
+  const nameInput = () =>
+    portalMenu()!.querySelector('input.inline-name-input') as HTMLInputElement | null;
+  const saveButton = () =>
+    portalMenu()!.querySelector('[data-action="save-inline-name"]') as HTMLButtonElement | null;
+
+  async function openMenu(spk: Speaker | null, props: Record<string, unknown> = {}) {
+    const onSpeakerUpdate = vi.fn();
+    const { container } = render(SegmentSpeakerDropdown, {
+      props: { segment: segment({ speaker: spk ?? undefined }), speakers: [], ...props },
+      events: { speakerUpdate: onSpeakerUpdate },
+    } as never);
+    await fireEvent.click(trigger(container));
+    return { container, onSpeakerUpdate };
+  }
+
+  async function typeName(value: string) {
+    const input = nameInput()!;
+    input.value = value;
+    await fireEvent.input(input);
+  }
+
+  it("offers a name field for the segment's own speaker, labelled with its slot", async () => {
+    await openMenu(unnamed);
+
+    expect(nameInput()).not.toBeNull();
+    expect(nameInput()!.placeholder).toBe('speaker.nameThisSpeakerPlaceholder');
+  });
+
+  it('renames THAT speaker (not a new one) when the name is submitted with Enter', async () => {
+    const { onSpeakerUpdate } = await openMenu(unnamed);
+
+    await typeName('  Laura Whitfield ');
+    await fireEvent.keyDown(nameInput()!, { key: 'Enter' });
+    await tick();
+
+    expect(onSpeakerUpdate).toHaveBeenCalledTimes(1);
+    expect(onSpeakerUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { speakerId: 'spk-2', newName: 'Laura Whitfield' } })
+    );
+    // Renaming goes through the parent's validated path; this component never POSTs.
+    expect(mockAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('submits from the save button too, and closes the menu', async () => {
+    const { onSpeakerUpdate } = await openMenu(unnamed);
+
+    await typeName('Laura Whitfield');
+    await fireEvent.click(saveButton()!);
+    await tick();
+
+    expect(onSpeakerUpdate).toHaveBeenCalledTimes(1);
+    expect(portalMenu()).toBeNull();
+  });
+
+  it('refuses a blank name and a SPEAKER_NN placeholder, saying why for the latter', async () => {
+    const { onSpeakerUpdate } = await openMenu(unnamed);
+
+    await typeName('   ');
+    expect(saveButton()!.disabled).toBe(true);
+    await fireEvent.keyDown(nameInput()!, { key: 'Enter' });
+
+    await typeName('SPEAKER_07');
+    expect(saveButton()!.disabled).toBe(true);
+    expect(portalMenu()!.textContent).toContain('speaker.placeholderNameRejected');
+    await fireEvent.keyDown(nameInput()!, { key: 'Enter' });
+
+    expect(onSpeakerUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the typed name is the speaker's current confirmed name", async () => {
+    const { onSpeakerUpdate } = await openMenu(named);
+
+    await typeName('Rui Fernandes');
+    expect(saveButton()!.disabled).toBe(true);
+    await fireEvent.keyDown(nameInput()!, { key: 'Enter' });
+
+    expect(onSpeakerUpdate).not.toHaveBeenCalled();
+  });
+
+  it('is absent when the segment has no speaker to name, and when the view is read-only', async () => {
+    await openMenu(null);
+    expect(nameInput()).toBeNull();
+    document.body.innerHTML = '';
+
+    const { container } = render(SegmentSpeakerDropdown, {
+      props: { segment: segment({ speaker: unnamed }), speakers: [], readOnly: true },
+    });
+    await fireEvent.click(trigger(container));
+    expect(portalMenu()).toBeNull();
+  });
+
+  it('keeps what the user is typing, and the focus, when the menu re-renders under it', async () => {
+    const onSpeakerUpdate = vi.fn();
+    const { container, rerender } = render(SegmentSpeakerDropdown, {
+      props: { segment: segment({ speaker: unnamed }), speakers: [unnamed] },
+      events: { speakerUpdate: onSpeakerUpdate },
+    } as never);
+    await fireEvent.click(trigger(container));
+
+    await typeName('Laur');
+    nameInput()!.focus();
+    const before = nameInput();
+
+    // A background refetch hands the component a NEW speakers array, and the imperative menu
+    // rebuilds itself from scratch. The half-typed name and the focus must survive that.
+    await rerender({ speakers: [{ ...unnamed }] } as never);
+    await tick();
+
+    const after = nameInput();
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before); // proves the menu really was rebuilt
+    expect(after!.value).toBe('Laur');
+    expect(document.activeElement).toBe(after);
+  });
+
+  it('offers matching speaker profiles as the user types and submits the chosen one', async () => {
+    mockListProfiles.mockResolvedValue([
+      { uuid: 'p1', name: 'Laura Whitfield' },
+      { uuid: 'p2', name: 'Laurence Chen' },
+      { uuid: 'p3', name: 'Rui Fernandes' },
+    ]);
+    const { onSpeakerUpdate } = await openMenu(unnamed);
+    await new Promise((resolve) => setTimeout(resolve, 0)); // let the profile fetch settle
+
+    await typeName('laur');
+    const matches = Array.from(portalMenu()!.querySelectorAll('[data-action="pick-profile"]')).map(
+      (el) => el.textContent?.trim()
+    );
+    expect(matches).toEqual(['Laura Whitfield', 'Laurence Chen']);
+
+    await fireEvent.click(
+      portalMenu()!.querySelectorAll('[data-action="pick-profile"]')[0] as HTMLElement
+    );
+    await tick();
+    expect(onSpeakerUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { speakerId: 'spk-2', newName: 'Laura Whitfield' } })
+    );
+  });
+
+  it('lists matching profiles alphabetically, whatever order the API returned them in', async () => {
+    mockListProfiles.mockResolvedValue([
+      { uuid: 'p2', name: 'Laurence Chen' },
+      { uuid: 'p3', name: 'Lauren Okafor' },
+      { uuid: 'p1', name: 'Laura Whitfield' },
+    ]);
+    await openMenu(unnamed);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await typeName('laur');
+
+    const matches = Array.from(portalMenu()!.querySelectorAll('[data-action="pick-profile"]')).map(
+      (el) => el.textContent?.trim()
+    );
+    expect(matches).toEqual(['Laura Whitfield', 'Lauren Okafor', 'Laurence Chen']);
+  });
+
+  it('still works when the profile list cannot be fetched', async () => {
+    mockListProfiles.mockRejectedValue(new Error('offline'));
+    const { onSpeakerUpdate } = await openMenu(unnamed);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await typeName('Laura Whitfield');
+    expect(portalMenu()!.querySelectorAll('[data-action="pick-profile"]')).toHaveLength(0);
+    await fireEvent.keyDown(nameInput()!, { key: 'Enter' });
+    await tick();
+
+    expect(onSpeakerUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels the create action as a NEW speaker for this segment, not a rename', async () => {
+    await openMenu(unnamed, { mediaFileUuid: 'file-1' });
+
+    const create = portalMenu()!.querySelector('[data-action="create-speaker"]');
+    expect(create!.textContent).toContain('speaker.newSpeakerForSegment');
+    expect(create!.textContent).not.toContain('speaker.addSpeaker');
   });
 });

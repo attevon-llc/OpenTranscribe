@@ -63,8 +63,14 @@ cleanup_all() {
     docker volume rm "${GR_STOCK_PROJECT}_minio_data"    >/dev/null 2>&1 || true
     docker rm -f otselftest-pg-fake >/dev/null 2>&1 || true
     docker volume rm otselftest_pgdata >/dev/null 2>&1 || true
-    rm -f "$GR_OWNED_STAMP" /tmp/ot-selftest-backups-env || true
+    # Case 7's two volumes and case 5's probe: each case removes its own on the happy path,
+    # but an aborted run left them (issue #1195), so the trap owns them too.
+    docker volume rm "${GR_STOCK_PROJECT}_preexisting_data" >/dev/null 2>&1 || true
+    docker volume rm "${GR_STOCK_PROJECT}_scratch_made_by_test" >/dev/null 2>&1 || true
+    rm -f "$GR_OWNED_STAMP" /tmp/ot-selftest-backups-env /tmp/ot-selftest-env-probe || true
     rm -rf /tmp/ot-selftest-backups-probe "$TEST_ROOT/opentr-stage-selftest" || true
+    # TEST_ROOT is this self-test's own fixed scratch path (never a real rehearsal's).
+    rm -rf "$TEST_ROOT" || true
     return 0
 }
 trap cleanup_all EXIT

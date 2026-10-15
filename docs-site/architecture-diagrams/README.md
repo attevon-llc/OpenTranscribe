@@ -27,10 +27,29 @@ scripts/generate-architecture-diagrams.sh search-indexing   # just one
 ```
 
 The script validates each spec at `showcase` quality before delivering — a spec that fails
-validation is never silently rendered broken.
+validation is never silently rendered broken. It then appends
+`<!-- spec-sha256: <hex> -->` (the SHA-256 of the spec bytes it rendered) to the HTML.
+Rendering is deterministic: re-running it on an unchanged spec changes nothing but that stamp.
+
+## Drift check (issue #1230)
+
+`scripts/check-architecture-diagram-drift.py` (stdlib only) fails when a spec's hash differs from
+its HTML's stamp, a spec has no HTML, or an HTML has no spec. It runs as the
+`architecture-diagram-drift` pre-commit hook (so in CI's pre-commit job, which has no Archify)
+and as `backend/tests/unit/test_architecture_diagram_drift.py`. `--selftest` runs its must-fire
+cases. A red check means: re-run the generator for that spec and commit both files.
 
 ## Updating a diagram
 
 Treat a stale diagram the same as any other doc: when the code it describes changes, edit the
 matching `specs/*.json` and re-run the generator. Do not hand-edit the rendered HTML in
 `static/architecture/` — it is a build artifact and will be silently overwritten.
+
+Cite the code each node stands for. Architecture specs carry it in `components[].sources`
+(`path`, `line`, `label`; at most 3) plus `meta.repository` (`url` and the 40-character
+`revision` the lines were read at); the generator passes `--repo-root` for that diagram type so
+Archify verifies every path and line before rendering. Workflow and sequence specs have no
+per-node source field, so they name the modules in their cards and view notes. Archify limits
+worth knowing before editing: workflow columns `0..5`, view notes at most 140 characters, and a
+desktop-readability check that fails on long sublabels (shorten the copy, do not widen the
+viewBox).

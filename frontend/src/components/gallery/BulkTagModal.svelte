@@ -236,7 +236,7 @@
 <BaseModal
   {isOpen}
   allowOverflow
-  maxWidth="480px"
+  size="sm"
   title={isAdd
     ? $t('gallery.bulk.tagModal.addTitle', { count: fileUuids.length })
     : $t('gallery.bulk.tagModal.removeTitle', { count: fileUuids.length })}
@@ -380,10 +380,8 @@
   }
 
   .current-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 

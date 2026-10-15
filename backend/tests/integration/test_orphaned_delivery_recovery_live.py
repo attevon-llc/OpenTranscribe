@@ -52,8 +52,10 @@ from app.models.media import Task
 
 pytestmark = [
     pytest.mark.integration,
-    # One unacked hash per Redis DB: tests here must never run beside each other.
-    pytest.mark.xdist_group("orphan_delivery_live"),
+    # One unacked hash per Redis DB: tests here must never run beside each other -- nor
+    # beside test_celery_queue_depth_live.py, which uses the same db 15 and deletes that
+    # same hash. Hence one group name shared by both modules.
+    pytest.mark.xdist_group("redis_db15_live"),
 ]
 
 BACKEND = Path(__file__).resolve().parents[2]
@@ -75,19 +77,7 @@ def _priority_key(priority: int) -> str:
     return _QUEUE if priority == 0 else f"{_QUEUE}{Channel.sep}{priority}"
 
 
-@pytest.fixture
-def broker(monkeypatch):
-    client = redis_lib.from_url(_redis_url())
-    try:
-        client.ping()
-    except redis_lib.exceptions.RedisError as exc:
-        pytest.skip(f"live Redis (db {_TEST_DB}) unreachable: {exc}")
-    if client.hlen(Channel.unacked_key):
-        pytest.skip(f"db {_TEST_DB} already holds unacked messages; refusing to share it")
-    monkeypatch.setenv("ORPHAN_TEST_BROKER_URL", _redis_url())
-    # Every lease read/write in THIS process goes to the test Redis too.
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: client)
-    yield client
+def _delete_owned_keys(client: redis_lib.Redis) -> None:
     keys = [Channel.unacked_key, Channel.unacked_index_key, Channel.unacked_mutex_key]
     keys += [_priority_key(p) for p in range(10)]
     keys += list(client.scan_iter("orphan-test:*"))
@@ -95,7 +85,29 @@ def broker(monkeypatch):
     keys += list(client.scan_iter("_kombu.binding.*"))
     keys += list(client.scan_iter("celery-task-meta-*"))
     client.delete(*keys)
-    client.close()
+
+
+@pytest.fixture
+def broker(monkeypatch):
+    client = redis_lib.from_url(_redis_url())
+    try:
+        client.ping()
+    except redis_lib.exceptions.RedisError as exc:
+        pytest.skip(f"live Redis (db {_TEST_DB}) unreachable: {exc}")
+    # Also at SETUP: a run killed before its teardown leaves an unacked hash and queue keys
+    # behind in db 15. This used to SKIP on a non-empty unacked hash -- which made one
+    # interrupted run disable the module on every later run. The only other writer of these
+    # keys is test_celery_queue_depth_live.py, now serialised with this module by the shared
+    # xdist_group, so anything found here is a leftover, not a concurrent run's state.
+    _delete_owned_keys(client)
+    monkeypatch.setenv("ORPHAN_TEST_BROKER_URL", _redis_url())
+    # Every lease read/write in THIS process goes to the test Redis too.
+    monkeypatch.setattr("app.core.redis.get_redis", lambda: client)
+    try:
+        yield client
+    finally:
+        _delete_owned_keys(client)
+        client.close()
 
 
 @pytest.fixture

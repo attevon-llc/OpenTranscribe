@@ -1740,3 +1740,12 @@ SUPPORT_ACCESS_PRESIGN_MAX_SECONDS = 300
 SUPPORT_ACCESS_REQUEST_RATE_LIMIT = "10/hour"
 #: Header that carries a grant uuid. Never ambient: a request without it has no grant.
 SUPPORT_ACCESS_GRANT_HEADER = "X-Support-Access-Grant"
+
+# --- Cloud ASR provider policy (issue #1246) ---------------------------------------------
+#: ``SystemSettings`` key: JSON list of the cloud provider ids a plain user may choose.
+#: ABSENT (or the JSON ``null``) means every provider is allowed, which is what a
+#: deployment did before the policy existed; an empty list means none.
+ASR_CLOUD_PROVIDERS_FOR_USERS_KEY = "asr.cloud_providers_for_users"
+#: ``SystemSettings`` key: ``"true"``/``"false"``. Whether a plain user may save a cloud
+#: provider configuration (and key) of their own. Absent means true.
+ASR_USERS_OWN_KEYS_KEY = "asr.users_may_add_own_keys"

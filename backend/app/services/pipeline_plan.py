@@ -93,6 +93,10 @@ ISSUE_MESSAGES: dict[str, str] = {
         "nothing is billed twice."
     ),
     "source_locked": "Your administrator manages speaker detection for this deployment.",
+    "asr_provider_not_allowed": "Your administrator has not enabled this transcription provider.",
+    "diarizer_provider_not_allowed": (
+        "Your administrator has not enabled this speaker detection provider."
+    ),
 }
 
 #: The codes the resolver reports with ``severity == "error"``: a run planned with one of
@@ -105,6 +109,8 @@ BLOCKING_CODES: tuple[str, ...] = (
     "local_diarization_unavailable",
     "automatic_needs_speaker_provider",
     "asr_no_timing_for_speakers",
+    "asr_provider_not_allowed",
+    "diarizer_provider_not_allowed",
 )
 
 
@@ -147,6 +153,11 @@ class PlanInputs:
     diarization_config: DiarizerConfigInfo | None = None  # asr_config only
     cpu_whisper_model: str | None = None  # per-file lightweight model -> local_cpu
     gpu_split: bool = False
+    #: The admin's cloud-provider allow-list (``services/asr_provider_policy``), already
+    #: resolved for this user: ``False`` only for a plain user whose ACTIVE config names a
+    #: provider the administrator has not enabled. The environment default is never blocked.
+    asr_provider_allowed: bool = True
+    diarizer_provider_allowed: bool = True
 
 
 @dataclass(frozen=True)
@@ -365,6 +376,8 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
     )
     if local_asr and lite:
         add("local_asr_unavailable", "error", "transcription")
+    if not local_asr and not i.asr_provider_allowed:
+        add("asr_provider_not_allowed", "error", "transcription")
     timing: Timing = "word" if local_asr else i.asr_timing
 
     d_engine = _diarization_engine(i, local_asr, add)
@@ -375,6 +388,8 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
         execution = "none"
     diarizing = d_engine != "off"
     runs = execution != "none"
+    if d_engine in ("asr_config", "pyannote_ai") and not i.diarizer_provider_allowed:
+        add("diarizer_provider_not_allowed", "error")
     if diarizing and timing == "none":
         add("asr_no_timing_for_speakers", "error")
     if diarizing and timing == "segment" and execution != "inline_asr":

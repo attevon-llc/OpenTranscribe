@@ -279,8 +279,10 @@ class TestASRConfigCRUD:
         data = _list_configs(client, user_token_headers)
         assert len(data["configs"]) == 0
 
-    def test_get_api_key_owner_only(self, client, user_token_headers, other_user_auth_headers):
-        """The /api-key endpoint must only return keys to the owning user."""
+    def test_no_route_reveals_a_stored_key(
+        self, client, user_token_headers, other_user_auth_headers
+    ):
+        """Credentials are write-only (#1246): the owner-only reveal route no longer exists."""
         created = _create_config(
             client,
             user_token_headers,
@@ -290,17 +292,16 @@ class TestASRConfigCRUD:
             api_key="dg_secret_key_xyz",
         ).json()
         uuid = created["uuid"]
+        assert created["has_api_key"] is True
 
-        # Owner can retrieve
-        resp = client.get(f"/api/asr-settings/config/{uuid}/api-key", headers=user_token_headers)
-        assert resp.status_code == 200
-        assert resp.json()["api_key"] == "dg_secret_key_xyz"
+        for headers in (user_token_headers, other_user_auth_headers):
+            resp = client.get(f"/api/asr-settings/config/{uuid}/api-key", headers=headers)
+            assert resp.status_code == 404
+            assert "dg_secret_key_xyz" not in resp.text
 
-        # Other user cannot
-        resp2 = client.get(
-            f"/api/asr-settings/config/{uuid}/api-key", headers=other_user_auth_headers
-        )
-        assert resp2.status_code == 404
+        detail = client.get(f"/api/asr-settings/config/{uuid}", headers=user_token_headers)
+        assert detail.status_code == 200
+        assert "dg_secret_key_xyz" not in detail.text
 
     def test_create_config_unauthenticated(self, client):
         resp = client.post(

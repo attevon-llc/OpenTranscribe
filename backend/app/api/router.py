@@ -10,6 +10,7 @@ from .endpoints import admin_hf_token
 from .endpoints import admin_scim_tokens
 from .endpoints import admin_storage_integrity
 from .endpoints import admin_timing
+from .endpoints import asr_provider_policy
 from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
@@ -252,6 +253,12 @@ include_router_with_consistency(
     asr_settings.router,
     prefix="/asr-settings",
     tags=["asr-settings"],
+    capability="asr.user_providers",
+)
+include_router_with_consistency(
+    asr_provider_policy.router,
+    prefix="/admin/asr-providers",
+    tags=["admin"],
     capability="asr.user_providers",
 )
 include_router_with_consistency(

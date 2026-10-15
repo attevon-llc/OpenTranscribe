@@ -122,6 +122,16 @@ off by default.
 
 ### Added
 
+- **Which cloud transcription providers users may choose (#1246).** A super admin can enable
+  only some cloud providers for plain users (`GET`/`PUT /api/admin/asr-providers`) and can
+  forbid users from adding keys of their own; the credentials users then rely on are the
+  administrator's shared ASR configurations, which the same endpoint lists as "key set" flags
+  per provider and per organisation. A provider that is not enabled is refused by the pipeline
+  plan, so dispatch, switching the active configuration and the speaker-detection choice all
+  refuse it with a fixed sentence (`asr_provider_not_allowed`, `diarizer_provider_not_allowed`),
+  and creating or re-pointing a configuration answers 409. Admins and the server's own
+  `ASR_PROVIDER` default are never blocked. With nothing set, every provider stays available.
+
 - **Amazon Bedrock accounts in the UI**: a Bedrock LLM configuration now carries its own AWS
   region and, optionally, an access key (key ID, secret and session token). The credentials are
   write-only: stored encrypted at rest, never returned by any endpoint, never logged and never
@@ -1370,6 +1380,11 @@ off by default.
 - **`pip` is removed from the production, lite and Blackwell runtime images (#1139).**
 
 ### Removed
+
+- **`GET /api/asr-settings/config/{uuid}/api-key` (#1246).** It returned a saved cloud ASR key
+  in the clear to the configuration's owner, and nothing in the interface used it. ASR
+  credentials are now write-only like every other credential: responses carry `has_api_key`
+  and `has_access_key_id` only. A script that read keys back must keep its own copy.
 
 - **The legacy single-task transcription path is gone (#1225).** `transcription.process_file`,
   `legacy_task.py` and `background.py` (superseded by the 3-stage chain long ago) are deleted,

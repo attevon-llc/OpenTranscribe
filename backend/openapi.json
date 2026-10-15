@@ -12199,6 +12199,84 @@
         "title": "ProviderDefaults",
         "type": "object"
       },
+      "ProviderPolicyEntry": {
+        "properties": {
+          "allowed_for_users": {
+            "title": "Allowed For Users",
+            "type": "boolean"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "shared_credentials": {
+            "items": {
+              "$ref": "#/components/schemas/SharedCredential"
+            },
+            "title": "Shared Credentials",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "allowed_for_users"
+        ],
+        "title": "ProviderPolicyEntry",
+        "type": "object"
+      },
+      "ProviderPolicyResponse": {
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderPolicyEntry"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "users_may_add_own_keys": {
+            "title": "Users May Add Own Keys",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "providers",
+          "users_may_add_own_keys"
+        ],
+        "title": "ProviderPolicyResponse",
+        "type": "object"
+      },
+      "ProviderPolicyUpdate": {
+        "properties": {
+          "allowed_for_users": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cloud provider ids users may choose. null allows every provider.",
+            "title": "Allowed For Users"
+          },
+          "users_may_add_own_keys": {
+            "default": true,
+            "title": "Users May Add Own Keys",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderPolicyUpdate",
+        "type": "object"
+      },
       "PyannoteConnectionTestRequest": {
         "description": "``POST /user-settings/diarization/pyannote/test``: omit ``api_key`` to test the saved one.",
         "properties": {
@@ -14326,6 +14404,46 @@
           "shared_at"
         ],
         "title": "SharedCollectionInfo",
+        "type": "object"
+      },
+      "SharedCredential": {
+        "description": "An admin-shared ASR configuration. Flags only: a key is never returned.",
+        "properties": {
+          "config_uuid": {
+            "title": "Config Uuid",
+            "type": "string"
+          },
+          "has_access_key_id": {
+            "title": "Has Access Key Id",
+            "type": "boolean"
+          },
+          "has_api_key": {
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          }
+        },
+        "required": [
+          "config_uuid",
+          "name",
+          "has_api_key",
+          "has_access_key_id"
+        ],
+        "title": "SharedCredential",
         "type": "object"
       },
       "SharedOrganizationContext": {
@@ -21257,6 +21375,78 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/asr-providers": {
+      "get": {
+        "description": "The allow-list, the own-keys switch and the shared credentials per provider.",
+        "operationId": "get_provider_policy_api_admin_asr_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Provider Policy",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Replace the policy. Unknown ids (or ``local``) are a 422 and change nothing.",
+        "operationId": "put_provider_policy_api_admin_asr_providers_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put Provider Policy",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/audit-logs": {
       "get": {
         "description": "Query audit logs with filtering. Super admin only (global, all tenants).\n\nOrg-admins get a tenant-scoped view of the same data at\n``GET /org-admin/audit-logs`` (see ``endpoints/org_admin.py``).\n\n``user_id`` filters by the ACTOR who performed the action; ``target_user_id``\nfilters by the SUBJECT the action was performed on (e.g. the erased user in a\nGDPR erasure) — see issue #443/#828 for the actor/subject convention.\n\nNote: This endpoint queries OpenSearch if audit logging to OpenSearch is\nenabled. If OpenSearch is not available, returns an error message.",
@@ -26421,55 +26611,6 @@
         ]
       }
     },
-    "/api/asr-settings/config/{config_uuid}/api-key": {
-      "get": {
-        "description": "Return the decrypted API key for the specified configuration. Owner-only.",
-        "operationId": "get_asr_config_api_key_api_asr_settings_config__config_uuid__api_key_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "config_uuid",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Config Uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Asr Config Api Key Api Asr Settings Config  Config Uuid  Api Key Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "summary": "Get Asr Config Api Key",
-        "tags": [
-          "asr-settings"
-        ]
-      }
-    },
     "/api/asr-settings/local-model/active": {
       "get": {
         "description": "Return the active local Whisper model name and available downloaded models.",
@@ -26600,7 +26741,7 @@
     },
     "/api/asr-settings/providers": {
       "get": {
-        "description": "Return the full ASR provider catalog with models, pricing, and capabilities.\n\nFor the local provider, each model entry includes a ``downloaded`` boolean\nindicating whether the model weights are already present on disk.",
+        "description": "Return the ASR provider catalog with models, pricing, and capabilities.\n\nFor the local provider, each model entry includes a ``downloaded`` boolean\nindicating whether the model weights are already present on disk. A plain user\nsees only the cloud providers the administrator enabled; an admin sees all, each\nwith ``allowed_for_users`` (``services/asr_provider_policy``).",
         "operationId": "get_providers_api_asr_settings_providers_get",
         "responses": {
           "200": {

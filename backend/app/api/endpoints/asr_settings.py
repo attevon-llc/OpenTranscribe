@@ -41,6 +41,7 @@ from app.core import local_whisper_catalog
 from app.db.base import get_db
 from app.schemas.asr_settings import ASRModelCapabilities
 from app.schemas.pipeline import ASRSwitchResult
+from app.services import asr_provider_policy
 from app.services.asr_switch_plan import SwitchOutcome
 from app.services.asr_switch_plan import assess_asr_switch
 from app.services.local_models import cache as local_model_cache
@@ -377,14 +378,19 @@ def _reset_diarizer_references(db: Session, config_uuids: list[str], user_id: in
 @router.get("/providers")
 def get_providers(
     current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ) -> Any:
-    """Return the full ASR provider catalog with models, pricing, and capabilities.
+    """Return the ASR provider catalog with models, pricing, and capabilities.
 
     For the local provider, each model entry includes a ``downloaded`` boolean
-    indicating whether the model weights are already present on disk.
+    indicating whether the model weights are already present on disk. A plain user
+    sees only the cloud providers the administrator enabled; an admin sees all, each
+    with ``allowed_for_users`` (``services/asr_provider_policy``).
     """
     catalog = _get_provider_catalog()
-    providers = list(catalog.values())
+    providers = asr_provider_policy.visible_providers(
+        list(catalog.values()), current_user.role, asr_provider_policy.load_policy(db)
+    )
 
     # Annotate local models with download availability
     try:
@@ -563,26 +569,6 @@ def get_asr_config(
     return _config_to_dict(config)
 
 
-@router.get("/config/{config_uuid}/api-key")
-def get_asr_config_api_key(
-    config_uuid: UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """Return the decrypted API key for the specified configuration. Owner-only."""
-    config = _get_config_or_404(db, config_uuid, current_user.id)
-
-    if not config.api_key:
-        return {"api_key": None}
-
-    decrypted = decrypt_api_key(str(config.api_key))
-    if decrypted is None:
-        logger.error(f"Failed to decrypt API key for ASR config {config_uuid}")
-        raise HTTPException(status_code=500, detail="Failed to decrypt API key")
-
-    return {"api_key": decrypted}
-
-
 @router.post("", status_code=201)
 def create_asr_config(
     request: Request,
@@ -601,6 +587,9 @@ def create_asr_config(
 
     if settings_in.provider.value == "local":
         refuse_on_lite("local_asr_unavailable")
+    asr_provider_policy.refuse_config_change(
+        db, current_user, settings_in.provider.value, carries_credential=True
+    )
 
     # Duplicate name check
     existing = (
@@ -697,6 +686,17 @@ def update_asr_config(  # noqa: C901
         refuse_on_lite("local_asr_unavailable")
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
+    supplies_key = any(
+        isinstance(getattr(settings_in, field), str) and getattr(settings_in, field).strip()
+        for field in ("api_key", "access_key_id")
+    )
+    if supplies_key or "provider" in settings_in.model_fields_set:
+        asr_provider_policy.refuse_config_change(
+            db,
+            current_user,
+            settings_in.provider.value if settings_in.provider else str(config.provider),
+            carries_credential=bool(supplies_key),
+        )
 
     # Cross-field region validation needs the effective provider (may be from existing config)
     if "region" in settings_in.model_fields_set:

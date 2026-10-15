@@ -7050,6 +7050,90 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HfTokenStatus": {
+        "description": "What the client may know. Never any part of the token.",
+        "properties": {
+          "is_set": {
+            "title": "Is Set",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "app",
+              "environment",
+              "none"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_set",
+          "source"
+        ],
+        "title": "HfTokenStatus",
+        "type": "object"
+      },
+      "HfTokenTestRequest": {
+        "properties": {
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A token to test without saving it. Omit to test the one in use.",
+            "title": "Token"
+          }
+        },
+        "title": "HfTokenTestRequest",
+        "type": "object"
+      },
+      "HfTokenTestResult": {
+        "properties": {
+          "code": {
+            "enum": [
+              "valid",
+              "invalid",
+              "unreachable"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "code",
+          "message"
+        ],
+        "title": "HfTokenTestResult",
+        "type": "object"
+      },
+      "HfTokenUpdate": {
+        "properties": {
+          "token": {
+            "description": "Hugging Face access token. Stored encrypted.",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "HfTokenUpdate",
+        "type": "object"
+      },
       "InterruptionStats": {
         "properties": {
           "by_speaker": {
@@ -23503,6 +23587,157 @@
         "summary": "Update Group Mapping",
         "tags": [
           "group-mappings"
+        ]
+      }
+    },
+    "/api/admin/hf-token": {
+      "delete": {
+        "description": "Remove the saved token. The server-environment token, if any, applies again.",
+        "operationId": "clear_hf_token_api_admin_hf_token_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HfTokenStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Clear Hf Token",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "description": "Whether a token is in effect and where it comes from (super_admin only).",
+        "operationId": "get_hf_token_status_api_admin_hf_token_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HfTokenStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Hf Token Status",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Store or replace the token, encrypted at rest.",
+        "operationId": "set_hf_token_api_admin_hf_token_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HfTokenUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HfTokenStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Hf Token",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/hf-token/test": {
+      "post": {
+        "description": "Check a token with Hugging Face. Fixed sentences only; nothing is stored.",
+        "operationId": "test_hf_token_api_admin_hf_token_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/HfTokenTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HfTokenTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Test Hf Token",
+        "tags": [
+          "admin"
         ]
       }
     },

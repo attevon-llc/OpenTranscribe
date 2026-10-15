@@ -224,11 +224,13 @@ class SpeakerEmbeddingService:
                 raise RuntimeError(_NO_BACKEND_AVAILABLE_MESSAGE) from import_err
 
             # Check if we have a Hugging Face token
-            hf_token = settings.HUGGINGFACE_TOKEN
+            from app.services.huggingface_token import get_hf_token
+
+            hf_token = get_hf_token()
             # Only warn about missing token if not in offline mode (models pre-downloaded)
             if not hf_token and os.getenv("HF_HUB_OFFLINE") != "1":
                 logger.warning(
-                    "No HUGGINGFACE_TOKEN found in settings. This may be required for gated models."
+                    "No Hugging Face access token is set. It may be required for gated models."
                 )
 
             # Log VRAM before loading embedding model
@@ -248,7 +250,7 @@ class SpeakerEmbeddingService:
                     msg = (
                         f"PyAnnote model '{self.model_name}' returned None. "
                         "This usually means your HuggingFace token lacks access to this gated model. "
-                        "Please verify your HUGGINGFACE_TOKEN and accept the model agreement on HuggingFace."
+                        "Please verify your Hugging Face access token and accept the model agreement on HuggingFace."
                     )
                 raise PermissionError(msg)
 

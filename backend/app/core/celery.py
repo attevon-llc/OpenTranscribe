@@ -840,37 +840,27 @@ def start_watch_source_fs_events(**kwargs):
 
 
 def publish_hf_token_to_environment() -> bool:
-    """Make ``HUGGINGFACE_TOKEN`` visible to ``huggingface_hub``, without any network I/O.
+    """Make the server-environment Hugging Face token visible to ``huggingface_hub``.
 
-    ``huggingface_hub.get_token()`` resolves in the order Colab secret -> environment
-    (``HF_TOKEN``, then ``HUGGING_FACE_HUB_TOKEN``) -> the on-disk token file, so
-    exporting ``HF_TOKEN`` gives every un-parameterised Hub call the same token that
-    ``huggingface_hub.login()`` used to install — at the cost of one dict write instead
-    of a blocking HTTPS round trip.
+    Runs inside every forked prefork child against celery's ``worker_proc_alive_timeout``
+    kill timer (issue #631), so it is a dict write and nothing else: no network, no DB, no
+    locks. That is why it publishes only the ENVIRONMENT token
+    (``services.huggingface_token.publish_env_token_for_fork``); a token saved in Settings
+    is resolved, and published the same way, by ``get_hf_token()`` at the first model load.
 
-    ⚠️ **Never call ``huggingface_hub.login()`` from here.** ``login()`` -> ``_login()``
-    -> ``whoami()`` issues ``GET {endpoint}/api/whoami-v2`` through
-    ``requests`` **with no ``timeout=``**, so a degraded network path blocks for as long
-    as the kernel's TCP/DNS retries take (the sibling fix in
-    ``app/utils/hf_hub_offline.py`` measured 23-30 s). This function runs inside every
-    forked prefork child against celery's ``worker_proc_alive_timeout`` kill timer, which
-    is what made issue #631 unrecoverable. The token round trip only *validated* the
-    token; it was never what made it usable, and every model loader in this codebase
-    already threads ``hf_token=settings.HUGGINGFACE_TOKEN`` explicitly.
+    ⚠️ **Never call ``huggingface_hub.login()`` from here.** ``login()`` -> ``whoami()``
+    issues an HTTPS request through ``requests`` **with no ``timeout=``**, so a degraded
+    network path blocks for as long as the kernel's TCP/DNS retries take (23-30 s measured),
+    which is what made issue #631 unrecoverable. Exporting ``HF_TOKEN`` gives every
+    un-parameterised Hub call the same credential at the cost of one dict write.
 
     Returns:
         True when this call exported the token, False when there was nothing to export
         or the operator had already published one.
     """
-    hf_token = os.getenv("HUGGINGFACE_TOKEN")
-    if not hf_token:
-        return False
-    # An operator-supplied HF_TOKEN/HUGGING_FACE_HUB_TOKEN wins — overriding it would
-    # silently swap which credential gated-model downloads authenticate with.
-    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"):
-        return False
-    os.environ["HF_TOKEN"] = hf_token
-    return True
+    from app.services.huggingface_token import publish_env_token_for_fork
+
+    return publish_env_token_for_fork()
 
 
 def _pool_concurrency() -> int:

@@ -48,7 +48,10 @@ should import `app.api` or `app.services` at module scope.
   `timeout=`). No network, no locks, no model loads in that function. `publish_hf_token_to_
   environment()` is the network-free replacement: `huggingface_hub.get_token()` prefers
   `HF_TOKEN` from the environment over its on-disk token file, so a dict write does what the
-  round trip did. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
+  round trip did. ⚠️ It publishes only the ENVIRONMENT token: the Hugging Face token can also be
+  saved in Settings (encrypted in `SystemSettings`), resolved by
+  `services/huggingface_token.get_hf_token()` (DB read, 60 s cache, publishes `HF_TOKEN` itself),
+  which must never be called from this fork hook. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
   defence in depth over celery's bare 4.0 s, not the fix.
   ⚠️ **That kill timer covers respawns only, so the absence of `Timed out waiting for UP
   message` in a worker's logs proves nothing.** It is armed from `on_process_up` via

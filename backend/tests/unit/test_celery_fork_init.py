@@ -35,6 +35,7 @@ from app.core.celery import celery_app
 from app.core.celery import init_worker_process
 from app.core.celery import preload_models
 from app.core.celery import publish_hf_token_to_environment
+from app.core.config import settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -54,13 +55,16 @@ def _clean_hf_env(monkeypatch):
     """Start every test from a known HuggingFace environment."""
     monkeypatch.delenv("HF_TOKEN", raising=False)
     monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
-    monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
+    monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", None)
+    from app.services import huggingface_token
+
+    monkeypatch.setattr(huggingface_token, "_published_by_us", False)
 
 
 @pytest.mark.unit
 class TestPublishHfTokenToEnvironment:
     def test_exports_the_configured_token_as_hf_token(self, monkeypatch):
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_configured_value")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_configured_value")
 
         assert publish_hf_token_to_environment() is True
 
@@ -75,7 +79,7 @@ class TestPublishHfTokenToEnvironment:
         assert "HF_TOKEN" not in os.environ
 
     def test_does_not_override_an_operator_supplied_hf_token(self, monkeypatch):
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_from_dotenv")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_from_dotenv")
         monkeypatch.setenv("HF_TOKEN", "hf_set_by_operator")
 
         assert publish_hf_token_to_environment() is False
@@ -90,7 +94,7 @@ class TestPublishHfTokenToEnvironment:
         Writing ``HF_TOKEN`` anyway would silently take precedence over it and swap which
         credential gated downloads authenticate with.
         """
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_from_dotenv")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_from_dotenv")
         monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "hf_legacy_operator_value")
 
         assert publish_hf_token_to_environment() is False
@@ -106,7 +110,7 @@ class TestPublishHfTokenToEnvironment:
         cannot see the token, exporting it achieved nothing.
         """
         huggingface_hub = pytest.importorskip("huggingface_hub")
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_resolvable_value")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_resolvable_value")
 
         publish_hf_token_to_environment()
 
@@ -120,7 +124,7 @@ class TestForkInitializerDoesNoNetworkIo:
         call with no timeout, issued once per forked child against a hard kill timer.
         """
         huggingface_hub = pytest.importorskip("huggingface_hub")
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_configured_value")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_configured_value")
         login = MagicMock(name="huggingface_hub.login")
         monkeypatch.setattr(huggingface_hub, "login", login)
 
@@ -150,7 +154,7 @@ class TestForkInitializerDoesNoNetworkIo:
         of this test did exactly that and passed against the unfixed code.
         """
         hf_api = pytest.importorskip("huggingface_hub.hf_api")
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_configured_value")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_configured_value")
         stall_seconds = PROC_ALIVE_TIMEOUT + 2.0
         monkeypatch.setattr(hf_api, "whoami", lambda *a, **k: time.sleep(stall_seconds))
 
@@ -165,7 +169,7 @@ class TestForkInitializerDoesNoNetworkIo:
         )
 
     def test_publishes_the_token_so_the_removed_login_loses_nothing(self, monkeypatch):
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_configured_value")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_configured_value")
 
         init_worker_process()
 
@@ -181,7 +185,7 @@ class TestForkInitializerDoesNoNetworkIo:
         Issue #631 had to be reconstructed after the fact from ``asynpool``'s SIGKILL
         lines alone, which say a child died but not what it was doing.
         """
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_configured_value")
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_configured_value")
 
         with caplog.at_level(logging.INFO, logger="app.core.celery"):
             init_worker_process()

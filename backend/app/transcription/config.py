@@ -124,6 +124,7 @@ class TranscriptionConfig:
     @classmethod
     def from_environment(cls, **overrides) -> "TranscriptionConfig":
         """Build config from env vars + hardware detection, with task-level overrides."""
+        from app.services.huggingface_token import get_hf_token
         from app.utils.hardware_detection import detect_hardware
 
         hw = detect_hardware()
@@ -178,7 +179,7 @@ class TranscriptionConfig:
             min_speakers=int(os.getenv("MIN_SPEAKERS", "1")),
             max_speakers=int(os.getenv("MAX_SPEAKERS", "20")),
             num_speakers=None,
-            hf_token=os.getenv("HUGGINGFACE_TOKEN"),
+            hf_token=get_hf_token(),
             enable_native_embeddings=os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower()
             == "true",
             enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()

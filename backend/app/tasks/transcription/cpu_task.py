@@ -63,7 +63,6 @@ def _run_cpu_transcription(
     overrides = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
         vad_min_silence_ms=user_settings["vad_min_silence_ms"],
         vad_min_speech_ms=user_settings["vad_min_speech_ms"],

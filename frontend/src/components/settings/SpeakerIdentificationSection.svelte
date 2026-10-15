@@ -20,6 +20,7 @@
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
   import SpeakerAttributeBulkPanel from '$components/settings/SpeakerAttributeBulkPanel.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
+  import HuggingFaceTokenCard from '$components/settings/HuggingFaceTokenCard.svelte';
   import {
     speakerIdentificationTabs,
     resolveSpeakerIdTab,
@@ -145,6 +146,7 @@
       {#if visited['spk-engine']}
         <p class="tab-description">{$t('settings.engineSettings.description')}</p>
         <EngineSettings on:change={(e) => (dirty.engine = e.detail.hasChanges)} />
+        <HuggingFaceTokenCard />
       {/if}
     </div>
   {/if}

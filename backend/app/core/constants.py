@@ -534,6 +534,19 @@ NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"
 NOTIFICATION_TYPE_REINDEX_COMPLETE = "reindex_complete"
 NOTIFICATION_TYPE_REINDEX_STOPPED = "reindex_stopped"
 
+# WebSocket notification type for the local Whisper model download (#1246)
+NOTIFICATION_TYPE_LOCAL_MODEL_DOWNLOAD = "local_model_download"
+
+# Celery node-name prefixes (``--hostname <prefix>%h`` in the compose files) of the workers that
+# load the pinned Whisper model, so the only ones a model switch restarts (#1246). ``gpu-diarize@``
+# is deliberately absent: it serves the diarization queue. If a topology ever puts Whisper there,
+# add its prefix here.
+WHISPER_WORKER_PREFIXES: tuple[str, ...] = (
+    "gpu-transcription@",
+    "gpu-transcribe@",
+    "gpu-scaled@",
+)
+
 # WebSocket notification types for embedding migration
 NOTIFICATION_TYPE_MIGRATION_PROGRESS = "migration_progress"
 NOTIFICATION_TYPE_MIGRATION_COMPLETE = "migration_complete"

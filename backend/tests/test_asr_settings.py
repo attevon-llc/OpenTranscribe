@@ -892,6 +892,7 @@ class TestAdminLocalModelControl:
         assert "active_model" in data
         assert data["source"] in ("database", "environment")
         assert "available_models" in data
+        assert isinstance(data["loaded_models"], list)
 
     def test_set_local_model_requires_admin(self, client, user_token_headers):
         """Regular users cannot change the local model."""

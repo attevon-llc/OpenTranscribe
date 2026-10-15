@@ -42,36 +42,8 @@ CLOSED_PORT_ENDPOINT = "http://127.0.0.1:9"
 
 
 @pytest.fixture(autouse=True)
-def _never_reach_the_real_hub(monkeypatch, hf_cache):
-    """Refuse any socket or DNS lookup that is not loopback; turn off Xet and use small chunks.
-
-    Every catalog id is a real repository id, so a call that forgets to pass the mock endpoint
-    would otherwise talk to huggingface.co. Name resolution is blocked too, so such a call fails
-    before it sends a byte. (Patching ``constants.ENDPOINT`` instead does not work: the library
-    builds file URLs from a template computed at import and only substitutes ``endpoint=`` when
-    the URL starts with the current ``ENDPOINT``, so a patched value silently sends the request
-    to the real hub.)
-    """
-    from huggingface_hub import constants
-
-    loopback = {"127.0.0.1", "::1", "localhost"}
-    real_getaddrinfo = socket.getaddrinfo
-    real_connect = socket.socket.connect
-
-    def guarded_getaddrinfo(host, *args, **kwargs):
-        if host not in loopback:
-            raise OSError(f"test blocked a lookup of {host!r}")
-        return real_getaddrinfo(host, *args, **kwargs)
-
-    def guarded_connect(self, address):
-        if isinstance(address, tuple) and address[0] not in loopback:
-            raise OSError(f"test blocked a connection to {address[0]!r}")
-        return real_connect(self, address)
-
-    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
-    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
-    monkeypatch.setattr(constants, "HF_HUB_DISABLE_XET", True)
-    monkeypatch.setattr(constants, "DOWNLOAD_CHUNK_SIZE", 64 * 1024)
+def _never_reach_the_real_hub(loopback_only):
+    """Every test here runs behind the loopback-only network guard (see ``loopback_only``)."""
 
 
 def test_the_guard_refuses_the_real_hub():

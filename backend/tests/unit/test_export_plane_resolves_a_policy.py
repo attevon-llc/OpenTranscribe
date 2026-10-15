@@ -60,6 +60,15 @@ _DEFERRED_DISPATCH = frozenset(
 #: A reason is mandatory: every one of these is a claim that the route emits no
 #: transcript-derived content, or that its content is masked somewhere this scan cannot see.
 EXEMPT: dict[str, str] = {
+    "POST /api/admin/local-models/download": (
+        "Downloads a Whisper MODEL into the shared Hugging Face cache (#1246); 'download' is "
+        "the model weights, not a transcript. The response is a progress state with a catalog "
+        "id and byte counts, and no transcript-derived content exists anywhere on the route."
+    ),
+    "POST /api/admin/local-models/download/cancel": (
+        "Stops the model download above; the response is the same progress state. No "
+        "transcript-derived content."
+    ),
     "GET /api/files/{file_uuid}/subtitles/validate": (
         "Emits a timing report — 'Segment 4: Overlaps with previous segment' — built by "
         "SubtitleService.validate_subtitle_timing from indices and float offsets. No "

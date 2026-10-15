@@ -63,6 +63,11 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "admin migration control-plane event (stopped/running), no MediaFile identity",
     ),
+    "tasks/local_model_download.py::notify": (
+        1,
+        "super_admin model-download progress for the initiating admin (#1246); carries a "
+        "catalog model id and byte counts, never a MediaFile identity",
+    ),
     "tasks/storage_orphan_sweep_task.py::storage_orphan_sweep_task": (
         1,
         "admin data-integrity completion event for the storage orphan sweep (#1212); it "

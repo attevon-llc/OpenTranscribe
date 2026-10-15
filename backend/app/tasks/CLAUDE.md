@@ -111,6 +111,19 @@ indexing → WebSocket notification.
   exactly who it exists for (#403 D6). Dispatched fire-and-forget from
   `transcription/postprocess.enrich_and_dispatch`; logic lives in
   `services/ingest_artifacts/` (its own CLAUDE.md).
+- `local_model_download.py` — `asr.download_local_model` (**download** queue, #1246): downloads one
+  catalog Whisper model into the shared Hugging Face cache for the Settings model library. The
+  task only wires Celery to `services/local_models/supervisor.py`: it reads `get_hf_token()` in
+  the body (never a fork hook), and the supervisor runs `local_models.runner` as a **child
+  process** it can stop, because `snapshot_download` has no cancel hook and `revoke(terminate=True)`
+  would SIGTERM the whole prefork child with no chance to clean up or release the lock. Cancelling
+  signals that CPU-only child — code managing its own child, not the operator rule against
+  signalling CUDA processes. State, the deployment-wide single-download lock (`SET NX`, Lua
+  compare-and-delete) and the cancel flag are Redis (`services/local_models/state.py`); progress
+  is the `local_model_download` WebSocket event to the initiating admin. No `autoretry_for`,
+  not `acks_late`: pressing Download again is the retry. Success is reported only after every
+  expected blob is on disk at its size — `snapshot_download` writes `refs/main` before it
+  downloads on a branch, so `is_complete` alone can be briefly true with files missing.
 - `transcription/cancellation.py` — what a **user cancel** does when the cooperative
   checkpoint fires (#823). It is deliberately NOT `context.requeue_after_abort`:
 

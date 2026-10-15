@@ -36,6 +36,10 @@ ERROR_MESSAGES: dict[str, str] = {
     "download_failed": "The download failed.",
     "insufficient_disk_space": "There is not enough free disk space for this model.",
     "unknown_local_model": "This model is not in the list of supported local models.",
+    "model_download_in_progress": "Another model is already downloading. Wait for it or cancel it.",
+    "no_model_download": "No model download is in progress.",
+    "local_model_already_downloaded": "This model is already downloaded.",
+    "model_download_unavailable": "The download could not be started. Try again shortly.",
 }
 
 

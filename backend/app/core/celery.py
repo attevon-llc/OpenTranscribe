@@ -231,6 +231,7 @@ celery_app = Celery(
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
         "app.tasks.media_download",
+        "app.tasks.local_model_download",
         # Re-export shim (NOT dead) — keeps legacy task-name routing working by
         # re-exporting from speaker_{identification,update,embedding}_task. See
         # app/tasks/speaker_tasks.py. Must stay in this include list.
@@ -460,6 +461,7 @@ celery_app.conf.update(
         "download.media_playlist": {"queue": CeleryQueues.DOWNLOAD},
         "download.prepare_media": {"queue": CeleryQueues.DOWNLOAD},
         "download.prepare_bulk_subtitles": {"queue": CeleryQueues.DOWNLOAD},
+        "asr.download_local_model": {"queue": CeleryQueues.DOWNLOAD},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},
@@ -1131,6 +1133,15 @@ def preload_models(**kwargs):
                 # Pin the model name so subsequent tasks use the loaded model,
                 # even if the admin changes the DB setting before restarting.
                 TranscriptionConfig.pin_model(config.model_name)
+
+                # Say which model this worker now serves, so the Settings page can confirm a
+                # model switch instead of guessing (#1246). One bounded Redis SET; never raises.
+                from app.services.local_models import worker_report
+
+                worker_report.report_loaded_model(
+                    getattr(kwargs.get("sender"), "hostname", None) or socket.gethostname(),
+                    config.model_name,
+                )
 
                 logger.info(
                     "GPU models preloaded and pinned "

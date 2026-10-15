@@ -7580,6 +7580,210 @@
         "title": "LocalEndpointsResponse",
         "type": "object"
       },
+      "LocalModelCatalogResponse": {
+        "description": "The catalog, the download in flight (if any) and the cache's free space.",
+        "properties": {
+          "active_model": {
+            "title": "Active Model",
+            "type": "string"
+          },
+          "cache_writable": {
+            "title": "Cache Writable",
+            "type": "boolean"
+          },
+          "download": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalModelDownloadState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "free_bytes": {
+            "title": "Free Bytes",
+            "type": "integer"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/LocalModelEntry"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "models",
+          "free_bytes",
+          "cache_writable",
+          "active_model"
+        ],
+        "title": "LocalModelCatalogResponse",
+        "type": "object"
+      },
+      "LocalModelDownloadRequest": {
+        "description": "Start downloading one catalog model.",
+        "properties": {
+          "model_id": {
+            "maxLength": 100,
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id"
+        ],
+        "title": "LocalModelDownloadRequest",
+        "type": "object"
+      },
+      "LocalModelDownloadState": {
+        "description": "Where the (single) model download stands.",
+        "properties": {
+          "bytes_done": {
+            "default": 0,
+            "title": "Bytes Done",
+            "type": "integer"
+          },
+          "bytes_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Total"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "downloading",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "status",
+          "updated_at"
+        ],
+        "title": "LocalModelDownloadState",
+        "type": "object"
+      },
+      "LocalModelEntry": {
+        "description": "One catalog model and its state in this deployment's cache.",
+        "properties": {
+          "approx_bytes": {
+            "title": "Approx Bytes",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "downloaded": {
+            "title": "Downloaded",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "description": "The model the transcription workers are set to use.",
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "language_support": {
+            "enum": [
+              "multilingual",
+              "english_only",
+              "english_optimized"
+            ],
+            "title": "Language Support",
+            "type": "string"
+          },
+          "partial": {
+            "description": "A download was interrupted and left partial files.",
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "present_bytes": {
+            "title": "Present Bytes",
+            "type": "integer"
+          },
+          "repo_id": {
+            "title": "Repo Id",
+            "type": "string"
+          },
+          "supports_translation": {
+            "title": "Supports Translation",
+            "type": "boolean"
+          },
+          "vram_hint_gb": {
+            "title": "Vram Hint Gb",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "repo_id",
+          "approx_bytes",
+          "vram_hint_gb",
+          "language_support",
+          "supports_translation",
+          "is_default",
+          "downloaded",
+          "partial",
+          "present_bytes",
+          "is_active"
+        ],
+        "title": "LocalModelEntry",
+        "type": "object"
+      },
       "LockedAccount": {
         "description": "One entry in the admin locked-accounts listing.\n\nEnrichment (``user_uuid``/``full_name``/``is_active``/``auth_type``) is a\nsingle batched query over the page's identifiers, never a per-row lookup.\nAn identifier resolving to no account is included with these fields\n``None`` (J-A3) -- it is the operationally useful half (a stuck integration\nretrying a dead credential looks exactly like this), and it is excluded\nfrom ``locked_count`` on the wire by virtue of not appearing on a page\nunless ``include_unlocked=true``. These are attacker-supplied strings in\nan admin UI: render as data, never as a link.",
         "properties": {
@@ -23989,6 +24193,107 @@
         ]
       }
     },
+    "/api/admin/local-models": {
+      "get": {
+        "description": "The catalog with what is downloaded, the download in flight and the free disk space.",
+        "operationId": "list_local_models_api_admin_local_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalModelCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Local Models",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/local-models/download": {
+      "post": {
+        "description": "Queue the download of one catalog model. One download runs at a time, deployment-wide.",
+        "operationId": "start_local_model_download_api_admin_local_models_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalModelDownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalModelDownloadState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Start Local Model Download",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/local-models/download/cancel": {
+      "post": {
+        "description": "Stop the download in flight; its partial files are removed and the lock is released.",
+        "operationId": "cancel_local_model_download_api_admin_local_models_download_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalModelDownloadState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel Local Model Download",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/locked-accounts": {
       "get": {
         "description": "List locked accounts (issue #570), cursor-paginated over the lockout store.\n\nA **read**, and deliberately not audited per request -- the write below\n(the reset) is. ``admin`` tier, matching the existing lock/unlock pair\n(J-A2): a reset whose target an admin cannot see would be worse than a\nlisting a super_admin-only tier would otherwise require.",
@@ -26640,7 +26945,7 @@
     },
     "/api/asr-settings/local-model/restart": {
       "post": {
-        "description": "Gracefully restart the GPU Celery worker to apply a new model (admin only).\n\nSends a warm shutdown signal via Celery's control API.  The worker finishes\nany in-progress tasks before exiting.  Docker ``restart: always`` brings\nthe container back automatically, and the ``worker_ready`` signal handler\npreloads the new model from the database. Lite runs no GPU worker: 409\n``local_asr_unavailable`` (#1228) instead of a shutdown broadcast to every worker.",
+        "description": "Gracefully restart the Whisper worker(s) to apply a new model (super_admin only).\n\nSends a warm shutdown, by name, to the workers in ``WHISPER_WORKER_PREFIXES``.  Each\nfinishes the jobs it is running before exiting (the remote control does not arm the\ncooperative abort), Docker ``restart: always`` brings the container back, and the\n``worker_ready`` hook preloads the stored model and records it\n(``services/local_models/worker_report``).  Clients confirm the switch by waiting for the\nreturned ``workers`` to report the new model after ``restart_requested_at`` via\n``GET /local-model/active``.  Lite runs no GPU worker: 409 ``local_asr_unavailable``\n(#1228).  No worker answering is 409 ``gpu_worker_not_found`` and nothing is signalled;\nit used to broadcast ``shutdown`` to every worker in the deployment.",
         "operationId": "restart_gpu_worker_api_asr_settings_local_model_restart_post",
         "responses": {
           "200": {

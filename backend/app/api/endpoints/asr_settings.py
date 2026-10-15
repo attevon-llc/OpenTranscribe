@@ -38,6 +38,7 @@ from app.auth.audit import audit_logger
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.core import local_whisper_catalog
+from app.core.constants import WHISPER_WORKER_PREFIXES
 from app.db.base import get_db
 from app.schemas.asr_settings import ASRModelCapabilities
 from app.schemas.pipeline import ASRSwitchResult
@@ -45,6 +46,7 @@ from app.services import asr_provider_policy
 from app.services.asr_switch_plan import SwitchOutcome
 from app.services.asr_switch_plan import assess_asr_switch
 from app.services.local_models import cache as local_model_cache
+from app.services.local_models import worker_report
 from app.services.pipeline_plan_inputs import plan_for_user
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -1118,6 +1120,8 @@ def get_active_local_model(
         "source": "database" if (setting and setting.value) else "environment",
         "available_models": discover_local_models(),
         "model_info": model_info,
+        # What each Whisper worker has actually loaded (empty when Redis is unreachable).
+        "loaded_models": worker_report.read_loaded_models(),
     }
 
 
@@ -1210,13 +1214,17 @@ def restart_gpu_worker(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
-    """Gracefully restart the GPU Celery worker to apply a new model (admin only).
+    """Gracefully restart the Whisper worker(s) to apply a new model (super_admin only).
 
-    Sends a warm shutdown signal via Celery's control API.  The worker finishes
-    any in-progress tasks before exiting.  Docker ``restart: always`` brings
-    the container back automatically, and the ``worker_ready`` signal handler
-    preloads the new model from the database. Lite runs no GPU worker: 409
-    ``local_asr_unavailable`` (#1228) instead of a shutdown broadcast to every worker.
+    Sends a warm shutdown, by name, to the workers in ``WHISPER_WORKER_PREFIXES``.  Each
+    finishes the jobs it is running before exiting (the remote control does not arm the
+    cooperative abort), Docker ``restart: always`` brings the container back, and the
+    ``worker_ready`` hook preloads the stored model and records it
+    (``services/local_models/worker_report``).  Clients confirm the switch by waiting for the
+    returned ``workers`` to report the new model after ``restart_requested_at`` via
+    ``GET /local-model/active``.  Lite runs no GPU worker: 409 ``local_asr_unavailable``
+    (#1228).  No worker answering is 409 ``gpu_worker_not_found`` and nothing is signalled;
+    it used to broadcast ``shutdown`` to every worker in the deployment.
     """
     refuse_on_lite("local_asr_unavailable")
     from app.core.celery import celery_app
@@ -1228,6 +1236,8 @@ def restart_gpu_worker(
         setting.value if setting and setting.value else os.getenv("WHISPER_MODEL", "large-v3-turbo")
     )
 
+    restart_requested_at = datetime.now(UTC).isoformat()
+
     # Discover GPU workers
     try:
         inspector = celery_app.control.inspect(timeout=3.0)
@@ -1236,32 +1246,20 @@ def restart_gpu_worker(
         logger.warning("Failed to inspect Celery workers: %s", exc)
         ping_result = {}
 
-    gpu_workers = [name for name in ping_result if "gpu" in name.lower()]
+    # Only the workers that load the pinned Whisper model. Restarting anything else (the
+    # diarization worker, media downloads - which include a model download in flight - yt-dlp,
+    # redaction, embeddings) buys nothing and interrupts unrelated work.
+    gpu_workers = [name for name in ping_result if name.startswith(WHISPER_WORKER_PREFIXES)]
 
     if not gpu_workers:
-        # No GPU workers found — might be down already or naming mismatch.
-        # Still send a broadcast shutdown to the 'gpu' queue as best-effort.
-        logger.warning("No GPU workers found via inspect, sending broadcast shutdown")
-        try:
-            celery_app.control.broadcast("shutdown")
-        except HTTPException:
-            # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
-            # anything it catches into a 500, which would report a deliberate 401/403/404/422
-            # raised inside this block as an internal server error (issue #431).
-            raise
-        except Exception as exc:
-            logger.exception("Failed to broadcast shutdown")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to signal worker restart.",
-            ) from exc
-        return {
-            "status": "restart_signaled",
-            "model": pending_model,
-            "workers": [],
-            "message": "Shutdown broadcast sent. No GPU workers were detected — "
-            "they may already be restarting.",
-        }
+        # No broadcast: with nobody to name, "shutdown" would reach every worker.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "gpu_worker_not_found",
+                "message": "No transcription worker answered. It may already be restarting.",
+            },
+        )
 
     # Check for active GPU tasks. Best-effort: this only produces an advisory
     # count in the response, so a broker hiccup must not block the restart.
@@ -1304,6 +1302,7 @@ def restart_gpu_worker(
         "model": pending_model,
         "workers": gpu_workers,
         "active_tasks": active_gpu_tasks,
+        "restart_requested_at": restart_requested_at,
         "message": (
             f"GPU worker restart signaled. "
             f"{'Worker will finish ' + str(active_gpu_tasks) + ' active task(s) before restarting.' if active_gpu_tasks > 0 else 'Worker will restart immediately.'} "

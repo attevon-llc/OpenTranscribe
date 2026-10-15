@@ -331,6 +331,9 @@ def test_full_restart_reaches_the_worker_control(client, super_admin_token_heade
     class _Inspector:
         def ping(self):
             calls.append("ping")
+            return {"gpu-transcription@w1": {"ok": "pong"}}
+
+        def active(self):
             return {}
 
     class _Control:

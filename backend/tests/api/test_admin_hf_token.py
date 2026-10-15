@@ -10,6 +10,10 @@ from app.core.config import settings
 from app.models.system_settings import SystemSettings
 from app.services import huggingface_token as svc
 
+# Every test here writes the same unique `system_settings` row; split across xdist workers they
+# block each other on its index until the statement times out.
+pytestmark = pytest.mark.xdist_group("hf_token_setting")
+
 URL = "/api/admin/hf-token"
 TOKEN = "hf_" + "Q" * 34
 

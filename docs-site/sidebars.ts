@@ -59,6 +59,7 @@ const sidebars: SidebarsConfig = {
       label: 'Features',
       items: [
         'features/transcription',
+        'features/local-transcription-models',
         'features/speaker-diarization',
         'features/boundary-correction',
         'features/content-redaction',

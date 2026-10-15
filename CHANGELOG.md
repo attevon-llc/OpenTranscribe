@@ -122,6 +122,17 @@ off by default.
 
 ### Added
 
+- **Download and switch local transcription models from Settings (#1246).** A super admin can
+  download any model on the shipped list (`GET /api/admin/local-models`, `POST .../download`,
+  `POST .../download/cancel`) from **Settings → Transcription → Local models**, with a disk-space
+  check, live byte progress, cancel, and one download at a time across the deployment. Setting a
+  downloaded model active asks only the Whisper workers to restart, after running jobs finish, and
+  the screen confirms the switch when every restarted worker reports the new model. One catalog
+  (`app/core/local_whisper_catalog.py`) now feeds the Settings list, the server's allow-list and
+  `scripts/download-models.py`, which stays for first-time setup. `/asr-settings/local-model/set`
+  now refuses a model that is not on the list (400) or not fully downloaded (409), model discovery
+  no longer counts a half-finished download as present, and `/local-model/restart` answers 409
+  `gpu_worker_not_found` instead of signalling every worker when no Whisper worker answers.
 - **Which cloud transcription providers users may choose (#1246).** A super admin can enable
   only some cloud providers for plain users (`GET`/`PUT /api/admin/asr-providers`) and can
   forbid users from adding keys of their own; the credentials users then rely on are the

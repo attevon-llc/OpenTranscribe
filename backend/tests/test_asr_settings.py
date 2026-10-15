@@ -8,9 +8,11 @@ savepoint rollback — no mocks for the data layer.
 """
 
 import pytest
+from fixtures.hf_cache import make_complete_repo
 from pydantic import ValidationError
 
 from app import models
+from app.core.local_whisper_catalog import LOCAL_WHISPER_MODELS
 from app.models.user_asr_settings import UserASRSettings
 from app.schemas.asr_settings import ASRProvider
 from app.schemas.asr_settings import UserASRSettingsCreate
@@ -875,6 +877,12 @@ class TestLocalModelDiscovery:
 class TestAdminLocalModelControl:
     """Tests for admin-only local Whisper model management."""
 
+    @pytest.fixture(autouse=True)
+    def _every_catalog_model_on_disk(self, hf_cache):
+        """Activation requires the model to be downloaded (#1246); put them all in the cache."""
+        for entry in LOCAL_WHISPER_MODELS:
+            make_complete_repo(hf_cache, entry.repo_id)
+
     def test_get_active_local_model(self, client, user_token_headers):
         """Any user can view the active local model."""
         resp = client.get("/api/asr-settings/local-model/active", headers=user_token_headers)
@@ -1025,12 +1033,13 @@ class TestTranscriptionConfigResolvesModel:
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_admin_set_model_reflected_in_get(self, client, super_admin_token_headers):
+    def test_admin_set_model_reflected_in_get(self, client, super_admin_token_headers, hf_cache):
         """Full round-trip: admin sets model, GET endpoint returns it."""
         # This test exercises the full DB path (set + get both use API sessions)
+        make_complete_repo(hf_cache, "Systran/faster-whisper-small")
         client.post(
             "/api/asr-settings/local-model/set",
-            json={"model_name": "distil-large-v3"},
+            json={"model_name": "small"},
             headers=super_admin_token_headers,
         )
         resp = client.get(
@@ -1038,5 +1047,5 @@ class TestTranscriptionConfigResolvesModel:
             headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["active_model"] == "distil-large-v3"
+        assert resp.json()["active_model"] == "small"
         assert resp.json()["source"] == "database"

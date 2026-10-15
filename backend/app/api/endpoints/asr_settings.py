@@ -32,14 +32,18 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.pipeline_settings import plan_issues_out
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
+from app.core import local_whisper_catalog
 from app.db.base import get_db
 from app.schemas.asr_settings import ASRModelCapabilities
-from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
 from app.schemas.pipeline import ASRSwitchResult
 from app.services.asr_switch_plan import SwitchOutcome
 from app.services.asr_switch_plan import assess_asr_switch
+from app.services.local_models import cache as local_model_cache
 from app.services.pipeline_plan_inputs import plan_for_user
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -1138,42 +1142,35 @@ def set_active_local_model(
     ``local_asr_unavailable`` (#1228).
     """
     refuse_on_lite("local_asr_unavailable")
-    model_name = body.model_name.strip()
-    if not model_name:
+    requested = body.model_name.strip()
+    if not requested:
         raise HTTPException(status_code=400, detail="model_name is required")
-    # Accept known short names (incl. distil variants from model_discovery), the reprocess
-    # whitelist (incl. CrisperWhisper), or any HuggingFace repo id (contains "/").
-    from app.services.asr.model_discovery import _SHORT_NAME_TO_REPO
-    from app.services.asr.model_discovery import resolve_loadable_model_name
 
-    # The PyTorch checkpoint nyrahealth/CrisperWhisper ships model.safetensors (no CT2
-    # model.bin), so faster-whisper's WhisperModel cannot load it. Transparently remap
-    # it to the CTranslate2 build, which is the only loadable CrisperWhisper variant.
-    if model_name == "nyrahealth/CrisperWhisper":
-        logger.info(
-            "Admin %s requested nyrahealth/CrisperWhisper (PyTorch checkpoint) — "
-            "remapping to the CTranslate2 build nyrahealth/faster_CrisperWhisper",
-            current_user.email,
-        )
-        model_name = "nyrahealth/faster_CrisperWhisper"
-
-    # Resolve custom short names (e.g. crisperwhisper) to the loadable repo id so the
-    # stored value is exactly what the GPU worker passes to WhisperModel.
-    model_name = resolve_loadable_model_name(model_name)
-
-    # Accept: reprocess whitelist + every short name and resolved repo id from the
-    # discovery map (covers distil-* short names and the CrisperWhisper repo id).
-    known_models = (
-        set(VALID_LOCAL_WHISPER_MODELS)
-        | set(_SHORT_NAME_TO_REPO)
-        | set(_SHORT_NAME_TO_REPO.values())
-    )
-    if model_name not in known_models and "/" not in model_name:
+    # Only catalog models can be selected (#1246). Aliases such as `crisperwhisper` and the
+    # PyTorch checkpoint `nyrahealth/CrisperWhisper` (no CT2 model.bin, so faster-whisper cannot
+    # load it) resolve to their loadable catalog entry; any other name, including an arbitrary
+    # `org/repo`, is refused.
+    model_id = local_whisper_catalog.canonical_id(requested)
+    entry = local_whisper_catalog.get(model_id) if model_id else None
+    if entry is None:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown model '{model_name}'. Provide a known faster-whisper model "
-            "(e.g. large-v3, large-v3-turbo, distil-large-v3) or a HuggingFace repo id.",
+            detail={
+                "code": "unknown_local_model",
+                "message": "This model is not in the list of supported local models.",
+            },
         )
+    # The worker loads the model from the cache with no network on restart; a model that is not
+    # fully on disk would make it download inside preload or start unloaded.
+    if not local_model_cache.is_complete(entry.repo_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "local_model_not_downloaded",
+                "message": "Download this model before activating it.",
+            },
+        )
+    model_name = entry.id
 
     from app.models.system_settings import SystemSettings
 
@@ -1190,6 +1187,14 @@ def set_active_local_model(
     db.commit()
 
     logger.info("Admin %s set local ASR model to '%s'", current_user.email, model_name)
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_SETTINGS_CHANGE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=request.client.host if request.client else None,
+        details={"setting": "local_whisper_model", "action": "set", "model": model_name},
+    )
 
     return {
         "model_name": model_name,

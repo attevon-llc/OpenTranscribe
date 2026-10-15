@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from fixtures.hf_cache import make_complete_repo
 
 from app.models import UserSetting
 from app.models.user_asr_settings import UserASRSettings
@@ -61,7 +62,13 @@ def world(
     normal_user,
     db_session,
     add_asr_config,
+    hf_cache,
 ) -> World:
+    # The full-image control activates a local model, and activating one now requires it to be
+    # on disk (#1246): provide both candidates `_set_local_model` picks between.
+    make_complete_repo(hf_cache, "Systran/faster-whisper-large-v3")
+    make_complete_repo(hf_cache, "Systran/faster-whisper-large-v2")
+
     def store(key: str, value: str) -> None:
         db_session.add(UserSetting(user_id=normal_user.id, setting_key=key, setting_value=value))
         db_session.commit()

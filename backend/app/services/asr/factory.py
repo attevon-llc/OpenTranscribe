@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from app.core.exceptions import ASRConfigurationError
+from app.core.local_whisper_catalog import provider_model_dicts
 
 from .base import ASRProvider
 from .local_provider import LocalASRProvider
@@ -109,86 +110,7 @@ ASR_PROVIDER_CATALOG: dict = {
         "status": "tested",
         "status_note": "",
         "diarization_quality": "Excellent — PyAnnote provides best-in-class speaker diarization",
-        "models": [
-            {
-                "id": "large-v3-turbo",
-                "display_name": "Large V3 Turbo",
-                "description": "Default — 6× faster, ~6 GB VRAM",
-                "price_per_min_batch": 0,
-                "is_default": True,
-                "supports_diarization": True,
-                "supports_translation": False,
-                "language_support": "english_optimized",
-            },
-            {
-                "id": "large-v3",
-                "display_name": "Large V3",
-                "description": "Best accuracy, ~10 GB VRAM, supports translation",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": True,
-                "language_support": "multilingual",
-            },
-            {
-                "id": "large-v2",
-                "display_name": "Large V2",
-                "description": "Legacy, ~10 GB VRAM",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": True,
-                "language_support": "multilingual",
-            },
-            {
-                "id": "medium",
-                "display_name": "Medium",
-                "description": "~5 GB VRAM",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": True,
-                "language_support": "multilingual",
-            },
-            {
-                "id": "small",
-                "display_name": "Small",
-                "description": "~2 GB VRAM",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": True,
-                "language_support": "multilingual",
-            },
-            {
-                "id": "base",
-                "display_name": "Base",
-                "description": "~1 GB VRAM",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": True,
-                "language_support": "multilingual",
-            },
-            {
-                "id": "tiny",
-                "display_name": "Tiny",
-                "description": "Fastest, lowest accuracy",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": True,
-                "language_support": "multilingual",
-            },
-            {
-                # CTranslate2 build (config.json + model.bin) — the only CrisperWhisper
-                # variant that loads in faster-whisper's WhisperModel. The PyTorch
-                # checkpoint nyrahealth/CrisperWhisper is intentionally NOT in this
-                # catalog: it ships model.safetensors (no CT2 model.bin), so CTranslate2
-                # cannot load it and the whisperx transformers backend is still a stub.
-                "id": "nyrahealth/faster_CrisperWhisper",
-                "display_name": "CrisperWhisper (English)",
-                "description": "Precise verbatim word-level timestamps, English only, ~3 GB VRAM",
-                "price_per_min_batch": 0,
-                "supports_diarization": True,
-                "supports_translation": False,
-                "language_support": "english_only",
-            },
-        ],
+        "models": provider_model_dicts(),
     },
     "deepgram": {
         "id": "deepgram",

@@ -3,7 +3,7 @@
 Download all required AI models for OpenTranscribe offline packaging.
 
 This script downloads:
-- WhisperX models
+- The local Whisper model (from the model catalog)
 - PyAnnote speaker diarization models
 - NLTK data files (punkt_tab tokenizer)
 - Sentence-Transformers models (all-MiniLM-L6-v2)
@@ -45,27 +45,6 @@ def guard_mps_empty_cache(torch_module):
         return False
     mps.empty_cache = lambda: None
     return True
-
-
-def resolve_whisper_device(use_gpu_env, cuda_available, compute_type):
-    """Pick the device/compute type for the WhisperX download step.
-
-    ``USE_GPU`` defaults to ``true``, so a run with no environment (a Dockerfile ``RUN``
-    that bakes models) requested ``cuda``/``float16`` on hosts without a GPU and failed.
-    CUDA is used only when requested AND present; on CPU the GPU-only ``float16``
-    becomes ``int8``, the backend's own CPU default (``hardware_detection.py``).
-
-    Args:
-        use_gpu_env: Raw value of ``USE_GPU`` (default ``'true'``).
-        cuda_available: Whether ``torch.cuda.is_available()``.
-        compute_type: Requested ``COMPUTE_TYPE``.
-
-    Returns:
-        ``(device, compute_type)``.
-    """
-    if use_gpu_env.lower() == 'true' and cuda_available:
-        return 'cuda', compute_type
-    return 'cpu', 'int8' if compute_type == 'float16' else compute_type
 
 
 # PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
@@ -119,44 +98,46 @@ def print_warning(text):
 
 
 def download_whisperx_models():
-    """Download WhisperX models"""
-    print_header('Downloading WhisperX Models')
+    """Download the local Whisper model named by ``WHISPER_MODEL`` from the model catalog.
+
+    The catalog (``app.core.local_whisper_catalog``) is the one list of models a deployment can
+    download and select, and ``app.services.local_models.downloader`` is the one downloader the
+    Settings page uses too. A name outside the catalog is refused rather than downloaded.
+    """
+    print_header('Downloading Local Whisper Model')
 
     try:
-        import torch
-        import whisperx
-
-        model_name = os.environ.get('WHISPER_MODEL', 'large-v3-turbo')
-        device, compute_type = resolve_whisper_device(
-            os.environ.get('USE_GPU', 'true'),
-            torch.cuda.is_available(),
-            os.environ.get('COMPUTE_TYPE', 'float16'),
+        from app.core.local_whisper_catalog import LOCAL_WHISPER_MODELS, canonical_id, get
+        from app.services.local_models.downloader import (
+            ERROR_MESSAGES,
+            classify_error,
+            download_blocking,
         )
+    except ImportError:
+        print_error(
+            'This downloader image predates the model catalog; use the image matching this '
+            "script's release (OT_IMAGE_TAG)."
+        )
+        return {'whisperx': {'status': 'failed', 'error': 'downloader_image_outdated'}}
 
-        print_info(f'Model: {model_name}')
-        print_info(f'Device: {device}')
-        print_info(f'Compute type: {compute_type}')
+    requested = os.environ.get('WHISPER_MODEL', 'large-v3-turbo')
+    model_id = canonical_id(requested)
+    entry = get(model_id) if model_id else None
+    if entry is None:
+        print_error(f"'{requested}' is not a supported local model.")
+        print_info('Supported models: ' + ', '.join(m.id for m in LOCAL_WHISPER_MODELS))
+        return {'whisperx': {'status': 'failed', 'error': 'unknown_local_model'}}
 
-        print_info('Loading WhisperX model (this will download if needed)...')
-        model = whisperx.load_model(model_name, device=device, compute_type=compute_type)
+    print_info(f'Model: {entry.id} ({entry.repo_id})')
+    try:
+        download_blocking(entry, os.environ.get('HUGGINGFACE_TOKEN'))
+    except Exception as exc:
+        code = classify_error(exc)
+        print_error(f'Failed to download local Whisper model: {ERROR_MESSAGES[code]}')
+        return {'whisperx': {'status': 'failed', 'error': code}}
 
-        print_success(f"WhisperX model '{model_name}' downloaded successfully")
-
-        # Clean up
-        del model
-
-        return {
-            'whisperx': {
-                'model': model_name,
-                'device': device,
-                'compute_type': compute_type,
-                'status': 'downloaded',
-            }
-        }
-
-    except Exception as e:
-        print_error(f'Failed to download WhisperX models: {e}')
-        return {'whisperx': {'status': 'failed', 'error': str(e)}}
+    print_success(f"Local Whisper model '{entry.id}' downloaded successfully")
+    return {'whisperx': {'model': entry.id, 'repo_id': entry.repo_id, 'status': 'downloaded'}}
 
 
 def validate_gated_model_access():

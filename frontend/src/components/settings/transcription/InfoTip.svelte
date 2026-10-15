@@ -225,7 +225,7 @@
     height: 10px;
   }
 
-  .panel[data-side='above']::before {
+  .panel:global([data-side='above'])::before {
     top: auto;
     bottom: -10px;
   }

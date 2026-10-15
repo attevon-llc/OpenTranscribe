@@ -81,26 +81,9 @@ def test_get_config_malformed_uuid_422(client, user_token_headers):
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_get_api_key_malformed_uuid_422(client, user_token_headers):
-    resp = client.get(f"{_BASE}/config/not-a-uuid/api-key", headers=user_token_headers)
-    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-
 def test_get_config_unknown_uuid_404(client, user_token_headers):
     resp = client.get(f"{_BASE}/config/{uuid.uuid4()}", headers=user_token_headers)
     assert resp.status_code == status.HTTP_404_NOT_FOUND
-
-
-def test_api_key_none_for_local_config(client, user_token_headers):
-    """A local config has no key → endpoint returns {'api_key': None} (not 500)."""
-    created = client.post(
-        _BASE,
-        json={"name": "Local NoKey", "provider": "local", "model_name": "tiny"},
-        headers=user_token_headers,
-    ).json()
-    resp = client.get(f"{_BASE}/config/{created['uuid']}/api-key", headers=user_token_headers)
-    assert resp.status_code == status.HTTP_200_OK
-    assert resp.json() == {"api_key": None}
 
 
 # ---------------------------------------------------------------------------
@@ -130,13 +113,19 @@ def test_create_encrypt_returns_none_500(client, user_token_headers):
     assert "dg_fixture_key_xyz" not in resp.text
 
 
-def test_get_api_key_decrypt_failure_500(client, user_token_headers):
-    """A stored key that fails to decrypt → 'Failed to decrypt API key' (owner path)."""
-    created = _create_cloud_config(client, user_token_headers, name="DecryptFail").json()
-    with patch(f"{_ENC}.decrypt_api_key", return_value=None):
-        resp = client.get(f"{_BASE}/config/{created['uuid']}/api-key", headers=user_token_headers)
-    assert resp.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert resp.json()["detail"] == "Failed to decrypt API key"
+def test_the_key_reveal_route_is_removed_for_every_kind_of_config(client, user_token_headers):
+    """No saved key can be read back (#1246): the owner-only reveal route is gone, so a
+    cloud config, a local one and a malformed id all answer 404 (not 200, 422 or 500)."""
+    cloud = _create_cloud_config(client, user_token_headers, name="NoReveal").json()
+    local = client.post(
+        _BASE,
+        json={"name": "Local NoKey", "provider": "local", "model_name": "tiny"},
+        headers=user_token_headers,
+    ).json()
+    for ident in (cloud["uuid"], local["uuid"], "not-a-uuid"):
+        resp = client.get(f"{_BASE}/config/{ident}/api-key", headers=user_token_headers)
+        assert resp.status_code == status.HTTP_404_NOT_FOUND, ident
+        assert "dg_fixture_key_xyz" not in resp.text
 
 
 def test_test_saved_config_decrypt_failure_500(client, user_token_headers):

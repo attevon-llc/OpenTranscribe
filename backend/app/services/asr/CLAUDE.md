@@ -111,7 +111,13 @@ way as soon as its catalog entry says `supports_diarization` and its parser fill
 
 AES-256-GCM via `utils/encryption.encrypt_api_key` (PBKDF2-SHA256, 600k iters, `v3:` prefix; legacy
 Fernet auto-detected on read). Responses expose only `has_api_key` / `has_access_key_id`, never a value
-or mask — sole exception is the owner-only `GET /config/{uuid}/api-key` (`api/endpoints/asr_settings.py:477`).
+or mask, on any route (the owner-only `GET /config/{uuid}/api-key` was removed in #1246).
+Which cloud providers a plain user may pick, and whether they may save a key of their own, is
+`services/asr_provider_policy.py` (`SystemSettings` `asr.cloud_providers_for_users`,
+`asr.users_may_add_own_keys`; super_admin `GET/PUT /admin/asr-providers`). The pipeline plan
+enforces it (`asr_provider_not_allowed`, `diarizer_provider_not_allowed`), so dispatch and every
+ASR switch refuse without a check of their own; creating/re-pointing a config is checked in
+`asr_settings.py` via `refuse_config_change`. Admins and the `ASR_PROVIDER` env default are exempt.
 On PUT an empty/null `api_key` means **keep the existing key** (how the UI edits other fields);
 changing `provider` **clears** it.
 

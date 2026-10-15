@@ -141,6 +141,12 @@ set: super_admin (`get_current_active_superuser`) under the `engine.settings` ca
 (`{is_set, source}` is all any route returns), fixed-sentence test results, audit event
 `admin.settings.change` with the action and never the value.
 
+`/admin/asr-providers` (GET/PUT, super_admin, capability `asr.user_providers`) is the cloud-ASR
+provider policy (#1246): which providers plain users may pick, whether they may add their own
+keys, and the admin-shared configurations (flags only, listed for the caller's active
+organisation) that carry the credentials. The decision itself lives in the pipeline plan; see
+`services/asr_provider_policy.py`.
+
 ### Compliance
 
 Legally significant, audit-logged in the service layer, and deliberately without a

@@ -72,6 +72,39 @@ def _diarizer_config(
     )
 
 
+def _provider_policy_flags(
+    db: Session,
+    user_id: int,
+    active_config_provider: str | None,
+    source: str,
+    diarizer_config: DiarizerConfigInfo | None,
+) -> tuple[bool, bool]:
+    """``(transcription allowed, speaker detector allowed)`` under the admin's allow-list.
+
+    Only a saved config the user activated is judged: the ``ASR_PROVIDER`` environment
+    default is the deployment's own choice. The vendor behind ``pyannote`` speaker
+    detection is the catalog's ``pyannote`` provider. Admins are exempt
+    (``asr_provider_policy``).
+    """
+    from app import models
+    from app.services import asr_provider_policy as policy
+
+    role = db.query(models.User.role).filter(models.User.id == user_id).scalar()
+    if policy.is_exempt(role):
+        return True, True
+    rules = policy.load_policy(db)
+    asr_ok = active_config_provider is None or policy.provider_allowed(
+        role, active_config_provider, rules
+    )
+    if source == "pyannote":
+        diar_ok = policy.provider_allowed(role, "pyannote", rules)
+    elif source == "asr_config" and diarizer_config is not None:
+        diar_ok = policy.provider_allowed(role, diarizer_config.provider, rules)
+    else:
+        diar_ok = True
+    return asr_ok, diar_ok
+
+
 def load_plan_inputs(
     db: Session,
     user_id: int,
@@ -139,6 +172,15 @@ def load_plan_inputs(
         has_key = bool(credential is not None and credential.api_key)
         pyannote_model = current_pyannote_model(credential.model_name if credential else None)
 
+    diarizer_config = (
+        _diarizer_config(db, user_id, str(config_uuid) if config_uuid else None, request)
+        if source == "asr_config"
+        else None
+    )
+    asr_allowed, diarizer_allowed = _provider_policy_flags(
+        db, user_id, provider if cfg is not None else None, source, diarizer_config
+    )
+
     return PlanInputs(
         deployment_mode=str(settings.DEPLOYMENT_MODE).lower(),
         asr_provider=provider,
@@ -152,13 +194,11 @@ def load_plan_inputs(
         diarizer_backend=TranscriptionConfig._resolve_diarizer_backend(),
         has_pyannote_key=has_key,
         pyannote_model=pyannote_model,
-        diarization_config=(
-            _diarizer_config(db, user_id, str(config_uuid) if config_uuid else None, request)
-            if source == "asr_config"
-            else None
-        ),
+        diarization_config=diarizer_config,
         cpu_whisper_model=whisper_model if whisper_model in LIGHTWEIGHT_MODELS else None,
         gpu_split=gpu_split_enabled() if gpu_split is None else gpu_split,
+        asr_provider_allowed=asr_allowed,
+        diarizer_provider_allowed=diarizer_allowed,
     )
 
 

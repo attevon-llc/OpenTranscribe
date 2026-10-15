@@ -132,4 +132,12 @@ describe('representative CRUD calls', () => {
     });
     expect(result).toEqual({ uuid: 'config-uuid', is_active: true });
   });
+
+  it('reads the server AWS credential status from the admin endpoint', async () => {
+    const status = { found: true, source: 'instance_role', region: 'us-east-1' };
+    mockInstance.get.mockResolvedValue({ data: status });
+    const result = await LLMSettingsApi.getBedrockServerCredentials();
+    expect(mockInstance.get).toHaveBeenCalledWith('/llm-settings/bedrock/server-credentials');
+    expect(result).toEqual(status);
+  });
 });

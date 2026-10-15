@@ -88,6 +88,10 @@ should import `app.api` or `app.services` at module scope.
   measurement that justifies the new value. The *result* is not here at all: it is a
   `SystemSettings` row keyed by a (provider, base_url, model) fingerprint, written only by
   the probe. Full rationale: `app/services/CLAUDE.md`.
+- `validation_errors.py` — `main.py`'s 422 handler: FastAPI's default body with each error's `input`
+  dropped when it concerns a sensitive field (`SENSITIVE_FIELDS`: `api_key`, `aws_*`) or is a body
+  containing one. The default echoes the failing value, i.e. a submitted secret. A new write-only
+  credential field belongs in that set.
 - `exceptions.py` — the `OpenTranscribeError` hierarchy, handled globally in `main.py`.
   **Service-layer only** — endpoints keep raising `HTTPException` (see its docstring).
 - `task_cancellation.py` — the **per-run** cooperative stand-down (#823), and

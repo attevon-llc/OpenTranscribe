@@ -2,12 +2,15 @@
 Pydantic schemas for user LLM settings
 """
 
+import re
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import Field
 from pydantic import field_validator
+from pydantic import model_validator
 
 from app.core.enums import ContextWindowStatus
 from app.core.enums import ReasoningOffSwitch
@@ -23,10 +26,9 @@ class LLMProvider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
     #: AWS-native, reached through boto3's Converse API (see
-    #: ``services/llm_bedrock.py``). No ``api_key``/``base_url`` — credentials resolve
-    #: via boto3's standard chain (IAM role, profile, or environment) and the AWS
-    #: region is a deployment-level setting (``BEDROCK_REGION``/``AWS_REGION``), not a
-    #: per-configuration field.
+    #: ``services/llm_bedrock.py``). No ``base_url``. A configuration may carry its own
+    #: region and AWS credentials (write-only, stored encrypted); blank means the
+    #: server's region and boto3 credential chain (``services/bedrock_settings.py``).
     BEDROCK = "bedrock"
     CUSTOM = "custom"
     # Legacy - kept for backward compatibility with existing database records
@@ -40,6 +42,84 @@ class ConnectionStatus(StrEnum):
     FAILED = "failed"
     PENDING = "pending"
     UNTESTED = "untested"
+
+
+#: AWS region names: ``us-east-1``, ``eu-central-1``, ``us-gov-west-1``, ``ap-southeast-2``.
+AWS_REGION_PATTERN = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
+AWS_ACCESS_KEY_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{16,128}$")
+AWS_SECRET_PATTERN = re.compile(r"^\S{16,256}$")
+AWS_SESSION_TOKEN_MAX = 4096
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+class BedrockCredentialFields(BaseModel):
+    """Write-only AWS fields for a ``bedrock`` configuration.
+
+    None of these is ever returned by an endpoint: the public schema carries only
+    ``aws_region`` and the ``has_aws_credentials`` flag. ``repr=False`` keeps them out of
+    any logged model.
+    """
+
+    aws_region: str | None = None
+    aws_access_key_id: str | None = Field(default=None, repr=False)
+    aws_secret_access_key: str | None = Field(default=None, repr=False)
+    aws_session_token: str | None = Field(default=None, repr=False)
+
+    @field_validator("aws_region", mode="before")
+    @classmethod
+    def _valid_region(cls, v):
+        v = _blank_to_none(v)
+        if v is not None and not AWS_REGION_PATTERN.fullmatch(v):
+            raise ValueError("aws_region must look like us-east-1")
+        return v
+
+    @field_validator("aws_access_key_id", mode="before")
+    @classmethod
+    def _valid_key_id(cls, v):
+        v = _blank_to_none(v)
+        if v is not None and not AWS_ACCESS_KEY_ID_PATTERN.fullmatch(v):
+            raise ValueError("aws_access_key_id is not a valid access key id")
+        return v
+
+    @field_validator("aws_secret_access_key", mode="before")
+    @classmethod
+    def _valid_secret(cls, v):
+        v = _blank_to_none(v)
+        if v is not None and not AWS_SECRET_PATTERN.fullmatch(v):
+            raise ValueError("aws_secret_access_key is not a valid secret access key")
+        return v
+
+    @field_validator("aws_session_token", mode="before")
+    @classmethod
+    def _valid_token(cls, v):
+        v = _blank_to_none(v)
+        if v is not None and (len(v) > AWS_SESSION_TOKEN_MAX or any(c.isspace() for c in v)):
+            raise ValueError("aws_session_token is not a valid session token")
+        return v
+
+    @model_validator(mode="after")
+    def _key_pair_together(self):
+        if bool(self.aws_access_key_id) != bool(self.aws_secret_access_key):
+            raise ValueError("aws_access_key_id and aws_secret_access_key must be given together")
+        if self.aws_session_token and not self.aws_access_key_id:
+            raise ValueError("aws_session_token needs an access key id and secret access key")
+        return self
+
+    @property
+    def has_aws_fields(self) -> bool:
+        """True when the request carries any AWS value to store."""
+        return bool(
+            self.aws_region
+            or self.aws_access_key_id
+            or self.aws_secret_access_key
+            or self.aws_session_token
+        )
 
 
 class UserLLMSettingsBase(BaseModel):
@@ -80,14 +160,17 @@ class UserLLMSettingsBase(BaseModel):
         return v
 
 
-class UserLLMSettingsCreate(UserLLMSettingsBase):
+class UserLLMSettingsCreate(UserLLMSettingsBase, BedrockCredentialFields):
     """Schema for creating user LLM settings"""
 
     api_key: str | None = None
 
 
-class UserLLMSettingsUpdate(BaseModel):
+class UserLLMSettingsUpdate(BedrockCredentialFields):
     """Schema for updating user LLM settings"""
+
+    #: Drop the configuration's own AWS credentials so it uses the server's credential chain.
+    clear_aws_credentials: bool = False
 
     name: str | None = None
     provider: LLMProvider | None = None
@@ -145,6 +228,10 @@ class UserLLMSettingsPublic(UUIDBaseSchema):
     test_status: ConnectionStatus | None = None
     test_message: str | None = None
     has_api_key: bool = False
+    #: Bedrock only: the configuration's region (not a secret) and whether it stores its own
+    #: AWS credentials. The credentials themselves are never returned.
+    aws_region: str | None = None
+    has_aws_credentials: bool = False
     is_shared: bool = False
     shared_at: datetime | None = None
     owner_name: str | None = None
@@ -201,7 +288,7 @@ class ContextWindowCapability(BaseModel):
     detail: str = ""
 
 
-class ConnectionTestRequest(BaseModel):
+class ConnectionTestRequest(BedrockCredentialFields):
     """Schema for connection test requests"""
 
     provider: LLMProvider
@@ -209,6 +296,8 @@ class ConnectionTestRequest(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     config_id: UUID | None = None  # For edit mode - uses stored API key
+    # Bedrock: the entered (unsaved) aws_* values come from BedrockCredentialFields; blank
+    # ones fall back to the stored configuration's (edit mode), then to the server's chain.
 
 
 class ConnectionTestResponse(BaseModel):
@@ -221,6 +310,17 @@ class ConnectionTestResponse(BaseModel):
     model_info: dict | None = None
 
 
+class BedrockServerCredentialStatus(BaseModel):
+    """Whether the SERVER's own AWS credential chain resolves, and the kind of source.
+
+    Never a value: no key, secret or token is read, only which provider of the chain answered.
+    """
+
+    found: bool
+    source: str | None = None
+    region: str | None = None
+
+
 class ProviderDefaults(BaseModel):
     """Default configuration for a provider"""
 
@@ -231,6 +331,9 @@ class ProviderDefaults(BaseModel):
     supports_custom_url: bool = True
     max_context_length: int | None = None
     description: str
+    #: Suggestions for a provider's free-text fields (Bedrock: AWS regions, model ids).
+    suggested_regions: list[str] = []
+    suggested_models: list[str] = []
 
 
 class SupportedProvidersResponse(BaseModel):

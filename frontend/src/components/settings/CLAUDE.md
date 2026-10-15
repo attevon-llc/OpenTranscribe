@@ -67,6 +67,13 @@ AdminTaskHealthPanel).
 - `SystemStatisticsPanel.svelte`, `AdminTaskHealthPanel.svelte` — admin dashboards (export
   module-context interfaces consumed by the shell).
 - `*Modal.svelte` (ASRConfigModal, LLMConfigModal) — nested editors opened from a panel.
+  `LLMConfigModal` delegates two blocks: `LLMLocalDiscovery` (the local-server detection, an
+  `ExpandableSection` disclosure: hidden for openai/anthropic/openrouter/bedrock, collapsed with its
+  result in the summary for ollama/vllm/custom, expanded only with no provider chosen and a reachable
+  endpoint; the parent keeps `useDiscoveredEndpoint` and its `await tick()` ordering) and
+  `LLMBedrockFields` (region + write-only AWS key; credentials are never pre-filled, a blank field is
+  not sent, `clear_aws_credentials` is the only way to drop a saved key, an admin also sees the
+  server-credential status).
 
 ## Conventions / patterns
 

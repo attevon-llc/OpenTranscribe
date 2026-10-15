@@ -90,6 +90,10 @@ class UUIDBaseSchema(BaseModel):
             # has_api_key is a property on UserLLMSettings model
             if hasattr(data, "has_api_key") and "has_api_key" not in data_dict:
                 data_dict["has_api_key"] = data.has_api_key
+            # Bedrock's region / has-credentials flags are decrypted views of api_key.
+            for computed in ("aws_region", "has_aws_credentials"):
+                if hasattr(data, computed) and computed not in data_dict:
+                    data_dict[computed] = getattr(data, computed)
 
             # Map foreign key UUIDs from related objects
             cls._map_foreign_key_uuids(data, data_dict)

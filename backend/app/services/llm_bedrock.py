@@ -20,9 +20,11 @@ is a *synchronous* ``Iterator[LLMStreamEvent]``; the chat service drives it with
 (``services/chat/service.py``). boto3's ``EventStream`` is a synchronous iterator
 cancelled the same way, so it drops in without ``aioboto3`` or any async plumbing.
 
-**Credentials.** Resolved by boto3's standard chain — instance role, task role,
-profile, or environment. Bedrock is therefore the one provider with no API key to
-store, which is why ``api_key`` is not consulted anywhere below.
+**Credentials.** A configuration may carry its own AWS key pair (write-only, stored
+encrypted, handed in as a ``BedrockConnection``); without one boto3's standard chain
+resolves them — instance role, task role, profile, or environment. Every client is
+built through ``bedrock_settings.client_kwargs``, the only place credentials reach boto3,
+and any error text is scrubbed of the connection's secrets before it is logged or yielded.
 
 **Retries (issue #1049).** Every client is built with botocore's retry config from
 ``BEDROCK_RETRY_MODE`` / ``BEDROCK_MAX_ATTEMPTS`` (default ``adaptive`` / 8). The
@@ -41,6 +43,8 @@ from typing import Any
 
 from app.core import constants as C  # noqa: N812
 from app.core.config import settings
+from app.services import bedrock_settings
+from app.services.bedrock_settings import BedrockConnection
 from app.services.llm_stream import LLMStreamEvent
 
 logger = logging.getLogger(__name__)
@@ -97,8 +101,10 @@ def is_transient_error(exc: BaseException) -> bool:
     return code in TRANSIENT_ERROR_CODES
 
 
-def _client(region: str):
-    """Build a ``bedrock-runtime`` client.
+def _client(
+    region: str, connection: BedrockConnection | None = None, service: str = "bedrock-runtime"
+):
+    """Build a Bedrock client (``bedrock-runtime`` by default).
 
     Not cached: botocore clients are not documented as thread-safe for concurrent
     use, and this runs under a threadpool. Construction is cheap relative to an
@@ -111,11 +117,10 @@ def _client(region: str):
         raise BedrockNotConfiguredError("boto3 is not installed") from exc
 
     if not region:
-        raise BedrockNotConfiguredError(
-            "No AWS region configured for Bedrock (set BEDROCK_REGION or AWS_REGION)"
-        )
+        raise BedrockNotConfiguredError("No AWS region configured for Bedrock")
     return boto3.client(
-        "bedrock-runtime", region_name=region, config=Config(retries=retry_config())
+        service,
+        **bedrock_settings.client_kwargs(region, connection, config=Config(retries=retry_config())),
     )
 
 
@@ -300,6 +305,7 @@ def converse(
     temperature: float | None = None,
     top_p: float | None = None,
     attribution: dict[str, Any] | None = None,
+    connection: BedrockConnection | None = None,
 ) -> tuple[str, int | None, str | None]:
     """Non-streaming Bedrock completion, built by draining :func:`stream_converse`.
 
@@ -316,6 +322,7 @@ def converse(
         temperature: Sampling temperature, omitted when None.
         top_p: Nucleus sampling, omitted when None.
         attribution: Tenant/user identifiers for ``requestMetadata``.
+        connection: The configuration's own AWS credentials, or None for the server chain.
 
     Returns:
         ``(content, usage_tokens, finish_reason)`` — the same shape every other
@@ -337,6 +344,7 @@ def converse(
         temperature=temperature,
         top_p=top_p,
         attribution=attribution,
+        connection=connection,
     ):
         if event.type == "delta":
             content_parts.append(event.text or "")
@@ -362,6 +370,7 @@ def stream_converse(
     top_p: float | None = None,
     cancel_event: threading.Event | None = None,
     attribution: dict[str, Any] | None = None,
+    connection: BedrockConnection | None = None,
 ) -> Iterator[LLMStreamEvent]:
     """Stream a completion from Bedrock, yielding normalized events.
 
@@ -381,12 +390,13 @@ def stream_converse(
             reason as temperature.
         cancel_event: Set by the caller on client disconnect or Stop.
         attribution: Tenant/user identifiers for ``requestMetadata``.
+        connection: The configuration's own AWS credentials, or None for the server chain.
 
     Yields:
         :class:`LLMStreamEvent` values.
     """
     try:
-        client = _client(region)
+        client = _client(region, connection)
         model_id = resolve_model_id(model, region)
     except BedrockNotConfiguredError as exc:
         yield LLMStreamEvent(type="error", message=str(exc))
@@ -425,9 +435,10 @@ def stream_converse(
     try:
         response = client.converse_stream(**request)
     except Exception as exc:  # noqa: BLE001 — surfaced in-band like every other provider
-        logger.error("Bedrock ConverseStream failed for %s: %s", model_id, exc)
+        text = bedrock_settings.scrub(str(exc), connection)
+        logger.error("Bedrock ConverseStream failed for %s: %s", model_id, text)
         yield LLMStreamEvent(
-            type="error", message=f"Bedrock error: {exc}", transient=is_transient_error(exc)
+            type="error", message=f"Bedrock error: {text}", transient=is_transient_error(exc)
         )
         return
 
@@ -450,10 +461,11 @@ def stream_converse(
             if event.type == "error":
                 return
     except Exception as exc:  # noqa: BLE001
-        logger.error("Bedrock stream interrupted for %s: %s", model_id, exc)
+        text = bedrock_settings.scrub(str(exc), connection)
+        logger.error("Bedrock stream interrupted for %s: %s", model_id, text)
         yield LLMStreamEvent(
             type="error",
-            message=f"Bedrock stream interrupted: {exc}",
+            message=f"Bedrock stream interrupted: {text}",
             transient=is_transient_error(exc),
         )
         return
@@ -465,3 +477,39 @@ def stream_converse(
         logger.warning("Bedrock stream for %s produced no usage metadata", model_id)
 
     yield LLMStreamEvent(type="done", finish_reason=finish_reason or "stop")
+
+
+def check_connection(
+    *, model: str, region: str, connection: BedrockConnection | None = None
+) -> tuple[bool, str]:
+    """One minimal ConverseStream call (the operation a chat turn uses), with a FIXED answer.
+
+    This is what "Test connection" runs, with the entered (possibly unsaved) credentials.
+    The real first-run failures are told apart: no credentials, rejected credentials,
+    access denied, model not enabled for the account, a base model id that needs an
+    inference profile, and a region without the service. Exception text is never returned.
+    """
+    try:
+        client = _client(region, connection)
+        model_id = resolve_model_id(model, region)
+        response = client.converse_stream(
+            modelId=model_id,
+            messages=[{"role": "user", "content": [{"text": "Hi"}]}],
+            inferenceConfig={"maxTokens": 5},
+        )
+        answer = ""
+        for raw in response["stream"]:
+            event, _stop = translate_stream_event(raw, model_id)
+            if event is not None and event.type == "delta":
+                answer += event.text or ""
+            elif event is not None and event.type == "error":
+                key = "throttled" if event.transient else "failed"
+                return False, bedrock_settings.FAILURE_MESSAGES[key]
+    except BedrockNotConfiguredError:
+        return False, bedrock_settings.FAILURE_MESSAGES["no_region"]
+    except Exception as exc:  # noqa: BLE001 -- mapped to a fixed sentence, never echoed
+        logger.warning("Bedrock connection test failed: %s", type(exc).__name__)
+        return False, bedrock_settings.describe_failure(exc)
+    if not answer.strip():
+        return False, bedrock_settings.FAILURE_MESSAGES["failed"]
+    return True, f"Connection successful - Model responded: '{answer[:50]}'"

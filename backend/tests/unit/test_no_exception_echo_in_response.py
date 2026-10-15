@@ -810,6 +810,14 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 #: every entry names the real consumer(s) traced by hand so a reason can go
 #: stale visibly rather than silently ("internal" alone is not a reason).
 _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/llm_bedrock.py::check_connection": (
+        1,
+        "dial result the user asked for, and NOT echo: the exception only SELECTS a key of "
+        "bedrock_settings.FAILURE_MESSAGES (classify_failure on the botocore exception type "
+        "and error Code); the returned string is one of those fixed sentences and never "
+        "contains exception text. tests/api/test_bedrock_credentials_api.py asserts the raw "
+        "AWS message and the submitted secret are absent from the response",
+    ),
     "services/asr/assemblyai_provider.py::validate_connection": (
         1,
         "dial result: self._sanitize_error(str(e), api_key) -> sanitize_provider_error "

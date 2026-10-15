@@ -122,6 +122,19 @@ off by default.
 
 ### Added
 
+- **Amazon Bedrock accounts in the UI**: a Bedrock LLM configuration now carries its own AWS
+  region and, optionally, an access key (key ID, secret and session token). The credentials are
+  write-only: stored encrypted at rest, never returned by any endpoint, never logged and never
+  echoed in an error (a validation error no longer repeats a submitted key). Blank fields use
+  the server's own AWS credentials (an IAM role is the better choice on AWS), and a shared
+  configuration's credentials are used for the users it is shared with without being sent to
+  them. Test connection runs with the credentials you typed and tells apart rejected
+  credentials, access denied, a model not enabled for the account, a base model id that needs
+  an inference profile, and an unavailable region, each as a fixed sentence. Administrators
+  also see whether the server's credential chain resolves
+  (`GET /api/llm-settings/bedrock/server-credentials`, admin and super_admin), by source kind
+  only.
+
 #### UI and UX
 
 - **The Hugging Face access token can be entered in Settings.** Every other credential for a
@@ -490,6 +503,17 @@ off by default.
 - **`dev-<git-sha>` image versions** are accepted by the build script and never move `:latest`.
 
 ### Changed
+
+- **Local server detection is a disclosure**: in the LLM configuration form, "Local LLM servers"
+  is hidden for providers that never run locally (OpenAI, Anthropic, OpenRouter, Bedrock) and
+  collapsed for Ollama, vLLM and Custom, with the result in its summary line ("1 running",
+  "none detected") and Rescan inside. With no provider chosen yet it opens by itself when a
+  server is reachable. "Use this" behaves as before.
+- **Bedrock**: the form no longer says the region and credentials are "configured by your
+  administrator"; the default model is now an inference-profile id
+  (`global.anthropic.claude-haiku-4-5-20251001-v1:0`), because newer Claude models refuse a bare
+  on-demand model id. A Bedrock stream or test error no longer repeats raw provider text that
+  could contain a credential.
 
 #### Speakers and speaker data safety
 

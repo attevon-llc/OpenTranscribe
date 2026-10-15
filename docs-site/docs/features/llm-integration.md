@@ -175,23 +175,50 @@ OPENAI_MODEL=gpt-4o
 
 ### Amazon Bedrock
 
-The AWS-native option. Unlike every other provider, Bedrock needs **no API key**:
-boto3 resolves credentials through the standard AWS chain — instance role, task
-role, shared profile, or environment — so a deployment on EC2, ECS or EKS
-provisions no secret at all.
+The AWS-native option. Bedrock has no API key and no base URL; it is reached through the AWS
+SDK, and a configuration can get its credentials in one of two ways.
+
+**1. Enter them in the configuration (Settings > AI & Chat > LLM Provider Configuration).**
+Choose **AWS Bedrock** as the provider and fill in the **Amazon Bedrock account** block:
+
+| Field | Notes |
+|---|---|
+| AWS region | A region where Bedrock and your model exist, for example `us-east-1`. Leave it on "server default" to use the deployment's region. |
+| Model name | A text field with suggestions. Newer Claude models are offered only through an **inference profile**, whose id starts with `global.` or a geography prefix, for example `global.anthropic.claude-haiku-4-5-20251001-v1:0` or `global.anthropic.claude-sonnet-4-6` (available in `us-east-1` and `us-west-2`). A bare on-demand base model id is refused for those models. |
+| Access key ID, Secret access key, Session token | Optional. All three are **write-only**: they are stored encrypted at rest, are never shown again (editing shows "saved, leave blank to keep it"), and never appear in an API response or a log. Tick "Remove the saved credentials" to go back to the server's own credentials. |
+
+**Test connection** uses the credentials you have typed, saved or not, and answers with a
+fixed sentence for the failures you will actually hit on a first run: no credentials,
+credentials rejected, access denied, **model not enabled for your account** (request access
+in the Amazon Bedrock console), a base model id that needs an inference profile, and a region
+that does not offer Bedrock or the model.
+
+An administrator can share a configuration with all users ("Share with all users"). The users
+it is shared with use its credentials without ever being sent them.
+
+**2. Leave the key fields blank and use the server's own AWS credentials.** boto3 resolves them
+through the standard chain: instance role, task role, shared profile, or environment. **On
+AWS this is the better choice**: a role needs no secret provisioned at all. Administrators see
+in the form whether the server's credentials currently resolve and from what kind of source
+(environment variables, shared profile, container or instance role), never a value.
 
 ```bash
+# Only for the server's own region and for deployments that pick the provider by environment
 LLM_PROVIDER=bedrock
 BEDROCK_REGION=us-east-1              # falls back to AWS_REGION / AWS_DEFAULT_REGION
-BEDROCK_MODEL_NAME=anthropic.claude-haiku-4-5-20251001-v1:0
+BEDROCK_MODEL_NAME=global.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-Required IAM permissions:
+For a test account, create a **least-privilege IAM user** with only these actions (rather
+than reusing an administrator's keys) and enter its access key in the configuration:
 
 | Action | Needed for |
 |---|---|
-| `bedrock:InvokeModelWithResponseStream` | Chat (streaming) |
+| `bedrock:InvokeModelWithResponseStream` | Chat (streaming) and Test connection |
 | `bedrock:InvokeModel` | Summaries, topics, speaker ID (non-streaming) |
+| `bedrock:ListFoundationModels` | Not called by OpenTranscribe; useful for checking model ids with the AWS CLI |
+
+The model must also be enabled for your account in the Amazon Bedrock console.
 
 **Transient capacity errors are retried before they reach the user.** Every
 Bedrock call (streaming chat included) uses botocore's `adaptive` retry mode with

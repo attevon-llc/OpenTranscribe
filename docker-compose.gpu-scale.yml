@@ -82,7 +82,7 @@ services:
       # forked pool that keeps answering healthy. The script reads pool.implementation
       # and applies the child-process checks only when they mean something.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-scaled@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       start_period: 40s

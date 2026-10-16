@@ -440,7 +440,7 @@ services:
       # forked pool that keeps answering healthy. The script reads pool.implementation
       # and applies the child-process checks only when they mean something.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcription@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       # Cold first-run WhisperX + PyAnnote preload (and HF download) can exceed 40s.
@@ -495,7 +495,7 @@ services:
       # while the accepted-task counter stays frozen), which a non-empty child list
       # reports as healthy. See backend/scripts/celery_pool_healthcheck.py (#631).
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py media-downloader@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       start_period: 40s
@@ -605,7 +605,7 @@ services:
       # appends a child before start(). The script also compares the pid set and the
       # accepted-task counter across probes (backend/scripts/celery_pool_healthcheck.py).
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cpu-processor@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       # PRELOAD_CPU_WHISPER model load can exceed 40s on first run.
@@ -686,7 +686,7 @@ services:
       # forked pool that keeps answering healthy. The script reads pool.implementation
       # and applies the child-process checks only when they mean something.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py redaction@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       start_period: 60s
@@ -740,7 +740,7 @@ services:
     healthcheck:
       # prefork pool: see the cpu-processor healthcheck comment above.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cloud-asr@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       start_period: 40s
@@ -788,7 +788,7 @@ services:
     healthcheck:
       # prefork pool: see the cpu-processor healthcheck comment above.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py ai-nlp@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       start_period: 40s
@@ -852,7 +852,7 @@ services:
     healthcheck:
       # prefork pool: see the cpu-processor healthcheck comment above.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py search-indexer@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       # Embedding model load can exceed 40s on first run.
@@ -1003,7 +1003,7 @@ services:
       # forked pool that keeps answering healthy. The script reads pool.implementation
       # and applies the child-process checks only when they mean something.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcribe@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       # Cold GPU model preload can exceed 40s on first run.
@@ -1077,7 +1077,7 @@ services:
       # forked pool that keeps answering healthy. The script reads pool.implementation
       # and applies the child-process checks only when they mean something.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-diarize@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       # Cold GPU model preload can exceed 40s on first run.

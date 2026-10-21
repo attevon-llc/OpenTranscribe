@@ -12,7 +12,13 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 vi.mock('$lib/api/authConfig', () => ({
-  AuthConfigApi: { getAllConfigs: vi.fn(), updateCategory: vi.fn(), testConnection: vi.fn() },
+  AuthConfigApi: {
+    getAllConfigs: vi.fn(),
+    updateCategory: vi.fn(),
+    testConnection: vi.fn(),
+    // The tab-strip dot reads this on mount; null = "could not be read", i.e. no dot.
+    getAuthMailReadiness: vi.fn().mockResolvedValue(null),
+  },
 }));
 
 vi.mock('$lib/passwordPolicy', () => ({

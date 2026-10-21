@@ -36,6 +36,7 @@
     getLegalDocument,
     acknowledgeLegalDocument
   } from '$lib/api/legal';
+  import { AuthConfigApi } from '$lib/api/authConfig';
   import { renderLegalMarkdown } from '$lib/legal/renderLegalMarkdown';
   import { extractCheckboxText } from '$lib/legal/checkboxText';
 
@@ -53,6 +54,21 @@
   let termsChecked = false;
   let viewerKey = '';
   let viewerOpen = false;
+
+  /**
+   * Whether auth mail can be delivered: true / false, or null when it could not be read
+   * (the summary line is then omitted rather than guessed). Read each time the summary
+   * is entered, not on mount: the operator may leave for Settings -> Auth Email, fix it
+   * and come back, and a value read before they left would still say it is broken.
+   * @type {boolean|null}
+   */
+  let mailDeliverable = null;
+  $: if (step === 4) void refreshMailReadiness();
+
+  async function refreshMailReadiness() {
+    const readiness = await AuthConfigApi.getAuthMailReadiness();
+    mailDeliverable = typeof readiness?.deliverable === 'boolean' ? readiness.deliverable : null;
+  }
 
   /** @type {'default_dev'|'operator_set'|'generated'|null} */
   let credentialKind = null;
@@ -496,6 +512,15 @@
             {$t('firstRunWizard.summaryNoDefaults')}
           {/if}
         </li>
+        {#if mailDeliverable !== null}
+          <li data-testid="wizard-summary-mail">
+            <strong>{$t('firstRunWizard.summaryMailLabel')}:</strong>
+            <!-- "Configured", not "working": a wrong host still reads configured. -->
+            {mailDeliverable
+              ? $t('firstRunWizard.summaryMailConfigured')
+              : $t('firstRunWizard.summaryMailMissing')}
+          </li>
+        {/if}
       </ul>
       <p>{$t('firstRunWizard.summaryNextSteps')}</p>
     </div>

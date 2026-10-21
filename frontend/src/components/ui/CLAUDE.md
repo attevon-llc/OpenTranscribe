@@ -39,6 +39,15 @@ primitive in the same spirit as this folder.
   `aria-hidden`). **Every `.dropdown-item` carries an icon** (gallery Organize/Process set the
   convention; `components/menuIcons.convention.test.ts` scans all markup and fails on a bare one).
   One distinct glyph per transcript export format. Add a glyph to `MENU_ICONS`; do not paste SVG.
+- `AuthMailNotice.svelte` — "authentication email cannot be delivered" notice (issue #1240), for
+  the Invite form (`context="invite"`, self-fetching) and the Auth Email tab (`context="tab"`,
+  given the designation). Renders ONLY on a definite `deliverable === false`; `null` (403 for a
+  plain admin, 404 without `auth.config_ui`, network error) is "unknown" and renders nothing, so
+  an advisory notice never raises a false alarm. Copy is a per-context map, not a ternary
+  (`AuthMailNotice.test.ts` enumerates the contexts). "Deliverable" means configured, never
+  "working".
+- `Tabs.svelte`'s `attention` item field draws a warning dot whose text is its accessible name
+  and tooltip; use it for "this panel needs doing" without opening it.
 - `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.

@@ -127,7 +127,14 @@ Twelve tabs: local, ldap, oidc, pki, proxy, saml, mappings, scim, directorySync,
   `PUT /api/admin/auth-config/email/designation` stays reachable — so on those editions the
   setting could not be configured at all. It is mounted in exactly **one** place; don't render
   a second copy. It reads the config list from `getEmailConfigs()` (super_admin, same tier as
-  the panel) and its i18n keys live under `settings.authentication.authMail.*`.
+  the panel) and its i18n keys live under `settings.authentication.authMail.*`. The "no
+  transport" state is rendered by the shared `ui/AuthMailNotice` (issue #1240), not by a paragraph
+  of its own: pass `readiness={designation}`. The panel emits `change` on every read/save, and
+  `AuthenticationSettings` listens so the **attention dot** on the tab clears the moment a
+  designation fixes it. That dot is fetched by the strip itself on mount
+  (`AuthConfigApi.getAuthMailReadiness()`), NOT by the panel: the panel is a lazy chunk, so a dot
+  that waited for it would only appear after the admin had already clicked in. Do not register
+  the read in `sectionData` PREFETCHERS; a cached value would keep the dot up after a save.
 - `ActiveSessionsPanel.svelte` is mounted in `UserProfileSettings` — a user's own sessions, not
   an admin surface.
 - **`GroupMappingSettings`** is the Group mappings tab — the only consumer of

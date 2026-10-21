@@ -169,6 +169,79 @@ describe('FirstRunWizard navigation and completion', () => {
   });
 });
 
+describe('FirstRunWizard summary: authentication email (issue #1240)', () => {
+  const DESIGNATION = '/admin/auth-config/email/designation';
+
+  /** The status endpoint answers the wizard; the designation endpoint answers `designation`. */
+  function serve(designation: unknown) {
+    mockAxios.get.mockImplementation((url: string) =>
+      url === DESIGNATION
+        ? designation === 'reject'
+          ? Promise.reject({ response: { status: 404 } })
+          : Promise.resolve({ data: designation })
+        : Promise.resolve({ data: baseStatus })
+    );
+  }
+
+  async function toSummary() {
+    render(FirstRunWizard);
+    await fireEvent.click(await screen.findByText('firstRunWizard.keepPasswordButton'));
+    await fireEvent.click(screen.getByText('common.next'));
+    await fireEvent.click(screen.getByText('firstRunWizard.applyButton'));
+    await waitFor(() => expect(stepOf()).toBe('4'));
+  }
+
+  it('says auth mail is not set up, and where to fix it, when nothing can deliver it', async () => {
+    serve({ deliverable: false });
+    await toSummary();
+
+    const line = await screen.findByTestId('wizard-summary-mail');
+    expect(line.textContent).toContain('firstRunWizard.summaryMailMissing');
+    expect(line.textContent).not.toContain('firstRunWizard.summaryMailConfigured');
+  });
+
+  it('says "configured", never "working", when it can be delivered', async () => {
+    serve({ deliverable: true });
+    await toSummary();
+
+    const line = await screen.findByTestId('wizard-summary-mail');
+    expect(line.textContent).toContain('firstRunWizard.summaryMailConfigured');
+    expect(line.textContent).not.toContain('firstRunWizard.summaryMailMissing');
+  });
+
+  it('omits the line when the readiness cannot be read, rather than guessing', async () => {
+    serve('reject');
+    await toSummary();
+
+    await waitFor(() =>
+      expect(mockAxios.get.mock.calls.some(([url]) => url === DESIGNATION)).toBe(true)
+    );
+    expect(screen.queryByTestId('wizard-summary-mail')).toBeNull();
+  });
+
+  it('reads the readiness again each time the summary is entered', async () => {
+    // Settings -> Auth Email can be fixed from inside the wizard; a value read once on
+    // mount would keep saying "not set up" after the operator came back.
+    serve({ deliverable: false });
+    await toSummary();
+    expect((await screen.findByTestId('wizard-summary-mail')).textContent).toContain(
+      'firstRunWizard.summaryMailMissing'
+    );
+
+    serve({ deliverable: true });
+    await fireEvent.click(screen.getByText('common.back'));
+    await waitFor(() => expect(stepOf()).toBe('3'));
+    await fireEvent.click(screen.getByText('firstRunWizard.applyButton'));
+    await waitFor(() => expect(stepOf()).toBe('4'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('wizard-summary-mail').textContent).toContain(
+        'firstRunWizard.summaryMailConfigured'
+      )
+    );
+  });
+});
+
 describe('FirstRunWizard terms step', () => {
   const ACK_MD = [
     '# Operator acknowledgment',

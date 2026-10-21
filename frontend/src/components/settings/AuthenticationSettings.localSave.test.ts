@@ -6,6 +6,8 @@ vi.mock('$lib/api/authConfig', () => ({
     getAllConfigs: vi.fn(),
     updateCategory: vi.fn(),
     testConnection: vi.fn(),
+    // The tab-strip dot reads this on mount; null = "could not be read", i.e. no dot.
+    getAuthMailReadiness: vi.fn().mockResolvedValue(null),
   },
 }));
 

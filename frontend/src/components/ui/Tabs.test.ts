@@ -17,6 +17,20 @@ describe('Tabs', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
+  it('marks a tab that needs attention, with an accessible name that says what for', () => {
+    render(Tabs, {
+      props: {
+        tabs: [...tabs, { id: 'd', label: 'Delta', attention: 'Needs setup' }],
+        activeId: 'a',
+      },
+    });
+
+    expect(screen.getByRole('img', { name: 'Needs setup' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Delta/ })).toHaveAttribute('title', 'Needs setup');
+    // Only the tab that asked for it carries one.
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+  });
+
   it('activates a tab on click', async () => {
     render(Tabs, { props: { tabs, activeId: 'a' } });
     await fireEvent.click(screen.getByRole('tab', { name: /Beta/ }));

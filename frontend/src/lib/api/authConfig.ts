@@ -235,6 +235,14 @@ export interface AuthMailDesignation {
   status: AuthMailStatus;
   /** Whether `SMTP_HOST` is set, i.e. whether the fallback transport exists. */
   env_smtp_configured: boolean;
+  /**
+   * Whether a password reset, invitation or verification link would be handed to a
+   * transport (a resolving designation, else env SMTP). This is "configured", not
+   * "proven working" -- a wrong host still reads true.
+   */
+  deliverable: boolean;
+  /** Whether local login itself depends on that mail (`require_email_verification`). */
+  verification_required: boolean;
 }
 
 export class AuthConfigApi {
@@ -291,6 +299,24 @@ export class AuthConfigApi {
   static async getAuthMailDesignation(): Promise<AuthMailDesignation> {
     const response = await axiosInstance.get('/admin/auth-config/email/designation');
     return response.data;
+  }
+
+  /**
+   * The designation, or `null` when it cannot be read.
+   *
+   * The endpoint is super_admin and sits behind the `auth.config_ui` capability, so
+   * a plain admin gets 403 and an edition without the capability gets 404. Both mean
+   * "unknown", never "not deliverable": a caller that treated any non-200 as an
+   * alarm would show every such admin a false warning. Network errors read the same
+   * way -- the notice built on this is advisory and the send itself stays the
+   * authority.
+   */
+  static async getAuthMailReadiness(): Promise<AuthMailDesignation | null> {
+    try {
+      return await AuthConfigApi.getAuthMailDesignation();
+    } catch {
+      return null;
+    }
   }
 
   /**

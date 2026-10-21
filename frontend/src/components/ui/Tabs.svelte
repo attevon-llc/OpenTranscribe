@@ -7,6 +7,12 @@
     disabled?: boolean;
     /** Native tooltip; used to say why a tab is disabled. */
     title?: string;
+    /**
+     * Marks a tab whose panel holds something that needs doing, without opening it. The
+     * text is the accessible name and tooltip of the dot, so it must say WHAT needs doing;
+     * a bare dot tells a screen-reader user nothing.
+     */
+    attention?: string;
   }
 </script>
 
@@ -118,13 +124,16 @@
       aria-controls={`tabpanel-${tab.id}`}
       tabindex={tab.id === activeId ? 0 : -1}
       disabled={tab.disabled}
-      title={tab.title}
+      title={tab.title ?? tab.attention}
       on:click={() => select(tab.id)}
       on:keydown={(e) => onKeydown(e, i)}
     >
       <span class="tab-label">{tab.label}</span>
       {#if tab.badge !== undefined && tab.badge !== null && tab.badge !== ''}
         <span class="tab-badge">{tab.badge}</span>
+      {/if}
+      {#if tab.attention}
+        <span class="tab-attention" role="img" aria-label={tab.attention}></span>
       {/if}
     </button>
   {/each}
@@ -227,6 +236,16 @@
   .tab:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .tab-attention {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warning-color);
+    /* A ring in the surface colour keeps the dot legible on the active tab's tint in
+       both themes. */
+    box-shadow: 0 0 0 2px var(--surface-color);
   }
   .tab-badge {
     display: inline-flex;

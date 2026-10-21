@@ -222,14 +222,18 @@ def test_wizard_status_password_changed_by_you_follows_the_self_change_stamp(
 def test_wizard_status_never_returns_a_password_or_hash(
     client, super_admin_token_headers, super_admin_user
 ):
-    """The payload is an allowlist of four keys; no credential material rides along."""
+    """The payload is an allowlist of six keys; no credential material rides along."""
     body = _status(client, super_admin_token_headers)
     assert set(body) == {
         "completed_at",
         "credential_kind",
         "password_min_age_hours",
         "password_changed_by_you",
+        "legal_required",
+        "legal_acknowledged",
     }
+    assert isinstance(body["legal_required"], bool)
+    assert isinstance(body["legal_acknowledged"], bool)
     assert super_admin_user.hashed_password not in str(body)
     assert isinstance(body["password_min_age_hours"], int)
 

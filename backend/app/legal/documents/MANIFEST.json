@@ -1,0 +1,25 @@
+{
+  "tag": "e7bb629",
+  "files": {
+    "operator-acknowledgment.md": {
+      "key": "opentranscribe-operator-acknowledgment",
+      "version": "0.1",
+      "sha256": "12d4bd03335a5888b5c5f1d5aa0e587abffee20d73ec5390dacc896473439db5"
+    },
+    "terms-of-use.md": {
+      "key": "opentranscribe-terms-of-use",
+      "version": "0.1",
+      "sha256": "87ade5702bcbcb098cc5a1a52f19547927dd7fc9e578470720eb5201d43b85c6"
+    },
+    "privacy-notice.md": {
+      "key": "opentranscribe-privacy-notice",
+      "version": "0.1",
+      "sha256": "d0e86ae4c458e71087455748e699e4e60ae6ba430afa7f0a79d11cf1cc3511da"
+    },
+    "data-flows-annex.md": {
+      "key": "opentranscribe-data-flows-annex",
+      "version": "0.1-draft",
+      "sha256": "3548cb9ecccfdd6ce4e3f342b379beaa3b6dd8c8fee55a6c33a82b9fad466354"
+    }
+  }
+}

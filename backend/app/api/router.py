@@ -27,6 +27,7 @@ from .endpoints import embedding_migration
 from .endpoints import engine_settings
 from .endpoints import first_run_wizard
 from .endpoints import groups
+from .endpoints import legal
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import local_models
@@ -208,6 +209,9 @@ include_router_with_consistency(
     tags=["directory-sync"],
     capability="auth.config_ui",
 )
+# Versioned legal documents + acknowledgments. Any authenticated user may read; the
+# operator acknowledgment is super_admin-only, enforced per-route.
+include_router_with_consistency(legal.router, prefix="/legal", tags=["legal"])
 # Completion state for the guided first-run flow (HANDOFF #28) — not itself a
 # config category, so no capability gate; super_admin only, enforced per-route.
 include_router_with_consistency(

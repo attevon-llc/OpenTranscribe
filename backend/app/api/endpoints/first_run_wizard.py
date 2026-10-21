@@ -29,6 +29,7 @@ from app.auth.password_policy import password_policy
 from app.core.security import verify_password
 from app.db.base import get_db
 from app.initial_data import _DEV_ADMIN_PASSWORD
+from app.legal import acceptance as legal_acceptance
 from app.models.user import User
 from app.services import system_settings_service
 
@@ -73,13 +74,21 @@ def get_first_run_wizard_status(
     ``password_changed_by_you``: the account holder has chosen their own password at
     least once (``password_last_self_changed_at`` is set), so the SPA can resume the
     wizard after the Settings round trip.
+    ``legal_required``: this edition needs the operator acknowledgment (false when an
+    extension installed its own document provider). ``legal_acknowledged``: the caller has
+    acknowledged the CURRENT text, or none is required.
     """
+    legal_required, legal_acknowledged = legal_acceptance.operator_acknowledgment_status(
+        db, current_user.id
+    )
     completed_at = system_settings_service.get_setting(db, _COMPLETED_AT_KEY)
     return {
         "completed_at": completed_at,
         "credential_kind": _credential_kind(current_user),
         "password_min_age_hours": password_policy.min_age_hours,
         "password_changed_by_you": current_user.password_last_self_changed_at is not None,
+        "legal_required": legal_required,
+        "legal_acknowledged": legal_acknowledged,
     }
 
 

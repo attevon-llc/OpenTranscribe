@@ -644,6 +644,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'user' AND column_name = 'password_last_self_changed_at')"
     )
 
+    # v441: versioned legal-document acceptances. Single-marker revision: the table IS the
+    # fingerprint (its UNIQUE key is part of the same CREATE, so a table without it cannot
+    # exist from this revision).
+    has_legal_acceptance = "legal_acceptance" in tables
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -701,8 +706,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
-    # v440: same as v439 plus the self-service password change column. The newest revision
-    # on this chain, so this is the top of the ladder.
+    # v441: same as v440 plus the legal acceptance table. The newest revision on this chain,
+    # so this is the top of the ladder.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+        and has_correction_carryover
+        and not has_unstamped_voiceprint_suggestion
+        and has_password_last_self_changed
+        and has_legal_acceptance
+    ):
+        return "v441_add_legal_acceptance"
+    # v440: same as v439 plus the self-service password change column.
     if (
         matches_v433
         and not has_unusable_pyannote_source

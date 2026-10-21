@@ -95,6 +95,8 @@ on pre-`v091` rows that provably came from a voiceprint, so their canonical labe
 2026-10-12 provenance rule; detection keyed on the ABSENCE of rows it would stamp, like v434).
 `v440_add_password_last_self_changed_at` (nullable `user.password_last_self_changed_at`: the
 minimum-password-age clock, set only by `PUT /users/me`; NULL = first change free; single-marker arm on the column).
+`v441_add_legal_acceptance` (`legal_acceptance`: which user accepted which legal document text, keyed by
+document key + SHA-256, `ON DELETE CASCADE` on the user; single-marker arm on the table).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

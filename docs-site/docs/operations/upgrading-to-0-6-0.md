@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-Fourteen migrations run automatically when the backend starts, from `v397` to `v440`. On a
+Fifteen migrations run automatically when the backend starts, from `v397` to `v441`. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.
@@ -65,6 +65,7 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v438` | Adds `speaker_correction_carryover` | No (empty until a corrected file is re-run) |
 | `v439` | Records `suggestion_source` on legacy speaker suggestions that the database proves came from a voice match, so those speakers keep their names | Data fix only: it writes one column on provable rows and nothing else |
 | `v440` | Adds `user.password_last_self_changed_at`, so the first password change an account holder makes is never refused for being too recent | No (empty until a user changes their own password) |
+| `v441` | Adds the `legal_acceptance` table, which records an administrator's acknowledgment of the operator terms | No (empty until an administrator acknowledges) |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.

@@ -7441,6 +7441,201 @@
         "title": "LLMSettingsStatus",
         "type": "object"
       },
+      "LegalAcknowledgmentAdminRecord": {
+        "description": "An acceptance as listed to administrators.",
+        "properties": {
+          "accepted_at": {
+            "format": "date-time",
+            "title": "Accepted At",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "user_email": {
+            "title": "User Email",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "version",
+          "sha256",
+          "accepted_at",
+          "user_email"
+        ],
+        "title": "LegalAcknowledgmentAdminRecord",
+        "type": "object"
+      },
+      "LegalAcknowledgmentRecord": {
+        "description": "One stored acceptance.",
+        "properties": {
+          "accepted_at": {
+            "format": "date-time",
+            "title": "Accepted At",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "version",
+          "sha256",
+          "accepted_at"
+        ],
+        "title": "LegalAcknowledgmentRecord",
+        "type": "object"
+      },
+      "LegalAcknowledgmentRequest": {
+        "description": "What the caller saw: the server refuses it unless it matches what is served now.",
+        "properties": {
+          "key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Sha256",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "version",
+          "sha256"
+        ],
+        "title": "LegalAcknowledgmentRequest",
+        "type": "object"
+      },
+      "LegalDocumentDetail": {
+        "description": "A served document with its full text.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "version",
+          "status",
+          "sha256",
+          "markdown"
+        ],
+        "title": "LegalDocumentDetail",
+        "type": "object"
+      },
+      "LegalDocumentSummary": {
+        "description": "A served document plus the caller's acknowledgment state.",
+        "properties": {
+          "acknowledged": {
+            "title": "Acknowledged",
+            "type": "boolean"
+          },
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "requires_acknowledgment": {
+            "title": "Requires Acknowledgment",
+            "type": "boolean"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "version",
+          "status",
+          "audience",
+          "sha256",
+          "requires_acknowledgment",
+          "acknowledged"
+        ],
+        "title": "LegalDocumentSummary",
+        "type": "object"
+      },
       "LinkExternalIdentityRequest": {
         "description": "Deliberately link an existing account to an external identity (P1.3).\n\nThe operator remedy referenced by ``auth/account_linking.py``: when a source\ncannot assert ``email_verified`` (Authentik hardcodes it false for every\naccount) or an address simply collides, the automatic email-match link is\nrefused and the login fails rather than guessing. This is the explicit\nalternative — an administrator sets the provider's own identifier on the\naccount, so the *next* login matches by that identifier first and never\nreaches the email-match branch at all.\n\nApplying this to a ``local``-password account also converts its ``auth_type``\nto ``provider`` and revokes its sessions (issue #912) — see the endpoint's\ndocstring for why, and for the one case (an already-external ``auth_type``)\nwhere that conversion deliberately does not happen.",
         "properties": {
@@ -23597,7 +23792,7 @@
     },
     "/api/admin/first-run-wizard/status": {
       "get": {
-        "description": "Whether the wizard has been completed (or explicitly skipped — both count:\nHANDOFF's spec is 'mark it complete... and never show it again', re-runnable\nfrom Settings for someone who skipped).",
+        "description": "Wizard state plus what step 1 needs to explain the password choice.\n\n``completed_at``: set once completed or explicitly skipped (both count: HANDOFF's\nspec is 'mark it complete... and never show it again', re-runnable from Settings).\n``credential_kind``: ``default_dev`` | ``operator_set`` | ``generated``.\n``password_min_age_hours``: the configured minimum time between password changes\n(0 means no limit).\n``password_changed_by_you``: the account holder has chosen their own password at\nleast once (``password_last_self_changed_at`` is set), so the SPA can resume the\nwizard after the Settings round trip.\n``legal_required``: this edition needs the operator acknowledgment (false when an\nextension installed its own document provider). ``legal_acknowledged``: the caller has\nacknowledged the CURRENT text, or none is required.",
         "operationId": "get_first_run_wizard_status_api_admin_first_run_wizard_status_get",
         "responses": {
           "200": {
@@ -23608,6 +23803,12 @@
                     "anyOf": [
                       {
                         "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "boolean"
                       },
                       {
                         "type": "null"
@@ -35439,6 +35640,161 @@
         "summary": "Update Member Role",
         "tags": [
           "groups"
+        ]
+      }
+    },
+    "/api/legal/acknowledgments": {
+      "get": {
+        "description": "Every stored acceptance, newest first, with the accepting user's email.",
+        "operationId": "list_legal_acknowledgments_api_legal_acknowledgments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LegalAcknowledgmentAdminRecord"
+                  },
+                  "title": "Response List Legal Acknowledgments Api Legal Acknowledgments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Legal Acknowledgments",
+        "tags": [
+          "legal"
+        ]
+      },
+      "post": {
+        "description": "Record that the caller accepted the exact text now served for ``key``.\n\nOnly a super_admin may acknowledge the operator acknowledgment. The request must carry\nthe version and hash the server serves now (409 otherwise), so a stale page cannot\naccept text it never showed. Repeating the same acceptance returns the stored record.",
+        "operationId": "acknowledge_legal_document_api_legal_acknowledgments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalAcknowledgmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcknowledgmentRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Acknowledge Legal Document",
+        "tags": [
+          "legal"
+        ]
+      }
+    },
+    "/api/legal/documents": {
+      "get": {
+        "description": "Every served document with the caller's acknowledgment state for its current text.",
+        "operationId": "list_legal_documents_api_legal_documents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LegalDocumentSummary"
+                  },
+                  "title": "Response List Legal Documents Api Legal Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Legal Documents",
+        "tags": [
+          "legal"
+        ]
+      }
+    },
+    "/api/legal/documents/{key}": {
+      "get": {
+        "description": "One document with its full markdown.",
+        "operationId": "get_legal_document_api_legal_documents__key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalDocumentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Legal Document",
+        "tags": [
+          "legal"
         ]
       }
     },

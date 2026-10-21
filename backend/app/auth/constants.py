@@ -36,6 +36,12 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v9: legal document provider seam. ``app.legal.registry.set_document_provider`` lets an
+# extension replace the document set served by ``/api/legal/*``. Additive: with no provider
+# installed the vendored OSS set is served and the operator acknowledgment is required;
+# installing any provider turns ``requires_acknowledgment`` off (the extension runs its own
+# acceptance flow). No existing seam changes.
+#
 # v8: platform-admin content access (issue #1122). In a multi-tenant deployment
 # (any active organization, or ``TENANCY_MODE=multi``) ``role in {admin, super_admin}``
 # grants NO implicit access to tenant content any more: it needs a support-access grant
@@ -114,7 +120,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 8
+CLOUD_SEAM_VERSION = 9
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

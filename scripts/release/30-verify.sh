@@ -221,7 +221,7 @@ else
         else
             record visual-baselines-fresh fail \
                 "frontend/src has ${ui_drift} commit(s) newer than the baselines in $VISUAL_BASELINE_DIR" \
-                "./opentr.sh start dev --fresh visual --port-offset 100 --seed-benchmark --with-mock-llm --gpu-device N && MOCK_LLM_PORT=5299 UPDATE_SCREENSHOTS=1 backend/venv/bin/pytest backend/tests/e2e/test_visual_regression.py --base-url=http://localhost:5273 --backend-url=http://localhost:5274   (review every image, then re-run without UPDATE_SCREENSHOTS)"
+                "./scripts/e2e/update-visual-baselines.sh --reason \"<what changed in the UI>\"   (stands up the isolated seeded stack, refuses a library that is not exactly the seed corpus, shows every diff before accepting, and records provenance; review each image)"
         fi
     fi
 fi

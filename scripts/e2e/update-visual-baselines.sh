@@ -32,7 +32,11 @@
 #      first two are statements of intent and only the third is an observation.
 #   2. It stands up the isolated seeded stack itself, so nobody has to remember
 #      `--fresh visual --port-offset 100 --seed-benchmark --with-mock-llm`, and
-#      stops it again afterwards.
+#      stops it again afterwards. Before it photographs anything it asserts the
+#      library is EXACTLY the seed corpus (names, multiplicity, sizes, all
+#      completed, nothing extra) -- the image must measure the UI, not how many
+#      times the stack was started (#1238: the seed used to upload on every
+#      start, so a reused stack's gallery grew a card per file per run).
 #   3. It SHOWS the operator what changed before anything is accepted, per
 #      surface, with the actual/diff images written somewhere discoverable. A
 #      regenerated baseline nobody looked at is a visual suite that has stopped
@@ -69,6 +73,7 @@
 #   ./scripts/e2e/update-visual-baselines.sh --reason "settings modal redesign"
 #   ./scripts/e2e/update-visual-baselines.sh --reason "..." --surface chat_trace
 #   ./scripts/e2e/update-visual-baselines.sh --reason "..." --yes      # no tty
+#   ./scripts/e2e/update-visual-baselines.sh --reason "..." --rebuild  # pristine stack
 #   ./scripts/e2e/update-visual-baselines.sh --help
 #
 # Exit codes (the repo-standard contract):
@@ -131,6 +136,12 @@ ASSUME_YES=false
 DRY_RUN=false
 KEEP_STACK=false
 DESTROY_STACK=false
+REBUILD_STACK=false
+#: Set when a destroy ran but volumes of the project remain (checked, never assumed).
+DESTROY_FAILED=false
+#: The files the seeder WILL upload, as printed by `seed-fresh-deployment.sh --manifest`.
+#: Derived from the code that creates the corpus, never transcribed here.
+SEED_MANIFEST=""
 SELECTED_SURFACES=()
 
 usage() {
@@ -158,10 +169,19 @@ Options:
   --yes                 Accept without the interactive prompt (backgrounded /
                         non-interactive shells have no tty to read from).
   --keep                Leave the capture stack running afterwards.
-  --destroy             Remove the capture stack's volumes too (default: stop,
-                        which keeps the seeded corpus for the next run).
-  --dry-run             Print the plan and the resolved safety checks; start
-                        nothing, capture nothing, write nothing.
+  --destroy             Remove the capture stack's volumes after the capture
+                        (default: stop, keeping them). Verified, not assumed:
+                        the run fails if any volume of the project survives.
+  --rebuild             Destroy the capture project BEFORE starting, for a
+                        pristine stack. Needed only when the corpus check below
+                        refuses a stack that holds leftovers.
+  --dry-run             Print the plan, the expected seed corpus and the resolved
+                        safety checks; start nothing, capture nothing, write
+                        nothing.
+
+Before capturing, the library must be EXACTLY the seed corpus (same files, same
+sizes, all completed, nothing else). A reused stack that satisfies that is safe;
+one that does not is refused with the remedy named.
   -h, --help            This message.
 EOF
 }
@@ -464,6 +484,7 @@ parse_args() {
             --yes|-y)      ASSUME_YES=true; shift ;;
             --keep)        KEEP_STACK=true; shift ;;
             --destroy)     DESTROY_STACK=true; shift ;;
+            --rebuild)     REBUILD_STACK=true; shift ;;
             --dry-run)     DRY_RUN=true; shift ;;
             -h|--help)     usage; exit 0 ;;
             *)             usage >&2; die "unknown argument: $1" "$EXIT_MISUSE" ;;
@@ -584,35 +605,156 @@ stop_capture_stack() {
 ${OPENTR} stop --fresh ${FRESH_NAME}${NC}"
         return 0
     fi
-    # `stop --fresh` keeps volumes: the seeded corpus is what makes the NEXT
-    # capture reproduce this one, so throwing it away by default would be
-    # actively counterproductive. --destroy is the opt-in.
+    # `stop --fresh` keeps volumes. That is safe to reuse ONLY because the seeder is
+    # idempotent per file and assert_corpus_is_the_seed refuses any library that is not
+    # exactly the seed corpus before a capture -- this comment used to say the kept corpus
+    # "reproduces this one", which was false while every start re-uploaded the seed (#1238).
+    # --destroy is the opt-in for a pristine next run.
     log "${BLUE}▶ ${OPENTR} stop --fresh ${FRESH_NAME}${NC}"
     "$OPENTR" stop --fresh "$FRESH_NAME" || log "${YELLOW}⚠ stop --fresh reported an error${NC}"
     if $DESTROY_STACK; then
-        log "${BLUE}▶ ${OPENTR} fresh-destroy ${FRESH_NAME}${NC}"
-        "$OPENTR" fresh-destroy "$FRESH_NAME" \
-            || log "${YELLOW}⚠ fresh-destroy reported an error${NC}"
+        destroy_capture_project || DESTROY_FAILED=true
     else
-        log "   Volumes kept. Remove them with: ${OPENTR} fresh-destroy ${FRESH_NAME}"
+        log "   Volumes kept. Remove them with: ${OPENTR} fresh-destroy ${FRESH_NAME} --yes"
     fi
 }
 
-# Wait until the seeded media has left "processing". The module docstring is
-# explicit that the suite needs completed, transcribed files; capturing while a
-# file is still processing records a spinner as the reference image.
-wait_for_seeded_files() {
+# Remove the capture project's containers AND volumes, then PROVE the volumes are gone.
+#
+# ⚠️ `fresh-destroy` is interactive: without `--yes` it reads a y/N answer, and EOF (any
+# backgrounded or piped shell) is "cancelled" -- it printed so and exited 0. A caller that
+# trusted the exit status reported a destroy that never happened, which is how `--destroy`
+# was a silent no-op outside a terminal. So the exit status is not consulted for the verdict;
+# the state is: any volume still named `otfresh-<name>_*` means the destroy did not happen.
+#
+# Only ever addresses the named fresh project; callers assert it is not a live one first.
+destroy_capture_project() {
+    local project="otfresh-${FRESH_NAME}" listing="" name left=""
+    log "${BLUE}▶ ${OPENTR} fresh-destroy ${FRESH_NAME} --yes${NC}"
+    "$OPENTR" fresh-destroy "$FRESH_NAME" --yes \
+        || log "${YELLOW}⚠ fresh-destroy reported an error${NC}"
+    if ! listing="$(docker volume ls --format '{{.Name}}' 2>/dev/null)"; then
+        log "${RED}❌ Could not list docker volumes, so the destroy cannot be verified.${NC}"
+        return 1
+    fi
+    while IFS= read -r name; do
+        [[ "$name" == "${project}_"* ]] && left="${left} ${name}"
+    done <<< "$listing"
+    if [[ -n "$left" ]]; then
+        log "${RED}❌ fresh-destroy did not remove the volumes of ${project}:${left}${NC}"
+        log "   Inspect with: ${OPENTR} fresh-list"
+        return 1
+    fi
+    log "${GREEN}✔ ${project}: no volumes remain.${NC}"
+    return 0
+}
+
+# --rebuild: start from a pristine project. Runs BEFORE the stack start, so it must prove the
+# project is not a live one first -- destroying the wrong project is the one unrecoverable
+# mistake available in this script.
+rebuild_capture_project() {
+    local project="otfresh-${FRESH_NAME}"
+    assert_project_is_not_live "$project" || exit "$EXIT_MISUSE"
+    if $DRY_RUN; then
+        log "${YELLOW}(dry run — would destroy ${project} first: --rebuild)${NC}"
+        return 0
+    fi
+    destroy_capture_project || die "--rebuild could not remove ${project}'s volumes" \
+        "$EXIT_PRECONDITION"
+}
+
+# The files the seeder will upload, derived from the seeder itself (`--manifest` shares its
+# selection code and makes no network call). Run from REPO_ROOT with the caller's
+# environment, exactly as opentr.sh runs the real seed, so SEED_MEDIA_DIR / SEED_MAX_FILES
+# and the worktree-aware default directory (#973) resolve identically for both.
+#
+# A synthetic or empty manifest is refused HERE, before a multi-minute stack start: those
+# files carry no speech, the pipeline marks them `error`, and there is nothing to photograph.
+derive_seed_manifest() {
+    local line count=0 source=""
+    SEED_MANIFEST="$(bash "$REPO_ROOT/scripts/seed-fresh-deployment.sh" --manifest)" \
+        || die "seed-fresh-deployment.sh --manifest failed" "$EXIT_PRECONDITION"
+    while IFS= read -r line; do
+        case "$line" in
+            "# source:"*) source="${line#"# source:"}"; source="${source# }" ;;
+            "#"*|"") ;;
+            *) count=$((count + 1)) ;;
+        esac
+    done <<< "$SEED_MANIFEST"
+    if [[ "$source" == "synthetic" || $count -eq 0 ]]; then
+        die "no real seed media (the seeder would fall back to silent synthetic fixtures \
+that the pipeline marks as errors). Set SEED_MEDIA_DIR to a directory of speech recordings." \
+            "$EXIT_PRECONDITION"
+    fi
+    log "${BLUE}🌱 Expected seed corpus: ${count} file(s) from ${source}${NC}"
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == "#"* ]] && continue
+        log "     ${line//$'\t'/  }  bytes"
+    done <<< "$SEED_MANIFEST"
+}
+
+# The capture must photograph EXACTLY the seed corpus and nothing else.
+#
+# The image measures whatever the library holds (the gallery's card count cannot be masked),
+# so "seeded media finished processing" was never enough: it passed a library of 12 files
+# (four starts of three) and the 6.8% diff that followed read as a UI regression (#1238).
+# This waits for processing to finish, then requires the library to equal the manifest:
+# every file once, the recorded size, `completed`, and no file outside it -- including
+# `e2e-owned-*` leftovers from a killed run, which are history too.
+#
+# Multisets, not sets (a set hides 12 copies of 3 names). Paginated (the endpoint defaults to
+# 20 per page and caps at 100; reading page 1 only is a window, not the corpus). A name or
+# multiplicity mismatch fails at once -- waiting cannot resolve it. An empty manifest is a
+# failure, never a vacuous pass. ONE heredoc on purpose: the unit test extracts it by index.
+assert_corpus_is_the_seed() {
     $DRY_RUN && return 0
-    log "${BLUE}⏳ Waiting for seeded media to finish processing…${NC}"
-    OT_BACKEND_URL="http://localhost:${BACKEND_PORT}" "$VENV_PY" - <<'PYEOF' || return 1
+    log "${BLUE}⏳ Waiting for seeded media to finish, then checking the library is exactly the seed…${NC}"
+    OT_BACKEND_URL="http://localhost:${BACKEND_PORT}" OT_SEED_MANIFEST="$SEED_MANIFEST" \
+    OT_FRESH_NAME="$FRESH_NAME" "$VENV_PY" - <<'PYEOF' || return 1
+import collections
 import os
 import sys
 import time
+from pathlib import PurePosixPath
 
 import requests
 
 backend = os.environ["OT_BACKEND_URL"]
+fresh_name = os.environ.get("OT_FRESH_NAME") or "<name>"
 deadline = time.time() + float(os.environ.get("OT_VISUAL_SEED_TIMEOUT", "1800"))
+# Seconds between polls while files process; retries after an unreadable response wait half.
+poll = float(os.environ.get("OT_VISUAL_POLL_SECONDS", "10"))
+
+
+def fail(message: str) -> None:
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+source = ""
+expected: list[tuple[str, int]] = []
+for line in os.environ.get("OT_SEED_MANIFEST", "").splitlines():
+    if line.startswith("# source:"):
+        source = line.partition(":")[2].strip()
+    elif line.strip() and not line.startswith("#"):
+        name, _, size = line.partition("\t")
+        try:
+            expected.append((name, int(size)))
+        except ValueError:
+            fail(f"malformed seed manifest line: {line!r}")
+if source == "synthetic" or not expected:
+    # `all([])` is True: an empty manifest would "match" any library, including an empty one.
+    fail(
+        "the seed manifest is empty or synthetic, so there is no corpus to check the library "
+        "against. Synthetic fixtures contain no speech and the pipeline marks them as errors."
+    )
+
+remedy = (
+    f"Remedy: ./opentr.sh fresh-destroy {fresh_name} --yes (or re-run the capture with "
+    f"--rebuild). Leftover test rows can be inspected first with: ./opentr.sh test-cleanup "
+    f"--fresh {fresh_name} --dry-run"
+)
+
 token = None
 while time.time() < deadline and token is None:
     try:
@@ -626,46 +768,130 @@ while time.time() < deadline and token is None:
             break
     except requests.RequestException:
         pass
-    time.sleep(5)
+    time.sleep(poll / 2)
 if token is None:
-    print("could not authenticate against the capture stack", file=sys.stderr)
-    sys.exit(1)
+    fail("could not authenticate against the capture stack")
 
 headers = {"Authorization": f"Bearer {token}"}
+
+
+def read_library() -> list[dict] | None:
+    """Every file the account owns across ALL pages, or None if the listing is unreadable."""
+    items: list[dict] = []
+    page, total_pages = 1, 1
+    while page <= total_pages:
+        try:
+            resp = requests.get(
+                f"{backend}/api/files",
+                headers=headers,
+                params={"page": page, "page_size": 100},
+                timeout=30,
+            )
+            body = resp.json()
+            batch = body["items"]
+            total_pages = int(body["total_pages"])
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            return None
+        items.extend(batch)
+        if not batch:
+            break
+        page += 1
+    return items
+
+
+def key(f: dict) -> str:
+    """The on-disk basename the seeder uploaded.
+
+    The stored ``filename`` is sanitized by the backend and no longer equals it; ``title``
+    keeps the original stem, and the sanitizer preserves the extension.
+    """
+    name = str(f.get("filename") or "")
+    path = PurePosixPath(name)
+    return f"{f.get('title') or path.stem}{path.suffix}"
+
+
+def status_of(f: dict) -> str:
+    return str(f.get("status", "")).lower() or "unknown"
+
+
+want = collections.Counter(name for name, _ in expected)
+sizes = dict(expected)
 while time.time() < deadline:
-    try:
-        files = requests.get(f"{backend}/api/files", headers=headers, timeout=30).json()
-    except (requests.RequestException, ValueError):
-        time.sleep(5)
+    files = read_library()
+    if files is None:
+        time.sleep(poll / 2)
         continue
-    if isinstance(files, dict):
-        files = files.get("items") or files.get("files") or []
-    busy = [f for f in files if str(f.get("status", "")).lower() in {"processing", "pending"}]
-    done = [f for f in files if str(f.get("status", "")).lower() == "completed"]
-    if files and not busy:
+    have = collections.Counter(key(f) for f in files)
+    missing = sorted((want - have).elements())
+    duplicated = sorted(n for n in want if have[n] > want[n])
+    extras = sorted(n for n in have if n not in want)
+    if missing or duplicated or extras:
+        lines = [
+            f"the library is not exactly the seed corpus: expected {len(expected)} file(s), "
+            f"found {len(files)}."
+        ]
+        if duplicated:
+            lines.append(
+                "  uploaded more than once: "
+                + ", ".join(f"{n} x{have[n]}" for n in duplicated)
+            )
+        if extras:
+            lines.append("  not part of the seed: " + ", ".join(f"{n} x{have[n]}" for n in extras))
+        if missing:
+            lines.append("  missing: " + ", ".join(missing))
+        lines.append(
+            "The gallery cannot mask its card count, so photographing this would bake the "
+            "stack's history into the baseline."
+        )
+        lines.append(remedy)
+        fail("\n".join(lines))
+
+    busy = [f for f in files if status_of(f) in {"processing", "pending"}]
+    if busy:
+        done = [f for f in files if status_of(f) == "completed"]
+        print(f"  {len(busy)} still processing, {len(done)} completed…", flush=True)
+        time.sleep(poll)
+        continue
+
+    wrong_size = sorted(
+        f"{key(f)} (stored {f.get('file_size')} bytes, seed is {sizes[key(f)]})"
+        for f in files
+        if f.get("file_size") != sizes[key(f)]
+    )
+    if wrong_size:
+        fail(
+            "a file with a seed name has different bytes than the seed file: "
+            + ", ".join(wrong_size)
+            + "\n"
+            + remedy
+        )
+
+    done = [f for f in files if status_of(f) == "completed"]
+    if len(done) != len(files):
+        counts = dict(collections.Counter(status_of(f) for f in files))
         if not done:
             # "Nothing is still running" is not "the corpus is ready". `error` is neither
             # `processing` nor `pending`, so a corpus in which every file FAILED used to pass
-            # here as "0 completed file(s)" and the capture photographed an empty library --
-            # failures that read as UI regressions on the branch under test (#973).
-            counts: dict[str, int] = {}
-            for f in files:
-                status = str(f.get("status", "")).lower() or "unknown"
-                counts[status] = counts.get(status, 0) + 1
-            print(
+            # as "0 completed file(s)" and the capture photographed an empty library (#973).
+            fail(
                 f"seeded media finished but none completed ({counts}); the visual suite needs "
                 "transcribed files, so refusing to capture against an empty corpus. A worktree "
                 "without SEED_MEDIA_DIR seeds silent fixtures that the pipeline correctly "
-                "marks as errors.",
-                file=sys.stderr,
+                f"marks as errors.\n{remedy}"
             )
-            sys.exit(1)
-        print(f"{len(done)} completed file(s), none processing")
-        sys.exit(0)
-    print(f"  {len(busy)} still processing, {len(done)} completed…", flush=True)
-    time.sleep(10)
-print("timed out waiting for seeded media to finish processing", file=sys.stderr)
-sys.exit(1)
+        bad = sorted(f"{key(f)} ({status_of(f)})" for f in files if status_of(f) != "completed")
+        fail(
+            f"{len(files) - len(done)} of {len(files)} seed file(s) did not complete ({counts}): "
+            + ", ".join(bad)
+            + "\nA failed seed file does not recover by waiting. "
+            + remedy
+        )
+    print(
+        f"{len(done)} completed file(s), none processing; "
+        f"the library is exactly the {len(expected)}-file seed corpus"
+    )
+    sys.exit(0)
+fail("timed out waiting for seeded media to finish processing")
 PYEOF
 }
 
@@ -725,6 +951,10 @@ restore_baselines_unless_accepted() {
         done
     fi
     stop_capture_stack
+    # A destroy that left volumes behind must not hide behind an accepted capture's exit 0.
+    if $DESTROY_FAILED && [[ $rc -eq 0 ]]; then
+        rc=$EXIT_FAIL
+    fi
     exit "$rc"
 }
 
@@ -956,6 +1186,7 @@ record_provenance() {
     "seeded": true,
     "mode": "dev (local source bind-mounted)"
   },
+  "corpus": $(corpus_json),
   "change_from_previous": {
     "status": $(json_string "${status:-unknown}"),
     "differing_pixels": $(json_string "${pct:-}")
@@ -967,6 +1198,30 @@ EOF
     log "${GREEN}✔ Provenance written to ${PROVENANCE_DIR#"$REPO_ROOT"/}/${NC}"
     $GIT_DIRTY && log "${YELLOW}  …recorded as captured from a DIRTY tree.${NC}"
     return 0
+}
+
+# The corpus this image was photographed against, from the manifest the library was asserted
+# to equal. "3 smallest files in a gitignored host directory" is host state, so without this a
+# new small file in that directory silently changes every future baseline and nothing says so.
+# `seed_source` is the directory's last component only: a committed sidecar must not carry the
+# photographer's home path.
+corpus_json() {
+    local line source="" name size entries="" count=0
+    while IFS= read -r line; do
+        case "$line" in
+            "# source:"*) source="${line#"# source:"}"; source="${source# }"; source="${source##*/}" ;;
+            "#"*|"") ;;
+            *)
+                name="${line%%$'\t'*}"
+                size="${line#*$'\t'}"
+                [[ $count -gt 0 ]] && entries+=", "
+                entries+="{\"filename\": $(json_string "$name"), \"size\": ${size}}"
+                count=$((count + 1))
+                ;;
+        esac
+    done <<< "$SEED_MANIFEST"
+    printf '{"seed_source": %s, "files": [%s], "library_total": %d}' \
+        "$(json_string "$source")" "$entries" "$count"
 }
 
 # Minimal JSON string escaping for operator-supplied text (--reason).
@@ -995,17 +1250,22 @@ main() {
 
     cd "$REPO_ROOT"
 
+    derive_seed_manifest
+
     WORKDIR="${OT_VISUAL_WORKDIR:-/tmp/ot-visual-baselines/$(date +%Y%m%d-%H%M%S)}"
     BEFORE_DIR="$WORKDIR/baseline-before"
     snapshot_baselines
 
     trap restore_baselines_unless_accepted EXIT
 
+    $REBUILD_STACK && rebuild_capture_project
+
     start_capture_stack
 
     if $DRY_RUN; then
         log "${GREEN}Dry run: declared-intent checks passed (offset ${PORT_OFFSET}, project \
 otfresh-${FRESH_NAME}).${NC}"
+        log "  Expected library: exactly the seed corpus listed above (checked after the stack is up)"
         log "  Not evaluated, because they are OBSERVATIONS of a running stack:"
         log "    · which compose project owns ports ${FRONTEND_PORT}/${BACKEND_PORT}"
         log "    · whether that stack serves local source or a baked image"
@@ -1019,8 +1279,8 @@ otfresh-${FRESH_NAME}).${NC}"
         "$FRESH_PROJECT" "$FRONTEND_PORT" "$BACKEND_PORT" || exit "$EXIT_PRECONDITION"
     assert_stack_serves_local_code "$FRESH_PROJECT" || exit "$EXIT_PRECONDITION"
 
-    wait_for_seeded_files || die "seeded media never finished processing — capturing now \
-would record a spinner as the reference image" "$EXIT_PRECONDITION"
+    assert_corpus_is_the_seed || die "the library is not exactly the seed corpus — capturing \
+now would record the stack's history, not the UI (see the message above)" "$EXIT_PRECONDITION"
 
     # Set BEFORE the capture, not after: the failure mode the trap exists for is
     # the run dying part way through, with some baselines already overwritten.

@@ -40,6 +40,8 @@ fresh mode, even when `.env` defines storage paths.**
 ./opentr.sh start dev --fresh test1
 
 # Upload a couple of small sample media files once the stack is healthy.
+# Idempotent: files the deployment already holds are skipped, so repeating this on a
+# stack that kept its volumes does not accumulate duplicates.
 ./opentr.sh start dev --fresh test1 --seed-benchmark
 
 # The --with-* test overlays come along, fully isolated: the LLDAP container is

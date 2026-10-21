@@ -425,6 +425,16 @@ this file is for.
   whisperx fallback. The `pyannote` group still loads `WHISPER_MODEL` through whisperx once, as its
   diarization warm-up.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
+  ⚠️ `seed-fresh-deployment.sh` is **idempotent per file** (#1238): it lists the deployment and
+  uploads only absent files, matching on the stored `title` + extension (the stored `filename` is
+  sanitized and differs from the on-disk name for ~1 in 4 corpus files), and uploads nothing if the
+  listing fails. `--manifest` prints `# source: …` then `<name><TAB><bytes>` with no network call;
+  `e2e/update-visual-baselines.sh` derives its expected corpus from it and refuses to capture unless
+  the library equals it exactly (names, multiplicity, sizes, all `completed`, nothing extra), because
+  the gallery's card count cannot be masked. `opentr.sh fresh-destroy <name> --yes` exists for
+  non-tty callers; without it EOF at the prompt now fails (it used to "cancel" with exit 0). The
+  wrapper's `--destroy`/`--rebuild` verify the project's volumes are gone rather than trust that exit
+  status.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), and `test-lite-mode.sh` (no
   FROM/TO to detect — always rehearses the CURRENT `VERSION`'s `--lite` deployment shape

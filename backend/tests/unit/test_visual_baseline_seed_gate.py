@@ -1,124 +1,27 @@
-"""A visual-baseline capture must never run against a corpus with nothing transcribed (#973).
+"""The seed directory must resolve from a git worktree (#973).
 
 Run from a git worktree, a capture seeded **zero completed files** and photographed the result
-anyway. The failures it produced (``no such index [transcript_chunks]`` on the file-detail
-surface, empty galleries) are indistinguishable from real UI regressions on the branch under
-test, which is what made it expensive. Two independent defects combined:
+anyway. ``scripts/seed-fresh-deployment.sh`` defaulted ``SEED_MEDIA_DIR`` to the RELATIVE path
+``benchmark/test_audio``. ``benchmark/`` is gitignored, so it exists only in the main checkout;
+from ``.claude/worktrees/<name>`` the path resolves to nothing, the script falls back to
+synthetic silence, and the pipeline (correctly) marks every file ``error``.
 
-1. ``scripts/seed-fresh-deployment.sh`` defaulted ``SEED_MEDIA_DIR`` to the RELATIVE path
-   ``benchmark/test_audio``. ``benchmark/`` is gitignored, so it exists only in the main
-   checkout; from ``.claude/worktrees/<name>`` the path resolves to nothing, the script falls
-   back to synthetic silence, and the pipeline (correctly) marks every file ``error``.
-2. ``wait_for_seeded_files`` in ``scripts/e2e/update-visual-baselines.sh`` exits 0 when
-   ``files and not busy``. ``error`` is neither ``processing`` nor ``pending``, so a corpus in
-   which EVERY file failed satisfied it and reported "0 completed file(s)" as success.
-
-Both are tested against the real script text, not a re-implementation: the gate by running
-the Python block embedded in the shell function against a stub backend, the path by sourcing
-only the resolver function inside a genuine ``git worktree``.
+Tested against the real script text, not a re-implementation: only the resolver function is
+sourced, inside a genuine ``git worktree``. The other half of #973 -- the capture wrapper's
+corpus gate -- lives in ``test_visual_baseline_corpus_gate.py``.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
-import sys
-import threading
-from http.server import BaseHTTPRequestHandler
-from http.server import HTTPServer
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-BASELINES_SCRIPT = REPO_ROOT / "scripts" / "e2e" / "update-visual-baselines.sh"
 SEED_SCRIPT = REPO_ROOT / "scripts" / "seed-fresh-deployment.sh"
-
-
-def _gate_source() -> str:
-    """The Python block ``wait_for_seeded_files`` feeds to the venv interpreter, verbatim."""
-    text = BASELINES_SCRIPT.read_text(encoding="utf-8")
-    fn = text.index("wait_for_seeded_files() {")
-    start = text.index("<<'PYEOF'", fn)
-    body_start = text.index("\n", start) + 1
-    body_end = text.index("\nPYEOF", body_start)
-    return text[body_start:body_end]
-
-
-def _run_gate(files: list[dict], *, timeout_s: int = 60) -> subprocess.CompletedProcess[str]:
-    """Run the real gate against a stub backend that serves ``files``."""
-
-    class Handler(BaseHTTPRequestHandler):
-        def _send(self, payload: object) -> None:
-            body = json.dumps(payload).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self) -> None:  # noqa: N802 - stdlib handler name
-            self._send({"access_token": "stub-token"})
-
-        def do_GET(self) -> None:  # noqa: N802 - stdlib handler name
-            self._send(files)
-
-        def log_message(self, *_args: object) -> None:  # keep test output clean
-            return
-
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        env = {
-            **os.environ,
-            "OT_BACKEND_URL": f"http://127.0.0.1:{server.server_address[1]}",
-            "OT_VISUAL_SEED_TIMEOUT": "20",
-        }
-        return subprocess.run(
-            [sys.executable, "-I", "-c", _gate_source()],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
-        )
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
-class TestTheProcessingGateRequiresACompletedFile:
-    def test_a_corpus_where_every_file_failed_is_not_ready(self):
-        result = _run_gate([{"status": "error"}, {"status": "error"}, {"status": "error"}])
-
-        assert result.returncode != 0, (
-            "the gate passed a corpus with ZERO completed files — the capture would then "
-            f"photograph an empty library.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-        # It must say WHY, in a way a person scanning a multi-minute start-up log can act on.
-        assert "none completed" in result.stderr.lower()
-        assert "error" in result.stderr.lower()
-
-    def test_one_completed_file_among_failures_is_enough(self):
-        """The control: the gate is not simply refusing everything."""
-        result = _run_gate([{"status": "error"}, {"status": "completed"}])
-
-        assert result.returncode == 0, result.stderr
-        assert "1 completed" in result.stdout
-
-    def test_an_all_completed_corpus_passes(self):
-        result = _run_gate([{"status": "completed"}, {"status": "completed"}])
-
-        assert result.returncode == 0, result.stderr
-        assert "2 completed" in result.stdout
-
-    def test_the_status_match_is_case_insensitive(self):
-        result = _run_gate([{"status": "Completed"}])
-
-        assert result.returncode == 0, result.stderr
 
 
 def _git(cwd: Path, *args: str) -> str:

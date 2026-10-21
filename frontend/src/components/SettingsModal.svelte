@@ -401,13 +401,16 @@
     // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
     // so regular org members never see these. Community never reaches here
     // (isCloudEdition is false), so the section is empty and drops out.
-    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') ? [
+    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') || orgAdminCapOn(capState, 'org.takedown') ? [
       {
         title: $t('settings.sections.billingTeam'),
         items: [
           ...(orgAdminCapOn(capState, 'billing') ? [{ id: 'billing' as SettingsSection, label: $t('billing.navLabel'), icon: 'credit-card' }] : []),
           ...(orgAdminCapOn(capState, 'usage_dashboard') ? [{ id: 'usage' as SettingsSection, label: $t('usage.navLabel'), icon: 'activity' }] : []),
-          ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }] : [])
+          ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }] : []),
+          // issue #1253: the organization's own takedown queue. Server-enforced by the
+          // `org.takedown` capability (unlike the platform queue's UI-only `admin.takedown`).
+          ...(orgAdminCapOn(capState, 'org.takedown') ? [{ id: 'org-takedown' as SettingsSection, label: $t('settings.quarantine.orgNavLabel'), icon: 'shield-off' }] : [])
         ]
       }
     ] : []),
@@ -1485,6 +1488,15 @@
         <p class="section-description">{$t('team.description')}</p>
         <LazySection load={sectionLoaders.team} let:Component>
           <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Cloud edition — organization takedown queue (org admins only, issue #1253) -->
+    {#if activeSection === 'org-takedown' && orgAdminCapOn(capState, 'org.takedown')}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.orgTakedown} let:Component>
+          <Component scope="organization" />
         </LazySection>
       </div>
     {/if}

@@ -25,7 +25,9 @@ same depth. Read this before assuming a key protects anything:
    router 404, so the UI gate is genuinely cosmetic:
    ``watch_sources``, ``organizations``, ``auth.config_ui``,
    ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``,
-   ``chat.rag``.
+   ``chat.rag``, ``org.takedown`` (``/org-admin/files``; no platform-admin bypass).
+   The platform takedown queue (``admin.takedown``, tier 2) stays ungated on purpose:
+   an operator must always be able to act on a legal notice.
 
    **Deployment-locked controls** (issue #1109) are server-enforced too, with
    no platform-admin bypass — they describe the deployment, not a tier:
@@ -132,6 +134,7 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "billing": False,
     "usage_dashboard": False,
     "organizations": False,  # member/seat management surface
+    "org.takedown": False,  # org-admin quarantine/release of the org's own files (#1253)
     "org.defaults": False,  # org-level default settings/policies
     "llm.byok": False,  # bring-your-own LLM key (cloud tier-gated extra)
     "redaction.policy": True,  # enforcement floor (org admin in cloud; operator here)
@@ -185,6 +188,7 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "billing": AUDIENCE_ORG_ADMIN,
     "usage_dashboard": AUDIENCE_ORG_ADMIN,
     "organizations": AUDIENCE_ORG_ADMIN,
+    "org.takedown": AUDIENCE_ORG_ADMIN,
     "org.defaults": AUDIENCE_ORG_ADMIN,
     "llm.byok": AUDIENCE_ORG_ADMIN,
     "redaction.policy": AUDIENCE_ORG_ADMIN,

@@ -117,6 +117,22 @@ class DurationSource(enum.StrEnum):
     NONE = "none"
 
 
+class TakedownOrigin(enum.StrEnum):
+    """Which authority currently holds a taken-down or legally held file (issue #1253).
+
+    Stored in ``media_file.takedown_origin`` and also used as the *authority* a
+    takedown actor acts with, because the rule that ties them together is one line:
+    an actor may release what its own authority placed, and the platform may release
+    anything. The platform's authority outranks the organization's, so an
+    organization administrator can never lift a takedown the operator placed.
+    """
+
+    #: Placed by the deployment operator (platform administrators).
+    PLATFORM = "platform"
+    #: Placed by an administrator of the organization that owns the file.
+    ORGANIZATION = "organization"
+
+
 class ReasoningOffSwitch(enum.StrEnum):
     """What a probe concluded about a model's "do not reason" parameter (issue #64).
 

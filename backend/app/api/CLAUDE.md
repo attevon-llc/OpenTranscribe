@@ -172,7 +172,8 @@ one-click UI button.
 | `POST /org-admin/gdpr/erase-user/{uuid}` | `require_org_admin` + `require_capability("organizations")`. Destroys only rows stamped with **this** org; the account and personal-scope data survive |
 | `POST /org-admin/gdpr/erase-organization?confirm=true` | Same gate; refuses without `confirm`. Irreversible whole-tenant erasure; members keep their accounts |
 | `GET /org-admin/audit-logs` | Same gate; scoped to org members, and a `user_id` (actor) or `target_user_id` (subject, issue #443/#828) filter outside the org is 403 either way |
-| `GET /admin/files/quarantined` · `POST /admin/files/{uuid}/{quarantine,release}` | Admin. DMCA/abuse takedown + legal hold; `release` is 409 when not quarantined |
+| `GET /admin/files/quarantined` · `POST /admin/files/{uuid}/{quarantine,release}` | Admin. DMCA/abuse takedown + legal hold; `release` is 409 when not quarantined. No capability gate and no support grant (the operator must always be able to act) |
+| `GET /org-admin/files/quarantined` · `POST /org-admin/files/{uuid}/{quarantine,release}` | `require_org_admin` + server-enforced `org.takedown` (404 when off, no superuser bypass). Own-org files only (looked up with `organization_id` IN the query, so foreign / personal / missing are one 404). **Platform wins**: an org cannot release or overwrite a takedown the operator placed (`takedown_platform_origin`). Never places a legal hold. `endpoints/org_admin_takedown.py` |
 
 An org admin has authority over the tenant's **data**, never over the **person's account** —
 that boundary is why there are two erasure entry points rather than one.

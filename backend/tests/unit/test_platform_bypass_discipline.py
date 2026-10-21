@@ -279,7 +279,7 @@ ALLOWLIST: dict[str, str] = {
         "N: passes legacy_admin from an LDAP probe result to the group-mapping resolver; not "
         "the User flag"
     ),
-    "services/takedown_service.py::is_review_admin": (
+    "services/takedown_predicates.py::is_review_admin": (
         "Q: defines who may review quarantined content (the Q class itself); never consulted "
         "for tenant scope"
     ),

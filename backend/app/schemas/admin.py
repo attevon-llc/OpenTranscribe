@@ -307,6 +307,11 @@ class ReleaseRequest(BaseModel):
     """Request to release a quarantined media file."""
 
     clear_legal_hold: bool = Field(True, description="Also lift the legal-hold when releasing.")
+    reason: str | None = Field(
+        None,
+        max_length=2000,
+        description="Why the file is being released. Recorded in the audit log only.",
+    )
 
 
 class QuarantinedFile(BaseModel):
@@ -336,6 +341,8 @@ class QuarantinedFile(BaseModel):
     quarantined_by_email: str | None = None
     legal_hold: bool = False
     is_quarantined: bool = True
+    # Which authority holds the file, 'platform' or 'organization' (issue #1253).
+    takedown_origin: str | None = None
 
 
 class QuarantinedFilesList(BaseModel):
@@ -360,6 +367,8 @@ class QuarantineActionResponse(BaseModel):
     # in the DB but its media URL still 403ing); `presign_revoked` is None.
     presign_revoked: bool | None = None
     presign_tag_cleared: bool | None = None
+    # Who holds the file after the action; None once nothing holds it (issue #1253).
+    takedown_origin: str | None = None
 
 
 class LinkExternalIdentityRequest(BaseModel):

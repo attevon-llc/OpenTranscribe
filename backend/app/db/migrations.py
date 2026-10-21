@@ -649,6 +649,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # exist from this revision).
     has_legal_acceptance = "legal_acceptance" in tables
 
+    # v442: which authority holds a taken-down file (issue #1253). Keyed on the TRIGGER, which
+    # the revision creates last: a column without the trigger is the state that should re-run
+    # the revision, because only the trigger keeps a held row from having no origin.
+    has_takedown_origin = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_media_file_takedown_origin' "
+        "AND NOT tgisinternal)"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -706,8 +714,21 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
-    # v441: same as v440 plus the legal acceptance table. The newest revision on this chain,
-    # so this is the top of the ladder.
+    # v442: same as v441 plus the takedown-origin column, CHECK and trigger. The newest
+    # revision on this chain, so this is the top of the ladder.
+    if (
+        matches_v433
+        and not has_unusable_pyannote_source
+        and not has_lite_local_source
+        and has_processing_provenance
+        and has_correction_carryover
+        and not has_unstamped_voiceprint_suggestion
+        and has_password_last_self_changed
+        and has_legal_acceptance
+        and has_takedown_origin
+    ):
+        return "v442_add_media_file_takedown_origin"
+    # v441: same as v440 plus the legal acceptance table.
     if (
         matches_v433
         and not has_unusable_pyannote_source

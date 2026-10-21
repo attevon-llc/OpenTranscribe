@@ -354,6 +354,13 @@ class MediaFile(Base):
     legal_hold: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Which authority holds the file (issue #1253, v442): ``TakedownOrigin`` value,
+    # 'platform' or 'organization'. "Platform wins": an organization administrator can
+    # release only what an organization placed. Set only by ``takedown_service``; a
+    # database trigger keeps it consistent with the two flags above (held with no
+    # origin reads as 'platform', nothing held means no origin), so a writer that sets
+    # ``is_quarantined`` directly can never leave a file the organization could release.
+    takedown_origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     if TYPE_CHECKING:
         # Non-persisted, TYPE_CHECKING-only: `takedown_service.quarantine_file`/
@@ -378,6 +385,10 @@ class MediaFile(Base):
     #   * ``ck_media_file_recorded_date_locked_is_manual`` stops a re-derivation from
     #     relabelling a hand-entered date as machine-derived while leaving it locked.
     __table_args__ = (
+        CheckConstraint(
+            "takedown_origin IS NULL OR takedown_origin IN ('platform', 'organization')",
+            name="ck_media_file_takedown_origin_valid",
+        ),
         CheckConstraint(
             "recorded_date_source IS NULL OR recorded_date_source IN "
             "('container', 'filename', 'transcript', 'llm', 'manual', 'none')",

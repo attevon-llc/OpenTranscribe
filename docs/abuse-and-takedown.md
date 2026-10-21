@@ -146,7 +146,62 @@ and **never blocks the takedown or the release**.
 | `POST /api/admin/files/{uuid}/release` | Release a file (restore access, optional clear legal-hold). |
 
 Audit event types: `admin.file.quarantine`, `admin.file.release` (in the FedRAMP
-AU-2/AU-3 audit log).
+AU-2/AU-3 audit log). Every event records `actor_role` (`platform_admin` or `org_admin`),
+`authority` (`platform` or `organization`) and `previous_origin`; a release also records the
+optional `reason`.
+
+The platform routes need **no support-access grant** and accept none: every `/api/admin`
+route answers `support_grant_action_not_permitted` to a request carrying a grant header, and
+they are deliberately **not** behind a capability, so the operator can always act on a notice.
+
+### Organization takedown (issue #1253)
+
+In a deployment that hosts several organizations, a notice can reach an organization's own
+administrators. They can take down and release **their own organization's files**, through a
+second door onto the same implementation (`takedown_service`):
+
+| Method & path | Purpose |
+| --- | --- |
+| `GET  /api/org-admin/files/quarantined` | This organization's taken-down files (`include_legal_holds` also lists released files that are still held). |
+| `POST /api/org-admin/files/{uuid}/quarantine` | Take one of this organization's files down (`reason`). |
+| `POST /api/org-admin/files/{uuid}/release` | Release a file this organization took down (optional audit-only `reason`). |
+
+Gated by `require_org_admin` **and** the server-enforced capability `org.takedown`, which is
+off in the community edition (the routes answer 404, also for a superuser). Another
+organization's file, a personal file and a missing file all return the same 404, and a probe is
+audited in the *caller's* organization with no reference to the file asked about. Organization
+administrators exist only through the managed-edition identity mirror, so on a community
+deployment this surface is inert.
+
+**Who holds a file is recorded** in `media_file.takedown_origin` (`platform` or
+`organization`), and the rule is **platform wins**:
+
+| Action | Platform | Organization administrator |
+| --- | --- | --- |
+| take down a clean file | allowed (origin `platform`) | allowed (origin `organization`) |
+| take down a file an organization holds | allowed, **escalates** to `platform` (the earlier reason is kept in the audit event) | allowed (refreshes the reason) |
+| take down a file the platform holds | allowed | refused, `409 takedown_platform_origin`, nothing changed |
+| release an organization takedown | allowed | allowed |
+| release a platform takedown | allowed | refused, `403 takedown_platform_origin`, nothing changed |
+
+Authority comes from the **route**, not the caller's roles: a person who is both a platform
+and an organization administrator acts as the organization on these routes. A held file with
+no recorded origin reads as `platform`; a database trigger makes that state unrepresentable.
+
+What an organization administrator sees of a takedown the **operator** placed: the row, with
+`can_release: false`, and neither the reason nor the actor (those fields are absent from the
+payload). They cannot open a quarantined file; the queue is metadata only.
+
+Differences from the platform path, each deliberate:
+
+- **No legal hold.** The organization route never places one (a hold also blocks the owner's
+  account deletion, which is a decision that has not been made for organizations).
+- **Owner notice** names "an administrator of your organization" and directs a counter-notice to
+  the organization's administrators, never to `ABUSE_CONTACT_EMAIL`; the acting administrator
+  is not disclosed.
+- **Rate limit** `ORG_TAKEDOWN_RATE_LIMIT` per user (one budget shared by both POSTs): every
+  takedown bumps the deployment-wide retrieval-cache version, so one tenant's churn costs every
+  tenant their cache until a per-tenant version exists.
 
 ## Presigned URL revocation (issue #907, FIXED)
 

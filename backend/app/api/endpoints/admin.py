@@ -3056,6 +3056,7 @@ def list_quarantined_files(
     from sqlalchemy.orm import aliased
 
     from app.models.organization import Organization
+    from app.services.takedown_authority import origin_value
 
     # Two DIFFERENT FKs to `user` on the same row (owner, and the admin who acted),
     # so this needs two aliased OUTER joins, not a per-row lookup (issue #576
@@ -3107,6 +3108,7 @@ def list_quarantined_files(
             quarantined_by_email=str(quarantined_by.email) if quarantined_by is not None else None,
             legal_hold=bool(f.legal_hold),
             is_quarantined=bool(f.is_quarantined),
+            takedown_origin=origin_value(f),
         )
         for f, owner, quarantined_by, org in rows
     ]
@@ -3127,6 +3129,7 @@ def quarantine_media_file(
     via ``/release`` and a legal-hold (default on) protects the object from
     deletion while a dispute/notice is open.
     """
+    from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import quarantine_file
     from app.utils.uuid_helpers import get_file_by_uuid
 
@@ -3135,7 +3138,7 @@ def quarantine_media_file(
     file = quarantine_file(
         db,
         file,
-        admin=current_user,
+        actor=TakedownActor.platform(current_user),
         reason=request_body.reason,
         legal_hold=request_body.legal_hold,
         source_ip=source_ip,
@@ -3147,6 +3150,7 @@ def quarantine_media_file(
         legal_hold=bool(file.legal_hold),
         status=str(file.status.value if hasattr(file.status, "value") else file.status),
         presign_revoked=bool(getattr(file, "presign_revoked", False)),
+        takedown_origin=file.takedown_origin,
     )
 
 
@@ -3169,6 +3173,7 @@ def release_media_file(
     never quarantined and carries no hold is still refused -- but a
     released-but-held file may now have its hold lifted here.
     """
+    from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import release_file
     from app.utils.uuid_helpers import get_file_by_uuid
 
@@ -3183,8 +3188,9 @@ def release_media_file(
     file = release_file(
         db,
         file,
-        admin=current_user,
+        actor=TakedownActor.platform(current_user),
         clear_legal_hold=clear_hold,
+        reason=request_body.reason if request_body is not None else None,
         source_ip=source_ip,
         user_agent=user_agent,
     )
@@ -3194,4 +3200,5 @@ def release_media_file(
         legal_hold=bool(file.legal_hold),
         status=str(file.status.value if hasattr(file.status, "value") else file.status),
         presign_tag_cleared=bool(getattr(file, "presign_tag_cleared", True)),
+        takedown_origin=file.takedown_origin,
     )

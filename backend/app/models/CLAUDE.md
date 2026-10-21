@@ -142,5 +142,10 @@ authority. See `backend/app/db/CLAUDE.md`.
   overwrite a concurrent stage's entry.
 - `MediaFile.is_quarantined` (DMCA/abuse takedown) is **independent of** `status`;
   `pre_quarantine_status` restores the prior value on release. A takedown never deletes rows.
+  `takedown_origin` (`platform` | `organization`, v442, issue #1253) records WHO holds the file:
+  an organization administrator can release only what an organization placed. Written by
+  `takedown_service` only; a trigger keeps it consistent with the two flags (held with no origin
+  reads as `platform`, nothing held means NULL), so a fixture that sets `is_quarantined` directly
+  still produces the fail-closed value. The authority rules live in `services/takedown_authority.py`.
 - `TranscriptSegment.text` always holds the **original** text; `redactions`/`toxicity` are
   cached detection spans applied as a read-time transform.

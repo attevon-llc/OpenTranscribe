@@ -102,6 +102,8 @@ export interface QuarantinedFile {
   quarantined_by_email: string | null;
   legal_hold: boolean;
   is_quarantined: boolean;
+  /** Which authority holds the file (issue #1253): 'platform' or 'organization'. */
+  takedown_origin: 'platform' | 'organization' | null;
 }
 
 export interface QuarantinedFilesList {
@@ -114,6 +116,7 @@ export interface QuarantineActionResult {
   is_quarantined: boolean;
   legal_hold: boolean;
   status: string;
+  takedown_origin: 'platform' | 'organization' | null;
 }
 
 export class AdminApi {

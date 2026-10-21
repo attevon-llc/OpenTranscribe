@@ -29,6 +29,7 @@ export type SettingsSection =
   | 'billing'
   | 'usage'
   | 'team'
+  | 'org-takedown'
   // Admin sections
   // 'admin-settings' and 'cache' are deliberately absent: neither has had a
   // render block in SettingsModal for some time, so deep-linking to them opened

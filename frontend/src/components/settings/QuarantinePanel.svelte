@@ -1,8 +1,14 @@
 <script lang="ts">
   /**
-   * Abuse/DMCA takedown review queue (issue #576). Deployment-wide — every
-   * owner/org, which is correct for this platform-admin surface (§B.6 E7); do
-   * not reuse for an org-scoped view.
+   * Abuse/DMCA takedown review queue (issue #576).
+   *
+   * `scope="platform"` (default) is the deployment-wide operator queue — every
+   * owner/org, which is correct for that surface (§B.6 E7). `scope="organization"`
+   * (issue #1253) is an organization administrator's own queue: it talks to a
+   * different client (`OrgAdminApi`, never `AdminApi`), lists only that
+   * organization's files, and offers Release only where the server says
+   * `can_release` — a takedown the operator placed can only be released by the
+   * operator, and its reason and actor are not sent at all.
    *
    * §B.2's corollary applies here too: this panel offers Release only. It has
    * no button that reaches a GDPR erasure route — `AdminApi` carries zero GDPR
@@ -15,11 +21,17 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
-  import { AdminApi, type QuarantinedFile } from '$lib/api/admin';
+  import { AdminApi } from '$lib/api/admin';
+  import { OrgAdminApi } from '$lib/api/orgAdmin';
+  import { toRows, type QueueRow, type QueueScope } from './quarantineRows';
 
   const PAGE_SIZE = 50;
 
-  let files: QuarantinedFile[] = [];
+  export let scope: QueueScope = 'platform';
+
+  $: isOrg = scope === 'organization';
+
+  let files: QueueRow[] = [];
   let total = 0;
   let offset = 0;
   let loading = false;
@@ -34,12 +46,15 @@
     loading = true;
     loadFailed = false;
     try {
-      const result = await AdminApi.listQuarantinedFiles({
+      const params = {
         limit: PAGE_SIZE,
         offset: newOffset,
         include_legal_holds: showLegalHoldsOnly,
-      });
-      files = result.files;
+      };
+      const result = isOrg
+        ? await OrgAdminApi.listQuarantinedFiles(params)
+        : await AdminApi.listQuarantinedFiles(params);
+      files = toRows(scope, result.files);
       total = result.total;
       offset = newOffset;
     } catch (err) {
@@ -64,10 +79,14 @@
    * A 409 here means someone else already released it — refetch, never retry
    * (§B.6 E3).
    */
-  async function release(file: QuarantinedFile, clearLegalHold: boolean) {
+  async function release(file: QueueRow, clearLegalHold: boolean) {
     releasingUuid = file.uuid;
     try {
-      await AdminApi.releaseFile(file.uuid, clearLegalHold);
+      if (isOrg) {
+        await OrgAdminApi.releaseFile(file.uuid);
+      } else {
+        await AdminApi.releaseFile(file.uuid, clearLegalHold);
+      }
       toastStore.success($t('settings.quarantine.releaseSuccess'));
       total = Math.max(0, total - 1);
       await load(offset);
@@ -81,10 +100,16 @@
 </script>
 
 <div class="quarantine-panel">
-  <h3 class="section-title">{$t('settings.quarantine.title')}</h3>
-  <p class="section-description">{$t('settings.quarantine.description')}</p>
+  <h3 class="section-title">
+    {$t(isOrg ? 'settings.quarantine.orgTitle' : 'settings.quarantine.title')}
+  </h3>
+  <p class="section-description">
+    {$t(isOrg ? 'settings.quarantine.orgDescription' : 'settings.quarantine.description')}
+  </p>
   <!-- §B.5 P1: scope copy names what quarantine hides — never "everywhere". -->
-  <p class="scope-note">{$t('settings.quarantine.scopeNote')}</p>
+  <p class="scope-note">
+    {$t(isOrg ? 'settings.quarantine.orgScopeNote' : 'settings.quarantine.scopeNote')}
+  </p>
 
   <div class="view-toggle">
     <button
@@ -127,6 +152,7 @@
           <th>{$t('settings.quarantine.columnReason')}</th>
           <th>{$t('settings.quarantine.columnTakenDown')}</th>
           <th>{$t('settings.quarantine.columnBy')}</th>
+          <th>{$t('settings.quarantine.columnHeldBy')}</th>
           <th>{$t('settings.quarantine.columnLegalHold')}</th>
           <th>{$t('settings.quarantine.columnActions')}</th>
         </tr>
@@ -136,21 +162,42 @@
           <tr>
             <td>
               <a href={`/files/${file.uuid}`} target="_blank" rel="noopener noreferrer">
-                {file.title || file.filename || file.uuid}
+                {file.label}
               </a>
             </td>
-            <!-- A person's email, never a bare integer id (issue #576 FINDING 3). -->
-            <td>{file.owner_email}</td>
-            <td class="reason-cell">{file.quarantine_reason || '—'}</td>
-            <td>{file.quarantined_at || '—'}</td>
-            <td>{file.quarantined_by_email || '—'}</td>
+            <!-- A person's name or email, never a bare integer id (issue #576 FINDING 3). -->
+            <td>{file.owner}</td>
+            <td class="reason-cell">
+              {#if file.reasonWithheld}
+                {$t('settings.quarantine.operatorHeldReason')}
+              {:else}
+                {file.reason || '—'}
+              {/if}
+            </td>
+            <td>{file.quarantinedAt || '—'}</td>
+            <td>{file.by || '—'}</td>
             <td>
-              {#if file.legal_hold}
+              {#if file.origin}
+                <span class="badge badge-origin" class:badge-operator={file.origin === 'platform'}>
+                  {$t(
+                    file.origin === 'platform'
+                      ? 'settings.quarantine.heldByOperator'
+                      : 'settings.quarantine.heldByOrganization'
+                  )}
+                </span>
+              {/if}
+            </td>
+            <td>
+              {#if file.legalHold}
                 <span class="badge badge-hold">{$t('settings.quarantine.legalHoldBadge')}</span>
               {/if}
             </td>
             <td class="actions-cell">
-              {#if file.is_quarantined}
+              {#if !file.canRelease}
+                <span class="action-disabled" title={$t('settings.quarantine.operatorOnlyRelease')}>
+                  {$t('settings.quarantine.operatorOnlyRelease')}
+                </span>
+              {:else if file.isQuarantined}
                 <button
                   class="action-link"
                   disabled={releasingUuid === file.uuid}
@@ -158,7 +205,7 @@
                 >
                   {$t('settings.quarantine.release')}
                 </button>
-              {:else if file.legal_hold}
+              {:else if file.legalHold}
                 <button
                   class="action-link"
                   disabled={releasingUuid === file.uuid}
@@ -281,6 +328,31 @@
   :global([data-theme='dark']) .badge-hold {
     background: rgba(217, 119, 6, 0.25);
     color: #fbbf24;
+  }
+
+  .badge-origin {
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+  }
+
+  .badge-operator {
+    background: rgba(100, 116, 139, 0.16);
+    color: #475569;
+  }
+
+  :global([data-theme='dark']) .badge-origin {
+    background: rgba(96, 165, 250, 0.22);
+    color: #93c5fd;
+  }
+
+  :global([data-theme='dark']) .badge-operator {
+    background: rgba(148, 163, 184, 0.24);
+    color: #cbd5e1;
+  }
+
+  .action-disabled {
+    font-size: 0.75rem;
+    color: var(--text-secondary, var(--text-color));
   }
 
   .actions-cell {

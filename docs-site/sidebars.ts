@@ -31,6 +31,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'installation/docker-compose',
         'installation/deployment-variants',
+        'installation/small-business-lan',
         'installation/hardware-requirements',
         'installation/gpu-setup',
         'installation/huggingface-setup',

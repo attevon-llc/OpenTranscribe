@@ -141,7 +141,13 @@ second is the specific failure mode they were written to prevent.
   `email_service.load_auth_mail_config`. A designation naming a missing or disabled row is
   rejected at **write** time, and deleting/disabling the designated row is refused — the read
   path degrades quietly enough that a bad designation would only surface as undelivered password
-  resets.
+  resets. `DesignationStatus.deliverable` (`resolves or env_smtp_configured`) is the ONE answer to
+  "would a credential mail be handed to a transport", the rule `EmailService._send_email` applies;
+  the designation route returns it (plus `verification_required`) and the admin UI branches on it.
+  `tests/api/test_auth_mail_deliverable.py` drives the real sender and this description from the
+  same rows so they cannot drift. It means configured, not working. The route is super_admin
+  only; exposing it to plain admins (so the invite form can warn them) was deliberately NOT done
+  and needs an authorization review first.
 - **`scim_service.py`** — every write `/scim/v2` performs. Deactivation revokes sessions,
   `super_admin` is untouchable, roles are never written at all, and `DELETE /Users/{id}` is a
   soft-disable. `scim_token_service.py` owns the credential: SHA-256 at rest, revoked and

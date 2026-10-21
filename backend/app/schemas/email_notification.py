@@ -148,7 +148,10 @@ class AuthMailDesignationResponse(BaseModel):
     ``config_uuid`` alone cannot tell the UI whether auth mail works: the row may
     have been deleted or disabled after it was designated. ``status`` /
     ``resolves`` carry that, and ``env_smtp_configured`` says whether the
-    fallback transport exists at all.
+    fallback transport exists at all. ``deliverable`` is the one answer the UI
+    should branch on ("would a password reset be handed to a transport"); it
+    means configured, not proven working. ``verification_required`` says whether
+    local login itself depends on that mail.
     """
 
     config_uuid: str | None = None
@@ -158,3 +161,5 @@ class AuthMailDesignationResponse(BaseModel):
     resolves: bool = False
     status: Literal["not_designated", "active", "missing", "disabled"]
     env_smtp_configured: bool = False
+    deliverable: bool
+    verification_required: bool

@@ -62,6 +62,35 @@ if ! declare -F ensure_env_permissions >/dev/null 2>&1; then
     }
 fi
 
+# Fallback definitions: this script is standalone and scripts/common.sh may be absent or
+# older. Identical bodies to common.sh's ot_is_valid_hostname() / ot_detect_lan_ip();
+# common.sh's win when present. Pinned by backend/tests/unit/test_lan_install_scripts.py.
+if ! declare -F ot_is_valid_hostname >/dev/null 2>&1; then
+    ot_is_valid_hostname() {
+        local name="${1:-}"
+        [[ ${#name} -le 253 && "$name" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]
+    }
+fi
+
+if ! declare -F ot_detect_lan_ip >/dev/null 2>&1; then
+    ot_detect_lan_ip() {
+        local ip="" iface=""
+        if command -v ip >/dev/null 2>&1; then
+            ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+        fi
+        if [ -z "$ip" ] && command -v route >/dev/null 2>&1; then
+            iface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
+            if [ -n "$iface" ]; then
+                ip=$(ipconfig getifaddr "$iface" 2>/dev/null || ifconfig "$iface" 2>/dev/null | awk '/inet / {print $2; exit}')
+            fi
+        fi
+        if [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+            echo "$ip"
+        fi
+        return 0
+    }
+fi
+
 # ─── Unattended-mode helpers ─────────────────────────────────────────────────
 # When OPENTRANSCRIBE_UNATTENDED is set, interactive prompts are skipped and
 # pre-set environment variables (or safe defaults) are used instead.
@@ -1606,6 +1635,26 @@ configure_llm_settings() {
     echo "• See .env.example for all available configuration options"
 }
 
+# Persist NGINX_SERVER_NAME in .env (update a live or commented entry, else append).
+# $1 must already have passed ot_is_valid_hostname: it is spliced into a sed replacement.
+write_nginx_server_name_to_env() {
+    local name="$1"
+    [ -f .env ] || return 0
+    if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
+        sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$name|g" .env
+    else
+        echo "" >> .env
+        echo "# HTTPS/SSL Configuration" >> .env
+        echo "NGINX_SERVER_NAME=$name" >> .env
+    fi
+    rm -f .env.bak
+    # Unconditional, not just on the fresh-install path (issue #857): a re-run
+    # against a pre-existing .env that predates this fix, or one created by a
+    # different path, is not guaranteed to already be owner-only.
+    ensure_env_permissions .env
+    echo "✓ Updated .env with NGINX_SERVER_NAME=$name"
+}
+
 configure_https_settings() {
     # Unattended: only configure HTTPS if NGINX_SERVER_NAME is pre-set in the environment
     if is_unattended; then
@@ -1615,8 +1664,23 @@ configure_https_settings() {
             SSL_CONFIGURED=false
             return 0
         fi
-        ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME}; certificates must be generated out of band"
-        SSL_CONFIGURED=false
+        if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
+            print_warning "NGINX_SERVER_NAME is not a valid hostname; skipping HTTPS/NGINX setup"
+            NGINX_SERVER_NAME=""
+            SSL_CONFIGURED=false
+            return 0
+        fi
+        # opentranscribe.sh reads NGINX_SERVER_NAME from .env only, never from the
+        # installer's environment, so without this write the nginx overlay is never
+        # selected and the stack silently comes up without HTTPS.
+        write_nginx_server_name_to_env "$NGINX_SERVER_NAME"
+        if [[ -f "nginx/ssl/server.crt" && -f "nginx/ssl/server.key" ]]; then
+            ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME} written to .env; existing certificates will be used"
+            SSL_CONFIGURED=true
+        else
+            ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME} written to .env; certificates are not generated unattended. Run: ./scripts/generate-ssl-cert.sh ${NGINX_SERVER_NAME} --auto-ip"
+            SSL_CONFIGURED=false
+        fi
         return 0
     fi
 
@@ -1663,7 +1727,7 @@ configure_https_settings() {
         print_info "Skipping HTTPS setup - you can configure later"
         echo "To enable HTTPS later:"
         echo "  1. Run: cd $PROJECT_DIR && ./opentranscribe.sh setup-ssl"
-        echo "  2. Or follow: docs/NGINX_SETUP.md (if downloaded)"
+        echo "  2. Or follow: https://docs.opentranscribe.app/docs/installation/small-business-lan"
         echo ""
         NGINX_SERVER_NAME=""
         return 0
@@ -1677,7 +1741,7 @@ configure_https_settings() {
     NGINX_SERVER_NAME="${user_hostname:-opentranscribe.local}"
 
     # Validate hostname (basic check)
-    if [[ ! "$NGINX_SERVER_NAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$ ]]; then
+    if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
         print_warning "Hostname appears invalid, using default: opentranscribe.local"
         NGINX_SERVER_NAME="opentranscribe.local"
     fi
@@ -1685,25 +1749,7 @@ configure_https_settings() {
     echo ""
     print_success "Hostname set to: $NGINX_SERVER_NAME"
 
-    # Update .env file with NGINX_SERVER_NAME
-    if [ -f .env ]; then
-        # Check if NGINX_SERVER_NAME already exists in .env
-        if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-            # Update existing entry (commented or not)
-            sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$NGINX_SERVER_NAME|g" .env
-        else
-            # Add new entry
-            echo "" >> .env
-            echo "# HTTPS/SSL Configuration" >> .env
-            echo "NGINX_SERVER_NAME=$NGINX_SERVER_NAME" >> .env
-        fi
-        rm -f .env.bak
-        # Unconditional, not just on the fresh-install path (issue #857): a re-run
-        # against a pre-existing .env that predates this fix, or one created by a
-        # different path, is not guaranteed to already be owner-only.
-        ensure_env_permissions .env
-        echo "✓ Updated .env with NGINX_SERVER_NAME=$NGINX_SERVER_NAME"
-    fi
+    write_nginx_server_name_to_env "$NGINX_SERVER_NAME"
 
     # Check if SSL certificate generation script exists
     if [ -f "scripts/generate-ssl-cert.sh" ]; then
@@ -2290,6 +2336,8 @@ display_summary() {
     # SSL certificate reminder — shown whenever HTTPS is configured so users
     # don't wonder why their browser shows a security warning on first visit.
     if [[ -n "$NGINX_SERVER_NAME" && "$SSL_CONFIGURED" == "true" ]]; then
+        local _lan_ip
+        _lan_ip="$(ot_detect_lan_ip)"
         echo -e "${YELLOW}🔒 SSL Certificate — Browser Trust Required${NC}"
         echo "   Before your first visit, trust the self-signed certificate:"
         echo ""
@@ -2299,7 +2347,14 @@ display_summary() {
         echo "   Certificate file: $PROJECT_DIR/nginx/ssl/server.crt"
         echo ""
         echo "   Or add to /etc/hosts / router DNS:"
-        echo "   $(hostname -I | awk '{print $1}')  $NGINX_SERVER_NAME"
+        echo "   ${_lan_ip:-<server-ip>}  $NGINX_SERVER_NAME"
+        echo ""
+        echo "   The certificate also covers this machine's IP addresses, so"
+        if [[ -n "$_lan_ip" ]]; then
+            echo "   https://${_lan_ip} works without a hosts entry."
+        else
+            echo "   https://<server-ip> works without a hosts entry."
+        fi
         echo ""
     fi
 }
@@ -2325,6 +2380,8 @@ prompt_start() {
         if [[ -n "$NGINX_SERVER_NAME" && "$SSL_CONFIGURED" == "true" ]]; then
             echo -e "${GREEN}✅ OpenTranscribe is starting up!${NC}"
             echo -e "${YELLOW}   (allow 30-60 seconds for all services to initialize)${NC}"
+            local _lan_ip
+            _lan_ip="$(ot_detect_lan_ip)"
             echo ""
             echo -e "${YELLOW}🔒 Before opening your browser, complete these two steps:${NC}"
             echo ""
@@ -2334,10 +2391,13 @@ prompt_start() {
             echo "   File:    $PROJECT_DIR/nginx/ssl/server.crt"
             echo ""
             echo -e "   ${BLUE}Step 2 — Add to /etc/hosts (or router DNS):${NC}"
-            echo "   $(hostname -I | awk '{print $1}')  $NGINX_SERVER_NAME"
-            echo "   Command: echo '$(hostname -I | awk '{print $1}')  $NGINX_SERVER_NAME' | sudo tee -a /etc/hosts"
+            echo "   ${_lan_ip:-<server-ip>}  $NGINX_SERVER_NAME"
+            echo "   Command: echo '${_lan_ip:-<server-ip>}  $NGINX_SERVER_NAME' | sudo tee -a /etc/hosts"
             echo ""
             echo -e "   Then visit: ${BLUE}https://$NGINX_SERVER_NAME${NC}"
+            if [[ -n "$_lan_ip" ]]; then
+                echo -e "   Or by address (no hosts entry needed): ${BLUE}https://${_lan_ip}${NC}"
+            fi
         else
             echo -e "${GREEN}✅ OpenTranscribe is starting up at http://localhost:${FRONTEND_PORT:-5173}${NC}"
             echo -e "${YELLOW}   (allow 30-60 seconds for all services to initialize)${NC}"

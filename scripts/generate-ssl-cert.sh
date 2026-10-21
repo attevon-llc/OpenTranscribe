@@ -20,7 +20,7 @@
 #   ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip
 #
 # After generation, you'll need to trust the certificate on client devices.
-# See the output instructions or docs/NGINX_SETUP.md for details.
+# See the output instructions or docs-site/docs/installation/small-business-lan.md.
 
 set -e
 
@@ -97,6 +97,19 @@ if [ -z "$HOSTNAME" ]; then
     print_usage
     exit 1
 fi
+
+# The hostname and every --ip value are written into an openssl config file below, so
+# anything outside a plain DNS label / dotted quad is rejected before it gets there.
+if [[ ${#HOSTNAME} -gt 253 || ! "$HOSTNAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
+    echo -e "${RED}Error: '$HOSTNAME' is not a valid hostname (letters, digits, dots and hyphens only)${NC}"
+    exit 1
+fi
+for ip in ${IP_ADDRESSES[@]+"${IP_ADDRESSES[@]}"}; do
+    if [[ ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        echo -e "${RED}Error: '$ip' is not a valid IPv4 address${NC}"
+        exit 1
+    fi
+done
 
 # Auto-detect IP addresses if requested
 if [ "$AUTO_IP" = true ]; then

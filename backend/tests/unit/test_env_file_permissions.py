@@ -147,14 +147,15 @@ def test_https_rerun_path_also_locks_permissions():
     locked down — this path runs whenever HTTPS/NGINX_SERVER_NAME is (re)configured,
     independent of whether `_create_initial_env` ran in this invocation."""
     source = SETUP.read_text(encoding="utf-8")
-    match = re.search(
-        r'echo "NGINX_SERVER_NAME=\$NGINX_SERVER_NAME" >> \.env'
-        r".*?Updated \.env with NGINX_SERVER_NAME",
-        source,
-        re.DOTALL,
+    writer = _function_body(source, "write_nginx_server_name_to_env")
+    assert "NGINX_SERVER_NAME=" in writer
+    assert "ensure_env_permissions" in writer
+    # Both the interactive and the unattended branch must go through that one writer.
+    https = _function_body(source, "configure_https_settings")
+    assert https.count("write_nginx_server_name_to_env") >= 2, (
+        "configure_https_settings must write NGINX_SERVER_NAME via the permission-locking "
+        "writer on both the interactive and the unattended path"
     )
-    assert match, "the NGINX_SERVER_NAME .env-update block was not found where expected"
-    assert "ensure_env_permissions" in match.group(0)
 
 
 # ─── opentr.sh — both first-run paths that bring MinIO up fresh ─────────────────────

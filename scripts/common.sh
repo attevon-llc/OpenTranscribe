@@ -172,6 +172,35 @@ ensure_env_permissions() {
     || echo "⚠️  Could not chmod 600 ${env_file} — it may be world-readable."
 }
 
+# True when $1 is a plain DNS name: letters, digits, dots and hyphens, no leading or
+# trailing punctuation, at most 253 characters. The hostname is later spliced into a
+# sed replacement and an openssl config file, so anything else must be refused here.
+ot_is_valid_hostname() {
+  local name="${1:-}"
+  [[ ${#name} -le 253 && "$name" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]
+}
+
+# Echo this machine's LAN address: the source address of the default route, or nothing.
+# Empty beats wrong -- `hostname -I` is GNU-only (empty on macOS/BSD) and its first entry
+# is not guaranteed to be the LAN address (it can be a Docker bridge). Callers print a
+# placeholder when this is empty rather than a made-up address.
+ot_detect_lan_ip() {
+  local ip="" iface=""
+  if command -v ip >/dev/null 2>&1; then
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+  fi
+  if [ -z "$ip" ] && command -v route >/dev/null 2>&1; then
+    iface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
+    if [ -n "$iface" ]; then
+      ip=$(ipconfig getifaddr "$iface" 2>/dev/null || ifconfig "$iface" 2>/dev/null | awk '/inet / {print $2; exit}')
+    fi
+  fi
+  if [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    echo "$ip"
+  fi
+  return 0
+}
+
 # Only touches the SHIPPED PLACEHOLDER. An empty or already-customized value is
 # left alone -- either means an operator made a deliberate choice (e.g. leaving
 # KMS auto-encryption off), and this must never clobber a real key.
@@ -646,7 +675,7 @@ print_access_info() {
     echo ""
     echo "📝 Note: Browser microphone recording is now available via HTTPS!"
     echo "   If you see certificate warnings, trust the certificate on your device."
-    echo "   See: docs/NGINX_SETUP.md for instructions"
+    echo "   See: https://docs.opentranscribe.app/docs/installation/small-business-lan"
   else
     # Direct container access mode (development default).
     # Read the same *_PORT variables compose interpolates into its `ports:`
@@ -663,7 +692,7 @@ print_access_info() {
     echo ""
     echo "📝 Note: Microphone recording only works on localhost in this mode."
     echo "   For HTTPS access from other devices, set NGINX_SERVER_NAME in .env"
-    echo "   See: docs/NGINX_SETUP.md for instructions"
+    echo "   See: https://docs.opentranscribe.app/docs/installation/small-business-lan"
   fi
   echo ""
 }

@@ -227,8 +227,10 @@ flowchart LR
 
 Password resets, invitations and email-verification links need a mail transport. The provider
 rows themselves live in **Settings → Watch Sources → Email configurations**; one of them is
-*designated* to carry authentication mail (super admin only). Clearing the designation falls
-back to the `SMTP_*` environment transport. A designation naming a missing or disabled
+*designated* to carry authentication mail at **Settings → Authentication → Auth Email** (super
+admin only). Clearing the designation falls back to the `SMTP_*` environment transport. When
+neither exists, a warning appears on that tab, on the Invite form and in the first-run wizard
+summary; see [Email delivery](../authentication/email-delivery.md). A designation naming a missing or disabled
 configuration is rejected when you save it, and deleting or disabling the designated row is
 refused while it holds the designation.
 

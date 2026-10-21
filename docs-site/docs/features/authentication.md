@@ -218,8 +218,10 @@ visible at Settings → Authentication → Audit.
 ## Transactional auth email
 
 Password resets, invitations and verification links need a mail transport. One
-`EmailNotificationConfig` row is *designated* to carry authentication mail (super_admin);
-clearing the designation falls back to the `SMTP_*` environment transport. A designation naming
+`EmailNotificationConfig` row (created under Settings → Watch Sources → Email configurations) is
+*designated* to carry authentication mail at Settings → Authentication → Auth Email
+(super_admin); clearing the designation falls back to the `SMTP_*` environment transport. With
+neither, these messages are not sent; see [Email delivery](../authentication/email-delivery.md). A designation naming
 a missing or disabled row is rejected at write time, and deleting or disabling the designated
 row is refused while it holds the designation — a silent failure here means undelivered password
 resets.

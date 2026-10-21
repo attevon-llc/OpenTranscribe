@@ -347,8 +347,11 @@ codes.
 
 Password resets, invitations and verification links need a working mail transport. Which one is
 an explicit choice: **Settings → Watch Sources → Email configurations** holds the provider rows,
-and one of them is *designated* to carry authentication mail
-(`PUT /api/admin/auth-config/email/designation`, super_admin).
+and one of them is *designated* to carry authentication mail at **Settings → Authentication →
+Auth Email** (`PUT /api/admin/auth-config/email/designation`, super_admin). Without a designation
+or `SMTP_*` settings these messages are not sent, and the admin UI says so; see
+[Email delivery](./email-delivery.md) for why a relay or your own mail provider is needed and how
+to set one up.
 
 - Clearing the designation falls back to the `SMTP_*` environment transport.
 - A designation naming a row that does not exist, or a disabled row, is **rejected at write

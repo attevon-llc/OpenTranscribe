@@ -120,7 +120,7 @@ def test_wizard_status_is_null_before_completion(
     """
     response = client.get(f"{WIZARD}/status", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"completed_at": None}
+    assert response.json()["completed_at"] is None
 
 
 def test_completing_the_wizard_persists_and_is_read_back(
@@ -139,7 +139,103 @@ def test_completing_the_wizard_persists_and_is_read_back(
 
     reread = client.get(f"{WIZARD}/status", headers=super_admin_token_headers)
     assert reread.status_code == status.HTTP_200_OK
-    assert reread.json() == {"completed_at": stamp}
+    assert reread.json()["completed_at"] == stamp
+
+
+def _status(client, headers) -> dict:
+    response = client.get(f"{WIZARD}/status", headers=headers)
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body: dict = response.json()
+    return body
+
+
+def test_wizard_status_reports_operator_set_for_a_chosen_password(
+    client, super_admin_token_headers, super_admin_user
+):
+    """The fixture's password is not the dev credential and is not forced to change."""
+    body = _status(client, super_admin_token_headers)
+    assert body["credential_kind"] == "operator_set"
+
+
+def test_wizard_status_flags_the_well_known_dev_password(
+    client, super_admin_token_headers, super_admin_user, db_session
+):
+    """A super_admin still on ``password`` is the case the warning card exists for.
+
+    Catches a classifier that keys on the account's email rather than on the stored
+    hash: renaming the account away from admin@example.com must not hide it.
+    """
+    from app.core.security import get_password_hash
+    from app.initial_data import _DEV_ADMIN_PASSWORD
+
+    super_admin_user.hashed_password = get_password_hash(_DEV_ADMIN_PASSWORD)
+    db_session.commit()
+    assert _status(client, super_admin_token_headers)["credential_kind"] == "default_dev"
+
+
+def test_wizard_status_is_unreachable_while_a_password_change_is_forced(
+    client, super_admin_token_headers, super_admin_user, db_session
+):
+    """The lifecycle gate 403s a must-change account before the handler runs.
+
+    So ``generated`` is never observable over HTTP today; the SPA shows the
+    forced-change screen first. Pinned so that a gate change which lets this route
+    through is noticed and the ``generated`` branch gets an HTTP-level test.
+    """
+    super_admin_user.must_change_password = True
+    db_session.commit()
+    response = client.get(f"{WIZARD}/status", headers=super_admin_token_headers)
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_credential_kind_is_generated_for_a_forced_change_and_dev_wins_over_it(
+    super_admin_user,
+):
+    """Classifier branches, called directly because the HTTP gate hides one of them."""
+    from app.api.endpoints.first_run_wizard import _credential_kind
+    from app.core.security import get_password_hash
+    from app.initial_data import _DEV_ADMIN_PASSWORD
+
+    super_admin_user.must_change_password = True
+    assert _credential_kind(super_admin_user) == "generated"
+
+    super_admin_user.hashed_password = get_password_hash(_DEV_ADMIN_PASSWORD)
+    assert _credential_kind(super_admin_user) == "default_dev"
+
+
+def test_wizard_status_password_changed_by_you_follows_the_self_change_stamp(
+    client, super_admin_token_headers, super_admin_user, db_session
+):
+    """False until the holder has chosen their own password; true once the stamp is set."""
+    from datetime import UTC
+    from datetime import datetime
+
+    super_admin_user.password_last_self_changed_at = None
+    db_session.commit()
+    assert _status(client, super_admin_token_headers)["password_changed_by_you"] is False
+
+    super_admin_user.password_last_self_changed_at = datetime.now(UTC)
+    db_session.commit()
+    assert _status(client, super_admin_token_headers)["password_changed_by_you"] is True
+
+
+def test_wizard_status_never_returns_a_password_or_hash(
+    client, super_admin_token_headers, super_admin_user
+):
+    """The payload is an allowlist of six keys; no credential material rides along."""
+    body = _status(client, super_admin_token_headers)
+    assert set(body) == {
+        "completed_at",
+        "credential_kind",
+        "password_min_age_hours",
+        "password_changed_by_you",
+        "legal_required",
+        "legal_acknowledged",
+    }
+    assert isinstance(body["legal_required"], bool)
+    assert isinstance(body["legal_acknowledged"], bool)
+    assert super_admin_user.hashed_password not in str(body)
+    assert isinstance(body["password_min_age_hours"], int)
 
 
 def test_completing_twice_re_stamps_rather_than_erroring(

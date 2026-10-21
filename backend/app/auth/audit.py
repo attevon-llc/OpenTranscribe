@@ -116,6 +116,9 @@ class AuditEventType(StrEnum):
     # Banner acknowledgment
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 
+    # An administrator acknowledged a versioned legal document (key, version, sha256 in details).
+    LEGAL_ACKNOWLEDGED = "legal.acknowledged"
+
     # A user saved or removed a third-party service credential of their own (issue #1204,
     # the pyannote.ai key). ``details`` names the provider and purpose only, NEVER the key.
     USER_CREDENTIAL_SET = "user.credential.set"

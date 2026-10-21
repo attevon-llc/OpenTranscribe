@@ -113,6 +113,7 @@ def _make_user(
     changed_ago: timedelta = LONG_AGO,
     role: str = "user",
     must_change_password: bool = False,
+    self_changed_ago: timedelta | None = None,
 ) -> User:
     """A real account with a real password-history row.
 
@@ -131,6 +132,10 @@ def _make_user(
         is_superuser=False,
         role=role,
         password_changed_at=datetime.now(UTC) - changed_ago,
+        # None = the holder never chose a password themselves (the minimum-age clock).
+        password_last_self_changed_at=(
+            None if self_changed_ago is None else datetime.now(UTC) - self_changed_ago
+        ),
         must_change_password=must_change_password,
     )
     db_session.add(user)
@@ -308,7 +313,9 @@ class TestMinimumPasswordAgeIsEnforced:
     """
 
     def test_a_change_made_too_soon_is_refused(self, client, db_session):
-        user = _make_user(db_session, changed_ago=timedelta(hours=1))
+        user = _make_user(
+            db_session, changed_ago=timedelta(hours=1), self_changed_ago=timedelta(hours=1)
+        )
         headers = _headers(client, user)
 
         response = _change_own_password(client, headers, REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD)
@@ -317,7 +324,9 @@ class TestMinimumPasswordAgeIsEnforced:
         assert "changed too recently" in response.json()["detail"]
 
     def test_the_refused_change_did_not_persist(self, client, db_session):
-        user = _make_user(db_session, changed_ago=timedelta(hours=1))
+        user = _make_user(
+            db_session, changed_ago=timedelta(hours=1), self_changed_ago=timedelta(hours=1)
+        )
         headers = _headers(client, user)
         before = str(user.hashed_password)
 
@@ -328,12 +337,27 @@ class TestMinimumPasswordAgeIsEnforced:
 
     def test_an_old_enough_password_may_be_changed(self, client, db_session):
         """The control: same request, same route, only the age differs."""
-        user = _make_user(db_session, changed_ago=LONG_AGO)
+        user = _make_user(db_session, changed_ago=LONG_AGO, self_changed_ago=LONG_AGO)
         headers = _headers(client, user)
 
         response = _change_own_password(client, headers, REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD)
 
         assert response.status_code == 200, response.text
+
+    def test_a_recently_set_credential_the_holder_never_chose_may_be_changed(
+        self, client, db_session
+    ):
+        """password_changed_at is expiry's clock, not the minimum-age clock."""
+        user = _make_user(db_session, changed_ago=timedelta(minutes=1))
+        assert user.password_last_self_changed_at is None
+
+        response = _change_own_password(
+            client, _headers(client, user), REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD
+        )
+
+        assert response.status_code == 200, response.text
+        db_session.refresh(user)
+        assert user.password_last_self_changed_at is not None
 
     def test_a_forced_change_is_never_blocked_by_the_minimum_age(self, client, db_session):
         """The self-inflicted denial of service this exemption exists to prevent.
@@ -356,7 +380,10 @@ class TestMinimumPasswordAgeIsEnforced:
         self, client, db_session, admin_token_headers
     ):
         """A user locked out by their own minimum age must still be recoverable."""
-        target = _make_user(db_session, changed_ago=timedelta(minutes=1))
+        target = _make_user(
+            db_session, changed_ago=timedelta(minutes=1), self_changed_ago=timedelta(minutes=1)
+        )
+        before = target.password_last_self_changed_at
 
         response = client.put(
             f"/api/users/{target.uuid}",
@@ -365,11 +392,34 @@ class TestMinimumPasswordAgeIsEnforced:
         )
 
         assert response.status_code == 200, response.text
+        # An admin reset is not the holder choosing a password: it must not start their clock.
+        db_session.refresh(target)
+        assert target.password_last_self_changed_at == before
+        changed_at = target.password_changed_at
+        assert changed_at is not None
+        assert changed_at > datetime.now(UTC) - timedelta(seconds=30)
+
+    def test_an_admin_reset_leaves_a_never_self_changed_account_unmarked(
+        self, client, db_session, admin_token_headers
+    ):
+        target = _make_user(db_session)
+
+        response = client.put(
+            f"/api/users/{target.uuid}",
+            headers=admin_token_headers,
+            json={"password": REPLACEMENT_PASSWORD},
+        )
+
+        assert response.status_code == 200, response.text
+        db_session.refresh(target)
+        assert target.password_last_self_changed_at is None
 
     def test_zero_hours_turns_the_control_off(self, client, db_session):
         """The documented off switch reaches the endpoint, not just the policy object."""
         _publish(password_min_age_hours=0)
-        user = _make_user(db_session, changed_ago=timedelta(minutes=1))
+        user = _make_user(
+            db_session, changed_ago=timedelta(minutes=1), self_changed_ago=timedelta(minutes=1)
+        )
         headers = _headers(client, user)
 
         response = _change_own_password(client, headers, REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD)
@@ -426,6 +476,36 @@ class TestBootstrapAdminPassword:
 
         assert len(rows) == 1
         assert verify_password(ORIGINAL_PASSWORD, str(rows[0].password_hash))
+
+    def test_an_operator_chosen_seed_password_can_be_changed_at_once(
+        self, client, db_session, seed
+    ):
+        """Consequence prevented: the first-run wizard's own instruction being refused.
+
+        The wizard tells the bootstrap admin to change the password; the seed stamped
+        ``password_changed_at`` with "now", so the minimum-age rule answered 400 "changed
+        too recently" for a day. ``must_change_password`` is false for an
+        operator-chosen password, so the forced-change exemption does not apply.
+        """
+        user = seed(ORIGINAL_PASSWORD, False)
+
+        response = _change_own_password(
+            client, _headers(client, user), REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD
+        )
+
+        assert response.status_code == 200, response.text
+
+    def test_the_minimum_age_still_applies_after_that_first_change(self, client, db_session, seed):
+        """The control: backdating the seed must not switch the rule off for the account."""
+        user = seed(ORIGINAL_PASSWORD, False)
+        headers = _headers(client, user)
+        first = _change_own_password(client, headers, REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD)
+        assert first.status_code == 200, first.text
+
+        second = _change_own_password(client, headers, "Third-Pass-Word-9!", REPLACEMENT_PASSWORD)
+
+        assert second.status_code == 400, second.text
+        assert "changed too recently" in second.json()["detail"]
 
     def test_the_seeded_password_cannot_come_back_after_a_rotation(self, db_session, seed):
         """The behaviour the history ROW exists for, isolated from the live column.

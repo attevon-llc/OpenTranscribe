@@ -12,6 +12,7 @@
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
+  import { listLegalDocuments } from '$lib/api/legal';
   import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '$lib/api/userSettings';
 
   // Sections are lazy (LazySection + sectionLoaders): only the pieces the modal itself needs
@@ -440,6 +441,8 @@
       items: [
         { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
         { id: 'file-status' as SettingsSection, label: $t('settings.fileStatus.title'), icon: 'activity' },
+        // Hidden when the deployment ships no legal documents (cloud edition) or the list fails.
+        ...(legalAvailable ? [{ id: 'legal' as SettingsSection, label: $t('settings.legal.title'), icon: 'file-text' }] : []),
         // Task health is the Recovery tab of File status (admin-task-health stays as an alias).
         ...(isAdmin ? [
           // File retention, media cache, backups, integrity, search index and speaker embeddings
@@ -599,7 +602,13 @@
     settingsModalStore.setDirty('recording', recordingSettingsChanged);
   }
 
+  let legalAvailable = false;
+
   onMount(() => {
+    listLegalDocuments()
+      .then((list) => (legalAvailable = list.length > 0))
+      .catch(() => (legalAvailable = false));
+
     // Load recording settings
     loadRecordingSettings();
 
@@ -1403,6 +1412,16 @@
         <h3 class="section-title">{$t('settings.supportAccess.title')}</h3>
         <LazySection load={sectionLoaders.supportStaff} let:Component>
           <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Legal documents -->
+    {#if activeSection === 'legal' && legalAvailable}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.legal.title')}</h3>
+        <LazySection load={sectionLoaders.legal} let:Component>
+          <Component {isAdmin} {isSuperAdmin} />
         </LazySection>
       </div>
     {/if}

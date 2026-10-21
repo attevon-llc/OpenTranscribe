@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
   import { loadProtectedMediaAuthConfig, getAuthConfigForHost, type ProtectedMediaAuthConfig } from '$lib/services/configService';
   import { getDownloadSettings, getDownloadSystemDefaults, type DownloadSystemDefaults } from '$lib/api/downloadSettings';
   import Spinner from '$components/ui/Spinner.svelte';
+  import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
+  import { TERMS_KEY, listLegalDocuments } from '$lib/api/legal';
 
   export let mediaUrl = '';
   export let processingUrl = false;
@@ -24,6 +26,14 @@
   let downloadInitialAudioQuality = '';
   let downloadDefaults: DownloadSystemDefaults | null = null;
   let showDownloadOptions = false;
+  let termsAvailable = false;
+  let termsOpen = false;
+
+  onMount(() => {
+    listLegalDocuments()
+      .then((list) => (termsAvailable = list.some((d) => d.key === TERMS_KEY)))
+      .catch(() => (termsAvailable = false));
+  });
 
   // Protected media auth
   let mediaUsername = '';
@@ -236,10 +246,19 @@
         <path d="M12 16v-4"></path>
         <path d="M12 8h.01"></path>
       </svg>
-      {$t('uploader.urlTermsNotice')}
+      <span>
+        {$t('uploader.urlTermsNotice')}
+        {#if termsAvailable}
+          <button type="button" class="url-terms-link" on:click={() => (termsOpen = true)}>
+            {$t('uploader.urlTermsLink')}
+          </button>
+        {/if}
+      </span>
     </p>
   </div>
 </div>
+
+<LegalDocumentViewer isOpen={termsOpen} docKey={TERMS_KEY} onClose={() => (termsOpen = false)} />
 
 <style>
   .url-panel {
@@ -439,6 +458,16 @@
     font-size: 0.625rem;
     line-height: 1.4;
     color: var(--text-tertiary, var(--text-secondary));
+  }
+
+  .url-terms-link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--primary-on-surface);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   .url-terms-notice svg { flex-shrink: 0; position: relative; top: 1px; }

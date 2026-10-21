@@ -45,6 +45,10 @@ PREFIXES: dict[str, str] = {
     ),
     "/api/auth/": "session lifecycle: never resolves the grant header (plan 4 rule 10)",
     "/api/system/": "system status and capabilities; never resolves the grant header (rule 10)",
+    "/api/legal/": (
+        "versioned legal documents and the operator's acknowledgment record; deployment-level, "
+        "never tenant content, so a support-access grant has nothing to unlock here"
+    ),
     "/api/users": "user directory and the caller's own profile; not tenant content",
     "/api/user-settings/": "the caller's own preferences; no tenant content",
     "/api/asr-settings": "deployment/user ASR provider configuration; no tenant content",

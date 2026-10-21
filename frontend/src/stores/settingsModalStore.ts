@@ -24,6 +24,7 @@ export type SettingsSection =
   // System sections (visible to all users)
   | 'system-statistics'
   | 'file-status'
+  | 'legal'
   // Cloud edition — org-admin sections (gated by audience='org_admin')
   | 'billing'
   | 'usage'

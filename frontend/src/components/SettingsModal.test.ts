@@ -1055,3 +1055,55 @@ describe('Back from a full page reopens Settings where it was left', () => {
     expect(container.querySelector('.settings-modal')).toBeNull();
   });
 });
+
+describe('Legal section', () => {
+  const LEGAL_DOCS = [
+    {
+      key: 'opentranscribe-terms-of-use',
+      title: 'Terms of Use',
+      version: '1.0',
+      status: 'draft',
+      audience: 'all',
+      sha256: 'a'.repeat(64),
+      requires_acknowledgment: false,
+      acknowledged: false,
+      acknowledged_at: null,
+    },
+  ];
+
+  function serveLegal(list: unknown) {
+    mockAxios.get.mockImplementation(async (url: string) => {
+      if (url === '/legal/documents') {
+        if (list instanceof Error) throw list;
+        return { data: list };
+      }
+      return { data: {} };
+    });
+  }
+
+  it('is hidden when the deployment ships no legal documents', async () => {
+    serveLegal([]);
+    const { container } = openModal();
+    await waitForOpen(container);
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/legal/documents'));
+
+    expect(navItem(container, 'settings.legal.title')).toBeNull();
+  });
+
+  it('is hidden when the documents request fails', async () => {
+    serveLegal(new Error('404'));
+    const { container } = openModal();
+    await waitForOpen(container);
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/legal/documents'));
+
+    expect(navItem(container, 'settings.legal.title')).toBeNull();
+  });
+
+  it('is listed for an ordinary user when documents exist', async () => {
+    serveLegal(LEGAL_DOCS);
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    await waitFor(() => expect(navItem(container, 'settings.legal.title')).not.toBeNull());
+  });
+});

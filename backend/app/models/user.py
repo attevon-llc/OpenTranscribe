@@ -149,6 +149,11 @@ class User(Base):
     password_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # For password expiration
+    # Set only by the holder's own successful change; NULL = never chosen one, so the
+    # minimum-age check lets the first change through. Admin/emailed resets never set it.
+    password_last_self_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )  # Force password change

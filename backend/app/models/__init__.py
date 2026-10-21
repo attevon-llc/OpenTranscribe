@@ -19,6 +19,7 @@ from .group import UserGroup
 from .group import UserGroupMember
 from .invitation import EmailVerificationToken
 from .invitation import UserInvitation
+from .legal_acceptance import LegalAcceptance
 from .media import Analytics
 from .media import Collection
 from .media import CollectionMember
@@ -93,6 +94,7 @@ __all__ = [
     "SystemSettings",
     "RefreshToken",
     "UserMFA",
+    "LegalAcceptance",
     "PasswordHistory",
     "PasswordResetToken",
     "UserInvitation",

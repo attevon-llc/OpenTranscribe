@@ -280,6 +280,119 @@ describe('inviting a user', () => {
   });
 });
 
+describe('inviting a user when auth mail is not set up (issue #1240)', () => {
+  const DESIGNATION = '/admin/auth-config/email/designation';
+  const noTransport = {
+    config_uuid: null,
+    config_name: null,
+    provider: null,
+    is_enabled: null,
+    resolves: false,
+    status: 'not_designated',
+    env_smtp_configured: false,
+    deliverable: false,
+    verification_required: false,
+  };
+
+  function serveDesignation(response: 'undeliverable' | 'deliverable' | 'forbidden') {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === DESIGNATION) {
+        if (response === 'forbidden') return Promise.reject({ response: { status: 403 } });
+        return Promise.resolve({
+          data: response === 'undeliverable' ? noTransport : { ...noTransport, deliverable: true },
+        });
+      }
+      if (url === '/auth/password-policy') return Promise.resolve({ data: { min_length: 12 } });
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  async function openInviteForm(role: 'admin' | 'super_admin' = 'super_admin') {
+    setCurrentUser('me-uuid', role);
+    const view = render(UserManagementTable, { props: { users: [] } });
+    await fireEvent.click(view.getByText('userManagement.inviteUser'));
+    return view;
+  }
+
+  it('shows the notice in the form, and leaves Send enabled (the 503 stays the authority)', async () => {
+    serveDesignation('undeliverable');
+    const { findByTestId, getByText } = await openInviteForm();
+
+    expect(await findByTestId('auth-mail-notice')).toBeInTheDocument();
+    expect(getByText('userManagement.sendInvite').closest('button')).not.toBeDisabled();
+  });
+
+  it('shows no notice while auth mail is deliverable', async () => {
+    serveDesignation('deliverable');
+    const { queryByTestId } = await openInviteForm();
+
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith(DESIGNATION));
+    expect(queryByTestId('auth-mail-notice')).toBeNull();
+  });
+
+  it('does not ask a plain admin for the readiness, which only a super_admin may read', async () => {
+    // Asking would only draw a refusal (and a denied-access entry) per form open.
+    serveDesignation('undeliverable');
+    const { queryByTestId } = await openInviteForm('admin');
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(mockAxios.get).not.toHaveBeenCalledWith(DESIGNATION);
+    expect(queryByTestId('auth-mail-notice')).toBeNull();
+  });
+
+  it('shows no false alarm when the readiness is refused', async () => {
+    serveDesignation('forbidden');
+    const { queryByTestId } = await openInviteForm();
+
+    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith(DESIGNATION));
+    expect(queryByTestId('auth-mail-notice')).toBeNull();
+  });
+
+  it('replaces the raw 503 sentence with the actionable one and refreshes the pending list', async () => {
+    serveDesignation('undeliverable');
+    mockAxios.post.mockRejectedValue({
+      response: {
+        status: 503,
+        data: { detail: "No mail transport is configured; 'Invitation' was not sent" },
+      },
+    });
+    const { getByText, getByLabelText } = await openInviteForm();
+    await fireEvent.input(getByLabelText('userManagement.email'), {
+      target: { value: 'invitee@x.com' },
+    });
+    mockAxios.get.mockClear();
+
+    await fireEvent.click(getByText('userManagement.sendInvite'));
+
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('userManagement.inviteMailUnavailable')
+    );
+    // The invitation was committed before the send; the list must show that pending row.
+    await waitFor(() =>
+      expect(mockAxios.get).toHaveBeenCalledWith('/auth/invitations', expect.anything())
+    );
+    expect(toastStore.error).not.toHaveBeenCalledWith(expect.stringContaining('No mail transport'));
+  });
+
+  it('still shows the server message for any other failure', async () => {
+    serveDesignation('deliverable');
+    mockAxios.post.mockRejectedValue({
+      response: { status: 409, data: { detail: 'An account with this email already exists' } },
+    });
+    const { getByText, getByLabelText } = await openInviteForm();
+    await fireEvent.input(getByLabelText('userManagement.email'), {
+      target: { value: 'invitee@x.com' },
+    });
+
+    await fireEvent.click(getByText('userManagement.sendInvite'));
+
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('An account with this email already exists')
+    );
+    expect(toastStore.error).not.toHaveBeenCalledWith('userManagement.inviteMailUnavailable');
+  });
+});
+
 describe('password reset', () => {
   // The submit button is disabled while either field is empty (same condition
   // executePasswordReset itself checks), so the empty-fields branch inside the

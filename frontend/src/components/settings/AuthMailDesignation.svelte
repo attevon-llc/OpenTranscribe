@@ -12,14 +12,18 @@
    * the env SMTP transport, which is unset in a stock deployment. That case is
    * surfaced here rather than left to a log line nobody reads.
    */
-  import { onMount } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { AuthConfigApi, type AuthMailDesignation } from '$lib/api/authConfig';
   import type { EmailConfig } from '$lib/api/watchSourcesApi';
+  import AuthMailNotice from '$components/ui/AuthMailNotice.svelte';
 
   export let configs: EmailConfig[] = [];
+
+  /** Reports each read/save so the tab strip's attention dot follows what is on screen. */
+  const dispatch = createEventDispatcher<{ change: AuthMailDesignation }>();
 
   let designation: AuthMailDesignation | null = null;
   let selected = '';
@@ -36,13 +40,19 @@
    */
   $: strandedUuid = dangling ? (designation?.config_uuid ?? '') : '';
   $: dirty = designation !== null && selected !== (designation.config_uuid ?? '');
-  $: undeliverable = designation !== null && !designation.resolves && !designation.env_smtp_configured;
+  /**
+   * A dangling designation that env SMTP is quietly covering: mail still goes out,
+   * but through a different transport than the one the admin chose. When nothing
+   * covers it the shared notice says so instead, naming the same cause.
+   */
+  $: coveredByEnv = dangling && designation?.deliverable === true;
 
   async function load() {
     loading = true;
     try {
       designation = await AuthConfigApi.getAuthMailDesignation();
       selected = designation.config_uuid ?? '';
+      dispatch('change', designation);
     } catch (err) {
       toastStore.error(getErrorMessage(err, $t('settings.authentication.authMail.loadFailed')));
     } finally {
@@ -57,6 +67,7 @@
     try {
       designation = await AuthConfigApi.setAuthMailDesignation(selected);
       selected = designation.config_uuid ?? '';
+      dispatch('change', designation);
       toastStore.success(
         designation.config_name
           ? $t('settings.authentication.authMail.saved', { name: designation.config_name })
@@ -102,7 +113,7 @@
       </button>
     </div>
 
-    {#if dangling}
+    {#if coveredByEnv}
       <p class="auth-mail-warning" role="alert">
         {designation?.status === 'disabled'
           ? $t('settings.authentication.authMail.danglingDisabled', {
@@ -111,11 +122,7 @@
           : $t('settings.authentication.authMail.danglingMissing')}
       </p>
     {/if}
-    {#if undeliverable}
-      <p class="auth-mail-warning" role="alert">
-        {$t('settings.authentication.authMail.noTransport')}
-      </p>
-    {/if}
+    <AuthMailNotice context="tab" readiness={designation} />
     {#if designation?.resolves}
       <p class="auth-mail-active">
         {$t('settings.authentication.authMail.active', {

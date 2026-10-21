@@ -122,6 +122,19 @@ off by default.
 
 ### Added
 
+- **Missing authentication email is now obvious (#1240).** When no email configuration is
+  designated and no `SMTP_*` settings exist, password resets, invitations and verification links
+  cannot be delivered. The Auth Email tab now names the cause (never designated, deleted, or
+  disabled), carries a marker so you do not have to open it to find out, and escalates when
+  email verification is required (new local accounts cannot sign in). A super admin sees the same
+  notice on the Invite form, the first-run wizard summary lists whether authentication email is
+  configured, and a failed invitation explains that the invitation was saved as pending and where
+  to fix mail. `GET /api/admin/auth-config/email/designation` gains `deliverable` and
+  `verification_required`. New docs page, [Email delivery](https://docs.opentranscribe.app/docs/authentication/email-delivery),
+  covers why a relay or your own mail provider is needed (blocked port 25, SPF/DKIM/DMARC) and
+  how to set up SMTP, Google Workspace, Microsoft 365 (Graph) and Exchange; three pages that sent
+  you to the wrong screen for the designation are corrected.
+
 - **Download and switch local transcription models from Settings (#1246).** A super admin can
   download any model on the shipped list (`GET /api/admin/local-models`, `POST .../download`,
   `POST .../download/cancel`) from **Settings → Transcription → Local models**, with a disk-space

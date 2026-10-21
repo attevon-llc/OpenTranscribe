@@ -18,7 +18,8 @@
   import LinkIdentityModal from './LinkIdentityModal.svelte';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import AuthMailNotice from './ui/AuthMailNotice.svelte';
 
   /**
    * @typedef {Object} User
@@ -330,7 +331,15 @@
       await refreshInvitations();
     } catch (err) {
       console.error('Error creating invitation:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.inviteFailed')));
+      // 503 is the backend's "no mail transport" refusal. Its sentence is English and names no
+      // fix, so say what happened to the invitation (it IS saved, as pending) and where to
+      // fix it. The invitation list is refreshed so that pending row is actually visible.
+      if (getErrorStatus(err) === 503) {
+        toastStore.error($t('userManagement.inviteMailUnavailable'));
+        await refreshInvitations();
+      } else {
+        toastStore.error(getErrorMessage(err, $t('userManagement.inviteFailed')));
+      }
     } finally {
       inviteSubmitting = false;
     }
@@ -883,6 +892,11 @@
     <div class="add-user-form">
       <h3>{$t('userManagement.inviteUser')}</h3>
       <p class="form-hint">{$t('userManagement.inviteDescription')}</p>
+      <!-- The readiness read is super_admin-only like the designation it comes from, so a
+           plain admin's request would only be refused; they get the 503 message instead. -->
+      {#if isSuperAdmin}
+        <AuthMailNotice context="invite" />
+      {/if}
 
       <div class="form-group">
         <label for="invite-email">{$t('userManagement.email')}</label>

@@ -35,6 +35,7 @@ from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.email_verification import email_verification_required
 from app.core.constants import AUTH_EMAIL_CONFIG_SETTING_KEY
 from app.db.base import get_db
 from app.models.user import User
@@ -44,6 +45,17 @@ from app.services import auth_mail_config_service as designation
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _designation_response(
+    db: Session, current: designation.DesignationStatus
+) -> AuthMailDesignationResponse:
+    """Build the response, adding the derived readiness facts to the status."""
+    return AuthMailDesignationResponse(
+        **asdict(current),
+        deliverable=current.deliverable,
+        verification_required=email_verification_required(db),
+    )
 
 
 @router.get("/email/designation", response_model=AuthMailDesignationResponse)
@@ -57,7 +69,7 @@ def get_auth_mail_designation(
         The designation with its resolution status, so the UI can warn about a
         designation left dangling by a later delete or disable.
     """
-    return AuthMailDesignationResponse(**asdict(designation.describe_designation(db)))
+    return _designation_response(db, designation.describe_designation(db))
 
 
 @router.put("/email/designation", response_model=AuthMailDesignationResponse)
@@ -103,4 +115,4 @@ def update_auth_mail_designation(
             "new_value": current.config_uuid,
         },
     )
-    return AuthMailDesignationResponse(**asdict(current))
+    return _designation_response(db, current)

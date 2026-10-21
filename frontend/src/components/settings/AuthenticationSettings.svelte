@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AuthConfigApi, type AuthMethodTestResponse } from '$lib/api/authConfig';
+  import {
+    AuthConfigApi,
+    type AuthMailDesignation,
+    type AuthMethodTestResponse,
+  } from '$lib/api/authConfig';
   import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -131,7 +135,12 @@
     // It used to live only inside the Watch Sources panel, which is hidden when
     // the `watch_sources` capability is off — leaving the setting unreachable on
     // those editions even though its endpoint stayed live. It belongs here.
-    { id: 'mail', label: $t('settings.authentication.tab.mail') },
+    {
+      id: 'mail',
+      label: $t('settings.authentication.tab.mail'),
+      // Only a definite "cannot be delivered" raises the dot; an unreadable answer is not an alarm.
+      attention: mailReadiness?.deliverable === false ? $t('authMailNotice.tabAttention') : undefined,
+    },
     // Reads auth_config_audit (Postgres) — a different source from the "Audit
     // Log" section, which streams security events out of OpenSearch and carries
     // no configuration changes.
@@ -146,6 +155,13 @@
    * honest state when no configuration can be read.
    */
   let emailConfigs: EmailConfig[] = [];
+  /**
+   * Whether auth mail can be delivered, for the dot on the tab. Fetched here on mount
+   * rather than by the tab's panel: the panel is lazy, so a dot that waited for it
+   * would not appear until the admin had already clicked in. The panel reports its
+   * own saves back through `on:change`, so the dot clears the moment it is fixed.
+   */
+  let mailReadiness: AuthMailDesignation | null = null;
   let emailConfigsLoaded = false;
 
   async function loadEmailConfigs() {
@@ -154,6 +170,8 @@
   }
 
   onMount(async () => {
+    // Not awaited: the dot is a hint and must not delay the panel it decorates.
+    AuthConfigApi.getAuthMailReadiness().then((r) => (mailReadiness = r));
     await loadConfigs();
   });
 
@@ -483,7 +501,7 @@
       {:else if activeTab === 'mail'}
         <LazySection load={authTabLoaders.mail} let:Component>
           {#if emailConfigsLoaded}
-            <Component configs={emailConfigs} />
+            <Component configs={emailConfigs} on:change={(e: CustomEvent<AuthMailDesignation>) => (mailReadiness = e.detail)} />
           {:else}
             <SettingsSkeleton variant="form" count={2} label={$t('settings.authentication.loadingConfig')} />
           {/if}

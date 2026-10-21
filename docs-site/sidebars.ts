@@ -82,6 +82,7 @@ const sidebars: SidebarsConfig = {
         'authentication/pki',
         'authentication/proxy',
         'authentication/groups',
+        'authentication/email-delivery',
       ],
     },
     {

@@ -603,7 +603,7 @@
         "type": "object"
       },
       "AuthMailDesignationResponse": {
-        "description": "The designation plus whether it still resolves.\n\n``config_uuid`` alone cannot tell the UI whether auth mail works: the row may\nhave been deleted or disabled after it was designated. ``status`` /\n``resolves`` carry that, and ``env_smtp_configured`` says whether the\nfallback transport exists at all.",
+        "description": "The designation plus whether it still resolves.\n\n``config_uuid`` alone cannot tell the UI whether auth mail works: the row may\nhave been deleted or disabled after it was designated. ``status`` /\n``resolves`` carry that, and ``env_smtp_configured`` says whether the\nfallback transport exists at all. ``deliverable`` is the one answer the UI\nshould branch on (\"would a password reset be handed to a transport\"); it\nmeans configured, not proven working. ``verification_required`` says whether\nlocal login itself depends on that mail.",
         "properties": {
           "config_name": {
             "anyOf": [
@@ -626,6 +626,10 @@
               }
             ],
             "title": "Config Uuid"
+          },
+          "deliverable": {
+            "title": "Deliverable",
+            "type": "boolean"
           },
           "env_smtp_configured": {
             "default": false,
@@ -668,10 +672,16 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "verification_required": {
+            "title": "Verification Required",
+            "type": "boolean"
           }
         },
         "required": [
-          "status"
+          "status",
+          "deliverable",
+          "verification_required"
         ],
         "title": "AuthMailDesignationResponse",
         "type": "object"

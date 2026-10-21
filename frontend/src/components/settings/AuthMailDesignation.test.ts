@@ -41,7 +41,7 @@ const CONFIGS = [
 ];
 
 function designation(overrides: Record<string, unknown> = {}) {
-  return {
+  const base = {
     config_uuid: null,
     config_name: null,
     provider: null,
@@ -49,8 +49,12 @@ function designation(overrides: Record<string, unknown> = {}) {
     resolves: false,
     status: 'not_designated',
     env_smtp_configured: true,
+    verification_required: false,
     ...overrides,
   };
+  // The server derives this as `resolves || env_smtp_configured`; an explicit
+  // override wins so a test can also state it directly.
+  return { deliverable: base.resolves || base.env_smtp_configured, ...base };
 }
 
 async function renderPanel(current: Record<string, unknown>, configs = CONFIGS) {
@@ -165,10 +169,53 @@ describe('AuthMailDesignation', () => {
     ).toBeInTheDocument();
   });
 
-  it('escalates when neither the designation nor env SMTP can deliver', async () => {
+  it('says nothing is deliverable when neither the designation nor env SMTP can', async () => {
     await renderPanel(designation({ env_smtp_configured: false }));
 
-    expect(screen.getByText('settings.authentication.authMail.noTransport')).toBeInTheDocument();
+    expect(screen.getByTestId('auth-mail-notice')).toBeInTheDocument();
+    expect(screen.getByText('authMailNotice.tabNotDesignated')).toBeInTheDocument();
+  });
+
+  it('names the actual cause of a dangling designation that nothing covers', async () => {
+    // Both dangling states used to print the same "no env SMTP either" sentence,
+    // which reads wrong when there is no earlier problem for "either" to refer to.
+    await renderPanel(
+      designation({ config_uuid: GONE_UUID, status: 'missing', env_smtp_configured: false })
+    );
+
+    expect(screen.getByText('authMailNotice.tabMissing')).toBeInTheDocument();
+    // The "fell back to env SMTP" paragraph would be false here: there is no fallback.
+    expect(
+      screen.queryByText('settings.authentication.authMail.danglingMissing')
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the fallback paragraph, not the alarm, when env SMTP covers a dangling one', async () => {
+    await renderPanel(designation({ config_uuid: GONE_UUID, status: 'missing' }));
+
+    expect(screen.queryByTestId('auth-mail-notice')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('settings.authentication.authMail.danglingMissing')
+    ).toBeInTheDocument();
+  });
+
+  it('drops the alarm as soon as saving a designation makes auth mail deliverable', async () => {
+    const select = await renderPanel(designation({ env_smtp_configured: false }));
+    expect(screen.getByTestId('auth-mail-notice')).toBeInTheDocument();
+    put.mockResolvedValue({
+      data: designation({
+        config_uuid: ENABLED_UUID,
+        config_name: 'Corp M365',
+        resolves: true,
+        status: 'active',
+        env_smtp_configured: false,
+      }),
+    } as never);
+
+    await fireEvent.change(select, { target: { value: ENABLED_UUID } });
+    await fireEvent.click(saveButton());
+
+    await waitFor(() => expect(screen.queryByTestId('auth-mail-notice')).not.toBeInTheDocument());
   });
 
   it('stays quiet while a working designation is in place', async () => {
@@ -182,9 +229,7 @@ describe('AuthMailDesignation', () => {
       })
     );
 
-    expect(
-      screen.queryByText('settings.authentication.authMail.noTransport')
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('auth-mail-notice')).not.toBeInTheDocument();
     expect(
       screen.queryByText('settings.authentication.authMail.danglingMissing')
     ).not.toBeInTheDocument();

@@ -75,6 +75,7 @@ class DesignationStatus:
         env_smtp_configured: Whether ``SMTP_HOST`` is set. With no designation
             and no env SMTP, credential-bearing mail fails outright — the UI needs
             to say so rather than showing an innocuous "not configured".
+        deliverable: Property, see :attr:`deliverable`.
     """
 
     config_uuid: str | None
@@ -84,6 +85,17 @@ class DesignationStatus:
     resolves: bool
     status: str
     env_smtp_configured: bool
+
+    @property
+    def deliverable(self) -> bool:
+        """Whether a credential-bearing message would be handed to a transport.
+
+        The same rule ``EmailService._send_email`` applies: a resolving
+        designation, else env SMTP. Defined here once so the admin UI and the
+        sender cannot disagree. It means *configured*, not *working* — a wrong
+        host passes — which is why callers must not label it "working".
+        """
+        return self.resolves or self.env_smtp_configured
 
 
 def _find(db: Session, config_uuid: str) -> EmailNotificationConfig | None:

@@ -38,6 +38,7 @@ export const sectionLoaders = {
   quarantine: () => import('$components/settings/QuarantinePanel.svelte'),
   supportApprovals: () => import('$components/settings/SupportAccessApprovalsPanel.svelte'),
   supportStaff: () => import('$components/settings/SupportAccessStaffPanel.svelte'),
+  legal: () => import('$components/settings/LegalSettings.svelte'),
   statistics: () => import('$components/settings/SystemStatisticsPanel.svelte'),
   fileStatusSection: () => import('$components/settings/FileStatusSection.svelte'),
   fileStatus: () => import('$components/settings/FileStatusSettings.svelte'),
@@ -111,6 +112,7 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
   'support-access': 'supportStaff',
   'system-statistics': 'statistics',
   // File status: the tab shell is the lead chunk; admin-task-health opens its Recovery tab.
+  legal: 'legal',
   'file-status': 'fileStatusSection',
   'admin-task-health': 'fileStatusSection',
   billing: 'billing',

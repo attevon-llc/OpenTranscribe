@@ -10,7 +10,9 @@
   config directly, since those have no dedicated small form of their own.
 
   Four steps -- password, deployment posture, security defaults, summary -- with
-  a visible indicator and a Back button. Completion is recorded only on the last
+  a visible indicator and a Back button. When the deployment ships legal documents
+  (status.legal_required) and the operator has not yet accepted them, a "Terms and
+  responsibilities" step comes first (five steps); it cannot be skipped. Completion is recorded only on the last
   step's Finish or an explicit Skip; closing the dialog just hides it. The
   password step hands off to Settings -> Profile and resumes when that closes.
 
@@ -26,12 +28,31 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import BaseModal from './ui/BaseModal.svelte';
-
-  const TOTAL_STEPS = 4;
+  import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
+  import {
+    OPERATOR_ACK_KEY,
+    TERMS_KEY,
+    PRIVACY_KEY,
+    getLegalDocument,
+    acknowledgeLegalDocument
+  } from '$lib/api/legal';
+  import { renderChatMarkdown } from '$lib/utils/chatMarkdown';
+  import { extractCheckboxText } from '$lib/legal/checkboxText';
 
   let visible = false;
+  // 0 is the terms step (only when includeTerms); 1..4 are the original steps.
   let step = 1;
   let saving = false;
+
+  // Sticky once set, so accepting the terms does not renumber the steps under the user.
+  let includeTerms = false;
+  let termsAccepted = false;
+  /** @type {{key:string,title:string,version:string,status:string,sha256:string,markdown:string}|null} */
+  let termsDoc = null;
+  let termsLoadFailed = false;
+  let termsChecked = false;
+  let viewerKey = '';
+  let viewerOpen = false;
 
   /** @type {'default_dev'|'operator_set'|'generated'|null} */
   let credentialKind = null;
@@ -52,7 +73,14 @@
   let appliedDefaults = [];
 
   $: passwordDone = passwordChanged || passwordKept;
+  $: offset = includeTerms ? 1 : 0;
+  $: totalSteps = 4 + offset;
+  $: termsHtml = termsDoc ? renderChatMarkdown(termsDoc.markdown) : '';
+  $: checkboxText = extractCheckboxText(termsDoc?.markdown) ?? $t('firstRunWizard.termsAcceptFallback');
   $: steps = [
+    ...(includeTerms
+      ? [{ id: 'terms', label: $t('firstRunWizard.stepTerms'), done: termsAccepted }]
+      : []),
     { id: 'password', label: $t('firstRunWizard.stepPassword'), done: passwordDone },
     { id: 'posture', label: $t('firstRunWizard.stepPosture'), done: posture !== null },
     { id: 'defaults', label: $t('firstRunWizard.stepDefaults'), done: defaultsApplied },
@@ -71,19 +99,26 @@
   // #28: "re-runnable... for someone who skipped it"). Ignores the initial
   // value on mount so this doesn't fire before the store has ever been bumped.
   let sawInitialReopenToken = false;
-  $: if ($firstRunWizardStore) {
+  // Only the token is a reactive dependency; a reactive block that read wizard state
+  // directly re-ran (and reopened the wizard) every time that state changed.
+  $: onReopenRequest($firstRunWizardStore);
+
+  /** @param {unknown} token */
+  function onReopenRequest(token) {
+    if (!token) return;
     if (!sawInitialReopenToken) {
       sawInitialReopenToken = true;
-    } else {
-      step = 1;
-      posture = null;
-      passwordKept = false;
-      returnedUnchanged = false;
-      defaultsApplied = false;
-      appliedDefaults = [];
-      refreshStatus();
-      visible = true;
+      return;
     }
+    posture = null;
+    passwordKept = false;
+    returnedUnchanged = false;
+    defaultsApplied = false;
+    appliedDefaults = [];
+    refreshStatus().then(() => {
+      step = includeTerms && !termsAccepted ? 0 : 1;
+    });
+    visible = true;
   }
 
   async function refreshStatus() {
@@ -92,6 +127,13 @@
       credentialKind = data.credential_kind ?? null;
       minAgeHours = data.password_min_age_hours ?? 0;
       passwordChanged = Boolean(data.password_changed_by_you);
+      termsAccepted = Boolean(data.legal_acknowledged);
+      if (data.legal_required && !data.legal_acknowledged) {
+        includeTerms = true;
+        loadTermsDocument();
+      } else if (!data.legal_required) {
+        includeTerms = false;
+      }
       return data;
     } catch (err) {
       // Never block the app over this -- see the endpoint's own docstring.
@@ -100,10 +142,45 @@
     }
   }
 
+  async function loadTermsDocument() {
+    if (termsDoc) return;
+    termsLoadFailed = false;
+    try {
+      termsDoc = await getLegalDocument(OPERATOR_ACK_KEY);
+    } catch (err) {
+      console.error('Error loading operator acknowledgment:', err);
+      termsLoadFailed = true;
+    }
+  }
+
+  async function acceptTerms() {
+    if (!termsDoc || !termsChecked) return;
+    saving = true;
+    try {
+      await acknowledgeLegalDocument(termsDoc);
+      termsAccepted = true;
+      step = 1;
+    } catch (err) {
+      console.error('Error recording acknowledgment:', err);
+      toastStore.error($t('firstRunWizard.termsAcceptFailed'));
+    } finally {
+      saving = false;
+    }
+  }
+
+  /** @param {string} key */
+  function openViewer(key) {
+    viewerKey = key;
+    viewerOpen = true;
+  }
+
   onMount(async () => {
     if (!$user || $user.role !== 'super_admin') return;
     const data = await refreshStatus();
-    if (data) visible = !data.completed_at;
+    if (data) {
+      visible = !data.completed_at;
+      if (includeTerms && !termsAccepted) step = 0;
+    }
   });
 
   // The wizard hides itself while Settings -> Profile is open (it would sit on
@@ -130,7 +207,7 @@
     await refreshStatus();
     returnedUnchanged = !passwordChanged;
     if (passwordChanged && !wasChanged) passwordKept = false;
-    step = passwordChanged ? 2 : 1;
+    step = includeTerms && !termsAccepted ? 0 : passwordChanged ? 2 : 1;
     visible = true;
   }
 
@@ -225,13 +302,13 @@
 </script>
 
 <BaseModal isOpen={visible} title={$t('firstRunWizard.title')} size="lg" onClose={hide}>
-  <div class="wizard-progress" data-testid="wizard-step-indicator" data-step={step}>
+  <div class="wizard-progress" data-testid="wizard-step-indicator" data-step={step + offset}>
     <p class="wizard-progress-label">
-      {$t('firstRunWizard.stepIndicator', { current: step, total: TOTAL_STEPS })}
+      {$t('firstRunWizard.stepIndicator', { current: step + offset, total: totalSteps })}
     </p>
     <ol class="wizard-progress-list">
       {#each steps as item, index (item.id)}
-        <li class:current={step === index + 1} class:done={item.done} data-done={item.done}>
+        <li class:current={step + offset === index + 1} class:done={item.done} data-done={item.done}>
           <span class="wizard-progress-mark" aria-hidden="true">{item.done ? '✓' : index + 1}</span>
           <span>{item.label}</span>
           {#if item.done}
@@ -242,7 +319,46 @@
     </ol>
   </div>
 
-  {#if step === 1}
+  {#if step === 0}
+    <div class="wizard-step" data-testid="wizard-terms-step">
+      <p>{$t('firstRunWizard.termsIntro')}</p>
+      <p class="wizard-hint">{$t('firstRunWizard.termsNoSkip')}</p>
+
+      {#if termsDoc}
+        {#if termsDoc.status === 'draft'}
+          <div class="wizard-callout wizard-callout-warning" data-testid="terms-draft-badge">
+            <strong>{$t('legal.draftBadge')}</strong>
+          </div>
+        {/if}
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderChatMarkdown -->
+        <div class="terms-panel" tabindex="0" role="textbox" aria-readonly="true" aria-multiline="true" aria-label={termsDoc.title} dir="ltr" data-testid="terms-panel">{@html termsHtml}</div>
+        <p class="wizard-hint">{$t('legal.viewer.officialText')}</p>
+        <div class="wizard-actions">
+          <button class="btn btn-secondary" on:click={() => openViewer(TERMS_KEY)}>
+            {$t('firstRunWizard.termsReadTerms')}
+          </button>
+          <button class="btn btn-secondary" on:click={() => openViewer(PRIVACY_KEY)}>
+            {$t('firstRunWizard.termsReadPrivacy')}
+          </button>
+        </div>
+        <label class="wizard-checkbox terms-accept">
+          <input type="checkbox" bind:checked={termsChecked} data-testid="terms-checkbox" />
+          <span dir="ltr">{checkboxText}</span>
+        </label>
+      {:else if termsLoadFailed}
+        <div class="wizard-callout wizard-callout-warning" role="alert">
+          <span>{$t('legal.viewer.loadFailed')}</span>
+        </div>
+        <div class="wizard-actions">
+          <button class="btn btn-secondary" on:click={loadTermsDocument}>
+            {$t('firstRunWizard.termsRetry')}
+          </button>
+        </div>
+      {:else}
+        <p class="wizard-hint">{$t('common.loading')}</p>
+      {/if}
+    </div>
+  {:else if step === 1}
     <div class="wizard-step">
       <p>{$t('firstRunWizard.welcomeBody')}</p>
       <p>{$t('firstRunWizard.whyBody')}</p>
@@ -383,23 +499,32 @@
     </div>
   {/if}
 
-  {#if step < 4}
+  {#if step > 0 && step < 4}
     <p class="wizard-hint wizard-skip-hint">{$t('firstRunWizard.skipHint')}</p>
   {/if}
 
   <svelte:fragment slot="footer">
-    {#if step < 4}
+    {#if step > 0 && step < 4}
       <button class="wizard-skip-link" on:click={skip} disabled={saving}>
         {$t('firstRunWizard.skipButton')}
       </button>
     {/if}
     <div class="wizard-footer-spacer"></div>
-    {#if step > 1}
+    {#if step > 1 || (step === 1 && includeTerms)}
       <button class="btn btn-secondary" on:click={() => (step -= 1)} disabled={saving}>
         {$t('common.back')}
       </button>
     {/if}
-    {#if step === 1}
+    {#if step === 0}
+      <button
+        class="btn btn-primary"
+        data-testid="terms-accept-button"
+        on:click={acceptTerms}
+        disabled={saving || !termsChecked || !termsDoc}
+      >
+        {saving ? $t('firstRunWizard.termsAccepting') : $t('firstRunWizard.termsAcceptButton')}
+      </button>
+    {:else if step === 1}
       {#if passwordChanged}
         <button class="btn btn-primary" on:click={() => (step = 2)}>{$t('common.next')}</button>
       {/if}
@@ -419,7 +544,40 @@
   </svelte:fragment>
 </BaseModal>
 
+<LegalDocumentViewer isOpen={viewerOpen} docKey={viewerKey} onClose={() => (viewerOpen = false)} />
+
 <style>
+  .terms-panel {
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 12px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-body);
+    text-align: start;
+  }
+
+  .terms-panel:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .terms-panel :global(h1),
+  .terms-panel :global(h2),
+  .terms-panel :global(h3) {
+    margin-block: 0.8em 0.3em;
+    font-size: var(--font-size-md);
+  }
+
+  .terms-panel :global(blockquote) {
+    margin-inline: 0;
+    padding-inline-start: 12px;
+    border-inline-start: 3px solid var(--border-color);
+  }
+
   .wizard-step {
     display: flex;
     flex-direction: column;

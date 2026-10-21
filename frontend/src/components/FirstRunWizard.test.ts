@@ -168,3 +168,116 @@ describe('FirstRunWizard navigation and completion', () => {
     await waitFor(() => expect(completeCalls()).toHaveLength(1));
   });
 });
+
+describe('FirstRunWizard terms step', () => {
+  const ACK_MD = [
+    '# Operator acknowledgment',
+    '',
+    'You are responsible.',
+    '',
+    'Checkbox text:',
+    '> I accept responsibility as operator.',
+  ].join('\n');
+  const ackDoc = {
+    key: 'opentranscribe-operator-acknowledgment',
+    title: 'Operator acknowledgment',
+    version: '1.0',
+    status: 'draft',
+    sha256: 'abc123def456',
+    markdown: ACK_MD,
+  };
+
+  function legalStatus(overrides: Record<string, unknown> = {}, doc = ackDoc) {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/legal/documents/opentranscribe-operator-acknowledgment') {
+        return Promise.resolve({ data: doc });
+      }
+      return Promise.resolve({
+        data: { ...baseStatus, legal_required: true, legal_acknowledged: false, ...overrides },
+      });
+    });
+  }
+
+  const indicatorText = () => screen.getByTestId('wizard-step-indicator').textContent;
+
+  it('shows the terms step first, as step 1 of 5', async () => {
+    legalStatus();
+    render(FirstRunWizard);
+
+    expect(await screen.findByTestId('wizard-terms-step')).toBeTruthy();
+    expect(stepOf()).toBe('1');
+    expect(indicatorText()).toContain('firstRunWizard.stepTerms');
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(5);
+    expect(screen.queryByText('firstRunWizard.skipButton')).toBeNull();
+  });
+
+  it('is skipped when the operator already acknowledged: 4 steps starting at password', async () => {
+    legalStatus({ legal_acknowledged: true });
+    render(FirstRunWizard);
+
+    expect(await screen.findByText('firstRunWizard.keepPasswordButton')).toBeTruthy();
+    expect(screen.queryByTestId('wizard-terms-step')).toBeNull();
+    expect(indicatorText()).not.toContain('firstRunWizard.stepTerms');
+    expect(screen.getByTestId('wizard-step-indicator').querySelectorAll('li')).toHaveLength(4);
+  });
+
+  it('is skipped when legal is not required (cloud edition)', async () => {
+    legalStatus({ legal_required: false });
+    render(FirstRunWizard);
+
+    expect(await screen.findByText('firstRunWizard.keepPasswordButton')).toBeTruthy();
+    expect(screen.queryByTestId('wizard-terms-step')).toBeNull();
+    expect(screen.getByTestId('wizard-step-indicator').querySelectorAll('li')).toHaveLength(4);
+  });
+
+  it('keeps accept disabled until the extracted checkbox sentence is ticked, then POSTs the acknowledgment', async () => {
+    legalStatus();
+    render(FirstRunWizard);
+
+    const accept = (await screen.findByTestId('terms-accept-button')) as HTMLButtonElement;
+    const label = (await screen.findByTestId('terms-checkbox')).closest('label');
+    expect(label?.textContent?.trim()).toBe('I accept responsibility as operator.');
+    expect(accept.disabled).toBe(true);
+
+    await fireEvent.click(screen.getByTestId('terms-checkbox'));
+    expect(accept.disabled).toBe(false);
+
+    await fireEvent.click(accept);
+    await waitFor(() =>
+      expect(mockAxios.post).toHaveBeenCalledWith('/legal/acknowledgments', {
+        key: 'opentranscribe-operator-acknowledgment',
+        version: '1.0',
+        sha256: 'abc123def456',
+      })
+    );
+    await waitFor(() => expect(screen.getByTestId('wizard-step-indicator')).toBeTruthy());
+    await waitFor(() => expect(stepOf()).toBe('2'));
+    expect(completeCalls()).toHaveLength(0);
+  });
+
+  it('stays on the terms step and toasts when the acknowledgment fails', async () => {
+    legalStatus();
+    mockAxios.post.mockRejectedValue(new Error('boom'));
+    const { toastStore } = await import('$stores/toast');
+    render(FirstRunWizard);
+
+    await fireEvent.click(await screen.findByTestId('terms-checkbox'));
+    await fireEvent.click(screen.getByTestId('terms-accept-button'));
+
+    await waitFor(() => expect(toastStore.error).toHaveBeenCalled());
+    expect(stepOf()).toBe('1');
+    expect(screen.getByTestId('wizard-terms-step')).toBeTruthy();
+  });
+
+  it('shows the draft badge only for a draft document', async () => {
+    legalStatus();
+    const { unmount } = render(FirstRunWizard);
+    expect(await screen.findByTestId('terms-draft-badge')).toBeTruthy();
+    unmount();
+
+    legalStatus({}, { ...ackDoc, status: 'final' });
+    render(FirstRunWizard);
+    await screen.findByTestId('terms-panel');
+    expect(screen.queryByTestId('terms-draft-badge')).toBeNull();
+  });
+});

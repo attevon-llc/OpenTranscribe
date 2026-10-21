@@ -211,6 +211,17 @@ describe('FirstRunWizard terms step', () => {
     expect(screen.queryByText('firstRunWizard.skipButton')).toBeNull();
   });
 
+  it('puts the acceptance checkbox in the footer, outside the scrollable panel', async () => {
+    legalStatus();
+    render(FirstRunWizard);
+
+    const box = await screen.findByTestId('terms-checkbox');
+    const footer = screen.getByTestId('terms-footer');
+    expect(footer.contains(box)).toBe(true);
+    expect(footer.contains(screen.getByTestId('terms-accept-button'))).toBe(true);
+    expect(screen.getByTestId('terms-panel').contains(box)).toBe(false);
+  });
+
   it('is skipped when the operator already acknowledged: 4 steps starting at password', async () => {
     legalStatus({ legal_acknowledged: true });
     render(FirstRunWizard);

@@ -9,7 +9,7 @@
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { getLegalDocument, type LegalDocument } from '$lib/api/legal';
-  import { renderChatMarkdown } from '$lib/utils/chatMarkdown';
+  import { renderLegalMarkdown } from '$lib/legal/renderLegalMarkdown';
 
   export let isOpen = false;
   export let docKey = '';
@@ -42,7 +42,14 @@
     }
   }
 
-  $: html = doc ? renderChatMarkdown(doc.markdown) : '';
+  let html = '';
+  $: void renderHtml(doc);
+
+  async function renderHtml(current: LegalDocument | null) {
+    const rendered = current ? await renderLegalMarkdown(current.markdown) : '';
+    // A newer document may have been picked while the sanitizer module loaded.
+    if (current === doc) html = rendered;
+  }
   $: fingerprint = doc ? doc.sha256.slice(0, 12) : '';
 </script>
 
@@ -70,7 +77,7 @@
       </span>
       <span>{$t('legal.viewer.officialText')}</span>
     </p>
-    <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderChatMarkdown -->
+    <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderLegalMarkdown -->
     <div class="legal-prose" data-testid="legal-prose" dir="ltr">{@html html}</div>
   {/if}
 

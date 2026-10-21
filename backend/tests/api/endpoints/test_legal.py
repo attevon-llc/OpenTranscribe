@@ -53,6 +53,21 @@ def test_get_document_returns_exact_served_text(client, user_token_headers):
     assert client.get("/api/legal/documents/nope", headers=user_token_headers).status_code == 404
 
 
+def test_served_markdown_drops_front_matter_but_the_hash_covers_the_whole_file(
+    client, user_token_headers
+):
+    """The reader sees the document, not its metadata; the fingerprint still covers every byte."""
+    import hashlib
+
+    doc = _current()
+    body = client.get(f"/api/legal/documents/{KEY}", headers=user_token_headers).json()
+
+    assert doc.content.decode("utf-8").startswith("---")
+    assert not body["markdown"].lstrip().startswith("---")
+    assert f"key: {KEY}" not in body["markdown"]
+    assert body["sha256"] == hashlib.sha256(doc.content).hexdigest()
+
+
 def test_super_admin_accepts_and_it_is_idempotent(
     client, db_session, super_admin_user, super_admin_token_headers
 ):

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
@@ -37,7 +37,8 @@ describe('LegalDocumentViewer', () => {
     render(LegalDocumentViewer, { isOpen: true, docKey: doc.key });
 
     const prose = await screen.findByTestId('legal-prose');
-    expect(prose.textContent).toContain('Safe paragraph.');
+    // The sanitizer module is imported lazily, so the html lands after the document does.
+    await waitFor(() => expect(prose.textContent).toContain('Safe paragraph.'));
     expect(prose.querySelector('script')).toBeNull();
     expect(prose.querySelector('img')).toBeNull();
     expect(prose.innerHTML).not.toContain('onerror');

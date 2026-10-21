@@ -36,7 +36,7 @@
     getLegalDocument,
     acknowledgeLegalDocument
   } from '$lib/api/legal';
-  import { renderChatMarkdown } from '$lib/utils/chatMarkdown';
+  import { renderLegalMarkdown } from '$lib/legal/renderLegalMarkdown';
   import { extractCheckboxText } from '$lib/legal/checkboxText';
 
   let visible = false;
@@ -75,7 +75,13 @@
   $: passwordDone = passwordChanged || passwordKept;
   $: offset = includeTerms ? 1 : 0;
   $: totalSteps = 4 + offset;
-  $: termsHtml = termsDoc ? renderChatMarkdown(termsDoc.markdown) : '';
+  let termsHtml = '';
+  $: void renderTermsHtml(termsDoc);
+
+  async function renderTermsHtml(current) {
+    const rendered = current ? await renderLegalMarkdown(current.markdown) : '';
+    if (current === termsDoc) termsHtml = rendered;
+  }
   $: checkboxText = extractCheckboxText(termsDoc?.markdown) ?? $t('firstRunWizard.termsAcceptFallback');
   $: steps = [
     ...(includeTerms
@@ -320,17 +326,17 @@
   </div>
 
   {#if step === 0}
-    <div class="wizard-step" data-testid="wizard-terms-step">
+    <div class="wizard-step terms-step-compact" data-testid="wizard-terms-step">
       <p>{$t('firstRunWizard.termsIntro')}</p>
       <p class="wizard-hint">{$t('firstRunWizard.termsNoSkip')}</p>
 
       {#if termsDoc}
         {#if termsDoc.status === 'draft'}
-          <div class="wizard-callout wizard-callout-warning" data-testid="terms-draft-badge">
+          <div class="wizard-callout wizard-callout-warning wizard-callout-slim" data-testid="terms-draft-badge">
             <strong>{$t('legal.draftBadge')}</strong>
           </div>
         {/if}
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderChatMarkdown -->
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderLegalMarkdown -->
         <div class="terms-panel" tabindex="0" role="textbox" aria-readonly="true" aria-multiline="true" aria-label={termsDoc.title} dir="ltr" data-testid="terms-panel">{@html termsHtml}</div>
         <p class="wizard-hint">{$t('legal.viewer.officialText')}</p>
         <div class="wizard-actions">
@@ -341,10 +347,6 @@
             {$t('firstRunWizard.termsReadPrivacy')}
           </button>
         </div>
-        <label class="wizard-checkbox terms-accept">
-          <input type="checkbox" bind:checked={termsChecked} data-testid="terms-checkbox" />
-          <span dir="ltr">{checkboxText}</span>
-        </label>
       {:else if termsLoadFailed}
         <div class="wizard-callout wizard-callout-warning" role="alert">
           <span>{$t('legal.viewer.loadFailed')}</span>
@@ -504,6 +506,24 @@
   {/if}
 
   <svelte:fragment slot="footer">
+    {#if step === 0}
+      <div class="terms-footer" data-testid="terms-footer">
+        {#if termsDoc}
+          <label class="wizard-checkbox terms-accept">
+            <input type="checkbox" bind:checked={termsChecked} data-testid="terms-checkbox" />
+            <span dir="ltr">{checkboxText}</span>
+          </label>
+        {/if}
+        <button
+          class="btn btn-primary"
+          data-testid="terms-accept-button"
+          on:click={acceptTerms}
+          disabled={saving || !termsChecked || !termsDoc}
+        >
+          {saving ? $t('firstRunWizard.termsAccepting') : $t('firstRunWizard.termsAcceptButton')}
+        </button>
+      </div>
+    {:else}
     {#if step > 0 && step < 4}
       <button class="wizard-skip-link" on:click={skip} disabled={saving}>
         {$t('firstRunWizard.skipButton')}
@@ -515,16 +535,7 @@
         {$t('common.back')}
       </button>
     {/if}
-    {#if step === 0}
-      <button
-        class="btn btn-primary"
-        data-testid="terms-accept-button"
-        on:click={acceptTerms}
-        disabled={saving || !termsChecked || !termsDoc}
-      >
-        {saving ? $t('firstRunWizard.termsAccepting') : $t('firstRunWizard.termsAcceptButton')}
-      </button>
-    {:else if step === 1}
+    {#if step === 1}
       {#if passwordChanged}
         <button class="btn btn-primary" on:click={() => (step = 2)}>{$t('common.next')}</button>
       {/if}
@@ -541,6 +552,7 @@
         {$t('firstRunWizard.finishButton')}
       </button>
     {/if}
+    {/if}
   </svelte:fragment>
 </BaseModal>
 
@@ -548,9 +560,9 @@
 
 <style>
   .terms-panel {
-    max-height: 260px;
+    max-height: 40vh;
     overflow-y: auto;
-    padding: 12px 16px;
+    padding: 10px 14px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--bg-secondary);
@@ -597,7 +609,8 @@
   .wizard-progress-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 16px;
+    flex-wrap: nowrap;
+    gap: 6px 10px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -609,6 +622,16 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+
+  /* Five steps must fit one line at the dialog width: only the current step keeps its label. */
+  .wizard-progress-list li:not(.current) > span:not(.wizard-progress-mark):not(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .wizard-progress-list li.current {
@@ -750,5 +773,34 @@
   .wizard-skip-link:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .terms-footer {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px 16px;
+  }
+
+  .terms-footer .terms-accept {
+    flex: 1 1 280px;
+    font-size: var(--font-size-sm);
+  }
+
+  .terms-footer .terms-accept:focus-within {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .terms-step-compact {
+    gap: 10px;
+  }
+
+  .wizard-callout-slim {
+    padding: 6px 12px;
+    font-size: var(--font-size-sm);
   }
 </style>

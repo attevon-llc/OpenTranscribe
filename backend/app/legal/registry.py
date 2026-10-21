@@ -44,8 +44,12 @@ class LegalDocument:
 
     @property
     def markdown(self) -> str:
-        """The document text."""
-        return self.content.decode("utf-8")
+        """The document text to display, without its front matter block.
+
+        The hash and the acceptance record cover the full file (``content``); only the
+        rendered text drops the metadata block, which is not part of what a reader accepts.
+        """
+        return strip_front_matter(self.content.decode("utf-8"))
 
 
 class DocumentProvider(Protocol):
@@ -73,6 +77,17 @@ def parse_front_matter(text: str) -> dict[str, str]:
             k, v = line.split(":", 1)
             out[k.strip()] = v.strip()
     return out
+
+
+def strip_front_matter(text: str) -> str:
+    """Return ``text`` without a leading ``---`` delimited front matter block."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return text
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "".join(lines[index + 1 :]).lstrip("\n")
+    return text
 
 
 def load_vendored_documents(directory: Path = _DOCUMENTS_DIR) -> list[LegalDocument]:

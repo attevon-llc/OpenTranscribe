@@ -22,10 +22,18 @@ import { dirname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-/** Gzip bytes. Set just above the measured post-optimisation size; raise only deliberately. */
-export const ROOT_LAYOUT_GZIP_BUDGET = 20 * 1024;
-/** Gzip bytes of the node plus its static import closure; raise only deliberately. */
-export const ROOT_LAYOUT_CLOSURE_GZIP_BUDGET = 130 * 1024;
+/**
+ * Gzip bytes of the root layout node. Headroom policy (issue #1255): keep about 10% above the
+ * measured size so an ordinary feature or a derived overlay does not turn the gate red; measured
+ * 20,068 B on the stock build after PR #1256. Raise only in a reviewed PR that states the new
+ * measurement, never to absorb a regression.
+ */
+export const ROOT_LAYOUT_GZIP_BUDGET = 22 * 1024;
+/**
+ * Gzip bytes of the node plus its static import closure. Same policy: about 4% above the
+ * measured 130,981 B (the closure is large, so a smaller fraction is the same absolute room).
+ */
+export const ROOT_LAYOUT_CLOSURE_GZIP_BUDGET = 136 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;

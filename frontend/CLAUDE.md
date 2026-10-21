@@ -150,8 +150,15 @@ second client-side exporter believing this exception still applies.
 
 ## Bundle budget gate (issues #1131, #1255)
 
+**Headroom policy.** The base budgets sit about 10% (node) and 4% (closure) above the measured
+stock build, so a normal feature PR or a derived overlay does not turn the gate red. The gate
+prints the remaining headroom on every run and marks it `LOW` under 512 B. When a PR drives the
+headroom to `LOW`, the fix is to move code out of the root closure with a dynamic `import()`;
+only if that is impossible does the PR raise the base, stating the new measurement and keeping
+about the same percentage of headroom. A budget is never raised to hide a regression.
+
 `scripts/check-bundle-budget.mjs` runs from `postbuild` after `vite build` and gates the root
-layout node (`nodes/0.*.js`, 20 KiB gzip) and its static import closure (130 KiB gzip), because
+layout node (`nodes/0.*.js`, 22 KiB gzip) and its static import closure (136 KiB gzip), because
 every page load pays for them, `/login` included. Heavy, conditionally shown components must be
 loaded with a dynamic `import()`.
 

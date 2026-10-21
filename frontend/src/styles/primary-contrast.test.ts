@@ -140,6 +140,56 @@ function compositeOver(
   ];
 }
 
+/**
+ * `UploadProgress.svelte`'s per-file progress-bar fill (#752 gap 2) is a
+ * NON-text UI component, so WCAG 2.1 SC 1.4.11 applies (3:1), not the 4.5:1
+ * normal-text threshold used above. The fix reuses existing "-text"/"-dark"
+ * status tokens rather than the plain `--success-color` / `--warning-color`
+ * / etc. tokens, because the plain tokens do NOT clear 3:1 against
+ * `--border-color` in light mode (see the control below) — this is exactly
+ * the trap §12.4 of the plan warns about: verify the "before" number first
+ * rather than assuming a token swap alone fixes the contrast.
+ */
+const NON_TEXT_AA = 3.0;
+
+describe('progress fill clears non-text contrast (WCAG 1.4.11) against its track', () => {
+  const progressStatusTokens: Record<string, string> = {
+    completed: '--color-success-text',
+    failed: '--error-dark',
+    cancelled: '--text-secondary',
+    active: '--color-info-text',
+    pending: '--color-warning-text',
+  };
+
+  for (const [label, selector] of [
+    ['light', ':root'],
+    ['dark', "[data-theme='dark']"],
+  ] as const) {
+    const border = hexToRgb(token(selector, '--border-color'));
+
+    for (const [status, tokenName] of Object.entries(progressStatusTokens)) {
+      it(`${label}: ${status} fill (${tokenName}) vs --border-color clears ${NON_TEXT_AA}:1`, () => {
+        const fill = hexToRgb(token(selector, tokenName));
+        expect(contrast(fill, border)).toBeGreaterThanOrEqual(NON_TEXT_AA);
+      });
+    }
+  }
+
+  it('control: the OLD hardcoded per-status hex values do not all clear 3:1 in light mode', () => {
+    // These are the literals UploadProgress.svelte's getStatusColor() used to
+    // return, checked against the LIGHT --border-color. Proves the gate
+    // discriminates rather than passing anything already in the file.
+    const lightBorder = hexToRgb(token(':root', '--border-color'));
+    const oldHardcoded: Record<string, string> = {
+      completed: '#10b981',
+      pending: '#f59e0b', // the biggest offender: 1.73:1
+    };
+    for (const hex of Object.values(oldHardcoded)) {
+      expect(contrast(hexToRgb(hex), lightBorder)).toBeLessThan(NON_TEXT_AA);
+    }
+  });
+});
+
 describe('.chip (upload-shared.css) clears AA contrast in dark mode', () => {
   const chipCss = fs.readFileSync(
     path.resolve(__dirname, '../components/upload/upload-shared.css'),
@@ -172,5 +222,88 @@ describe('.chip (upload-shared.css) clears AA contrast in dark mode', () => {
     // this is the ~2.0:1 the #835 investigation measured.
     const oldText = hexToRgb(token("[data-theme='dark']", '--primary-color'));
     expect(contrast(oldText, compositedChipBg)).toBeLessThan(AA_NORMAL_TEXT);
+  });
+});
+
+describe('error fill carrying white text (speakers inbox badge)', () => {
+  // `--error-color` is the status FILL/icon colour: #ef4444 (3.76:1 with white) in light and
+  // #f87171 (2.76:1) in dark. The /speakers inbox-count badge paints white text on it and
+  // failed axe colour-contrast in both themes. A fill that carries white text is a different
+  // role from the status colour, so it has its own token.
+  for (const [label, selector] of [
+    ['light', ':root'],
+    ['dark', "[data-theme='dark']"],
+  ] as const) {
+    it(`${label}: white on --error-solid clears ${AA_NORMAL_TEXT}:1`, () => {
+      expect(contrast(hexToRgb(token(selector, '--error-solid')), WHITE)).toBeGreaterThanOrEqual(
+        AA_NORMAL_TEXT
+      );
+    });
+
+    it(`control: ${label}: white on --error-color (the fill it replaces) fails AA`, () => {
+      expect(contrast(hexToRgb(token(selector, '--error-color')), WHITE)).toBeLessThan(
+        AA_NORMAL_TEXT
+      );
+    });
+  }
+});
+
+describe('upload tray header counts clear AA on the primary-blue header (UX review item 12)', () => {
+  const tray = fs.readFileSync(
+    path.resolve(__dirname, '../components/UploadManager.svelte'),
+    'utf8'
+  );
+
+  /** Body of the rule whose (possibly comma-grouped) selector list names `selector`. */
+  function rule(selector: string): string {
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    for (const m of tray.matchAll(re)) {
+      const names = m[1].split(',').map((s) => s.trim().split('\n').pop()!.trim());
+      if (names.includes(selector)) return m[2];
+    }
+    throw new Error(`${selector} rule not found in UploadManager.svelte`);
+  }
+
+  /** Resolves a literal colour or `var(--token)` to RGB under one theme. */
+  function resolveColour(value: string, selector: string): [number, number, number] {
+    const v = value.trim();
+    const viaVar = v.match(/^var\((--[\w-]+)/);
+    if (viaVar) return hexToRgb(token(selector, viaVar[1]));
+    if (v === 'white') return WHITE;
+    const hex = v.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    if (!hex) throw new Error(`cannot resolve colour: ${value}`);
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1];
+    return hexToRgb(h);
+  }
+
+  const headerBg = rule('.panel-header').match(/background:\s*([^;]+);/)![1];
+  const headerFg = rule('.panel-header').match(/\bcolor:\s*([^;]+);/)![1];
+
+  for (const [label, selector] of [
+    ['light', ':root'],
+    ['dark', "[data-theme='dark']"],
+  ] as const) {
+    for (const cls of ['.stat-active', '.stat-queued', '.stat-completed']) {
+      it(`${label}: ${cls} text clears ${AA_NORMAL_TEXT}:1 on its background`, () => {
+        const body = rule(cls);
+        const fg = body.match(/\bcolor:\s*([^;]+);/)?.[1] ?? headerFg;
+        const bg = body.match(/background:\s*([^;]+);/)?.[1] ?? headerBg;
+        const ratio = contrast(resolveColour(fg, selector), resolveColour(bg, selector));
+        expect(ratio).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+      });
+    }
+  }
+
+  it('the active count is the boldest of the three', () => {
+    expect(rule('.stat-active')).toMatch(
+      /font-weight:\s*(?:[6-9]00|var\(--font-weight-semibold\))/
+    );
+  });
+
+  it('control: the previous amber / grey / green literals fail on the header blue', () => {
+    const header = hexToRgb(token(':root', '--primary-color'));
+    for (const hex of ['#fbbf24', '#d1d5db', '#86efac']) {
+      expect(contrast(hexToRgb(hex), header)).toBeLessThan(AA_NORMAL_TEXT);
+    }
   });
 });

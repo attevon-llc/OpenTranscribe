@@ -85,18 +85,20 @@
   .tag-input-container {
     display: flex;
     flex-wrap: wrap;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border: 1px solid var(--field-border);
+    border-radius: var(--field-radius);
     padding: 0.375rem;
-    background: var(--background-color);
-    min-height: 38px;
-    transition: border-color 0.2s ease;
+    background: var(--field-bg);
+    min-height: 2.375rem;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
     cursor: text;
   }
 
   .tag-input-container:focus-within {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    box-shadow: var(--field-focus-ring);
   }
 
   .tag-input-container.disabled {

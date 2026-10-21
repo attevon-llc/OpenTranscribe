@@ -237,7 +237,7 @@
     </div>
   {/if}
 
-  <BaseModal isOpen={showTargetDialog} title={$t('speaker.selectTargetSpeaker')} onClose={closeTargetDialog} maxWidth="500px">
+  <BaseModal isOpen={showTargetDialog} title={$t('speaker.selectTargetSpeaker')} onClose={closeTargetDialog} size="sm">
     <p class="modal-description">
       {$t('speaker.modalDescription', {
         count: selectedSpeakers.size - 1,
@@ -400,7 +400,7 @@
 
   .speaker-badge {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     padding: 3px 8px;
     border-radius: 12px;
     border: 1px solid;

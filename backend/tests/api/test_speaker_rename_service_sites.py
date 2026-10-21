@@ -37,6 +37,11 @@ from app.models.media import SpeakerCluster
 from app.models.media import SpeakerClusterMember
 from app.models.media import SpeakerProfile
 
+# These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach
+# as a failure. CI has no OpenSearch, so stand the stores in with the recorders; the live
+# behaviour is covered by test_deletion_residue_live.
+pytestmark = pytest.mark.usefixtures("speaker_os_seams")
+
 _DELAY = "app.tasks.rename_propagation_task.propagate_speaker_rename.delay"
 
 
@@ -414,6 +419,7 @@ class TestAssignSpeakerToProfile:
             "SPEAKER_00",
             suggested_name="Dana",
             confidence=0.5,
+            suggestion_source="voice_match",
         )
         profile = _profile(db_session, normal_user, "Dana")
 
@@ -428,6 +434,36 @@ class TestAssignSpeakerToProfile:
         )
         assert _queued(delay_mock) == {(str(media_file.uuid), "Dana"): ["SPEAKER_00"]}
 
+    def test_confidence_crossing_the_threshold_on_an_llm_suggestion_queues_nothing(
+        self, db_session, normal_user
+    ):
+        """A profile assignment raises ``confidence``, but an LLM suggestion is never the
+        canonical label, so raising its confidence moves nothing."""
+        from app.services.speaker_matching_service import SpeakerMatchingService
+
+        media_file = _media_file(db_session, normal_user, "assign-confidence-llm")
+        speaker = _speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_00",
+            suggested_name="Dana",
+            confidence=0.5,
+            suggestion_source="llm_analysis",
+        )
+        profile = _profile(db_session, normal_user, "Dana")
+
+        with patch(_DELAY) as delay_mock:
+            SpeakerMatchingService(db_session, embedding_service=None).assign_speaker_to_profile(
+                int(speaker.id), int(profile.id), confidence=0.9
+            )
+
+        db_session.refresh(speaker)
+        assert (speaker.confidence, speaker.profile_id) == (0.9, profile.id), (
+            "control: the assignment really happened"
+        )
+        delay_mock.assert_not_called()
+
     def test_assigning_an_already_confident_speaker_queues_nothing(self, db_session, normal_user):
         """Chunks already carry the suggestion; the profile link alone changes
         nothing indexed."""
@@ -441,6 +477,7 @@ class TestAssignSpeakerToProfile:
             "SPEAKER_00",
             suggested_name="Dana",
             confidence=0.9,
+            suggestion_source="voice_match",
         )
         profile = _profile(db_session, normal_user, "Dana")
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -108,7 +109,7 @@
   </div>
 
   {#if loading}
-    <div class="loading">{$t('common.loading')}</div>
+    <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
   {:else if tokens.length === 0}
     <EmptyState
       title={$t('settings.scimTokens.emptyTitle')}
@@ -177,7 +178,7 @@
 <BaseModal
   isOpen={showCreate}
   title={justCreatedToken ? $t('settings.scimTokens.createdTitle') : $t('settings.scimTokens.addToken')}
-  maxWidth="420px"
+  size="sm"
   onClose={closeCreate}
 >
   {#if justCreatedToken}
@@ -261,11 +262,6 @@
     margin-bottom: 1rem;
   }
 
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: var(--color-text-secondary);
-  }
 
   .table-wrap {
     overflow-x: auto;
@@ -321,11 +317,6 @@
   .form-group input[type='text'],
   .form-group input[type='date'] {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-bg);
-    color: var(--color-text);
   }
 
   .warning-box {

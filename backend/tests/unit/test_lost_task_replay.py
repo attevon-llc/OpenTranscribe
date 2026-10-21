@@ -104,7 +104,7 @@ def test_a_finished_task_leaves_nothing_to_replay(fake_redis):
 
 
 @pytest.mark.parametrize(
-    "name", ["transcription.gpu_transcribe", "transcription.process_file", "cleanup.deep_cleanup"]
+    "name", ["transcription.gpu_transcribe", "transcription.cpu_transcribe", "cleanup.deep_cleanup"]
 )
 def test_unlisted_and_transcription_tasks_are_never_recorded(fake_redis, name):
     tr.on_task_start(_task(name, queue="gpu"), "t-3", [], {})
@@ -352,8 +352,9 @@ def test_the_celery_signals_are_wired(fake_redis):
 #: A task in neither this map nor ``REPLAYABLE_TASKS`` is a run that silently vanishes when its
 #: worker dies mid-run (an early ack drops the message; nothing re-sends it).
 _NOT_REPLAYED_ON_PURPOSE = {
-    # GPU work: a replay is a second GPU run, and the allowlist admits no GPU task.
-    "rediarize": "GPU queue",
+    # The speaker-detection post stage: on the GPU queue a replay is a second GPU run (the
+    # allowlist admits no GPU task); on cloud-asr it is a second BILLED pyannote.ai job.
+    "rediarize": "GPU run or a billed vendor job",
     # Updates speaker profiles and closes the pipeline run (firing its completion hook), so a
     # second run is not known to reach the same end state. Its loss is still recovered: the
     # pipeline run it was closing reads as lost and is re-dispatched.
@@ -367,9 +368,12 @@ _NOT_REPLAYED_ON_PURPOSE = {
 _PIPELINE_DISPATCH_MODULES = (
     "app/tasks/transcription/preprocess.py",
     "app/tasks/transcription/postprocess.py",
-    "app/tasks/transcription/background.py",
+    # The speaker-detection post stage hands off to the voiceprint stage (issue #1225).
+    "app/tasks/rediarize_task.py",
     "app/tasks/transcription/downstream.py",
     "app/tasks/ingest_artifacts_task.py",
+    # The shared attribute/LLM-speaker-ID dispatcher the three completion paths call.
+    "app/tasks/speaker_attribute_task.py",
 )
 
 

@@ -1,8 +1,8 @@
 /**
  * Bedrock is the first LLM provider with neither a `base_url` nor an `api_key` —
  * it's reached through the AWS SDK, not an HTTP endpoint (issue #596). The form
- * must not render either field for it, must explain where credentials/region
- * actually come from (a deployment-level setting, not this form), and must
+ * renders neither field for it; its region and optional AWS key live in the
+ * Bedrock account block (see LLMConfigModal.bedrockFields.test.ts), and it must
  * still submit a valid configuration from just a name + model ID.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -92,19 +92,22 @@ describe('LLMConfigModal — Bedrock provider', () => {
     expect(screen.queryByLabelText(/llm\.apiKey/)).not.toBeInTheDocument();
   });
 
-  it('explains that region/credentials are a deployment-level setting, not entered here', async () => {
+  it('shows the Bedrock account block (region and optional AWS key) instead of an "ask your administrator" note', async () => {
     renderModal();
     await selectBedrock();
 
-    expect(screen.getByText('llm.bedrockInfo')).toBeInTheDocument();
+    expect(screen.getByText('llm.bedrock.title')).toBeInTheDocument();
+    expect(screen.getByLabelText('llm.bedrock.region')).toBeInTheDocument();
+    expect(screen.getByLabelText('llm.bedrock.accessKeyId')).toBeInTheDocument();
+    expect(screen.queryByText('llm.bedrockInfo')).not.toBeInTheDocument();
   });
 
-  it('does not show the info note for a provider that DOES take a base URL', async () => {
+  it('does not show the Bedrock block for a provider that DOES take a base URL', async () => {
     renderModal();
     const select = screen.getByLabelText('llm.provider') as HTMLSelectElement;
     await fireEvent.change(select, { target: { value: 'openai' } });
 
-    expect(screen.queryByText('llm.bedrockInfo')).not.toBeInTheDocument();
+    expect(screen.queryByText('llm.bedrock.title')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/llm\.baseUrl/)).toBeInTheDocument();
   });
 

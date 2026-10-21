@@ -92,40 +92,40 @@ def keyword_index():
 
     name = f"test_kw_latency_{uuid.uuid4().hex[:12]}"
     client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    rng = random.Random(1064)  # noqa: S311 — deterministic test corpus, not crypto
-    vocab = _vocabulary(rng, 6000)
-    actions: list[dict[str, Any]] = []
-    for f in range(N_FILES):
-        file_uuid = f"kwlat-{f:04d}"
-        for n in range(CHUNKS_PER_FILE):
-            words = [
-                rng.choice(_TOPICAL) if rng.random() < 0.03 else rng.choice(vocab)
-                for _ in range(WORDS_PER_CHUNK)
-            ]
-            actions.append({"index": {"_index": name, "_id": f"{file_uuid}_{n}"}})
-            actions.append(
-                {
-                    "file_id": -(f + 1),
-                    "file_uuid": file_uuid,
-                    "user_id": USER_ID,
-                    "accessible_user_ids": [USER_ID],
-                    "chunk_index": n,
-                    "content": " ".join(words),
-                    "title": f"Weekly sync {f}",
-                    "speaker": f"SPEAKER_{n % 4:02d}",
-                    "speakers": [f"SPEAKER_{i:02d}" for i in range(4)],
-                    "language": "en",
-                    "doc_type": "chunk",
-                    "start_time": n * 30.0,
-                    "end_time": n * 30.0 + 30.0,
-                }
-            )
-    resp = client.bulk(body=actions, refresh=True)
-    assert not resp.get("errors"), "bulk seed reported errors"
-    client.indices.forcemerge(index=name, max_num_segments=1)
-    client.indices.refresh(index=name)
-    assert client.count(index=name)["count"] == N_FILES * CHUNKS_PER_FILE
     try:
+        rng = random.Random(1064)  # noqa: S311 — deterministic test corpus, not crypto
+        vocab = _vocabulary(rng, 6000)
+        actions: list[dict[str, Any]] = []
+        for f in range(N_FILES):
+            file_uuid = f"kwlat-{f:04d}"
+            for n in range(CHUNKS_PER_FILE):
+                words = [
+                    rng.choice(_TOPICAL) if rng.random() < 0.03 else rng.choice(vocab)
+                    for _ in range(WORDS_PER_CHUNK)
+                ]
+                actions.append({"index": {"_index": name, "_id": f"{file_uuid}_{n}"}})
+                actions.append(
+                    {
+                        "file_id": -(f + 1),
+                        "file_uuid": file_uuid,
+                        "user_id": USER_ID,
+                        "accessible_user_ids": [USER_ID],
+                        "chunk_index": n,
+                        "content": " ".join(words),
+                        "title": f"Weekly sync {f}",
+                        "speaker": f"SPEAKER_{n % 4:02d}",
+                        "speakers": [f"SPEAKER_{i:02d}" for i in range(4)],
+                        "language": "en",
+                        "doc_type": "chunk",
+                        "start_time": n * 30.0,
+                        "end_time": n * 30.0 + 30.0,
+                    }
+                )
+        resp = client.bulk(body=actions, refresh=True)
+        assert not resp.get("errors"), "bulk seed reported errors"
+        client.indices.forcemerge(index=name, max_num_segments=1)
+        client.indices.refresh(index=name)
+        assert client.count(index=name)["count"] == N_FILES * CHUNKS_PER_FILE
         yield client, name
     finally:
         client.indices.delete(index=name, ignore_unavailable=True)

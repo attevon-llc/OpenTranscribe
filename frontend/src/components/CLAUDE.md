@@ -11,12 +11,39 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
 - `TranscriptDisplay.svelte`, `VideoPlayer.svelte`, `Navbar.svelte`, `SettingsModal.svelte`,
   `FileUploader.svelte`, `UserFileStatus.svelte`, `CollectionsPanel.svelte` — coordinators
   that own data + state and delegate rendering to thin children.
-- `RetrievalQualityNotice.svelte` — the honest "results may be imperfect" note (#461), shared by
-  chat and search. **The `surface` prop is not cosmetic**: the cross-encoder reranker runs only on
-  the chat retrieval path, so the chat copy names it and the search copy must not — `/search` is
-  ranked by OpenSearch RRF fusion. Dismissal is per-surface in `localStorage`
-  (`opentr:retrievalQualityNotice:<surface>`) and, being a UI preference, is deliberately NOT
-  cleared by `clearUserState`.
+- `RetrievalQualityNotice.svelte` — the honest "results may be imperfect" note, shared by chat,
+  search, and (issue #756) the speakers page. **The `surface` prop is not cosmetic**: the
+  cross-encoder reranker runs only on the chat retrieval path, so the chat copy names it and the
+  search copy must not — `/search` is ranked by OpenSearch RRF fusion; the speakers surface names
+  neither (clustering is voice-embedding similarity) and links to #524, not #461. Copy and issue
+  URL are looked up from a `Record<surface, …>` map, not a ternary — a ternary silently falls
+  through to one branch's copy for any surface it wasn't written to handle. Dismissal is
+  per-surface in `localStorage` (`opentr:retrievalQualityNotice:<surface>`) and, being a UI
+  preference, is deliberately NOT cleared by `clearUserState`.
+- `NotificationsPanel.svelte` — bell panel. `ICON_BY_TYPE` maps every notification type to an
+  icon name and **each name needs a render branch** (an unmapped name silently shows the bell;
+  `NotificationsPanel.test.ts` asserts coverage). `transcription_status` is the `logo` icon, an
+  `<img>` of `assets/logo-icon.png` (the only non-SVG entry, so tests query `.notification-icon img`);
+  topic/auto-label share the tag glyph and collection notifications use the folder glyph.
+  **Retention (issue #1217):** the list is an inbox, pruned — never animated away. The policy is a
+  pure function in `$lib/notifications/retention.ts` (injected `now`, no timers); `websocket.ts`
+  runs it on load, on add and on panel close, and it is a no-op while the panel is open. Never
+  removed: errors/warnings (`status`/`data.status` anything but completed), in-flight items,
+  `persistent` types, unread items under 14 days. `RETENTION_BY_TYPE` classifies every
+  `NotificationType` (compile-time `Record` + a test against `NOTIFICATION_TYPES`); an unknown
+  wire type is never clearable, so a new type is NOT auto-clearable until someone classifies it.
+  `readAt` (set by `markAsRead`/`markAllAsRead`, cleared when a progress update re-marks a row
+  unread) is the clock for read items. The "Keep notifications for" select
+  (`notifications/NotificationRetentionSetting.svelte`) persists to
+  `localStorage['opentr:notificationRetention']`, a UI preference that `clearUserState` keeps. The
+  "N older notifications cleared" note (`notifications/ClearedNotice.svelte`) reads
+  `clearedNotice`, whose count is fixed at panel open and acknowledged at close **in the store**:
+  the store is the source of truth because the panel is app chrome that must not keep its own
+  copy. **Mounted exactly once, by `routes/+layout.svelte`** (issue #1222): it used to be mounted
+  again by `Navbar.svelte`, so the markup, the click-outside listener and the scroll lock all
+  doubled while it was open. `Navbar.notificationsMount.test.ts` fails on a second mount. The
+  bell button (`.notifications-btn`, a visual-regression mask) stays in the navbar and only toggles
+  `showNotificationsPanel`; `.notifications-panel` / `.notifications-backdrop` are unchanged.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`.
   Each subfolder holds the presentational children split out of one oversized coordinator.

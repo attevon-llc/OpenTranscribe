@@ -14,11 +14,11 @@ would be a silent styling/attribution gap rather than dead code.
 
 **The line this guard enforces, and why it is not arbitrary:** a UI seam may
 outlive its emitter only when an OPEN, MILESTONED issue names that emitter.
-`"summary"` currently has no backend emitter either (see `KINDS_PENDING_AN_EMITTER`
-below), but issue #464 (open, v0.6.0) schedules one — LLM summaries as the
-map-reduce output — so it is a documented seam, not a gap. `"recurrence"` had no
-such issue scheduling its emitter, which is why #830 deleted it rather than
-building one.
+`"recurrence"` had no such issue scheduling its emitter, which is why #830
+deleted it rather than building one. `"summary"` used to be in this position
+too (issue #464) — it now has a real emitter (`citations.KIND_SUMMARY`,
+`build_overview_citations`), so `KINDS_PENDING_AN_EMITTER` below is empty
+until the next kind needs the same escape hatch.
 
 Modelled on `test_chat_sse_contract.py`: parse the REAL source on both sides
 rather than hand-copying the expected sets, because a hand-copied set drifts
@@ -54,12 +54,11 @@ def _string_literals(text: str) -> set[str]:
 #: A STALE entry (the backend has since grown that emitter) must fail this test
 #: too — see assertion 4 below, the `KNOWN_DEAD_DARK_SELECTOR_FILES` idiom from
 #: `theme-parity.test.ts`.
-KINDS_PENDING_AN_EMITTER: dict[str, str] = {
-    "summary": (
-        "#464 (open, v0.6.0) -- LLM summaries as the map-reduce output; that "
-        "lane adds the emitter. See schemas/chat.py's Citation docstring."
-    ),
-}
+#:
+#: Empty since #464 landed `citations.KIND_SUMMARY`/`build_overview_citations`'s
+#: kind selection — kept as a `dict[str, str]` (not deleted) because the shape
+#: is reused the next time a UI seam ships ahead of its emitter.
+KINDS_PENDING_AN_EMITTER: dict[str, str] = {}
 
 
 def backend_citation_kinds(module: object) -> set[str]:
@@ -151,10 +150,19 @@ def test_every_frontend_kind_with_no_backend_emitter_is_an_explicitly_allowed_ex
 
 def test_every_pending_emitter_reason_names_an_issue():
     """The `audit-tests.py` mandatory-reason convention, applied to this
-    allowlist too: a reason that doesn't name an issue is not a reason."""
-    for kind, reason in KINDS_PENDING_AN_EMITTER.items():
-        assert isinstance(reason, str) and reason.strip(), f"{kind}: empty reason"
-        assert "#" in reason, f"{kind}: reason does not name an issue: {reason!r}"
+    allowlist too: a reason that doesn't name an issue is not a reason.
+
+    A generator expression, not a `for` loop: `KINDS_PENDING_AN_EMITTER` is
+    currently empty (see its own docstring), and an assertion whose only
+    evidence is a `for` over a dict that may legitimately be empty is exactly
+    what `audit-tests.py`'s `loop-only` detector exists to flag — this shape
+    is checked structurally by `--selftest`
+    (`tests/unit/test_audit_tests_selftest.py`), not merely by convention.
+    """
+    reasons = list(KINDS_PENDING_AN_EMITTER.items())
+    assert all(
+        isinstance(reason, str) and reason.strip() and "#" in reason for _kind, reason in reasons
+    ), reasons
 
 
 def test_citations_py_sets_every_kind_through_a_named_constant():

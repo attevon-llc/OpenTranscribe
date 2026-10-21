@@ -10,14 +10,18 @@ canonical short names used by faster-whisper / CTranslate2.
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
+
+from app.services.local_models import cache
 
 logger = logging.getLogger(__name__)
 
 # Mapping from faster-whisper short name → HuggingFace repo id.
 # Mirrors faster_whisper.utils._MODELS but kept here to avoid importing
 # the full faster_whisper package in non-GPU contexts (e.g. API server).
+#
+# This is NOT an allow-list. It exists so models already present in the cache under a legacy
+# name (``distil-*``, ``large``, ``turbo``) are still recognised and resolved. What a deployment
+# may newly download or select is ``core/local_whisper_catalog``.
 _SHORT_NAME_TO_REPO: dict[str, str] = {
     "tiny.en": "Systran/faster-whisper-tiny.en",
     "tiny": "Systran/faster-whisper-tiny",
@@ -65,31 +69,19 @@ for _name, _repo in sorted(_SHORT_NAME_TO_REPO.items(), key=lambda x: len(x[0]),
         _REPO_DIR_TO_SHORT[_dir_name] = _name
 
 
-def _get_hf_cache_dir() -> Path:
-    """Return the HuggingFace hub cache directory path."""
-    # In Docker: volume-mounted to /home/appuser/.cache/huggingface
-    # Locally: ~/.cache/huggingface  or HF_HOME / HUGGINGFACE_HUB_CACHE env vars
-    cache = os.getenv("HUGGINGFACE_HUB_CACHE") or os.getenv("HF_HOME")
-    if cache:
-        return Path(cache) / "hub" if "hub" not in cache else Path(cache)
-
-    # MODEL_CACHE_DIR is the project-level setting from .env
-    model_cache = os.getenv("MODEL_CACHE_DIR")
-    if model_cache:
-        return Path(model_cache) / "huggingface" / "hub"
-
-    return Path.home() / ".cache" / "huggingface" / "hub"
-
-
 def discover_local_models() -> list[dict]:
     """Scan the HuggingFace cache for downloaded faster-whisper models.
+
+    A repository counts only when it is complete (``cache.is_complete``): a half-finished
+    download leaves ``*.incomplete`` blobs and no snapshot, and offering it for activation
+    would hand the GPU worker a model it cannot load.
 
     Returns a list of dicts, each with:
         - ``short_name``: the canonical faster-whisper short name (e.g. "large-v3-turbo")
         - ``repo_id``: the HuggingFace repo identifier
         - ``downloaded``: always True (only downloaded models are returned)
     """
-    cache_dir = _get_hf_cache_dir()
+    cache_dir = cache.hub_cache_dir()
     if not cache_dir.is_dir():
         logger.debug("HuggingFace cache dir not found: %s", cache_dir)
         return []
@@ -103,10 +95,8 @@ def discover_local_models() -> list[dict]:
                 continue
             short_name = _REPO_DIR_TO_SHORT.get(entry.name)
             if short_name and short_name not in seen_names:
-                # Verify the model has actual blobs (not just an empty placeholder)
-                blobs_dir = entry / "blobs"
-                if blobs_dir.is_dir() and any(blobs_dir.iterdir()):
-                    repo_id = _SHORT_NAME_TO_REPO.get(short_name, "")
+                repo_id = _SHORT_NAME_TO_REPO.get(short_name, "")
+                if cache.is_complete(repo_id):
                     found.append(
                         {
                             "short_name": short_name,

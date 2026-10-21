@@ -1,9 +1,9 @@
 """Persistence of the engine that ACTUALLY served diarization (issue #706).
 
 Before this file, ``media_file.diarization_provider`` was never written for a locally
-diarized file — the only producer was ``diarization_merge.py``'s in-memory
-``ASRResult.metadata`` dict on the cloud-ASR merge path (covered by
-``test_diarization_merge.py``, unchanged here). Verified live: native diarization ran
+diarized file — the only producer was the cloud-ASR merge path's in-memory
+``ASRResult.metadata`` dict (``diarization_merge.py``, since replaced by ``assign_speakers``
+and the ``DiarizeResult``'s own fields in ``cloud_asr.py``, #1226). Verified live: native diarization ran
 (``native diarization done in 3.1s: ...`` in the worker log) and the column recorded NULL.
 
 The fix threads a resolved ``(provider, model)`` pair from the diarizer instance that
@@ -48,6 +48,7 @@ from app.transcription.diarizer_native import NATIVE_MODEL_NAME
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine.job import JobResult
 from app.transcription.engine.job import RawInferenceResult
+from tests.unit._plan_contexts import plan_context
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
@@ -289,20 +290,15 @@ def _yield_session(db):
 
 @pytest.fixture
 def finalize_seams(db_session, monkeypatch):
-    """Patch finalize.py's out-of-process seams: DB session, notifications, background work.
+    """Patch finalize.py's out-of-process seams: DB session and notifications.
 
     Follows the ``test_cpu_task.py`` fix-shape (backend/tests/CLAUDE.md): only genuinely
-    out-of-process work is patched (websocket notifications, the background thread this
-    function fires off for embeddings/indexing) — the speaker/segment/status DB writes run
-    for real against the test session.
+    out-of-process work is patched (websocket notifications) — the speaker/segment/status
+    DB writes run for real against the test session.
     """
     monkeypatch.setattr(finalize_mod, "session_scope", lambda: _yield_session(db_session))
     monkeypatch.setattr(finalize_mod, "send_progress_notification", lambda *a, **k: None)
     monkeypatch.setattr(finalize_mod, "send_transcript_ready_notification", lambda *a, **k: None)
-    # The background thread does its own embedding-matching/indexing DB work on a second
-    # session this test does not control; replacing it with a no-op keeps the test scoped
-    # to the CRITICAL path this issue is about.
-    monkeypatch.setattr(finalize_mod, "_run_post_gpu_background", lambda *a, **k: None)
 
 
 @pytest.fixture
@@ -351,7 +347,9 @@ class TestProcessAndSaveCriticalPersistsResolvedDiarization:
         }
 
         finalize_mod._process_and_save_critical(
-            _ctx(processing_media_file, normal_user), result, preprocess_context={}
+            _ctx(processing_media_file, normal_user),
+            result,
+            preprocess_context={"pipeline_plan": plan_context()},
         )
 
         db_session.refresh(processing_media_file)
@@ -373,7 +371,9 @@ class TestProcessAndSaveCriticalPersistsResolvedDiarization:
         }
 
         finalize_mod._process_and_save_critical(
-            _ctx(processing_media_file, normal_user), result, preprocess_context={}
+            _ctx(processing_media_file, normal_user),
+            result,
+            preprocess_context={"pipeline_plan": plan_context()},
         )
 
         db_session.refresh(processing_media_file)
@@ -393,39 +393,11 @@ class TestProcessAndSaveCriticalPersistsResolvedDiarization:
         }
 
         finalize_mod._process_and_save_critical(
-            _ctx(processing_media_file, normal_user), result, preprocess_context={}
+            _ctx(processing_media_file, normal_user),
+            result,
+            preprocess_context={"pipeline_plan": plan_context()},
         )
 
         db_session.refresh(processing_media_file)
         assert processing_media_file.status == FileStatus.COMPLETED
         assert processing_media_file.diarization_provider is None
-
-
-class TestProcessTranscriptionResultPersistsResolvedDiarization:
-    """``_process_transcription_result`` — the legacy/CPU-fallback finalize path.
-
-    Same derivation logic, duplicated verbatim in the source (see finalize.py) — covered
-    separately so a future de-duplication cannot silently drop one branch's fix.
-    """
-
-    def test_native_served_run_persists_native_on_the_row(
-        self, db_session, finalize_seams, normal_user, processing_media_file
-    ):
-        result = {
-            "segments": [{"start": 0.0, "end": 1.0, "text": "hi", "speaker": "SPEAKER_00"}],
-            "language": "en",
-            "asr_provider": "local",
-            "asr_model": "large-v3-turbo",
-            "diarization_provider": "native",
-            "diarization_model": NATIVE_MODEL_NAME,
-            "diarization_disabled": False,
-        }
-
-        finalize_mod._process_transcription_result(
-            _ctx(processing_media_file, normal_user), result, audio_file_path="x.wav"
-        )
-
-        db_session.refresh(processing_media_file)
-        assert processing_media_file.status == FileStatus.COMPLETED
-        assert processing_media_file.diarization_provider == "native"
-        assert processing_media_file.diarization_model == NATIVE_MODEL_NAME

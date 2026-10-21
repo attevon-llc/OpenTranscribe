@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _resolve_tag
 from app.api.endpoints.tags._common import logger
@@ -36,7 +37,7 @@ from app.services.tag_service import on_tags_changed
 from app.utils.error_handlers import ErrorHandler
 
 
-@router.post("", response_model=TagSchema)
+@router.post("", response_model=TagSchema, dependencies=[Depends(refuse_under_support_grant)])
 def create_tag(
     tag_data: TagBase,
     db: Session = Depends(get_db),
@@ -267,7 +268,11 @@ def add_tag_to_file(
 
     # Get file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        bypass=ctx.bypass,
+        organization_id=ctx.org_id,
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -322,7 +327,11 @@ def remove_tag_from_file(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        bypass=ctx.bypass,
+        organization_id=ctx.org_id,
     )
     file_id = media_file.id
 

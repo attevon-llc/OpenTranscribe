@@ -15,7 +15,7 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - **Automatic speaker identification** with voice fingerprinting across videos
 - **AI-powered summarization** with customizable prompts and LLM integration
 - **Full-text and semantic search** powered by OpenSearch
-- **Privacy-first processing** - everything runs locally on your infrastructure
+- **Privacy-first processing** - with local transcription, everything runs on your infrastructure; audio is sent to a cloud provider only if you choose one
 
 ## Key Features
 
@@ -26,11 +26,12 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - 40x+ realtime speed on GPU (`large-v3-turbo` default, 6x faster than `large-v2`)
 - Support for audio (MP3, WAV, FLAC, M4A) and video (MP4, MOV, AVI, MKV)
 - Cloud ASR providers: Deepgram, AssemblyAI, OpenAI, Google, AWS, Azure, Speechmatics, Gladia, pyannote.ai
+- A lite image for hosts with no GPU, which transcribes and detects speakers with cloud providers only (see [Deployment Variants](../installation/deployment-variants.md))
 
 ### Smart Speaker Management
-- Automatic speaker diarization using PyAnnote.audio
+- Automatic speaker detection, chosen per user: on this server (the diar-native engine by default, with PyAnnote as a fallback), by your cloud transcription provider, or by the pyannote.ai cloud service
 - Diarization boundary correction — word-boundary smoothing (default on) and an optional acoustic re-check reduce speaker mislabeling at turn boundaries
-- Cross-video speaker recognition with voice fingerprinting
+- Cross-video speaker recognition with voice fingerprinting (voiceprints are always computed on this server, whoever detected the speakers)
 - LLM-enhanced speaker identification
 - Global speaker profiles that persist across transcriptions
 - Confidence scoring and manual verification workflow
@@ -64,16 +65,16 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 ## Why OpenTranscribe?
 
 ### Open Source & Self-Hosted
-- **Full control** over your data - nothing leaves your infrastructure
+- **Full control** over your data - nothing leaves your infrastructure unless you choose a cloud provider
 - **AGPL-3.0 License** - open source with network copyleft protection
 - **No subscription fees** - one-time setup, unlimited use
 - **Privacy-first** - ideal for sensitive content (legal, medical, business)
 
 ### Production-Ready
 - **Docker-based deployment** - runs anywhere
-- **GPU acceleration** - NVIDIA GPUs supported
+- **GPU acceleration** - NVIDIA GPUs supported; CPU-only and cloud-only (lite) variants for hosts without one
 - **Multi-worker architecture** - process multiple files in parallel
-- **Offline capable** - works in airgapped environments
+- **Offline capable** - the full image works in airgapped environments
 
 ### Enterprise Security
 - **Multiple authentication methods** - Local, LDAP/AD, OpenID Connect (any conforming provider), SAML 2.0, PKI/X.509, and trusted-header (reverse proxy) — all can run simultaneously
@@ -130,7 +131,7 @@ cd opentranscribe
                             ▼                    ▼
                     ┌──────────────┐     ┌─────────────┐
                     │  PostgreSQL  │     │  WhisperX   │
-                    │    MinIO     │     │  PyAnnote   │
+                    │    MinIO     │     │ diar-native │
                     │ OpenSearch   │     │     LLM     │
                     └──────────────┘     └─────────────┘
 ```
@@ -147,7 +148,7 @@ cd opentranscribe
 - 16GB+ RAM
 - 8+ CPU cores
 - 100GB+ SSD
-- NVIDIA GPU with 8GB+ VRAM (RTX 3070 or better)
+- NVIDIA GPU with 8GB+ VRAM (RTX 3070 or better) for the full image; the lite image needs no GPU
 
 ## Next Steps
 
@@ -156,5 +157,6 @@ Ready to get started? Follow our [Quick Start Guide](./quick-start.md) to instal
 Or explore:
 - [Installation Guide](../installation/docker-compose.md) - Detailed installation instructions
 - [Hardware Requirements](../installation/hardware-requirements.md) - Hardware recommendations
+- [Deployment Variants](../installation/deployment-variants.md) - Full, CPU-only, or lite (cloud-only)
 - [Configuration](../configuration/environment-variables.md) - Customize your setup
 - [Authentication](../authentication/overview.md) - Enterprise authentication options

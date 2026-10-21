@@ -119,7 +119,7 @@ def list_files_for_tag(
         user_id=current_user.id,
         organization_id=ctx.org_id,
         limit=limit,
-        is_admin=current_user.is_admin,
+        is_admin=ctx.bypass.user_is_admin,
     )
     return TagFileList(
         total=total,

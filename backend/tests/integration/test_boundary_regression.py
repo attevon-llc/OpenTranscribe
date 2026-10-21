@@ -31,7 +31,6 @@ Refs: issue #193, docs/DIARIZATION_BOUNDARY_FIX_PLAN.md.
 from __future__ import annotations
 
 import json
-import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -79,7 +78,9 @@ def _finalize_segments() -> Any:
     return finalize_segments
 
 
-def _score(segments: list[dict[str, Any]], ref_words: list[dict[str, Any]]) -> dict[str, Any]:
+def _score(
+    segments: list[dict[str, Any]], ref_words: list[dict[str, Any]], tmp_dir: Path
+) -> dict[str, Any]:
     """WSER + island count + collar-0 DER for one variant against parallel ref words."""
     from app.utils.diarization_metrics import count_bleed_islands
     from app.utils.diarization_metrics import der
@@ -97,11 +98,13 @@ def _score(segments: list[dict[str, Any]], ref_words: list[dict[str, Any]]) -> d
     hyp_seq = map_hyp_to_ref([hw.get("speaker") for hw in hyp_words], w.get("perm", {}))
     islands = count_bleed_islands(ref_seq, hyp_seq, max_island=3)
 
-    der_c0 = _collar0_der(der, words_to_rttm, ref_words, hyp_words)
+    der_c0 = _collar0_der(der, words_to_rttm, ref_words, hyp_words, tmp_dir)
     return {"wser": w["wser"], "islands": len(islands), "der_c0": der_c0}
 
 
-def _collar0_der(der: Any, words_to_rttm: Any, ref_words: list, hyp_words: list) -> float | None:
+def _collar0_der(
+    der: Any, words_to_rttm: Any, ref_words: list, hyp_words: list, tmp_dir: Path
+) -> float | None:
     """Collar-0 DER from word-derived RTTM turns. None if pyannote.metrics absent."""
     from app.utils.diarization_metrics import read_rttm
 
@@ -109,13 +112,9 @@ def _collar0_der(der: Any, words_to_rttm: Any, ref_words: list, hyp_words: list)
         text = words_to_rttm(words, uri="fixture")
         if not text.strip():
             return []
-        with tempfile.NamedTemporaryFile("w", suffix=".rttm", delete=False) as fh:
-            fh.write(text)
-            tmp = fh.name
-        try:
-            return read_rttm(tmp)
-        finally:
-            Path(tmp).unlink(missing_ok=True)
+        rttm = tmp_dir / "turns.rttm"
+        rttm.write_text(text)
+        return read_rttm(str(rttm))
 
     ref_turns, hyp_turns = _turns(ref_words), _turns(hyp_words)
     if not ref_turns or not hyp_turns:
@@ -146,7 +145,7 @@ def _discover_fixtures() -> list[Path]:
     # speakrs regressed — which is the first thing you need to know.
     ids=lambda p: p.name.removesuffix(".rawinfer.json") if p is not None else "none",
 )
-def test_fixture_regression(fixture_path: Path | None) -> None:
+def test_fixture_regression(fixture_path: Path | None, tmp_path: Path) -> None:
     """Replay a frozen GPU fixture through CPU finalize + smoothing; assert no regression.
 
     A sibling ``<name>.baseline.json`` (``{"off": {...}, "on": {...}}``) and a
@@ -190,8 +189,8 @@ def test_fixture_regression(fixture_path: Path | None) -> None:
     if isinstance(ref_words, dict):
         ref_words = ref_words.get("words", [])
 
-    off = _score(finalize_segments(deepcopy(assigned), off_cfg), ref_words)
-    on = _score(finalize_segments(deepcopy(assigned), on_cfg), ref_words)
+    off = _score(finalize_segments(deepcopy(assigned), off_cfg), ref_words, tmp_path)
+    on = _score(finalize_segments(deepcopy(assigned), on_cfg), ref_words, tmp_path)
 
     # Smoothing must reduce or hold WSER (5% slack absorbs scoring noise).
     assert on["wser"] <= off["wser"] * 1.05, (
@@ -260,7 +259,7 @@ def _build_bleed_segments() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]
     return assigned, ref_words
 
 
-def test_synthetic_bleed_fixed() -> None:
+def test_synthetic_bleed_fixed(tmp_path: Path) -> None:
     """A 2-word bleed island is repaired by ON smoothing with zero islands introduced.
 
     Self-contained: no GPU, no fixtures, no engine. Exercises finalize_segments OFF/ON
@@ -271,8 +270,8 @@ def test_synthetic_bleed_fixed() -> None:
 
     assigned, ref_words = _build_bleed_segments()
 
-    off = _score(finalize_segments(deepcopy(assigned), off_cfg), ref_words)
-    on = _score(finalize_segments(deepcopy(assigned), on_cfg), ref_words)
+    off = _score(finalize_segments(deepcopy(assigned), off_cfg), ref_words, tmp_path)
+    on = _score(finalize_segments(deepcopy(assigned), on_cfg), ref_words, tmp_path)
 
     # OFF leaves the planted 2-word island in place.
     assert off["islands"] >= 1, f"expected a planted bleed island in OFF, got {off['islands']}"

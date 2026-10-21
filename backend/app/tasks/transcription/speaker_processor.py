@@ -404,8 +404,41 @@ def apply_sidecar_gender(db: Session, media_file_id: int, speaker_gender: dict |
         verdict = speaker_gender.get(speaker.name)
         if not verdict:
             continue
-        speaker.predicted_gender = verdict.get("label")
-        speaker.attribute_confidence = {"gender": round(float(verdict.get("confidence", 0.0)), 3)}
+        label = verdict.get("label")
+        confidence = verdict.get("confidence")
+        # A verdict with no label or no confidence is the sidecar declining to classify this
+        # speaker. Claim nothing and leave it to the enrichment task: `.get(key, default)` only
+        # covers an ABSENT key, so a present null used to reach float(None) and fail the whole
+        # transcription.
+        if not label or confidence is None:
+            continue
+        speaker.predicted_gender = label
+        speaker.attribute_confidence = {"gender": round(float(confidence), 3)}
         speaker.attributes_predicted_at = now
         updated += 1
     return updated
+
+
+def apply_sidecar_gender_for_user(
+    db: Session, media_file_id: int, user_id: int, speaker_gender: dict | None
+) -> int:
+    """``apply_sidecar_gender``, but only when the file's owner allows gender prediction.
+
+    The sidecar classifies gender whether or not the user wants it, so the opt-out has to
+    be honoured here, at the write (issue #1200): both "speaker attribute detection" and
+    "gender detection" must be on. The diarizer's own ``DIAR_NATIVE_GENDER`` env switch
+    stays an additional hard off (nothing arrives in ``speaker_gender`` when it is off).
+    """
+    if not speaker_gender:
+        return 0
+
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+
+    if not resolve_speaker_attribute_flags(db, user_id).gender_prediction_allowed:
+        logger.info(
+            "Not storing sidecar gender for file %d: gender prediction is off for user %d",
+            media_file_id,
+            user_id,
+        )
+        return 0
+    return apply_sidecar_gender(db, media_file_id, speaker_gender)

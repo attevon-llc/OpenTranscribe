@@ -133,7 +133,7 @@ class TestGracefulDegradation:
 
         monkeypatch.setattr(type(limiter), "redis", property(_poisoned))
 
-        assert limiter.check_rate_limit(123) == (True, "")
+        assert limiter.check_rate_limit(123) == (True, "", None)
         limiter.record_download(123)  # must be a no-op, not raise
         assert limiter.get_remaining_quota(123) == {
             "hourly_remaining": -1,
@@ -147,7 +147,7 @@ class TestGracefulDegradation:
         limiter = yrl.YouTubeRateLimiter()
         monkeypatch.setattr(type(limiter), "redis", property(lambda self: None))
 
-        assert limiter.check_rate_limit(123) == (True, "")
+        assert limiter.check_rate_limit(123) == (True, "", None)
 
     def test_an_unreachable_redis_reports_the_unlimited_sentinel(self, monkeypatch):
         monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", True)
@@ -206,17 +206,21 @@ class TestSlidingWindowAgainstRealRedis:
         limiter.record_download(user_id)
         limiter.record_download(user_id)  # 2 of 3
 
-        assert limiter.check_rate_limit(user_id) == (True, "")
+        assert limiter.check_rate_limit(user_id) == (True, "", None)
 
     def test_blocks_exactly_at_the_hourly_limit_boundary(self, limiter_env):
         limiter, user_id = limiter_env
         for _ in range(3):  # exactly the configured limit
             limiter.record_download(user_id)
 
-        allowed, reason = limiter.check_rate_limit(user_id)
+        allowed, reason, retry_after = limiter.check_rate_limit(user_id)
 
         assert allowed is False
         assert "Hourly limit exceeded" in reason
+        # Real reset time (~1h away, since the oldest entry was just written),
+        # never the sentinel absence a blocked call must not report.
+        assert retry_after is not None
+        assert 3595 <= retry_after <= 3600
 
     def test_daily_limit_blocks_even_with_hourly_headroom(self, limiter_env, monkeypatch):
         limiter, user_id = limiter_env
@@ -224,10 +228,12 @@ class TestSlidingWindowAgainstRealRedis:
         for _ in range(5):  # the configured daily limit
             limiter.record_download(user_id)
 
-        allowed, reason = limiter.check_rate_limit(user_id)
+        allowed, reason, retry_after = limiter.check_rate_limit(user_id)
 
         assert allowed is False
         assert "Daily limit exceeded" in reason
+        assert retry_after is not None
+        assert 86395 <= retry_after <= 86400
 
     def test_entries_older_than_the_window_are_pruned_and_excluded(self, limiter_env):
         limiter, user_id = limiter_env
@@ -242,7 +248,7 @@ class TestSlidingWindowAgainstRealRedis:
         limiter.record_download(user_id)
         limiter.record_download(user_id)
 
-        allowed, _ = limiter.check_rate_limit(user_id)
+        allowed, _reason, _retry_after = limiter.check_rate_limit(user_id)
 
         assert allowed is True
         # And check_rate_limit's own zremrangebyscore must have swept it out.

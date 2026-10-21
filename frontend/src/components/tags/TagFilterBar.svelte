@@ -100,7 +100,6 @@
     min-width: 7rem;
     height: 37.4px;
     padding: 0.35rem 0.5rem;
-    border-radius: 6px;
     font-size: 0.875rem;
   }
 

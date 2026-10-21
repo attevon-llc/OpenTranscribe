@@ -217,6 +217,7 @@ def start_transcription_task(
     whisper_model: str | None = None,
     disable_diarization: bool | None = None,
     task_id: str | None = None,
+    reuse_requested_options: bool = False,
 ) -> str | None:
     """
     Start the background transcription and waveform generation tasks in parallel.
@@ -253,6 +254,7 @@ def start_transcription_task(
             disable_diarization=disable_diarization,
             whisper_model=whisper_model,
             task_id=task_id,
+            reuse_requested_options=reuse_requested_options,
         )
         # Waveform generation is dispatched from the preprocess task once the
         # 16 kHz WAV is staged in MinIO temp (see Phase 2 PR #3: eliminates
@@ -298,6 +300,7 @@ def dispatch_upload_pipeline(
     max_speakers: int | None,
     num_speakers: int | None,
     task_id: str | None,
+    disable_diarization: bool | None = None,
 ) -> str | None:
     """Shared post-commit dispatch tail for BOTH upload ingest paths.
 
@@ -305,15 +308,10 @@ def dispatch_upload_pipeline(
     The legacy multipart and presigned ``/complete`` routes both call this so
     the "what happens after the bytes land" logic lives in ONE place — the
     thumbnail/validation gaps came from these two tails being hand-copied and
-    drifting. Call AFTER the row is committed. ``whisper_model`` falls back to
-    the per-file requested model when not explicitly provided.
+    drifting. Call AFTER the row is committed. Any option the caller leaves ``None`` falls
+    back to what ``/prepare`` recorded on the row (model, speaker range, skipped
+    diarization), and a model stored before the deployment locked model choice is dropped.
     """
-    if not whisper_model and db_file.requested_whisper_model:
-        whisper_model = str(db_file.requested_whisper_model)
-    # A model stored at /prepare before the deployment locked model choice must not apply.
-    from app.core.locked_settings import effective_whisper_model
-
-    whisper_model = effective_whisper_model(whisper_model, None)
     dispatch_thumbnail_for_video(db_file, user_id)
     return start_transcription_task(
         db_file.id,
@@ -322,7 +320,9 @@ def dispatch_upload_pipeline(
         max_speakers,
         num_speakers,
         whisper_model=whisper_model,
+        disable_diarization=disable_diarization,
         task_id=task_id,
+        reuse_requested_options=True,
     )
 
 
@@ -336,6 +336,7 @@ def dispatch_upload_pipeline_or_mark_error(
     max_speakers: int | None,
     num_speakers: int | None,
     task_id: str | None,
+    disable_diarization: bool | None = None,
 ) -> str | None:
     """``dispatch_upload_pipeline``, but a failure leaves a VISIBLE row (issue #905).
 
@@ -356,6 +357,7 @@ def dispatch_upload_pipeline_or_mark_error(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             task_id=task_id,
+            disable_diarization=disable_diarization,
         )
     except Exception as exc:
         _mark_upload_dispatch_failed(db, file_id, user_id, exc)

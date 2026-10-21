@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from typing import Literal
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -22,6 +23,7 @@ from app.db.base import get_db
 from app.models.system_settings import SystemSettings
 from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import set_setting
+from app.utils.lite_mode import refuse_on_lite
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -115,13 +117,52 @@ def _resolve_setting(db: Session, field: str) -> dict[str, Any]:
     return {"value": _coerce(field, default), "source": "default"}
 
 
-@router.get("")
+class EngineSettingValue(BaseModel):
+    """One engine setting's effective value and where it came from."""
+
+    value: Any
+    source: Literal["db", "env", "default"]
+
+
+class EngineSettingsResponse(BaseModel):
+    """Every runtime-tunable engine setting, plus a read-only look at the diarization sidecar."""
+
+    transcriber_backend: EngineSettingValue
+    diarizer_backend: EngineSettingValue
+    diarizer_require_sidecar: EngineSettingValue
+    boundary_smoothing_enabled: EngineSettingValue
+    boundary_acoustic_recheck_enabled: EngineSettingValue
+    boundary_acoustic_cosine_margin: EngineSettingValue
+    boundary_acoustic_max_word_dur: EngineSettingValue
+    diarizer_sidecar_status: Literal["reachable", "unreachable", "unknown"] = Field(
+        description=(
+            "Whether the diar-native sidecar can serve right now, from the cached readiness "
+            "probe. 'unknown' when the probe itself could not run."
+        )
+    )
+
+
+def _sidecar_status() -> Literal["reachable", "unreachable", "unknown"]:
+    """Read-only sidecar state for the admin UI; never raises and never echoes failure text."""
+    try:
+        from app.transcription.diarizer_native import sidecar_ready
+
+        return "reachable" if sidecar_ready() else "unreachable"
+    except Exception as exc:
+        logger.warning("Diarizer sidecar status probe failed (%s)", type(exc).__name__)
+        return "unknown"
+
+
+@router.get("", response_model=EngineSettingsResponse)
 def get_engine_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Return current engine settings with source annotation (db / env / default)."""
-    return {field: _resolve_setting(db, field) for field in _KEYS}
+    return {
+        **{field: _resolve_setting(db, field) for field in _KEYS},
+        "diarizer_sidecar_status": _sidecar_status(),
+    }
 
 
 class _EngineSettingsUpdate(BaseModel):
@@ -140,10 +181,19 @@ def update_engine_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
-    """Write one or more engine settings to the DB. Only provided (non-None) fields are saved."""
+    """Write one or more engine settings to the DB. Only provided (non-None) fields are saved.
+
+    Lite has no local transcription or speaker detection engine (#1228): choosing one is
+    409 ``local_asr_unavailable`` / ``local_diarization_unavailable``. Boundary smoothing
+    stays editable there; it applies to any diarized transcript.
+    """
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update")
+    if "transcriber_backend" in updates:
+        refuse_on_lite("local_asr_unavailable")
+    if {"diarizer_backend", "diarizer_require_sidecar"} & updates.keys():
+        refuse_on_lite("local_diarization_unavailable")
 
     if "transcriber_backend" in updates:
         from app.transcription.engine.backends import VALID_TRANSCRIBER_BACKENDS

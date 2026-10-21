@@ -11,6 +11,10 @@ Reusable `use:` actions for DOM behaviors that don't belong in a component. Impo
   the node. Capture-phase document listener, so it works even when inner handlers call
   `stopPropagation`.
 
+- `anchoredPanel.ts` — places every dropdown/menu/popover panel (portal to `<body>`, fixed, flips above,
+  caps height, clamps, RTL, `data-side`). Built on `$lib/popoverPosition.ts`; rule and usage in
+  `components/ui/CLAUDE.md`. `portal.ts` is the bare portal it generalises.
+
 ## Conventions / patterns
 
 - Usage:

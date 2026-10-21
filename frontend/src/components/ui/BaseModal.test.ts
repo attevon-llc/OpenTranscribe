@@ -140,12 +140,46 @@ describe('BaseModal height prop', () => {
     expect(el.style.height).toBe('');
   });
 
-  it('still applies maxWidth alongside it', () => {
+  it('still applies the size scale alongside it', () => {
     const { container } = render(BaseModal, {
-      props: { isOpen: true, title: 'Both', maxWidth: '720px', height: '780px' },
+      props: { isOpen: true, title: 'Both', size: 'lg', height: '780px' },
     });
     const el = container.querySelector('.modal-container') as HTMLElement;
     expect(el.style.maxWidth).toBe('720px');
     expect(el.style.height).toBe('780px');
+  });
+
+  describe('size scale', () => {
+    const widthOf = (size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl') => {
+      const { container } = render(BaseModal, {
+        props: { isOpen: true, title: 'W', ...(size ? { size } : {}) },
+      });
+      const el = container.querySelector('.modal-container') as HTMLElement;
+      return el.style.maxWidth;
+    };
+
+    it('defaults to the 600px form width', () => {
+      expect(widthOf()).toBe('600px');
+    });
+
+    it.each([
+      ['sm', '480px'],
+      ['md', '600px'],
+      ['lg', '720px'],
+      ['xl', '960px'],
+      ['2xl', '1200px'],
+    ] as const)('maps %s to %s', (size, px) => {
+      expect(widthOf(size)).toBe(px);
+    });
+  });
+
+  it('uses a caller-supplied titleId for the dialog name', () => {
+    const { container } = render(BaseModal, {
+      props: { isOpen: true, title: 'Named', titleId: 'my-title' },
+    });
+    expect(container.querySelector('h2')?.id).toBe('my-title');
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-labelledby')).toBe(
+      'my-title'
+    );
   });
 });

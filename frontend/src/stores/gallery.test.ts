@@ -219,6 +219,7 @@ describe('resetPagination', () => {
 describe('saveFilters / resetFilters', () => {
   it('copies arrays/objects rather than holding the caller reference', () => {
     const tags = ['a', 'b'];
+    const owners = ['owner-uuid-1'];
     const dateRange: { from: Date | null; to: Date | null } = {
       from: new Date('2026-01-01'),
       to: null,
@@ -230,19 +231,21 @@ describe('saveFilters / resetFilters', () => {
       selectedCollectionId: null,
       dateRange,
       durationRange: { min: null, max: null },
-      fileSizeRange: { min: null, max: null },
       selectedFileTypes: [],
       selectedStatuses: [],
       ownershipFilter: 'all',
+      selectedOwners: owners,
       sortBy: 'upload_time',
       sortOrder: 'desc',
     });
 
     tags.push('mutated-after-save');
+    owners.push('mutated-after-save');
     dateRange.from = null;
 
     const state = get(galleryStore);
     expect(state.filterSelectedTags).toEqual(['a', 'b']);
+    expect(state.filterSelectedOwners).toEqual(['owner-uuid-1']);
     expect(state.filterDateRange.from).toEqual(new Date('2026-01-01'));
   });
 
@@ -254,10 +257,10 @@ describe('saveFilters / resetFilters', () => {
       selectedCollectionId: 'c1',
       dateRange: { from: new Date(), to: new Date() },
       durationRange: { min: 1, max: 2 },
-      fileSizeRange: { min: 1, max: 2 },
       selectedFileTypes: ['mp3'],
       selectedStatuses: ['completed'],
       ownershipFilter: 'mine',
+      selectedOwners: ['owner-uuid-1'],
       sortBy: 'filename',
       sortOrder: 'asc',
     });
@@ -268,6 +271,7 @@ describe('saveFilters / resetFilters', () => {
     expect(state.filterSearchQuery).toBe('');
     expect(state.filterSelectedTags).toEqual([]);
     expect(state.filterOwnershipFilter).toBe('all');
+    expect(state.filterSelectedOwners).toEqual([]);
     expect(state.filterSortOrder).toBe('desc');
   });
 });

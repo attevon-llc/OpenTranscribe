@@ -33,6 +33,10 @@ export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current directory.
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '');
+  // Dev-only override so a second dev server (another checkout, another port) can reach a
+  // backend that is not the compose service name, e.g. VITE_API_PROXY_TARGET=http://localhost:5374.
+  const apiTarget = env.VITE_API_PROXY_TARGET || 'http://backend:8080';
+  const wsTarget = apiTarget.replace(/^http/, 'ws');
 
   // Bundle-size analysis is opt-in (ANALYZE=true or `--mode analyze`) so normal
   // builds are completely unaffected. Emits dist/stats.html after the build.
@@ -60,11 +64,11 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/health': {
-          target: 'http://backend:8080',
+          target: apiTarget,
           changeOrigin: true,
         },
         '/api': {
-          target: 'http://backend:8080',
+          target: apiTarget,
           changeOrigin: true,
           rewrite: (path) => path,
           secure: false,
@@ -86,8 +90,11 @@ export default defineConfig(({ mode }) => {
           },
         },
         '/api/ws': {
-          target: 'ws://backend:8080',
+          target: wsTarget,
           ws: true,
+          // The backend's WebSocket origin check allows an origin equal to the request's own
+          // origin; with an overridden target the browser's origin is another dev port.
+          ...(env.VITE_API_PROXY_TARGET ? { headers: { Origin: apiTarget } } : {}),
           changeOrigin: true,
           rewrite: (path) => path,
         },

@@ -2,6 +2,7 @@
   import { t } from '$stores/locale';
   import axios from 'axios';
   import BaseModal from './ui/BaseModal.svelte';
+  import { SLOT, splitAtSlot } from '$lib/i18n/slots';
 
   export let showModal = false;
 
@@ -25,6 +26,11 @@
     Boolean(serverVersion) &&
     serverVersion !== 'unknown' &&
     normalizeVersion(serverVersion) !== normalizeVersion(buildVersion);
+
+  // The licence and NOTICE links sit INSIDE one translated sentence each (issue #1222); the
+  // translator places the {{license}} / {{notice}} placeholder, we render the link there.
+  $: [licenseBefore, licenseAfter] = splitAtSlot($t('about.legal.licensedUnder', { license: SLOT }));
+  $: [noticeBefore, noticeAfter] = splitAtSlot($t('about.legal.thirdParty', { notice: SLOT }));
 
   function closeModal() {
     showModal = false;
@@ -80,7 +86,7 @@
 </script>
 
 <div class="about-modal-wrapper">
-<BaseModal isOpen={showModal} onClose={closeModal} maxWidth="800px" zIndex={1300}>
+<BaseModal isOpen={showModal} onClose={closeModal} size="xl" zIndex={1300}>
   <svelte:fragment slot="header">
     <div class="header-title-group">
       <h2 class="modal-title">{$t('about.title')}</h2>
@@ -357,13 +363,12 @@
               <h3>{$t('about.legal.title')}</h3>
 
               <p class="legal-line">
-                {$t('about.legal.licensedUnder')}
-                <a
+                {licenseBefore}<a
                   href="{REPOSITORY_URL}/blob/master/LICENSE"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="inline-link">{$t('about.legal.licenseName')}</a
-                >{$t('about.legal.licensedUnderSuffix')}
+                >{licenseAfter}
               </p>
 
               <p class="legal-line">
@@ -379,13 +384,12 @@
               </p>
 
               <p class="legal-line">
-                {$t('about.legal.thirdParty')}
-                <a
+                {noticeBefore}<a
                   href="{REPOSITORY_URL}/blob/master/NOTICE"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="inline-link">{$t('about.legal.noticeName')}</a
-                >{$t('about.legal.thirdPartySuffix')}
+                >{noticeAfter}
               </p>
 
               <p class="legal-caveat">{$t('about.legal.sourceOfferModified')}</p>

@@ -1,8 +1,8 @@
 """Tests for ``clean_garbage_words`` in ``app/tasks/transcription/finalize.py``.
 
 ``clean_garbage_words`` is the last thing that **edits transcript text** before it is
-persisted. Both finalize paths call it (``_process_transcription_result`` L147 and
-``_process_and_save_critical`` L270) on *every* segment of *every* file whenever the
+persisted. The finalize path calls it (``_process_and_save_critical``) on *every*
+segment of *every* file whenever the
 DB-backed ``garbage_cleanup_enabled`` setting is on — which it is by default — and its
 output goes straight into ``save_transcript_segments``.
 

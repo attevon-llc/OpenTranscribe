@@ -2,6 +2,7 @@
  * API client for authentication configuration management.
  */
 import axiosInstance from '../axios';
+import { invalidateAuthMethods } from '$stores/auth';
 
 export interface AuthConfigResponse {
   id: number;
@@ -249,6 +250,8 @@ export class AuthConfigApi {
 
   static async updateCategory(category: string, config: Record<string, any>): Promise<void> {
     await axiosInstance.put(`/admin/auth-config/${category}`, config);
+    // The public /auth/methods answer is derived from this config and is shared for a few seconds.
+    invalidateAuthMethods();
   }
 
   static async testConnection(

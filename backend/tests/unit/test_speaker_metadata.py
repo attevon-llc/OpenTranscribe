@@ -89,40 +89,39 @@ def indices(monkeypatch):
     monkeypatch.setattr(settings, "OPENSEARCH_SPEAKER_INDEX", base_name)
     v3 = get_speaker_index_v3()
     v4 = get_speaker_index_v4()
-    _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
-    _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
-    # `_ensure_versioned_speaker_index` swallows CLUSTER_UNAVAILABLE_ERRORS (which include 4xx
-    # TransportErrors such as a shard-limit validation_exception) and returns without raising,
-    # so under cluster pressure this fixture can "succeed" having created nothing. Fail here,
-    # naming the cause, rather than three lines later as a mystery stale-document assertion.
-    for name in (v3, v4):
-        assert client.indices.exists(index=name), (
-            f"index {name} was not created — _ensure_versioned_speaker_index swallowed the "
-            "cluster error (issue #486)"
-        )
     alias = get_speaker_index()
-    client.indices.put_alias(index=v4, name=alias)
-
     transcript_index = f"test_transcripts_meta_{uuid_pkg.uuid4().hex[:10]}"
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", transcript_index)
-    client.indices.create(
-        index=transcript_index,
-        body={
-            "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0}},
-            "mappings": {
-                "properties": {
-                    "file_id": {"type": "integer"},
-                    "file_uuid": {"type": "keyword"},
-                    "user_id": {"type": "integer"},
-                    "title": {"type": "text"},
-                    "speakers": {"type": "keyword"},
-                    "upload_time": {"type": "date"},
-                }
-            },
-        },
-    )
 
     try:
+        _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
+        _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
+        # `_ensure_versioned_speaker_index` swallows CLUSTER_UNAVAILABLE_ERRORS (which include 4xx
+        # TransportErrors such as a shard-limit validation_exception) and returns without raising,
+        # so under cluster pressure this fixture can "succeed" having created nothing. Fail here,
+        # naming the cause, rather than three lines later as a mystery stale-document assertion.
+        for name in (v3, v4):
+            assert client.indices.exists(index=name), (
+                f"index {name} was not created — _ensure_versioned_speaker_index swallowed the "
+                "cluster error (issue #486)"
+            )
+        client.indices.put_alias(index=v4, name=alias)
+        client.indices.create(
+            index=transcript_index,
+            body={
+                "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0}},
+                "mappings": {
+                    "properties": {
+                        "file_id": {"type": "integer"},
+                        "file_uuid": {"type": "keyword"},
+                        "user_id": {"type": "integer"},
+                        "title": {"type": "text"},
+                        "speakers": {"type": "keyword"},
+                        "upload_time": {"type": "date"},
+                    }
+                },
+            },
+        )
         yield SimpleNamespace(
             client=client, v3=v3, v4=v4, alias=alias, transcript_index=transcript_index
         )

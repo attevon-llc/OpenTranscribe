@@ -152,10 +152,9 @@
   .comparison-item { flex: 1; text-align: center; }
 
   .comparison-label {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: 0.25rem;
-    text-transform: uppercase;
     font-weight: 500;
   }
 
@@ -231,7 +230,7 @@
   }
 
   .choice-option.selected .choice-header svg {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .choice-title {

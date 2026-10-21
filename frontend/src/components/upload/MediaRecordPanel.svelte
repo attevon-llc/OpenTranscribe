@@ -213,16 +213,7 @@
 
   .device-select {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    transition: border-color 0.15s ease;
   }
-
-  .device-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
   .device-select:disabled { opacity: 0.6; cursor: not-allowed; }
 
   /* Recording controls */
@@ -301,7 +292,7 @@
   .duration-badge {
     font-family: 'Monaco', 'Menlo', monospace;
     font-size: 0.9375rem;
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(59, 130, 246, 0.1);
     padding: 0.1875rem 0.625rem;
@@ -381,7 +372,7 @@
   .settings-link {
     background: none;
     border: none;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-size: 0.6875rem;
     cursor: pointer;
     text-decoration: underline;

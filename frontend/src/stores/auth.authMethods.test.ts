@@ -20,7 +20,7 @@ vi.mock('$lib/session/clearUserState', () => ({ clearUserState: vi.fn() }));
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 
 import axiosInstance from '$lib/axios';
-import { getAuthMethods, login } from './auth';
+import { getAuthMethods, invalidateAuthMethods, login } from './auth';
 
 const mockedGet = vi.mocked(axiosInstance.get);
 const mockedPost = vi.mocked(axiosInstance.post);
@@ -28,6 +28,71 @@ const mockedPost = vi.mocked(axiosInstance.post);
 describe('getAuthMethods', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    invalidateAuthMethods();
+  });
+
+  describe('shared between the layout and the login page', () => {
+    it('concurrent callers share one request', async () => {
+      mockedGet.mockResolvedValue({ data: { methods: ['local'] } } as never);
+
+      const [a, b] = await Promise.all([getAuthMethods(), getAuthMethods()]);
+
+      expect(mockedGet).toHaveBeenCalledTimes(1);
+      expect(a).toBe(b);
+    });
+
+    it('a caller right after the first settled gets the same answer without a request', async () => {
+      mockedGet.mockResolvedValue({ data: { methods: ['local'] } } as never);
+
+      const boot = await getAuthMethods(); // the layout's boot call
+      const loginPage = await getAuthMethods(); // the login page mounting a moment later
+
+      expect(mockedGet).toHaveBeenCalledTimes(1);
+      expect(loginPage).toEqual(boot);
+      expect(loginPage.methods).toEqual(['local']);
+    });
+
+    it('does not remember a failure: the next caller asks the server again', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockedGet.mockRejectedValueOnce(new Error('down'));
+      mockedGet.mockResolvedValueOnce({ data: { methods: ['oidc'] } } as never);
+
+      const failed = await getAuthMethods();
+      const recovered = await getAuthMethods();
+
+      expect(failed.methods).toEqual(['local']);
+      expect(recovered.methods).toEqual(['oidc']);
+      expect(mockedGet).toHaveBeenCalledTimes(2);
+    });
+
+    it('invalidateAuthMethods() forces a fresh request (after an admin edits the config)', async () => {
+      mockedGet.mockResolvedValueOnce({ data: { methods: ['local'] } } as never);
+      mockedGet.mockResolvedValueOnce({ data: { methods: ['oidc'] } } as never);
+
+      await getAuthMethods();
+      invalidateAuthMethods();
+      const afterEdit = await getAuthMethods();
+
+      expect(mockedGet).toHaveBeenCalledTimes(2);
+      expect(afterEdit.methods).toEqual(['oidc']);
+    });
+
+    it('expires after the freshness window', async () => {
+      vi.useFakeTimers();
+      try {
+        mockedGet.mockResolvedValueOnce({ data: { methods: ['local'] } } as never);
+        mockedGet.mockResolvedValueOnce({ data: { methods: ['oidc'] } } as never);
+
+        await getAuthMethods();
+        vi.advanceTimersByTime(60_000);
+        const later = await getAuthMethods();
+
+        expect(mockedGet).toHaveBeenCalledTimes(2);
+        expect(later.methods).toEqual(['oidc']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('passes the backend flags through untouched', async () => {

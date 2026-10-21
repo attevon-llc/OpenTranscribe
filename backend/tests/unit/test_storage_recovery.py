@@ -258,6 +258,31 @@ def test_match_metadata_ignores_rows_without_duration():
     assert recovery.match_metadata_by_duration(rows, metadata) == {}
 
 
+def test_youtube_shaped_row_matches_on_container_duration_but_not_speech_extent():
+    """Pins issue #969's second-order finding: this matcher was systematically dead.
+
+    Real numbers from the live dev DB's "Joe Asks Trump" row: YouTube's own sidecar
+    duration is 358.19s (real container length). Pre-#969, ``storage.py`` overwrote the
+    row's stored duration with the transcript's speech extent, 347.24s -- an 10.95s gap,
+    5.5x this matcher's own 2.0s tolerance. No real YouTube row could ever match.
+
+    A row correctly holding the CONTAINER duration (358.19, what #969's fix now
+    preserves) matches. The SAME row holding the pre-fix SPEECH EXTENT (347.24) does
+    not -- proving the fix is what restores this feature, not a widened tolerance.
+    """
+    metadata = {
+        "yt1": {"youtube_id": "yt1", "title": "Joe Asks Trump", "duration": 358.19},
+    }
+
+    container_duration_row = [SimpleNamespace(id=1, duration=358.19)]
+    assert recovery.match_metadata_by_duration(container_duration_row, metadata) == {
+        1: metadata["yt1"]
+    }
+
+    speech_extent_row = [SimpleNamespace(id=1, duration=347.24)]
+    assert recovery.match_metadata_by_duration(speech_extent_row, metadata) == {}
+
+
 def test_apply_metadata_matches_updates_title(db_session, normal_user):
     mf = recovery.register_object(
         db_session, object_name="media/1/uuid.mp4", size=10, user=normal_user

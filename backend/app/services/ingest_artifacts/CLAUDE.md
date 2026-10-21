@@ -33,7 +33,11 @@ directory, you have misread the stage.
 - `provenance.py` — the D3 tagged union and its validator.
 - `sizing.py` — **the measured embedding window** and everything derived from it.
 - `index_mapping.py` — the OpenSearch mapping, id scheme and document builder for the digest
-  plane. Defined here in Stage 2, **applied by Stage 3** (`_INDEX_VERSION = 6`); Stage 3
+  plane **and, since issue #963, the summary plane** — `build_summary_documents` reads
+  `media_file.summary_data`'s leaf walk (imported from `services/search/summary_search`, never
+  restated) and builds documents with **no LLM call and no I/O**, so the package's "nothing
+  here calls an LLM or touches OpenSearch" invariant survives: this module still only builds
+  dicts. Defined here in Stage 2, **applied by Stage 3** (`_INDEX_VERSION = 6`); Stage 3
   imports every name in it rather than restating any of them.
 
 Task: `app/tasks/ingest_artifacts_task.py` (`artifacts.generate_file_facts`, **nlp** queue),

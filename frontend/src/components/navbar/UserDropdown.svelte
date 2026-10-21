@@ -10,9 +10,11 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
+  import { prefetchSettingsModal } from '$lib/settings/settingsModalLoader';
   import UserMenuExtras from '$lib/cloud/components/UserMenuExtras.svelte';
 
   /** The currently signed-in user (null when unauthenticated). */
@@ -37,6 +39,9 @@
 
   /** @type {HTMLDivElement | null} */
   let dropdownRef: HTMLDivElement | null = null;
+  let buttonRef: HTMLButtonElement;
+  /** Portaled to <body> by anchoredPanel, so outside `dropdownRef`. */
+  let menuRef: HTMLDivElement | undefined;
 
   /**
    * Toggle the user dropdown menu
@@ -94,7 +99,12 @@
    * @param {MouseEvent} event - The mouse event
    */
   function handleClickOutside(event: MouseEvent) {
-    if (dropdownRef && event.target && !dropdownRef.contains(event.target as Node)) {
+    if (
+      dropdownRef &&
+      event.target &&
+      !dropdownRef.contains(event.target as Node) &&
+      !menuRef?.contains(event.target as Node)
+    ) {
       showDropdown = false;
     }
   }
@@ -111,8 +121,11 @@
 <!-- User profile dropdown -->
 <div class="user-dropdown" bind:this={dropdownRef}>
   <button
+    bind:this={buttonRef}
     class="user-button"
     on:click={toggleDropdown}
+    on:pointerenter={() => prefetchSettingsModal()}
+    on:focus={() => prefetchSettingsModal()}
     aria-label={$t('nav.userMenuTooltip')}
     aria-haspopup="menu"
     aria-expanded={showDropdown}
@@ -141,7 +154,11 @@
   </button>
 
   {#if showDropdown}
-    <div class="dropdown-menu">
+    <div
+      class="dropdown-menu"
+      bind:this={menuRef}
+      use:anchoredPanel={{ anchor: buttonRef, width: 'content', edge: 'right', gap: 8 }}
+    >
       <div class="dropdown-header">
         <span>{$t('nav.signedInAs')}</span>
         <strong>{user ? user.email : $t('nav.user')}</strong>
@@ -269,18 +286,14 @@
     flex-shrink: 0;
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .dropdown-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
     width: 240px;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-    margin-top: 0.5rem;
-    z-index: 1000;
+    overflow-y: auto;
     padding: 0.5rem 0;
     min-width: 200px;
     display: flex;
@@ -355,16 +368,6 @@
     text-decoration: none !important;
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
     transform: translateX(2px) !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:visited) {
-    color: var(--text-color) !important;
-    text-decoration: none !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:visited:hover) {
-    color: var(--primary-on-surface) !important;
-    text-decoration: none !important;
   }
 
   /* Entries contributed by child components (e.g. UserMenuExtras) live in their
@@ -477,8 +480,12 @@
      ⚠️ Coordinated with the identical threshold in ../Navbar.svelte, which
      drops the navbar gap to 1.5rem. Both must move together: raising only the
      Navbar one left the username visible from 1281-1500px, where the bar still
-     needed 1355px and still overflowed. Measured while fixing issue #452. */
-  @media (max-width: 1500px) {
+     needed 1355px and still overflowed. Measured while fixing issue #452.
+     ⚠️ RAISED to 1560px for issue #754 ("Chat" → "AI chat"): the label widened
+     by up to ~45px in the widest translation, so Navbar.svelte's coordinated
+     threshold moved 1500 → 1560px. See that file's comment for the
+     measurement and its offline-estimate caveat. */
+  @media (max-width: 1560px) {
     .username {
       display: none;
     }

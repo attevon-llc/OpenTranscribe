@@ -414,6 +414,8 @@ def test_completion_does_not_clobber_a_file_quarantined_mid_transcription(db_ses
     # Everything unrelated to the guard still writes normally -- this is not a
     # blanket "skip the whole function for a held file" guard.
     assert media_file.language == "en"
+    # issue #969: the container duration survives here too -- the quarantine guard
+    # is unrelated to the duration-provenance fix, and both must hold at once.
     assert media_file.duration == pytest.approx(PROBED_DURATION)
 
 
@@ -610,7 +612,7 @@ def test_a_missing_media_file_is_logged_and_skipped_rather_than_raising(db_sessi
 
 
 # --------------------------------------------------------------------------------------
-# 5. Characterization tests for OPEN defects
+# 5. Duration provenance (issue #969, CLOSED) + one remaining characterization test
 # --------------------------------------------------------------------------------------
 
 
@@ -636,13 +638,39 @@ def test_completing_with_no_segments_keeps_the_probed_duration(db_session, media
         "the probed duration was overwritten for a file with no segments"
     )
     assert media_file.status == FileStatus.COMPLETED
+    assert media_file.duration_source is None, (
+        "no write happened here at all, so provenance must stay untouched"
+    )
+
+
+def test_container_duration_survives_transcription(db_session, media_file):
+    """The container duration must SURVIVE completion (issue #969).
+
+    This is the red-first test for the defect the issue reports.
+    ``media_file.duration`` starts at ``PROBED_DURATION`` (3600.0, as ffprobe would have
+    set it before transcription runs — see the ``media_file`` fixture). Segments end at
+    30.0. Pre-fix, ``update_media_file_transcription_status`` unconditionally overwrote
+    the column with ``max(segment.end)`` — the transcript's SPEECH EXTENT, not the
+    recording's length — discarding trailing silence, music or applause. Every completed
+    row on the live dev DB was found to equal its speech extent exactly, to the
+    millisecond: 10 of 10.
+    """
+    segments = [_segment(0.0, 10.0, "first"), _segment(10.0, 30.0, "second")]
+
+    update_media_file_transcription_status(db_session, media_file.id, segments)
+
+    db_session.refresh(media_file)
+    assert media_file.duration == pytest.approx(PROBED_DURATION), (
+        "the container duration must not be replaced by the transcript's speech extent"
+    )
 
 
 def test_unprobed_duration_falls_back_to_the_latest_segment_end(db_session, media_file):
     """With no probed duration, the fallback is the LATEST end, not the last element.
 
     Speech extent is only a last resort since issue #969 (a probed duration always wins);
-    when it is used it must still be max(end) (issue #455).
+    when it is used it must still be max(end) (issue #455), and it is recorded WITH its
+    provenance rather than passed off as a measurement of the real recording.
 
     ``segments[-1]["end"]`` assumed the list was sorted by time. Overlap marking and the
     speaker-boundary resegmentation both reorder segments, and the cloud-ASR adapters emit
@@ -663,6 +691,56 @@ def test_unprobed_duration_falls_back_to_the_latest_segment_end(db_session, medi
     db_session.refresh(media_file)
     assert media_file.duration == pytest.approx(30.0), (
         "duration must be max(end), not the end of whichever segment happens to be last"
+    )
+    assert media_file.duration_source == "transcript_extent"
+
+
+def test_zero_duration_is_treated_as_missing(db_session, normal_user):
+    """A pre-#455 ``0.0`` artefact is filled from the transcript, same as a NULL.
+
+    ``<= 0`` counts as unset: no real media has zero length, and a row written before
+    #455 shipped can still carry the ``0.0`` that bug wrote.
+    """
+    mf = MediaFile(
+        uuid=uuid_module.uuid4(),
+        user_id=normal_user.id,
+        filename="zero_duration.mp3",
+        storage_path=f"user_{normal_user.id}/zero_duration.mp3",
+        file_size=4096,
+        content_type="audio/mpeg",
+        status=FileStatus.PROCESSING,
+        duration=0.0,
+    )
+    db_session.add(mf)
+    db_session.commit()
+    db_session.refresh(mf)
+
+    update_media_file_transcription_status(db_session, mf.id, [_segment(0.0, 12.5, "x")])
+
+    db_session.refresh(mf)
+    assert mf.duration == pytest.approx(12.5)
+    assert mf.duration_source == "transcript_extent"
+
+
+def test_speech_extent_never_lowers_a_container_duration(db_session, media_file):
+    """Explicit non-lowering guarantee, distinct intent from the survival test above.
+
+    A short transcript (segments end at 30.0) must never shrink a much longer container
+    duration (3600.0) even though both tests would catch the same code path — this one
+    exists to pin the guarantee as a design invariant, not an accident of the fixture.
+    """
+    out_of_order = [
+        _segment(0.0, 10.0, "first"),
+        _segment(20.0, 30.0, "last to end"),
+        _segment(10.0, 20.0, "middle"),
+    ]
+
+    update_media_file_transcription_status(db_session, media_file.id, out_of_order)
+
+    db_session.refresh(media_file)
+    assert media_file.duration == pytest.approx(PROBED_DURATION)
+    assert media_file.duration_source is None, (
+        "the container value was never replaced, so no provenance write happened"
     )
 
 

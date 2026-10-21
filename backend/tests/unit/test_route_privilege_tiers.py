@@ -37,6 +37,10 @@ TIER_SUPER_ADMIN = "super_admin"
 SUPER_ADMIN_PREFIXES = (
     "/api/admin/auth-config",
     "/api/admin/engine-settings",
+    # Decides which vendors users may send audio to: a deployment-wide egress policy.
+    "/api/admin/asr-providers",
+    # Downloads multi-GB models into the shared cache and gates which one the workers serve.
+    "/api/admin/local-models",
     # Covers the mirror routes too: they are mounted at /api/admin/backup/mirror. There
     # used to be a separate "/api/admin/media-mirror" entry here, which matched NO route
     # and therefore asserted nothing — see test_every_super_admin_prefix_matches_a_route.

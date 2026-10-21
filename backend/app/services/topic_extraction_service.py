@@ -30,6 +30,8 @@ from app.models.media import MediaFile
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
 from app.schemas.topic import LLMSuggestionResponse
+from app.services.file_provenance import llm_facts
+from app.services.file_provenance import record_stage
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 from app.utils.llm_log_safety import describe_llm_text
@@ -297,9 +299,16 @@ IMPORTANT GUIDELINES:
             }
 
     def _persist_extraction(
-        self, media_file_id: int, llm_response: LLMSuggestionResponse
+        self,
+        media_file_id: int,
+        llm_response: LLMSuggestionResponse,
+        provenance: dict[str, Any] | None = None,
     ) -> TopicExtractionResult | None:
-        """Phase 3 — write (short session, Postgres only)."""
+        """Phase 3 — write (short session, Postgres only).
+
+        ``provenance`` is the LLM's provider/model/where, resolved before this session
+        opens (``llm_facts`` may resolve a hostname) and recorded with the suggestion.
+        """
         with session_scope() as db:
             media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
             if media_file is None:
@@ -313,6 +322,8 @@ IMPORTANT GUIDELINES:
             )
             if suggestion is None:
                 return None
+            if provenance:
+                record_stage(db, media_file_id, "topics", **provenance)
             return self._as_result(suggestion, "completed")
 
     def extract_topics(
@@ -402,7 +413,9 @@ IMPORTANT GUIDELINES:
             progress_callback("Saving AI suggestions...")
 
         # Phase 3 — write (DB session reopened, Postgres only).
-        return self._persist_extraction(media_file_id, llm_response)
+        return self._persist_extraction(
+            media_file_id, llm_response, provenance=llm_facts(llm_service.config)
+        )
 
     def apply_suggestions(
         self,

@@ -63,6 +63,7 @@ def _make_speaker(
         display_name=display_name,
         resolved_display_name=resolved_display_name,
         suggested_name=None,
+        suggestion_source=None,
         verified=False,
         confidence=None,
         created_at=datetime.now(UTC),

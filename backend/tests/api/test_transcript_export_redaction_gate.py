@@ -142,7 +142,8 @@ def test_export_locked_masks_every_format(
     assert PROFANITY not in response.text, (
         f"{fmt} export leaked unmasked content under export_locked"
     )
-    assert CLEAN_TEXT in response.text
+    # Whitespace-normalized: SRT/VTT cues wrap a sentence onto two lines.
+    assert CLEAN_TEXT in " ".join(response.text.split())
 
 
 @pytest.mark.parametrize("fmt", ALL_FORMATS)

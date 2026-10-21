@@ -13,6 +13,7 @@
   import { clickOutside } from '$lib/actions/clickOutside';
   import { focusTrap } from '$lib/actions/focusTrap';
   import ModelSwitcher from './ModelSwitcher.svelte';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
   import { LLMSettingsApi } from '$lib/api/llmSettings';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import type { ReasoningOffSwitch } from '$lib/api/llmSettings';
@@ -173,23 +174,19 @@
     </div>
 
     <div class="control-group">
-      <label class="field-label" for="chat-temperature">
-        {$t('chat.controls.temperature')}
-        <span class="value">{temperature.toFixed(2)}</span>
-      </label>
-      <input
+      <RangeSlider
         id="chat-temperature"
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
+        label={$t('chat.controls.temperature')}
+        hint={$t('chat.controls.temperatureHint')}
+        min={0}
+        max={1}
+        step={0.05}
         value={temperature}
         on:change={(e) =>
           dispatch('change', { temperature: Number((e.target as HTMLInputElement).value) })}
         {disabled}
         data-testid="chat-temperature"
       />
-      <span class="range-hint">{$t('chat.controls.temperatureHint')}</span>
     </div>
 
     {#if userLlmSettings}
@@ -275,25 +272,20 @@
       </div>
 
       <div class="control-group">
-        <label class="field-label" for="chat-top-p">
-          {$t('chat.controls.topP')}
-          <span class="value">
-            {settings.top_p ?? $t('chat.controls.inherit')}
-          </span>
-        </label>
-        <input
+        <RangeSlider
           id="chat-top-p"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
+          label={$t('chat.controls.topP')}
+          hint={$t('chat.controls.topPHint')}
+          min={0}
+          max={1}
+          step={0.05}
           value={settings.top_p ?? 1}
+          valueText={settings.top_p == null ? $t('chat.controls.inherit') : undefined}
           on:change={(e) =>
             dispatch('change', { top_p: Number((e.target as HTMLInputElement).value) })}
           {disabled}
           data-testid="chat-top-p"
         />
-        <span class="range-hint">{$t('chat.controls.topPHint')}</span>
       </div>
     </details>
   </div>
@@ -464,31 +456,7 @@
   textarea,
   select {
     width: 100%;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-family: inherit;
-    font-size: 0.85rem;
     resize: vertical;
-  }
-
-  textarea:focus-visible,
-  select:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 1px;
-    border-color: var(--primary-color);
-  }
-
-  textarea:focus,
-  select:focus {
-    border-color: var(--primary-color);
-  }
-
-  input[type='range'] {
-    width: 100%;
-    accent-color: var(--primary-color);
   }
 
   .char-count {

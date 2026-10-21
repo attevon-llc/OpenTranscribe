@@ -58,13 +58,23 @@ for spec in "${specs[@]}"; do
   diagram_type="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['diagram_type'])" "$spec")"
   out="$OUT_DIR/$name.html"
   echo "==> $name ($diagram_type)"
-  if ! node "$ARCHIFY_DIR/bin/archify.mjs" validate "$diagram_type" "$spec" --quality showcase --json > /tmp/archify-validate-"$name".json 2>&1; then
+  # Architecture specs cite code (components[].sources); Archify verifies those paths and
+  # lines against the checkout, and accepts --repo-root for that diagram type only.
+  evidence_args=()
+  if [ "$diagram_type" = "architecture" ]; then
+    evidence_args=(--repo-root "$REPO_ROOT")
+  fi
+  if ! node "$ARCHIFY_DIR/bin/archify.mjs" validate "$diagram_type" "$spec" --quality showcase "${evidence_args[@]}" --json > /tmp/archify-validate-"$name".json 2>&1; then
     echo "    VALIDATION FAILED — see /tmp/archify-validate-$name.json" >&2
     status=1
     continue
   fi
-  node "$ARCHIFY_DIR/bin/archify.mjs" deliver "$diagram_type" "$spec" "$out" --quality showcase --json \
+  node "$ARCHIFY_DIR/bin/archify.mjs" deliver "$diagram_type" "$spec" "$out" --quality showcase "${evidence_args[@]}" --json \
     | python3 -c "import json,sys; d=json.load(sys.stdin); print('    delivered:', d['validation']['compositionStatus'], d['artifact']['bytes'], 'bytes')"
+  # The drift check (scripts/check-architecture-diagram-drift.py, pre-commit + CI) compares
+  # this stamp with the spec's current hash; it cannot re-render without Archify.
+  spec_sha="$(sha256sum "$spec" | cut -d' ' -f1)"
+  printf '<!-- spec-sha256: %s -->\n' "$spec_sha" >> "$out"
 done
 
 exit $status

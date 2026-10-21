@@ -77,7 +77,7 @@ EXIT_DEVICE_UNAVAILABLE = 9
 #: message; these add the OpenTranscribe-specific remedy it cannot know about.
 _REMEDY: dict[int, str] = {
     EXIT_TOKEN_DENIED: (
-        "Set HUGGINGFACE_TOKEN in .env to a HuggingFace READ token, and — signed in as "
+        "Set a HuggingFace READ token in Settings (or in the server environment), and — signed in as "
         "that same account — accept the terms at "
         "https://huggingface.co/pyannote/speaker-diarization-community-1. The gate is "
         "per-account and auto-approved; a valid token whose account never accepted it "
@@ -174,9 +174,13 @@ def _subprocess_env() -> dict[str, str]:
 
     The token is passed through the environment and never on the command line, which is
     visible to every process on the box via ``ps``. ``diar-server`` consults
-    ``HF_TOKEN``, ``HUGGINGFACE_TOKEN`` and ``HUGGING_FACE_HUB_TOKEN`` itself, so
-    nothing is renamed here.
+    ``HF_TOKEN`` first, so the resolved token (Settings over the server environment) is
+    handed to it there, unless the operator exported their own ``HF_TOKEN`` /
+    ``HUGGING_FACE_HUB_TOKEN``, which wins. Resolving it is the export.
     """
+    from app.services.huggingface_token import get_hf_token
+
+    get_hf_token()  # resolving it exports HF_TOKEN (see services/huggingface_token.py)
     env = dict(os.environ)
     # huggingface_hub reads HF_ENDPOINT with a default, so a key that is *set but
     # empty* resolves to "" and breaks the download with no useful error. Unset beats

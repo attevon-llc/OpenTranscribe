@@ -286,11 +286,3 @@ def test_numeric_flags_carry_bounds_matching_the_schema():
         assert le_constraints, f"{spec.field}: schema has no `le` constraint to compare"
         assert ge_constraints == [spec.ge], spec.field
         assert le_constraints == [spec.le], spec.field
-
-
-def test_no_flag_is_marked_experimental_yet():
-    """Documents current reality: `experimental=True` is plumbing for a
-    future planner/enrichment toggle, not a live behaviour. If this ever
-    fails, the admin UI's "Experimental" subsection needs real controls, not
-    just its current explanatory-copy placeholder."""
-    assert all(not spec.experimental for spec in CHAT_FLAG_REGISTRY)

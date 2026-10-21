@@ -210,7 +210,7 @@ Key code: `app/utils/hardware_detection.py`, `config.py`. Benchmarks:
 ## Boundary correction (issue #193)
 
 Two post-processing stages fix speaker mislabeling at turn boundaries. **All settings are
-DB-backed and live in the admin UI → Settings → Engine Configuration** (no restart); env
+DB-backed and live in the super-admin UI → Settings → Speaker Identification → Speaker Engine** (no restart); env
 (`ENGINE_BOUNDARY_*`) is fallback-only — there are no required `.env` vars.
 
 - **Boundary smoothing** (default ON, pure-CPU): collapses 1–3 word "wrong-speaker islands"
@@ -283,7 +283,9 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
   an abort so that redelivery need not re-download and re-decode.
 - Changing `EMBEDDING_BATCH_SIZE` changes VRAM predictability, not accuracy. Don't "optimize"
   it back to auto-scaling without re-running the VRAM profile.
-- `DiarizationProviderFactory` (`app/services/diarization/`) is a **different axis** from
-  `diarizer_backend`: it selects *where diarization happens* per user (ASR provider / local /
-  pyannote.ai cloud / off). This file's `native` vs `pyannote` choice only applies once the
-  answer is "locally, on our GPU". Read that package's CLAUDE.md before conflating them.
+- The pipeline plan (`services/pipeline_plan.py`) is a **different axis** from
+  `diarizer_backend`: it decides *where speaker detection happens* per user (the ASR
+  provider / this server / pyannote.ai / off) and whether it runs inline in the GPU stage
+  (`enable_diarization` is the plan's `execution == "inline_local"`) or as a post stage
+  after the transcript is saved. This file's `native` vs `pyannote` choice only applies once
+  the answer is "this server". Read `app/services/diarization/CLAUDE.md` before conflating them.

@@ -20,7 +20,18 @@ call these functions, not `axios` directly.
   public); `groupMappings.ts` covers `/admin/group-mappings/*` (super_admin — note `GrantableRole`
   is `user|admin` only, never `super_admin`); `userApprovals.ts` covers `/admin/user-approvals/*`
   (admin) and exports `isAlreadyDecided`, the 409 "somebody else decided this first" test that
-  callers must surface rather than swallow.
+  callers must surface rather than swallow. `pyannoteCredential.ts` covers
+  `/user-settings/diarization/pyannote` (#1204): the key is write-only, so a form must never
+  pre-fill it; view rules live in `$lib/settings/pyannoteCredential.ts`. `pipeline.ts` covers
+  `GET /user-settings/pipeline` (#1227), the server-resolved plan behind Settings > Processing pipeline;
+  `getPipelineView` rejects a reply without `steps`/`issues` so no consumer has to.
+  `asrProviderPolicy.ts` covers `/admin/asr-providers` (#1246, super administrator only): which cloud ASR providers
+  plain users may use; stored keys are never readable (`ASRSettingsApi.getApiKey` was removed).
+  `localModels.ts` covers `/admin/local-models` (+ `/download`, `/download/cancel`; #1246, super administrator only): the
+  Whisper model catalog with what is on disk and the one download. Literal URLs on purpose: the route-has-a-caller scanner
+  reads them.
+  `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
+  (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 
 ## Conventions / patterns
 
@@ -36,3 +47,6 @@ call these functions, not `axios` directly.
 ## Gotchas
 
 - Auth/token handling is centralized in `$lib/axios` + `$stores/auth` — don't duplicate it here.
+- `supportAccess.ts` mirrors `backend/app/schemas/support_access.py` (#1122): one `SupportAccessApi`
+  with `staff | org | workspace` perspectives. Its routes 404 outside multi-tenant mode, and
+  `/support-access/`, `/org-admin/` and `/users/me/support-access` never carry the grant header.

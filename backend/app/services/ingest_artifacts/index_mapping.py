@@ -68,15 +68,29 @@ DOC_TYPE_CHUNK = "chunk"
 #: A digest section of a transcript (this stage's output).
 DOC_TYPE_DIGEST = "digest"
 
+#: An LLM-authored summary leaf (issue #963). Derived, interpretive text: it is NOT in
+#: :data:`VERBATIM_DOC_TYPES` and must never reach the transcript results page or chat
+#: retrieval. Reachable only through :func:`summary_plane_clause`.
+DOC_TYPE_SUMMARY = "summary"
+
 DOC_TYPES: tuple[str, ...] = (
     DOC_TYPE_CHUNK,
     DOC_TYPE_DIGEST,
+    DOC_TYPE_SUMMARY,
 )
 
 #: The doc_types that are *someone's own words*, i.e. what the search UI and the chunk
-#: plane mean by a result. Digests are derived text and must not surface as if a speaker
-#: had said them.
+#: plane mean by a result. Digests and summaries are derived text and must not surface
+#: as if a speaker had said them.
 VERBATIM_DOC_TYPES: tuple[str, ...] = (DOC_TYPE_CHUNK,)
+
+#: Base of the ``chunk_index`` sentinel band reserved for summary leaves (issue #963).
+#: Digests occupy -1, -2, … (:func:`digest_chunk_index`); a shared band would let leaf 0
+#: of a summary and section 0 of a digest sort into the same ``index.sort.field`` slot.
+#: A million sections is not reachable — ``ingest_artifacts/sizing.py`` bounds a digest
+#: far below that — so the two bands are provably disjoint
+#: (``test_the_sentinel_bands_never_collide``).
+SUMMARY_CHUNK_INDEX_BASE = -1_000_000
 
 #: Mapping entries Stage 3 adds to the chunks index.
 #:
@@ -120,6 +134,11 @@ def chunk_plane_clause() -> dict[str, Any]:
 def digest_plane_clause() -> dict[str, Any]:
     """The inverse: match only digest documents. No compat arm — digests are all new."""
     return {"term": {DOC_TYPE_FIELD: DOC_TYPE_DIGEST}}
+
+
+def summary_plane_clause() -> dict[str, Any]:
+    """Match only summary-leaf documents (issue #963). No compat arm — the plane is all new."""
+    return {"term": {DOC_TYPE_FIELD: DOC_TYPE_SUMMARY}}
 
 
 def digest_document_id(file_uuid: str, section_index: int) -> str:
@@ -264,3 +283,99 @@ def build_digest_documents(
 def digest_document_ids(file_uuid: str, digest: dict[str, Any]) -> list[str]:
     """Ids matching :func:`build_digest_documents`, in the same order."""
     return [digest_document_id(file_uuid, int(s["index"])) for s in digest.get("sections", [])]
+
+
+def summary_document_id(file_uuid: str, leaf_index: int) -> str:
+    """``{uuid}_summary_{n}`` — disjoint from ``{uuid}_{n}`` and ``{uuid}_digest_{n}`` (#963)."""
+    return f"{file_uuid}_summary_{leaf_index}"
+
+
+def summary_chunk_index(leaf_index: int) -> int:
+    """Sentinel ``chunk_index`` for a summary leaf: leaf 0 → :data:`SUMMARY_CHUNK_INDEX_BASE`."""
+    return SUMMARY_CHUNK_INDEX_BASE - int(leaf_index)
+
+
+def build_summary_documents(
+    *,
+    file_uuid: str,
+    file_id: int,
+    summary_data: Any,
+    facts: dict[str, Any],
+    base_metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """One document per string leaf of ``media_file.summary_data`` (issue #963).
+
+    Pure: builds dicts, indexes nothing — the same contract as
+    :func:`build_digest_documents`. The leaf walk is imported from
+    ``services.search.summary_search.walk_summary_leaves``, NOT restated here: the
+    ``key_path`` string it produces is a frontend wire contract
+    (``frontend/src/lib/utils/summaryKeyPath.ts`` resolves it against the downloaded
+    ``summary_data``), and two walkers would be two chances to disagree about it. The
+    import is deferred (function-local) to avoid a module-level cycle between this
+    package and ``services.search``.
+
+    A non-dict/empty/None ``summary_data`` produces ``[]`` and never raises (#462
+    rejection 3 — the no-LLM deployment has no summaries at all).
+
+    Args:
+        file_uuid: File UUID. Present on the document **and** used for its id.
+        file_id: Integer file id. Present as well as the uuid — the ACL rewrite keys on
+            ``file_id`` and the tenant backfill on ``file_uuid`` (addendum G5), and a
+            summary missing either becomes unreachable by one of them — a permission
+            leak, not a relevance bug.
+        summary_data: The stored ``media_file.summary_data`` payload.
+        facts: The stored ``file_facts.facts`` payload, for the roster and date.
+        base_metadata: Per-file fields shared with chunk/digest documents.
+
+    Returns:
+        One document per string leaf, in leaf-walk order.
+    """
+    from app.services.search.summary_search import walk_summary_leaves
+
+    if not isinstance(summary_data, dict) or not summary_data:
+        return []
+
+    roster = list(facts.get("roster") or [])
+    recorded_at = facts.get("recorded_at")
+    documents: list[dict[str, Any]] = []
+
+    for index, (key_path, leaf_text) in enumerate(walk_summary_leaves(summary_data, "")):
+        document: dict[str, Any] = dict(base_metadata)
+        document.update(
+            {
+                "file_id": file_id,
+                "file_uuid": file_uuid,
+                DOC_TYPE_FIELD: DOC_TYPE_SUMMARY,
+                "chunk_index": summary_chunk_index(index),
+                "summary_leaf_index": index,
+                "summary_key_path": key_path,
+                "content": leaf_text,
+                "embedding_text": build_embedding_text(
+                    title=base_metadata.get("title"),
+                    recorded_at=recorded_at,
+                    roster=roster,
+                    body=leaf_text,
+                ),
+                "speakers": roster,
+            }
+        )
+        # A summary leaf is not attributable to one speaker, and has no timespan —
+        # same reasoning as build_digest_documents.pop("speaker", ...).
+        document.pop("speaker", None)
+        document.pop("start_time", None)
+        document.pop("end_time", None)
+        documents.append(document)
+
+    return documents
+
+
+def summary_document_ids(file_uuid: str, summary_data: Any) -> list[str]:
+    """Ids matching :func:`build_summary_documents`, in the same order."""
+    from app.services.search.summary_search import walk_summary_leaves
+
+    if not isinstance(summary_data, dict) or not summary_data:
+        return []
+    return [
+        summary_document_id(file_uuid, n)
+        for n, _ in enumerate(walk_summary_leaves(summary_data, ""))
+    ]

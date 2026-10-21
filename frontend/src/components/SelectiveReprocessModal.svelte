@@ -9,9 +9,18 @@
   import { toastStore } from '../stores/toast';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
+  import PerFileModelSelect from './PerFileModelSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import {
+    getTranscriptionSettings,
+    getTranscriptionSystemDefaults,
+    speakerPrefill,
+    speakerSubmitRange,
+    type TranscriptionSettings,
+    type TranscriptionSystemDefaults
+  } from '$lib/api/transcriptionSettings';
 
   export let showModal: boolean = false;
   export let file: any = null;
@@ -32,6 +41,10 @@
   let minSpeakers: number | null = null;
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
+  // The user's saved speaker behaviour, so a re-run starts from their range (and a blank field
+  // means what they chose) instead of from nothing.
+  let transcriptionSettings: TranscriptionSettings | null = null;
+  let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
 
   // ASR provider info
   let isCloudASR = false;
@@ -54,8 +67,11 @@
   $: hasWordTimestamps = bulkMode
     ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
     : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
+  // A cloud ASR provider returns its own speakers on a transcription re-run, so the range is
+  // moot there; a re-diarize re-detects with the user's current speaker-detection choice
+  // whichever provider transcribed the file, so its range always applies.
   $: showSpeakerSettings =
-    (selectedStages.has('transcription') || selectedStages.has('rediarize')) && !isCloudASR;
+    selectedStages.has('rediarize') || (selectedStages.has('transcription') && !isCloudASR);
   $: isValid =
     selectedStages.size > 0 &&
     (!showSpeakerSettings ||
@@ -96,8 +112,8 @@
       id: 'rediarize',
       labelKey: 'reprocess.stageRediarize',
       descKey: 'reprocess.stageRediarizeDesc',
-      disabled: !hasWordTimestamps || isCloudASR,
-      disabledReason: isCloudASR ? $t('reprocess.rediarizeCloudDisabled') : $t('reprocess.stageRediarizeDisabled'),
+      disabled: !hasWordTimestamps,
+      disabledReason: $t('reprocess.stageRediarizeDisabled'),
     },
   ] as StageDefinition[];
 
@@ -204,8 +220,14 @@
       };
 
       if (showSpeakerSettings) {
-        if (minSpeakers !== null) requestBody.min_speakers = minSpeakers;
-        if (maxSpeakers !== null) requestBody.max_speakers = maxSpeakers;
+        const range = speakerSubmitRange(
+          transcriptionSettings,
+          transcriptionSystemDefaults,
+          { minSpeakers, maxSpeakers },
+          numSpeakers
+        );
+        if (range.minSpeakers !== null) requestBody.min_speakers = range.minSpeakers;
+        if (range.maxSpeakers !== null) requestBody.max_speakers = range.maxSpeakers;
         if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
       }
 
@@ -275,10 +297,30 @@
     reprocessing = false;
   }
 
+  async function loadSpeakerPrefill() {
+    try {
+      const [settings, defaults] = await Promise.all([
+        getTranscriptionSettings(),
+        getTranscriptionSystemDefaults()
+      ]);
+      transcriptionSettings = settings;
+      transcriptionSystemDefaults = defaults;
+      // Only fill what the user has not already typed while this was loading.
+      const prefill = speakerPrefill(settings);
+      if (minSpeakers === null) minSpeakers = prefill.minSpeakers;
+      if (maxSpeakers === null) maxSpeakers = prefill.maxSpeakers;
+    } catch {
+      // Blank fields still resolve to the user's saved range on the server.
+      transcriptionSettings = null;
+      transcriptionSystemDefaults = null;
+    }
+  }
+
   // Reset state and fetch ASR status when modal opens
   $: if (showModal) {
     resetState();
     selectedReprocessModel = null;
+    void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {
@@ -330,7 +372,7 @@
   }
 </script>
 
-<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} maxWidth="540px" zIndex={9999} onClose={handleClose}>
+<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} size="md" zIndex={9999} onClose={handleClose}>
         <!-- Step Indicator -->
         <div class="step-indicator">
           {#each stepLabels as label, i}
@@ -533,14 +575,11 @@
                     <label for="reprocess-model-select">
                       {$t('uploader.whisperModel')}
                     </label>
-                    <select id="reprocess-model-select" bind:value={selectedReprocessModel} class="model-select">
-                      <option value={null}>
-                        {$t('uploader.highQuality')} ({adminDefaultModel})
-                      </option>
-                      <option value="base">
-                        {$t('uploader.fastProcessing')}
-                      </option>
-                    </select>
+                    <PerFileModelSelect
+                      id="reprocess-model-select"
+                      bind:value={selectedReprocessModel}
+                      adminModel={adminDefaultModel}
+                    />
                     {#if selectedReprocessModel === 'base'}
                       <p class="model-hint-text">{$t('uploader.fastProcessingHint')}</p>
                     {/if}
@@ -848,12 +887,12 @@
   }
 
   .step-label.active {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     font-weight: 600;
   }
 
   .step-label.completed {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .step-line {
@@ -935,10 +974,8 @@
   }
 
   .stage-group-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -1056,10 +1093,8 @@
 
   .review-label {
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
     display: block;
     margin-bottom: 0.5rem;
   }
@@ -1078,7 +1113,7 @@
     font-size: 0.78rem;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border: 1px solid rgba(59, 130, 246, 0.2);
   }
 
@@ -1114,7 +1149,7 @@
     padding: 0.6rem 0.75rem;
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     background: rgba(59, 130, 246, 0.06);
     border-bottom: 1px solid rgba(59, 130, 246, 0.1);
   }
@@ -1218,46 +1253,13 @@
     font-size: 0.7rem;
   }
 
-  .setting-field input {
-    padding: 0.45rem 0.6rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-background, var(--card-background));
-    color: var(--text-primary);
-    font-size: 0.85rem;
-  }
-
-  .setting-field input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-
   .setting-field input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    background-color: var(--disabled-background, #f5f5f5);
   }
 
   .setting-field input::placeholder {
     color: var(--text-muted);
-  }
-
-  .model-select {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--input-background, var(--card-background));
-    color: var(--text-primary);
-    font-size: 0.85rem;
-    cursor: pointer;
-  }
-
-  .model-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
 
   .model-hint-text {
@@ -1338,10 +1340,6 @@
     border-color: var(--border-color);
   }
 
-  :global([data-theme='dark']) .setting-field input:disabled {
-    background-color: rgba(255, 255, 255, 0.05);
-  }
-
   :global([data-theme='dark']) .validation-error {
     background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
@@ -1382,9 +1380,7 @@
       padding: 0.75rem;
     }
 
-    .setting-field input,
-    .setting-field select,
-    .model-select {
+    .setting-field input {
       min-height: 44px;
       font-size: 1rem;
     }

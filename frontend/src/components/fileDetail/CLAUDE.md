@@ -18,6 +18,13 @@ Presentational children extracted from the file-detail route `src/routes/files/[
   transcript column while redaction is pending.
 - `SpeakerProfileConfirmModal.svelte` — update-globally / create-new confirmation for a renamed
   speaker. Emits `updateProfile`, `createNewProfile`, `cancel`.
+- `ProcessingSection.svelte` — the collapsible "Processing" section rendered right after
+  `MetadataDisplay` (#1229): how the file was processed, one row per step, via the shared
+  `$components/ProcessingProvenance.svelte`. Props: `steps` (the page's
+  `file.processing_steps`), `expanded`. Renders nothing when the payload has no rows. It
+  replaced the models row that used to sit inside `MetadataDisplay` (hardcoded "Whisper:"
+  label, and every non-`native` engine shown as PyAnnote); the backend's
+  `processing_steps` is display-ready, so derive nothing here.
 
 ## Conventions / patterns
 
@@ -38,19 +45,36 @@ Presentational children extracted from the file-detail route `src/routes/files/[
   (`GET /files/{uuid}/export`, issue #673); `$lib/export/txtExportPrefs` only persists the
   TXT options dialog's toggles.
 - The transcript itself is rendered by `TranscriptDisplay` + `components/transcript/*`.
+- **Issue #748 layout**: the left (`.video-column`) column order is player, waveform,
+  `TranscriptActionsBar` (Export · Edit speakers · Download — moved OUT of `TranscriptDisplay`,
+  renders directly on the page now), then either `SpeakerEditorPanel` (while editing speakers)
+  or `TagsSection`/`CollectionsSection` (otherwise), then `AnalyticsSection` (always visible,
+  including while editing speakers — it's the speaker context being labelled against), then
+  `MetadataDisplay` (also moved — was in `.file-header` above the grid, hidden while editing
+  speakers), then `ProcessingSection` (#1229, the last item in this column, hidden with it). `CommentSection` moved to the bottom of the
+  RIGHT (`.transcript-column`) column, below `RedactionControls`. The page owns
+  `isEditingSpeakers` directly (`TranscriptActionsBar`'s `toggleSpeakerEditor` event flips it
+  inline) — there is no longer a prop-forwarding hop through `TranscriptDisplay`.
+- The download SSE stream `TranscriptActionsBar` triggers lives in
+  `$lib/fileDetail/downloadStream.ts` (`createDownloadStreamManager()`, issue #748 J5) — a
+  factory returning `{ downloadMedia, cleanup }`; the page calls `cleanup()` from its own
+  `onDestroy`.
 
 ## Gotchas
 
 - **`transcript_segments` is the SINGLE representation of segment data — never reintroduce a
   second copy (#352).** `file.grouped_segments` is the backend's display grouping and carries
-  only `segment_uuids`; `TranscriptDisplay.mapBackendGroup` is the one place those references
-  are resolved. Groups used to embed full segment copies, so the page held two objects per
-  segment and every optimistic write patched only the flat one — renaming a speaker or editing
-  a segment saved to the database and then rendered nothing until a full page reload. **Mutate
-  segments only through `$lib/fileDetail/segmentSync`** (`renameSpeakersInFile`,
-  `patchSegmentInFile`, `appendSegmentPage`), never with a bare loop over `transcript_segments`.
-  Note `transcriptStore` is a _separate_ flat store feeding `TranscriptModal` — keep calling
-  `transcriptStore.updateSpeakerName` alongside the helper.
+  only `segment_uuids`; `$lib/transcript/resolveGroupedSegments.ts` (shared by
+  `TranscriptDisplay` and the search-result "view transcript" modal, issue #755) is the one
+  place those references are resolved. Groups used to embed full segment copies, so the page
+  held two objects per segment and every optimistic write patched only the flat one — renaming
+  a speaker or editing a segment saved to the database and then rendered nothing until a full
+  page reload. **Mutate segments only through `$lib/fileDetail/segmentSync`**
+  (`renameSpeakersInFile`, `patchSegmentInFile`, `appendSegmentPage`), never with a bare loop
+  over `transcript_segments`. `transcriptStore` (the raw store) is still fed for
+  `AnalyticsSection`'s `SpeakerStats` — its `processedTranscriptSegments` derived store (the
+  old `TranscriptModal`'s speaker-grouped reading view) was deleted with that component
+  (#755).
 - **Prop-drilling is the settled pattern — don't add a store for page state (#338).** The page
   used to also write a `reactiveFile` writable on every mutation; nothing ever subscribed to it,
   so all 13 `.set()` calls were inert while reading as if they refreshed the UI. It has been

@@ -191,7 +191,7 @@ function show_help {
     echo "                provisions the native diarizer's weights; 'password-blocklist' installs the"
     echo "                breached-password list (a few hours, needs internet); omit for the models."
     echo "  logs [svc]    View logs (all or specific service)"
-    echo "  update        Pull latest Docker images and restart"
+    echo "  update        Pull latest Docker images and restart (run 'backup' first)"
     echo "  update-full   Update images AND configuration files"
     echo "  clean         Remove all volumes and data (CAUTION)"
     echo "  backup        Backup the database (optional --encrypt)"
@@ -1289,6 +1289,28 @@ preflight_upgrade_env() {
     return 1
 }
 
+# Recommend a database backup before the stack is torn down for an upgrade.
+#
+# The backend applies the new release's migrations on its first boot, and the chain is
+# one-way: `update --rollback` refuses (or, forced, cannot read) a newer schema, and its
+# remedy is "restore a backup taken before the upgrade". Nothing said to take one. A
+# recommendation, not a prompt: `update` runs unattended (cron, the release rehearsal's
+# phase 08), where a read would block or fail.
+recommend_pre_upgrade_backup() {
+    local newest="" f
+    for f in ./backups/opentranscribe_backup_*.sql ./backups/opentranscribe_backup_*.sql.gpg; do
+        [ -f "$f" ] || continue
+        if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest="$f"; fi
+    done
+    echo -e "${YELLOW}💾 This upgrade migrates the database on first start, and migrations are one-way.${NC}"
+    echo -e "${YELLOW}   Take a backup first if you have not: ./opentranscribe.sh backup${NC}"
+    if [ -n "$newest" ]; then
+        echo -e "${YELLOW}   Newest backup found: $newest${NC}"
+    else
+        echo -e "${YELLOW}   No backup found in ./backups.${NC}"
+    fi
+}
+
 # Pull the images an upgrade needs, tolerating a pull failure ONLY when every one of
 # them is already present locally.
 #
@@ -1364,6 +1386,10 @@ compose_pull_for_upgrade() {
 # empty, and continue. Any other failure is still fatal.
 compose_down_for_upgrade() {
     local compose_files="$1"
+
+    # Both upgrade arms reach this only after preflight_upgrade_env passed and before
+    # anything is torn down: the last point where the advice can still be acted on.
+    recommend_pre_upgrade_backup
 
     # Drain CUDA-holding workers before `down` reaches them (issue #782) -- the upgrade
     # path this function exists for is exactly the case named in that issue.

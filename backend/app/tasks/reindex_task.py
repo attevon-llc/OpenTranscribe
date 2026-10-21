@@ -59,6 +59,7 @@ def _resolve_reindex_speaker_name(row: Any) -> str:
         display_name=row.display_name,
         suggested_name=row.suggested_name,
         confidence=row.confidence,
+        suggestion_source=getattr(row, "suggestion_source", None),
     )
 
 
@@ -158,6 +159,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
                 Speaker.profile_id,
                 Speaker.suggested_name,
                 Speaker.confidence,
+                Speaker.suggestion_source,
             )
             .filter(Speaker.id.in_(speaker_ids))
             .all()
@@ -1234,7 +1236,10 @@ def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:
             logger.error(
                 f"REFUSING post-reindex orphan cleanup for user {user_id}: it would delete "
                 f"{len(orphan_uuids)} of {len(indexed_in_os)} indexed files. A reindex that "
-                f"orphaned most of the corpus did not finish — run a full reindex instead."
+                f"orphaned most of the corpus did not finish — run a full reindex instead. If "
+                f"those files really were removed (a restore, out-of-band row deletion), "
+                f"reconcile with GET /api/admin/data-integrity/counts, then "
+                f"POST /api/admin/data-integrity?force=true&confirm=true."
             )
             return 0
 

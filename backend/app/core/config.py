@@ -294,6 +294,12 @@ class Settings(BaseSettings):
     # the capability resolver to hide platform-managed features from tenants).
     DEPLOYMENT_EDITION: str = os.getenv("DEPLOYMENT_EDITION", "community")
 
+    # Tenancy mode: "auto" (default), "single" or "multi". Read by
+    # app.services.platform_access.tenancy_mode, which fails closed (unknown -> multi).
+    # Deliberately an env var and not a SystemSettings row: it constrains platform admins, so
+    # an admin must not be able to switch it off from the UI.
+    TENANCY_MODE: str = os.getenv("TENANCY_MODE", "auto")
+
     # JWT Token settings (NIST SP 800-63B compliant)
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
     JWT_ALGORITHM: str = "HS256"

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { AdminApi, type AccountStatusReport } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
@@ -31,13 +32,7 @@
 
 <div class="account-status-strip">
   {#if loading}
-    <div class="skeleton-chips">
-      <div class="skeleton-chip"></div>
-      <div class="skeleton-chip"></div>
-      <div class="skeleton-chip"></div>
-      <div class="skeleton-chip wide"></div>
-      <div class="skeleton-chip"></div>
-    </div>
+    <SettingsSkeleton variant="chips" />
   {:else if report}
     <div class="status-chips">
       <span class="chip">
@@ -96,7 +91,7 @@
   }
 
   .chip-value {
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.85rem;
   }
 
@@ -129,23 +124,6 @@
   }
   .chip.danger .chip-value { color: rgb(239, 68, 68); }
 
-  /* Skeleton loading */
-  .skeleton-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    justify-content: center;
-  }
 
-  .skeleton-chip {
-    height: 30px;
-    width: 100px;
-    border-radius: 20px;
-    background: var(--border-color, #444);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
-  }
 
-  .skeleton-chip.wide {
-    width: 130px;
-  }
 </style>

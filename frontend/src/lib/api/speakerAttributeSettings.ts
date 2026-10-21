@@ -16,6 +16,8 @@ export interface SpeakerAttributeSettings {
   detection_enabled: boolean;
   gender_detection_enabled: boolean;
   show_attributes_on_cards: boolean;
+  /** Automatically ask the AI provider to suggest speaker names after transcription. */
+  auto_llm_speaker_identification: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export interface SpeakerAttributeSystemDefaults {
   detection_enabled: boolean;
   gender_detection_enabled: boolean;
   show_attributes_on_cards: boolean;
+  auto_llm_speaker_identification: boolean;
 }
 
 /**

@@ -48,7 +48,10 @@ should import `app.api` or `app.services` at module scope.
   `timeout=`). No network, no locks, no model loads in that function. `publish_hf_token_to_
   environment()` is the network-free replacement: `huggingface_hub.get_token()` prefers
   `HF_TOKEN` from the environment over its on-disk token file, so a dict write does what the
-  round trip did. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
+  round trip did. ⚠️ It publishes only the ENVIRONMENT token: the Hugging Face token can also be
+  saved in Settings (encrypted in `SystemSettings`), resolved by
+  `services/huggingface_token.get_hf_token()` (DB read, 60 s cache, publishes `HF_TOKEN` itself),
+  which must never be called from this fork hook. `worker_proc_alive_timeout` (`CELERY_PROC_ALIVE_TIMEOUT`, default 30 s) is
   defence in depth over celery's bare 4.0 s, not the fix.
   ⚠️ **That kill timer covers respawns only, so the absence of `Timed out waiting for UP
   message` in a worker's logs proves nothing.** It is armed from `on_process_up` via
@@ -85,6 +88,10 @@ should import `app.api` or `app.services` at module scope.
   measurement that justifies the new value. The *result* is not here at all: it is a
   `SystemSettings` row keyed by a (provider, base_url, model) fingerprint, written only by
   the probe. Full rationale: `app/services/CLAUDE.md`.
+- `validation_errors.py` — `main.py`'s 422 handler: FastAPI's default body with each error's `input`
+  dropped when it concerns a sensitive field (`SENSITIVE_FIELDS`: `api_key`, `aws_*`) or is a body
+  containing one. The default echoes the failing value, i.e. a submitted secret. A new write-only
+  credential field belongs in that set.
 - `exceptions.py` — the `OpenTranscribeError` hierarchy, handled globally in `main.py`.
   **Service-layer only** — endpoints keep raising `HTTPException` (see its docstring).
 - `task_cancellation.py` — the **per-run** cooperative stand-down (#823), and

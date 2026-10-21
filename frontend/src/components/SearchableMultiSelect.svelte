@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
 
   type Option = { id: string | number; name: string; count?: number };
 
@@ -31,6 +32,9 @@
   let isOpen = false;
   let searchTerm = '';
   let dropdownElement: HTMLDivElement;
+  let toggleElement: HTMLButtonElement;
+  // The panel is portaled to <body> (anchoredPanel), so it is outside `dropdownElement`.
+  let panelElement: HTMLDivElement | undefined;
 
   // Filter options based on search
   $: filteredOptions = options.filter(option => {
@@ -58,8 +62,18 @@
   }
 
   function handleClickOutside(event: MouseEvent) {
-    if (dropdownElement && !dropdownElement.contains(event.target as Node)) {
+    const target = event.target as Node;
+    if (dropdownElement && !dropdownElement.contains(target) && !panelElement?.contains(target)) {
       isOpen = false;
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && isOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      isOpen = false;
+      toggleElement?.focus();
     }
   }
 
@@ -73,6 +87,10 @@
 
 <div class="multiselect-container" bind:this={dropdownElement}>
   <button
+    bind:this={toggleElement}
+    aria-haspopup="listbox"
+    aria-expanded={isOpen}
+    on:keydown={handleKeydown}
     class="multiselect-toggle"
     class:disabled
     on:click={() => !disabled && (isOpen = !isOpen)}
@@ -97,7 +115,13 @@
   </button>
 
   {#if isOpen}
-    <div class="dropdown-panel">
+    <div
+      class="dropdown-panel"
+      role="presentation"
+      bind:this={panelElement}
+      use:anchoredPanel={{ anchor: toggleElement }}
+      on:keydown={handleKeydown}
+    >
       <div class="search-box">
         <input
           type="text"
@@ -179,20 +203,19 @@
     transform: rotate(180deg);
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above / caps max-height to the room. */
   .dropdown-panel {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
+    display: flex;
+    flex-direction: column;
     background-color: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     box-shadow: var(--dropdown-shadow);
-    z-index: 1000;
     overflow: hidden;
   }
 
   .search-box {
+    flex: none;
     padding: 0.5rem;
     border-bottom: 1px solid var(--border-color);
     background-color: var(--card-background);
@@ -201,16 +224,7 @@
   .search-input {
     width: 100%;
     padding: 0.4rem 0.6rem;
-    border: 1px solid var(--input-border);
-    border-radius: 4px;
     font-size: 0.85rem;
-    background-color: var(--input-background);
-    color: var(--text-color);
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--input-focus-border);
   }
 
   .search-input::placeholder {
@@ -219,6 +233,8 @@
   }
 
   .options-list {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     background-color: var(--card-background);
   }

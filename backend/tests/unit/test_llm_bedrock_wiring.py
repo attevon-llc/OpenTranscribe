@@ -100,11 +100,18 @@ def test_get_provider_config_is_none_without_a_region(monkeypatch):
     assert LLMService._get_provider_config(LLMProvider.BEDROCK) is None
 
 
-def test_get_provider_config_is_none_without_a_model(monkeypatch):
+def test_get_provider_config_falls_back_to_the_coded_default_model(monkeypatch):
+    """A blank model setting is not "unconfigured": the coded default profile id applies."""
+    from app.core.constants import DEFAULT_BEDROCK_MODEL_ID
+
     monkeypatch.setattr(settings, "BEDROCK_MODEL_NAME", "")
     monkeypatch.setattr(settings, "BEDROCK_REGION", "us-east-1")
 
-    assert LLMService._get_provider_config(LLMProvider.BEDROCK) is None
+    assert LLMService._get_provider_config(LLMProvider.BEDROCK) == (
+        DEFAULT_BEDROCK_MODEL_ID,
+        None,
+        None,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -144,13 +151,11 @@ def test_endpoints_dict_carries_a_descriptive_entry_for_bedrock(monkeypatch):
     plain subscript in the `/llm-settings/test` endpoint) raised `KeyError`, and
     `validate_connection`'s init-time log line silently read as `endpoint=None`.
     """
-    monkeypatch.setattr(settings, "BEDROCK_REGION", "us-east-1")
     service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model=MODEL))
 
     endpoint = service.endpoints[LLMProvider.BEDROCK]  # must not KeyError
     assert endpoint is not None
     assert "bedrock-runtime" in endpoint
-    assert "us-east-1" in endpoint
 
 
 # --------------------------------------------------------------------------

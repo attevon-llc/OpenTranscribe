@@ -225,6 +225,66 @@ class CacheClearResponse(BaseModel):
     deleted: int = Field(..., description="Number of derived objects removed")
 
 
+# ===== Locked-account management (issue #570) =====
+
+
+class LockedAccount(BaseModel):
+    """One entry in the admin locked-accounts listing.
+
+    Enrichment (``user_uuid``/``full_name``/``is_active``/``auth_type``) is a
+    single batched query over the page's identifiers, never a per-row lookup.
+    An identifier resolving to no account is included with these fields
+    ``None`` (J-A3) -- it is the operationally useful half (a stuck integration
+    retrying a dead credential looks exactly like this), and it is excluded
+    from ``locked_count`` on the wire by virtue of not appearing on a page
+    unless ``include_unlocked=true``. These are attacker-supplied strings in
+    an admin UI: render as data, never as a link.
+    """
+
+    identifier: str
+    is_locked: bool
+    failed_attempts: int
+    lockout_count: int
+    locked_until: str | None = None
+    first_failed_attempt: str | None = None
+    last_failed_attempt: str | None = None
+    admin_unlocked_at: str | None = None
+    user_uuid: str | None = None
+    full_name: str | None = None
+    is_active: bool | None = None
+    auth_type: str | None = None
+
+
+class LockedAccountsList(BaseModel):
+    """Paginated locked-accounts listing.
+
+    ``lockout_enabled`` is on the response, not implied by an empty list -- the
+    deleted ``get_all_locked_accounts`` returned ``[]`` when the feature was
+    off, indistinguishable from "nobody is locked". ``store_backend`` reports
+    which storage this PROCESS is reading (issue #810's known-real degraded
+    state) -- a listing built on the in-memory fallback is that replica's view,
+    not the deployment's. ``truncated`` covers a scan that hit its page budget
+    without exhausting the keyspace, so "0 locked accounts" from a truncated
+    page is never rendered as "all clear".
+    """
+
+    accounts: list[LockedAccount]
+    next_cursor: str | None = None
+    lockout_enabled: bool
+    store_backend: str
+    truncated: bool = False
+
+
+class LockoutResetResponse(BaseModel):
+    """Result of resetting an account's progressive lockout counter."""
+
+    success: bool
+    identifier: str
+    previous_lockout_count: int
+    was_locked: bool
+    unlocked: bool
+
+
 # ===== Abuse / DMCA / safe-harbor takedown =====
 
 
@@ -255,15 +315,25 @@ class QuarantinedFile(BaseModel):
     ``is_quarantined`` distinguishes a currently-quarantined row from a
     released-but-still-held one (issue #825) -- both can appear together when
     the list endpoint is queried with ``include_legal_holds=true``.
+
+    Issue #576 FINDING 3: the previous shape carried ``user_id`` /
+    ``organization_id`` / ``quarantined_by`` as raw integer DB ids. No endpoint in
+    the app maps an integer user id back to a person (``UUIDBaseSchema`` strips the
+    integer ``id`` from every user-shaped response), so a review queue built on
+    those fields could show a takedown reason beside the bare number ``7``. This is
+    a breaking wire change to a route with zero frontend callers before this
+    change -- the cheapest possible moment to fix it.
     """
 
     uuid: str
     filename: str | None = None
-    user_id: int
-    organization_id: int | None = None
+    title: str | None = None
+    owner_uuid: str
+    owner_email: str
+    organization_uuid: str | None = None
     quarantine_reason: str | None = None
     quarantined_at: str | None = None
-    quarantined_by: int | None = None
+    quarantined_by_email: str | None = None
     legal_hold: bool = False
     is_quarantined: bool = True
 

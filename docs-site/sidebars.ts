@@ -30,6 +30,7 @@ const sidebars: SidebarsConfig = {
       label: 'Installation',
       items: [
         'installation/docker-compose',
+        'installation/deployment-variants',
         'installation/hardware-requirements',
         'installation/gpu-setup',
         'installation/huggingface-setup',
@@ -58,6 +59,7 @@ const sidebars: SidebarsConfig = {
       label: 'Features',
       items: [
         'features/transcription',
+        'features/local-transcription-models',
         'features/speaker-diarization',
         'features/boundary-correction',
         'features/content-redaction',
@@ -105,10 +107,12 @@ const sidebars: SidebarsConfig = {
         'operations/storage-recovery',
         'operations/backup-audit',
         'operations/upgrading',
+        'operations/upgrading-to-0-6-0',
         'operations/monitoring',
         'operations/performance-tuning',
         'operations/prompt-engineering',
         'operations/security-hardening',
+        'operations/support-access',
         'operations/runbooks',
       ],
     },

@@ -157,6 +157,13 @@ class AutoLabelSettingsSchema(BaseModel):
     tags_enabled: bool = Field(True, description="Auto-apply tags")
     collections_enabled: bool = Field(True, description="Auto-apply collections")
     bulk_grouping_enabled: bool = Field(True, description="Group bulk imports by topic")
+    auto_topic_extraction: bool = Field(
+        True,
+        description=(
+            "Automatically ask the configured AI provider for tag and collection suggestions "
+            "after a file is transcribed. Does not affect the manual extract/auto-label buttons."
+        ),
+    )
 
 
 class RetroactiveAutoLabelRequest(BaseModel):

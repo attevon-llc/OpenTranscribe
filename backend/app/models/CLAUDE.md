@@ -10,8 +10,10 @@ authority. See `backend/app/db/CLAUDE.md`.
 
 - `media.py` (~925 lines — the deliberate exception to the ~300-line rule): `MediaFile`,
   `TranscriptSegment`, `Speaker`/`SpeakerProfile`/`SpeakerCluster`/`SpeakerMatch`, `Collection`,
-  `Tag`, `Task`, `Analytics`, `Comment`. `SpeakerCannotLink` and `SpeakerProfileBlacklist` are
-  defined here but **not re-exported** from `__init__.py` — import them from `app.models.media`.
+  `Tag`, `Task`, `Analytics`, `Comment`. `SpeakerCannotLink`, `SpeakerProfileBlacklist` and
+  `SpeakerCorrectionCarryover` (`v438`, a correction held by its time spans across a re-run,
+  issue #1233) are defined here but **not re-exported** from `__init__.py` — import them from
+  `app.models.media`.
 - `group.py` — `UserGroup`, `UserGroupMember`, and (since `v378`) `GroupMapping`.
   `MAPPING_SOURCES` / `MEMBERSHIP_SOURCES` are the CHECK bodies' single source of truth
   (`*_SQL` built from the tuples); `v382` widened both to add `proxy` and `scim`.
@@ -134,6 +136,10 @@ authority. See `backend/app/db/CLAUDE.md`.
   owns it.
 - `MediaFile.status` is annotated non-Optional but declared `nullable=True` — intentional
   (legacy DDL); the annotation and the kwarg are allowed to disagree, the kwarg drives DDL.
+- `MediaFile.processing_provenance` (JSONB, `v437`, #1229) is **`deferred=True`**: the gallery
+  loads the row whole and never reads it. Never assign it through the ORM; the only writer is
+  `services/file_provenance.record_stage` (an atomic `jsonb_set`), and an ORM assignment would
+  overwrite a concurrent stage's entry.
 - `MediaFile.is_quarantined` (DMCA/abuse takedown) is **independent of** `status`;
   `pre_quarantine_status` restores the prior value on release. A takedown never deletes rows.
 - `TranscriptSegment.text` always holds the **original** text; `redactions`/`toxicity` are

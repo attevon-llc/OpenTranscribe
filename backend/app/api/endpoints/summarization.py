@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.db.base import get_db
@@ -45,6 +46,7 @@ from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummaryTaskRequest
 from app.services.llm_service import is_llm_available
+from app.services.platform_bypass import PlatformBypass
 from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
 from app.services.summary_export_service import SummaryExportLabels
 from app.services.summary_export_service import build_summary_export
@@ -93,7 +95,7 @@ async def trigger_summarization(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -223,7 +225,7 @@ def get_file_summary(
     - Processing metadata (provider, model, timing)
     """
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     if not media_file.summary_data:
@@ -238,12 +240,21 @@ def get_file_summary(
         file_id=UUID(str(media_file.uuid)),
         filename=media_file.title or media_file.filename,
         summary_data=_redacted_summary(
-            db, current_user, dict(media_file.summary_data), organization_id=ctx.org_id
+            db,
+            current_user,
+            dict(media_file.summary_data),
+            organization_id=ctx.org_id,
+            media_file=media_file,
+            bypass=ctx.bypass,
         ),
     )
 
 
-@router.get("/{file_uuid}/summary/export", response_class=Response)
+@router.get(
+    "/{file_uuid}/summary/export",
+    response_class=Response,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def export_summary(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
@@ -296,7 +307,7 @@ def export_summary(
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {export_format}")
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
 
     if not media_file.summary_data:
@@ -364,6 +375,9 @@ def _redacted_summary(
     current_user: User,
     summary_data: dict[str, Any],
     organization_id: int | None = None,
+    *,
+    media_file: MediaFile | None = None,
+    bypass: PlatformBypass = PlatformBypass.none(),
 ) -> dict[str, Any]:
     """Apply the requesting user's redaction policy to a summary (#465).
 
@@ -403,7 +417,14 @@ def _redacted_summary(
     from app.services.redaction.summary_redaction import mask_summary
 
     try:
-        cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
+        if bypass.under_grant and media_file is not None:
+            # Under a support-access grant the policy is the file OWNER's in the file's
+            # tenant, so support sees what the tenant's own policy shows (issue #1122).
+            cfg = resolve_effective_config(
+                db, int(media_file.user_id), organization_id=media_file.organization_id
+            )
+        else:
+            cfg = resolve_effective_config(db, current_user.id, organization_id=organization_id)
     except Exception as e:
         logger.exception("Failed to resolve redaction config; refusing the summary read")
         raise HTTPException(
@@ -482,7 +503,7 @@ async def identify_speakers(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -548,7 +569,7 @@ def delete_summary(
         db,
         file_uuid,
         current_user.id,
-        is_admin=current_user.is_admin,
+        bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission="editor",
     )
@@ -583,6 +604,12 @@ def delete_summary(
             status_code=500,
             detail="An internal error occurred. Please try again.",
         ) from e
+
+    # Prune the OpenSearch summary plane to match the now-cleared column
+    # (issue #963) — after commit, never from inside the transaction above.
+    from app.tasks.search_indexing_task import index_file_summary
+
+    index_file_summary.delay(file_id)
 
     logger.info(f"Deleted summary for file {file_id}")
     return {"message": "Summary deleted successfully", "file_id": response_uuid}

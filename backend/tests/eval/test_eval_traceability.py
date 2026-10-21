@@ -14,6 +14,7 @@ import pytest
 from tests.eval.harness import probe_metrics
 from tests.eval.harness.probe_metrics import ProseLeakError
 from tests.eval.harness.traceability import TurnTraceability
+from tests.eval.harness.traceability import _normalise
 from tests.eval.harness.traceability import assert_no_prose
 from tests.eval.harness.traceability import build_traceability_results
 from tests.eval.harness.traceability import build_traceability_rows
@@ -56,6 +57,51 @@ def _record(**overrides: object) -> dict:
     }
     base.update(overrides)
     return base
+
+
+# ---------------------------------------------------------------------------
+# _normalise — the space-before-punctuation tolerance (issue #976), tested directly
+# against the edge cases named in the issue: contractions, quotation marks, ellipses,
+# multiple/adjacent punctuation marks.
+# ---------------------------------------------------------------------------
+
+
+def test_normalise_strips_space_before_punctuation() -> None:
+    assert _normalise("speech recognition , Channel one") == "speech recognition, channel one"
+
+
+def test_normalise_handles_multiple_punctuation_marks_in_one_string() -> None:
+    assert (
+        _normalise("yeah , then you say the question ; the answer .")
+        == "yeah, then you say the question; the answer."
+    )
+
+
+def test_normalise_leaves_contractions_untouched() -> None:
+    """Contractions have no whitespace around the apostrophe in either tokenization
+    convention, so the punctuation-spacing rule must not touch them."""
+    assert _normalise("that's not now , don't worry") == "that's not now, don't worry"
+
+
+def test_normalise_collapses_a_tokenized_ellipsis() -> None:
+    """AMI/QMSum-shaped ellipsis (space before each mark) collapses to the natural
+    run of periods, matching a naturally-punctuated '...' on the other side."""
+    assert _normalise("and then . . . nothing") == _normalise("and then... nothing")
+
+
+def test_normalise_does_not_merge_different_words_across_a_punctuation_boundary() -> None:
+    """The tolerance is scoped to spacing only — it must never make two DIFFERENT
+    words compare equal just because a delimiter sits between them."""
+    assert _normalise("channel one , four") != _normalise("channel two , four")
+
+
+def test_normalise_is_idempotent_on_already_natural_punctuation() -> None:
+    """A snippet that already has natural (no-space-before) punctuation must be
+    unaffected by the new rule — this is the regression guard for #976 introducing
+    a false positive on ordinary text."""
+    natural = "we plan to ship on friday, pending review."
+    assert _normalise(natural) == _normalise(natural)
+    assert _normalise(natural) == "we plan to ship on friday, pending review."
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +275,65 @@ def test_quote_fidelity_normalises_whitespace_and_case() -> None:
     assert metrics.quotes_unsupported == 0
 
 
+def test_quote_fidelity_tolerates_ami_qmsum_space_before_punctuation() -> None:
+    """Issue #976: AMI/QMSum's raw tokenization puts a space before punctuation
+    (``"speech recognition , Channel one , channel four , yeah ."``). A model that
+    quotes the same material re-punctuates naturally (no space before the comma/
+    period), and that must still be scored as a faithful quote — this is the
+    documented must-fire false-negative case from the issue."""
+    record = _record(
+        app_answer=('They said "speech recognition, Channel one, channel four, yeah."[1].'),
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "speech recognition , Channel one , channel four , yeah .",
+            }
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_total == 1
+    assert metrics.quotes_unsupported == 0
+    assert metrics.quote_fidelity == 1.0
+
+
+def test_quote_fidelity_second_ami_qmsum_example_from_the_issue() -> None:
+    """The issue's second worked example: 'No, that not now' quoted against a
+    snippet tokenized as 'No , that not now ,'."""
+    record = _record(
+        app_answer='The speaker replied "No, that not now"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "No , that not now ,"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 0
+
+
+def test_quote_fidelity_still_fails_a_genuinely_different_quote_despite_the_tolerance() -> None:
+    """Must-stay-clean control for the #976 fix: the punctuation-spacing tolerance
+    must not loosen the check enough to pass a quote whose WORDS differ from the
+    snippet, even when the snippet uses AMI/QMSum-style space-before-punctuation."""
+    record = _record(
+        app_answer='They said "we should cancel the launch , Channel one ."[1].',
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "speech recognition , Channel one , channel four , yeah .",
+            }
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_total == 1
+    assert metrics.quotes_unsupported == 1
+    assert metrics.quote_fidelity == 0.0
+
+
 def test_quote_fidelity_ignores_a_quote_pointed_at_a_dangling_marker() -> None:
     """A quote cited against a marker with no rendered citation has no snippet to
     check against, so it counts as unsupported rather than being silently skipped."""
@@ -241,6 +346,128 @@ def test_quote_fidelity_ignores_a_quote_pointed_at_a_dangling_marker() -> None:
     metrics = extract_turn_traceability(record)
     assert metrics.quotes_total == 1
     assert metrics.quotes_unsupported == 1
+
+
+# ---------------------------------------------------------------------------
+# quote_fidelity_tolerant — #532 follow-up SECONDARY metric (Unit U6).
+# The PRIMARY quote_fidelity above must stay unaffected by any test here.
+# ---------------------------------------------------------------------------
+
+
+def test_tolerant_must_fire_on_a_markdown_escaped_quote_the_strict_metric_misses() -> None:
+    """Unit U6a must-fire case from the design plan: the model's own markdown
+    escaping (``L\\_C\\_D\\_``) is not a change in content. The PRIMARY strict
+    metric must still fail it (unchanged behaviour); the tolerant one must not."""
+    record = _record(
+        app_answer='They said "dump the L\\_C\\_D\\_ screen"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "you dump the L_C_D_ screen first"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 1, "the PRIMARY metric is unaffected by U6"
+    assert metrics.quote_fidelity == 0.0
+    assert metrics.quotes_unsupported_tolerant == 0
+    assert metrics.quote_fidelity_tolerant == 1.0
+
+
+def test_tolerant_must_fire_on_an_ellipsis_elided_quote_with_fragments_in_order() -> None:
+    """Unit U6b must-fire case: fragments split by an ellipsis, present IN ORDER
+    in the cited snippet."""
+    record = _record(
+        app_answer='They said "big buttons... that is easier to use than"[1].',
+        citations=[
+            {
+                "id": 1,
+                "file_uuid": "file-a",
+                "snippet": "we want big buttons because that is easier to use than tiny icons",
+            }
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 1, "the PRIMARY metric does not elide ellipses"
+    assert metrics.quotes_unsupported_tolerant == 0
+    assert metrics.quote_fidelity_tolerant == 1.0
+
+
+def test_tolerant_must_stay_clean_when_ellipsis_fragments_are_out_of_order() -> None:
+    """Must-stay-clean control, the real multi-002 quote from the design plan:
+    fragments exist in the snippet but in the WRONG order — never supported,
+    tolerant or not. This is what keeps U6b a formatting tolerance, not a
+    content one."""
+    record = _record(
+        app_answer='They said "… going to want... to do"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "going to... want it to do most"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported == 1
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_must_stay_clean_when_a_fragment_is_simply_absent() -> None:
+    record = _record(
+        app_answer='They said "foo... bar"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "foo but never the other word"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_must_stay_clean_when_fragments_split_across_two_citations() -> None:
+    """A quote's fragments existing only when pooled across TWO different
+    citations must not be scored supported — each fragment is checked only
+    against the ONE cited snippet, never a union of snippets."""
+    record = _record(
+        app_answer='They said "foo... bar"[1].',
+        citations=[
+            {"id": 1, "file_uuid": "file-a", "snippet": "foo appears here only"},
+            {"id": 2, "file_uuid": "file-b", "snippet": "bar appears here only"},
+        ],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}, {"id": 2, "file_uuid": "file-b"}],
+        chunks_used=2,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_is_still_a_genuinely_faithful_check_for_a_different_quote() -> None:
+    """Must-stay-clean: an outright fabricated quote (no ellipsis, no markdown
+    escapes — just different words) must still fail under the tolerant metric."""
+    record = _record(
+        app_answer='They said "we should cancel the launch"[1].',
+        citations=[{"id": 1, "file_uuid": "file-a", "snippet": "totally unrelated content"}],
+        offered_citations=[{"id": 1, "file_uuid": "file-a"}],
+        chunks_used=1,
+    )
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_unsupported_tolerant == 1
+    assert metrics.quote_fidelity_tolerant == 0.0
+
+
+def test_tolerant_and_strict_share_the_same_quotes_total() -> None:
+    """Same total as the primary metric (same regex, same answer) — only
+    which quotes are found unsupported can differ, per the module docstring."""
+    record = _record()  # the default fixture's one supported, non-elided quote
+    metrics = extract_turn_traceability(record)
+    assert metrics.quotes_total == 1
+    # Deliberately not asserting quotes_unsupported_tolerant's VALUE here beyond
+    # "same total" — the shared-fixture default quote is already covered by
+    # test_quote_fidelity_must_stay_clean_when_the_quote_is_supported.
+
+
+def test_tolerant_is_none_when_the_answer_makes_no_quoted_claims() -> None:
+    record = _record(app_answer="The team discussed feedback [2] without quoting anyone.")
+    metrics = extract_turn_traceability(record)
+    assert metrics.quote_fidelity_tolerant is None
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +699,8 @@ def test_the_new_fields_pass_the_no_prose_check() -> None:
         "quote_fidelity_complete",
         "quotes_unsupported_at_240",
         "quote_fidelity_at_240",
+        "quotes_unsupported_tolerant",
+        "quote_fidelity_tolerant",
     ):
         assert key in row
 
@@ -528,6 +757,8 @@ def test_turn_traceability_as_json_field_shape() -> None:
         quote_fidelity_complete=1.0,
         quotes_unsupported_at_240=0,
         quote_fidelity_at_240=1.0,
+        quotes_unsupported_tolerant=0,
+        quote_fidelity_tolerant=1.0,
     )
     payload = metrics.as_json()
     assert set(payload) == {
@@ -555,4 +786,6 @@ def test_turn_traceability_as_json_field_shape() -> None:
         "quote_fidelity_complete",
         "quotes_unsupported_at_240",
         "quote_fidelity_at_240",
+        "quotes_unsupported_tolerant",
+        "quote_fidelity_tolerant",
     }

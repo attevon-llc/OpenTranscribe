@@ -379,24 +379,16 @@ class TestASRSharingVisibility:
 class TestASRSharingAPIKeySecurity:
     """API keys must NEVER be exposed to non-owners for ASR configs."""
 
-    def test_non_owner_cannot_get_asr_api_key(
-        self, client, db_session, normal_user, other_user, other_user_auth_headers
+    def test_no_one_can_get_an_asr_api_key(
+        self, client, db_session, normal_user, user_token_headers, other_user_auth_headers
     ):
-        """Non-owner requesting GET /config/{uuid}/api-key should be denied (404 hides resource)."""
-        cfg = _create_asr_config(db_session, normal_user, shared=True)
-        resp = client.get(
-            f"/api/asr-settings/config/{cfg.uuid}/api-key", headers=other_user_auth_headers
-        )
-        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
-
-    def test_owner_can_get_asr_api_key(self, client, db_session, normal_user, user_token_headers):
-        """Owner can retrieve their own ASR API key."""
+        """ASR credentials are write-only (#1246): neither the owner nor anyone a config is
+        shared with can read a key back, because the reveal route no longer exists."""
         cfg = _create_asr_config(db_session, normal_user, shared=True, api_key="sk-asr-owner")
-        resp = client.get(
-            f"/api/asr-settings/config/{cfg.uuid}/api-key", headers=user_token_headers
-        )
-        assert resp.status_code == 200
-        assert resp.json()["api_key"] is not None
+        for headers in (user_token_headers, other_user_auth_headers):
+            resp = client.get(f"/api/asr-settings/config/{cfg.uuid}/api-key", headers=headers)
+            assert resp.status_code == 404, resp.text
+            assert "sk-asr-owner" not in resp.text
 
 
 class TestASRSharingAccessControl:

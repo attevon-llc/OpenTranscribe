@@ -11,7 +11,7 @@ Common questions and answers about OpenTranscribe.
 
 ### What is OpenTranscribe?
 
-OpenTranscribe is an open-source, self-hosted AI-powered transcription and media analysis platform. It uses state-of-the-art AI models (WhisperX, PyAnnote, LLMs) to transcribe audio/video files, identify speakers, generate summaries, and enable powerful search across your media library.
+OpenTranscribe is an open-source, self-hosted AI-powered transcription and media analysis platform. It uses state-of-the-art AI models (Whisper via faster-whisper, a PyAnnote-based speaker engine, LLMs), or cloud providers you choose, to transcribe audio/video files, identify speakers, generate summaries, and enable powerful search across your media library.
 
 ### Is OpenTranscribe free?
 
@@ -19,9 +19,9 @@ Yes! OpenTranscribe is completely free and open-source under the GNU Affero Gene
 
 ### What makes OpenTranscribe different from other transcription services?
 
-- **Self-hosted** - Your data never leaves your infrastructure
+- **Self-hosted** - Your data stays on your infrastructure unless you choose a cloud provider
 - **Open source** - Full transparency and customizability
-- **Privacy-first** - No cloud services required (except optional LLM providers)
+- **Privacy-first** - No cloud services required; cloud transcription, speaker detection and LLM providers are all optional
 - **Advanced features** - Speaker diarization, cross-video speaker matching, AI summarization
 - **No usage limits** - Transcribe unlimited content
 - **GPU acceleration** - Fast processing with your own hardware
@@ -51,18 +51,26 @@ See [Hardware Requirements](./installation/hardware-requirements.md) for detaile
 
 ### Do I need a GPU?
 
-No, but **highly recommended** for practical use. CPU-only processing is very slow:
+No, but **highly recommended** for practical use when transcribing on your own server. CPU-only processing is very slow:
 - **GPU (RTX 3080)**: 1-hour video → ~5 minutes
 - **CPU (8-core)**: 1-hour video → ~60 minutes
 
+Speaker detection on your own server also runs without a GPU, more slowly. On a CPU-only install nothing switches it off for you (the old `ENABLE_DIARIZATION` variable is gone): to skip it, choose **Off** under **Settings → Speaker Identification → Speaker Detection**.
+
+If you have no GPU at all, the lite deployment sends transcription and speaker detection to cloud providers you configure; see [Deployment variants](./installation/deployment-variants.md).
+
 ### Can I use Apple Silicon (M1/M2/M3)?
 
-Yes, with the `--lite` (CPU-only) image — but **not** with MPS acceleration. Docker
+Yes, with the `--lite` image — but **not** with MPS acceleration. Docker
 Desktop on macOS has no Metal/GPU passthrough into the Linux VM the container runs
 in, so every container on Apple Silicon is CPU-only regardless of the host chip's
-MPS capability. Expect CPU-class timings, not GPU-class ones — see the CPU figures
-above. (An MPS code path exists in the diarization engine, but it is unreachable in
-every containerized deployment; see `backend/app/transcription/CLAUDE.md`.)
+MPS capability. Lite is cloud-only for transcription and speaker detection: configure a
+cloud transcription provider (and pyannote.ai, or a provider that returns speakers, for
+speaker detection); only voiceprints are computed on the Mac's CPU. See
+[Deployment variants](./installation/deployment-variants.md#which-cloud-providers-return-speakers)
+for which providers return speakers. (An MPS code path
+exists in the diarization engine, but it is unreachable in every containerized
+deployment; see `backend/app/transcription/CLAUDE.md`.)
 
 ### What GPUs are supported?
 
@@ -85,9 +93,9 @@ See [HuggingFace Setup](./installation/huggingface-setup.md) for detailed instru
 
 ### Why do I need a HuggingFace token?
 
-The PyAnnote speaker diarization models are "gated" - they require accepting a user agreement before downloading. The token authenticates that you've accepted the terms.
+The PyAnnote speaker diarization models are "gated" - they require accepting a user agreement before downloading. The token authenticates that you've accepted the terms. Both engines that detect speakers on your server (diar-native and the in-process PyAnnote engine) are built from those models.
 
-**Without a token:** Transcription works, but speakers won't be detected (everything will be labeled as SPEAKER_00).
+**Without a token:** Transcription works, but your server cannot load its speaker detection models, so speaker detection on this server fails with a message about the missing model access. Speaker detection by a cloud provider (pyannote.ai, or a transcription provider that returns speakers) does not need the token.
 
 ### Can I run OpenTranscribe offline?
 
@@ -110,14 +118,14 @@ Maximum file size: **4GB**
 
 ### What languages are supported for transcription?
 
-**100+ languages** are supported for transcription via WhisperX/Whisper. See the [Whisper documentation](https://github.com/openai/whisper#available-models-and-languages) for the full list.
+**100+ languages** are supported for transcription via Whisper. See the [Whisper documentation](https://github.com/openai/whisper#available-models-and-languages) for the full list.
 
 **v0.2.0 Language Features:**
 - **Source Language Selection**: Auto-detect or manually specify the audio language
 - **Translation Toggle**: Choose to keep original language or translate to English
-- **Word-Level Timestamps**: ~42 languages support word-level alignment (others fall back to segment-level)
+- **Word-Level Timestamps**: the built-in model produces word timestamps for every language, directly during transcription (there is no separate alignment step). Cloud providers return word or segment timing depending on the provider
 
-Configure language settings in: **Settings → Transcription → Language Settings**
+Configure language settings in: **Settings → Transcription → Language**
 
 **Note:** English transcription quality is best. Other languages work but accuracy varies.
 
@@ -137,7 +145,7 @@ Configure language settings in: **Settings → Transcription → Language Settin
 - Russian (\u0420\u0443\u0441\u0441\u043a\u0438\u0439)
 - Chinese (\u4e2d\u6587)
 
-Change the UI language in: **Settings → Language**
+Change the UI language in: **Settings → Profile & Security** (Language)
 
 Want to contribute a translation? Submit a PR with a new locale file!
 
@@ -153,13 +161,13 @@ Accuracy depends on:
 
 ### How does speaker diarization work?
 
-OpenTranscribe uses PyAnnote.audio to:
-1. **Detect voice activity** - Find when people are speaking
-2. **Extract voice features** - Create voice fingerprints
-3. **Cluster speakers** - Group similar voices
-4. **Assign labels** - Tag each segment with SPEAKER_00, SPEAKER_01, etc.
+You choose who detects speakers, separately from who transcribes: your own server (the diar-native engine, or the in-process PyAnnote engine, chosen by an administrator), the cloud transcription provider when it returns speakers, or the pyannote.ai cloud service. On your server the engine:
+1. **Detects voice activity** - Finds when people are speaking
+2. **Extracts voice features** - Creates voice fingerprints
+3. **Clusters speakers** - Groups similar voices
+4. **Assigns labels** - Tags each segment with SPEAKER_00, SPEAKER_01, etc.
 
-You can then manually edit speaker names, and OpenTranscribe will remember those voices across future transcriptions.
+The speaker turns are then matched to the transcript by word timestamps (or by segment, when the model only returns segment timing). Voiceprints are always computed on your server, whoever detected the speakers. You can then manually edit speaker names, and OpenTranscribe will remember those voices across future transcriptions. See [Speaker Diarization](./features/speaker-diarization.md#where-speakers-are-detected).
 
 ### Can OpenTranscribe identify speakers by name automatically?
 
@@ -176,19 +184,13 @@ OpenTranscribe applies diarization boundary correction to fix speaker mislabelin
 
 ### Can OpenTranscribe redact PII, profanity, or toxic content?
 
-Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **off by default (opt-in)** (Settings → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
+Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **off by default (opt-in)** (Settings → Privacy & Redaction → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
 
 ### How many speakers can it detect?
 
-Default: **1-20 speakers**
+The default diar-native engine counts speakers automatically. You can also give a speaker range (1 to 50) in **Settings → Speaker Identification → Speaker Detection**, or per file when you upload or reprocess; the system default range is `MIN_SPEAKERS`/`MAX_SPEAKERS` in `.env` (1-20).
 
-You can increase this in `.env`:
-```bash
-MIN_SPEAKERS=1
-MAX_SPEAKERS=50  # or higher for large conferences
-```
-
-There's no hard upper limit, but accuracy decreases with very large groups (30+ speakers).
+The range is a hint: pyannote.ai and the in-process PyAnnote engine apply it, cloud transcription providers apply what they support, and the default diar-native engine ignores it. Accuracy decreases with very large groups (30+ speakers).
 
 ### What LLM providers are supported?
 
@@ -223,16 +225,19 @@ Yes! AI summaries can be generated in **12 languages** (`LLM_OUTPUT_LANGUAGES`,
 - Italian, Portuguese, Dutch, Russian
 - Chinese, Japanese, Korean, Arabic
 
-Configure in: **Settings → Transcription → LLM Output Language**
+Configure in: **Settings → Transcription → Language** (*Language for AI features*)
 
 The LLM will generate the summary in your chosen language regardless of the original audio language.
 
 ### Can I use OpenTranscribe without any cloud services?
 
 Yes! You can run completely offline and local:
-- Transcription: Local WhisperX models
-- Speakers: Local PyAnnote models
+- Transcription: The built-in Whisper models (choose the built-in model under **Settings → Transcription**)
+- Speakers: Detected on your server (choose **Automatic** with the built-in model, or **Always on this server's GPU**)
+- Voiceprints: Always computed on your server
 - LLM (optional): Local vLLM or Ollama
+
+This needs the full deployment: a lite deployment cannot transcribe or detect speakers on the server.
 
 No data leaves your infrastructure.
 
@@ -288,15 +293,21 @@ Yes! OpenTranscribe supports **User Groups** and **Collection Sharing**. Admins 
 
 ### Can I use cloud speech-to-text instead of local Whisper?
 
-Yes! OpenTranscribe supports **multi-provider cloud ASR** in addition to local WhisperX. You can configure cloud speech-to-text providers for an API-lite deployment that doesn't require a GPU. This is useful for lighter-weight setups where you prefer cloud processing over local hardware.
+Yes! OpenTranscribe supports **multi-provider cloud ASR** in addition to the built-in Whisper models. Speaker detection is a separate choice: most cloud providers also return speakers, and with **Automatic** their labels are used. For a model that returns text only, your server detects the speakers (full deployment), or you choose pyannote.ai. A model that returns no timestamps at all cannot be combined with speaker detection.
+
+A lite deployment needs no GPU and is cloud-only: transcription and speaker detection both use cloud providers you configure, while voiceprints are still computed on your server.
+
+When you use a cloud provider, your audio is sent to that vendor and processed under its terms; the same applies to pyannote.ai. See [Deployment variants](./installation/deployment-variants.md#which-cloud-providers-return-speakers) for which providers return speakers and [which combinations are valid](./installation/deployment-variants.md#which-combinations-are-valid).
 
 ### Can I reprocess just the speaker diarization without re-transcribing?
 
-Yes! The **selective reprocessing** feature lets you pick specific stages to re-run. Instead of reprocessing an entire file from scratch, you can choose to redo only speaker diarization, only summarization, or any other individual stage — saving significant time when you just need to tweak one part of the pipeline.
+Yes! The **selective reprocessing** feature lets you pick specific stages to re-run. Instead of reprocessing an entire file from scratch, you can choose to redo only speaker diarization (**Re-diarize Only (v4)**), only summarization, or any other individual stage — saving significant time when you just need to tweak one part of the pipeline.
+
+Re-diarizing uses your **current** speaker-detection choice: pyannote.ai if you chose it, otherwise your server's engine (a cloud provider's own speakers cannot be fetched again without transcribing again). On a lite deployment a re-run that would need your server's engine is refused. The reprocess dialog currently offers this stage only while your active transcription provider is the built-in model.
 
 ### How does cross-video speaker matching work?
 
-OpenTranscribe uses **GPU-accelerated speaker pre-clustering** to group similar voices across all your transcriptions. Voice embeddings are extracted during diarization and then clustered so the system can suggest matches when the same speaker appears in different recordings. This powers the cross-video speaker identification workflow.
+OpenTranscribe uses **GPU-accelerated speaker pre-clustering** to group similar voices across all your transcriptions. Voice embeddings (voiceprints) are computed on your server after speakers are detected, whoever detected them, and then clustered so the system can suggest matches when the same speaker appears in different recordings. This powers the cross-video speaker identification workflow.
 
 ### Can OpenTranscribe automatically tag my transcriptions?
 
@@ -308,7 +319,7 @@ Yes! Admins can configure **file retention policies** to automatically clean up 
 
 ### How can I improve AI summary quality for my organization?
 
-Configure **Organization Context** in **Settings → Transcription**. This lets you provide background information about your organization — such as its mission, common terminology, and typical meeting types. The LLM uses this context when generating summaries, resulting in more relevant and accurate output tailored to your specific domain.
+Configure **Organization Context** in **Settings → Organization Context**. This lets you provide background information about your organization — such as its mission, common terminology, and typical meeting types. The LLM uses this context when generating summaries, resulting in more relevant and accurate output tailored to your specific domain.
 
 ### Can I switch between grid and list view?
 
@@ -316,7 +327,7 @@ Yes! The **gallery view** supports both grid and list layouts. You can toggle be
 
 ### Does OpenTranscribe detect speaker gender?
 
-Yes! OpenTranscribe includes **automatic gender classification** for detected speakers. Gender predictions are generated from voice embeddings and displayed alongside speaker information. This helps validate speaker clusters and provides additional metadata for organizing and identifying speakers.
+Yes! OpenTranscribe includes **automatic gender classification** for detected speakers. Gender predictions are made from each speaker's audio by a voice-attribute classifier (a Wav2Vec2-based model, or the diar-native engine in the same pass when it detected the speakers) and displayed alongside speaker information. This helps validate speaker clusters and provides additional metadata for organizing and identifying speakers.
 
 ### Can I customize export format?
 
@@ -401,10 +412,13 @@ WHISPER_MODEL=medium
 
 ### Speaker diarization not working
 
-1. **Check HuggingFace token** is set in `.env`
-2. **Accept model agreements** (both pyannote models)
-3. **Check logs** for download errors: `docker compose logs celery-worker`
-4. **Re-download models** if corrupted
+1. **Check your choice** under **Settings → Speaker Identification → Speaker Detection** (it may be **Off**), and check whether the file shows a refusal message (for example a model with no timestamps, or pyannote.ai chosen without a key)
+2. For detection on your server: **check the HuggingFace token** is set in `.env`
+3. **Accept the model agreement** for [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+4. **Check logs** for download errors: `docker compose logs celery-worker`
+5. **Re-download models** if corrupted
+
+On a lite deployment there is no speaker detection on the server; choose a cloud model that returns speakers or pyannote.ai.
 
 ### Poor transcription quality
 
@@ -424,11 +438,14 @@ WHISPER_MODEL=medium
 
 ### Is my data secure?
 
-Yes! All processing happens locally:
+Yes. By default all processing happens on your server:
 - Media files stored in MinIO (local S3-compatible storage)
 - Transcripts stored in PostgreSQL (local database)
-- AI models run locally (no cloud services)
+- AI models run locally with the built-in transcription model and speaker detection on your server
+- Voiceprints are always computed on your server
 - Optional LLM calls can use self-hosted providers
+
+If you choose a cloud transcription provider, pyannote.ai, or a cloud LLM, the audio (or, for an LLM, transcript text) is sent to that vendor.
 
 ### Are transcripts encrypted?
 
@@ -460,7 +477,7 @@ Yes! OpenTranscribe is designed for privacy-sensitive use cases:
 - Business strategy meetings
 - Personal recordings
 
-All processing is local, nothing is sent to cloud services (except optional LLM calls, which you control).
+With the built-in transcription model, speaker detection on your server and a local (or no) LLM, nothing is sent to cloud services. Cloud transcription, pyannote.ai speaker detection and cloud LLMs are each an explicit choice that sends audio or text to that vendor.
 
 ## Authentication
 
@@ -600,16 +617,17 @@ See [Developer Guide](./developer-guide/architecture.md) to get started.
 
 **Frontend:** Svelte + TypeScript + Vite
 **Backend:** Python + FastAPI + SQLAlchemy
-**AI:** WhisperX + PyAnnote + LangChain
+**AI:** faster-whisper + diar-native / PyAnnote + LangChain
 **Infrastructure:** Docker + PostgreSQL + Redis + MinIO + OpenSearch
 
 See [Architecture](./developer-guide/architecture.md) for details.
 
 ### What AI models does it use?
 
-- **WhisperX** - Speech recognition (based on OpenAI Whisper)
-- **PyAnnote.audio** - Speaker diarization
-- **Wav2Vec2** - Word-level alignment
+- **Whisper (faster-whisper)** - Speech recognition, with word timestamps produced during transcription (no separate alignment model)
+- **PyAnnote community-1** - Speaker diarization, run by the diar-native engine or in-process PyAnnote
+- **WeSpeaker** - Voiceprints for cross-file speaker matching
+- **Wav2Vec2 gender/age classifier** - Optional speaker attribute detection
 - **Sentence Transformers** - Semantic search embeddings
 - **LLMs** (optional) - Summarization and analysis
 
@@ -649,7 +667,7 @@ If you modify OpenTranscribe for internal use only (not as a network service), y
 
 - **WhisperX**: Apache 2.0 License
 - **PyAnnote**: MIT License
-- **Wav2Vec2**: Apache 2.0 License
+- **Wav2Vec2 gender/age classifier**: Apache 2.0 License
 
 All are permissive licenses compatible with commercial use.
 

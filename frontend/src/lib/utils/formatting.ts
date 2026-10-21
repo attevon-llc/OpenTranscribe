@@ -91,6 +91,38 @@ export function formatClock(totalSeconds: number | null | undefined): string {
 }
 
 /**
+ * Local wall-clock time (hour and minute, no seconds) of an ISO-8601 instant, in the
+ * user's locale. An unparseable value is returned unchanged.
+ */
+export function formatTimeOfDay(iso: string, locale?: string): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+/**
+ * Compact `Xh Ym`/`Ym Zs`/`Zs` duration, the "how long did this take" idiom
+ * (issue #753's notification duration chip; e.g. `125` -> `"2m 5s"`,
+ * `45` -> `"45s"`, `3660` -> `"1h 1m"`). Unlike {@link formatDuration}/
+ * {@link formatClock} this omits zero units entirely rather than padding —
+ * intentionally different, per `lib/utils/CLAUDE.md`'s do-not-migrate note
+ * for compact `Xh Ym` durations. `$stores/websocket`'s `formatEtaSeconds`
+ * delegates its arithmetic here and keeps its own `undefined`-for-no-ETA
+ * guard on top, so the two duration idioms share one implementation instead
+ * of two independently-maintained copies of the same minute/hour rollover.
+ */
+export function formatCompactDuration(totalSeconds: number): string {
+  const seconds = Math.round(isNaN(totalSeconds) || totalSeconds < 0 ? 0 : totalSeconds);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes < 60) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/**
  * Live player time with decimal milliseconds (padded minutes).
  * e.g. 3.25 -> "00:03.250", 3661.5 -> "01:01:01.500". Invalid input -> "00:00.000".
  */
@@ -146,6 +178,31 @@ export function taskProgressPercent(progress: unknown): number {
   const value = typeof progress === 'number' ? progress : Number.NaN;
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, Math.round(value * 100)));
+}
+
+/**
+ * Translation key + plural count for a rate-limit "try again in..." hint
+ * (issue #788). Returns a key rather than a rendered string so the caller
+ * supplies the actual translation via `$t(key, { count })` — this file stays
+ * i18n-agnostic like every other formatter here, and i18next's `_one`/`_other`
+ * plural suffixes need the real `count` value at call time, not baked in here.
+ *
+ * Deliberately STATIC, not a live countdown (issue #788 J7): a ticking label
+ * would re-announce on every assistive-tech pass since the toast/error region
+ * is `role="alert"`/`role="status"`. One number, chosen once, is both simpler
+ * and more accessible than a per-second re-render.
+ *
+ * @param seconds Seconds to wait, as parsed from a `Retry-After` header.
+ *   Non-finite or non-positive input is clamped to 1 second — "try again in a
+ *   moment" is safer than a nonsensical "in -3 seconds" or "in NaN seconds".
+ */
+export function retryWaitLabel(seconds: number): { key: string; count: number } {
+  const clamped = Number.isFinite(seconds) ? Math.max(1, Math.round(seconds)) : 1;
+  if (clamped < 60) {
+    return { key: 'common.retryAfterSeconds', count: clamped };
+  }
+  const minutes = Math.max(1, Math.round(clamped / 60));
+  return { key: 'common.retryAfterMinutes', count: minutes };
 }
 
 /**

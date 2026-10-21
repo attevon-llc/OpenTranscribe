@@ -74,12 +74,12 @@ def speaker_indices(monkeypatch):
 
     v3 = get_speaker_index_v3()
     v4 = get_speaker_index_v4()
-    _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
-    _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
     alias = get_speaker_index()
-    client.indices.put_alias(index=v4, name=alias)
 
     try:
+        _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
+        _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
+        client.indices.put_alias(index=v4, name=alias)
         yield SimpleNamespace(client=client, v3=v3, v4=v4, alias=alias)
     finally:
         for idx in (v3, v4):
@@ -110,12 +110,12 @@ def speaker_indices_alias_v3(monkeypatch):
 
     v3 = get_speaker_index_v3()
     v4 = get_speaker_index_v4()
-    _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
-    _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
     alias = get_speaker_index()
-    client.indices.put_alias(index=v3, name=alias)
 
     try:
+        _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
+        _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
+        client.indices.put_alias(index=v3, name=alias)
         yield SimpleNamespace(client=client, v3=v3, v4=v4, alias=alias)
     finally:
         for idx in (v3, v4):

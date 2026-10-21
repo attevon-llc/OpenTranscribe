@@ -810,6 +810,14 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 #: every entry names the real consumer(s) traced by hand so a reason can go
 #: stale visibly rather than silently ("internal" alone is not a reason).
 _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/llm_bedrock.py::check_connection": (
+        1,
+        "dial result the user asked for, and NOT echo: the exception only SELECTS a key of "
+        "bedrock_settings.FAILURE_MESSAGES (classify_failure on the botocore exception type "
+        "and error Code); the returned string is one of those fixed sentences and never "
+        "contains exception text. tests/api/test_bedrock_credentials_api.py asserts the raw "
+        "AWS message and the submitted secret are absent from the response",
+    ),
     "services/asr/assemblyai_provider.py::validate_connection": (
         1,
         "dial result: self._sanitize_error(str(e), api_key) -> sanitize_provider_error "
@@ -843,8 +851,8 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "dial result, same self._sanitize_error path as assemblyai_provider.py "
         "(this is the ASR provider, services/asr/ -- not the diarization-only "
-        "services/diarization/pyannote_provider.py entry below, a different class "
-        "with zero call sites)",
+        "services/diarization/pyannote_provider.py, a different class that since "
+        "#1204 answers with fixed sentences only)",
     ),
     "services/asr/speechmatics_provider.py::validate_connection": (
         1,
@@ -889,12 +897,6 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "HTTP surface sees it -- email_service.py:416 runs it through _scrub() "
         "before logging, watch_source_tasks.py:634 unpacks it as `_msg` and never "
         "reads it at all",
-    ),
-    "services/diarization/pyannote_provider.py::validate_connection": (
-        1,
-        "internal-only in the strongest sense: ZERO call sites. Required only "
-        "because DiarizationProvider (base.py:41) declares it @abstractmethod -- "
-        "see the comment on the method itself for why this is reported, not fixed",
     ),
     "services/backup_recovery.py::write_companion": (
         1,

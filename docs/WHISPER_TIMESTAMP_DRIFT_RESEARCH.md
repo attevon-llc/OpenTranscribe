@@ -321,7 +321,7 @@ All benchmarks: Joe Rogan Experience #2404 (3.3 hours, 11,893s), NVIDIA RTX A600
 
 #### 2. Silero VAD Parameter Tuning
 **Status**: IMPLEMENTED
-**Description**: Silero VAD parameters are now fully user-configurable via the Settings UI (Settings > Transcription > Advanced Transcription > VAD Settings). Users can tune `threshold`, `min_silence_duration_ms`, `min_speech_duration_ms`, and `speech_pad_ms` for specific audio types (noisy recordings, fast dialogue, lecture-style monologues).
+**Description**: Silero VAD parameters are now fully user-configurable via the Settings UI (Settings → Transcription → Accuracy & Cleanup → Voice activity detection). Users can tune `threshold`, `min_silence_duration_ms`, `min_speech_duration_ms`, and `speech_pad_ms` for specific audio types (noisy recordings, fast dialogue, lecture-style monologues).
 **Implementation**: Parameters stored per-user in the `user_setting` table, loaded at transcription time, passed through `TranscriptionConfig` to `BatchedInferencePipeline.transcribe()`. Environment variables provide system-wide defaults.
 **Files**: `backend/app/transcription/config.py`, `backend/app/transcription/transcriber.py`, `backend/app/api/endpoints/user_settings.py`, `frontend/src/components/settings/TranscriptionSettings.svelte`
 

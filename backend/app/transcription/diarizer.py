@@ -88,7 +88,7 @@ class SpeakerDiarizer:
                 else:
                     msg = (
                         f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
-                        "Ensure: 1) HUGGINGFACE_TOKEN is set in .env, "
+                        "Ensure: 1) a Hugging Face access token is set (Settings, or the server environment), "
                         "2) You accepted the gated model agreement for "
                         "speaker-diarization-community-1 "
                         "(https://huggingface.co/pyannote/speaker-diarization-community-1) "
@@ -127,7 +127,7 @@ class SpeakerDiarizer:
                         msg = (
                             f"PyAnnote fallback model '{PYANNOTE_V3_FALLBACK}' returned None. "
                             "This usually means your HuggingFace token lacks access to this gated model. "
-                            "Please verify your HUGGINGFACE_TOKEN and accept the model agreement on HuggingFace."
+                            "Please verify your Hugging Face access token and accept the model agreement on HuggingFace."
                         )
                     raise PermissionError(msg)
                 self._model_name = PYANNOTE_V3_FALLBACK

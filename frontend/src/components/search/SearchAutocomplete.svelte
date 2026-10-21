@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getErrorCode } from '$lib/utils/apiError';
   import { createDebouncedHandler } from '$lib/utils/debounce';
 
@@ -201,7 +202,12 @@
   {/if}
 
   {#if showSuggestions}
-    <div class="suggestions-dropdown" role="listbox" id="search-suggestions-listbox">
+    <div
+      class="suggestions-dropdown"
+      role="listbox"
+      id="search-suggestions-listbox"
+      use:anchoredPanel={{ anchor: inputEl }}
+    >
       {#each suggestions as suggestion, i}
         <button
           class="suggestion-item"
@@ -240,23 +246,12 @@
     width: 100%;
     height: 44px;
     padding: 0 1rem;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 12px;
-    background: var(--input-background, var(--surface-color, #fff));
-    color: var(--text-color, #111827);
     font-size: 0.9375rem;
-    outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
     color-scheme: light dark;
   }
 
   .search-input.has-value {
     padding-right: 2.5rem;
-  }
-
-  .search-input:focus {
-    border-color: var(--primary-color, #4f46e5);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
   }
 
   .clear-btn {
@@ -284,18 +279,13 @@
     background-color: var(--hover-color, #f1f5f9);
   }
 
+  /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .suggestions-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 4px;
     background: var(--card-background, var(--surface-color, #fff));
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 8px;
     box-shadow: var(--dropdown-shadow, 0 4px 12px rgba(0, 0, 0, 0.1));
-    z-index: 100;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   .suggestion-item {
@@ -365,8 +355,8 @@
   .operator-hint code {
     font-family: monospace;
     font-size: 0.75rem;
-    background: rgba(99, 102, 241, 0.08);
-    color: var(--primary-color, #4f46e5);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--primary-on-surface);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
   }

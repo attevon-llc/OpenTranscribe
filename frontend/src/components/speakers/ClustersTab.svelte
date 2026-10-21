@@ -35,6 +35,7 @@
   export let unassignBlacklist = true;
   export let clusterPage = 1;
   export let clusterPages = 0;
+  export let reviewCount = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -107,12 +108,23 @@
   {#if loadingClusters}
     <ListRowSkeleton count={6} />
   {:else if clusters.length === 0}
-    <EmptyState title={$t('speakers.clusters.emptyTitle')} description={$t('speakers.clusters.emptyDesc')} padding="60px 20px">
+    <EmptyState
+      title={$t('speakers.clusters.emptyTitle')}
+      description={reviewCount > 0
+        ? $t('speakers.clusters.emptyReviewDesc', { count: reviewCount })
+        : $t('speakers.clusters.emptyDesc')}
+      padding="60px 20px"
+    >
       <svelte:fragment slot="icon">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="12" cy="12" r="10" /><path d="M8 12h8" /><path d="M12 8v8" />
         </svg>
       </svelte:fragment>
+      {#if reviewCount > 0}
+        <button type="button" class="btn btn-secondary" on:click={() => dispatch('openReview')}>
+          {$t('speakers.clusters.openReview')}
+        </button>
+      {/if}
     </EmptyState>
   {:else}
     {#if mergeMode}
@@ -301,22 +313,12 @@
     width: 100%;
     min-width: 0;
     padding: 8px 32px 8px 12px;
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    background: var(--input-background);
-    color: var(--text-color);
     font-size: 14px;
     box-sizing: border-box;
   }
 
   .search-input::placeholder {
     color: var(--text-secondary);
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--input-focus-border);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
   }
 
   .btn-recluster {
@@ -350,7 +352,8 @@
 
   .last-clustered-chip {
     font-size: 11px;
-    color: var(--text-secondary);
+    /* 11px on the hover tint — --text-secondary measures 4.34:1 here, under AA. */
+    color: var(--text-on-tint);
     background: var(--hover-color);
     padding: 1px 7px;
     border-radius: 10px;
@@ -404,10 +407,8 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary, #6b7280);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     margin: 16px 0 4px;
     padding: 4px 4px;
     border: none;
@@ -505,7 +506,7 @@
     border-radius: 6px;
     margin-bottom: 12px;
     font-size: 14px;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .merge-banner span {

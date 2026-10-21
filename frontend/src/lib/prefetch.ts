@@ -1,8 +1,8 @@
 /**
- * Prefetch service for hover-based and post-login data preloading.
+ * Prefetch service for hover-based data preloading.
  *
  * Provides debounced hover prefetch for gallery/search cards,
- * post-login dashboard data prefetch, and search next-page prefetch.
+ * and search next-page prefetch.
  */
 
 import axiosInstance from '$lib/axios';
@@ -76,27 +76,6 @@ export function cancelPrefetch(): void {
 }
 
 /**
- * Prefetch dashboard data (file list + user settings) after login.
- * Fires in parallel, fails silently.
- */
-export function prefetchDashboardData(): void {
-  // Prefetch the first page of files
-  const filesKey = cacheKey.files(1, '');
-  apiCache
-    .getOrFetch(filesKey, () => axiosInstance.get('/files').then((r) => r.data), CacheTTL.FILES)
-    .catch(() => {});
-
-  // Prefetch collections
-  apiCache
-    .getOrFetch(
-      cacheKey.collections(),
-      () => axiosInstance.get('/collections').then((r) => r.data),
-      CacheTTL.COLLECTIONS
-    )
-    .catch(() => {});
-}
-
-/**
  * Prefetch speakers page data on hover.
  * Fires all three tab endpoints in parallel, fails silently.
  */
@@ -128,28 +107,6 @@ export function prefetchSpeakersData(): void {
           .get('/speaker-clusters/unverified/inbox', { params: { page: 1, per_page: 20 } })
           .then((r) => r.data),
       CacheTTL.SPEAKERS
-    )
-    .catch(() => {});
-}
-
-/**
- * Prefetch file status data on hover of the File Status nav link.
- * Fires status summary + first page of tasks in parallel, fails silently.
- */
-export function prefetchFileStatusData(): void {
-  apiCache
-    .getOrFetch(
-      cacheKey.status(),
-      () => axiosInstance.get('/my-files/status').then((r) => r.data),
-      CacheTTL.STATUS
-    )
-    .catch(() => {});
-
-  apiCache
-    .getOrFetch(
-      'tasks:page1',
-      () => axiosInstance.get('/tasks?page=1&page_size=25').then((r) => r.data),
-      CacheTTL.STATUS
     )
     .catch(() => {});
 }

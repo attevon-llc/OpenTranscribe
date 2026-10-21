@@ -162,7 +162,7 @@
   .preview-time {
     font-family: monospace;
     font-weight: 600;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     flex-shrink: 0;
     white-space: nowrap;
   }
@@ -193,7 +193,7 @@
     align-items: center;
     gap: 0.25rem;
     font-size: 0.75rem;
-    color: var(--primary-color, #4f46e5);
+    color: var(--primary-on-surface);
     text-decoration: none;
     padding: 0.25rem 0.5rem;
     border-radius: 6px;
@@ -201,7 +201,7 @@
   }
 
   .preview-detail-link:hover {
-    background: color-mix(in srgb, var(--primary-color, #4f46e5) 8%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
   }
 
   .preview-close {

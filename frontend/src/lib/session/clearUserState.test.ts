@@ -18,6 +18,7 @@ import { get } from 'svelte/store';
 import { clearUserState } from '$lib/session/clearUserState';
 import { apiCache, CacheTTL } from '$lib/apiCache';
 import { capabilities } from '$stores/capabilities';
+import { peekSectionData, setSectionData } from '$lib/settings/sectionData';
 
 describe('clearUserState', () => {
   beforeEach(() => {
@@ -36,6 +37,16 @@ describe('clearUserState', () => {
     await clearUserState();
 
     expect(apiCache.stats().size).toBe(0);
+  });
+
+  it('forgets the stale-while-revalidate settings copies, so User B never sees User A’s config', async () => {
+    setSectionData('settings:auth-config', { local: ['user-a'] });
+    setSectionData('settings:pipeline', { steps: [] });
+
+    await clearUserState();
+
+    expect(peekSectionData('settings:auth-config')).toBeUndefined();
+    expect(peekSectionData('settings:pipeline')).toBeUndefined();
   });
 
   it('resets capabilities to unloaded community defaults (cloud tier leak)', async () => {
@@ -72,6 +83,28 @@ describe('clearUserState', () => {
     expect(localStorage.getItem('notifications')).toBeNull();
     expect(localStorage.getItem('upload_queue')).toBeNull();
     expect(localStorage.getItem('opentr:uploadPreviousValues')).toBeNull();
+  });
+
+  it('ends an active support-access session on logout and forgets the tab-scoped pointer', async () => {
+    // A grant must not outlive the login that started it (issue #1122): the header
+    // would otherwise ride the NEXT user's requests in this tab.
+    const { supportSession } = await import('$stores/supportSession');
+    const { getSupportAccessHeaders, setActiveSupportGrant } = await import(
+      '$lib/supportAccess/headers'
+    );
+    const end = vi.spyOn(supportSession, 'end');
+    setActiveSupportGrant('11111111-2222-3333-4444-555555555555');
+    sessionStorage.setItem('opentr:supportSession', JSON.stringify({ grantUuid: 'x' }));
+    try {
+      await clearUserState();
+
+      expect(end).toHaveBeenCalledWith('logout');
+      expect(sessionStorage.getItem('opentr:supportSession')).toBeNull();
+    } finally {
+      end.mockRestore();
+      setActiveSupportGrant(null);
+    }
+    expect(getSupportAccessHeaders('/files/x')).toEqual({});
   });
 
   it('preserves UI preferences — over-clearing is a bug too', async () => {

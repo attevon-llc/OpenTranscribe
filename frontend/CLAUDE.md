@@ -18,6 +18,11 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is
   loaded (not the `en` fallback), which is safe because `npm run check:i18n` enforces exact
   key parity — keep it green.
+  **A link or badge inside a sentence is ONE translated string with a named placeholder**, rendered
+  with `$lib/i18n/slots` (`$t(key, { link: SLOT })` then `splitAtSlot`); never a `*Suffix` key or a
+  value that starts with a space, dash or punctuation (`lib/i18n/sourceCopy.test.ts`). Accents are
+  part of the word: `lib/i18n/accents.test.ts` fails on es/fr/pt/de words written without them
+  (#1222).
 
 ## Commands (run in `frontend/`)
 
@@ -163,5 +168,55 @@ Tokens live in `src/styles/theme.css`; the light values are on `:root`, the dark
 Hand-rolled icon buttons are where this recurs, because they are copied rather than reused.
 Prefer the `ui/` primitives (`SearchBar`'s clear/next controls, `CopyButton`, `Chip`,
 `BaseModal`'s header close) over re-declaring the pattern.
+
+- **The app has no purple.** `a:visited` used to set `--link-visited` (indigo), which also repainted
+  every visited `.btn`-style anchor (the `:visited` selector out-specifies `.btn`); the rule and token are
+  gone, visited links keep the link blue. `src/styles/noPurple.test.ts` fails on any violet-to-magenta
+  hex/rgb/hsl literal or purple colour keyword in `.svelte`/`.css`/`.ts`, and on a `:visited` rule that sets
+  a colour. Use `--primary-color-rgb` / `--primary-on-surface` for tints, never an indigo literal. Allowlisted
+  with reasons: the speaker palette (data) and the CUI classification banner colour (regulatory).
+
+## Type and weight rules (issue #1243)
+
+The scale, weights, line heights and prose measure are tokens in `src/styles/theme.css`
+(`--font-size-2xs … --font-size-2xl`, `--font-weight-regular|medium|semibold`,
+`--line-height-tight|snug|body`, `--measure-prose`). New and edited CSS uses them; don't add
+another literal size (the tree had ~60 distinct ones).
+
+- **Body text is regular (400).** 500 is for labels, chips, meta and result titles; 600 is
+  for headings and true emphasis (`strong`, `th`). **Nothing is 700** — `theme.css` maps
+  `strong`/`b`/`th`/`h1-h6` to semibold, since the browser default (700) is Poppins Bold.
+- **`app.html`'s `@font-face` weights must point at the file downloaded for that weight**
+  (`scripts/download-fonts.js`). Weight 600 used to load `Poppins-Bold.woff2`, so every
+  "semibold" in the app rendered bold; `src/styles/typography.test.ts` pins the mapping.
+- Reading text (chat answers and messages) is `--font-size-body` (15px) at
+  `--line-height-body` (1.6), capped at `--measure-prose` (72ch). Snippets and dense lists
+  are `--font-size-md`; metadata `--font-size-sm`/`xs`, in `--text-secondary`.
+- Chat: the user's turn is the tinted bubble, the assistant's answer is plain text with no
+  surface. Assistant markdown styling lives ONLY in `chat/ChatMarkdown.svelte`.
+- Search results follow search-engine hierarchy: title (`--font-size-lg`, medium, link colour
+  `--primary-on-surface`), then muted meta, then the snippet with a `--highlight-bg` mark. A
+  bare `<mark>` anywhere gets that highlight from `theme.css`.
+- Link-coloured TEXT uses `--primary-on-surface`, never `--primary-color`: the button blue is
+  2.9:1 on the dark card.
+- **RTL**: use logical properties (`padding-inline-start`, `border-inline-start`,
+  `text-align: start`, `inset-inline-end`), and give user/model-authored text `dir="auto"` so
+  an English answer in the `ar` UI keeps its own direction. Code blocks are always LTR.
+  `typography.test.ts` fails on physical left/right properties in the chat prose and search
+  result components.
+- Empty states: `ui/EmptyState` owns the icon -> title -> description -> action rhythm
+  (`--empty-state-gap`, `--empty-state-action-gap`); pass actions in its default slot and
+  never add your own margin to them. Buttons need the base `.btn` class as well as
+  `.btn-secondary`/`.btn-primary`, which carry colour only, no padding.
+
+## Floating panels flip and clamp: use the `anchoredPanel` action
+
+Any dropdown, menu, popover or suggestion panel is placed with `use:anchoredPanel` from
+`$lib/actions/anchoredPanel` — never `position: absolute; top: 100%`. It portals the panel to `<body>`
+(`position: fixed`, so no scrolling sidebar/modal body clips it and no transformed ancestor re-roots it),
+opens below, flips above when there is no room below, caps `max-height` so the panel scrolls internally,
+and clamps to the viewport in LTR and RTL. `components/floatingPanel.convention.test.ts` fails on a
+component that skips it; exceptions need a written reason in its `ALLOWED` map. Usage and the click-outside
+caveat: `src/components/ui/CLAUDE.md`.
 
 ## Verify UI changes in a browser (light + dark) — type-check ≠ feature-check.

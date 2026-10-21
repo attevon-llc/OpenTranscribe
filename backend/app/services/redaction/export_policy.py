@@ -46,6 +46,7 @@ for a masking decision. See ``api/endpoints/files/__init__.py``.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 
@@ -115,3 +116,19 @@ def export_policy_fingerprint(cfg: EffectiveRedactionConfig | None) -> str:
         sort_keys=True,
     )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
+
+
+def plain_text_policy(cfg: EffectiveRedactionConfig) -> EffectiveRedactionConfig:
+    """The policy a plain-text artifact (a file, a caption track) is masked with.
+
+    ``blur`` is a style for the transcript VIEW: its placeholder is a
+    ``<span class="redacted">`` wrapping the ORIGINAL text, which the page blurs with CSS.
+    Written into an SRT, a WebVTT cue, a TXT/CSV/JSON export or a burned-in video there is
+    no CSS: the original is simply the text. So every plain-text surface masks with the
+    ``label`` placeholder instead (the substitution search snippets and summaries already
+    make) and keeps every other part of the policy (categories, entities, allowlist,
+    custom words) exactly as resolved.
+    """
+    if cfg.style == "blur":
+        return dataclasses.replace(cfg, style="label")
+    return cfg

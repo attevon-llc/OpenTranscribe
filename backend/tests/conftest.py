@@ -4,19 +4,25 @@
 # HTTPException.detail, which is typed str while every lifecycle gate raises an
 # object. Declared once here rather than as a cast at every call site — casts
 # bury the assertion, and widening a production signature to suit a test is worse.
+import atexit
 import itertools
 import os
 import re
+import shutil
 import socket
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+if TYPE_CHECKING:
+    from tests.testrun_marker import LiveRunMarker
 
 # Add backend directory to Python path for imports
 _backend_dir = Path(__file__).parent.parent
@@ -40,8 +46,12 @@ for _var in _db_vars + _minio_vars:
     if _var in _env_values and _env_values[_var]:
         os.environ.setdefault(_var, _env_values[_var])
 
-# Create temporary directories for testing
+# Create temporary directories for testing. One per process (each xdist worker imports this
+# file), removed when the process exits. It used to be removed by nothing: 7,358 of these were
+# sitting in /tmp on 2026-10-11. A SIGKILLed worker still skips atexit; the prefix is
+# registered in scripts/cleanup-test-data.py's tmp plane, which sweeps what that leaves.
 _test_temp_dir = tempfile.mkdtemp(prefix="opentranscribe_test_")
+atexit.register(shutil.rmtree, _test_temp_dir, ignore_errors=True)
 _test_data_dir = os.path.join(_test_temp_dir, "data")
 _test_upload_dir = os.path.join(_test_data_dir, "uploads")
 _test_models_dir = os.path.join(_test_temp_dir, "models")
@@ -208,6 +218,29 @@ def _selection_may_run_gpu_tests(markexpr: str) -> bool:
     return False
 
 
+_LIVE_RUN_MARKER: "pytest.StashKey[LiveRunMarker]" = pytest.StashKey()
+
+
+def _register_live_test_run(config: pytest.Config) -> None:
+    """Mark this pytest run LIVE for ``scripts/cleanup-test-data.py`` (see testrun_marker.py).
+
+    The controller process only: xdist workers live and die inside it, so its marker already
+    covers whatever they create, and N workers would otherwise mean N markers per run.
+    """
+    if hasattr(config, "workerinput"):
+        return
+    from tests.testrun_marker import LiveRunMarker
+    from tests.testrun_marker import default_testruns_dir
+
+    config.stash[_LIVE_RUN_MARKER] = LiveRunMarker(default_testruns_dir(_project_root))
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    marker = config.stash.get(_LIVE_RUN_MARKER, None)
+    if marker is not None:
+        marker.release()
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Restrict CUDA device visibility unless the selection may run gpu tests.
 
@@ -223,6 +256,7 @@ def pytest_configure(config: pytest.Config) -> None:
     (`test_an_ambient_cuda_visible_devices_does_not_release_the_guard`) exists
     to catch a regression back to it.
     """
+    _register_live_test_run(config)
     hatch = os.environ.get(_CUDA_GUARD_HATCH)
     if hatch is not None:
         if hatch != "all":
@@ -310,6 +344,35 @@ pytest_plugins = [
     "fixtures.dir_collector_memo",
     "fixtures.search_corpus_stack",
     "fixtures.auth_state_isolation",
+    # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
+    # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
+    "fixtures.summary_plane",
+    # `support_world`: two organizations, an org admin, a platform admin and a super_admin with
+    # real tokens, for the support-access grant suites (#1122). Opt-in; nothing autouse.
+    "fixtures.support_world",
+    # `speaker_os_seams`: recording stand-ins for every OpenSearch seam the shared speaker
+    # cleanup (#1214) touches. Opt-in; nothing autouse.
+    "fixtures.speaker_cleanup_seams",
+    # `speaker_assignment_seams`: the kNN reads the assignment paths make (cluster and
+    # profile matching, re-cluster embeddings), answered from the same recorders (#1233).
+    "fixtures.speaker_assignment_seams",
+    # `hf_cache`: an empty temporary Hugging Face hub cache, with builders for complete and
+    # interrupted repository layouts (#1246). Opt-in; nothing autouse.
+    "fixtures.hf_cache",
+    # `mock_hf_hub`: a loopback stand-in for the Hugging Face hub (model-info API + file
+    # endpoint with ETag/Range) so the real downloader runs with no network (#1246).
+    "fixtures.mock_hf_hub",
+    # `local_model_redis`: one throwaway redis:7-alpine per xdist worker on a free loopback
+    # port, for the model-download lock/state/supervisor/endpoint suites (#1246). Opt-in.
+    "fixtures.throwaway_redis",
+    # `local_model_redis`: one throwaway redis:7-alpine per xdist worker on a free loopback
+    # port, for the model-download lock/state/supervisor/endpoint suites (#1246). Opt-in.
+    "fixtures.throwaway_redis",
+    # pytest's own bundled plugin, enabling the `pytester` fixture — used by
+    # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
+    # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures
+    # of its own beyond `pytester`/`pytester_static_path`, so nothing else changes.
+    "pytester",
 ]
 
 

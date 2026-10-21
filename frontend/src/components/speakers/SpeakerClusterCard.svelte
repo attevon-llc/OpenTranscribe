@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { SpeakerCluster } from '$lib/types/speakerCluster';
   import { t } from '$stores/locale';
+  import GenderBadge from './GenderBadge.svelte';
 
   export let cluster: SpeakerCluster;
   export let expanded = false;
@@ -54,11 +55,17 @@
     if (e.key === 'Escape') cancelEdit();
   }
 
+  /**
+   * Returns a TEXT colour, so it must use the text-weight status tokens rather than the
+   * fill ones. `--success-color` (#10b981) on the badge's own success tint measures
+   * 2.27:1 — less than half of WCAG AA's 4.5:1 — and the amber and red fills fail the
+   * same way. The `--color-*-text` variants exist for exactly this distinction.
+   */
   function qualityColor(score: number | null): string {
-    if (score === null) return 'var(--text-secondary)';
-    if (score >= 0.8) return 'var(--success-color, #10b981)';
-    if (score >= 0.6) return 'var(--warning-color, #f59e0b)';
-    return 'var(--error-color, #ef4444)';
+    if (score === null) return 'var(--text-on-tint)';
+    if (score >= 0.8) return 'var(--color-success-text, #047857)';
+    if (score >= 0.6) return 'var(--color-warning-text, #b45309)';
+    return 'var(--color-error-text, #b91c1c)';
   }
 </script>
 
@@ -120,19 +127,20 @@
           {$t('speakers.cluster.matchPercent', { score: (cluster.quality_score * 100).toFixed(0) })}
         </span>
       {/if}
-      {#if cluster.gender_composition && cluster.gender_composition.total_with_gender > 0}
+      {#if cluster.gender_composition && cluster.gender_composition.total_with_gender > 0 && (cluster.gender_composition.dominant_gender === 'male' || cluster.gender_composition.dominant_gender === 'female')}
         <span
           class="gender-chip"
           class:gender-coherent={!cluster.gender_composition.has_gender_conflict}
           class:gender-conflict={cluster.gender_composition.has_gender_conflict}
           title={cluster.gender_composition.has_gender_conflict ? $t('speakers.cluster.genderConflict') : $t('speakers.cluster.genderCoherent')}
         >
-          {#if cluster.gender_composition.dominant_gender === 'male'}
-            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
-          {:else}
-            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
-          {/if}
-          {cluster.gender_composition.gender_label}
+          <!--
+            Composed from the structured `dominant_gender`/`has_gender_conflict` fields
+            rather than the backend's `gender_label` string (issue #756) — that string is
+            untranslated English ("mostly male") which no locale can render, and the
+            backend already sends the structured data this chip needs.
+          -->
+          <GenderBadge gender={cluster.gender_composition.dominant_gender} />
         </span>
       {/if}
       <span class="member-count" title={$t('speakers.tooltip.memberCount')}>{$t('speakers.cluster.memberCount', { count: cluster.member_count })}</span>
@@ -248,7 +256,7 @@
 
   .cluster-label.suggested {
     font-style: italic;
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
   }
 
   .suggested-badge {
@@ -257,20 +265,15 @@
     padding: 1px 6px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
   }
 
   .label-input {
     font-weight: 500;
-    border: 1px solid var(--primary-color, #3b82f6);
-    border-radius: 4px;
     padding: 2px 6px;
     font-size: inherit;
-    background: var(--card-background, #ffffff);
-    color: var(--text-color, #111827);
-    outline: none;
     min-width: 0;
     flex: 1;
     box-sizing: border-box;
@@ -306,12 +309,6 @@
     gap: 3px;
     line-height: 1;
     vertical-align: middle;
-  }
-
-  .gender-svg {
-    width: 12px;
-    height: 12px;
-    flex-shrink: 0;
   }
 
   .gender-coherent {
@@ -398,7 +395,7 @@
 
   /* Split — blue outline → solid blue (matches primary action palette) */
   .action-btn.split {
-    color: var(--primary-color, #3b82f6);
+    color: var(--primary-on-surface);
     border-color: var(--primary-color, #3b82f6);
   }
 

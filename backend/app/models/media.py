@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import backref
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -63,6 +64,12 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # When processing completed
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)  # Duration in seconds
+    # Where ``duration`` came from (v431, issue #969) — mirrors ``recorded_date_source``.
+    # NULL means "written before #969 was fixed; provenance unknown" — the pre-fix
+    # pipeline unconditionally overwrote this column with the transcript's speech
+    # extent, so an un-backfilled NULL row's duration is presumptively wrong. See
+    # ``app.core.enums.DurationSource``.
+    duration_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # BigInteger, not Integer: the column is bigint in Postgres and the app
     # advertises 15 GB uploads (MAX_UPLOAD_BYTES), well past Integer's 2.1 GB
     # ceiling. The model said Integer while the database said bigint — reads
@@ -281,6 +288,12 @@ class MediaFile(Base):
     requested_whisper_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Model user asked for at upload
+    # The rest of the file's per-file request, so a retry or recovery re-dispatches what the
+    # user chose rather than falling back to defaults. NULL = "not asked" (saved setting wins).
+    requested_min_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_max_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_num_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    requested_disable_diarization: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     diarization_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # e.g., "pyannote/speaker-diarization-3.1"
@@ -301,6 +314,12 @@ class MediaFile(Base):
     diarization_disabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )  # True when user explicitly skipped diarization
+    # Per-step provider/model/where record (issue #1229), {"v": 1, "steps": {...}}. Written
+    # only by services/file_provenance.record_stage (one atomic jsonb_set); NULL = processed
+    # before recording began. Deferred: the gallery loads this row whole and never reads it.
+    processing_provenance: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, deferred=True
+    )
 
     # Upload batch tracking
     upload_batch_id: Mapped[int | None] = mapped_column(
@@ -376,6 +395,16 @@ class MediaFile(Base):
         CheckConstraint(
             "NOT recorded_date_locked OR recorded_date_source = 'manual'",
             name="ck_media_file_recorded_date_locked_is_manual",
+        ),
+        # v431 (#969). No provenance-required companion CHECK like
+        # ``ck_media_file_recorded_date_provenance``: every pre-existing row already
+        # has a duration and a NULL source, and the migration deliberately does not
+        # backfill (see v431's docstring) — that pairing would refuse to insert on
+        # a live production schema.
+        CheckConstraint(
+            "duration_source IS NULL OR duration_source IN "
+            "('container', 'transcript_extent', 'none')",
+            name="ck_media_file_duration_source",
         ),
         Index(
             "ix_media_file_recorded_date",
@@ -606,7 +635,7 @@ class Speaker(Base):
     )  # AI-suggested name from LLM or embedding match
     suggestion_source: Mapped[str | None] = mapped_column(
         String, nullable=True
-    )  # Source of suggestion: "llm_analysis", "voice_match", "profile_match"
+    )  # "llm_analysis" (a guess; never the label), "voice_match"/"profile_match" (voiceprint), "user_skipped"
     verified: Mapped[bool | None] = mapped_column(
         Boolean, default=False
     )  # Flag to indicate if the speaker has been verified
@@ -842,6 +871,20 @@ class Task(Base):
     # Relationships
     user: Mapped["User"] = relationship("User")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", back_populates="tasks")
+
+    # ⚠️ Do NOT add a non-mapped attribute here to carry a computed value out of a
+    # helper. A `duration_seconds` transient briefly lived on this class for issue
+    # #753's notification chip and was wrong twice over: as a bare `float | None` it
+    # raised `MappedAnnotationError` at class-definition time (SQLAlchemy 2.0
+    # Annotated Declarative scans every annotated class attribute and rejects anything
+    # that is neither `Mapped[...]` nor `ClassVar[...]`), so `import app.models.media`
+    # failed and the whole app refused to start; and as a `ClassVar[...]` it satisfied
+    # SQLAlchemy but made every write a mypy error, because assigning to a ClassVar
+    # through an instance is a type error even though Python permits it.
+    #
+    # The value is now simply RETURNED — `task_utils.update_task_status_with_duration`
+    # hands back `(task, duration_seconds)`. Smuggling a computed value out on an ORM
+    # object was fighting both tools because it was the wrong shape.
 
 
 class Analytics(Base):
@@ -1101,7 +1144,12 @@ class SpeakerCluster(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", backref="speaker_clusters")
+    # passive_deletes: speaker_cluster.user_id is NOT NULL + ON DELETE CASCADE, so the
+    # database removes the clusters with the account. A bare backref made the ORM NULL the
+    # FK first, and every account owning a cluster failed to delete.
+    user: Mapped["User"] = relationship(
+        "User", backref=backref("speaker_clusters", passive_deletes="all")
+    )
     promoted_to_profile: Mapped["SpeakerProfile | None"] = relationship(
         "SpeakerProfile", foreign_keys=[promoted_to_profile_id]
     )
@@ -1227,6 +1275,43 @@ class SpeakerProfileBlacklist(Base):
 
     __table_args__ = (
         UniqueConstraint("speaker_id", "profile_id", name="uq_speaker_profile_blacklist"),
+    )
+
+
+class SpeakerCorrectionCarryover(Base):
+    """A user's correction, kept by the AUDIO it judged while a re-run replaces the speaker.
+
+    Re-diarizing, re-transcribing or retrying a file deletes its speakers, and the
+    ``ON DELETE CASCADE`` on the two tables above takes every correction with them. One
+    row per correction of a deleted speaker: the speaker's time ``spans`` and what it
+    was ruled out from (a profile, or a speaker of another file). The re-run's segment
+    save hands it to the new speakers whose speech lies in those spans, then deletes it
+    (``services/speaker_correction_carryover``; issue #1233).
+    """
+
+    __tablename__ = "speaker_correction_carryover"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    media_file_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    profile_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("speaker_profile.id", ondelete="CASCADE"), nullable=True
+    )
+    cannot_link_speaker_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=True
+    )
+    spans: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(profile_id IS NULL) <> (cannot_link_speaker_id IS NULL)",
+            name="ck_speaker_correction_carryover_one_target",
+        ),
     )
 
 

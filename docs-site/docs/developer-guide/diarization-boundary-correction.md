@@ -171,8 +171,8 @@ UI. No `.env` variables are *required* — env is fallback-only.
   `DELETE "/{key}"` (reset to env/default). Each value is returned with its `source`
   (`db` / `env` / `default`). The update model validates `boundary_acoustic_cosine_margin`
   ∈ [0, 1] and `boundary_acoustic_max_word_dur` ∈ [0.1, 5.0].
-- **UI:** `frontend/src/components/settings/EngineSettings.svelte` — Settings → Engine
-  Configuration. Toggles for smoothing and acoustic re-check, plus the cosine-margin and
+- **UI:** `frontend/src/components/settings/EngineSettings.svelte` — Settings → Speaker Identification →
+  Speaker Engine. Toggles for smoothing and acoustic re-check, plus the cosine-margin and
   max-word-duration inputs.
 
 The admin-facing keys (`engine.boundary_smoothing_enabled`,

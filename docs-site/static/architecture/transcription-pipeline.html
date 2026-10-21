@@ -4959,7 +4959,7 @@
       </div>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"happy-path","label":"Upload to searchable transcript","focus":["user","backend","dispatch","preprocess","asr","diarize","postprocess","index","notify"],"note":"The full path from an uploaded file to a searchable, speaker-labeled transcript."},{"id":"gpu-work","label":"GPU-bound work","focus":["preprocess","asr","diarize"],"note":"ASR and diarization run on Celery's gpu queue; this is the expensive part of the pipeline."},{"id":"post-processing","label":"Post-processing + delivery","focus":["postprocess","index","notify"],"note":"Boundary correction, redaction, DB write, search indexing, and the WebSocket notification back to the user."}]</script>
+    <script id="archify-guided-views-data" type="application/json">[{"id":"happy-path","label":"Upload to searchable transcript","focus":["user","backend","dispatch","preprocess","transcribe","postprocess","index","notify"],"note":"Default (local Whisper, Automatic): speakers and voiceprints come out of the transcription task itself."},{"id":"plan","label":"One decision point","focus":["backend","dispatch","transcribe","poststage","voiceprints"],"note":"dispatch.py resolves pipeline_plan once, refuses blocking issues before queueing, and every stage reads that plan."},{"id":"speakers","label":"Speaker detection paths","focus":["transcribe","postprocess","poststage","voiceprints","index"],"note":"Speakers inline in the transcribe task, or in a post stage after the transcript is saved. Voiceprints always run here."}]</script>
 
     <script id="archify-i18n-data" type="application/json">{"locale":"en","messages":{"viewer.kind.frontend":"Frontend","viewer.kind.backend":"Backend","viewer.kind.database":"Database","viewer.kind.cloud":"Cloud","viewer.kind.security":"Security","viewer.kind.messagebus":"Message bus","viewer.kind.external":"External","viewer.kind.neutral":"Neutral","viewer.kind.node":"Node","viewer.kind.start":"Start","viewer.kind.active":"Active","viewer.kind.waiting":"Waiting","viewer.kind.decision":"Decision","viewer.kind.success":"Success","viewer.kind.failure":"Failure","viewer.toolbar.actions":"Diagram actions","viewer.theme.toggle.title":"Toggle theme (T)","viewer.theme.toggle":"Toggle color theme","viewer.theme.dark":"Dark","viewer.theme.light":"Light","viewer.preset.choose.title":"Choose visual style (S cycles)","viewer.preset.choose":"Choose visual style","viewer.preset.style":"Style","viewer.preset.menu":"Visual style","viewer.preset.identity":"Visual identity","viewer.preset.cycles":"S cycles","viewer.preset.classic":"Classic","viewer.preset.classic.short":"Classic","viewer.preset.classic.hint":"Stable technical default","viewer.preset.flow":"Signal Flow","viewer.preset.flow.short":"Flow","viewer.preset.flow.hint":"Motion-forward presentation","viewer.preset.blueprint":"Blueprint","viewer.preset.blueprint.hint":"Engineering review","viewer.preset.editorial":"Editorial","viewer.preset.editorial.hint":"Publication and launch notes","viewer.preset.badge.signalFlow":"SIGNAL FLOW","viewer.preset.badge.blueprint":"BLUEPRINT / REV 01","viewer.preset.badge.editorial":"EDITORIAL / FIELD NOTE","viewer.preset.badge.editorialPlate":"ARCHIFY / PLATE 04","viewer.preset.current":"Visual style: {style}. Choose visual style","viewer.motion.live":"Live","viewer.motion.still":"Still","viewer.motion.pause":"Pause motion","viewer.motion.resume":"Resume motion","viewer.motion.reduced":"Motion paused by reduced-motion preference","viewer.motion.hidden":"Motion paused while this page is hidden","viewer.motion.yielding":"Pause motion; currently yielding to {owner}","viewer.motion.yielding.title":"Live preview enabled · yielding to {owner}","viewer.owner.story":"the guided story","viewer.owner.chapter":"the active chapter","viewer.owner.chapterPreview":"the chapter delta preview","viewer.owner.handoff":"the chapter handoff","viewer.owner.route":"Route Probe","viewer.owner.lens":"Semantic Lens","viewer.owner.relationship":"Relationship Preview","viewer.owner.intent":"Intent Trace","viewer.owner.focus":"semantic focus","viewer.owner.legend":"legend preview","viewer.owner.reader":"reader interaction","viewer.present.enter":"Enter presentation stage","viewer.present.enter.title":"Presentation stage (F)","viewer.present.exit":"Exit presentation stage","viewer.present.exit.title":"Exit presentation stage (F or Escape)","viewer.present.present":"Present","viewer.present.exit.label":"Exit","viewer.export.button":"Export","viewer.export.button.title":"Export diagram (E)","viewer.export.diagram":"Export diagram","viewer.export.menu":"Export","viewer.export.subtitle":"Portable, clean outputs","viewer.export.share":"Share","viewer.export.shareCard":"Share Card","viewer.export.routeShareCard":"Route Share Card","viewer.export.reachShareCard":"Reach Share Card","viewer.export.copyShareCard":"Copy Share Card","viewer.export.copyDiagram":"Copy diagram","viewer.export.clipboardPng":"PNG to clipboard","viewer.export.raster":"Raster images","viewer.export.image":"Image","viewer.export.lossless":"Lossless image","viewer.export.compact":"Compact image","viewer.export.modern":"Modern image","viewer.export.vectorMotion":"Vector and motion","viewer.export.vectorMotion.heading":"Vector \u0026 motion","viewer.export.editable":"Editable vector","viewer.export.motion6s":"6s motion","viewer.export.unsupported":"Not supported by this browser","viewer.export.clipboardUnsupported":"Clipboard image write not supported by this browser","viewer.export.clipboardUnsupported.period":"Clipboard image write not supported by this browser.","viewer.export.clipboardUnsupported.short":"Clipboard image write not supported in this browser.","viewer.export.motionUnavailable":"Motion capture unavailable in this browser","viewer.export.webmUnavailable":"WebM unavailable in this browser","viewer.export.failed":"Export failed: {message}","viewer.export.unknownVariant":"Unknown Share Card variant: {variant}","viewer.export.routeRequired":"Trace a route before exporting a Route Share Card","viewer.export.reachRequired":"Trace authored reach before exporting a Reach Share Card","viewer.export.unknown":"unknown","viewer.export.routeFailed":"Route Share Card export failed: {message}","viewer.export.reachFailed":"Reach Share Card export failed: {message}","viewer.export.copyFailed":"Copy failed: {message}","viewer.export.copiedPng":"Copied PNG to clipboard","viewer.export.copiedShare":"Copied Share Card","viewer.export.downloadedShare":"Downloaded Share Card","viewer.export.downloadedRoute":"Downloaded Route Share Card","viewer.export.downloadedReach":"Downloaded Reach Share Card","viewer.export.downloadedWebm":"Downloaded WebM","viewer.export.recording":"Recording 6 seconds of motion…","viewer.export.card.routeSummary.one":"Route: {source} → {target} · {count} directed hop","viewer.export.card.routeSummary.other":"Route: {source} → {target} · {count} directed hops","viewer.export.card.reachSummary":"Authored {direction} from {origin} · {nodes} · {links} · max {hops}","viewer.export.card.node.one":"{count} node","viewer.export.card.node.other":"{count} nodes","viewer.export.card.link.one":"{count} link","viewer.export.card.link.other":"{count} links","viewer.export.card.hop.one":"{count} hop","viewer.export.card.hop.other":"{count} hops","viewer.export.card.routeBadge":"ARCHIFY · ROUTE · {hops}","viewer.export.card.reachBadge":"ARCHIFY · {direction} REACH","viewer.export.card.defaultBadge":"ARCHIFY · {preset} · {theme}","viewer.export.direction.upstream":"Upstream","viewer.export.direction.downstream":"Downstream","viewer.export.error.canvasUnavailable":"Canvas unavailable for {label}","viewer.export.error.contextUnavailable":"2D canvas context unavailable for {label}","viewer.export.error.toBlobUnavailable":"canvas.toBlob unavailable for {label}","viewer.export.error.toBlobNull":"canvas.toBlob returned no data for {label}","viewer.export.error.variantsCombined":"Share Card variants cannot be combined","viewer.export.error.viewerState":"Share Card export could not remove temporary viewer state","viewer.export.error.routeState":"Route Card export could not preserve the resolved route safely","viewer.export.error.reachState":"Reach Card export could not preserve authored reach safely","viewer.export.error.webmRequirements":"WebM motion export requires a trace animation and browser MediaRecorder support","viewer.export.error.mediaRecorder":"MediaRecorder failed","viewer.export.error.emptyWebm":"MediaRecorder produced an empty WebM","viewer.export.error.webmBackground":"SVG background could not be loaded for WebM export","viewer.guided.region":"Guided diagram views","viewer.guided.previous":"Previous guided view","viewer.guided.previous.title":"Previous guided view ([)","viewer.guided.next":"Next guided view","viewer.guided.next.title":"Next guided view (])","viewer.guided.views":"Guided views","viewer.guided.explore":"Explore this system","viewer.guided.intro":"Step through curated paths without changing the source diagram.","viewer.guided.trail":"Story trail","viewer.guided.beat":"Beat","viewer.guided.nextBeat":"Next","viewer.guided.play":"Play guided story","viewer.guided.play.title":"Play guided story (P)","viewer.guided.pause":"Pause guided story","viewer.guided.pause.title":"Pause guided story (P)","viewer.guided.replay":"Replay guided story","viewer.guided.replay.title":"Replay guided story (P)","viewer.guided.playStory":"Play story","viewer.guided.pauseStory":"Pause","viewer.guided.replayStory":"Replay story","viewer.guided.motionUnavailable":"Story playback unavailable while motion is Still","viewer.guided.enableMotion":"Switch motion to Live to play the guided story","viewer.guided.selectBeatLink":"Select a Story Beat to copy its exact link","viewer.guided.copyMoment":"Copy moment","viewer.guided.momentCopied":"Moment link copied","viewer.guided.momentCopyFailed":"Could not copy story moment link","viewer.guided.copied":"Copied","viewer.guided.copyFailed":"Copy failed","viewer.guided.showAll":"Show all","viewer.guided.showAll.aria":"Show entire diagram","viewer.guided.chapters":"Story chapters","viewer.guided.storyTrail":"Story trail for {label}: {count} beats","viewer.guided.chapter.open":"Open chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.current":"Current chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.selectedNodes":"{count} selected nodes","viewer.guided.chapter.stops":"{count} stops","viewer.guided.chapter.stop.one":"{count} stop","viewer.guided.chapter.stop.other":"{count} stops","viewer.guided.chapter.current.title":"{label} — current chapter, {count} stops","viewer.guided.chapter.delta.expanded":"{stay} stay, {enter} enter, {leave} leave","viewer.guided.chapter.delta.aria":"Open chapter {index} of {total}: {label}. Chapter focus delta: {delta}","viewer.guided.chapter.delta.title":"{label} — {delta} chapter focus","viewer.guided.handoff":"{from} → {to} · via {label}","viewer.guided.share.chapter":"Chapter {index} / {total}","viewer.guided.share.initial":"Chapter 01 / 01","viewer.guided.share.default":"Guided chapter","viewer.guided.state.ready":"Ready","viewer.guided.state.playing":"Playing","viewer.guided.state.settled":"Settled","viewer.guided.state.paused":"Paused","viewer.guided.state.pinned":"Pinned","viewer.guided.state.still":"Still","viewer.guided.share.step":"Step {index} / {total} · {label}","viewer.guided.share.staticMoment":"{step} · Static moment","viewer.guided.share.complete":"{count} steps complete · {note}","viewer.guided.share.settled":"Path settled for reading.","viewer.guided.share.staticPath":"{count} steps · Static path","viewer.guided.share.ready":"{count} steps · Ready","viewer.guided.share.aria":"{state} chapter {index} of {total}: {label}. {beat}. {route}","viewer.guided.beat.start":"Beat {index} / {total} · {label} · starting point","viewer.guided.beat.forward":"Beat {index} / {total} · {from} → {to}","viewer.guided.beat.reverse":"Beat {index} / {total} · {from} → {to} · reverse authored link","viewer.guided.beat.multiple":"Beat {index} / {total} · {from} ⇄ {to} · {count} authored links","viewer.guided.beat.group":"Beat {index} / {total} · {from} · {to} · grouped · no direct link","viewer.guided.beat.aria.prefix":"Story beat {index} of {total}: {label}. ","viewer.guided.beat.aria.start":"Starting point.","viewer.guided.beat.aria.forward":"From {from} through one authored forward relationship.","viewer.guided.beat.aria.reverse":"From {from}; the authored relationship points from {to} to {from}.","viewer.guided.beat.aria.multiple":"From {from} through {count} authored relationships; shown without arbitrary motion.","viewer.guided.beat.aria.group":"Grouped from {from} with no direct authored relationship.","viewer.guided.caption.start":"Starting point","viewer.guided.caption.grouped":"Grouped transition · no direct authored link","viewer.guided.caption.more":" +{count} more","viewer.guided.caption.reverse":"Reverse authored relationship","viewer.guided.caption.relationships":"{count} authored relationships","viewer.guided.caption.relationship":"Authored relationship","viewer.guided.caption.direction":"authored direction: {from} → {to}","viewer.guided.caption.starting":"Authored starting point","viewer.guided.beatLink":"Copy link to current story moment: Beat {index} of {total}: {label}","viewer.guided.noStory":"This diagram has no authored guided story.","viewer.guide.eyebrow":"Diagram guide","viewer.guide.close":"Close diagram guide","viewer.guide.inspecting":"Inspecting compiled semantics","viewer.guide.actions":"Diagram exploration actions","viewer.guide.find":"Find any node","viewer.guide.find.hint":"Search labels, responsibilities, kinds, and stable IDs.","viewer.guide.route":"Trace a route","viewer.guide.route.aria":"Trace a directed route","viewer.guide.route.hint":"Ask how two semantic nodes connect in authored direction.","viewer.guide.map":"See the whole system","viewer.guide.map.hint":"Open Semantic Radar with a live viewport and stable nodes.","viewer.guide.lens":"Compare semantic kinds","viewer.guide.lens.hint":"Count roles, reveal their traffic, and compare direct authored links.","viewer.guide.story":"Play the guided story","viewer.guide.story.hint":"Walk the authored chapters and real relationships.","viewer.guide.present":"Enter Presentation Stage","viewer.guide.present.hint":"Give the live diagram the viewport without changing export.","viewer.guide.shortcuts":"Additional keyboard shortcuts","viewer.guide.shortcut.export":"Export","viewer.guide.shortcut.theme":"Theme","viewer.guide.shortcut.style":"Style","viewer.guide.shortcut.reset":"Reset","viewer.guide.shortcut.zoomIn":"Zoom in","viewer.guide.shortcut.zoomOut":"Zoom out","viewer.guide.shortcut.close":"Close","viewer.guide.facts":"{nodes} · {relationships} · {views}","viewer.guide.fact.node.one":"{count} semantic node","viewer.guide.fact.node.other":"{count} semantic nodes","viewer.guide.fact.relationship.one":"{count} relationship","viewer.guide.fact.relationship.other":"{count} relationships","viewer.guide.fact.view.one":"{count} guided view","viewer.guide.fact.view.other":"{count} guided views","viewer.guide.story.available.one":"Walk {count} authored chapter and its real relationships.","viewer.guide.story.available.other":"Walk {count} authored chapters and their real relationships.","viewer.guide.story.unavailable":"No authored guided story in this diagram.","viewer.guide.open":"Open diagram guide","viewer.guide.noStory":"This diagram has no authored guided story.","viewer.finder.title":"Find a node","viewer.finder.close":"Close node finder","viewer.finder.placeholder":"Search labels or IDs","viewer.finder.search":"Search diagram nodes","viewer.finder.results":"Diagram nodes","viewer.finder.empty":"No matching nodes","viewer.finder.result.focus":"Focus {label}","viewer.finder.result.routeStart":"Choose {label} as route start","viewer.finder.result.routeTarget":"Choose {label} as route destination, {links}","viewer.finder.status.empty":"No matching nodes","viewer.finder.status.count.one":"{count} matching node","viewer.finder.status.count.other":"{count} matching nodes","viewer.finder.noun.nodes":"nodes","viewer.finder.link.one":"{count} link","viewer.finder.link.other":"{count} links","viewer.finder.result.focus.one":"Focus {label}, {count} related connection","viewer.finder.result.focus.other":"Focus {label}, {count} related connections","viewer.finder.status.filtered":"{visible} of {available} {noun}","viewer.finder.status.all":"{available} {noun}","viewer.passport.eyebrow":"Semantic passport","viewer.passport.metadata":"Node metadata","viewer.passport.evidence":"Verified source evidence","viewer.passport.verified":"Verified source","viewer.passport.reach":"Authored reach","viewer.passport.reach.trace":"Trace authored reachability","viewer.passport.upstream":"Upstream","viewer.passport.downstream":"Downstream","viewer.passport.upstream.trace":"Trace upstream authored reachability","viewer.passport.downstream.trace":"Trace downstream authored reachability","viewer.passport.close":"Close semantic passport","viewer.passport.copy":"Copy link","viewer.passport.copy.focus":"Copy link to focused node","viewer.passport.relations":"Relations","viewer.passport.relations.show":"Show connected relationships","viewer.passport.relations.hide":"Hide connected relationships","viewer.passport.relations.list":"Connected relationships","viewer.passport.copyRelation":"Copy relation","viewer.passport.copyNode":"Copy node","viewer.passport.copyPinned":"Copy link to pinned relationship","viewer.passport.copySource":"Copy link to source node","viewer.passport.copy.focused.success":"Focused node link copied","viewer.passport.copy.pinned.success":"Pinned relationship link copied","viewer.passport.copy.focused.failed":"Could not copy focused node link","viewer.passport.copy.pinned.failed":"Could not copy pinned relationship link","viewer.passport.relationship.none":"No connected relationships","viewer.passport.relationship.count.one":"{count} relation","viewer.passport.relationship.count.other":"{count} relations","viewer.passport.relationship.show.one":"Show {count} connected relationship","viewer.passport.relationship.show.other":"Show {count} connected relationships","viewer.passport.relationship.summary":"{out} outgoing · {in} incoming{loops}","viewer.passport.relationship.loops":" · {count} loop","viewer.passport.relationship.explorer":"Direct relationship explorer","viewer.passport.relationship.help":"Use arrow keys to explore relationships. Press Enter or Space to pin details; Escape clears.","viewer.passport.relationship.loopsBack":"loops back","viewer.passport.relationship.connectsTo":"connects to","viewer.passport.relationship.connectsFrom":"connects from","viewer.passport.relationship.pinned":"Pinned relationship · {from} → {to} · {label}","viewer.passport.relationship.inspect":"Inspect relationship {index} of {total}: {from} to {to}, {label}. Press Enter for details.","viewer.passport.relationship.group.out":"Outgoing","viewer.passport.relationship.group.in":"Incoming","viewer.passport.relationship.group.loop":"Self loops","viewer.passport.relationship.row":"{group}: {relationship}, {neighbor}","viewer.passport.relationship.direction.out":"OUT →","viewer.passport.relationship.direction.in":"← IN","viewer.passport.relationship.direction.loop":"LOOP","viewer.passport.sourceCount.one":"{count} verified source reference","viewer.passport.sourceCount.other":"{count} verified source references","viewer.passport.sourceMarker":"SRC","viewer.passport.beacon.one":"{count} verified source; focus this node to inspect","viewer.passport.beacon.other":"{count} verified sources; focus this node to inspect","viewer.passport.repository.open":"Open verified repository revision {revision}","viewer.passport.source.open":"Open verified source {path} at revision {revision}","viewer.passport.source.openLink":"Open ↗","viewer.passport.reach.upstream.one":"Trace {count} upstream authored node","viewer.passport.reach.upstream.other":"Trace {count} upstream authored nodes","viewer.passport.reach.downstream.one":"Trace {count} downstream authored node","viewer.passport.reach.downstream.other":"Trace {count} downstream authored nodes","viewer.passport.reach.noUpstream":"No upstream authored nodes","viewer.passport.reach.noDownstream":"No downstream authored nodes","viewer.passport.reach.status":"{direction} · {nodes} nodes · {links} links · max {hops} hops","viewer.route.eyebrow":"Route probe","viewer.route.start":"Choose a start node","viewer.route.start.find":"Find start","viewer.route.start.find.aria":"Find a route start","viewer.route.copy":"Copy link","viewer.route.copy.aria":"Copy link to traced route","viewer.route.clear":"Clear","viewer.route.clear.aria":"Clear route probe","viewer.route.traced":"Traced route","viewer.route.pickTwo":"Pick two semantic nodes on the diagram","viewer.route.pickOne":"Pick a semantic node on the diagram","viewer.route.controls":"Route journey controls","viewer.route.previous":"Previous route position","viewer.route.play":"Play route journey","viewer.route.pause":"Pause route journey","viewer.route.replay":"Replay route journey","viewer.route.next":"Next route position","viewer.route.journey":"Journey","viewer.route.pause.label":"Pause","viewer.route.replay.label":"Replay","viewer.route.overview":"Overview","viewer.route.overview.aria":"Show complete route overview","viewer.route.instructions":"Choose the source, then the destination. Direction matters.","viewer.route.destination":"Choose a destination from {label}","viewer.route.destination.find":"Find target","viewer.route.destination.find.aria":"Find a reachable route destination","viewer.route.differentDestination":"Choose a different destination","viewer.route.distinct":"A route needs two distinct semantic nodes.","viewer.route.unreachable":"No directed route to {label}","viewer.route.unreachable.detail":"{target} is not reachable from {source}. Pick a highlighted destination.","viewer.route.start.instructions":"Select the source. The next step will reveal only directed destinations.","viewer.route.copy.success":"Traced route link copied","viewer.route.copy.failed":"Could not copy traced route link","viewer.route.position":"Route position {index} of {total}: {label}","viewer.route.step":"Step {index} of {total} · {phase} · {label}","viewer.route.motionRequired":"Automatic journey requires Live motion","viewer.route.trigger.clear":"Clear traced route","viewer.route.overview.status":"{nodes} · {hops} · shortest authored route","viewer.route.overview.node.one":"{count} node","viewer.route.overview.node.other":"{count} nodes","viewer.route.overview.hop.one":"{count} directed hop","viewer.route.overview.hop.other":"{count} directed hops","viewer.route.phase.playing":"Playing","viewer.route.phase.complete":"Complete","viewer.route.phase.inspecting":"Inspecting","viewer.route.destination.count.one":"{count} directed destination available. Pick a highlighted node.","viewer.route.destination.count.other":"{count} directed destinations available. Pick a highlighted node.","viewer.route.noOutgoing":"No outgoing route starts here. Clear and choose another source.","viewer.route.result.title":"{source} to {target}","viewer.route.finder.source.title":"Choose route start","viewer.route.finder.source.placeholder":"Search route sources","viewer.route.finder.source.empty":"No matching route sources","viewer.route.finder.source.results":"Nodes that can start a route","viewer.route.finder.source.noun":"route sources","viewer.route.finder.source.badge":"start","viewer.route.finder.target.title":"Destination from {label}","viewer.route.finder.target.placeholder":"Search reachable destinations","viewer.route.finder.target.empty":"No matching reachable destinations","viewer.route.finder.target.results":"Reachable route destinations","viewer.route.finder.target.noun":"reachable destinations","viewer.route.hop.one":"{count} hop","viewer.route.hop.other":"{count} hops","viewer.lens.eyebrow":"Semantic lens","viewer.lens.title":"Compare system roles","viewer.lens.close":"Close semantic lens","viewer.lens.instruction":"Choose up to two semantic kinds. One reveals its real traffic; two compare only direct authored relationships.","viewer.lens.kinds":"Semantic kinds","viewer.lens.choose":"Choose a kind to inspect its nodes and touching relationships.","viewer.lens.copy":"Copy link to semantic lens","viewer.lens.clear":"Clear semantic lens","viewer.lens.open":"Open semantic lens","viewer.lens.openActive":"Open active semantic lens","viewer.lens.legend":"Semantic legend","viewer.lens.legend.inspect.one":"Inspect {label}, {count} node","viewer.lens.legend.inspect.other":"Inspect {label}, {count} nodes","viewer.lens.kind.count.one":"{label}, {count} node","viewer.lens.kind.count.other":"{label}, {count} nodes","viewer.lens.compare.one":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationship","viewer.lens.compare.other":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationships","viewer.lens.single":"{nodes} · {relationships} · connected peers remain visible","viewer.lens.node.one":"{count} {label} node","viewer.lens.node.other":"{count} {label} nodes","viewer.lens.relationship.one":"{count} touching relationship","viewer.lens.relationship.other":"{count} touching relationships","viewer.radar.title":"Semantic radar","viewer.radar.building":"Building overview","viewer.radar.openFull":"Open full semantic radar","viewer.radar.open":"Open radar","viewer.radar.close":"Close semantic radar","viewer.radar.surface":"Diagram overview. Click a node to focus it, or use arrow keys to pan.","viewer.radar.click":"Click node","viewer.radar.drag":"Drag to pan","viewer.radar.space":"Semantic radar needs more MAP space.","viewer.radar.nodes":"Semantic diagram radar nodes","viewer.radar.focus":"Focus {label} from Semantic Radar","viewer.radar.status":"{count} nodes · {viewport}","viewer.radar.fullMap":"{count} nodes · full map","viewer.radar.compacted":"Radar compacted to avoid covering the Semantic Passport or MAP controls.","viewer.radar.cancelWaiting":"Cancel semantic radar waiting for more MAP space","viewer.radar.needsSpace":"Semantic radar needs more visible MAP space","viewer.radar.viewport.full":"full map","viewer.radar.viewport.width":"{percent}% width","viewer.radar.viewport.scale":"{percent}% viewport","viewer.nav.controls":"Diagram view controls","viewer.nav.route":"Trace a directed route","viewer.nav.route.title":"Trace route (R)","viewer.nav.route.short":"PATH","viewer.nav.radar":"Open semantic radar","viewer.nav.radar.title":"Semantic radar (M)","viewer.nav.radar.short":"MAP","viewer.nav.lens":"Open semantic lens","viewer.nav.lens.title":"Semantic lens (L)","viewer.nav.lens.short":"LENS","viewer.nav.find":"Find a node","viewer.nav.find.title":"Find a node (/)","viewer.nav.guide":"Open diagram guide","viewer.nav.guide.title":"Diagram guide (?)","viewer.nav.zoomOut":"Zoom out","viewer.nav.zoomOut.title":"Zoom out (-)","viewer.nav.reset":"Reset diagram view","viewer.nav.reset.title":"Reset view (0)","viewer.nav.read":"READ","viewer.nav.zoomIn":"Zoom in","viewer.nav.zoomIn.title":"Zoom in (+)","viewer.nav.camera":"{hint}. Reset diagram view","viewer.nav.camera.title":"{semantic}{hint} · reset view (0)","viewer.nav.camera.semantic":"Semantic camera active · ","viewer.nav.level.map":"MAP","viewer.nav.level.read":"READ","viewer.nav.level.full":"FULL","viewer.nav.level.auto":"AUTO","viewer.nav.detail.map":"Zoom in to reveal relationship labels and node context","viewer.nav.detail.read":"Zoom in again to reveal tags and annotations","viewer.nav.detail.full":"Full diagram detail","viewer.intent.summary":"{label}. {out} outgoing, {in} incoming{loops}. {total} connections. Press Enter for details.","viewer.intent.loops":", {count} self loop","viewer.common.copied":"Copied","viewer.common.copyFailed":"Copy failed","viewer.common.copyLink":"Copy link","viewer.common.clear":"Clear","viewer.common.close":"Close"}}</script>
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
@@ -5004,7 +5004,7 @@
     <!-- Main Diagram -->
     <div class="diagram-container" data-detail-level="read"
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
-      <svg viewBox="0 0 1126 534" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+      <svg viewBox="0 0 1204 534" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
         <title id="archify-diagram-title">OpenTranscribe — Transcription Pipeline</title>
         <desc id="archify-diagram-description">A workflow diagram generated by Archify.</desc>
         <!-- Definitions -->
@@ -5030,42 +5030,44 @@
         <rect width="100%" height="100%" fill="url(#grid)" />
 
         <!-- Swimlanes -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="1058" height="106" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="1148" height="106" rx="10" class="c-lane" stroke-width="1"/>
         <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / API / Web</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="178" width="1058" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="200" class="t-dim" font-size="10" font-weight="600">02 / Celery Pipeline (gpu/cpu queues)</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="178" width="1148" height="106" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="200" class="t-dim" font-size="10" font-weight="600">02 / Celery pipeline (queue chosen by the plan)</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="304" width="1058" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="326" class="t-dim" font-size="10" font-weight="600">03 / Data + Search</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="304" width="1148" height="106" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="326" class="t-dim" font-size="10" font-weight="600">03 / Speakers (this server or cloud)</text>
 
         <!-- Phase headers -->
         <line x1="68" y1="35" x2="338.8" y2="35" class="a-default" stroke-width="1.1"/>
         <rect x="68" y="27" width="270.8" height="16" rx="4" class="c-mask"/>
-        <text x="203.4" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">Intake</text>
-        <line x1="406.80000000000007" y1="35" x2="871.2" y2="35" class="a-emphasis" stroke-width="1.1"/>
-        <rect x="406.80000000000007" y="27" width="464.3999999999999" height="16" rx="4" class="c-mask"/>
-        <text x="639" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">ASR + diarization</text>
-        <line x1="958.1999999999999" y1="35" x2="1089.3999999999999" y2="35" class="a-dashed" stroke-width="1.1"/>
-        <rect x="958.1999999999999" y="27" width="131.2" height="16" rx="4" class="c-mask"/>
-        <text x="1023.8" y="39" class="t-messagebus" font-size="8" font-weight="600" text-anchor="middle">Post-process + deliver</text>
+        <text x="203.4" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">Intake + plan</text>
+        <line x1="406.80000000000007" y1="35" x2="706.4000000000001" y2="35" class="a-emphasis" stroke-width="1.1"/>
+        <rect x="406.80000000000007" y="27" width="299.59999999999997" height="16" rx="4" class="c-mask"/>
+        <text x="556.6" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">Transcription</text>
+        <line x1="841.2" y1="35" x2="1160" y2="35" class="a-dashed" stroke-width="1.1"/>
+        <rect x="841.2" y="27" width="318.79999999999995" height="16" rx="4" class="c-mask"/>
+        <text x="1000.6" y="39" class="t-messagebus" font-size="8" font-weight="600" text-anchor="middle">Speakers + delivery</text>
 
         <!-- Workflow groups -->
 
 
         <!-- Edge paths -->
-        <path data-edge-from="backend" data-edge-to="dispatch" data-edge-label="enqueue" data-edge-key="0" data-edge-id="enqueue" data-composition-points="358.8,120;374.8,120;374.8,168;292.8,168;292.8,220" d="M 358.8 120 L 374.8 120 L 374.8 168 L 292.8 168 L 292.8 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="postprocess" data-edge-to="index" data-edge-label="index for search" data-edge-key="1" data-edge-id="index-transcript" data-composition-points="1089.1999999999998,246;1110,246;1110,330;1004.1999999999999,330;1004.1999999999999,346" d="M 1089.1999999999998 246 L 1110 246 L 1110 330 L 1004.1999999999999 330 L 1004.1999999999999 346" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="postprocess" data-edge-to="notify" data-edge-label="transcript ready" data-edge-key="2" data-edge-id="notify-user" data-composition-points="1004.1999999999999,212;1004.1999999999999,146" d="M 1004.1999999999999 212 L 1004.1999999999999 146" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="preprocess" data-edge-to="asr" data-edge-key="3" data-edge-id="run-asr" data-composition-points="518.8,246;546.8,246" d="M 518.8 246 L 546.8 246" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="asr" data-edge-to="diarize" data-edge-label="speaker turns" data-edge-key="4" data-edge-id="run-diarize" data-composition-points="678.8,246;759.1999999999999,246" d="M 678.8 246 L 759.1999999999999 246" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="diarize" data-edge-to="postprocess" data-edge-key="5" data-edge-id="run-postprocess" data-composition-points="891.1999999999999,246;919.1999999999999,246" d="M 891.1999999999999 246 L 919.1999999999999 246" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="dispatch" data-edge-to="preprocess" data-edge-key="6" data-edge-id="start-preprocess" data-composition-points="358.8,246;386.8,246" d="M 358.8 246 L 386.8 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="user" data-edge-to="backend" data-edge-label="upload" data-edge-key="7" data-edge-id="upload" data-composition-points="180,120;226.8,120" d="M 180 120 L 226.8 120" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="backend" data-edge-to="dispatch" data-edge-label="plan once" data-edge-key="0" data-edge-id="enqueue" data-composition-points="292.8,146;292.8,168;374.8,168;374.8,239;358.8,239" d="M 292.8 146 L 292.8 168 L 374.8 168 L 374.8 239 L 358.8 239" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="postprocess" data-edge-to="index" data-edge-label="index for search" data-edge-key="1" data-edge-id="index-transcript" data-composition-points="887.2,272;887.2,288;1114,288;1114,272" d="M 887.2 272 L 887.2 288 L 1114 288 L 1114 272" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="postprocess" data-edge-to="notify" data-edge-label="transcript ready" data-edge-key="2" data-edge-id="notify-user" data-composition-points="887.2,220;887.2,120;1048,120" d="M 887.2 220 L 887.2 120 L 1048 120" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="postprocess" data-edge-to="poststage" data-edge-label="post_stage_*" data-edge-key="3" data-edge-id="post-stage" data-composition-points="821.2,246;805.2,246;805.2,426;887.2,426;887.2,406" d="M 821.2 246 L 805.2 246 L 805.2 426 L 887.2 426 L 887.2 406" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="postprocess" data-edge-to="voiceprints" data-edge-label="embedding stage" data-edge-key="4" data-edge-id="post-voiceprints" data-composition-points="821.2,246;805.2,246;805.2,426;1114,426;1114,398" d="M 821.2 246 L 805.2 246 L 805.2 426 L 1114 426 L 1114 398" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="transcribe" data-edge-to="postprocess" data-edge-label="transcript saved" data-edge-key="5" data-edge-id="run-postprocess" data-composition-points="660.4,212;660.4,162;887.2,162;887.2,220" d="M 660.4 212 L 660.4 162 L 887.2 162 L 887.2 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="preprocess" data-edge-to="transcribe" data-edge-label="plan&#39;s queue" data-edge-key="6" data-edge-id="run-transcribe" data-composition-points="518.8,246;594.4,246" d="M 518.8 246 L 594.4 246" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="poststage" data-edge-to="voiceprints" data-edge-key="7" data-edge-id="stage-voiceprints" data-composition-points="953.2,379;1048,379" d="M 953.2 379 L 1048 379" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="dispatch" data-edge-to="preprocess" data-edge-key="8" data-edge-id="start-preprocess" data-composition-points="292.8,280;292.8,300;452.8,300;452.8,272" d="M 292.8 280 L 292.8 300 L 452.8 300 L 452.8 272" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="user" data-edge-to="backend" data-edge-label="upload" data-edge-key="9" data-edge-id="upload" data-composition-points="180,120;226.8,120" d="M 180 120 L 226.8 120" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
 
         <!-- Nodes -->
-        <g id="node-user" data-node-id="user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, uploads media, API / Web › Intake" aria-pressed="false" data-node-kind="external" data-node-sublabel="uploads media" data-node-context="API / Web › Intake">
-          <title>User · uploads media · API / Web › Intake</title>
+        <g id="node-user" data-node-id="user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, uploads media, API / Web › Intake + plan" aria-pressed="false" data-node-kind="external" data-node-sublabel="uploads media" data-node-context="API / Web › Intake + plan">
+          <title>User · uploads media · API / Web › Intake + plan</title>
           <rect x="48" y="94" width="132" height="52" rx="6" class="c-mask"/>
           <rect x="48" y="94" width="132" height="52" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(54 100) scale(0.6875)">
@@ -5076,8 +5078,8 @@
           <text data-detail="context" x="114" y="132" class="t-muted" font-size="8" text-anchor="middle">uploads media</text>
         </g>
 
-        <g id="node-backend" data-node-id="backend" data-node-label="FastAPI" tabindex="0" role="button" aria-label="Focus FastAPI, stores to MinIO, API / Web › Intake" aria-pressed="false" data-node-kind="backend" data-node-sublabel="stores to MinIO" data-node-context="API / Web › Intake">
-          <title>FastAPI · stores to MinIO · API / Web › Intake</title>
+        <g id="node-backend" data-node-id="backend" data-node-label="FastAPI" tabindex="0" role="button" aria-label="Focus FastAPI, stores to MinIO, API / Web › Intake + plan" aria-pressed="false" data-node-kind="backend" data-node-sublabel="stores to MinIO" data-node-context="API / Web › Intake + plan">
+          <title>FastAPI · stores to MinIO · API / Web › Intake + plan</title>
           <rect x="226.8" y="94" width="132" height="52" rx="6" class="c-mask"/>
           <rect x="226.8" y="94" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(232.8 100) scale(0.6875)">
@@ -5087,112 +5089,136 @@
           <text data-detail="context" x="292.8" y="132" class="t-muted" font-size="8" text-anchor="middle">stores to MinIO</text>
         </g>
 
-        <g id="node-notify" data-node-id="notify" data-node-label="Notify" tabindex="0" role="button" aria-label="Focus Notify, WebSocket to browser, API / Web › Post-process + deliver" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="WebSocket to browser" data-node-context="API / Web › Post-process + deliver">
-          <title>Notify · WebSocket to browser · API / Web › Post-process + deliver</title>
-          <rect x="938.1999999999999" y="94" width="132" height="52" rx="6" class="c-mask"/>
-          <rect x="938.1999999999999" y="94" width="132" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(944.1999999999999 100) scale(0.6875)">
+        <g id="node-notify" data-node-id="notify" data-node-label="Notify" tabindex="0" role="button" aria-label="Focus Notify, WebSocket to browser, API / Web › Speakers + delivery" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="WebSocket to browser" data-node-context="API / Web › Speakers + delivery">
+          <title>Notify · WebSocket to browser · API / Web › Speakers + delivery</title>
+          <rect x="1048" y="94" width="132" height="52" rx="6" class="c-mask"/>
+          <rect x="1048" y="94" width="132" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(1054 100) scale(0.6875)">
             <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
             <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
             <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
             <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1004.1999999999999" y="115" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Notify</text>
-          <text data-detail="context" x="1004.1999999999999" y="132" class="t-muted" font-size="8" text-anchor="middle">WebSocket to browser</text>
+          <text data-node-label="" data-detail-anchor="" x="1114" y="115" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Notify</text>
+          <text data-detail="context" x="1114" y="132" class="t-muted" font-size="8" text-anchor="middle">WebSocket to browser</text>
         </g>
 
-        <g id="node-dispatch" data-node-id="dispatch" data-node-label="Celery Dispatch" tabindex="0" role="button" aria-label="Focus Celery Dispatch, gpu queue, Celery Pipeline (gpu/cpu queues) › Intake" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="gpu queue" data-node-context="Celery Pipeline (gpu/cpu queues) › Intake">
-          <title>Celery Dispatch · gpu queue · Celery Pipeline (gpu/cpu queues) › Intake</title>
-          <rect x="226.8" y="220" width="132" height="52" rx="6" class="c-mask"/>
-          <rect x="226.8" y="220" width="132" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(232.8 226) scale(0.6875)">
+        <g id="node-dispatch" data-node-id="dispatch" data-node-label="Plan + dispatch" tabindex="0" role="button" aria-label="Focus Plan + dispatch, pipeline_plan, Celery pipeline (queue chosen by the plan) › Intake + plan" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="pipeline_plan" data-node-tag="refuses invalid" data-node-context="Celery pipeline (queue chosen by the plan) › Intake + plan">
+          <title>Plan + dispatch · pipeline_plan · Celery pipeline (queue chosen by the plan) › Intake + plan · refuses invalid</title>
+          <rect x="226.8" y="212" width="132" height="68" rx="6" class="c-mask"/>
+          <rect x="226.8" y="212" width="132" height="68" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(232.8 218) scale(0.6875)">
             <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
             <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
             <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
             <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="292.8" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Celery Dispatch</text>
-          <text data-detail="context" x="292.8" y="258" class="t-muted" font-size="8" text-anchor="middle">gpu queue</text>
+          <text data-node-label="" data-detail-anchor="" x="292.8" y="233" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Plan + dispatch</text>
+          <text data-detail="context" x="292.8" y="250" class="t-muted" font-size="8" text-anchor="middle">pipeline_plan</text>
+        <text data-detail="fine" x="292.8" y="268" class="t-messagebus" font-size="7" text-anchor="middle">refuses invalid</text>
         </g>
 
-        <g id="node-preprocess" data-node-id="preprocess" data-node-label="Preprocess" tabindex="0" role="button" aria-label="Focus Preprocess, extract/normalize audio, Celery Pipeline (gpu/cpu queues) › ASR + diarization" aria-pressed="false" data-node-kind="backend" data-node-sublabel="extract/normalize audio" data-node-context="Celery Pipeline (gpu/cpu queues) › ASR + diarization">
-          <title>Preprocess · extract/normalize audio · Celery Pipeline (gpu/cpu queues) › ASR + diarization</title>
+        <g id="node-preprocess" data-node-id="preprocess" data-node-label="Preprocess" tabindex="0" role="button" aria-label="Focus Preprocess, cpu: extract audio, Celery pipeline (queue chosen by the plan) › Transcription" aria-pressed="false" data-node-kind="backend" data-node-sublabel="cpu: extract audio" data-node-context="Celery pipeline (queue chosen by the plan) › Transcription">
+          <title>Preprocess · cpu: extract audio · Celery pipeline (queue chosen by the plan) › Transcription</title>
           <rect x="386.8" y="220" width="132" height="52" rx="6" class="c-mask"/>
           <rect x="386.8" y="220" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(392.8 226) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="452.8" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Preprocess</text>
-          <text data-detail="context" x="452.8" y="258" class="t-muted" font-size="8" text-anchor="middle">extract/normalize audio</text>
+          <text data-detail="context" x="452.8" y="258" class="t-muted" font-size="8" text-anchor="middle">cpu: extract audio</text>
         </g>
 
-        <g id="node-asr" data-node-id="asr" data-node-label="ASR" tabindex="0" role="button" aria-label="Focus ASR, WhisperX (local/cloud), Celery Pipeline (gpu/cpu queues) › ASR + diarization" aria-pressed="false" data-node-kind="backend" data-node-sublabel="WhisperX (local/cloud)" data-node-context="Celery Pipeline (gpu/cpu queues) › ASR + diarization">
-          <title>ASR · WhisperX (local/cloud) · Celery Pipeline (gpu/cpu queues) › ASR + diarization</title>
-          <rect x="546.8" y="220" width="132" height="52" rx="6" class="c-mask"/>
-          <rect x="546.8" y="220" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(552.8 226) scale(0.6875)">
+        <g id="node-transcribe" data-node-id="transcribe" data-node-label="Transcribe" tabindex="0" role="button" aria-label="Focus Transcribe, local or cloud ASR, Celery pipeline (queue chosen by the plan) › Transcription" aria-pressed="false" data-node-kind="backend" data-node-sublabel="local or cloud ASR" data-node-tag="inline speakers" data-node-context="Celery pipeline (queue chosen by the plan) › Transcription">
+          <title>Transcribe · local or cloud ASR · Celery pipeline (queue chosen by the plan) › Transcription · inline speakers</title>
+          <rect x="594.4" y="212" width="132" height="68" rx="6" class="c-mask"/>
+          <rect x="594.4" y="212" width="132" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(600.4 218) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="612.8" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">ASR</text>
-          <text data-detail="context" x="612.8" y="258" class="t-muted" font-size="8" text-anchor="middle">WhisperX (local/cloud)</text>
+          <text data-node-label="" data-detail-anchor="" x="660.4" y="233" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Transcribe</text>
+          <text data-detail="context" x="660.4" y="250" class="t-muted" font-size="8" text-anchor="middle">local or cloud ASR</text>
+        <text data-detail="fine" x="660.4" y="268" class="t-backend" font-size="7" text-anchor="middle">inline speakers</text>
         </g>
 
-        <g id="node-diarize" data-node-id="diarize" data-node-label="Diarization" tabindex="0" role="button" aria-label="Focus Diarization, PyAnnote / diar-native, Celery Pipeline (gpu/cpu queues) › ASR + diarization" aria-pressed="false" data-node-kind="backend" data-node-sublabel="PyAnnote / diar-native" data-node-context="Celery Pipeline (gpu/cpu queues) › ASR + diarization">
-          <title>Diarization · PyAnnote / diar-native · Celery Pipeline (gpu/cpu queues) › ASR + diarization</title>
-          <rect x="759.1999999999999" y="220" width="132" height="52" rx="6" class="c-mask"/>
-          <rect x="759.1999999999999" y="220" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(765.1999999999999 226) scale(0.6875)">
+        <g id="node-postprocess" data-node-id="postprocess" data-node-label="Postprocess" tabindex="0" role="button" aria-label="Focus Postprocess, hand off, enrich, Celery pipeline (queue chosen by the plan) › Speakers + delivery" aria-pressed="false" data-node-kind="backend" data-node-sublabel="hand off, enrich" data-node-context="Celery pipeline (queue chosen by the plan) › Speakers + delivery">
+          <title>Postprocess · hand off, enrich · Celery pipeline (queue chosen by the plan) › Speakers + delivery</title>
+          <rect x="821.2" y="220" width="132" height="52" rx="6" class="c-mask"/>
+          <rect x="821.2" y="220" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(827.2 226) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="825.1999999999999" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Diarization</text>
-          <text data-detail="context" x="825.1999999999999" y="258" class="t-muted" font-size="8" text-anchor="middle">PyAnnote / diar-native</text>
+          <text data-node-label="" data-detail-anchor="" x="887.2" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Postprocess</text>
+          <text data-detail="context" x="887.2" y="258" class="t-muted" font-size="8" text-anchor="middle">hand off, enrich</text>
         </g>
 
-        <g id="node-postprocess" data-node-id="postprocess" data-node-label="Post-process" tabindex="0" role="button" aria-label="Focus Post-process, boundary fix, redact, write DB, Celery Pipeline (gpu/cpu queues) › Post-process + deliver" aria-pressed="false" data-node-kind="backend" data-node-sublabel="boundary fix, redact, write DB" data-node-tag="Postgres" data-node-context="Celery Pipeline (gpu/cpu queues) › Post-process + deliver">
-          <title>Post-process · boundary fix, redact, write DB · Celery Pipeline (gpu/cpu queues) › Post-process + deliver · Postgres</title>
-          <rect x="919.1999999999999" y="212" width="170" height="68" rx="6" class="c-mask"/>
-          <rect x="919.1999999999999" y="212" width="170" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(925.1999999999999 218) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="1004.1999999999999" y="233" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Post-process</text>
-          <text data-detail="context" x="1004.1999999999999" y="250" class="t-muted" font-size="8" text-anchor="middle">boundary fix, redact, write DB</text>
-        <text data-detail="fine" x="1004.1999999999999" y="268" class="t-backend" font-size="7" text-anchor="middle">Postgres</text>
-        </g>
-
-        <g id="node-index" data-node-id="index" data-node-label="Index" tabindex="0" role="button" aria-label="Focus Index, OpenSearch hybrid index, Data + Search › Post-process + deliver" aria-pressed="false" data-node-kind="database" data-node-sublabel="OpenSearch hybrid index" data-node-context="Data + Search › Post-process + deliver">
-          <title>Index · OpenSearch hybrid index · Data + Search › Post-process + deliver</title>
-          <rect x="938.1999999999999" y="346" width="132" height="52" rx="6" class="c-mask"/>
-          <rect x="938.1999999999999" y="346" width="132" height="52" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(944.1999999999999 352) scale(0.6875)">
+        <g id="node-index" data-node-id="index" data-node-label="Index" tabindex="0" role="button" aria-label="Focus Index, OpenSearch, Celery pipeline (queue chosen by the plan) › Speakers + delivery" aria-pressed="false" data-node-kind="database" data-node-sublabel="OpenSearch" data-node-context="Celery pipeline (queue chosen by the plan) › Speakers + delivery">
+          <title>Index · OpenSearch · Celery pipeline (queue chosen by the plan) › Speakers + delivery</title>
+          <rect x="1048" y="220" width="132" height="52" rx="6" class="c-mask"/>
+          <rect x="1048" y="220" width="132" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(1054 226) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1004.1999999999999" y="367" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Index</text>
-          <text data-detail="context" x="1004.1999999999999" y="384" class="t-muted" font-size="8" text-anchor="middle">OpenSearch hybrid index</text>
+          <text data-node-label="" data-detail-anchor="" x="1114" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Index</text>
+          <text data-detail="context" x="1114" y="258" class="t-muted" font-size="8" text-anchor="middle">OpenSearch</text>
+        </g>
+
+        <g id="node-poststage" data-node-id="poststage" data-node-label="Speaker post stage" tabindex="0" role="button" aria-label="Focus Speaker post stage, rediarize_task, Speakers (this server or cloud) › Speakers + delivery" aria-pressed="false" data-node-kind="backend" data-node-sublabel="rediarize_task" data-node-tag="assign_speakers" data-node-context="Speakers (this server or cloud) › Speakers + delivery">
+          <title>Speaker post stage · rediarize_task · Speakers (this server or cloud) › Speakers + delivery · assign_speakers</title>
+          <rect x="821.2" y="338" width="132" height="68" rx="6" class="c-mask"/>
+          <rect x="821.2" y="338" width="132" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(827.2 344) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="887.2" y="359" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Speaker post stage</text>
+          <text data-detail="context" x="887.2" y="376" class="t-muted" font-size="8" text-anchor="middle">rediarize_task</text>
+        <text data-detail="fine" x="887.2" y="394" class="t-backend" font-size="7" text-anchor="middle">assign_speakers</text>
+        </g>
+
+        <g id="node-voiceprints" data-node-id="voiceprints" data-node-label="Voiceprints" tabindex="0" role="button" aria-label="Focus Voiceprints, always this server, Speakers (this server or cloud) › Speakers + delivery" aria-pressed="false" data-node-kind="backend" data-node-sublabel="always this server" data-node-context="Speakers (this server or cloud) › Speakers + delivery">
+          <title>Voiceprints · always this server · Speakers (this server or cloud) › Speakers + delivery</title>
+          <rect x="1048" y="346" width="132" height="52" rx="6" class="c-mask"/>
+          <rect x="1048" y="346" width="132" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(1054 352) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="1114" y="367" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Voiceprints</text>
+          <text data-detail="context" x="1114" y="384" class="t-muted" font-size="8" text-anchor="middle">always this server</text>
         </g>
 
         <!-- Edge labels -->
-        <g data-detail="context" data-edge-from="backend" data-edge-to="dispatch" data-edge-label="enqueue" data-edge-key="0" data-edge-id="enqueue">
-          <rect x="312" y="148" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="333.8" y="158" class="t-backend" font-size="8" text-anchor="middle">enqueue</text>
+        <g data-detail="context" data-edge-from="backend" data-edge-to="dispatch" data-edge-label="plan once" data-edge-key="0" data-edge-id="enqueue">
+          <rect x="307.2" y="148" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="333.8" y="158" class="t-backend" font-size="8" text-anchor="middle">plan once</text>
         </g>
         <g data-detail="context" data-edge-from="postprocess" data-edge-to="index" data-edge-label="index for search" data-edge-key="1" data-edge-id="index-transcript">
-          <rect x="1013.6999999999999" y="310" width="86.8" height="14" rx="3" class="c-mask"/>
-          <text x="1057.1" y="320" class="t-database" font-size="8" text-anchor="middle">index for search</text>
+          <rect x="957.2" y="268" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="1000.6" y="278" class="t-database" font-size="8" text-anchor="middle">index for search</text>
         </g>
         <g data-detail="context" data-edge-from="postprocess" data-edge-to="notify" data-edge-label="transcript ready" data-edge-key="2" data-edge-id="notify-user">
-          <rect x="960.8" y="192" width="86.8" height="14" rx="3" class="c-mask"/>
-          <text x="1004.1999999999999" y="202" class="t-database" font-size="8" text-anchor="middle">transcript ready</text>
+          <rect x="924.2" y="100" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="967.6" y="110" class="t-database" font-size="8" text-anchor="middle">transcript ready</text>
+        </g>
+        <g data-detail="context" data-edge-from="postprocess" data-edge-to="poststage" data-edge-label="post_stage_*" data-edge-key="3" data-edge-id="post-stage">
+          <rect x="812.4000000000001" y="406" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="846.2" y="416" class="t-database" font-size="8" text-anchor="middle">post_stage_*</text>
+        </g>
+        <g data-detail="context" data-edge-from="postprocess" data-edge-to="voiceprints" data-edge-label="embedding stage" data-edge-key="4" data-edge-id="post-voiceprints">
+          <rect x="918.6" y="406" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="959.6" y="416" class="t-database" font-size="8" text-anchor="middle">embedding stage</text>
+        </g>
+        <g data-detail="context" data-edge-from="transcribe" data-edge-to="postprocess" data-edge-label="transcript saved" data-edge-key="5" data-edge-id="run-postprocess">
+          <rect x="730.4" y="142" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="773.8" y="152" class="t-backend" font-size="8" text-anchor="middle">transcript saved</text>
+        </g>
+        <g data-detail="context" data-edge-from="preprocess" data-edge-to="transcribe" data-edge-label="plan&#39;s queue" data-edge-key="6" data-edge-id="run-transcribe">
+          <rect x="522.8" y="226" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="556.5999999999999" y="236" class="t-backend" font-size="8" text-anchor="middle">plan&#39;s queue</text>
         </g>
 
-        <g data-detail="context" data-edge-from="asr" data-edge-to="diarize" data-edge-label="speaker turns" data-edge-key="4" data-edge-id="run-diarize">
-          <rect x="682.8" y="226" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="719" y="236" class="t-backend" font-size="8" text-anchor="middle">speaker turns</text>
-        </g>
 
-
-        <g data-detail="context" data-edge-from="user" data-edge-to="backend" data-edge-label="upload" data-edge-key="7" data-edge-id="upload">
+        <g data-detail="context" data-edge-from="user" data-edge-to="backend" data-edge-label="upload" data-edge-key="9" data-edge-id="upload">
           <rect x="184" y="100" width="38.8" height="14" rx="3" class="c-mask"/>
           <text x="203.4" y="110" class="t-muted" font-size="8" text-anchor="middle">upload</text>
         </g>
@@ -5406,33 +5432,35 @@
       <div class="card">
         <div class="card-header">
           <div class="card-dot cyan"></div>
-          <h3>Async by design</h3>
+          <h3>One plan per run</h3>
         </div>
         <ul>
-          <li>&bull; Upload returns immediately; all heavy work runs on Celery</li>
-          <li>&bull; gpu queue: ASR + diarization; cpu/nlp queues: redaction, facts, embeddings</li>
+          <li>&bull; services/pipeline_plan.py decides engine, queue, merge and voiceprint step for every transcription x speaker-detection combination</li>
+          <li>&bull; tasks/transcription/dispatch.py _plan_for_dispatch refuses a blocking issue (fixed sentence) before any task is published</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot rose"></div>
-          <h3>Correctness steps</h3>
+          <h3>Where speakers come from</h3>
         </div>
         <ul>
-          <li>&bull; Boundary correction (smoother) trims speaker-turn overlap, ~-32% WSER</li>
-          <li>&bull; Redaction runs before the transcript is considered final</li>
+          <li>&bull; Inline: local engine in the gpu task, the cloud vendor&#39;s own labels, or a cloud diarizer alongside cloud ASR</li>
+          <li>&bull; Post stage (rediarize_task): this server on gpu, or pyannote.ai / another vendor on cloud-asr; finalize_segments re-splits</li>
+          <li>&bull; One merge: assign_speakers, word or segment granularity; models with no timestamps are refused, no forced alignment</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot emerald"></div>
-          <h3>Delivery</h3>
+          <h3>Voiceprints never leave</h3>
         </div>
         <ul>
-          <li>&bull; OpenSearch gets the searchable copy; Postgres stays system of record</li>
-          <li>&bull; Frontend learns completion via WebSocket, not polling</li>
+          <li>&bull; inline_native: vectors from the local engine, matched in postprocess</li>
+          <li>&bull; embedding_stage: services/voiceprint_extractor.py on the cpu queue after any other detector</li>
+          <li>&bull; Each stage records what ran in media_file.processing_provenance (file_provenance.record_stage)</li>
         </ul>
       </div>
     </div>
@@ -14843,3 +14871,4 @@
   </script>
 </body>
 </html>
+<!-- spec-sha256: 1355bfa4d36d00b17f741d36bfd927aeacce47d719fc044220ea18f62a4a6c98 -->

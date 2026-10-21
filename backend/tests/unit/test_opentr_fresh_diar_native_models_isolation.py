@@ -235,6 +235,11 @@ def _make_checkout(
     for name in OVERLAYS:
         (checkout / name).write_text("services: {}\n", encoding="utf-8")
     (checkout / "VERSION").write_text("0.0.0-test\n", encoding="utf-8")
+    # `opentr.sh start` refuses to run without a .env (#961a) rather than letting a
+    # container crash-loop on an empty interpolation. This sandbox never needs a value from
+    # it (the one override under test arrives through the process environment), so an
+    # empty file satisfies the check.
+    (checkout / ".env").write_text("", encoding="utf-8")
     shutil.copy2(OPENTR, checkout / "opentr.sh")
     (checkout / "opentr.sh").chmod(0o755)
     shutil.copy2(COMMON, checkout / "scripts" / "common.sh")

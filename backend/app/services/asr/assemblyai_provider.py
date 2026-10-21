@@ -126,10 +126,27 @@ class AssemblyAIProvider(ASRProvider):
         # universal-2 is the multilingual model → let it auto-detect language.
         detect_language = self._model_name == "universal-multilingual" or config.language == "auto"
 
+        # A fixed count goes in `speakers_expected`; otherwise the range goes in
+        # `speaker_options` (min/max_speakers_expected, the installed SDK's SpeakerOptions
+        # model, #1226). Never both: the count already pins the range.
+        speaker_options = None
+        if (
+            config.enable_diarization
+            and config.num_speakers is None
+            and 1 <= config.min_speakers <= config.max_speakers
+        ):
+            speaker_options = aai.SpeakerOptions.model_validate(
+                {
+                    "min_speakers_expected": config.min_speakers,
+                    "max_speakers_expected": config.max_speakers,
+                }
+            )
+
         cfg = aai.TranscriptionConfig(
             speech_models=speech_models,
             speaker_labels=config.enable_diarization,
             speakers_expected=config.num_speakers,
+            speaker_options=speaker_options,
             language_detection=detect_language,
             language_code=None if detect_language else config.language,
             punctuate=True,

@@ -18,6 +18,14 @@ this file is for.
   before committing, or CI fails. The venv is 3.12, CI is 3.13 — verified byte-identical output
   at current pins. `info.version` is normalized to a fixed sentinel so a release version bump
   alone never causes drift.
+- **Docs generated from code** (issue #1230) — `generate-pipeline-docs.py --write|--check`
+  (backend venv; imports `app`) writes the Deployment variants page's three partials under
+  `docs-site/docs/installation/_generated/` from `docker-build-push.sh list-platforms`,
+  `security-scan.sh list-repos`, the ASR catalog and `resolve_pipeline_plan`; CI's backend job
+  runs `--check`. `check-architecture-diagram-drift.py` (stdlib, `--selftest`) compares each
+  `/architecture` render's `spec-sha256` stamp, written by `generate-architecture-diagrams.sh`,
+  with its spec; it is a pre-commit hook. Both are pinned by unit tests; see
+  `docs-site/CLAUDE.md`.
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
   `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
   `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a
@@ -407,6 +415,15 @@ this file is for.
   source of truth — `Dockerfile.prod` uses `groupadd -r` with no GID pin, so the GID is
   whatever the base image leaves free. `backend/tests/integration/test_chown_scripts_real_tree.py`
   derives it from the built image; a base-image bump that moves it fails there.
+  The `whisperx` group of `download-models.py` (kept as the `--only` key) is a thin caller of
+  `app.services.local_models.downloader.download_blocking` (#1246), the same downloader the
+  Settings page uses. `WHISPER_MODEL` must name a model in
+  `backend/app/core/local_whisper_catalog.py` (aliases such as `crisperwhisper` are applied there,
+  not in the shell wrapper); anything else, e.g. `distil-large-v3` or an arbitrary `org/repo`, is
+  refused with `unknown_local_model`. A downloader image that predates the catalog fails the group
+  with an instruction to use the image matching the script's release (`OT_IMAGE_TAG`); there is no
+  whisperx fallback. The `pyannote` group still loads `WHISPER_MODEL` through whisperx once, as its
+  diarization warm-up.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), and `test-lite-mode.sh` (no
@@ -665,9 +682,40 @@ this file is for.
 
 Root `CLAUDE.md` points here for the mechanics. `.fresh/` is gitignored and fully regenerated.
 
+**Starting `--fresh` from a git worktree (issue #961a):** `.env` is gitignored, so a worktree
+does not get one. `opentr.sh`'s prologue auto-links (never copies, never reads) the MAIN
+checkout's `.env` into the worktree via a *relative* symlink when it can find one —
+`git rev-parse --git-common-dir` resolves to the main checkout's `.git` regardless of which
+worktree invoked it, and comparing it against `--git-dir` is git's own documented worktree
+test. When no main `.env` exists either, `require_env_file_or_die()` refuses a real (non
+`--dry-run`) `start` with a diagnosis naming the main checkout, instead of proceeding with every
+interpolated var empty and letting Postgres crash-loop on an unrelated-looking
+"superuser password is not specified".
+
+**`up --wait` returning 0 is not sufficient proof the stack is up (issue #962).** It has a known
+race (moby/compose) where a container stuck in a restart loop can be observed "Running" at poll
+time. `verify_stack_health()` re-inspects every container this invocation's compose project
+controls (`docker compose $COMPOSE_FILES ps -a -q`) after `up` returns, and fails the whole
+`start` if any is `restarting`/`exited`/`dead`/`unhealthy`. A container still `health: starting`
+is never a failure — Docker's own healthcheck state machine already won't flip that to
+`unhealthy` before the service's OWN `start_period` (Keycloak's 120s, the backend's 600s, ...),
+so nothing here re-implements a competing global timeout.
+
 - `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
   `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`, plus the aux
-  services below when their flag is passed).
+  services below when their flag is passed). It also carries two `environment:` additions
+  (issues #961b / #968), both generated — never hand-edit this file:
+  - `frontend` always gets `CHOKIDAR_USEPOLLING=true` / `CHOKIDAR_INTERVAL` (default 300,
+    tunable via that env var before `start`). Two Vite dev servers side by side (this stack +
+    the main one) exhaust `fs.inotify.max_user_instances` (128 on a typical host) and the
+    second one dies with `EMFILE` watching `vite.config.ts`. Raising the sysctl needs root; a
+    `--fresh` stack is by definition the second watcher, so it's the one that polls instead.
+  - `backend` gets an offset-aware `CORS_ORIGINS` (a JSON array — pydantic-settings JSON-decodes
+    a `list[str]` env var BEFORE its `mode="before"` validator runs, so a comma-separated value
+    raises `SettingsError` at startup) whenever `--port-offset` is non-zero. Without it, the
+    WebSocket origin check (`_origin_is_allowed`, `backend/app/api/websockets.py`, #903's
+    anti-hijacking fix — kept exact-match, never weakened) rejects every handshake from this
+    stack's offset Vite origin with 403, and `/api/ws` silently never connects.
 - `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
   `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
 - `.fresh/<name>.aux` — the aux overlay files the deployment was started with, one per line.
@@ -982,6 +1030,66 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
     loud warning (DB-only planes — the `cleanup-test-users.py` subprocess — still run) and
     the process exits non-zero, so `run-integration-tests.sh`/`e2e/run-e2e.sh`'s
     `|| sweep_rc=$?` guard is what keeps a sweep failure from blocking the actual test run.
+  - **Store planes (issue #1195)** — `scripts/lib/test_artifact_sweep.py`: throwaway
+    OpenSearch indexes + ingest pipelines (Tier A when EMPTY, Tier B with documents), test
+    buckets and test-keyed objects in the media/cache buckets, scratch Postgres databases
+    (`ot_<word>_test`, Tier B, never with an open connection), `/tmp` trees of this user, and
+    labelled throwaway docker containers/networks (Tier B only — `throwaway_pg.py` records why
+    a container is never removed automatically). A name must FULLY match a registered shape
+    ending in the fixture's uniquifier; the protected list (production indexes, `.`-prefixed
+    system indexes, configured buckets, the target and system databases) is checked first and
+    again at the point of deletion. Orphan `profile_<uuid>` speaker docs are reported, never
+    deleted (Tier C). `--planes records,indexes,...` selects; the integration test of the row
+    sweep runs `--planes records` so it never touches the host's real stores.
+  - **Injected corpora and benchmark uploads (#1222)**: the records plane also finds media whose
+    `metadata_important.rag_eval.seed` fully matches `INJECTED_TEST_SEED_SHAPE` (the seeds the
+    TEST suites mint; never the canonical empty seed or an operator seed) and
+    `bench-parallel-<hex8>.<ext>` (standalone `benchmark_parallel.py --upload`, which also deletes
+    its own uploads unless `--keep-uploads`). Both are deleted over the API, so they end in
+    `purge_media_file`, the same destroyer as `python -m app.scripts.corpus_injection --purge`
+    (`inject-eval-corpus.sh ... --purge --dry-run|--yes`). An operator's corpus is removed with
+    that command, never by the sweep.
+  - **Rows owned by another test user (#1237)**: every record delete runs as the admin, who is
+    403 on someone else's speaker profile, so a leaked `delres-e2e-<hex8>@example.com` account's
+    rows could never go and kept the account `BLOCKED`. A candidate whose owner FULLY matches a
+    registered test-user shape (`cleanup-test-users.py`'s `ORPHAN_PATTERNS_UNAMBIGUOUS`; the
+    review tier only under `--execute`), predates the liveness cutoff and is not in its keep-list
+    is now removed by deleting the owner via `DELETE /api/admin/users/{uuid}` (cascade + storage
+    purge) before the per-record deletes. Every failed delete prints `HTTP <status> <reason>:
+    <detail>`. `_delete_owners` sits behind the same `effective_execute` guard as
+    `_delete_candidates` (AST-scanned).
+  - **Stack scoping**: the store planes exit 2 when the EXPORTED `POSTGRES_PORT`/
+    `OPENSEARCH_PORT`/`MINIO_PORT` resolve to different stacks (base + one `--port-offset`),
+    which is the "exported one port, forgot another" accident. `.env`/default values are one
+    stack by construction and never trip it.
+  - **`--min-age-minutes N`** lowers the cutoff further: nothing younger is ever touched.
+- `cleanup-test-leftovers.sh` (`./opentr.sh test-cleanup`, issue #1195) — the unattended
+  wrapper. `--project <compose-project>` or `--fresh <name>` is REQUIRED (it lists candidates
+  and refuses otherwise); every port, credential and bucket name is read from that project's
+  own containers, selected by `com.docker.compose.project`. Runs ONLY the Tier A sweep with an
+  age floor (`--min-age-minutes`, default 30). Modes: `--once` (default), `--background
+  [--interval-minutes N]`, `--status`, `--stop`, plus `--dry-run`. State in
+  `.test-cleanup/<project>.{log,pid,lock}` (`OT_TEST_CLEANUP_DIR`): one summary paragraph per
+  pass in the log, a lock so passes never overlap, a pid file so a project has one loop.
+  `--stop` checks `/proc/<pid>/cmdline` names this script's loop for this project and sends a
+  plain TERM to that pid only — never pkill/kill -9; a pass in progress finishes first.
+
+  ```bash
+  ./opentr.sh test-cleanup --fresh v060 --dry-run          # what a pass would remove
+  ./opentr.sh test-cleanup --fresh v060                    # one Tier A pass now
+  ./opentr.sh test-cleanup --fresh v060 --background --interval-minutes 60
+  ./opentr.sh test-cleanup --fresh v060 --status           # running? last pass summary
+  ./opentr.sh test-cleanup --fresh v060 --stop
+  ```
+- **End-of-run sweep** — `lib/test-data-sweep.sh`: `run-integration-tests.sh` and
+  `e2e/run-e2e.sh` call `tds_sweep_at_exit`, which runs the Tier A sweep from an EXIT trap
+  (so after a failed phase, a `set -e` abort, Ctrl-C or TERM), ends the run's own liveness
+  marker first (`testrun_end`) so its own leftovers are not protected by its own start time,
+  and never changes the exit code. `run-dev-tests.sh` sweeps ONCE after all phases
+  (`tds_own_end_sweep_for_children` exports `OT_TEST_DATA_SWEEP_AT_EXIT=parent`, which the
+  wrapped scripts honour) and owns the single EXIT trap that also stops a `--with-llm-test`
+  vLLM it started and the overlays. ⚠️ A second top-level `trap ... EXIT` in any of these
+  scripts silently replaces the sweep — `unit/test_test_data_sweep_at_exit.py` fails on one.
 - `testrun-registry.sh` — not itself destructive (it only ever creates a lock file under
   `.testruns/`), but is the liveness mechanism `cleanup-test-data.py`'s safety argument
   depends on. `testrun_begin` opens a marker file, takes `flock -n` on it, and holds the fd
@@ -989,6 +1097,16 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   exit, including SIGKILL/OOM/reboot, so a crashed run cannot be mistaken for a still-live
   one and there is no PID-reuse hazard. `TESTRUN_REGISTRY_DIR` overrides the `.testruns/`
   location — used only by the isolated-DB test proving this mechanism, never in normal use.
+  The directory is the MAIN checkout's `.testruns/` (resolved through `git rev-parse
+  --git-common-dir`), shared by every worktree; `backend/tests/testrun_marker.py` (every
+  pytest controller) and `cleanup-test-data.py` resolve the same path
+  (`unit/test_testrun_registry_location.py`). `testrun_end` releases and removes a run's own
+  marker; stale markers are pruned by the sweep's tmp plane (issue #1195).
+- `pki/run-pki-e2e-leg.sh` (matrix leg `3-pki`, issue #1222) — starts a PROD+nginx+PKI stack under the
+  stock names and stops it from one EXIT trap armed BEFORE `opentr.sh start` (INT/TERM exit 130/143 so
+  the trap runs; `--keep-stack` skips the stop). `unit/test_pki_leg_teardown.py` proves the trap logic
+  with stubs; a real PKI run is the only proof that `./opentr.sh stop` removes the PKI overlay's
+  containers, and none has been done for this change.
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
 - `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
   **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock
@@ -1007,7 +1125,8 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   under `frontend/` — pass `--no-claude` if you don't want your index touched.
 - Everything else writes to the **live dev stack**: benchmarks upload files and never delete them;
   `test-all-auth.sh` / `test-fedramp.sh` register real users and never clean up (that is why
-  `cleanup-test-users.py` exists); `run-auth-e2e.sh` mutates admin auth config (restored on an exit
+  `cleanup-test-users.py` exists; `test-fedramp.sh`'s `fedramp-e2e-<ts>` account is a registered
+  Tier A shape since #1195); `run-auth-e2e.sh` mutates admin auth config (restored on an exit
   trap) and stops the frontend container.
 
 ## Gotchas

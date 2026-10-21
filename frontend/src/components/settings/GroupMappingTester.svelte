@@ -207,8 +207,6 @@
     margin: 0;
     font-size: 0.875rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--color-text-secondary);
   }
 
@@ -257,23 +255,10 @@
 
   .form-control {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-size: 0.875rem;
-  }
-
-  .form-control:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-primary-alpha);
   }
 
   .form-textarea {
     resize: vertical;
-    font-family: inherit;
   }
 
   .help-text {
@@ -309,9 +294,7 @@
   .result-label {
     min-width: 9rem;
     font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: var(--font-weight-medium);
     color: var(--color-text-secondary);
   }
 

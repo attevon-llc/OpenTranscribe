@@ -1,12 +1,22 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import PerFileModelSelect from '$components/PerFileModelSelect.svelte';
 
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
+  /**
+   * Wire-compatible name: `false` (the default) means a summary IS generated.
+   * The UI presents this positively (`generateSummary`, derived below) so the
+   * toggle reads as an affirmative choice rather than a double negative — see
+   * #751 item 3. The prop itself is unchanged so the parent's localStorage
+   * restore/save and the `skip_summary` wire field need no migration.
+   */
   export let skipSummary = false;
   /** False when the deployment owns the model choice: render it read-only. */
   export let modelChoiceEnabled = true;
+
+  $: generateSummary = !skipSummary;
 
   const dispatch = createEventDispatcher<{
     change: { selectedWhisperModel: string | null; skipSummary: boolean };
@@ -14,6 +24,11 @@
 
   function emitChange() {
     dispatch('change', { selectedWhisperModel, skipSummary });
+  }
+
+  function toggleGenerateSummary(checked: boolean) {
+    skipSummary = !checked;
+    emitChange();
   }
 </script>
 
@@ -26,14 +41,12 @@
       {$t('uploader.whisperModel')}
       <span class="hint">{$t('uploader.whisperModelHint')}</span>
     </label>
-    <select id="whisper-model-select" bind:value={selectedWhisperModel} on:change={emitChange} class="model-select">
-      <option value={null}>
-        {$t('uploader.highQuality')} ({adminDefaultModel})
-      </option>
-      <option value="base">
-        {$t('uploader.fastProcessing')}
-      </option>
-    </select>
+    <PerFileModelSelect
+      id="whisper-model-select"
+      bind:value={selectedWhisperModel}
+      adminModel={adminDefaultModel}
+      on:change={emitChange}
+    />
     {#if selectedWhisperModel === 'base'}
       <p class="model-note">{$t('uploader.fastProcessingHint')}</p>
     {/if}
@@ -47,11 +60,15 @@
     <h4 class="section-title">{$t('upload.aiSummary')}</h4>
     <label class="toggle-row">
       <span class="toggle-text">
-        <span class="toggle-label">{$t('upload.skipSummary')}</span>
-        <span class="hint">{$t('upload.skipSummaryHint')}</span>
+        <span class="toggle-label">{$t('upload.generateSummary')}</span>
+        <span class="hint">{$t('upload.generateSummaryHint')}</span>
       </span>
       <label class="toggle-switch">
-        <input type="checkbox" bind:checked={skipSummary} on:change={emitChange} />
+        <input
+          type="checkbox"
+          checked={generateSummary}
+          on:change={(e) => toggleGenerateSummary(e.currentTarget.checked)}
+        />
         <span class="toggle-slider"></span>
       </label>
     </label>
@@ -66,12 +83,6 @@
   .field label { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; gap: 0.125rem; }
   .hint { font-size: 0.6875rem; font-weight: 400; color: var(--text-secondary); }
 
-  .model-select {
-    width: 100%; padding: 0.4375rem 0.625rem; border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--input-bg, var(--surface-color)); color: var(--text-primary); font-size: 0.875rem; cursor: pointer;
-  }
-  .model-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
-
   .model-managed { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
   .model-note { margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3; }
 
@@ -85,10 +96,8 @@
   .section-title {
     margin: 0;
     padding: 0.5rem 0.75rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);

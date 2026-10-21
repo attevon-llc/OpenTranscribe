@@ -81,7 +81,7 @@ class TranscriptionConfig:
     num_speakers: int | None = None
     hf_token: str | None = None
     enable_native_embeddings: bool = True
-    enable_diarization: bool = True  # False to skip diarization entirely
+    enable_diarization: bool = True  # per-run value comes from the PipelinePlan; no env var sets it
     enable_overlap_detection: bool = True
     overlap_min_duration: float = 0.25
 
@@ -124,6 +124,7 @@ class TranscriptionConfig:
     @classmethod
     def from_environment(cls, **overrides) -> "TranscriptionConfig":
         """Build config from env vars + hardware detection, with task-level overrides."""
+        from app.services.huggingface_token import get_hf_token
         from app.utils.hardware_detection import detect_hardware
 
         hw = detect_hardware()
@@ -174,12 +175,11 @@ class TranscriptionConfig:
             device_index=whisperx_config.get("device_index", 0),
             source_language=os.getenv("SOURCE_LANGUAGE", "auto"),
             translate_to_english=False,
-            enable_diarization=os.getenv("ENABLE_DIARIZATION", "true").lower() == "true",
             enable_dedup=os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true",
             min_speakers=int(os.getenv("MIN_SPEAKERS", "1")),
             max_speakers=int(os.getenv("MAX_SPEAKERS", "20")),
             num_speakers=None,
-            hf_token=os.getenv("HUGGINGFACE_TOKEN"),
+            hf_token=get_hf_token(),
             enable_native_embeddings=os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower()
             == "true",
             enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()
@@ -230,39 +230,28 @@ class TranscriptionConfig:
 
     @staticmethod
     def _maybe_warn_cpu_mode_misconfigured(config: "TranscriptionConfig") -> None:
-        """Warn once when running on CPU with a heavy model or diarization on.
+        """Warn once when running on CPU with a heavy Whisper model.
 
-        PyAnnote diarization requires CUDA; running it on CPU will fail or
-        be unusably slow. Whisper large-* on CPU runs >10x realtime. If we
-        detect either condition, log a single advisory so admins can
-        adjust ``WHISPER_MODEL`` / ``ENABLE_DIARIZATION`` in ``.env``.
+        Whisper large-* on CPU runs >10x realtime, so log a single advisory
+        so admins can adjust ``WHISPER_MODEL`` in ``.env``. Whether speakers
+        are detected is not an env setting (each run follows its user's
+        Speaker Detection choice), so it is not part of this advisory.
         Does not block startup — the user may have intentional reasons.
         """
         global _CPU_MODE_WARNING_EMITTED
         if _CPU_MODE_WARNING_EMITTED or config.device != "cpu":
             return
 
-        heavy_model = config.model_name not in LIGHTWEIGHT_MODELS
-        if not heavy_model and not config.enable_diarization:
+        if config.model_name in LIGHTWEIGHT_MODELS:
             return
 
-        issues: list[str] = []
-        if heavy_model:
-            issues.append(
-                f"WHISPER_MODEL={config.model_name} on CPU runs >10x realtime "
-                "(recommend WHISPER_MODEL=base or small)"
-            )
-        if config.enable_diarization:
-            issues.append(
-                "ENABLE_DIARIZATION=true on CPU is not supported by PyAnnote "
-                "(recommend ENABLE_DIARIZATION=false on CPU-only deployments)"
-            )
-
         logger.warning(
-            "CPU-only mode detected with a configuration intended for GPU: %s. "
+            "CPU-only mode detected with a configuration intended for GPU: "
+            "WHISPER_MODEL=%s on CPU runs >10x realtime "
+            "(recommend WHISPER_MODEL=base or small). "
             "Edit .env and restart workers to apply CPU-friendly defaults. "
             "See docs/CPU_MODE_TESTING.md for the full guidance.",
-            "; ".join(issues),
+            config.model_name,
         )
         _CPU_MODE_WARNING_EMITTED = True
 

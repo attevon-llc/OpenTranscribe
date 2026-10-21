@@ -30,9 +30,9 @@ flowchart TB
     Redis --> Workers
 
     subgraph Workers["Celery Workers"]
-        GPU[GPU Queue\ntranscription, diarization]
-        CloudASR[Cloud ASR Queue\ncloud provider APIs]
-        CPU[CPU Queue\npreprocess, postprocess]
+        GPU[GPU Queue\nlocal transcription, local speaker detection]
+        CloudASR[Cloud ASR Queue\ncloud transcription, cloud speaker detection]
+        CPU[CPU Queue\npreprocess, postprocess, voiceprints]
         Download[Download Queue\nyt-dlp, URL fetch]
         NLP[NLP Queue\nsummarization, speaker ID]
         Embedding[Embedding Queue\nmigration, consistency]
@@ -68,9 +68,9 @@ flowchart TB
   - `app/services/progress_tracker.py` — EWMA-based ETA for all long-running tasks
 
 ### Workers (Celery)
-- **GPU Queue**: Transcription, diarization (concurrency=1)
-- **Cloud ASR Queue**: Cloud speech providers (concurrency=4)
-- **CPU Queue**: Audio preprocessing, postprocessing (concurrency=8)
+- **GPU Queue**: Local Whisper transcription and this server's speaker detection (concurrency=1)
+- **Cloud ASR Queue**: Cloud transcription providers and cloud speaker detection (pyannote.ai, or a vendor used only for its speakers)
+- **CPU Queue**: Audio preprocessing, postprocessing, the voiceprint stage (concurrency=8). The same worker also drains `cpu-transcribe` (lightweight per-file Whisper models) and `utility`
 - **Download Queue**: YouTube/URL downloads
 - **NLP Queue**: LLM features (summarization, speaker ID)
 - **Embedding Queue**: Speaker embedding extraction
@@ -83,40 +83,112 @@ flowchart TB
 - **OpenSearch 3.4.0**: Full-text and vector search with alias-based speaker indices
 - **Redis**: Task queue broker and caching singleton
 
-## 3-Stage Transcription Pipeline
+## Transcription Pipeline
 
-Transcription uses a Celery chain that separates CPU and GPU work for maximum GPU utilization:
+Transcription and speaker detection are chosen independently, and each can run on this server
+or at a cloud vendor. One pure function decides how a file is processed, and every stage
+follows its answer. Which combinations each image supports is listed in
+[Deployment Variants](../installation/deployment-variants.md).
+
+### The plan: one decision point
+
+`services/pipeline_plan.py` `resolve_pipeline_plan(PlanInputs) -> PipelinePlan` takes the
+user's transcription choice, their speaker-detection choice, the deployment (full or lite),
+the model's capabilities from the ASR catalog and the admin's local engine, and returns:
+
+- **Transcription**: `local_gpu`, `local_cpu` (a lightweight per-file model) or `cloud`, the
+  queue it runs on, and the timing the model returns (`word`, `segment` or `none`).
+- **Speaker detection**: which detector runs (`asr` = the transcription vendor's own speakers,
+  `local` = this server, `pyannote_ai`, `asr_config` = another saved provider used only for
+  its speakers, or `off`) and how (`inline_asr`, `inline_local`, `parallel_cloud`,
+  `post_stage_local`, `post_stage_cloud`, `none`).
+- **Voiceprints**: always computed on this server (`inline_native` after this server's
+  engine, otherwise `embedding_stage` on the `cpu` queue). A vendor's voiceprints are never used.
+- **Issues**: each with a stable code and a fixed sentence. Only `error` severity blocks.
+
+`services/pipeline_plan_inputs.py` gathers the inputs. The same resolver answers
+`GET /api/user-settings/pipeline` (the read-only pipeline view in Settings) and validates
+settings changes, so what Settings shows cannot disagree with what runs.
+
+There is no forced-alignment step and no wav2vec2 alignment model: local Whisper produces word
+timestamps itself, and a cloud model that returns no timestamps is refused for every speaker
+detector rather than aligned after the fact.
+
+### The chain
+
+`tasks/transcription/dispatch.py` resolves the plan **once** per run. A plan with a blocking
+issue is refused before anything is published: the file goes to ERROR with the issue's fixed
+sentence. Otherwise the plan travels in the chain context (`plan.to_context()`) and every
+stage reads it from there:
 
 ```
-CPU preprocess → GPU transcribe+diarize → CPU postprocess
+preprocess (cpu)
+  → transcribe (gpu | cpu-transcribe | cloud-asr)
+  → postprocess (cpu)
+      → post stage: rediarize_task (cloud-asr for a vendor, gpu for this server)
+      | voiceprint stage (cpu)
+      | inline voiceprints (no extra task)
 ```
 
-### Stage 1: Preprocess (CPU Queue)
-- Downloads media from MinIO
-- Extracts audio via FFmpeg (presigned URL streaming or file download)
-- Normalizes audio to WAV format
-- Uploads preprocessed audio to MinIO temp storage
-- Extracts media metadata (best-effort, non-blocking)
+1. **Preprocess** (`cpu`): downloads the media, extracts and normalizes audio with FFmpeg,
+   stages the WAV for the next stage, and reads media metadata.
+2. **Transcribe** on the plan's queue:
+   - `gpu`: local Whisper (faster-whisper with word timestamps). When the plan says
+     `inline_local`, this server's speaker detection runs in the same task and returns
+     per-speaker vectors. With the optional gpu-split topology the two halves run on
+     `gpu-transcribe` and `gpu-diarize`.
+   - `cpu-transcribe`: a lightweight per-file Whisper model.
+   - `cloud-asr`: a cloud vendor. With `inline_asr` the vendor's own speakers are used; with
+     `parallel_cloud` a cloud detector runs beside the transcription in the same task.
+3. **Postprocess** (`cpu`) indexes the transcript, dispatches downstream work (summary, topics,
+   speaker attributes) and hands speaker work to one of:
+   - the **post stage** when the plan says `post_stage_local` or `post_stage_cloud`:
+     `rediarize_task` with the plan's detector, on `cloud-asr` for a vendor (no GPU slot is
+     held while the vendor works) or on the GPU queue for this server's engine. It re-splits
+     the saved segments at speaker changes and then runs the voiceprint step. A vendor failure
+     is not fatal: the transcript is kept and the failure is recorded.
+   - the **voiceprint stage** (`embedding_stage`, `cpu`) for speakers that came from a cloud
+     vendor without vectors.
+   - **inline voiceprints** (`inline_native`), matched right in postprocess from the vectors
+     the GPU stage returned.
 
-### Stage 2: Transcribe + Diarize (GPU Queue)
-- Downloads preprocessed audio from MinIO temp
-- Runs WhisperX transcription with word-level timestamps
-- Runs PyAnnote speaker diarization
-- Saves transcript segments to PostgreSQL
-- Returns speaker mappings and native embeddings
+Each run has exactly one completion and metering terminus: postprocess when nothing was handed
+off, otherwise the stage it handed off to.
 
-### Stage 3: Postprocess (CPU Queue)
-- Processes speaker embeddings (native PyAnnote centroids, no GPU needed)
-- Indexes transcript in OpenSearch (whole-doc + chunk-level)
-- Dispatches downstream tasks (summarization, speaker attributes, clustering)
-- Cleans up MinIO temp audio
-- Sends WebSocket completion notification
+### One merge, one voiceprint interface
+
+- **Speaker assignment** has one implementation, `transcription/speaker_assigner.py`
+  `assign_speakers(..., granularity="word" | "segment")`, used by the GPU stage, the cloud task
+  and the post stage. Segment-timed models are merged at segment granularity, so a speaker
+  change inside a segment is not detected (the plan reports this as a warning).
+- **Voiceprints** go through `services/voiceprint_extractor.py`:
+  `extract(audio_path, turns) -> Voiceprints` (256-d WeSpeaker vectors per speaker), served by
+  the diar-native sidecar's `/embed_window` with an in-process fallback.
+  `get_voiceprint_extractor()` is the seam a replacement implementation plugs into.
+
+### Per-file provenance
+
+Every stage that completes a step records which provider and model ran it and where, through
+one writer, `services/file_provenance.py` `record_stage` (stored in
+`media_file.processing_provenance`). One reader, `services/file_provenance_view.py`
+`build_processing_steps`, serves it as `processing_steps` on the file detail and file status
+endpoints. Files processed before recording began are shown as not recorded, never guessed.
+
+### Lite deployments
+
+`docker-compose.lite.yml` sets `DEPLOYMENT_MODE=lite` on every service and scales both GPU
+workers (`celery-worker`, `celery-worker-gpu-scaled`) to `replicas: 0`. The plan therefore
+never schedules local transcription or this server's speaker detection there: those choices are
+refused with a fixed sentence (`local_asr_unavailable`, `local_diarization_unavailable`, or
+`automatic_needs_speaker_provider` for Automatic with a text-only model) before any task is
+published. Cloud transcription and cloud speaker detection run on `cloud-asr`, and voiceprints
+are still computed locally by the voiceprint stage on `cpu`.
 
 ### Pipeline Benefits
 - **GPU never idles**: While GPU processes file N, CPU preprocesses file N+1
 - **Batch efficiency**: For 1000+ files, CPU queue (concurrency=8) prepares multiple files ahead
 - **Error isolation**: Postprocess failures don't lose transcription data (segments already saved)
-- **Queue routing**: Auto-resolves GPU vs cloud-asr queue based on user's ASR provider
+- **No GPU held for cloud work**: cloud transcription and cloud speaker detection run on `cloud-asr`
 
 ### Error Handling
 - Each stage has its own error handler for status updates
@@ -191,21 +263,22 @@ flowchart LR
     Redis[(Redis Broker)] --> gpu & cloud_asr & cpu & download & nlp & embedding & utility & redaction
 
     subgraph gpu["gpu (concurrency=1)"]
-        g1[WhisperX transcription]
-        g2[PyAnnote diarization]
+        g1[Local Whisper transcription]
+        g2[Speaker detection on this server]
     end
 
-    subgraph cloud_asr["cloud-asr (concurrency=4)"]
-        c1[Deepgram / AssemblyAI]
-        c2[OpenAI / Google / AWS]
+    subgraph cloud_asr["cloud-asr"]
+        c1[Cloud transcription]
+        c2[Cloud speaker detection]
     end
 
     subgraph cpu["cpu (concurrency=8)"]
         p1[Audio preprocessing]
         p2[Postprocessing]
+        p3[Voiceprint stage]
     end
 
-    subgraph download["download (concurrency=3)"]
+    subgraph download["download (concurrency=5)"]
         d1[yt-dlp downloads]
         d2[URL media fetch]
     end
@@ -237,9 +310,9 @@ Tasks are separated into queues by resource type to prevent resource contention:
 | Queue | Concurrency | Why Separate |
 |-------|-------------|--------------|
 | `gpu` | 1 | GPU memory is exclusive; concurrent GPU tasks cause OOM |
-| `cloud-asr` | 4 | Network-bound cloud API calls, no GPU needed |
-| `cpu` | 8 | CPU-bound preprocessing/postprocessing should not block GPU |
-| `download` | 3 | Network-bound downloads with rate limiting |
+| `cloud-asr` | 16 (`CLOUD_ASR_CONCURRENCY`) | Network-bound cloud transcription and cloud speaker detection, no GPU needed |
+| `cpu` | 8 | CPU-bound preprocessing, postprocessing and the voiceprint stage should not block GPU |
+| `download` | 5 | Network-bound downloads with rate limiting |
 | `nlp` | 4 | LLM API calls are network-bound, separate from transcription |
 | `embedding` | varies | Speaker embedding extraction, can be CPU or GPU |
 | `utility` | varies | Maintenance tasks, error handlers, reindexing |
@@ -263,9 +336,12 @@ The `get_redis()` function in `app/core/redis.py` returns a process-wide, lazily
 - Production: docker-compose with NGINX reverse proxy, CSP headers
 - Offline: Airgapped deployment with pre-cached models
 - Cloud: AWS/GCP/Azure with GPU instances
-- Lite: Cloud-only ASR, no GPU required (~2GB image)
+- Lite: cloud-only transcription and speaker detection, no GPU required; voiceprints are still computed locally on CPU
+
+See [Deployment Variants](../installation/deployment-variants.md) for what each image can run.
 
 ## Next Steps
 
+- [Deployment Variants](../installation/deployment-variants.md)
 - [Contributing](./contributing.md)
 - [Docker Compose Installation](../installation/docker-compose.md)

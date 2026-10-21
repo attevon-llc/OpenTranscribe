@@ -136,13 +136,13 @@
 
   .page-btn:hover:not(:disabled):not(.active) {
     background: var(--hover-color, #f3f4f6);
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
   }
 
   .page-btn.active {
-    background: var(--primary-color, #4f46e5);
+    background: var(--primary-color);
     color: white;
-    border-color: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color);
   }
 
   .page-btn:disabled {

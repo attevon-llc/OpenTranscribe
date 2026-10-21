@@ -32,7 +32,7 @@ Generate summaries in 12 different languages:
 - Portuguese, Chinese, Japanese, Korean
 - Italian, Russian, Arabic, Hindi
 
-Configure in Settings → Transcription → LLM Output Language.
+Configure in Settings → Transcription → Language (*Language for AI features*).
 
 ### Organization Context (New in v0.4.0)
 
@@ -40,7 +40,7 @@ Inject organization-specific context into AI prompts for more relevant summaries
 
 - Define organization context text (e.g., team names, project acronyms, domain terminology)
 - Context is automatically included in summarization and speaker identification prompts
-- Configurable per-user in Settings → AI → Organization Context
+- Configurable per-user in Settings → Organization Context
 - Toggle whether context applies to default prompts, custom prompts, or both
 
 The organization context is injected as a system-level preamble before the transcript content in all LLM calls. This allows the model to correctly resolve ambiguous references -- for example, knowing that "the Board" refers to a specific governance body, or that "Q3" means a particular fiscal quarter for your organization. The context text is stored per-user, so different teams can define their own terminology without conflicting.
@@ -66,7 +66,7 @@ AI-powered automatic tagging and collection assignment ([#140](https://github.co
 - Configurable confidence threshold for auto-application
 - Enable/disable separately for tags and collections
 - Retroactive auto-labeling available for existing files
-- Configure in Settings → AI → Auto-Label
+- Configure in Settings → Auto-Labeling (Tags & Collections)
 
 #### How the Auto-Label Pipeline Works
 
@@ -76,12 +76,25 @@ AI-powered automatic tagging and collection assignment ([#140](https://github.co
 4. **Batch grouping**: For bulk imports, the system tracks which files were uploaded together via an `upload_batch` table. After all files in a batch complete topic extraction, topics appearing in 2+ files trigger automatic shared collection creation.
 5. **Provenance tracking**: Every tag and collection tracks its `source` ("manual", "auto_ai", or "bulk_group") so users can distinguish AI-applied labels from human ones. The frontend displays a sparkle icon on auto-applied items with confidence tooltips.
 
+### Turn off the automatic AI suggestions
+
+After a file is transcribed, OpenTranscribe can automatically ask your configured AI provider for two things, and each one sends the transcript text to that provider. Both are **on by default** and each has its own switch:
+
+| Switch | Where | What it controls |
+|---|---|---|
+| **Suggest tags and collections automatically after transcription** (`auto_topic_extraction`) | Settings → AI & Chat → Auto-Labeling (Tags & Collections) | The topic-extraction step that produces tag and collection suggestions. Suggestions are applied automatically only if Auto-Labeling itself is on; otherwise you review them. |
+| **Suggest speaker names automatically with AI** (`auto_llm_speaker_identification`) | Settings → Speaker Identification → Voice Attributes | The AI step that suggests who each speaker is. Suggestions are never applied automatically; you confirm each one. It is independent of voice-attribute (gender) detection. |
+
+The switches only affect the automatic step. The manual buttons on a file (suggest speaker names, extract suggestions, auto-label, reprocessing selected stages) always work. With no AI provider configured the switches are disabled, because nothing is sent either way. The background recovery sweep respects the switches too: it will not re-queue a step you turned off.
+
+Administrators can set a deployment-wide default by adding the system settings `auto_llm.topic_extraction` or `auto_llm.speaker_identification` with the value `false`; a user's own choice always wins over it.
+
 ### Disable AI Summary Generation
 
 Users can disable automatic AI summarization:
 
 - **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for a specific file
-- **User default**: Set your default in Settings → AI → Auto-Summarize to prevent automatic summarization on all uploads
+- **User default**: Set your default in Settings → LLM Provider Configuration → AI Summary Settings to prevent automatic summarization on all uploads
 - Disabling auto-summarize does not prevent manual summarization — users can still click "Generate Summary" on any transcript at any time
 
 ### Prompt Sharing
@@ -90,7 +103,7 @@ Custom AI prompts can be shared between users:
 
 - Users can share their custom summarization prompts with other users or groups via the sharing system
 - Shared prompts appear in the recipient's prompt selection dropdown alongside their own prompts
-- Sharing is managed from Settings → AI Prompts → Share
+- Sharing is managed from Settings → AI Summarization Prompts → Share
 - Useful for standardizing summarization output across a team without each member creating identical prompts
 
 ### Speaker Identification
@@ -162,23 +175,50 @@ OPENAI_MODEL=gpt-4o
 
 ### Amazon Bedrock
 
-The AWS-native option. Unlike every other provider, Bedrock needs **no API key**:
-boto3 resolves credentials through the standard AWS chain — instance role, task
-role, shared profile, or environment — so a deployment on EC2, ECS or EKS
-provisions no secret at all.
+The AWS-native option. Bedrock has no API key and no base URL; it is reached through the AWS
+SDK, and a configuration can get its credentials in one of two ways.
+
+**1. Enter them in the configuration (Settings > AI & Chat > LLM Provider Configuration).**
+Choose **AWS Bedrock** as the provider and fill in the **Amazon Bedrock account** block:
+
+| Field | Notes |
+|---|---|
+| AWS region | A region where Bedrock and your model exist, for example `us-east-1`. Leave it on "server default" to use the deployment's region. |
+| Model name | A text field with suggestions. Newer Claude models are offered only through an **inference profile**, whose id starts with `global.` or a geography prefix, for example `global.anthropic.claude-haiku-4-5-20251001-v1:0` or `global.anthropic.claude-sonnet-4-6` (available in `us-east-1` and `us-west-2`). A bare on-demand base model id is refused for those models. |
+| Access key ID, Secret access key, Session token | Optional. All three are **write-only**: they are stored encrypted at rest, are never shown again (editing shows "saved, leave blank to keep it"), and never appear in an API response or a log. Tick "Remove the saved credentials" to go back to the server's own credentials. |
+
+**Test connection** uses the credentials you have typed, saved or not, and answers with a
+fixed sentence for the failures you will actually hit on a first run: no credentials,
+credentials rejected, access denied, **model not enabled for your account** (request access
+in the Amazon Bedrock console), a base model id that needs an inference profile, and a region
+that does not offer Bedrock or the model.
+
+An administrator can share a configuration with all users ("Share with all users"). The users
+it is shared with use its credentials without ever being sent them.
+
+**2. Leave the key fields blank and use the server's own AWS credentials.** boto3 resolves them
+through the standard chain: instance role, task role, shared profile, or environment. **On
+AWS this is the better choice**: a role needs no secret provisioned at all. Administrators see
+in the form whether the server's credentials currently resolve and from what kind of source
+(environment variables, shared profile, container or instance role), never a value.
 
 ```bash
+# Only for the server's own region and for deployments that pick the provider by environment
 LLM_PROVIDER=bedrock
 BEDROCK_REGION=us-east-1              # falls back to AWS_REGION / AWS_DEFAULT_REGION
-BEDROCK_MODEL_NAME=anthropic.claude-haiku-4-5-20251001-v1:0
+BEDROCK_MODEL_NAME=global.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-Required IAM permissions:
+For a test account, create a **least-privilege IAM user** with only these actions (rather
+than reusing an administrator's keys) and enter its access key in the configuration:
 
 | Action | Needed for |
 |---|---|
-| `bedrock:InvokeModelWithResponseStream` | Chat (streaming) |
+| `bedrock:InvokeModelWithResponseStream` | Chat (streaming) and Test connection |
 | `bedrock:InvokeModel` | Summaries, topics, speaker ID (non-streaming) |
+| `bedrock:ListFoundationModels` | Not called by OpenTranscribe; useful for checking model ids with the AWS CLI |
+
+The model must also be enabled for your account in the Amazon Bedrock console.
 
 **Transient capacity errors are retried before they reach the user.** Every
 Bedrock call (streaming chat included) uses botocore's `adaptive` retry mode with
@@ -257,7 +297,7 @@ OLLAMA_MODEL=llama3.2:latest
 ## No LLM Mode
 
 OpenTranscribe works without any LLM configuration. Leave `LLM_PROVIDER` empty (and configure no
-provider in **Settings → AI**) and these still work in full:
+provider in **Settings → LLM Provider Configuration**) and these still work in full:
 
 - **Transcription** and **speaker diarization**
 - **Cross-recording speaker matching** (voiceprints are local models, not an LLM)

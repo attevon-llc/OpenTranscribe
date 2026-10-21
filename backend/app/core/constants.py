@@ -41,8 +41,8 @@ class CeleryQueues:
     CLOUD_ASR = "cloud-asr"  # Dynamic: cloud ASR providers (CPU worker consumes)
     CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
     # Phase 4: transcription-only GPU worker (celery-worker-gpu-transcribe, gpu-split
-    # profile). dispatch.py's _resolve_gpu_queue() routes here only when
-    # gpu_split_enabled() is true (issue #703 — this queue previously had no publisher).
+    # profile). The pipeline plan routes here only for inline local speaker detection with
+    # gpu_split_enabled() true and a live consumer (issue #703; dispatch._plan_for_dispatch).
     GPU_TRANSCRIBE = "gpu-transcribe"
     GPU_DIARIZE = "gpu-diarize"  # Phase 4: diarization-only GPU worker
     REDACTION = "redaction"  # Content redaction detection (dedicated CPU service)
@@ -88,10 +88,10 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     is the same argument issue #584 already accepted for
     ``extract_speaker_embeddings``, generalised to the rest of the family.
 
-    ⚠️ **Not for work that REQUIRES a GPU to be correct.**
-    ``transcription.process_file`` stays pinned to ``gpu``: lite ships no local
-    ASR and ``services/asr/factory.py`` refuses it by name, so rerouting it would
-    replace a clear refusal with a different failure on another worker.
+    ⚠️ **Not for work that REQUIRES a GPU to be correct.** Local Whisper
+    (``transcription.gpu_transcribe`` on ``gpu``) stays where it is: lite ships no
+    local ASR and the pipeline plan refuses it at dispatch (``local_asr_unavailable``),
+    so rerouting it would replace a clear refusal with a different failure.
 
     ⚠️ Deliberately **not** a live consumer probe. ``inspect().active_queues()``
     (as in ``tasks/transcription/dispatch.py``) costs a broker broadcast of up to
@@ -157,7 +157,7 @@ def gpu_split_enabled() -> bool:
     Before this branch the flag was inert for dispatch, so that combination is a
     regression, not a pre-existing risk.
 
-    Do NOT route on this value alone. ``dispatch.py::_resolve_gpu_queue`` also
+    Do NOT route on this value alone. ``dispatch.py::_plan_for_dispatch`` also
     verifies a live consumer is bound to ``CeleryQueues.GPU_TRANSCRIBE`` (via Celery
     control ``inspect().active_queues()``) before honouring it, and falls back to the
     always-staffed ``'gpu'`` queue otherwise — that check, not this function, is what
@@ -534,6 +534,19 @@ NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"
 NOTIFICATION_TYPE_REINDEX_COMPLETE = "reindex_complete"
 NOTIFICATION_TYPE_REINDEX_STOPPED = "reindex_stopped"
 
+# WebSocket notification type for the local Whisper model download (#1246)
+NOTIFICATION_TYPE_LOCAL_MODEL_DOWNLOAD = "local_model_download"
+
+# Celery node-name prefixes (``--hostname <prefix>%h`` in the compose files) of the workers that
+# load the pinned Whisper model, so the only ones a model switch restarts (#1246). ``gpu-diarize@``
+# is deliberately absent: it serves the diarization queue. If a topology ever puts Whisper there,
+# add its prefix here.
+WHISPER_WORKER_PREFIXES: tuple[str, ...] = (
+    "gpu-transcription@",
+    "gpu-transcribe@",
+    "gpu-scaled@",
+)
+
 # WebSocket notification types for embedding migration
 NOTIFICATION_TYPE_MIGRATION_PROGRESS = "migration_progress"
 NOTIFICATION_TYPE_MIGRATION_COMPLETE = "migration_complete"
@@ -623,6 +636,29 @@ DEFAULT_TRANSCRIPTION_MAX_SPEAKERS = 20
 DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
 DEFAULT_GARBAGE_CLEANUP_ENABLED = True
 DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
+
+# Field groups for the scoped reset (DELETE /user-settings/transcription?group=...).
+# The union must equal the fields the PUT handler persists; a unit test enforces it.
+TRANSCRIPTION_SETTING_GROUPS: dict[str, tuple[str, ...]] = {
+    "language": ("source_language", "translate_to_english", "llm_output_language"),
+    "accuracy": (
+        "garbage_cleanup_enabled",
+        "garbage_cleanup_threshold",
+        "vad_threshold",
+        "vad_min_silence_ms",
+        "vad_min_speech_ms",
+        "vad_speech_pad_ms",
+        "hallucination_silence_threshold",
+        "repetition_penalty",
+    ),
+    "speakers": (
+        "diarization_source",
+        "diarization_asr_config_uuid",
+        "speaker_prompt_behavior",
+        "min_speakers",
+        "max_speakers",
+    ),
+}
 
 # Watch Sources global tuning (DB-backed via SystemSettings, admin-UI managed,
 # no restart). Coded defaults here are the single source of truth — there are
@@ -791,8 +827,11 @@ DEFAULT_REPETITION_PENALTY = 1.0  # 1.0 = no penalty
 # Valid speaker prompt behaviors
 VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]
 
-# Diarization source options
-VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
+# Diarization source options. What each one resolves to, per transcription engine and
+# deployment, is decided in one place: services/pipeline_plan.resolve_pipeline_plan.
+# ``asr_config`` = another saved ASR configuration's speaker detection, named by the
+# ``transcription_diarization_asr_config_uuid`` user setting.
+VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "asr_config", "off")
 DEFAULT_DIARIZATION_SOURCE = "provider"
 
 # Native diarizer (diar-native sidecar) model provisioning.
@@ -1276,6 +1315,39 @@ BEDROCK_GEO_PREFIX_BY_REGION = {
     "af": "eu.",
 }
 
+# Amazon Bedrock defaults. A Bedrock LLM configuration carries its own region and (optionally)
+# AWS credentials, stored encrypted (services/bedrock_settings.py); a configuration that leaves
+# them blank uses the server's region (BEDROCK_REGION / AWS_REGION) and AWS credential chain.
+# Newer Claude models are offered only through inference profiles (a "global." or geo prefix);
+# their bare on-demand base ids are refused, so the default and the suggestions are profile ids.
+DEFAULT_BEDROCK_MODEL_ID = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+BEDROCK_SUGGESTED_MODELS = (
+    DEFAULT_BEDROCK_MODEL_ID,
+    "global.anthropic.claude-sonnet-4-6",
+)
+# Suggestions for the region select. Validation is the strict pattern in
+# schemas/llm_settings.py, not this list, so a region AWS adds later still works.
+BEDROCK_REGIONS = (
+    "us-east-1",
+    "us-east-2",
+    "us-west-2",
+    "ca-central-1",
+    "sa-east-1",
+    "eu-central-1",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-west-3",
+    "eu-north-1",
+    "eu-south-1",
+    "ap-northeast-1",
+    "ap-northeast-2",
+    "ap-south-1",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "us-gov-west-1",
+    "us-gov-east-1",
+)
+
 REDACTION_LLM_FAILSAFE_TEXT = "[redacted — masking unavailable]"
 # How many times an LLM task may defer itself waiting for detection spans before
 # failing. 10 × 60s covers a slow CPU scan; past that something is wrong, and a
@@ -1463,9 +1535,18 @@ DEFAULT_CHAT_TRACE_ENABLED = True  # chat.trace_enabled
 # widened time range is what the cached-span rebuild reads), and the growth
 # is bounded so it comes out of the SAME excerpt budget without silently
 # evicting other files' evidence (`MAX_EXPANSION_SEGMENTS`/
-# `MAX_EXPANDED_WORDS`). Default OFF: a new, unmeasured retrieval shape, same
-# posture as every other W2.x flag above.
-DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_enabled
+# `MAX_EXPANDED_WORDS`). Default ON as of 2026-09-21: measured (2026-08-20/21,
+# re-verified post-#526 on a TS3005/ES2002a A/B) that expansion delivers a
+# real, reproducible answer-quality gain ("same chunks, richer content") with
+# coverage a wash, not a regression, and #526 (the citation/quote-fidelity
+# blocker — an expanded chunk's citation pointed at a shorter, unexpanded
+# indexed span) is CLOSED on both the backend (`ChunkHit.expanded` +
+# `EXPANDED_SNIPPET_CHARS`) and the reader (`ChatSources.svelte`'s expander,
+# #913). citation_resolution_rate/citation_validity_rate stayed a perfect 1.0
+# in both arms of the re-verification. See issue #523's closing comment for
+# the full numbers, including a harness measurement artifact (filed
+# separately) that made raw quote_fidelity look worse than it is.
+DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = True  # chat.rag.context_expansion_enabled
 
 # --- #532 synthesis-gap EXPERIMENT flags. -----------------------------------
 # The measured defect: retrieval OFFERS 99% of a multi-file scope, the answer
@@ -1652,3 +1733,32 @@ FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
 # the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
 # rather than hardcoding the string twice.
 STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"
+
+# =============================================================================
+# Support-access grants (issue #1122)
+# =============================================================================
+# Code constants, not settings, on purpose: the control constrains platform admins, so an
+# admin must not be able to widen it from the UI (separation of duties).
+SUPPORT_ACCESS_MIN_TTL_MINUTES = 15
+SUPPORT_ACCESS_MAX_TTL_MINUTES = 480
+SUPPORT_ACCESS_BREAK_GLASS_MAX_TTL_MINUTES = 240
+SUPPORT_ACCESS_DEFAULT_TTL_MINUTES = 60
+#: An undecided request lapses after this long and can no longer be approved or denied.
+SUPPORT_ACCESS_PENDING_EXPIRY_HOURS = 72
+#: Cap on a presigned URL minted under a grant. A SigV4 URL is a bearer token, not bound to
+#: a user, so revoking the grant does not invalidate one already minted; this bounds the
+#: residual access after revocation.
+SUPPORT_ACCESS_PRESIGN_MAX_SECONDS = 300
+#: Grant creation is rate limited per user so request spam cannot flood approvers.
+SUPPORT_ACCESS_REQUEST_RATE_LIMIT = "10/hour"
+#: Header that carries a grant uuid. Never ambient: a request without it has no grant.
+SUPPORT_ACCESS_GRANT_HEADER = "X-Support-Access-Grant"
+
+# --- Cloud ASR provider policy (issue #1246) ---------------------------------------------
+#: ``SystemSettings`` key: JSON list of the cloud provider ids a plain user may choose.
+#: ABSENT (or the JSON ``null``) means every provider is allowed, which is what a
+#: deployment did before the policy existed; an empty list means none.
+ASR_CLOUD_PROVIDERS_FOR_USERS_KEY = "asr.cloud_providers_for_users"
+#: ``SystemSettings`` key: ``"true"``/``"false"``. Whether a plain user may save a cloud
+#: provider configuration (and key) of their own. Absent means true.
+ASR_USERS_OWN_KEYS_KEY = "asr.users_may_add_own_keys"

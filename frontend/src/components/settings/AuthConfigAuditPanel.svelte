@@ -225,17 +225,11 @@
 
   .label-text {
     color: var(--color-text-secondary, var(--text-secondary));
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
+    font-size: var(--font-size-xs);
   }
 
   select {
     padding: 0.25rem 0.375rem;
-    border: 1px solid var(--color-border, var(--border-color));
-    border-radius: 6px;
-    background: var(--color-bg, var(--surface-color));
-    color: var(--color-text, var(--text-color));
     font-size: 0.75rem;
     min-width: 12rem;
     height: 1.75rem;

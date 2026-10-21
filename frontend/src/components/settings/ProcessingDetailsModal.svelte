@@ -37,7 +37,7 @@
   };
 </script>
 
-<BaseModal {isOpen} title={$t('settings.statistics.processingDetails')} onClose={close} maxWidth="600px" zIndex={1300}>
+<BaseModal {isOpen} title={$t('settings.statistics.processingDetails')} onClose={close} size="md" zIndex={1300}>
         <!-- Tab navigation -->
         <div class="detail-tabs">
           <button class="tab" class:active={section === 'performance'} on:click={() => section = 'performance'}>
@@ -374,11 +374,9 @@
 
   .subsection-title {
     font-size: 0.8125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin: 1.25rem 0 0.5rem 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
 
   .empty-notice {

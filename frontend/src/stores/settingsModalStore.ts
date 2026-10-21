@@ -5,7 +5,9 @@ export type SettingsSection =
   | 'profile'
   | 'recording'
   | 'audio-extraction'
+  | 'processing-pipeline'
   | 'transcription'
+  | 'speaker-identification'
   | 'organization-context'
   | 'speaker-attributes'
   | 'download'
@@ -21,6 +23,7 @@ export type SettingsSection =
   | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
+  | 'file-status'
   // Cloud edition — org-admin sections (gated by audience='org_admin')
   | 'billing'
   | 'usage'
@@ -34,14 +37,19 @@ export type SettingsSection =
   // an empty pane. Cache configuration lives inside the 'retention' panel.
   | 'admin-users'
   | 'admin-task-health'
+  | 'quarantine'
   | 'chat-admin'
   | 'redaction-policy'
+  // The data-storage topics are tabs of 'data-management'; the five ids below survive as aliases.
+  | 'data-management'
   | 'embedding-migration'
   | 'data-integrity'
   | 'retention'
   | 'backup'
   | 'media-sources'
   | 'watch-sources'
+  | 'support-access'
+  | 'support-access-requests'
   // Super Admin sections
   | 'authentication'
   | 'audit-logs';
@@ -49,7 +57,11 @@ export type SettingsSection =
 interface SettingsModalState {
   isOpen: boolean;
   activeSection: SettingsSection;
-  dirtyState: Record<SettingsSection, boolean>;
+  /**
+   * Sparse: a section appears once something reports it dirty. Alias ids (a legacy id that now
+   * opens a tab of another row) are never tracked here; read a row's dirt through its own id.
+   */
+  dirtyState: Partial<Record<SettingsSection, boolean>>;
 }
 
 const initialState: SettingsModalState = {
@@ -59,36 +71,23 @@ const initialState: SettingsModalState = {
     profile: false,
     recording: false,
     'audio-extraction': false,
+    'processing-pipeline': false,
     transcription: false,
+    'speaker-identification': false,
     'organization-context': false,
-    'speaker-attributes': false,
     download: false,
     'ai-prompts': false,
     'llm-provider': false,
     'auto-labeling': false,
-    'search-indexing': false,
     groups: false,
-    'asr-provider': false,
-    'custom-vocabulary': false,
     'content-redaction': false,
     chat: false,
     'chat-admin': false,
-    'engine-settings': false,
-    'system-statistics': false,
-    billing: false,
-    usage: false,
-    team: false,
-    'admin-users': false,
-    'admin-task-health': false,
     'redaction-policy': false,
-    'embedding-migration': false,
-    'data-integrity': false,
     retention: false,
     backup: false,
     'media-sources': false,
     'watch-sources': false,
-    authentication: false,
-    'audit-logs': false,
   },
 };
 
@@ -143,7 +142,7 @@ function createSettingsModalStore() {
             acc[key as SettingsSection] = false;
             return acc;
           },
-          {} as Record<SettingsSection, boolean>
+          {} as Partial<Record<SettingsSection, boolean>>
         ),
       }));
     },

@@ -88,8 +88,23 @@ describe('batchVerifySpeakers', () => {
       action: 'assign',
       profile_uuid: 'profile-1',
       display_name: undefined,
+      override_unassignment: false,
     });
     expect(result).toEqual({ updated: 2 });
+  });
+
+  it('sends an explicit override of an earlier unassignment only when asked to', async () => {
+    const reply = { updated_count: 1, failed_count: 0, errors: [], blocked_speaker_uuids: [] };
+    mockInstance.post.mockResolvedValue({ data: reply });
+    const result = await batchVerifySpeakers(['s1'], 'assign', 'profile-1', undefined, true);
+    expect(result).toEqual(reply);
+    expect(mockInstance.post).toHaveBeenCalledWith('/speaker-clusters/batch-verify', {
+      speaker_uuids: ['s1'],
+      action: 'assign',
+      profile_uuid: 'profile-1',
+      display_name: undefined,
+      override_unassignment: true,
+    });
   });
 });
 

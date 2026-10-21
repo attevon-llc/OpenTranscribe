@@ -519,6 +519,12 @@ class SpeakerMatchingService:
         # `_handle_no_speaker_match`).
         before = canonical_speaker_label_for_row(speaker)
 
+        # The user assigned this profile to this one speaker by hand: that overrides an
+        # earlier unassignment from it (issue #1233). The profile embeddings it moves
+        # between are rebuilt by the update task the endpoint queues.
+        from app.services.speaker_cleanup import lift_profile_blacklist
+
+        lift_profile_blacklist(self.db, int(speaker_id), int(profile_id))
         speaker.profile_id = profile_id  # type: ignore[assignment]
         speaker.verified = True  # type: ignore[assignment]
         if confidence is not None:
@@ -728,6 +734,32 @@ class SpeakerMatchingService:
             or 0
         )
 
+    def _refusals(self, speaker_id: int) -> tuple[set[str], set[int]]:
+        """The names and the speakers a user's correction rules out for this speaker."""
+        from app.services.speaker_cleanup import blocked_profile_names
+        from app.services.speaker_cleanup import cannot_link_partners
+
+        return (
+            blocked_profile_names(self.db, [speaker_id])[speaker_id],
+            cannot_link_partners(self.db, [speaker_id])[speaker_id],
+        )
+
+    def _match_is_blocked(self, speaker: Speaker, match: dict[str, Any]) -> bool:
+        """Whether a correction forbids giving this speaker the matched identity."""
+        from app.services.speaker_cleanup import blocked_profile_names
+        from app.services.speaker_cleanup import speaker_blocked_from_profile
+
+        profile_id = match.get("profile_id")
+        if profile_id is not None and speaker_blocked_from_profile(
+            self.db, int(speaker.id), int(profile_id)
+        ):
+            return True
+        name = str(match.get("suggested_name") or "").casefold()
+        return (
+            bool(name)
+            and name in blocked_profile_names(self.db, [int(speaker.id)])[int(speaker.id)]
+        )
+
     def _handle_speaker_match(
         self,
         speaker: Speaker,
@@ -758,6 +790,18 @@ class SpeakerMatchingService:
         # no `display_name` write at all, so "before" has to be read first or
         # a suggestion-only bump (no auto-accept) would dispatch nothing.
         before = canonical_speaker_label_for_row(speaker)
+
+        # A speaker the user unassigned from this identity is neither suggested it nor
+        # linked to it (issue #1233). A speaker created by this very run has no
+        # corrections yet; one being re-matched (a re-embed) may.
+        if self._match_is_blocked(speaker, match):
+            match = {
+                **match,
+                "auto_accept": False,
+                "confidence": 0.0,
+                "suggested_name": None,
+                "profile_id": None,
+            }
 
         # Found a matching speaker - store the suggestion only if high confidence
         speaker.confidence = match["confidence"]
@@ -971,8 +1015,17 @@ class SpeakerMatchingService:
 
             if found_matches:
                 logger.info(f"Found {len(found_matches)} matches for speaker {int(speaker.id)}")
+                # A >=0.75 suggestion moves the canonical label, so a name (or a speaker) the
+                # user ruled out for this voice — carried over a re-run of its file — is never
+                # suggested (issue #1233).
+                refused_names, partners = self._refusals(int(speaker.id))
                 # If there are high-confidence matches from verified speakers, suggest them
                 for match in found_matches:
+                    if (
+                        str(match.get("display_name") or "").casefold() in refused_names
+                        or int(match.get("speaker_id") or 0) in partners
+                    ):
+                        continue
                     if match["confidence"] >= ConfidenceLevel.HIGH and match["display_name"]:
                         # No `display_name` write on this path at all — a
                         # suggestion crossing the resolver's confidence
@@ -1196,9 +1249,22 @@ class SpeakerMatchingService:
                 else []
             )
 
+            from app.services.speaker_cleanup import SpeakerImpact
+            from app.services.speaker_cleanup import clusters_holding_speakers
+            from app.services.speaker_cleanup import has_other_identity
+            from app.services.speaker_cleanup import reconcile_speaker_impact
+            from app.services.speaker_cleanup import speaker_blocked_from_profile
+
             updated_speakers = []
             for speaker in candidate_speakers:
                 if not self._should_propagate_to_speaker(speaker):
+                    continue
+                # A speaker the user unassigned from this profile, or said is not one
+                # of its speakers, is never re-linked by a propagation; nor is one the user
+                # named somebody else — a look-alike voice does not rename it (#1233).
+                if speaker_blocked_from_profile(
+                    self.db, int(speaker.id), profile_id
+                ) or has_other_identity(self.db, speaker, profile_id):
                     continue
 
                 similarity = match_by_id[int(speaker.id)]
@@ -1215,8 +1281,18 @@ class SpeakerMatchingService:
             if not updated_speakers:
                 return
 
+            updated_ids = {int(s.id) for s in updated_speakers}
+            impact = SpeakerImpact(
+                owner_ids={user_id},
+                profile_ids={profile_id},
+                cluster_uuids=clusters_holding_speakers(self.db, updated_ids),
+            )
             self.db.commit()
             self._update_speakers_in_opensearch(updated_speakers, profile_id)
+            # The profile gained voices and their clusters re-weight them (profile-linked
+            # members count double); both rebuilt from the committed rows. Logged, not
+            # raised: this runs inside upload-time matching.
+            reconcile_speaker_impact(self.db, impact)
             logger.info(
                 f"Propagated profile {profile_id} to {len(updated_speakers)} similar speakers"
             )

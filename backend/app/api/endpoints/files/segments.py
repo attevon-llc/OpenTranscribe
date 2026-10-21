@@ -63,13 +63,15 @@ def get_file_segments(
     already-materialized objects and adds no query, so the endpoint keeps its
     two-query profile.
     """
-    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, str(file_uuid), current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db, str(file_uuid), current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
     )
     file_id = db_file.id
+    # organization_id: without it the reader's tenant redaction floor is never consulted
+    # (#988's shape), so "load more" pages came back unmasked under an org floor that the
+    # first page (GET /files/{uuid}) applied.
     redaction_cfg, reveal_categories = _resolve_redaction_for_request(
-        db, db_file, current_user, is_admin=is_admin, redact=redact
+        db, db_file, current_user, bypass=ctx.bypass, redact=redact, organization_id=ctx.org_id
     )
 
     # Withhold the transcript until redaction finishes (when enabled).

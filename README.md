@@ -970,11 +970,11 @@ For production use, ensure you:
    # Add to .env
    NGINX_SERVER_NAME=opentranscribe.local
 
-   # Start with HTTPS enabled
-   ./opentr.sh start dev
+   # Start with HTTPS enabled (the NGINX overlay is production-only; `start dev` skips it)
+   ./opentr.sh start prod
    ```
 
-   For detailed instructions including Let's Encrypt setup, see [docs/NGINX_SETUP.md](docs/NGINX_SETUP.md).
+   For the step-by-step small-office guide, see [Install for a small business](docs-site/docs/installation/small-business-lan.md). For Let's Encrypt and the full reference, see [NGINX & HTTPS Setup](docs-site/docs/configuration/nginx-setup.md).
 
    > **Note**: Modern browsers require HTTPS for microphone access. Without NGINX/SSL setup,
    > microphone recording will only work when accessing via `localhost`.

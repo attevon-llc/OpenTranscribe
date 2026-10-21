@@ -305,7 +305,7 @@ def _request_origin(websocket: WebSocket) -> str | None:
     """The origin the handshake was addressed TO, for a same-origin comparison.
 
     Reconstructed from ``Host`` plus the forwarded scheme, which is what nginx
-    supplies for ``/api/ws`` (``proxy_set_header Host $host`` +
+    supplies for ``/api/ws`` (``proxy_set_header Host $http_host`` +
     ``X-Forwarded-Proto $scheme``). Falls back to the connection's own scheme,
     mapping the WebSocket schemes onto the HTTP ones an ``Origin`` header uses.
     """

@@ -1983,6 +1983,7 @@
   "uploader.protectedMediaPasswordLabel": "Media site password",
   "uploader.protectedMediaHint": "These credentials are sent securely to the server and used only for this download request (not stored).",
   "uploader.recordingNotSupported": "Recording is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.",
+  "uploader.recordingRequiresHttps": "Recording needs a secure connection. Open this page over HTTPS (https://) instead of plain HTTP to use the microphone.",
   "uploader.microphoneDevice": "Microphone Device",
   "uploader.selectMicrophoneTooltip": "Select microphone device",
   "uploader.microphone": "Microphone",

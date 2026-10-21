@@ -249,7 +249,7 @@ Self-signed certificates require trusting on each client device:
 - **Copy** `nginx/ssl/server.crt` to client devices
 - **Import** into browser/system certificate store
 
-See [NGINX_SETUP.md](NGINX_SETUP.md) for detailed platform-specific instructions.
+See [Install for a small business](../docs-site/docs/installation/small-business-lan.md) for detailed platform-specific instructions.
 
 ### Access via HTTPS
 

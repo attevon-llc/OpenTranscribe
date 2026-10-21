@@ -85,6 +85,35 @@ if ! declare -F read_env_value >/dev/null 2>&1; then
     }
 fi
 
+# Fallback definitions: this script is standalone and scripts/common.sh may be absent or
+# older. Identical bodies to common.sh's ot_is_valid_hostname() / ot_detect_lan_ip();
+# common.sh's win when present. Pinned by backend/tests/unit/test_lan_install_scripts.py.
+if ! declare -F ot_is_valid_hostname >/dev/null 2>&1; then
+    ot_is_valid_hostname() {
+        local name="${1:-}"
+        [[ ${#name} -le 253 && "$name" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]
+    }
+fi
+
+if ! declare -F ot_detect_lan_ip >/dev/null 2>&1; then
+    ot_detect_lan_ip() {
+        local ip="" iface=""
+        if command -v ip >/dev/null 2>&1; then
+            ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+        fi
+        if [ -z "$ip" ] && command -v route >/dev/null 2>&1; then
+            iface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
+            if [ -n "$iface" ]; then
+                ip=$(ipconfig getifaddr "$iface" 2>/dev/null || ifconfig "$iface" 2>/dev/null | awk '/inet / {print $2; exit}')
+            fi
+        fi
+        if [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+            echo "$ip"
+        fi
+        return 0
+    }
+fi
+
 # The repo's default branch, asked for at runtime rather than written down.
 #
 # Every hardcoded "master" in a download URL is a rename waiting to break an install.
@@ -2395,6 +2424,14 @@ case "${1:-help}" in
             hostname="${user_hostname:-opentranscribe.local}"
         fi
 
+        # The hostname is spliced into a sed replacement and an openssl config below.
+        if ! ot_is_valid_hostname "$hostname"; then
+            echo ""
+            echo -e "${RED}❌ '$hostname' is not a valid hostname${NC}"
+            echo "   Use letters, digits, dots and hyphens only (e.g. opentranscribe.local)."
+            exit 1
+        fi
+
         echo ""
         echo -e "${GREEN}✓ Using hostname: $hostname${NC}"
         echo ""
@@ -2458,9 +2495,11 @@ case "${1:-help}" in
         echo -e "${YELLOW}📋 HTTPS Setup Complete - Next Steps${NC}"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
+        lan_ip="$(ot_detect_lan_ip)"
         echo "1. Configure DNS (choose one):"
-        echo "   • Router DNS: Add $hostname → your server IP"
-        echo "   • /etc/hosts: Add 'YOUR_SERVER_IP  $hostname'"
+        echo "   • Router DNS: Add $hostname → ${lan_ip:-your server IP}"
+        echo "   • /etc/hosts: Add '${lan_ip:-YOUR_SERVER_IP}  $hostname'"
+        echo "   (Skip this step to use the server's IP address instead; the certificate covers it.)"
         echo ""
         echo "2. Trust the certificate on each device:"
         echo "   • Copy nginx/ssl/server.crt to client devices"
@@ -2470,6 +2509,11 @@ case "${1:-help}" in
         echo "   ./opentranscribe.sh restart"
         echo ""
         echo "4. Access at: https://$hostname"
+        if [ -n "$lan_ip" ]; then
+            echo "   or by address: https://$lan_ip"
+        fi
+        echo "   (Use this port-443 address, not the plain http://...:5173 one:"
+        echo "   browsers refuse sign-in cookies and microphone access over plain HTTP.)"
         echo ""
         ;;
     version)

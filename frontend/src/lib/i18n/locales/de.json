@@ -2667,6 +2667,7 @@
   "uploader.recordingInProgress": "Aufnahme läuft - {{seconds}}s",
   "uploader.recordingInProgressTitle": "Aufnahme Läuft",
   "uploader.recordingNotSupported": "Aufnahme wird von diesem Browser nicht unterstützt. Bitte verwenden Sie einen modernen Browser wie Chrome, Firefox oder Safari.",
+  "uploader.recordingRequiresHttps": "Für die Aufnahme ist eine sichere Verbindung erforderlich. Öffnen Sie diese Seite über HTTPS (https://) statt über einfaches HTTP, um das Mikrofon zu verwenden.",
   "uploader.recordingSettingsSummary": "Max: {{max}}min • Qualität: {{quality}} • Auto-Stopp: {{autoStop}}",
   "uploader.recordingWarningMessage": "Sie haben eine aktive Aufnahme. Das Wechseln der Registerkarte stoppt und verwirft Ihre Aufnahme. Möchten Sie wirklich fortfahren?",
   "uploader.remaining": "verbleibend",

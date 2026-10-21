@@ -10,6 +10,10 @@
   export let recordingQuality = 'high';
   export let autoStopEnabled = true;
 
+  // Browsers expose navigator.mediaDevices only in a secure context (HTTPS or localhost),
+  // so on a plain-HTTP LAN address "not supported" is the address, not the browser.
+  const insecureContext = typeof window !== 'undefined' && window.isSecureContext === false;
+
   const dispatch = createEventDispatcher<{
     recordingReady: void;
     clear: void;
@@ -55,13 +59,13 @@
 
 <div class="record-panel">
   {#if !recordingSupported}
-    <div class="unsupported-msg">
+    <div class="unsupported-msg" data-testid="recording-unsupported">
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
-      <span>{$t('uploader.recordingNotSupported')}</span>
+      <span>{$t(insecureContext ? 'uploader.recordingRequiresHttps' : 'uploader.recordingNotSupported')}</span>
     </div>
   {:else}
     {#if audioDevices.length > 0}

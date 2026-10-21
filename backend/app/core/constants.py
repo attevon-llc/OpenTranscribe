@@ -1751,6 +1751,10 @@ SUPPORT_ACCESS_PENDING_EXPIRY_HOURS = 72
 SUPPORT_ACCESS_PRESIGN_MAX_SECONDS = 300
 #: Grant creation is rate limited per user so request spam cannot flood approvers.
 SUPPORT_ACCESS_REQUEST_RATE_LIMIT = "10/hour"
+#: Organization takedown actions are rate limited per user (issue #1253). Every quarantine or
+#: release bumps the deployment-wide retrieval-cache version, so one tenant's churn costs every
+#: tenant their cache; a per-tenant version is a separate follow-up.
+ORG_TAKEDOWN_RATE_LIMIT = "30/hour"
 #: Header that carries a grant uuid. Never ambient: a request without it has no grant.
 SUPPORT_ACCESS_GRANT_HEADER = "X-Support-Access-Grant"
 

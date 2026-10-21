@@ -525,6 +525,7 @@ def test_account_purge_plan_names_the_rendition(normal_user, db_session):
 
 
 def test_takedown_revokes_and_release_restores_the_rendition_url(admin_user, db_session, store):
+    from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import quarantine_file
     from app.services.takedown_service import release_file
 
@@ -542,10 +543,12 @@ def test_takedown_revokes_and_release_restores_the_rendition_url(admin_user, db_
     store.objects[row.storage_path] = (b"x", "audio/x-aiff")
     store.objects[row.playback_path] = (b"x", "audio/mp4")
 
-    quarantine_file(db_session, row, admin=admin_user, reason="dmca", legal_hold=False)
+    quarantine_file(
+        db_session, row, actor=TakedownActor.platform(admin_user), reason="dmca", legal_hold=False
+    )
     assert (row.playback_path, True) in store.tags
 
-    release_file(db_session, row, admin=admin_user, clear_legal_hold=False)
+    release_file(db_session, row, actor=TakedownActor.platform(admin_user), clear_legal_hold=False)
     assert (row.playback_path, False) in store.tags
 
 

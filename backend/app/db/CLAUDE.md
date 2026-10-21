@@ -97,6 +97,10 @@ on pre-`v091` rows that provably came from a voiceprint, so their canonical labe
 minimum-password-age clock, set only by `PUT /users/me`; NULL = first change free; single-marker arm on the column).
 `v441_add_legal_acceptance` (`legal_acceptance`: which user accepted which legal document text, keyed by
 document key + SHA-256, `ON DELETE CASCADE` on the user; single-marker arm on the table).
+`v442_add_media_file_takedown_origin` (`media_file.takedown_origin`: which authority holds a taken-down
+or held file, issue #1253; backfills every existing hold as `platform`, adds a value CHECK and a
+`BEFORE INSERT OR UPDATE` trigger that keeps the column consistent with the flags. Its detection arm
+keys on the trigger, created last, not the column.)
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

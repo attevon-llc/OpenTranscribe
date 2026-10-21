@@ -259,6 +259,7 @@ def test_releasing_a_legal_hold_dispatches_the_sweep(db_session):
     Asserted on the dispatch AND on the row's state, so a hook that fired while failing
     to clear the hold could not pass.
     """
+    from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import release_file
 
     admin = _mk_user(db_session, "admin", role="admin")
@@ -269,11 +270,11 @@ def test_releasing_a_legal_hold_dispatches_the_sweep(db_session):
 
     with (
         patch("app.tasks.erasure_reconciliation.erasure_reconciliation_sweep.delay") as dispatch,
-        patch("app.services.takedown_service.audit_logger"),
-        patch("app.services.takedown_service._notify_owner_release"),
+        patch("app.services.takedown_notices.audit_logger"),
+        patch("app.services.takedown_service.notify_owner_release"),
         patch("app.services.minio_service.set_object_legal_hold", return_value=True),
     ):
-        release_file(db_session, media, admin=admin, clear_legal_hold=True)
+        release_file(db_session, media, actor=TakedownActor.platform(admin), clear_legal_hold=True)
 
     assert dispatch.call_count == 1
     db_session.refresh(media)
@@ -282,6 +283,7 @@ def test_releasing_a_legal_hold_dispatches_the_sweep(db_session):
 
 def test_releasing_without_clearing_the_hold_does_not_dispatch(db_session):
     """The control for the hook: a release that KEEPS the hold has unblocked nothing."""
+    from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import release_file
 
     admin = _mk_user(db_session, "admin2", role="admin")
@@ -292,10 +294,10 @@ def test_releasing_without_clearing_the_hold_does_not_dispatch(db_session):
 
     with (
         patch("app.tasks.erasure_reconciliation.erasure_reconciliation_sweep.delay") as dispatch,
-        patch("app.services.takedown_service.audit_logger"),
-        patch("app.services.takedown_service._notify_owner_release"),
+        patch("app.services.takedown_notices.audit_logger"),
+        patch("app.services.takedown_service.notify_owner_release"),
     ):
-        release_file(db_session, media, admin=admin, clear_legal_hold=False)
+        release_file(db_session, media, actor=TakedownActor.platform(admin), clear_legal_hold=False)
 
     assert dispatch.call_count == 0
     db_session.refresh(media)

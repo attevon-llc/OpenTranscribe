@@ -311,7 +311,7 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Sessions** | `auth.session.created`, `auth.session.expired`, `auth.session.terminated`, `auth.session.limit_exceeded` |
 | **Banner** | `auth.banner.acknowledged` |
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
-| **Content moderation** | `admin.file.quarantine`, `admin.file.release` |
+| **Content moderation** | `admin.file.quarantine`, `admin.file.release` (also written when an organization administrator acts on their own organization's files; the event records the actor's role and which authority held the file) |
 | **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
 | **User credentials** | `user.credential.set`, `user.credential.delete` (a user saved or removed their own pyannote.ai key; the key itself is never recorded) |

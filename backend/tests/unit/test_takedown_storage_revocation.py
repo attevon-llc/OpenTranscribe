@@ -18,6 +18,7 @@ from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services import takedown_service
+from app.services.takedown_service import TakedownActor
 from app.services.takedown_service import quarantine_file
 from app.services.takedown_service import release_file
 
@@ -78,7 +79,9 @@ class TestQuarantineTagsBothObjects:
             return True
 
         with patch(_TAG_TARGET, side_effect=_record):
-            quarantine_file(db, file, admin=admin, reason="dmca", legal_hold=False)
+            quarantine_file(
+                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+            )
 
         assert (file.storage_path, True) in calls
         assert (file.thumbnail_path, True) in calls
@@ -87,7 +90,9 @@ class TestQuarantineTagsBothObjects:
     def test_release_untags_storage_path_and_thumbnail(self, world):
         db, admin, file = world
         with patch(_TAG_TARGET, return_value=True):
-            quarantine_file(db, file, admin=admin, reason="dmca", legal_hold=False)
+            quarantine_file(
+                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+            )
 
         calls: list[tuple[str, bool]] = []
 
@@ -96,7 +101,7 @@ class TestQuarantineTagsBothObjects:
             return True
 
         with patch(_TAG_TARGET, side_effect=_record):
-            release_file(db, file, admin=admin, clear_legal_hold=False)
+            release_file(db, file, actor=TakedownActor.platform(admin), clear_legal_hold=False)
 
         assert (file.storage_path, False) in calls
         assert (file.thumbnail_path, False) in calls
@@ -110,11 +115,13 @@ class TestQuarantineTaggerFailureIsBestEffort:
 
         with (
             patch(_TAG_TARGET, side_effect=RuntimeError("storage unreachable")),
-            patch("app.services.takedown_service.audit_logger") as fake_audit,
+            patch("app.services.takedown_notices.audit_logger") as fake_audit,
         ):
             fake_audit.log.side_effect = lambda **kw: audits.append(kw)
             # Must not raise — the tagger call is wrapped in its own try/except.
-            quarantine_file(db, file, admin=admin, reason="dmca", legal_hold=False)
+            quarantine_file(
+                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+            )
 
         assert file.presign_revoked is False
         assert audits, "quarantine_file must still audit even when tagging raises"
@@ -132,7 +139,9 @@ class TestReleaseUntagRetries:
         db.commit()
 
         with patch(_TAG_TARGET, return_value=True):
-            quarantine_file(db, file, admin=admin, reason="dmca", legal_hold=False)
+            quarantine_file(
+                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+            )
 
         monkeypatch.setattr(takedown_service, "_PRESIGN_UNTAG_BACKOFF_SECONDS", 0)
         call_count = 0
@@ -146,7 +155,7 @@ class TestReleaseUntagRetries:
             patch(_TAG_TARGET, side_effect=_always_fails),
             caplog.at_level("ERROR", logger="app.services.takedown_service"),
         ):
-            release_file(db, file, admin=admin, clear_legal_hold=False)
+            release_file(db, file, actor=TakedownActor.platform(admin), clear_legal_hold=False)
 
         assert call_count == takedown_service._PRESIGN_UNTAG_RETRIES == 3
         error_records = [r for r in caplog.records if r.levelname == "ERROR"]
@@ -159,7 +168,9 @@ class TestReleaseUntagRetries:
         db.commit()
 
         with patch(_TAG_TARGET, return_value=True):
-            quarantine_file(db, file, admin=admin, reason="dmca", legal_hold=False)
+            quarantine_file(
+                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+            )
 
         monkeypatch.setattr(takedown_service, "_PRESIGN_UNTAG_BACKOFF_SECONDS", 0)
         attempts = {"n": 0}
@@ -169,7 +180,7 @@ class TestReleaseUntagRetries:
             return attempts["n"] >= 2
 
         with patch(_TAG_TARGET, side_effect=_fails_then_succeeds):
-            release_file(db, file, admin=admin, clear_legal_hold=False)
+            release_file(db, file, actor=TakedownActor.platform(admin), clear_legal_hold=False)
 
         assert attempts["n"] == 2
         assert file.presign_tag_cleared is True

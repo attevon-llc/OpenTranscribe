@@ -11201,6 +11201,144 @@
         "title": "OpenSearchSnapshotStatus",
         "type": "object"
       },
+      "OrgQuarantineRequest": {
+        "description": "Take one of the caller's organization's files down.\n\nThere is deliberately no ``legal_hold`` field: whether an organization takedown\nalso places a legal hold is an open authorization decision (a hold blocks the\nowner's account deletion), so the organization route never places one.",
+        "properties": {
+          "reason": {
+            "description": "Takedown reason (notice reference, policy clause, report id).",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OrgQuarantineRequest",
+        "type": "object"
+      },
+      "OrgQuarantinedFile": {
+        "description": "A file in the organization's takedown queue.\n\n``quarantine_reason`` and ``quarantined_by_display`` are only present\n(``response_model_exclude_unset``) for a file an organization placed. For a file the\noperator holds the row says that it is held and by whom (\"platform\"), and that the\ncaller cannot release it, and nothing about why.",
+        "properties": {
+          "can_release": {
+            "title": "Can Release",
+            "type": "boolean"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "is_quarantined": {
+            "default": true,
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
+          "legal_hold": {
+            "default": false,
+            "title": "Legal Hold",
+            "type": "boolean"
+          },
+          "owner_display": {
+            "title": "Owner Display",
+            "type": "string"
+          },
+          "owner_uuid": {
+            "title": "Owner Uuid",
+            "type": "string"
+          },
+          "quarantine_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantine Reason"
+          },
+          "quarantined_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantined At"
+          },
+          "quarantined_by_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quarantined By Display"
+          },
+          "takedown_origin": {
+            "title": "Takedown Origin",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "owner_uuid",
+          "owner_display",
+          "takedown_origin",
+          "can_release"
+        ],
+        "title": "OrgQuarantinedFile",
+        "type": "object"
+      },
+      "OrgQuarantinedFilesList": {
+        "description": "Paginated takedown queue of one organization.",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/OrgQuarantinedFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files",
+          "total"
+        ],
+        "title": "OrgQuarantinedFilesList",
+        "type": "object"
+      },
       "OrgRef": {
         "description": "An organization as shown in a grant. ``null`` once the organization is gone.",
         "properties": {
@@ -11229,6 +11367,26 @@
           "name"
         ],
         "title": "OrgRef",
+        "type": "object"
+      },
+      "OrgReleaseRequest": {
+        "description": "Release a file the caller's organization took down.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the file is being released. Recorded in the audit log only.",
+            "title": "Reason"
+          }
+        },
+        "title": "OrgReleaseRequest",
         "type": "object"
       },
       "OrgTargetOut": {
@@ -12877,6 +13035,17 @@
             "title": "Status",
             "type": "string"
           },
+          "takedown_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Takedown Origin"
+          },
           "uuid": {
             "title": "Uuid",
             "type": "string"
@@ -12989,6 +13158,17 @@
               }
             ],
             "title": "Quarantined By Email"
+          },
+          "takedown_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Takedown Origin"
           },
           "title": {
             "anyOf": [
@@ -13645,6 +13825,19 @@
             "description": "Also lift the legal-hold when releasing.",
             "title": "Clear Legal Hold",
             "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the file is being released. Recorded in the audit log only.",
+            "title": "Reason"
           }
         },
         "title": "ReleaseRequest",
@@ -37169,6 +37362,203 @@
           }
         ],
         "summary": "Get Org Audit Logs",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/files/quarantined": {
+      "get": {
+        "description": "List this organization's taken-down files, newest first.\n\nA file the operator holds is listed (so an administrator can answer \"why did this\nfile vanish\") with ``can_release`` false and without its reason or actor.",
+        "operationId": "list_org_quarantined_files_api_org_admin_files_quarantined_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Also include released files that remain under legal hold.",
+            "in": "query",
+            "name": "include_legal_holds",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Also include released files that remain under legal hold.",
+              "title": "Include Legal Holds",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgQuarantinedFilesList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Quarantined Files",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/files/{file_uuid}/quarantine": {
+      "post": {
+        "description": "Take one of this organization's files down (hidden from everyone but the operator).\n\nNever places a legal hold: that decision is not delegated to organizations yet.\nRefused with 409 ``takedown_platform_origin`` when the operator already holds it.",
+        "operationId": "quarantine_org_file_api_org_admin_files__file_uuid__quarantine_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgQuarantineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuarantineActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Quarantine Org File",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/files/{file_uuid}/release": {
+      "post": {
+        "description": "Release a file this organization took down.\n\n409 when the file is not held; 403 ``takedown_platform_origin`` when the operator\nplaced the takedown (only the operator can lift it).",
+        "operationId": "release_org_file_api_org_admin_files__file_uuid__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/OrgReleaseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuarantineActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Release Org File",
         "tags": [
           "org-admin"
         ]

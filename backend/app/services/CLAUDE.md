@@ -93,9 +93,12 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).
-- **Abuse takedown / quarantine** — `takedown_service.py` is the one place quarantine lives:
-  `exclude_quarantined`/`is_hidden_for` gate reads, `quarantine_file`/`release_file` are the
-  admin actions. Its `is_notification_suppressed` / `is_notification_suppressed_for_uuid` /
+- **Abuse takedown / quarantine** — `takedown_service.py` is the one place quarantine lives
+  (a facade since #1253: `takedown_predicates` = the read side, `takedown_authority` = who may
+  act, `takedown_notices` = owner notices + audit). `exclude_quarantined`/`is_hidden_for` gate
+  reads, `quarantine_file`/`release_file` take a `TakedownActor` (platform or organization;
+  "platform wins", see `takedown_authority`). Patch `app.services.takedown_notices.audit_logger`,
+  not the service module's, in tests. Its `is_notification_suppressed` / `is_notification_suppressed_for_uuid` /
   `filter_suppressed_file_uuids` are the WS-push-side twin of that same gate (issue #908) —
   `app/utils/websocket_notify.py:send_ws_event_for_file` is the **required** call site for any
   WebSocket event naming a `MediaFile`; `send_ws_event` itself has no notion of quarantine at

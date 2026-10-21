@@ -34,6 +34,7 @@ from .endpoints import local_models
 from .endpoints import media_collections
 from .endpoints import media_mirror_settings
 from .endpoints import org_admin
+from .endpoints import org_admin_takedown
 from .endpoints import pipeline_settings
 from .endpoints import prompts
 from .endpoints import redaction_settings
@@ -169,6 +170,16 @@ include_router_with_consistency(
     prefix="/org-admin",
     tags=["org-admin"],
     capability="organizations",
+)
+# Organization-scoped quarantine/release (issue #1253). Its own capability so a deployment
+# can expose it without the rest of /org-admin; no platform-admin bypass, because these are
+# not a platform surface (a superuser gets the same 404 as anyone while the key is off).
+include_router_with_consistency(
+    org_admin_takedown.router,
+    prefix="/org-admin/files",
+    tags=["org-admin"],
+    capability="org.takedown",
+    platform_admin_bypass=False,
 )
 include_router_with_consistency(
     support_access.org_router,

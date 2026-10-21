@@ -27,6 +27,7 @@ from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.notification_service import send_task_notification
+from app.services.takedown_service import TakedownActor
 from app.services.takedown_service import is_notification_suppressed
 from app.services.takedown_service import quarantine_file
 from app.services.takedown_service import release_file
@@ -146,7 +147,7 @@ class TestOwnerNoticesAreNeverSuppressed:
         admin = _mk_user(db, admin=True)
         file = _mk_file(db, owner=owner, quarantined=False)
 
-        quarantine_file(db, file, admin=admin, reason="DMCA notice #817")
+        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="DMCA notice #817")
 
         assert len(sent) == 1, "the owner's takedown notice must still be delivered"
         assert sent[0]["user_id"] == owner.id
@@ -158,10 +159,10 @@ class TestOwnerNoticesAreNeverSuppressed:
         admin = _mk_user(db, admin=True)
         file = _mk_file(db, owner=owner, quarantined=False)
 
-        quarantine_file(db, file, admin=admin, reason="disputed")
+        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="disputed")
         sent.clear()  # only the release notice is under test here
 
-        release_file(db, file, admin=admin)
+        release_file(db, file, actor=TakedownActor.platform(admin))
 
         assert len(sent) == 1, "the owner's release notice must still be delivered"
         assert sent[0]["user_id"] == owner.id

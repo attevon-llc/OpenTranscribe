@@ -437,6 +437,31 @@ OpenTranscribe, complete, is a category of one: **self-hosted, speaker-aware org
 spanning recordings and documents, with best-in-class diarization, fused document RAG, and
 cross-modal speaker attribution.**
 
+### What makes the fused corpus the differentiator (and what it commits us to)
+
+The edge is not "also supports PDFs." It is **fused, speaker-attributed search and chat across
+diarized conversations and external documents, at corpus scale**, with citations of equal quality
+into either kind of source. NotebookLM has the multi-source citation-jump pattern but no "who said
+this." Otter/Fireflies/Granola own the transcript and speaker side but treat attached documents as
+static context rather than retrievable corpus members. Dovetail/Grain get closest on cross-referenced
+clips, but as hosted research repos, not self-hosted diarized ASR. The architecture already commits to
+this: the v6 `doc_type` discriminator, RRF fusion and the `char_range` provenance arm exist so one chat
+answer can cite a transcript segment and a document passage side by side.
+
+That makes three things core value rather than UI polish, scheduled right after the base document
+vertical (upload, parse, index, basic view) lands, not left as a backlog:
+
+1. **Cross-linking and citation-jump** from an answer to the exact spot in either a recording or a
+   document.
+2. **Speaker-pivoted queries** as a named query shape: "everything Speaker X discussed about Y, plus
+   the supporting documents." This is a search and chat-UX design question that has not been
+   designed yet; it builds on speaker profiles and voiceprints (identity) and on #550 (persona).
+3. **Verification that `/search` returns fused transcript and document results.** Not checkable on
+   `master` today: the document plane has not been re-landed (#552), so only transcript and digest
+   `doc_type` values exist.
+
+Tracked in the speaker-pivoted fused search issue (depends on #552; related #516, #550).
+
 ### Original vision (audio/video-only, kept for the record)
 
 > **Self-hosted organizational memory for audio and video.**

@@ -1982,6 +1982,7 @@
   "uploader.protectedMediaPasswordLabel": "Password del sito multimediale",
   "uploader.protectedMediaHint": "Queste credenziali vengono inviate in modo sicuro al server e usate solo per questa richiesta di download (non vengono memorizzate).",
   "uploader.recordingNotSupported": "La registrazione non è supportata in questo browser. Usa un browser moderno come Chrome, Firefox o Safari.",
+  "uploader.recordingRequiresHttps": "La registrazione richiede una connessione sicura. Apri questa pagina tramite HTTPS (https://) anziché HTTP semplice per usare il microfono.",
   "uploader.microphoneDevice": "Dispositivo microfono",
   "uploader.selectMicrophoneTooltip": "Seleziona il dispositivo microfono",
   "uploader.microphone": "Microfono",

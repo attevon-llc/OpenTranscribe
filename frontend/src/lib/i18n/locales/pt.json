@@ -1953,6 +1953,7 @@
   "uploader.protectedMediaPasswordLabel": "Senha do servidor de mídia",
   "uploader.protectedMediaHint": "Essas credenciais são enviadas com segurança ao servidor e usadas apenas para este download (não são armazenadas).",
   "uploader.recordingNotSupported": "A gravação não é suportada neste navegador. Por favor, use um navegador moderno como Chrome, Firefox ou Safari.",
+  "uploader.recordingRequiresHttps": "A gravação requer uma conexão segura. Abra esta página por HTTPS (https://) em vez de HTTP simples para usar o microfone.",
   "uploader.microphoneDevice": "Dispositivo de Microfone",
   "uploader.selectMicrophoneTooltip": "Selecionar dispositivo de microfone",
   "uploader.microphone": "Microfone",

@@ -1953,6 +1953,7 @@
   "uploader.protectedMediaPasswordLabel": "媒体服务器密码",
   "uploader.protectedMediaHint": "这些凭据将安全发送到服务器，仅用于此次下载（不会存储）。",
   "uploader.recordingNotSupported": "此浏览器不支持录制。请使用Chrome、Firefox或Safari等现代浏览器。",
+  "uploader.recordingRequiresHttps": "录制需要安全连接。请通过 HTTPS（https://）而不是普通 HTTP 打开此页面，以使用麦克风。",
   "uploader.microphoneDevice": "麦克风设备",
   "uploader.selectMicrophoneTooltip": "选择麦克风设备",
   "uploader.microphone": "麦克风",

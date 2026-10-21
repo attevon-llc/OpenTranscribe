@@ -1982,6 +1982,7 @@
   "uploader.protectedMediaPasswordLabel": "미디어 사이트 비밀번호",
   "uploader.protectedMediaHint": "이 자격 증명은 서버에 안전하게 전송되며 이 다운로드 요청에만 사용됩니다 (저장되지 않음).",
   "uploader.recordingNotSupported": "이 브라우저에서는 녹음이 지원되지 않습니다. Chrome, Firefox, Safari 등 최신 브라우저를 사용해 주세요.",
+  "uploader.recordingRequiresHttps": "녹음에는 보안 연결이 필요합니다. 마이크를 사용하려면 일반 HTTP 대신 HTTPS(https://)로 이 페이지를 여세요.",
   "uploader.microphoneDevice": "마이크 장치",
   "uploader.selectMicrophoneTooltip": "마이크 장치를 선택하세요",
   "uploader.microphone": "마이크",

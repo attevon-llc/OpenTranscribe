@@ -1953,6 +1953,7 @@
   "uploader.protectedMediaPasswordLabel": "メディアサーバーのパスワード",
   "uploader.protectedMediaHint": "これらの認証情報は安全にサーバーに送信され、このダウンロードにのみ使用されます（保存されません）。",
   "uploader.recordingNotSupported": "このブラウザでは録音がサポートされていません。Chrome、Firefox、Safariなどのモダンブラウザを使用してください。",
+  "uploader.recordingRequiresHttps": "録音には安全な接続が必要です。マイクを使用するには、通常のHTTPではなくHTTPS（https://）でこのページを開いてください。",
   "uploader.microphoneDevice": "マイクデバイス",
   "uploader.selectMicrophoneTooltip": "マイクデバイスを選択",
   "uploader.microphone": "マイク",

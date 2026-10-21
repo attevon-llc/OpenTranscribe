@@ -1982,6 +1982,7 @@
   "uploader.protectedMediaPasswordLabel": "كلمة مرور موقع الوسائط",
   "uploader.protectedMediaHint": "تُرسل بيانات الاعتماد هذه بشكل آمن إلى الخادم وتُستخدم فقط لطلب التنزيل هذا (لا يتم تخزينها).",
   "uploader.recordingNotSupported": "التسجيل غير مدعوم في هذا المتصفح. يُرجى استخدام متصفح حديث مثل Chrome أو Firefox أو Safari.",
+  "uploader.recordingRequiresHttps": "يتطلب التسجيل اتصالاً آمناً. افتح هذه الصفحة عبر HTTPS (https://) بدلاً من HTTP العادي لاستخدام الميكروفون.",
   "uploader.microphoneDevice": "جهاز الميكروفون",
   "uploader.selectMicrophoneTooltip": "اختر جهاز الميكروفون",
   "uploader.microphone": "الميكروفون",

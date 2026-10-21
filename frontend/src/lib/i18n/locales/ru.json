@@ -1952,6 +1952,7 @@
   "uploader.protectedMediaPasswordLabel": "Пароль медиасервера",
   "uploader.protectedMediaHint": "Эти учётные данные безопасно отправляются на сервер и используются только для этой загрузки (не сохраняются).",
   "uploader.recordingNotSupported": "Запись не поддерживается в этом браузере. Пожалуйста, используйте современный браузер, такой как Chrome, Firefox или Safari.",
+  "uploader.recordingRequiresHttps": "Для записи требуется защищённое соединение. Откройте эту страницу по HTTPS (https://), а не по обычному HTTP, чтобы использовать микрофон.",
   "uploader.microphoneDevice": "Микрофон",
   "uploader.selectMicrophoneTooltip": "Выберите микрофон",
   "uploader.microphone": "Микрофон",

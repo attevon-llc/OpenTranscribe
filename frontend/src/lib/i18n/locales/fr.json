@@ -2667,6 +2667,7 @@
   "uploader.recordingInProgress": "Enregistrement en cours - {{seconds}}s",
   "uploader.recordingInProgressTitle": "Enregistrement en Cours",
   "uploader.recordingNotSupported": "L'enregistrement n'est pas pris en charge par ce navigateur. Veuillez utiliser un navigateur moderne comme Chrome, Firefox ou Safari.",
+  "uploader.recordingRequiresHttps": "L'enregistrement nécessite une connexion sécurisée. Ouvrez cette page en HTTPS (https://) plutôt qu'en HTTP simple pour utiliser le microphone.",
   "uploader.recordingSettingsSummary": "Max : {{max}}min • Qualité : {{quality}} • Arrêt auto : {{autoStop}}",
   "uploader.recordingWarningMessage": "Vous avez un enregistrement actif en cours. Changer d'onglet arrêtera et supprimera votre enregistrement. Êtes-vous sûr de vouloir continuer ?",
   "uploader.remaining": "restant",

@@ -2667,6 +2667,7 @@
   "uploader.recordingInProgress": "Grabación en progreso - {{seconds}}s",
   "uploader.recordingInProgressTitle": "Grabación en Progreso",
   "uploader.recordingNotSupported": "La grabación no es compatible con este navegador. Por favor, usa un navegador moderno como Chrome, Firefox o Safari.",
+  "uploader.recordingRequiresHttps": "La grabación requiere una conexión segura. Abre esta página mediante HTTPS (https://) en lugar de HTTP simple para usar el micrófono.",
   "uploader.recordingSettingsSummary": "Máx: {{max}}min • Calidad: {{quality}} • Auto-detener: {{autoStop}}",
   "uploader.recordingWarningMessage": "Tienes una grabación activa en progreso. Cambiar de pestaña detendrá y descartará tu grabación. ¿Estás seguro de que quieres continuar?",
   "uploader.remaining": "restante",

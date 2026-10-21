@@ -1982,6 +1982,7 @@
   "uploader.protectedMediaPasswordLabel": "Wachtwoord mediasite",
   "uploader.protectedMediaHint": "Deze inloggegevens worden veilig naar de server verzonden en alleen gebruikt voor deze downloadaanvraag (niet opgeslagen).",
   "uploader.recordingNotSupported": "Opnemen wordt niet ondersteund in deze browser. Gebruik een moderne browser zoals Chrome, Firefox of Safari.",
+  "uploader.recordingRequiresHttps": "Opnemen vereist een beveiligde verbinding. Open deze pagina via HTTPS (https://) in plaats van gewone HTTP om de microfoon te gebruiken.",
   "uploader.microphoneDevice": "Microfoonapparaat",
   "uploader.selectMicrophoneTooltip": "Microfoonapparaat selecteren",
   "uploader.microphone": "Microfoon",

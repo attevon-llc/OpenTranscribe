@@ -245,12 +245,39 @@ both light and dark themes, and compares each against a committed PNG under
 ```
 
 It brings up an isolated, seeded stack (`--fresh visual --port-offset 100
---seed-benchmark --with-mock-llm`), waits for the seeded media to leave `processing`,
-captures, prints a per-surface old-vs-new percentage with the actual/diff images written
-to a `/tmp/ot-visual-baselines/<timestamp>/` directory it names, asks you to confirm,
-writes a provenance sidecar per image, and stops the stack again. `--keep` leaves it
-running (useful for the verification re-run it prints); `--destroy` also removes its
-volumes.
+--seed-benchmark --with-mock-llm`), waits for the seeded media to finish processing,
+**asserts the library is exactly the seed corpus** (below), captures, prints a
+per-surface old-vs-new percentage with the actual/diff images written to a
+`/tmp/ot-visual-baselines/<timestamp>/` directory it names, asks you to confirm, writes a
+provenance sidecar per image, and stops the stack again. `--keep` leaves it running
+(useful for the verification re-run it prints); `--destroy` also removes its volumes;
+`--rebuild` destroys the project *before* starting, for a pristine stack.
+
+### The image must measure the UI, not the stack's history
+
+The gallery's card count cannot be masked, so a baseline silently encodes however many
+files the capture stack held. Until #1238 the seeder uploaded its media on **every**
+start while the capture stack kept its volumes, so four starts left 12 files and a
+gallery baseline taken at 9 failed a compare at 12 (6.8% against a 0.5% tolerance).
+Two layers now stop that, doing different jobs:
+
+- **Prevention.** `scripts/seed-fresh-deployment.sh` is idempotent per file: it lists the
+  deployment first and uploads only the seed files that are absent, so
+  `--seed-benchmark` is safe to repeat. If the listing cannot be read it uploads
+  nothing. `--manifest` prints, with no network call, exactly which
+  `<filename><TAB><bytes>` pairs it would seed; the wrapper derives its expectation from
+  that, never from a copy of the names.
+- **Detection.** Before photographing anything the wrapper requires the library to equal
+  that manifest: every file exactly once, with the recorded size, `completed`, and
+  **nothing else** (a leaked `e2e-owned-*` row counts as history). It compares
+  multisets, reads every page of `/api/files`, treats an empty or synthetic manifest as
+  a failure rather than a vacuous pass, and names the remedy
+  (`./opentr.sh fresh-destroy visual --yes`, or `--rebuild`) when it refuses.
+
+`--destroy` and `--rebuild` go through `opentr.sh fresh-destroy --yes` and then verify
+that no `otfresh-<name>_*` volume remains, because the prompt used to treat "no tty" as
+"cancelled" with exit 0. Each sidecar records the corpus (`corpus.files`: names and
+sizes) the image was taken against.
 
 ### Why not `UPDATE_SCREENSHOTS=1`
 

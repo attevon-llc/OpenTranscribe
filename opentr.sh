@@ -167,7 +167,8 @@ show_help() {
   echo "  stop --fresh [name]                    - Stop a fresh deployment (volumes kept)"
   echo "  status --fresh [name]                  - Status of a fresh deployment"
   echo "  fresh-list                             - List all fresh deployments + their volumes"
-  echo "  fresh-destroy <name>                   - Remove a fresh deployment (containers+volumes, confirmed)"
+  echo "  fresh-destroy <name> [--yes]           - Remove a fresh deployment (containers+volumes, confirmed;"
+  echo "                                           --yes skips the prompt, needed without a tty)"
   echo ""
   echo "Start/Reset Options:"
   echo "  --build              - Build prod images locally (test before push)"
@@ -203,6 +204,7 @@ show_help() {
   echo "                         Covers the --with-ldap-test/--with-smb-test/--with-monitoring/"
   echo "                         --with-keycloak-test/--with-authentik-test overlays too."
   echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
+  echo "                         (idempotent: files the deployment already holds are skipped)"
   echo "  --no-bindmount       - With --fresh: don't bind-mount ./backend into backend/worker"
   echo "                         containers, and drop uvicorn --reload. The stack then runs the"
   echo "                         IMAGE built at 'up --build' time, not live edits on disk — for"
@@ -1896,8 +1898,12 @@ fresh_list() {
 # touches any bind path.
 fresh_destroy() {
   local raw="$1"
+  # "yes" = `--yes`: skip the prompt. Without it a backgrounded or piped shell has no answer
+  # to read, and the prompt used to treat that as "cancelled" and exit 0 -- a destroy that
+  # reported success without happening.
+  local assume_yes="${2:-}"
   if [ -z "$raw" ]; then
-    echo "❌ Usage: ./opentr.sh fresh-destroy <name>"
+    echo "❌ Usage: ./opentr.sh fresh-destroy <name> [--yes]"
     exit 1
   fi
   local name
@@ -1953,11 +1959,21 @@ fresh_destroy() {
   echo ""
   echo "   This touches ONLY this isolated project and its own directories — no LIVE"
   echo "   bind paths, no other stack."
-  printf "   Proceed? (y/N) "
-  read -r confirm
-  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    echo "❌ Destroy cancelled."
-    return 0
+  if [ "$assume_yes" = "yes" ]; then
+    echo "   --yes: proceeding without confirmation."
+  else
+    printf "   Proceed? (y/N) "
+    local confirm=""
+    if ! read -r confirm; then
+      echo ""
+      echo "❌ No answer to read (no tty?): NOTHING was destroyed. Pass --yes to confirm" >&2
+      echo "   non-interactively: ./opentr.sh fresh-destroy ${name} --yes" >&2
+      return 1
+    fi
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      echo "❌ Destroy cancelled."
+      return 0
+    fi
   fi
 
   # COMPOSE_PROFILES="*" (supported since Compose v2.24) is load-bearing here, not
@@ -4198,7 +4214,16 @@ case "$1" in
     ;;
 
   fresh-destroy)
-    fresh_destroy "${2:-}"
+    shift
+    _fd_name=""
+    _fd_yes=""
+    for _fd_arg in "$@"; do
+      case "$_fd_arg" in
+        --yes|-y) _fd_yes="yes" ;;
+        *) [ -z "$_fd_name" ] && _fd_name="$_fd_arg" ;;
+      esac
+    done
+    fresh_destroy "$_fd_name" "$_fd_yes"
     ;;
 
   shell)

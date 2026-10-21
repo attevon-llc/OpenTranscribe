@@ -219,8 +219,9 @@ def transcribed_file_uuid(owned_transcribed_file: dict[str, Any]) -> str:
       The test body now resolves it lazily, inside the ``file_detail`` branch.
     * "Newest completed file" is by construction not reproducible. The module docstring
       answers that with "run against a ``--fresh --seed-benchmark`` stack, where nothing
-      else can upload" — true, but it makes the baseline a property of the seeding
-      script rather than of the UI. ``owned_transcribed_file`` is the committed 10 s
+      else can upload" — true only because the capture wrapper now asserts the library is
+      exactly the seed corpus before it photographs (#1238), and even then it makes the
+      baseline a property of the seeding script rather than of the UI. ``owned_transcribed_file`` is the committed 10 s
       clip through the real pipeline: the same audio, the same transcript, on any stack.
 
     ⚠️ **The committed ``file_detail-{light,dark}`` baselines predate this change** and
@@ -757,8 +758,9 @@ def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -
             f"    ./scripts/e2e/update-visual-baselines.sh "
             f"--reason '<why>' --surface {surface}\n"
             f"which brings that stack up (--fresh visual --port-offset 100 "
-            f"--seed-benchmark --with-mock-llm), waits for the seeded media to leave "
-            f"'processing', and tears it down again. To COMPARE against it without "
+            f"--seed-benchmark --with-mock-llm), waits for the seeded media to finish "
+            f"processing, refuses to capture unless the library is exactly the seed "
+            f"corpus, and tears it down again. To COMPARE against it without "
             f"updating, add --keep and re-run this module with --base-url/--backend-url "
             f"pointed at the offset ports it prints."
         )

@@ -93,6 +93,8 @@ every FK `ON DELETE CASCADE`; single-marker arm on the table),
 `v439_infer_legacy_voiceprint_suggestion_source` (data-only: stamps `speaker.suggestion_source`
 on pre-`v091` rows that provably came from a voiceprint, so their canonical label survives the
 2026-10-12 provenance rule; detection keyed on the ABSENCE of rows it would stamp, like v434).
+`v440_add_password_last_self_changed_at` (nullable `user.password_last_self_changed_at`: the
+minimum-password-age clock, set only by `PUT /users/me`; NULL = first change free; single-marker arm on the column).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

@@ -203,7 +203,7 @@ def _assert_password_old_enough_to_change(user: User) -> None:
     Raises:
         HTTPException: 400 while the minimum age has not elapsed.
     """
-    remaining = password_min_age_remaining(user.password_changed_at)
+    remaining = password_min_age_remaining(user.password_last_self_changed_at)
     if remaining is None:
         return
 
@@ -352,6 +352,8 @@ def update_current_user(
         new_hash = get_password_hash(new_password)
         update_data["hashed_password"] = new_hash
         update_data["password_changed_at"] = datetime.now(UTC)
+        # The minimum-age clock: only the holder's own change starts it.
+        update_data["password_last_self_changed_at"] = update_data["password_changed_at"]
 
         # Store password in history after successful change
         add_password_to_history(db, current_user.id, new_hash)

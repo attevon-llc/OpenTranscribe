@@ -18,3 +18,5 @@ Rules for core code:
 - `locales/` may be added by the overlay (per-locale flat JSON string packs);
   `$lib/i18n` merges any packs it finds there at init. The community stub
   intentionally has none.
+- Every overlay must keep its static import graph small and load heavy code lazily: see the
+  "Bundle budget" block in `index.ts` and `frontend/CLAUDE.md`, "Bundle budget gate".

@@ -144,7 +144,48 @@ second client-side exporter believing this exception still applies.
   this directory at image-build time. Core code imports only `$lib/cloud` (+ its `components/`),
   gates every call site with `isCloudEdition` from `$lib/edition`, and must never name the
   edition's vendors — CI's seam-guard greps `frontend/src` (and `backend/app`) for `clerk|stripe`
-  and fails the build on a match.
+  and fails the build on a match. Its exports and static importers are pinned by
+  `src/lib/cloud/seamContract.test.ts`, and the `index.ts` header lists what an overlay must
+  keep cheap (see "Bundle budget gate" below).
+
+## Bundle budget gate (issues #1131, #1255)
+
+**Headroom policy.** The base budgets sit about 10% (node) and 4% (closure) above the measured
+stock build, so a normal feature PR or a derived overlay does not turn the gate red. The gate
+prints the remaining headroom on every run and marks it `LOW` under 512 B. When a PR drives the
+headroom to `LOW`, the fix is to move code out of the root closure with a dynamic `import()`;
+only if that is impossible does the PR raise the base, stating the new measurement and keeping
+about the same percentage of headroom. A budget is never raised to hide a regression.
+
+`scripts/check-bundle-budget.mjs` runs from `postbuild` after `vite build` and gates the root
+layout node (`nodes/0.*.js`, 22 KiB gzip) and its static import closure (136 KiB gzip), because
+every page load pays for them, `/login` included. Heavy, conditionally shown components must be
+loaded with a dynamic `import()`.
+
+- **Headroom is printed for both metrics on every run, pass or fail**, with a `LOW` marker under
+  512 B. A failing run still shows the passing metric's margin. Exit codes: `0` pass, `1` over
+  budget (or no/ambiguous root node), `2` misconfigured allowance.
+- **Derived builds** (those that replace `$lib/cloud`) keep running the stock `npm run build` and
+  pass a bounded allowance through build-time environment variables, never by editing or
+  skipping the script: `BUNDLE_BUDGET_ALLOWANCE_NODE_BYTES`,
+  `BUNDLE_BUDGET_ALLOWANCE_CLOSURE_BYTES` (whole bytes, unset or empty means 0) and
+  `BUNDLE_BUDGET_ALLOWANCE_REASON` (one line, 20 to 300 characters, required when either value is
+  above 0). The effective budget is base plus allowance, per metric. The caps live in the script
+  (3,072 B node, 20,480 B closure), so an allowance cannot disable the gate; raising a cap is a
+  core PR. An active allowance is printed with its reason on every run, an unknown
+  `BUNDLE_BUDGET_*` variable (a typo) is an error, and an allowance that is no longer needed
+  produces a "remove it" warning. Set the values in the derived repo's Dockerfile build stage next
+  to the overlay, sized as measured size minus base rounded up to 512 B. Do not name them
+  `VITE_*`: Vite would inline the reason into the client bundle.
+- **Why lazy loading alone is not enough:** `Navbar.svelte` imports `$lib/cloud` statically, so
+  the seam module's own static import graph is in the root closure however lazily other files
+  import it. An `export ... from './heavyModule'` in the overlay's `index.ts` defeats every
+  dynamic import in core.
+- The gate measures the community build, where `isCloudEdition` branches are dead-code
+  eliminated; a derived build also pays for core's own edition-gated code and its eager
+  `lib/cloud/locales/*.json` packs. Size an allowance from a measurement of the derived build.
+- Tests: `src/bundleBudget.test.ts` (helpers, layout lazy-import contract) and
+  `src/bundleBudget.allowance.test.ts` (allowance rules, headroom output, exit codes).
 
 ## Theming — two rules that have both already shipped a bug (issue #746)
 

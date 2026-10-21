@@ -17,6 +17,27 @@
  *    dispatch `select` when an entry is chosen so the menu closes.
  *  - This stub defines the seam contract: the managed edition must export the
  *    same symbols with compatible signatures. Change here first, mirror there.
+ *    `seamContract.test.ts` pins the export list and the static importers.
+ *
+ * Bundle budget. `scripts/check-bundle-budget.mjs` gates the root layout chunk and its
+ * static import closure, and `Navbar.svelte` imports this module statically, so THIS
+ * FILE'S OWN STATIC IMPORT GRAPH IS PAID BY EVERY PAGE LOAD, however lazily other files
+ * `import('$lib/cloud')`. Overlay rules:
+ *  - Never write `export ... from './heavyModule'` for code that is only needed after
+ *    sign-in or on demand. Export a thin wrapper that calls `import('./heavyModule')`
+ *    inside the function body.
+ *  - Core binds these statically, so they must stay cheap: `refreshUsage` and
+ *    `refreshBilling` (Navbar), `usageStore`, `isOverLimit` and `showQuotaExceeded` (the
+ *    upload surface; the only three core calls synchronously), and the components
+ *    `UsageBadge`, `UpgradeButton` and `UserMenuExtras`. Every other symbol is reached
+ *    only through a dynamic `import('$lib/cloud')`. A statically imported component
+ *    brings whatever it imports with it.
+ *  - `locales/*.json` packs are loaded eagerly (`$lib/i18n`) and count against the same
+ *    budget.
+ *  - If the derived build still exceeds the budget it sets the build-time variables
+ *    `BUNDLE_BUDGET_ALLOWANCE_NODE_BYTES`, `BUNDLE_BUDGET_ALLOWANCE_CLOSURE_BYTES` and
+ *    `BUNDLE_BUDGET_ALLOWANCE_REASON` (see `frontend/CLAUDE.md`, "Bundle budget gate").
+ *    The allowance is capped, printed on every build, and a reason is mandatory.
  */
 
 import { readable, type Readable } from 'svelte/store';

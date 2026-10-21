@@ -525,6 +525,15 @@ off by default.
 
 ### Changed
 
+- **The bundle-budget build gate shows its margin, and derived builds can pass a capped allowance
+  (#1255).** `npm run build` now prints the exact headroom of both the root layout node and its
+  static closure on every run, pass or fail, and flags anything under 512 B as `LOW`; a failing
+  run used to name only the metric that failed. A deployment that replaces `$lib/cloud` can set
+  `BUNDLE_BUDGET_ALLOWANCE_NODE_BYTES`, `BUNDLE_BUDGET_ALLOWANCE_CLOSURE_BYTES` and a required
+  `BUNDLE_BUDGET_ALLOWANCE_REASON` at build time instead of skipping the gate; the allowance is
+  capped in core, printed on every run, and a malformed value or misspelled name exits 2. The
+  base budgets are unchanged. The seam module's header now lists what an overlay must keep cheap
+  and why, and `seamContract.test.ts` pins its exports and static importers.
 - **Local server detection is a disclosure**: in the LLM configuration form, "Local LLM servers"
   is hidden for providers that never run locally (OpenAI, Anthropic, OpenRouter, Bedrock) and
   collapsed for Ollama, vLLM and Custom, with the result in its summary line ("1 running",

@@ -9,13 +9,14 @@
 # Usage:
 #   1. Set NGINX_SERVER_NAME in .env (e.g., transcribe.local or your domain)
 #   2. Generate SSL certificates (see scripts/generate-ssl-cert.sh)
-#   3. Run: ./opentr.sh start dev (auto-detects NGINX_SERVER_NAME)
+#   3. Run: ./opentranscribe.sh start (installed deployment) or ./opentr.sh start prod.
+#      This overlay is loaded in production only; ./opentr.sh start dev skips it.
 #
 # For homelab/self-signed certificates:
 #   ./scripts/generate-ssl-cert.sh transcribe.local
 #
 # For production with Let's Encrypt:
-#   See docs/NGINX_SETUP.md for Certbot instructions
+#   See docs-site/docs/configuration/nginx-setup.md for Certbot instructions
 
 services:
   backend:
@@ -61,7 +62,9 @@ services:
       /bin/sh -c "
       FLOWER_AUTH_B64=$$(printf '%s:%s' '${FLOWER_USER:-admin}' '${FLOWER_PASSWORD:-flower}' | base64 | tr -d '\n') &&
       export FLOWER_AUTH_B64 &&
-      envsubst '$$NGINX_SERVER_NAME $$FLOWER_AUTH_B64'
+      if [ '${NGINX_HTTPS_PORT:-443}' = 443 ]; then NGINX_HTTPS_REDIRECT_SUFFIX=''; else NGINX_HTTPS_REDIRECT_SUFFIX=':${NGINX_HTTPS_PORT:-443}'; fi &&
+      export NGINX_HTTPS_REDIRECT_SUFFIX &&
+      envsubst '$$NGINX_SERVER_NAME $$FLOWER_AUTH_B64 $$NGINX_HTTPS_REDIRECT_SUFFIX'
       < /etc/nginx/templates/site.conf.template
       > /etc/nginx/conf.d/site.conf && nginx -g 'daemon off;'"
     ports:

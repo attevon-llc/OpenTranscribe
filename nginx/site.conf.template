@@ -2,6 +2,8 @@
 # Environment variables are substituted at container startup via envsubst
 #
 # Required: NGINX_SERVER_NAME (e.g., transcribe.local, transcribe.example.com)
+# Derived by docker-compose.nginx.yml: NGINX_HTTPS_REDIRECT_SUFFIX (empty when the host
+# HTTPS port is 443, otherwise ":<port>" so the redirect lands on the published port).
 
 # HTTP server - redirect all traffic to HTTPS
 server {
@@ -16,9 +18,11 @@ server {
         add_header Content-Type text/plain;
     }
 
-    # Redirect all other HTTP traffic to HTTPS
+    # Redirect all other HTTP traffic to HTTPS. $host carries no port, so a host HTTPS
+    # port other than 443 (NGINX_HTTPS_PORT=8443) has to be appended explicitly or the
+    # browser is sent to a port nothing listens on.
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://$host${NGINX_HTTPS_REDIRECT_SUFFIX}$request_uri;
     }
 }
 

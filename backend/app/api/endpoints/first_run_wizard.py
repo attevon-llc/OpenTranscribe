@@ -25,7 +25,10 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.auth.password_policy import password_policy
+from app.core.security import verify_password
 from app.db.base import get_db
+from app.initial_data import _DEV_ADMIN_PASSWORD
 from app.models.user import User
 from app.services import system_settings_service
 
@@ -38,16 +41,46 @@ logger = logging.getLogger(__name__)
 _COMPLETED_AT_KEY = "first_run_wizard.completed_at"
 
 
+def _credential_kind(user: User) -> str:
+    """Classify the caller's current credential without exposing it.
+
+    ``default_dev`` means the stored hash still verifies against the well-known
+    development bootstrap password (``initial_data``), i.e. anyone who has read the
+    docs can sign in. ``generated`` means the password was randomly generated at
+    first boot and ``must_change_password`` still forces its replacement. Anything
+    else is ``operator_set``. Only the caller's own hash is checked, and neither the
+    candidate nor the result of the comparison is logged or returned.
+    """
+    if user.hashed_password and verify_password(_DEV_ADMIN_PASSWORD, str(user.hashed_password)):
+        return "default_dev"
+    if user.must_change_password:
+        return "generated"
+    return "operator_set"
+
+
 @router.get("/status")
 def get_first_run_wizard_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-) -> dict[str, str | None]:
-    """Whether the wizard has been completed (or explicitly skipped — both count:
-    HANDOFF's spec is 'mark it complete... and never show it again', re-runnable
-    from Settings for someone who skipped)."""
+) -> dict[str, str | int | bool | None]:
+    """Wizard state plus what step 1 needs to explain the password choice.
+
+    ``completed_at``: set once completed or explicitly skipped (both count: HANDOFF's
+    spec is 'mark it complete... and never show it again', re-runnable from Settings).
+    ``credential_kind``: ``default_dev`` | ``operator_set`` | ``generated``.
+    ``password_min_age_hours``: the configured minimum time between password changes
+    (0 means no limit).
+    ``password_changed_by_you``: the account holder has chosen their own password at
+    least once (``password_last_self_changed_at`` is set), so the SPA can resume the
+    wizard after the Settings round trip.
+    """
     completed_at = system_settings_service.get_setting(db, _COMPLETED_AT_KEY)
-    return {"completed_at": completed_at}
+    return {
+        "completed_at": completed_at,
+        "credential_kind": _credential_kind(current_user),
+        "password_min_age_hours": password_policy.min_age_hours,
+        "password_changed_by_you": current_user.password_last_self_changed_at is not None,
+    }
 
 
 @router.post("/complete")

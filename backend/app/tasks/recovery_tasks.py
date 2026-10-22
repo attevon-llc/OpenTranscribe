@@ -1,6 +1,6 @@
 """Celery tasks for storage recovery / in-place re-ingestion (Feature B).
 
-Two task families, both CPU-queue:
+Two task families, both CPU-queue (routed in ``core/celery.py``'s ``task_routes``):
 
 1. ``youtube_metadata_fetch`` — standalone, rate-limited, metadata-ONLY harvest
    of title/duration for the YouTube ids surfaced by surviving thumbnail
@@ -54,7 +54,6 @@ _YT_METADATA_DELAY_SECONDS = 5.0
 @celery_app.task(
     name="recovery.youtube_metadata_fetch",
     bind=True,
-    queue="cpu",
     priority=CPUPriority.ADMIN_BATCH,
 )
 def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict:
@@ -124,7 +123,6 @@ def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict
 @celery_app.task(
     name="recovery.youtube_metadata_backfill",
     bind=True,
-    queue="cpu",
     priority=CPUPriority.ADMIN_BATCH,
 )
 def youtube_metadata_backfill(self, user_id: int) -> dict:
@@ -233,7 +231,6 @@ def _tier_b_probe_duration(storage_path: str) -> float | None:
 @celery_app.task(
     name="recovery.media_duration_backfill",
     bind=True,
-    queue="cpu",
     priority=CPUPriority.ADMIN_BATCH,
 )
 def media_duration_backfill(self, user_id: int | None = None, dry_run: bool = True) -> dict:

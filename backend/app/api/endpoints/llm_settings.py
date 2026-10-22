@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -1235,6 +1236,19 @@ def test_llm_connection(
         )
 
 
+class _BedrockTestFields(TypedDict, total=False):
+    """The aws_* keyword arguments of ``ConnectionTestRequest``, typed for the ** splat.
+
+    ``total=False`` because a non-Bedrock row must leave them UNSET, not None:
+    ``aws_region in model_fields_set`` decides whether the test honours a given region.
+    """
+
+    aws_region: str | None
+    aws_access_key_id: str | None
+    aws_secret_access_key: str | None
+    aws_session_token: str | None
+
+
 def _test_request_from_row(user_config: models.UserLLMSettings) -> schemas.ConnectionTestRequest:
     """A test request describing a stored configuration, credentials decrypted in-process.
 
@@ -1245,7 +1259,7 @@ def _test_request_from_row(user_config: models.UserLLMSettings) -> schemas.Conne
     except ValueError as exc:
         raise HTTPException(status_code=500, detail="Failed to decrypt stored credentials") from exc
 
-    aws: dict[str, str | None] = {}
+    aws: _BedrockTestFields = {}
     if bedrock is not None:
         aws = {
             "aws_region": bedrock.region,

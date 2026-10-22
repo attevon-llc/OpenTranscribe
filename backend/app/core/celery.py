@@ -246,6 +246,7 @@ celery_app = Celery(
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
+        "app.tasks.tenant_backfill_task",
         "app.tasks.storage_orphan_sweep_task",
         "app.tasks.search_indexing_task",
         "app.tasks.search_index_sweep_task",
@@ -511,6 +512,8 @@ celery_app.conf.update(
         # (docker-compose.lite.yml) scales the GPU worker to zero replicas, so
         # pinning this to 'gpu' left it queued forever there (issue #584).
         "extract_speaker_embeddings": {"queue": CeleryQueues.CPU},
+        # One-off operator backfill (priority CPUPriority.MAINTENANCE).
+        "tenant_backfill_organization_id": {"queue": CeleryQueues.CPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": CeleryQueues.NLP},
         "ai.identify_speakers": {"queue": CeleryQueues.NLP},
@@ -578,6 +581,16 @@ celery_app.conf.update(
         # FedRAMP AC-10 concurrent-session ceiling (issue #632): one grouped
         # query plus small per-user UPDATEs. Utility — never gpu.
         "session.cap_sweep": {"queue": CeleryQueues.UTILITY},
+        # Chat retention: one settings read, then bounded deletes. Utility — never gpu.
+        "chat.retention_sweep": {"queue": CeleryQueues.UTILITY},
+        # Benchmark-timing bookkeeping (one Redis hash -> one DB row), dispatched with a
+        # countdown after postprocess. Utility, so telemetry never takes a cpu slot.
+        "pipeline_timing.flush_tail": {"queue": CeleryQueues.UTILITY},
+        # Admin-triggered storage recovery (Feature B, issue #969): ffprobe re-probes,
+        # sidecar reads, and a paced yt-dlp metadata-only harvest. CPU — never gpu.
+        "recovery.youtube_metadata_fetch": {"queue": CeleryQueues.CPU},
+        "recovery.youtube_metadata_backfill": {"queue": CeleryQueues.CPU},
+        "recovery.media_duration_backfill": {"queue": CeleryQueues.CPU},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -1258,48 +1271,62 @@ def preload_models(**kwargs):
     _validate_task_routes()
 
 
-def _validate_task_routes():
-    """Log warnings for tasks missing from task_routes.
+#: Tasks deliberately absent from ``task_routes`` because every dispatch site picks the
+#: queue at call time. Each needs a written reason. Read by ``unrouted_task_names()``,
+#: which both the worker-startup warning and ``tests/unit/test_task_routes_complete.py``
+#: use, so the runtime check and the test cannot drift apart (issue #1268).
+INTENTIONALLY_UNROUTED_TASKS: dict[str, str] = {
+    "transcription.gpu_transcribe": "dispatch.py routes it to 'gpu' or 'cloud-asr' per plan",
+    "transcription.cpu_transcribe": "dispatch.py routes it to 'cpu-transcribe' at call time",
+    # Dispatched from exactly one place — _dispatch_gpu_split_diarize_chain in
+    # tasks/transcription/core.py — which always .set(queue=GPU_DIARIZE) explicitly.
+    # Deliberately NOT given a static route: "gpu-diarize" is only consumed under the
+    # gpu-split compose profile, so a static default would send an accidental bare
+    # dispatch to a queue with no consumer on every NON-split deployment, which is
+    # precisely issue #703's failure mode (a reserved worker doing no work while files
+    # sit in `processing` forever). An unrouted accident lands on 'celery' and is at
+    # least visible; a wrongly-routed one is silent.
+    "transcription.diarize_gpu": "gpu-split only; core.py sets gpu-diarize, or gpu if unstaffed",
+}
 
-    Runs once at worker startup. Tasks not in task_routes and without a
-    decorator-level queue= will silently go to the default 'celery' queue,
-    which may not be the intended behavior.
+
+def unrouted_task_names() -> list[str]:
+    """Registered non-builtin tasks with neither a route nor an allowlist entry.
+
+    Such a task lands on the default 'celery' queue whenever a caller does not pass
+    ``queue=`` itself. Only tasks already registered are seen, so a caller that wants
+    the complete answer must import the ``include=`` modules first
+    (``celery_app.loader.import_default_modules()``); a started worker already has.
     """
-    # Tasks intentionally excluded from task_routes (dynamically routed at call time)
-    intentionally_unrouted = {
-        "transcription.gpu_transcribe",  # Routed to "gpu" or "cloud-asr" by dispatch.py
-        "transcription.cpu_transcribe",  # Routed to "cpu-transcribe" by dispatch.py
-        # Dispatched from exactly one place — _dispatch_gpu_split_diarize_chain in
-        # tasks/transcription/core.py — which always .set(queue=GPU_DIARIZE) explicitly.
-        # Deliberately NOT given a static route: "gpu-diarize" is only consumed under the
-        # gpu-split compose profile, so a static default would send an accidental bare
-        # dispatch to a queue with no consumer on every NON-split deployment, which is
-        # precisely issue #703's failure mode (a reserved worker doing no work while files
-        # sit in `processing` forever). An unrouted accident lands on 'celery' and is at
-        # least visible; a wrongly-routed one is silent.
-        "transcription.diarize_gpu",
-    }
-
     routed_names = set(celery_app.conf.task_routes.keys())
-    unrouted = []
+    return sorted(
+        name
+        for name in celery_app.tasks
+        if not name.startswith("celery.")
+        # Celery shares @app.task registrations across apps, so a test that builds its own
+        # throwaway Celery app leaks its tasks (e.g. ``guard.errback``) into this registry
+        # when a whole suite runs in one process. Only tasks this codebase defines count.
+        and getattr(celery_app.tasks[name], "__module__", "").startswith("app.")
+        and name not in INTENTIONALLY_UNROUTED_TASKS
+        and name not in routed_names
+    )
 
-    for name in celery_app.tasks:
-        if name.startswith("celery."):
-            continue
-        if name in intentionally_unrouted:
-            continue
-        if name not in routed_names:
-            unrouted.append(name)
 
-    if unrouted:
-        for name in sorted(unrouted):
-            logger.warning(
-                f"Task '{name}' has no task_routes entry — will go to default 'celery' queue"
-            )
-    else:
+def _validate_task_routes():
+    """Log a warning per registered task missing from task_routes (worker startup).
+
+    The enforcing version of this check is ``tests/unit/test_task_routes_complete.py``;
+    this log line is the backstop for a deployment that loads extra task modules.
+    """
+    unrouted = unrouted_task_names()
+    for name in unrouted:
+        logger.warning(
+            f"Task '{name}' has no task_routes entry — will go to default 'celery' queue"
+        )
+    if not unrouted:
         logger.info(
-            f"Task route validation passed: {len(routed_names)} routes, "
-            f"{len(intentionally_unrouted)} intentionally dynamic"
+            f"Task route validation passed: {len(celery_app.conf.task_routes)} routes, "
+            f"{len(INTENTIONALLY_UNROUTED_TASKS)} intentionally dynamic"
         )
 
 

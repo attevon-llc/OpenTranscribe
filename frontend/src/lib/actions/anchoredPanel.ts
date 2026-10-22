@@ -43,6 +43,8 @@ export function anchoredPanel(node: HTMLElement, initial: AnchoredPanelOptions) 
   let options = initial;
   if (options.portal !== false) document.body.appendChild(node);
   node.style.position = 'fixed';
+  // Hook for form-elements.css: rows inside a placed panel get no global button shadow.
+  node.setAttribute('data-floating-panel', '');
   // Above modals (--z-modal) like DateRangePicker's layer: a panel opened from inside a dialog
   // is now a body child, so it competes with the dialog's own stacking layer.
   node.style.zIndex = options.zIndex ?? 'calc(var(--z-modal, 1300) + 10)';

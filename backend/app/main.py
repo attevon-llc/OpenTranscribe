@@ -801,6 +801,21 @@ def _start_pii_warmup() -> None:
         logger.warning(f"PII analyzer warm-up could not start (non-fatal): {e}")
 
 
+def _start_reranker_warmup() -> None:
+    """Load the chat reranker on a daemon thread (issue #1269).
+
+    The first chat in a fresh API process paid a ~10-15 s cold load of the CPU
+    cross-encoder. The settings gate and the load both run on the thread, so the
+    lifespan pays only ``Thread.start()``. Never a startup dependency.
+    """
+    try:
+        from app.services.chat.reranker_warmup import start_reranker_warmup
+
+        start_reranker_warmup()
+    except Exception as e:  # noqa: BLE001 — an optimisation never blocks startup
+        logger.warning(f"Chat reranker warm-up could not start (non-fatal): {e}")
+
+
 def _provision_native_diarizer() -> None:
     """Export the native diarizer's model set if it is not already vouched for.
 
@@ -1001,6 +1016,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 
     _start_pii_warmup()
+    _start_reranker_warmup()
 
     logger.info("Setting up MinIO and task recovery...")
     minio_task = asyncio.create_task(run_in_threadpool(_setup_minio))

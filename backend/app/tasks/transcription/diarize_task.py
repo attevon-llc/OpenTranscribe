@@ -47,7 +47,9 @@ logger = logging.getLogger(__name__)
     autoretry_for=(ConnectionError, TimeoutError),
     retry_backoff=True,
     retry_backoff_max=30,
-    queue="gpu-diarize",
+    # No queue= here: the sole dispatch site (core._dispatch_gpu_split_diarize_chain)
+    # resolves it per call, and a decorator default would silently send any other
+    # dispatch to gpu-diarize, which non-split deployments never drain (#703, #1268).
 )
 def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> dict:
     """Stage 2b (GPU-diarize): diarization only for the Phase 4 multi-GPU split.

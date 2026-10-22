@@ -298,7 +298,7 @@
     background: none;
     color: var(--text-color, #374151);
     font-size: 0.8125rem;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: background 0.1s;
   }

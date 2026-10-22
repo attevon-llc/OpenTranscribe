@@ -1,5 +1,20 @@
 // Vitest global setup. Adds jest-dom matchers (toBeInTheDocument, etc.) to expect().
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/svelte/pure';
+
+// Budget for `waitFor` / `findBy*`. Several components reach their final DOM only after a
+// lazy `import()` (the DOMPurify sanitizer in LegalDocumentViewer, KaTeX in ChatMarkdown,
+// the About modal in Navbar), and the first import of a module in a worker includes its
+// Vite transform, queued on the single main vitest thread behind every other worker's
+// requests. Testing Library's 1 s default was calibrated for a re-render, not a transform:
+// measured 2026-10-22 on the 48-core shared host at load ~120, the
+// LegalDocumentViewer sanitized-markdown test took 2.71 s end to end and its 1 s waitFor
+// failed; at load ~50 with the vitest.config.ts worker cap it took 0.58 s. 3 s covers the
+// measured worst case and stays below the 5 s test timeout, so a real failure still
+// reports the waitFor's own assertion message, not an anonymous test timeout. Only a
+// failing wait is slower; a passing one returns as soon as its assertion holds.
+const ASYNC_UTIL_TIMEOUT_MS = 3_000;
+configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 
 // jsdom doesn't implement `window.matchMedia`. Svelte 5's `MediaQuery` (used by
 // `svelte/motion` via `prefers-reduced-motion`) calls it at MODULE EVALUATION

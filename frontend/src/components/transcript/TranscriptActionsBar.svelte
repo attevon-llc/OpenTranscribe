@@ -264,7 +264,7 @@
     padding: 10px 16px;
     background: none;
     border: none;
-    text-align: left;
+    text-align: start;
     color: var(--text-primary);
     font-size: 14px;
     cursor: pointer;

@@ -318,11 +318,32 @@ button {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+/*
+ * No transform on the bare element, ever. This rule used to `scale(1.02)` every <button> on
+ * hover, and a global rule cannot know its layout: a full-width row inside a scrolling panel
+ * (every dropdown and menu: `overflow-y: auto` computes overflow-x to auto) grew 2px past the
+ * scrollport, raised a horizontal scrollbar, and the scrollbar moved the row out from under the
+ * pointer, which flickered. Standalone buttons that want a lift opt in by class (`.btn-*`,
+ * `.modal-*-button`, `button.primary`). `menuHover.convention.test.ts` pins both halves.
+ */
 button:hover:not(:disabled) {
   background-color: var(--button-hover);
-  transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   text-decoration: none !important;
+}
+
+/*
+ * Rows in a menu, listbox or anchored panel are flat: no resting or hover shadow.
+ * `data-floating-panel` is set by `$lib/actions/anchoredPanel` on every panel it places.
+ * `:where()` keeps both rules at the specificity they had, so a component rule still wins.
+ */
+button:hover:not(:disabled):not(
+    :where([data-floating-panel] *, [role='menu'] *, [role='listbox'] *)
+  ) {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+:where([data-floating-panel], [role='menu'], [role='listbox']) button {
+  box-shadow: none;
 }
 
 /*
@@ -346,10 +367,6 @@ button:hover:not(:disabled) {
 button:focus-visible {
   outline: 2px solid var(--primary-color);
   outline-offset: 2px;
-}
-
-button:active:not(:disabled) {
-  transform: scale(1);
 }
 
 button.primary {

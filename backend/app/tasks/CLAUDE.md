@@ -273,8 +273,12 @@ indexing → WebSocket notification.
 - Queues (`core/constants.py:CeleryQueues`): `gpu`, `cpu`, `download`, `nlp`, `embedding`,
   `utility`, `redaction`, plus dynamic `cloud-asr`, `cpu-transcribe`, `gpu-transcribe`,
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at
-  dispatch instead of creating a phantom queue. `_validate_task_routes()` warns at worker
-  startup for any registered task with no `task_routes` entry.
+  dispatch instead of creating a phantom queue. **Every registered task needs a
+  `task_routes` entry**, or an entry in `celery.py:INTENTIONALLY_UNROUTED_TASKS` with a
+  written reason (call-time routing only) — `tests/unit/test_task_routes_complete.py` fails
+  otherwise (issue #1268); `_validate_task_routes()` logs the same check at worker startup.
+  **Never put `queue=` in a task decorator**: Celery merges the route UNDER the task's own
+  options, so a decorator queue silently overrides `task_routes` (the same test forbids it).
 - ⚠️ **A valid route is not a drained route, and `--lite` is where they diverge.**
   `docker-compose.lite.yml` scales BOTH `gpu` consumers (`celery-worker`,
   `celery-worker-gpu-scaled`) to `replicas: 0`, so anything pinned to `gpu` there is

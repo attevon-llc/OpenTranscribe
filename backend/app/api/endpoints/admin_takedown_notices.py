@@ -63,7 +63,7 @@ from app.utils.csv_safe import render_csv
 
 router = APIRouter()
 
-_SHARED = {"scope": "takedown_notices", "key_func": user_or_ip_key}
+_LIMIT_SCOPE = "takedown_notices"
 
 _EXPORT_HEADER = (
     "notice_uuid",
@@ -142,7 +142,7 @@ def _export_record(notice: TakedownNotice, link: TakedownNoticeFile) -> list[Any
 @router.post(
     "/takedown-notices", response_model=TakedownNoticeOut, status_code=status.HTTP_201_CREATED
 )
-@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, **_SHARED)
+@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, scope=_LIMIT_SCOPE, key_func=user_or_ip_key)
 def create_takedown_notice(
     body: TakedownNoticeCreate,
     request: Request,
@@ -171,7 +171,7 @@ def create_takedown_notice(
 
 
 @router.get("/takedown-notices", response_model=TakedownNoticeList)
-@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, **_SHARED)
+@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, scope=_LIMIT_SCOPE, key_func=user_or_ip_key)
 def list_takedown_notices(
     request: Request,
     response: Response,
@@ -266,7 +266,7 @@ def export_takedown_notices(
 
 
 @router.get("/takedown-notices/{notice_uuid}", response_model=TakedownNoticeOut)
-@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, **_SHARED)
+@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, scope=_LIMIT_SCOPE, key_func=user_or_ip_key)
 def get_takedown_notice(
     notice_uuid: UUID,
     request: Request,
@@ -290,7 +290,7 @@ def get_takedown_notice(
 
 
 @router.patch("/takedown-notices/{notice_uuid}/files/{file_uuid}", response_model=TakedownNoticeOut)
-@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, **_SHARED)
+@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, scope=_LIMIT_SCOPE, key_func=user_or_ip_key)
 def update_takedown_notice_file(
     notice_uuid: UUID,
     file_uuid: UUID,
@@ -330,7 +330,7 @@ def update_takedown_notice_file(
 
 
 @router.post("/takedown-notices/{notice_uuid}/notify", response_model=NotifyResponse)
-@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, **_SHARED)
+@limiter.shared_limit(TAKEDOWN_NOTICE_RATE_LIMIT, scope=_LIMIT_SCOPE, key_func=user_or_ip_key)
 def notify_takedown_notice(
     notice_uuid: UUID,
     request: Request,

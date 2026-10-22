@@ -436,7 +436,7 @@ All Celery tasks **MUST** use explicit `name=` in their decorator with dotted na
 ### Queue Assignment Rules
 
 1. **Define queue routing in `task_routes` only** (`backend/app/core/celery.py`) — this is the single source of truth
-2. **Do NOT put `queue=` in task decorators** — it creates a maintenance hazard (decorator is silently overridden by `task_routes`)
+2. **Do NOT put `queue=` in task decorators** — a decorator queue silently overrides `task_routes` (Celery merges the route under the task's own options), so the routing table stops being the source of truth. Enforced by `tests/unit/test_task_routes_complete.py`
 3. **Use `CeleryQueues.*` constants** from `app.core.constants` — never raw queue name strings
 4. **Exception:** Dynamically-routed tasks (e.g., `transcription.gpu_transcribe`) that are intentionally NOT in `task_routes` may use `.set(queue=CeleryQueues.X)` at call time
 
@@ -459,7 +459,7 @@ All valid queues are declared in `CeleryQueues` class (`backend/app/core/constan
 
 ### Startup Validation
 
-On worker startup, `_validate_task_routes()` logs a WARNING for any registered task missing from `task_routes`. This catches accidentally unrouted tasks that would silently go to the default `celery` queue.
+`tests/unit/test_task_routes_complete.py` fails on any registered task missing from `task_routes` and not listed (with a reason) in `INTENTIONALLY_UNROUTED_TASKS`; on worker startup, `_validate_task_routes()` logs the same check as a WARNING. An unrouted task would otherwise go to the default `celery` queue.
 
 ### Task Registration
 Tasks are registered via explicit `include=` list in `celery_app` initialization (`backend/app/core/celery.py`). When adding a new task module, add it to this list.

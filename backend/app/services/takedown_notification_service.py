@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 import uuid as uuid_pkg
 from collections import defaultdict
+from datetime import UTC
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -79,6 +81,9 @@ def notify_owners(
     """Email each affected owner once for ``event`` on ``notice``; record every outcome.
 
     Commits the delivery log per owner so a crash part-way keeps what was already sent.
+    Each owner is handled under a row lock on the notice, and the log is re-read under that
+    lock: two overlapping calls (a double click, a client retry after a timeout) would
+    otherwise both read "not yet sent" and both send.
     """
     wanted = (
         (TakedownLinkStatus.RELEASED.value,) if event is TakedownNotifyEvent.RELEASED else _IN_FORCE
@@ -88,30 +93,31 @@ def notify_owners(
     if not links:
         return NotifyResponse(**counts)
 
-    existing = {
-        (row.link_id, row.recipient_user_uuid): row
-        for row in db.query(TakedownNotification).filter(
-            TakedownNotification.link_id.in_([link.id for link in links]),
-            TakedownNotification.event == event.value,
-            TakedownNotification.channel == _CHANNEL,
-        )
-    }
     by_owner: dict[uuid_pkg.UUID, list[TakedownNoticeFile]] = defaultdict(list)
     for link in links:
-        row = existing.get((link.id, link.owner_user_uuid))
-        if row is not None and row.status in _FINAL:
-            counts["already_notified"] += 1
-            continue
         by_owner[link.owner_user_uuid].append(link)
-
-    titles = file_titles(db, (link.file_id for group in by_owner.values() for link in group))
+    titles = file_titles(db, (link.file_id for link in links))
     organization = notice.recorded_by_authority == "organization"
     transport = email_service.has_transport()
     for owner_uuid, group in by_owner.items():
-        owner = db.query(User).filter(User.uuid == owner_uuid, User.is_active.is_(True)).first()
-        status = _deliver(owner, group, event, organization, titles, transport)
+        # Released by this owner's commit, so one slow mailbox does not hold the whole notice.
+        db.query(TakedownNotice.id).filter(TakedownNotice.id == notice.id).with_for_update().one()
+        existing = _delivery_rows(db, group, event, owner_uuid)
+        pending = []
         for link in group:
-            row = existing.get((link.id, owner_uuid))
+            row = existing.get(link.id)
+            if row is not None and row.status in _FINAL:
+                counts["already_notified"] += 1
+            else:
+                pending.append(link)
+        if not pending:
+            db.commit()
+            continue
+        owner = db.query(User).filter(User.uuid == owner_uuid, User.is_active.is_(True)).first()
+        status = _deliver(owner, pending, event, organization, titles, transport)
+        attempted_at = datetime.now(UTC)
+        for link in pending:
+            row = existing.get(link.id)
             if row is None:
                 row = TakedownNotification(
                     link_id=link.id,
@@ -123,6 +129,7 @@ def notify_owners(
                 db.add(row)
             row.recipient_user_id = owner.id if owner is not None else None
             row.status = status.value
+            row.attempted_at = attempted_at
         db.commit()
         if status is TakedownNotifyStatus.SENT:
             counts["sent"] += 1
@@ -131,6 +138,26 @@ def notify_owners(
         elif status is TakedownNotifyStatus.SKIPPED_NO_TRANSPORT:
             counts["skipped_no_transport"] += 1
     return NotifyResponse(**counts)
+
+
+def _delivery_rows(
+    db: Session,
+    group: list[TakedownNoticeFile],
+    event: TakedownNotifyEvent,
+    owner_uuid: uuid_pkg.UUID,
+) -> dict[int, TakedownNotification]:
+    """The current delivery-log rows of ``group`` for this event and owner, by link id."""
+    rows = (
+        db.query(TakedownNotification)
+        .filter(
+            TakedownNotification.link_id.in_([link.id for link in group]),
+            TakedownNotification.event == event.value,
+            TakedownNotification.channel == _CHANNEL,
+            TakedownNotification.recipient_user_uuid == owner_uuid,
+        )
+        .populate_existing()
+    )
+    return {int(row.link_id): row for row in rows}
 
 
 def _deliver(

@@ -759,6 +759,53 @@ class TestEraseOrganization:
         summary = erase_organization(two_orgs.db, 999_999_999)
         assert summary["already_erased"] is True
 
+    def test_a_takedown_record_survives_the_erasure_of_its_organization(
+        self, two_orgs, fake_opensearch
+    ):
+        """Issue #1254: the notice record outlives the file AND the organization it named.
+
+        A NO ACTION foreign key on ``takedown_notice_file.organization_id`` would make this
+        erasure fail; a CASCADE would erase the evidence with the tenant.
+        """
+        from app.models.takedown import TakedownNoticeFile
+        from app.services.gdpr_erasure_service import erase_organization
+        from app.services.takedown_service import TakedownActor
+        from app.services.takedown_service import quarantine_file
+
+        db, file, org = two_orgs.db, two_orgs.file_a, two_orgs.org_a
+        org_id, org_uuid, file_uuid = org.id, org.uuid, file.uuid
+        with (
+            patch("app.services.chat.retrieval_cache.bump_corpus_version"),
+            patch("app.services.takedown_service.notify_owner_takedown"),
+            patch("app.services.takedown_service.audit_takedown"),
+        ):
+            quarantine_file(
+                db,
+                file,
+                actor=TakedownActor.platform(two_orgs.admin_b),
+                reason="shown to the owner",
+                operator_action_reason="no notice",
+                legal_hold=False,
+            )
+        link_id = db.query(TakedownNoticeFile.id).filter_by(file_uuid=file_uuid).scalar()
+
+        with (
+            patch(
+                "app.services.file_cleanup_service.delete_file_storage_artifacts",
+                return_value=True,
+            ),
+            fake_opensearch(deleted=1),
+        ):
+            summary = erase_organization(db, org_id)
+
+        assert summary["complete"] is True and summary["errors"] == []
+        db.expire_all()
+        assert db.query(Organization).filter(Organization.id == org_id).first() is None
+        kept = db.get(TakedownNoticeFile, link_id)
+        assert kept is not None, "the org erasure took the takedown record with it"
+        assert (kept.organization_id, kept.file_id) == (None, None)
+        assert (kept.organization_uuid, kept.file_uuid) == (org_uuid, file_uuid)
+
 
 # --------------------------------------------------------------------------- #
 # Org-scoped member erasure + legal-hold guard (0.5.0 review fixes)            #

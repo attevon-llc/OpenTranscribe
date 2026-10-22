@@ -214,6 +214,19 @@ def transition_link(
         TakedownNoticeError: The link is closed, the move is not allowed, or the file is
             not currently under takedown (409 in each case).
     """
+    # Lock the file row (the row ``release_file`` locks first), then re-read the link. A
+    # release that committed after this request loaded them would otherwise be overwritten
+    # by a status saying the file is still taken down while it is in fact restored.
+    file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == link.file_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+        if link.file_id is not None
+        else None
+    )
+    db.refresh(link)
     current = TakedownLinkStatus(link.status)
     if current is TakedownLinkStatus.RELEASED:
         raise TakedownNoticeError(CODE_LINK_CLOSED, 409, "This takedown has already been released")
@@ -223,8 +236,7 @@ def transition_link(
             409,
             f"A takedown that is {current.value} cannot become {to.value}",
         )
-    file = db.get(MediaFile, link.file_id) if link.file_id is not None else None
-    if file is None or not file.is_quarantined:
+    if file is None or link.file_id is None or not file.is_quarantined:
         raise TakedownNoticeError(CODE_NOT_IN_FORCE, 409, "This file is not currently taken down")
     now = datetime.now(UTC)
     link.status = to.value

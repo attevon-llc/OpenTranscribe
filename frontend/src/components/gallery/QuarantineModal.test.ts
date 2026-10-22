@@ -24,7 +24,16 @@ const api = vi.hoisted(() => ({
   },
 }));
 
+const notices = vi.hoisted(() => ({
+  TakedownNoticesApi: {
+    list: vi.fn(),
+    create: vi.fn(),
+    notify: vi.fn(),
+  },
+}));
+
 vi.mock('$lib/api/admin', () => api);
+vi.mock('$lib/api/takedownNotices', () => notices);
 
 vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -32,6 +41,13 @@ vi.mock('$stores/toast', () => ({
 
 import QuarantineModal from './QuarantineModal.svelte';
 import type { MediaFile } from '$lib/types/media';
+
+async function chooseOperatorAction(container: HTMLElement, why: string) {
+  await fireEvent.click(container.querySelector('input[type="radio"][value="operator"]')!);
+  await fireEvent.input(container.querySelector('#quarantine-operator-reason')!, {
+    target: { value: why },
+  });
+}
 
 function makeFile(overrides: Partial<MediaFile> = {}): MediaFile {
   return {
@@ -46,6 +62,7 @@ function makeFile(overrides: Partial<MediaFile> = {}): MediaFile {
 describe('QuarantineModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    notices.TakedownNoticesApi.list.mockResolvedValue({ notices: [], total: 0 });
   });
 
   it('disables submit with an empty reason', () => {
@@ -73,20 +90,21 @@ describe('QuarantineModal', () => {
     expect(submitBtn.disabled).toBe(true);
   });
 
-  it('enables submit once a real reason is typed, and posts reason + legal_hold', async () => {
+  it('enables submit once a reason and a basis are given, and posts reason + hold + basis', async () => {
     api.AdminApi.quarantineFile.mockResolvedValue({
       uuid: 'f-1',
       is_quarantined: true,
       legal_hold: true,
       status: 'quarantined',
     });
-    const { getByPlaceholderText, getByText } = render(QuarantineModal, {
+    const { container, getByPlaceholderText, getByText } = render(QuarantineModal, {
       props: { isOpen: true, files: [makeFile()] },
     });
     const textarea = getByPlaceholderText(
       /gallery\.quarantine\.reasonPlaceholder|DMCA notice reference/i
     ) as HTMLTextAreaElement;
     await fireEvent.input(textarea, { target: { value: 'DMCA notice #42' } });
+    await chooseOperatorAction(container, 'routine review');
 
     const submitBtn = getByText(/gallery\.quarantine\.submit|Quarantine 1 file/i).closest(
       'button'
@@ -96,7 +114,9 @@ describe('QuarantineModal', () => {
     await fireEvent.click(submitBtn);
 
     await waitFor(() =>
-      expect(api.AdminApi.quarantineFile).toHaveBeenCalledWith('f-1', 'DMCA notice #42', true)
+      expect(api.AdminApi.quarantineFile).toHaveBeenCalledWith('f-1', 'DMCA notice #42', true, {
+        operatorActionReason: 'routine review',
+      })
     );
   });
 

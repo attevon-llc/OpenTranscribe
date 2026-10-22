@@ -104,6 +104,8 @@ export interface QuarantinedFile {
   is_quarantined: boolean;
   /** Which authority holds the file (issue #1253): 'platform' or 'organization'. */
   takedown_origin: 'platform' | 'organization' | null;
+  /** The notice records covering this file that are not yet released (issue #1254). */
+  notices: { notice_uuid: string; link_uuid: string; notice_type: string; status: string }[];
 }
 
 export interface QuarantinedFilesList {
@@ -240,15 +242,24 @@ export class AdminApi {
     return response.data;
   }
 
-  /** Take a file down (abuse/DMCA). Reversible via {@link releaseFile}. */
+  /**
+   * Take a file down (abuse/DMCA). Reversible via {@link releaseFile}.
+   *
+   * `basis` is required: a takedown cites a recorded notice (`noticeUuid`) or states that it
+   * had none (`operatorActionReason`), never both and never neither (issue #1254).
+   */
   static async quarantineFile(
     fileUuid: string,
     reason: string,
-    legalHold: boolean = true
+    legalHold: boolean,
+    basis: { noticeUuid: string } | { operatorActionReason: string }
   ): Promise<QuarantineActionResult> {
     const response = await axiosInstance.post(`/admin/files/${fileUuid}/quarantine`, {
       reason,
       legal_hold: legalHold,
+      ...('noticeUuid' in basis
+        ? { notice_uuid: basis.noticeUuid }
+        : { operator_action_reason: basis.operatorActionReason }),
     });
     return response.data;
   }

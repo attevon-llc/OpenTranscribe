@@ -25,6 +25,7 @@ export type SettingsSection =
   | 'system-statistics'
   | 'file-status'
   | 'legal'
+  | 'my-takedowns'
   // Cloud edition — org-admin sections (gated by audience='org_admin')
   | 'billing'
   | 'usage'
@@ -40,6 +41,7 @@ export type SettingsSection =
   | 'admin-users'
   | 'admin-task-health'
   | 'quarantine'
+  | 'takedown-notices'
   | 'chat-admin'
   | 'redaction-policy'
   // The data-storage topics are tabs of 'data-management'; the five ids below survive as aliases.

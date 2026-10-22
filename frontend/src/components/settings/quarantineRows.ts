@@ -18,6 +18,8 @@ export interface QueueRow {
   isQuarantined: boolean;
   /** Platform: always (the operator can release anything). Organization: server-computed. */
   canRelease: boolean;
+  /** Notice records covering the file (platform queue only; issue #1254). */
+  notices: { uuid: string; type: string; status: string }[];
 }
 
 function fromPlatform(f: QuarantinedFile): QueueRow {
@@ -33,6 +35,11 @@ function fromPlatform(f: QuarantinedFile): QueueRow {
     legalHold: f.legal_hold,
     isQuarantined: f.is_quarantined,
     canRelease: true,
+    notices: (f.notices ?? []).map((n) => ({
+      uuid: n.link_uuid,
+      type: n.notice_type,
+      status: n.status,
+    })),
   };
 }
 
@@ -49,6 +56,7 @@ function fromOrganization(f: OrgQuarantinedFile): QueueRow {
     legalHold: f.legal_hold,
     isQuarantined: f.is_quarantined,
     canRelease: f.can_release,
+    notices: [],
   };
 }
 

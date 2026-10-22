@@ -28,6 +28,7 @@
   import { invalidateSectionData, SectionDataKey } from '$lib/settings/sectionData';
   import type { ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import { SupportAccessApi } from '$lib/api/supportAccess';
+  import { TakedownNoticesApi } from '$lib/api/takedownNotices';
   import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
   import { UserApprovalsApi } from '$lib/api/userApprovals';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
@@ -122,6 +123,7 @@
     // admin
     'admin-users': 'admin',
     quarantine: 'admin',
+    'takedown-notices': 'admin',
     'data-management': 'admin',
     'support-access': 'admin',
   };
@@ -354,7 +356,9 @@
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
         { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
-        ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : [])
+        ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : []),
+        // issue #1254: only for a user who has had a file taken down; it is the durable copy of the notice.
+        ...(hasTakedowns ? [{ id: 'my-takedowns' as SettingsSection, label: $t('takedown.mine.navLabel'), icon: 'shield-off' }] : [])
       ]
     },
     {
@@ -429,6 +433,7 @@
           // 404s and a compliance endpoint that vanishes is worse than one that
           // refuses.
           { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' },
+          { id: 'takedown-notices' as SettingsSection, label: $t('takedown.admin.navLabel'), icon: 'file-text', cap: 'admin.takedown' },
           ...(tenancyMulti ? [{ id: 'support-access' as SettingsSection, label: $t('settings.supportAccess.navLabel'), icon: 'life-buoy' }] : [])
         ]
       }
@@ -606,11 +611,16 @@
   }
 
   let legalAvailable = false;
+  let hasTakedowns = false;
 
   onMount(() => {
     listLegalDocuments()
       .then((list) => (legalAvailable = list.length > 0))
       .catch(() => (legalAvailable = false));
+
+    TakedownNoticesApi.listMine({ limit: 1 })
+      .then((page) => (hasTakedowns = page.total > 0))
+      .catch(() => (hasTakedowns = false));
 
     // Load recording settings
     loadRecordingSettings();
@@ -1394,6 +1404,23 @@
     {#if activeSection === 'quarantine'}
       <div class="content-section">
         <LazySection load={sectionLoaders.quarantine} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Takedown notice records (issue #1254) -->
+    {#if activeSection === 'takedown-notices'}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.takedownNotices} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    {#if activeSection === 'my-takedowns' && hasTakedowns}
+      <div class="content-section">
+        <LazySection load={sectionLoaders.myTakedowns} let:Component>
           <Component />
         </LazySection>
       </div>

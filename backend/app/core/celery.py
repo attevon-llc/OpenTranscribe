@@ -246,6 +246,7 @@ celery_app = Celery(
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
+        "app.tasks.tenant_backfill_task",
         "app.tasks.storage_orphan_sweep_task",
         "app.tasks.search_indexing_task",
         "app.tasks.search_index_sweep_task",
@@ -511,8 +512,7 @@ celery_app.conf.update(
         # (docker-compose.lite.yml) scales the GPU worker to zero replicas, so
         # pinning this to 'gpu' left it queued forever there (issue #584).
         "extract_speaker_embeddings": {"queue": CeleryQueues.CPU},
-        # One-off operator backfill (priority CPUPriority.MAINTENANCE); not in include=, so it is
-        # registered only where a process imports app.tasks.tenant_backfill_task.
+        # One-off operator backfill (priority CPUPriority.MAINTENANCE).
         "tenant_backfill_organization_id": {"queue": CeleryQueues.CPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": CeleryQueues.NLP},

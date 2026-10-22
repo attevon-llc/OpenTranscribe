@@ -87,11 +87,13 @@ def test_no_task_pins_a_queue_in_its_decorator():
 
 
 def test_a_task_leaked_from_another_celery_app_is_not_counted():
-    """Celery shares @app.task registrations across apps; a test's throwaway app must not trip this.
+    """A task defined outside ``app.`` (a test's throwaway Celery app) must not trip the check.
 
-    Reproduces the CI-only failure: ``test_abort_requeue_contract`` builds its own app, its tasks
-    appear in ``celery_app.tasks`` once the whole suite runs in one process, and the completeness
-    check used to fail on ``guard.*``.
+    Celery shares @app.task registrations across apps, so in CI's single-process full run
+    ``test_abort_requeue_contract``'s ``guard.*`` tasks landed in ``celery_app.tasks`` and the
+    completeness check failed on them. Whether that leak happens depends on test order, so this
+    registers a foreign task directly instead of relying on it, and removes it afterwards so
+    nothing else in the process sees it.
     """
     from celery import Celery
 
@@ -102,13 +104,17 @@ def test_a_task_leaked_from_another_celery_app_is_not_counted():
         return None
 
     celery_app.loader.import_default_modules()
-    celery_app.finalize()
-    assert "leak_probe.unrouted" in celery_app.tasks, "the leak this test guards did not occur"
-    assert "leak_probe.unrouted" not in unrouted_task_names()
+    celery_app.tasks.register(_unrouted)
+    try:
+        assert "leak_probe.unrouted" in celery_app.tasks
+        assert "leak_probe.unrouted" not in unrouted_task_names()
+    finally:
+        celery_app.tasks.unregister("leak_probe.unrouted")
 
 
-def test_the_tenant_backfill_task_is_routed_once_its_module_is_loaded():
-    import app.tasks.tenant_backfill_task  # noqa: F401  (registers the task; not in include=)
-
+def test_the_tenant_backfill_task_is_registered_by_include_and_routed():
+    # A route for a task no worker registers is meaningless (and test_celery_app_resolution
+    # rejects it): the module must be in include=, so a plain worker import registers it.
+    assert "tenant_backfill_organization_id" in _registered_app_tasks()
     assert celery_app.conf.task_routes["tenant_backfill_organization_id"] == {"queue": "cpu"}
     assert "tenant_backfill_organization_id" not in unrouted_task_names()

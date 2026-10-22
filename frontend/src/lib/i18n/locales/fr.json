@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "Issue enregistrée",
   "takedown.admin.outcomeFailed": "Impossible d'enregistrer l'issue",
   "takedown.admin.notifyOwners": "Informer les propriétaires par e-mail",
+  "takedown.admin.notifyRestored": "Informer les propriétaires par e-mail du rétablissement de l'accès",
   "takedown.admin.notified": "{{count}} propriétaire(s) informé(s) par e-mail",
   "takedown.admin.notifyNoTransport": "Aucun e-mail n'est configuré : personne n'a été prévenu",
   "takedown.admin.notifyFailed": "Certains e-mails n'ont pas pu être envoyés",

@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "Ergebnis erfasst",
   "takedown.admin.outcomeFailed": "Das Ergebnis konnte nicht erfasst werden",
   "takedown.admin.notifyOwners": "Eigentümer per E-Mail benachrichtigen",
+  "takedown.admin.notifyRestored": "Eigentümer per E-Mail über die Freigabe informieren",
   "takedown.admin.notified": "{{count}} Eigentümer per E-Mail benachrichtigt",
   "takedown.admin.notifyNoTransport": "Es ist kein E-Mail-Versand eingerichtet, daher wurde niemand benachrichtigt",
   "takedown.admin.notifyFailed": "Einige E-Mails konnten nicht gesendet werden",

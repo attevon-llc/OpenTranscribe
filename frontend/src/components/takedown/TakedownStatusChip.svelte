@@ -13,50 +13,30 @@
     display: inline-block;
     padding: 0.125rem 0.5rem;
     border-radius: 999px;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
+  /* Theme tokens switch with [data-theme], so one rule serves light and dark. */
   .chip-open {
-    background: rgba(217, 119, 6, 0.15);
-    color: #b45309;
+    background: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--color-warning-text);
   }
 
   .chip-counter_notice {
-    background: rgba(37, 99, 235, 0.12);
-    color: #1d4ed8;
+    background: rgba(var(--primary-color-rgb), 0.14);
+    color: var(--color-info-text);
   }
 
   .chip-upheld {
-    background: rgba(220, 38, 38, 0.12);
-    color: #b91c1c;
+    background: rgba(var(--error-color-rgb), 0.14);
+    color: var(--color-error-text);
   }
 
   .chip-released,
   .chip-resolved {
-    background: rgba(22, 163, 74, 0.14);
-    color: #15803d;
-  }
-
-  :global([data-theme='dark']) .chip-open {
-    background: rgba(217, 119, 6, 0.25);
-    color: #fbbf24;
-  }
-
-  :global([data-theme='dark']) .chip-counter_notice {
-    background: rgba(96, 165, 250, 0.22);
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .chip-upheld {
-    background: rgba(248, 113, 113, 0.22);
-    color: #fca5a5;
-  }
-
-  :global([data-theme='dark']) .chip-released,
-  :global([data-theme='dark']) .chip-resolved {
-    background: rgba(74, 222, 128, 0.2);
-    color: #86efac;
+    background: rgba(var(--success-color-rgb), 0.14);
+    color: var(--color-success-text);
   }
 </style>

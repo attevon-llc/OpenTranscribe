@@ -99,12 +99,12 @@
     gap: 0.5rem;
     padding: 0.75rem;
     border-radius: 6px;
-    background: var(--bg-secondary, rgba(0, 0, 0, 0.03));
-    font-size: 0.8125rem;
+    background: var(--bg-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .state-row.error {
-    color: #dc2626;
+    color: var(--color-error-text);
   }
 
   .cards {
@@ -136,11 +136,11 @@
     grid-template-columns: max-content 1fr;
     gap: 0.25rem 1rem;
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   dt {
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   dd {
@@ -153,7 +153,7 @@
 
   .dispute {
     margin: 0.75rem 0 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
   }
 </style>

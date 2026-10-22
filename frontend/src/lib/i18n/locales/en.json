@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "Outcome recorded",
   "takedown.admin.outcomeFailed": "Could not record the outcome",
   "takedown.admin.notifyOwners": "Email the owners",
+  "takedown.admin.notifyRestored": "Email the owners that access was restored",
   "takedown.admin.notified": "{{count}} owner(s) emailed",
   "takedown.admin.notifyNoTransport": "No email is configured, so nobody was emailed",
   "takedown.admin.notifyFailed": "Some emails could not be sent",

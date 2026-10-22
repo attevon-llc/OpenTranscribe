@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "Uitkomst vastgelegd",
   "takedown.admin.outcomeFailed": "De uitkomst kon niet worden vastgelegd",
   "takedown.admin.notifyOwners": "Eigenaren per e-mail informeren",
+  "takedown.admin.notifyRestored": "De eigenaren per e-mail laten weten dat de toegang is hersteld",
   "takedown.admin.notified": "{{count}} eigenaar(s) per e-mail geïnformeerd",
   "takedown.admin.notifyNoTransport": "Er is geen e-mail ingesteld, dus niemand is per e-mail geïnformeerd",
   "takedown.admin.notifyFailed": "Sommige e-mails konden niet worden verzonden",

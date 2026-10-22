@@ -172,6 +172,32 @@ describe('TakedownNoticesPanel', () => {
     expect(toastStore.success).not.toHaveBeenCalled();
   });
 
+  it('a fully released notice offers the restore email, never a takedown email', async () => {
+    serve([
+      notice({
+        status: 'resolved',
+        links: [link({ status: 'released', outcome_at: '2026-10-05T00:00:00Z' })],
+      }),
+    ]);
+    post.mockResolvedValue({
+      data: { sent: 1, failed: 0, skipped_no_transport: 0, already_notified: 0 },
+    } as never);
+    render(TakedownNoticesPanel);
+    await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
+    await fireEvent.click(screen.getByRole('button', { name: /\d/ }));
+
+    expect(screen.queryByRole('button', { name: 'Email the owners' })).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Email the owners that access was restored' })
+    );
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/admin/takedown-notices/n-1/notify', {
+        event: 'released',
+      })
+    );
+  });
+
   it('records a new notice from the form, which is invalid until reference and basis exist', async () => {
     post.mockResolvedValue({ data: notice({ links: [] }) } as never);
     const { container } = render(TakedownNoticesPanel);

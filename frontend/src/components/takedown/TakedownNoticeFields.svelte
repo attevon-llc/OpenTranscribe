@@ -80,16 +80,16 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-weight: 600;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
   }
 
   .field input,
   .field select,
   .field textarea {
     padding: 0.4rem 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: normal;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
   }
 
   .field textarea {
@@ -98,8 +98,8 @@
   }
 
   .help {
-    font-size: 0.75rem;
-    font-weight: normal;
-    color: var(--text-secondary, var(--text-color));
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    color: var(--text-secondary);
   }
 </style>

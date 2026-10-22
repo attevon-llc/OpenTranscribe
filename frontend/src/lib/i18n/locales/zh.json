@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "结果已记录",
   "takedown.admin.outcomeFailed": "无法记录结果",
   "takedown.admin.notifyOwners": "给所有者发邮件",
+  "takedown.admin.notifyRestored": "通过电子邮件告知所有者访问已恢复",
   "takedown.admin.notified": "已向 {{count}} 位所有者发送邮件",
   "takedown.admin.notifyNoTransport": "未配置电子邮件,因此没有发送任何邮件",
   "takedown.admin.notifyFailed": "部分邮件发送失败",

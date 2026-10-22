@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "Результат записан",
   "takedown.admin.outcomeFailed": "Не удалось записать результат",
   "takedown.admin.notifyOwners": "Написать владельцам",
+  "takedown.admin.notifyRestored": "Сообщить владельцам по электронной почте о восстановлении доступа",
   "takedown.admin.notified": "Писем владельцам отправлено: {{count}}",
   "takedown.admin.notifyNoTransport": "Почта не настроена, поэтому никому ничего не отправлено",
   "takedown.admin.notifyFailed": "Не удалось отправить часть писем",

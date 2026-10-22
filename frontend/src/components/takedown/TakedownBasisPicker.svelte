@@ -102,19 +102,19 @@
 
   legend {
     padding: 0 0.25rem;
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   .choice {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .indented {
-    margin-left: 1.5rem;
+    margin-inline-start: 1.5rem;
     min-width: 0;
   }
 
@@ -127,15 +127,15 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-weight: 600;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
   }
 
   select,
   textarea {
     padding: 0.4rem 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: normal;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
   }
 
   textarea {

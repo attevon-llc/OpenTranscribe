@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "Resultado registado",
   "takedown.admin.outcomeFailed": "Não foi possível registar o resultado",
   "takedown.admin.notifyOwners": "Avisar os proprietários por e-mail",
+  "takedown.admin.notifyRestored": "Avisar os proprietários por e-mail de que o acesso foi restaurado",
   "takedown.admin.notified": "{{count}} proprietário(s) avisado(s) por e-mail",
   "takedown.admin.notifyNoTransport": "Não há e-mail configurado, por isso ninguém foi avisado",
   "takedown.admin.notifyFailed": "Não foi possível enviar alguns e-mails",

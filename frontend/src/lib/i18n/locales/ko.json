@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "결과를 기록했습니다",
   "takedown.admin.outcomeFailed": "결과를 기록하지 못했습니다",
   "takedown.admin.notifyOwners": "소유자에게 이메일 보내기",
+  "takedown.admin.notifyRestored": "액세스가 복원되었음을 소유자에게 이메일로 알리기",
   "takedown.admin.notified": "소유자 {{count}}명에게 이메일을 보냈습니다",
   "takedown.admin.notifyNoTransport": "이메일이 설정되어 있지 않아 아무에게도 보내지 못했습니다",
   "takedown.admin.notifyFailed": "일부 이메일을 보내지 못했습니다",

@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "結果を記録しました",
   "takedown.admin.outcomeFailed": "結果を記録できませんでした",
   "takedown.admin.notifyOwners": "所有者にメールを送信",
+  "takedown.admin.notifyRestored": "アクセスの復元を所有者にメールで知らせる",
   "takedown.admin.notified": "{{count}}人の所有者にメールを送信しました",
   "takedown.admin.notifyNoTransport": "メールが設定されていないため、誰にも送信されていません",
   "takedown.admin.notifyFailed": "一部のメールを送信できませんでした",

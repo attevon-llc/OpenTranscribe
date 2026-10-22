@@ -5777,6 +5777,7 @@
   "takedown.admin.outcomeRecorded": "تم تسجيل النتيجة",
   "takedown.admin.outcomeFailed": "تعذّر تسجيل النتيجة",
   "takedown.admin.notifyOwners": "إرسال بريد إلى المالكين",
+  "takedown.admin.notifyRestored": "إبلاغ المالكين بالبريد الإلكتروني باستعادة الوصول",
   "takedown.admin.notified": "تم إرسال بريد إلى {{count}} من المالكين",
   "takedown.admin.notifyNoTransport": "لم يتم إعداد البريد الإلكتروني، لذلك لم تُرسَل أي رسالة",
   "takedown.admin.notifyFailed": "تعذّر إرسال بعض الرسائل",

@@ -30,10 +30,11 @@
     }
   }
 
-  async function notify() {
+  /** `released` tells the owners of the released files that access is back; nobody else. */
+  async function notify(event: 'quarantined' | 'released' = 'quarantined') {
     busy = 'notify';
     try {
-      const result = await TakedownNoticesApi.notify(notice.uuid);
+      const result = await TakedownNoticesApi.notify(notice.uuid, event);
       if (result.sent > 0) {
         toastStore.success($t('takedown.admin.notified', { count: result.sent }));
       } else if (result.skipped_no_transport > 0) {
@@ -85,35 +86,46 @@
             </td>
             <td class="reason">{link.owner_reason}</td>
             <td><TakedownStatusChip status={link.status} /></td>
-            <td class="actions">
-              {#if inForce(link.status) && link.file_exists}
-                {#if link.status !== 'counter_notice'}
-                  <button
-                    class="action-link"
-                    disabled={busy !== ''}
-                    on:click={() => record(link.file_uuid, 'counter_notice')}
-                  >
-                    {$t('takedown.admin.recordCounterNotice')}
-                  </button>
+            <td>
+              <div class="actions">
+                {#if inForce(link.status) && link.file_exists}
+                  {#if link.status !== 'counter_notice'}
+                    <button
+                      class="action-link"
+                      disabled={busy !== ''}
+                      on:click={() => record(link.file_uuid, 'counter_notice')}
+                    >
+                      {$t('takedown.admin.recordCounterNotice')}
+                    </button>
+                  {/if}
+                  {#if link.status !== 'upheld'}
+                    <button
+                      class="action-link"
+                      disabled={busy !== ''}
+                      on:click={() => record(link.file_uuid, 'upheld')}
+                    >
+                      {$t('takedown.admin.markUpheld')}
+                    </button>
+                  {/if}
                 {/if}
-                {#if link.status !== 'upheld'}
-                  <button
-                    class="action-link"
-                    disabled={busy !== ''}
-                    on:click={() => record(link.file_uuid, 'upheld')}
-                  >
-                    {$t('takedown.admin.markUpheld')}
-                  </button>
-                {/if}
-              {/if}
+              </div>
             </td>
           </tr>
         {/each}
       </tbody>
     </table>
-    <button class="btn" disabled={busy !== ''} on:click={notify}>
-      {$t('takedown.admin.notifyOwners')}
-    </button>
+    <div class="notify-row">
+      {#if notice.links.some((l) => inForce(l.status))}
+        <button class="btn btn-secondary" disabled={busy !== ''} on:click={() => notify('quarantined')}>
+          {$t('takedown.admin.notifyOwners')}
+        </button>
+      {/if}
+      {#if notice.links.some((l) => l.status === 'released')}
+        <button class="btn btn-secondary" disabled={busy !== ''} on:click={() => notify('released')}>
+          {$t('takedown.admin.notifyRestored')}
+        </button>
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -123,37 +135,37 @@
     flex-direction: column;
     gap: 0.75rem;
     padding: 0.75rem;
-    background: var(--bg-secondary, rgba(0, 0, 0, 0.03));
+    background: var(--bg-secondary);
     border-radius: 6px;
   }
 
   .basis-line,
   .muted {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .muted,
   .uuid {
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .uuid {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     font-family: monospace;
   }
 
   .links {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .links th,
   .links td {
     padding: 0.4rem;
     border-bottom: 1px solid var(--border-color);
-    text-align: left;
+    text-align: start;
     vertical-align: top;
   }
 
@@ -171,25 +183,19 @@
   .action-link {
     border: none;
     background: none;
-    color: var(--accent-color, #2563eb);
+    color: var(--primary-on-surface);
     cursor: pointer;
     padding: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
-  .btn {
-    align-self: flex-start;
-    padding: 0.375rem 0.875rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    cursor: pointer;
-    font-size: 0.8125rem;
+  .notify-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
-  .action-link:disabled,
-  .btn:disabled {
+  .action-link:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

@@ -121,17 +121,17 @@
         <option value="resolved">{$t('takedown.status.resolved')}</option>
       </select>
     </label>
-    <button class="btn" on:click={() => (recording = !recording)}>
+    <button class="btn btn-secondary" on:click={() => (recording = !recording)}>
       {$t('takedown.admin.record')}
     </button>
-    <button class="btn" on:click={() => download('csv')}>{$t('takedown.admin.exportCsv')}</button>
-    <button class="btn" on:click={() => download('json')}>{$t('takedown.admin.exportJson')}</button>
+    <button class="btn btn-secondary" on:click={() => download('csv')}>{$t('takedown.admin.exportCsv')}</button>
+    <button class="btn btn-secondary" on:click={() => download('json')}>{$t('takedown.admin.exportJson')}</button>
   </div>
 
   {#if recording}
     <form class="record-form" on:submit|preventDefault={saveNotice}>
       <TakedownNoticeFields bind:draft idPrefix="panel-notice" disabled={saving} />
-      <button class="btn primary" type="submit" disabled={!isDraftValid(draft) || saving}>
+      <button class="btn btn-primary record-submit" type="submit" disabled={!isDraftValid(draft) || saving}>
         {#if saving}<Spinner size="small" />{/if}
         {$t('takedown.admin.recordSubmit')}
       </button>
@@ -143,7 +143,7 @@
   {:else if loadFailed}
     <div class="state-row error">
       <span>{$t('takedown.admin.loadFailed')}</span>
-      <button class="btn" on:click={() => load(offset)}>{$t('common.retry')}</button>
+      <button class="btn btn-secondary" on:click={() => load(offset)}>{$t('common.retry')}</button>
     </div>
   {:else if total === 0}
     <EmptyState
@@ -222,11 +222,10 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     white-space: nowrap;
   }
 
-  .btn,
   .pagination button {
     display: inline-flex;
     align-items: center;
@@ -237,20 +236,16 @@
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
-  .btn.primary {
-    align-self: flex-start;
-    background: var(--accent-color, #2563eb);
-    border-color: var(--accent-color, #2563eb);
-    color: white;
-  }
-
-  .btn:disabled,
   .pagination button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .record-submit {
+    align-self: flex-start;
   }
 
   .record-form {
@@ -268,47 +263,47 @@
     gap: 0.5rem;
     padding: 0.75rem;
     border-radius: 6px;
-    background: var(--bg-secondary, rgba(0, 0, 0, 0.03));
-    font-size: 0.8125rem;
+    background: var(--bg-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .state-row.error {
-    color: #dc2626;
+    color: var(--color-error-text);
     justify-content: space-between;
   }
 
   .notices {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .notices th,
   .notices td {
     padding: 0.5rem;
     border-bottom: 1px solid var(--border-color);
-    text-align: left;
+    text-align: start;
     vertical-align: top;
   }
 
   .row:hover,
   .row.open {
-    background: var(--hover-color, rgba(0, 0, 0, 0.04));
+    background: var(--hover-color);
   }
 
   .row-toggle {
     border: none;
     background: none;
     padding: 0;
-    color: var(--accent-color, #2563eb);
+    color: var(--primary-on-surface);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .pagination {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 </style>

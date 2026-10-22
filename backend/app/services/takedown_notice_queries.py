@@ -207,6 +207,10 @@ def live_notice_refs(
     )
     refs: dict[int, list[tuple[str, str, str, str]]] = {}
     for link, notice in rows:
+        if link.file_id is None:
+            # The file was purged (the key is SET NULL); the filter above excludes these,
+            # so this only narrows the type.
+            continue
         refs.setdefault(int(link.file_id), []).append(
             (str(notice.uuid), str(link.uuid), notice.notice_type, link.status)
         )

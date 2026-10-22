@@ -92,6 +92,12 @@ class AuditEventType(StrEnum):
     # Abuse / DMCA / safe-harbor takedown events
     ADMIN_FILE_QUARANTINE = "admin.file.quarantine"
     ADMIN_FILE_RELEASE = "admin.file.release"
+    # Takedown notice records (issue #1254). ``details`` carries ids, the notice type and
+    # counts only, never the basis or a reason.
+    ADMIN_TAKEDOWN_NOTICE_CREATE = "admin.takedown_notice.create"
+    ADMIN_TAKEDOWN_NOTICE_UPDATE = "admin.takedown_notice.update"
+    ADMIN_TAKEDOWN_NOTICE_NOTIFY = "admin.takedown_notice.notify"
+    ADMIN_TAKEDOWN_NOTICE_EXPORT = "admin.takedown_notice.export"
 
     # A forced OpenSearch orphan purge that overrode the sweep's ratio guard
     ADMIN_DATA_INTEGRITY_PURGE = "admin.data_integrity.purge"

@@ -133,6 +133,48 @@ class TakedownOrigin(enum.StrEnum):
     ORGANIZATION = "organization"
 
 
+class TakedownNoticeType(enum.StrEnum):
+    """What kind of legal notice (or operator action) a takedown record documents (issue #1254)."""
+
+    DMCA = "dmca"
+    COURT_ORDER = "court_order"
+    ABUSE_REPORT = "abuse_report"
+    #: A breach of the deployment's acceptable-use policy.
+    AUP = "aup"
+    OTHER = "other"
+    #: No third-party notice: the operator acted on its own and recorded why.
+    OPERATOR_ACTION = "operator_action"
+
+
+class TakedownLinkStatus(enum.StrEnum):
+    """Where one file stands under one takedown notice (issue #1254).
+
+    ``RELEASED`` is set only by the release action, so the record can never say a file
+    was restored while it is still hidden.
+    """
+
+    OPEN = "open"
+    COUNTER_NOTICE = "counter_notice"
+    UPHELD = "upheld"
+    RELEASED = "released"
+
+
+class TakedownNotifyEvent(enum.StrEnum):
+    """What a takedown notification told its recipient."""
+
+    QUARANTINED = "quarantined"
+    RELEASED = "released"
+
+
+class TakedownNotifyStatus(enum.StrEnum):
+    """The outcome of one takedown notification attempt."""
+
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED_NO_TRANSPORT = "skipped_no_transport"
+    SKIPPED_NO_RECIPIENT = "skipped_no_recipient"
+
+
 class ReasoningOffSwitch(enum.StrEnum):
     """What a probe concluded about a model's "do not reason" parameter (issue #64).
 

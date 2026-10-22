@@ -245,8 +245,11 @@ The migration chain progresses through these versions:
 | `v439` | `suggestion_source` stamped on provably voiceprint-matched legacy speaker suggestions (#1233) |
 | `v440` | `user.password_last_self_changed_at`: the minimum password age counts from the holder's own change, so the first change is allowed at once |
 | `v441` | `legal_acceptance`: records which administrator acknowledged which version of a legal document |
+| `v442` | `media_file.takedown_origin`: which authority (operator or organization) holds a taken-down file (#1253) |
+| `v443` | `takedown_notice` and `takedown_notice_file`: a durable record of each legal notice and the files it covers (#1254) |
+| `v444` | `takedown_notification`: a log of who was told about a takedown (#1254) |
 
-What `v397` to `v441` mean for an existing install, including the few that change data, is
+What `v397` to `v444` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail

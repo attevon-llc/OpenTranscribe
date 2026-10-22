@@ -106,6 +106,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   new unguarded call site. …and `exclude_quarantined` is re-applied on the ASYNC export plane
   (`tasks/media_download.py`) because a dispatch-time authorization does not survive a
   takedown landing before the worker runs.
+  **Notice records (issue #1254):** `quarantine_file` requires `notice=` XOR `operator_action_reason=` and writes
+  the `takedown_notice_file` link BEFORE its first commit (a failure rolls the flags back), `release_file` closes
+  the links in the same commit. Write side `takedown_notice_service` (never commits), reads
+  `takedown_notice_queries`, owner email `takedown_notification_service` (recipients from the record only, one
+  email per owner per notice, delivery log). Details: `docs/abuse-and-takedown.md`.
 - **Identity / account security** — see below. `auth_config_service.py` (DB > .env > coded
   default, AES-256-GCM at rest), `account_security_service.py`,
   `idp_group_mapping_service.py`, `directory_sync_service.py`, `auth_mail_config_service.py`,

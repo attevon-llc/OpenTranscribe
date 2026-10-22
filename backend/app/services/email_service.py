@@ -27,6 +27,7 @@ is scrubbed of email addresses so it stays safe to surface — see
 from __future__ import annotations
 
 import contextlib
+import html
 import logging
 import re
 import smtplib
@@ -311,6 +312,42 @@ class EmailService:
             f"{settings.PROJECT_NAME} - {subject}",
             _shell(subject, inner),
             text_body,
+        )
+
+    def has_transport(self) -> bool:
+        """Whether a message would be handed to a transport (designated config or env SMTP).
+
+        Lets a caller record "not sent, no transport" honestly instead of treating the
+        non-sensitive no-transport branch's log-and-return as a delivery.
+        """
+        return self._designated_config() is not None or bool(settings.SMTP_HOST)
+
+    def send_takedown_notice(
+        self, to_email: str, subject: str, heading: str, paragraphs: list[str]
+    ) -> None:
+        """Tell a file owner about a takedown or a restore (issue #1254).
+
+        Every interpolated value is HTML-escaped here, in one place, so a caller cannot
+        forget it for a title or reason that came from a person. The body carries a legal
+        reason, so it is treated like a credential for logging: never written to the log,
+        and a missing transport raises rather than being logged as if sent.
+
+        Args:
+            to_email: The owner's address.
+            subject: Short subject line (the product name is prefixed).
+            heading: Plain-text heading.
+            paragraphs: Plain-text paragraphs; rendered escaped.
+
+        Raises:
+            EmailDeliveryError: No transport, or the transport rejected the message.
+        """
+        inner = "".join(f"<p>{html.escape(p)}</p>" for p in paragraphs)
+        self._send_email(
+            to_email,
+            f"{settings.PROJECT_NAME} - {subject}",
+            _shell(html.escape(heading), inner),
+            "\n\n".join([heading, *paragraphs]),
+            sensitive=True,
         )
 
     def _designated_config(self) -> EmailNotificationConfig | None:

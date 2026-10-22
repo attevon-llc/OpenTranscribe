@@ -98,7 +98,12 @@ class TestQuarantineAccessGate:
         """A taken-down file 404s for its owner (every read surface uses this)."""
         db, owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="DMCA-12345", legal_hold=True
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="DMCA-12345",
+            legal_hold=True,
+            operator_action_reason="operator action (test)",
         )
 
         with pytest.raises(Exception) as exc:
@@ -111,7 +116,12 @@ class TestQuarantineAccessGate:
 
         db, owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="abuse report 7", legal_hold=True
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="abuse report 7",
+            legal_hold=True,
+            operator_action_reason="operator action (test)",
         )
 
         got = get_file_by_uuid_with_permission(
@@ -124,7 +134,12 @@ class TestQuarantineAccessGate:
         """Releasing the file restores the owner's access and clears the hold."""
         db, owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="mistaken", legal_hold=True
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="mistaken",
+            legal_hold=True,
+            operator_action_reason="operator action (test)",
         )
         assert file.legal_hold is True
 
@@ -142,7 +157,12 @@ class TestQuarantineState:
     def test_quarantine_sets_metadata(self, world):
         db, _owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="copyright claim", legal_hold=True
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="copyright claim",
+            legal_hold=True,
+            operator_action_reason="operator action (test)",
         )
         assert file.is_quarantined is True
         assert file.quarantine_reason == "copyright claim"
@@ -154,7 +174,12 @@ class TestQuarantineState:
     def test_quarantine_without_legal_hold(self, world):
         db, _owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="no hold", legal_hold=False
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="no hold",
+            legal_hold=False,
+            operator_action_reason="operator action (test)",
         )
         assert file.is_quarantined is True
         assert file.legal_hold is False
@@ -163,7 +188,14 @@ class TestQuarantineState:
         db, _owner, admin, file = world
         # Not quarantined: visible to everyone.
         assert is_hidden_for(file, is_admin=False) is False
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="x", legal_hold=False)
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="x",
+            legal_hold=False,
+            operator_action_reason="operator action (test)",
+        )
         # Quarantined: hidden from non-admin, visible to admin.
         assert is_hidden_for(file, is_admin=False) is True
         assert is_hidden_for(file, is_admin=True) is False
@@ -174,7 +206,12 @@ class TestExcludeQuarantinedPredicate:
         """The gallery/list predicate removes a taken-down file for normal users."""
         db, owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="hidden", legal_hold=False
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="hidden",
+            legal_hold=False,
+            operator_action_reason="operator action (test)",
         )
 
         base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
@@ -186,7 +223,12 @@ class TestExcludeQuarantinedPredicate:
         """include_quarantined=True (admin 'see all') leaves the file in."""
         db, owner, admin, file = world
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="hidden", legal_hold=False
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="hidden",
+            legal_hold=False,
+            operator_action_reason="operator action (test)",
         )
 
         base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
@@ -225,7 +267,12 @@ class TestQuarantineAuditOrgStamp:
         with patch("app.services.takedown_notices.audit_logger") as fake_audit:
             fake_audit.log.side_effect = lambda **kw: calls.append(kw)
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="dmca",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
             release_file(db, file, actor=TakedownActor.platform(admin), clear_legal_hold=False)
 
@@ -240,7 +287,12 @@ class TestQuarantineAuditOrgStamp:
         with patch("app.services.takedown_notices.audit_logger") as fake_audit:
             fake_audit.log.side_effect = lambda **kw: calls.append(kw)
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="x", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="x",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
 
         assert calls[0]["organization_id"] is None
@@ -342,7 +394,13 @@ class TestPriorStatusRestore:
         file.status = FileStatus.ERROR
         db.commit()
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="test")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="test",
+            operator_action_reason="operator action (test)",
+        )
         assert file.status == FileStatus.QUARANTINED
         assert file.pre_quarantine_status == FileStatus.ERROR.value
 
@@ -357,8 +415,20 @@ class TestPriorStatusRestore:
         file.status = FileStatus.COMPLETED
         db.commit()
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="first")
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="second (refresh)")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="first",
+            operator_action_reason="operator action (test)",
+        )
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="second (refresh)",
+            operator_action_reason="operator action (test)",
+        )
         assert file.pre_quarantine_status == FileStatus.COMPLETED.value
 
         release_file(db, file, actor=TakedownActor.platform(admin))
@@ -368,7 +438,13 @@ class TestPriorStatusRestore:
         """Rows quarantined before v371 have no recorded prior status — release
         falls back to COMPLETED."""
         db, _owner, admin, file = world
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="test")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="test",
+            operator_action_reason="operator action (test)",
+        )
         file.pre_quarantine_status = None
         db.commit()
 
@@ -393,7 +469,11 @@ class TestPriorStatusRestore:
         db.commit()
 
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="mid-transcription takedown"
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="mid-transcription takedown",
+            operator_action_reason="operator action (test)",
         )
         assert file.status == FileStatus.QUARANTINED
         assert file.pre_quarantine_status == FileStatus.PROCESSING.value
@@ -431,7 +511,13 @@ class TestCorpusVersionBump:
         bumps: list[int] = []
         monkeypatch.setattr(retrieval_cache, "bump_corpus_version", lambda: bumps.append(1))
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="DMCA-corpus")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="DMCA-corpus",
+            operator_action_reason="operator action (test)",
+        )
 
         assert len(bumps) == 1
 
@@ -439,7 +525,13 @@ class TestCorpusVersionBump:
         from app.services.chat import retrieval_cache
 
         db, _owner, admin, file = world
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="DMCA-corpus")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="DMCA-corpus",
+            operator_action_reason="operator action (test)",
+        )
 
         bumps: list[int] = []
         monkeypatch.setattr(retrieval_cache, "bump_corpus_version", lambda: bumps.append(1))
@@ -476,7 +568,13 @@ class TestOwnerNotification:
         db, owner, admin, file = world
         monkeypatch.setattr(settings, "ABUSE_CONTACT_EMAIL", "abuse@deploy.example")
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="DMCA notice #777")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="DMCA notice #777",
+            operator_action_reason="operator action (test)",
+        )
 
         assert len(sent) == 1
         note = sent[0]
@@ -507,7 +605,13 @@ class TestOwnerNotification:
         db, owner, admin, file = world
         monkeypatch.setattr(settings, "ABUSE_CONTACT_EMAIL", "")
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="AUP violation")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="AUP violation",
+            operator_action_reason="operator action (test)",
+        )
 
         assert len(sent) == 1
         assert sent[0]["extra"]["abuse_contact_email"] == ""
@@ -517,7 +621,13 @@ class TestOwnerNotification:
         """Release sends the OWNER a `file_takedown_released` notice with a
         working file link (access is restored, so `file_id` is included)."""
         db, owner, admin, file = world
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="disputed")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="disputed",
+            operator_action_reason="operator action (test)",
+        )
         release_file(db, file, actor=TakedownActor.platform(admin))
 
         assert len(sent) == 2
@@ -536,7 +646,13 @@ class TestOwnerNotification:
         file.title = "Quarterly All-Hands"
         db.commit()
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="report 9")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="report 9",
+            operator_action_reason="operator action (test)",
+        )
         assert sent[0]["extra"]["filename"] == "Quarterly All-Hands"
 
     def test_notification_failure_never_breaks_takedown(self, world, monkeypatch):
@@ -550,7 +666,12 @@ class TestOwnerNotification:
         db, owner, admin, file = world
 
         quarantine_file(
-            db, file, actor=TakedownActor.platform(admin), reason="DMCA-1", legal_hold=True
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="DMCA-1",
+            legal_hold=True,
+            operator_action_reason="operator action (test)",
         )
         assert file.is_quarantined is True
         assert file.legal_hold is True

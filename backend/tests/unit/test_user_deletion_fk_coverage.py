@@ -272,6 +272,32 @@ _ACTOR: dict[str, Disposition] = {
         "v387. A takedown never deletes rows, so the file belongs to a different "
         "account and survives; only the reviewer's attribution goes.",
     ),
+    "takedown_notice.handled_by_user_id": Disposition(
+        SET_NULL,
+        "TakedownNotice",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v443 (#1254). A takedown notice is compliance evidence that must outlive the "
+        "operator who recorded it; only the attribution goes, and handled_by_user_uuid keeps "
+        "a pseudonymous snapshot of who it was.",
+    ),
+    "takedown_notice_file.file_id": Disposition(
+        SET_NULL,
+        "TakedownNoticeFile",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v443 (#1254). The record of a takedown is retained after the file is purged: a "
+        "CASCADE would delete the evidence with the file and NO ACTION would block the purge. "
+        "file_uuid keeps naming the file.",
+    ),
+    "takedown_notification.recipient_user_id": Disposition(
+        SET_NULL,
+        "TakedownNotification",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v444 (#1254). The delivery log shows who was told; the row stays when the recipient's "
+        "account is deleted and recipient_user_uuid keeps the pseudonymous snapshot.",
+    ),
     "summary_prompt.shared_by": Disposition(
         SET_NULL,
         "SummaryPrompt",

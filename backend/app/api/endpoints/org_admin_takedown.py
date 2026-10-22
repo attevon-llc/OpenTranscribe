@@ -254,6 +254,9 @@ def quarantine_org_file(
             file,
             actor=TakedownActor.organization(ctx.user, org_id),
             reason=request_body.reason,
+            # An organization administrator has no notice to cite: the stated reason is the
+            # record, kept as an organization-authority operator action (issue #1254).
+            operator_action_reason=request_body.reason,
             legal_hold=False,
             source_ip=source_ip,
             user_agent=user_agent,

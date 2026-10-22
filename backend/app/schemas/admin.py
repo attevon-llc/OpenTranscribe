@@ -3,11 +3,15 @@ Pydantic schemas for admin settings
 """
 
 import re
+import uuid as uuid_pkg
+from typing import Annotated
 
 from pydantic import BaseModel
 from pydantic import EmailStr
 from pydantic import Field
+from pydantic import StringConstraints
 from pydantic import field_validator
+from pydantic import model_validator
 
 
 class RetryConfig(BaseModel):
@@ -301,6 +305,23 @@ class QuarantineRequest(BaseModel):
         True,
         description="Also place a legal-hold on the row + S3 object so it can't be deleted.",
     )
+    notice_uuid: uuid_pkg.UUID | None = Field(
+        None,
+        description="The recorded takedown notice (POST /admin/takedown-notices) this acts on.",
+    )
+    operator_action_reason: Annotated[
+        str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    ] = Field(
+        None,
+        description="Why the operator acted with no notice. Exactly one of this and notice_uuid.",
+    )
+
+    @model_validator(mode="after")
+    def _a_notice_or_a_stated_reason(self) -> "QuarantineRequest":
+        """A takedown cites a recorded notice or states that it had none, never both/neither."""
+        if (self.notice_uuid is None) == (self.operator_action_reason is None):
+            raise ValueError("give exactly one of notice_uuid or operator_action_reason")
+        return self
 
 
 class ReleaseRequest(BaseModel):
@@ -310,8 +331,20 @@ class ReleaseRequest(BaseModel):
     reason: str | None = Field(
         None,
         max_length=2000,
-        description="Why the file is being released. Recorded in the audit log only.",
+        description=(
+            "Why the file is being released. Recorded in the audit log and as the outcome "
+            "note on the takedown notice records the release closes."
+        ),
     )
+
+
+class QuarantineNoticeRef(BaseModel):
+    """A takedown notice link on a quarantine queue row."""
+
+    notice_uuid: str
+    link_uuid: str
+    notice_type: str
+    status: str
 
 
 class QuarantinedFile(BaseModel):
@@ -343,6 +376,8 @@ class QuarantinedFile(BaseModel):
     is_quarantined: bool = True
     # Which authority holds the file, 'platform' or 'organization' (issue #1253).
     takedown_origin: str | None = None
+    # The notice records covering this file that are not released (issue #1254).
+    notices: list[QuarantineNoticeRef] = Field(default_factory=list)
 
 
 class QuarantinedFilesList(BaseModel):

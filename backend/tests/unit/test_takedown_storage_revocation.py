@@ -80,7 +80,12 @@ class TestQuarantineTagsBothObjects:
 
         with patch(_TAG_TARGET, side_effect=_record):
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="dmca",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
 
         assert (file.storage_path, True) in calls
@@ -91,7 +96,12 @@ class TestQuarantineTagsBothObjects:
         db, admin, file = world
         with patch(_TAG_TARGET, return_value=True):
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="dmca",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
 
         calls: list[tuple[str, bool]] = []
@@ -120,7 +130,12 @@ class TestQuarantineTaggerFailureIsBestEffort:
             fake_audit.log.side_effect = lambda **kw: audits.append(kw)
             # Must not raise — the tagger call is wrapped in its own try/except.
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="dmca",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
 
         assert file.presign_revoked is False
@@ -140,7 +155,12 @@ class TestReleaseUntagRetries:
 
         with patch(_TAG_TARGET, return_value=True):
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="dmca",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
 
         monkeypatch.setattr(takedown_service, "_PRESIGN_UNTAG_BACKOFF_SECONDS", 0)
@@ -169,7 +189,12 @@ class TestReleaseUntagRetries:
 
         with patch(_TAG_TARGET, return_value=True):
             quarantine_file(
-                db, file, actor=TakedownActor.platform(admin), reason="dmca", legal_hold=False
+                db,
+                file,
+                actor=TakedownActor.platform(admin),
+                reason="dmca",
+                legal_hold=False,
+                operator_action_reason="operator action (test)",
             )
 
         monkeypatch.setattr(takedown_service, "_PRESIGN_UNTAG_BACKOFF_SECONDS", 0)

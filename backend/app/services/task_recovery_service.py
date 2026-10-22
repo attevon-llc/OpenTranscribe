@@ -14,6 +14,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.enums import TranscriptionStage
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import RunState
@@ -703,6 +704,7 @@ class TaskRecoveryService:
                             FileStatus.PROCESSING,
                             f"Retrying after GPU memory error (attempt {media_file.retry_count}/{effective_max_retries})",
                             progress=0,
+                            stage=TranscriptionStage.PREPARE,
                         )
                     except Exception as e:
                         logger.warning(

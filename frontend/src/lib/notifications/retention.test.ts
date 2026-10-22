@@ -308,3 +308,72 @@ describe('hard cap', () => {
     expect(ids(out)).toEqual(ids(protectedRows));
   });
 });
+
+// A file's processing records render as ONE card (consolidated processing notification), so
+// pruning them one at a time would leave a card claiming "transcription waiting" for a file
+// whose transcription record simply expired first.
+describe('a file processing card is retained as one unit', () => {
+  const job = (type: NotificationType, over: Parameters<typeof make>[0] = {}) =>
+    make({ type, status: 'completed', data: { file_id: 'f1', status: 'completed' }, ...over });
+
+  it('keeps every record of a card while any one of them is still inside its window', () => {
+    const tx = job('transcription_status', { readAgoMs: 30 * HOUR });
+    const summary = job('summarization_status', { readAgoMs: HOUR });
+    const out = prune([summary, tx]);
+    expect(ids(out.kept)).toEqual([summary.id, tx.id]);
+    expect(out.removedVisible).toBe(0);
+  });
+
+  it('drops the whole card at once and reports it as ONE cleared item', () => {
+    const tx = job('transcription_status', { readAgoMs: 30 * HOUR });
+    const summary = job('summarization_status', { readAgoMs: 25 * HOUR });
+    const other = make({ readAgoMs: HOUR });
+    const out = prune([summary, other, tx]);
+    expect(ids(out.kept)).toEqual([other.id]);
+    expect(out.removedVisible).toBe(1);
+  });
+
+  it('a failure anywhere in the card pins the whole card', () => {
+    const tx = job('transcription_status', { readAgoMs: 30 * DAY });
+    const summary = job('summarization_status', {
+      status: 'error',
+      data: { file_id: 'f1', status: 'failed' },
+      readAgoMs: 30 * DAY,
+    });
+    expect(prune([summary, tx]).kept).toHaveLength(2);
+  });
+
+  it("a skipped LLM task (shown as nothing) does not pin the card, and redaction 'done' is a success", () => {
+    const tx = job('transcription_status', { readAgoMs: 30 * HOUR });
+    const topics = job('topic_extraction_status', {
+      status: undefined,
+      data: { file_id: 'f1', status: 'not_configured' },
+      readAgoMs: 30 * HOUR,
+    });
+    const redaction = job('redaction_status', {
+      status: undefined,
+      data: { file_id: 'f1', status: 'done' },
+      readAgoMs: 30 * HOUR,
+    });
+    expect(prune([redaction, topics, tx]).kept).toEqual([]);
+    // Outside a card, not_configured is still a warning and is kept.
+    const lone = make({
+      type: 'auto_label_status',
+      data: { status: 'not_configured' },
+      readAgoMs: 30 * DAY,
+    });
+    expect(prune([lone]).kept).toEqual([lone]);
+  });
+
+  it('the cap evicts a card whole, counting its records toward the limit', () => {
+    const tx = job('transcription_status', { readAgoMs: 2 * HOUR, ageMs: 9 * DAY });
+    const summary = job('summarization_status', { readAgoMs: 2 * HOUR, ageMs: 9 * DAY });
+    const filler = Array.from({ length: MAX_NOTIFICATIONS - 1 }, () => make({ readAgoMs: HOUR }));
+    const out = prune([...filler, summary, tx]);
+    // 101 records: dropping the oldest unit (the 2-record card) brings it to 99.
+    expect(out.kept).toHaveLength(MAX_NOTIFICATIONS - 1);
+    expect(ids(out.kept)).not.toContain(tx.id);
+    expect(ids(out.kept)).not.toContain(summary.id);
+    expect(out.removedVisible).toBe(1);
+  });
+});

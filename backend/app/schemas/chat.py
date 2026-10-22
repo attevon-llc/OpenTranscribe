@@ -26,6 +26,8 @@ SearchMode = Literal["hybrid", "semantic", "keyword"]
 
 MAX_MESSAGE_CHARS = 8000
 MAX_SYSTEM_PROMPT_CHARS = 2000
+#: Largest per-conversation answer budget a client may store; the turn clamps it further.
+MAX_ANSWER_TOKENS_REQUEST = 200_000
 
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -127,7 +129,7 @@ class ConversationSettings(BaseModel):
     use_context: bool | None = None
     system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(default=None, ge=256, le=200_000)
+    max_tokens: int | None = Field(default=None, ge=256, le=MAX_ANSWER_TOKENS_REQUEST)
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     search_mode: SearchMode | None = None
     #: Whether the model should reason before answering (issue #64). ``False``
@@ -380,6 +382,23 @@ class ContextEstimate(BaseModel):
     context_window: int
     pct: float
     warning_level: Literal["ok", "warn", "over"] = "ok"
+
+
+class AnswerBudget(BaseModel):
+    """The reply budget a turn would use for one model, so the UI can show it.
+
+    Computed by the same ``resolve_answer_tokens`` the stream uses, so what the
+    settings panel calls "default" is exactly what an unset conversation sends,
+    and ``max_tokens`` is exactly where a larger override is clamped — the clamp
+    is shown to the user rather than applied silently.
+    """
+
+    #: Sent as ``max_tokens`` when the conversation sets no override.
+    default_tokens: int
+    #: The largest override honoured (tenant cap and half the context window).
+    max_tokens: int
+    #: The model's (measured-narrowed) context window the two are derived from.
+    context_window: int
 
 
 class ChatAdminSettings(BaseModel):

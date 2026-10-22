@@ -3,6 +3,7 @@
 import contextlib
 import logging
 
+from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.services.file_provenance import inline_speakers_by
 from app.services.pipeline_plan import PipelinePlan
@@ -245,7 +246,13 @@ def _run_cloud_asr_pipeline(
         + (f" ({len(vocab_terms)} vocabulary terms)" if vocab_terms else "")
     )
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running cloud ASR transcription")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.4,
+        "Running cloud ASR transcription",
+        stage=TranscriptionStage.TRANSCRIBE,
+    )
 
     # Only request diarization when the provider actually supports it; passing
     # enable_diarization=True to a provider that doesn't support it (e.g. OpenAI
@@ -276,10 +283,13 @@ def _run_cloud_asr_pipeline(
         vocabulary=vocab_terms if vocab_terms else None,
     )
 
+    # Providers report (progress, message) only; every frame from them is transcription.
     def cloud_progress_callback(progress: float, message: str) -> None:
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+        send_progress_notification(
+            ctx.user_id, ctx.file_id, progress, message, stage=TranscriptionStage.TRANSCRIBE
+        )
 
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)

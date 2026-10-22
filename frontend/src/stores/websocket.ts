@@ -8,6 +8,13 @@ import { formatCompactDuration } from '$lib/utils/formatting';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 import { pruneNotifications } from '$lib/notifications/retention';
+import {
+  advanceRunTiming,
+  isTerminalState,
+  taskStateFromStatus,
+  type StepMark,
+} from '$lib/notifications/runTiming';
+import { countUnreadItems } from '$lib/notifications/jobGrouping';
 import { notificationRetention, clearedNotice } from '$stores/notificationRetention';
 import { showNotificationsPanel } from '$stores/notificationsPanel';
 
@@ -94,6 +101,10 @@ export interface NotificationData {
   // NEVER the same number as a recording's length (that's `file_updated`'s
   // `duration`/`formatted_duration` — a different, unrelated field).
   duration_seconds?: number;
+  // transcription_status processing frames: the sub-stage the backend filed this frame
+  // under (backend `TranscriptionStage`; keys in $lib/notifications/processingJob
+  // TRANSCRIPTION_STAGES). Absent on terminal frames and older backends.
+  stage?: string;
   [key: string]: unknown;
 }
 
@@ -121,8 +132,13 @@ export interface Notification {
   status?: 'processing' | 'completed' | 'error';
   dismissible?: boolean; // false while processing
   silent?: boolean; // if true, don't show in notification panel (for gallery-only updates)
+  // Run timing for the consolidated processing card ($lib/notifications/runTiming), epoch ms.
+  startedAt?: number;
+  finishedAt?: number;
+  stepLog?: StepMark[];
   enrichmentTasks?: string[]; // Expected enrichment tasks (from enrichment_started)
-  completedEnrichments?: string[]; // Completed enrichment task names (chips)
+  enrichmentStartedAt?: number;
+  enrichmentCompletedAt?: Record<string, number>; // task name -> when it reported done
 }
 
 // WebSocket connection status
@@ -784,25 +800,47 @@ function createWebSocketStore() {
                 // Find existing progressive notification
                 const existingIndex = s.notifications.findIndex((n) => n.progressId === progressId);
 
-                if (existingIndex !== -1) {
+                const existing = existingIndex !== -1 ? s.notifications[existingIndex] : undefined;
+                // Any finished state, including 'done' (redaction) and 'disabled' /
+                // 'not_configured' (LLM tasks), may be dismissed; the two creation and
+                // update paths used to disagree, leaving a first-frame skip undismissable.
+                const dismissible =
+                  isTerminalState(taskStateFromStatus(status)) ||
+                  (data.type === 'youtube_processing_status' && status === 'pending');
+                const { timing, newRun } = advanceRunTiming(
+                  existing,
+                  existing ? existing.data?.status ?? existing.status : undefined,
+                  status,
+                  progress.percentage,
+                  Date.now(),
+                  typeof data.data.stage === 'string' ? data.data.stage : undefined
+                );
+
+                if (existing) {
+                  // A retry or reprocess starts over: the previous run's enrichment results
+                  // must not show as this run's.
+                  const previous = newRun
+                    ? {
+                        ...existing,
+                        enrichmentTasks: undefined,
+                        enrichmentStartedAt: undefined,
+                        enrichmentCompletedAt: undefined,
+                      }
+                    : existing;
                   // Update existing notification with new data (important for summary completion)
-                  const updatedNotification = {
-                    ...s.notifications[existingIndex],
+                  const updatedNotification: Notification = {
+                    ...previous,
+                    ...timing,
                     message: currentStep,
                     timestamp: new Date(),
                     currentStep,
                     progress,
                     status: status as 'processing' | 'completed' | 'error',
-                    dismissible:
-                      status === 'completed' ||
-                      status === 'failed' ||
-                      status === 'error' ||
-                      status === 'not_configured' ||
-                      (data.type === 'youtube_processing_status' && status === 'pending'),
+                    dismissible,
                     read: false, // Mark as unread for updates
                     readAt: undefined,
                     data: {
-                      ...s.notifications[existingIndex].data,
+                      ...existing.data,
                       ...data.data,
                     }, // Merge old and new data
                   };
@@ -821,14 +859,11 @@ function createWebSocketStore() {
                     timestamp: new Date(),
                     read: false,
                     data: data.data,
+                    ...timing,
                     currentStep,
                     progress,
                     status: status as 'processing' | 'completed' | 'error',
-                    dismissible:
-                      status === 'completed' ||
-                      status === 'failed' ||
-                      status === 'error' ||
-                      (data.type === 'youtube_processing_status' && status === 'pending'),
+                    dismissible,
                   };
 
                   s.notifications = retain([notification, ...s.notifications]);
@@ -838,33 +873,32 @@ function createWebSocketStore() {
                 return s;
               });
             } else if (isEnrichmentType) {
-              // Enrichment events update the parent transcription notification with chips
+              // Enrichment events are timed onto the parent transcription record; the
+              // processing card renders them as that file's "indexing and analysis" task.
               const fileId = data.data.file_id;
               const progressId = `transcription_status_${fileId}`;
+              const now = Date.now();
 
               update((s: WebSocketState) => {
                 const parentIndex = s.notifications.findIndex((n) => n.progressId === progressId);
 
                 if (parentIndex !== -1) {
-                  const parent = s.notifications[parentIndex];
+                  const parent = { ...s.notifications[parentIndex] };
 
                   if (data.type === 'enrichment_started') {
-                    // Store expected task list
                     parent.enrichmentTasks = data.data.tasks || [];
-                    parent.completedEnrichments = parent.completedEnrichments || [];
-                  } else if (data.type === 'enrichment_task_complete') {
-                    // Add completed task chip (avoid duplicates)
-                    const taskName = data.data.task;
-                    if (!parent.completedEnrichments) {
-                      parent.completedEnrichments = [];
-                    }
-                    if (!parent.completedEnrichments.includes(taskName)) {
-                      parent.completedEnrichments = [...parent.completedEnrichments, taskName];
+                    parent.enrichmentStartedAt = now;
+                    parent.enrichmentCompletedAt = {};
+                  } else {
+                    const taskName = String(data.data.task ?? '');
+                    const doneAt = parent.enrichmentCompletedAt ?? {};
+                    // The first report wins: a duplicate must not stretch the duration.
+                    if (taskName && doneAt[taskName] === undefined) {
+                      parent.enrichmentCompletedAt = { ...doneAt, [taskName]: now };
                     }
                   }
 
-                  // Trigger reactivity
-                  s.notifications[parentIndex] = { ...parent };
+                  s.notifications[parentIndex] = parent;
                   saveNotificationsToStorage(s.notifications);
                 }
                 return s;
@@ -1403,11 +1437,10 @@ showNotificationsPanel.subscribe((open) => {
   panelWasOpen = open;
 });
 
-// Derived store for unread notifications count (excluding silent notifications)
-export const unreadCount = derived(
-  websocketStore,
-  ($websocketStore: WebSocketState) =>
-    $websocketStore.notifications.filter((n: Notification) => !n.read && !n.silent).length
+// Unread panel ITEMS (silent records excluded): a file's processing card counts once,
+// however many of its event records are unread.
+export const unreadCount = derived(websocketStore, ($websocketStore: WebSocketState) =>
+  countUnreadItems($websocketStore.notifications)
 );
 
 /**

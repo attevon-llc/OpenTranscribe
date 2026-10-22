@@ -366,6 +366,8 @@
     background: none;
     border: none;
     border-radius: 6px;
+    /* Ghost icon buttons: no global button shadow or hover scale. */
+    box-shadow: none;
     color: var(--text-secondary);
     font-size: 0.78rem;
     cursor: pointer;
@@ -374,6 +376,8 @@
   .action-btn:hover {
     background-color: var(--button-hover);
     color: var(--text-color);
+    box-shadow: none;
+    transform: none;
   }
 
   .edit-box {

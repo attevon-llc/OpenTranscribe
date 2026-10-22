@@ -20,6 +20,7 @@ from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
+from app.core.enums import TranscriptionStage
 from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import clear_run_markers
 from app.core.task_liveness import run_heartbeat
@@ -225,7 +226,13 @@ def _finalize(gpu_result: dict) -> dict:
         elif plan.speaker_id.execution == "inline_native":
             # This server's engine diarized inside the GPU stage and handed back the
             # per-speaker vectors: match them here, nothing to dispatch.
-            send_progress_notification(user_id, file_id, 0.80, "Processing speaker identification")
+            send_progress_notification(
+                user_id,
+                file_id,
+                0.80,
+                "Processing speaker identification",
+                stage=TranscriptionStage.SPEAKERS,
+            )
             if use_native and native_embeddings:
                 _process_native_embeddings(
                     file_id, user_id, task_id, native_embeddings, speaker_mapping
@@ -240,7 +247,11 @@ def _finalize(gpu_result: dict) -> dict:
             # The text is usable now; the post stage sends its own completion notification
             # and is the run's metering terminus (never here: no double count).
             send_progress_notification(
-                user_id, file_id, 0.90, "Transcription complete, detecting speakers..."
+                user_id,
+                file_id,
+                0.90,
+                "Transcription complete, detecting speakers...",
+                stage=TranscriptionStage.SPEAKERS,
             )
             with session_scope() as db:
                 _task, task_duration_seconds = update_task_status_with_duration(
@@ -249,13 +260,25 @@ def _finalize(gpu_result: dict) -> dict:
             send_completion_notification(user_id, file_id, duration_seconds=task_duration_seconds)
         elif handed_off == "voiceprint_stage":
             # The voiceprint stage completes, notifies and meters the run.
-            send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
+            send_progress_notification(
+                user_id,
+                file_id,
+                0.90,
+                "Processing speaker identification",
+                stage=TranscriptionStage.SPEAKERS,
+            )
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.90)
         else:
             # Nothing handed off (inline speakers, none, or a hand-off that could not be
             # queued): everything is done — this is the run's single metering terminus.
-            send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
+            send_progress_notification(
+                user_id,
+                file_id,
+                0.95,
+                "Finalizing transcription",
+                stage=TranscriptionStage.SPEAKERS,
+            )
             with session_scope() as db:
                 _task, task_duration_seconds = update_task_status_with_duration(
                     db, task_id, "completed", progress=1.0, completed=True
@@ -342,7 +365,9 @@ def _dispatch_post_stage(gpu_result: dict, plan) -> bool:
     from .user_settings import resolve_speaker_range_for_user
 
     file_id, user_id = gpu_result["file_id"], gpu_result["user_id"]
-    send_progress_notification(user_id, file_id, 0.85, "Queuing speaker detection")
+    send_progress_notification(
+        user_id, file_id, 0.85, "Queuing speaker detection", stage=TranscriptionStage.SPEAKERS
+    )
     issues = [issue.code for issue in plan.issues if issue.severity == "warning"]
     try:
         speaker_range = resolve_speaker_range_for_user(
@@ -390,7 +415,13 @@ def _dispatch_embedding_stage(gpu_result: dict) -> bool:
     from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
 
     file_id, user_id = gpu_result["file_id"], gpu_result["user_id"]
-    send_progress_notification(user_id, file_id, 0.80, "Dispatching speaker embedding extraction")
+    send_progress_notification(
+        user_id,
+        file_id,
+        0.80,
+        "Dispatching speaker embedding extraction",
+        stage=TranscriptionStage.SPEAKERS,
+    )
     try:
         extract_speaker_embeddings_task.apply_async(
             args=[str(gpu_result["file_uuid"])],

@@ -153,7 +153,8 @@
     display: flex;
     align-items: flex-end;
     gap: 0.5rem;
-    padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+    padding-block: 0.5rem;
+    padding-inline: 0.9rem 0.5rem;
     border: 1px solid var(--field-border);
     border-radius: 24px;
     background-color: var(--field-bg);
@@ -171,10 +172,15 @@
     border-color: var(--error-color, #dc3545);
   }
 
+  /* Embedded field: the shell above draws the one rounded box and its focus ring, so every
+     property form-elements.css paints on a textarea is reset here (its :focus ring would
+     otherwise draw a second outline inside the shell). */
   textarea {
     flex: 1;
     border: none;
+    border-radius: 0;
     background: transparent;
+    box-shadow: none;
     resize: none;
     outline: none;
     color: var(--text-color);

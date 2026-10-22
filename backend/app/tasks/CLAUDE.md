@@ -240,6 +240,17 @@ indexing → WebSocket notification.
   `test_pipeline_execution_matrix.py::test_every_stage_of_a_run_records_what_it_ran` runs the
   chain per executable plan cell.
 
+- **Every transcription progress frame names its sub-stage.** `transcription_status`
+  processing frames carry `stage` (`prepare|transcribe|diarize|finalize|speakers`) from
+  `core/enums.TranscriptionStage`, the one vocabulary the engine's `emit` also uses; the
+  notification card renders steps from it, never from the percent. Pass
+  `stage=TranscriptionStage.X` to every `send_progress_notification` call, and give an
+  engine-driven progress closure a `stage` parameter (defaulting to its task's stage) so
+  `adapt_legacy` forwards the engine's. `tests/unit/test_transcription_stage_wire.py` lists
+  every call site with its stage and fails on a new one without a row; the mapping
+  (including `rediarize_task`'s diarize -> finalize -> speakers) is in
+  `docs/design/consolidated_processing_notification_plan.md`.
+
 - **Any WebSocket event naming a `MediaFile` must go through
   `app/utils/websocket_notify.py:send_ws_event_for_file`, never the raw `send_ws_event`**
   (issue #908). `send_ws_event` has no notion of quarantine at all — a filename, title, or

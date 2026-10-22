@@ -8,6 +8,7 @@ import logging
 import os
 
 from app.core.config import settings
+from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils.task_utils import update_task_status
@@ -172,12 +173,22 @@ def _run_transcription_pipeline(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running AI transcription")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.4,
+        "Running AI transcription",
+        stage=TranscriptionStage.TRANSCRIBE,
+    )
 
-    def progress_callback(progress, message):
+    def progress_callback(
+        progress: float,
+        message: str,
+        stage: TranscriptionStage = TranscriptionStage.TRANSCRIBE,
+    ) -> None:
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
 
     pipeline = TranscriptionPipeline(config)
     raw_result = pipeline.process(
@@ -300,12 +311,22 @@ def _run_engine_pipeline(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.40)
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.40, "Running AI transcription")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.40,
+        "Running AI transcription",
+        stage=TranscriptionStage.TRANSCRIBE,
+    )
 
-    def _progress(progress: float, message: str) -> None:
+    def _progress(
+        progress: float,
+        message: str,
+        stage: TranscriptionStage = TranscriptionStage.TRANSCRIBE,
+    ) -> None:
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
 
     raw = engine.run_gpu_stage(pre, progress_callback=_progress)
     job_result = engine.run_cpu_finalize(raw)
@@ -415,12 +436,22 @@ def _run_transcribe_only_stage(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.40)
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.40, "Running AI transcription")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.40,
+        "Running AI transcription",
+        stage=TranscriptionStage.TRANSCRIBE,
+    )
 
-    def _progress(progress: float, message: str) -> None:
+    def _progress(
+        progress: float,
+        message: str,
+        stage: TranscriptionStage = TranscriptionStage.TRANSCRIBE,
+    ) -> None:
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
 
     transcript = engine.run_transcribe_only(pre, progress_callback=_progress)
     return transcript.serialize()

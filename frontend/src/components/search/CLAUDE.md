@@ -3,13 +3,28 @@
 ## Purpose
 
 Thin presentational children of `routes/search/+page.svelte` (the hybrid keyword+semantic search
-coordinator), plus the full-transcript match browser opened from a result card.
+coordinator).
 
 ## Key files
 
-- `SearchResultCard.svelte` — one file's hit: title/meta/match badges + occurrences (3 visible when
-  `has_both_match_types`, else 2). Dispatches `preview` (a toggle — re-clicking the active
-  occurrence emits `null`) and `viewTranscript`. No API calls.
+- `SearchResultsBody.svelte` — the results area once a query has run: the Summaries and
+  Transcripts sections (collapsible `ui/ExpandableSection` with `headingLevel={2}`; the
+  Transcripts toggle exists only when both sections show) and, when the page passes
+  `panelMode`, the sticky knowledge-panel `<aside>` beside a 44rem results column. The panel
+  shows the pinned hit, else the hovered/focused one, else the top result. The page decides
+  `panelMode` from viewport width (1440px with the filter sidebar open, 1180px collapsed).
+  Design and rationale: `docs/design/search_results_ux_audit.md`.
+- `SearchResultCard.svelte` — one file's hit as a compact search-engine result: title, one
+  muted meta line (date, duration, relevance), 1 snippet (2 when `has_both_match_types`),
+  "Show N more matches" and "Details" disclosures. Speakers, tags, size and match sources are
+  NOT in the card; they live in `SearchResultInfoCard.svelte` (`panel` in the aside,
+  `inline` inside the card on narrow layouts). Dispatches `preview` (start a clip),
+  `togglePlayback` (pause/resume the clip already loaded), `viewTranscript`, `inspect`
+  (hover/focus) and `toggleDetails` (pin). No API calls.
+- `SearchPreviewButton.svelte` — the per-occurrence play control, state
+  `idle | playing | paused`. `activePreview.playing` follows the floating player's Plyr
+  `play`/`pause` events (`ended` reports `pause`), so the glyph never claims "playing" for a
+  paused clip. Primary colour when active, never `--error-color`.
 - `SearchOccurrence.svelte` — one snippet row; renders the backend's `<mark>` /
   `<mark class="semantic">` highlight markup, so its `mark` styling must stay `:global`.
   The card title is a block of text, not a flex row: as `inline-flex` each title `<mark>` was
@@ -50,7 +65,7 @@ coordinator), plus the full-transcript match browser opened from a result card.
 ## Gotchas
 
 - **E2E-guarded selectors owned here** (`backend/tests/e2e/test_search.py`): `.search-input` and
-  `.clear-btn` in `SearchAutocomplete`. The card's root must also stay a direct child of the page's
+  `.clear-btn` in `SearchAutocomplete`. The card's root (`article.result-card`, with `.result-title` and `.view-transcript-btn` always visible) must also stay a direct child of `SearchResultsBody`'s
   `.results-list` — the test counts `.results-list > *`. That is why the page's
   `RetrievalQualityNotice` (#461) sits in `.quality-notice-slot` **above** `.results-list` rather
   than inside it; it is also gated to `searchMode === 'hybrid'`, since Exact mode is literal BM25
@@ -58,5 +73,9 @@ coordinator), plus the full-transcript match browser opened from a result card.
 - `TranscriptViewModal` (search mode) re-fetches on the redaction toggle (`?redact=false`,
   owner-only) and rebuilds the loaded range **in place** — don't flip the loading state there
   or the view flickers.
-- `SearchResultCard` re-implements `formatDuration`/`formatFileSize`/`formatDate` locally instead of
-  using `$lib/utils/formatting` — don't copy that into new cards.
+- The card and info card format through `$lib/utils/formatting` (`formatClock`, `formatDate`,
+  `formatLanguageNames`) and `$lib/utils/metadataMapper`'s `formatFileSize`; the old local
+  copies are gone, don't reintroduce them.
+- The info `<aside>` and every notice stay OUTSIDE `.results-list` (see the E2E note above).
+- The page marks a clicked occurrence active before its stream URL resolves, and drops a URL
+  fetch superseded by a newer click (`previewRequest`), so two cards never both show "pause".

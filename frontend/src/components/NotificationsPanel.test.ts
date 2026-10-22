@@ -1,24 +1,21 @@
 /**
- * `NotificationsPanel.svelte` had NO component test before this file (issue
- * #753's currency review, confirmed against the tree: only
- * `notificationsPanel.test.ts`, the open/close boolean store, and
- * `appModuleResolution.test.ts`'s import-only smoke check existed). That
- * matters here specifically because this file's own icon map has shipped a
- * silent-fallback-to-bell bug before (`getNotificationIcon` returning
- * `'video'`/`'music'` with no matching render branch) — a defect the type
- * system cannot catch without `{@html}` (which `frontend/CLAUDE.md` forbids
- * for anything but sanitizer-routed strings), so a rendering assertion is
- * the only thing that actually proves coverage.
+ * `NotificationsPanel.svelte` and its children (`components/notifications/`).
  *
- * The duration-chip tests are the load-bearing ones: issue #753's own
- * currency review found that the tempting data source — a recording's
- * length — is a completely different number from how long a job took to
- * process it, and would look plausible while being wrong on every file. The
- * "does not use `data.duration`" test below is written specifically to catch
- * that trap being reintroduced.
+ * Icon coverage: the icon registry has shipped a silent-fallback-to-bell bug before
+ * (`'video'`/`'music'` with no render branch), which only a rendering assertion catches.
+ *
+ * Processing cards: one file used to produce one row per event type (transcription, summary,
+ * topics, redaction), each counted in the badge. The card tests below pin ONE card per file,
+ * the weighted bar's LLM dependence as rendered, the details toggle's a11y wiring, the card's
+ * dismiss/open acting on every record it holds, and a live region that speaks outcomes only.
+ * The duration "trap" (processing time vs recording length) is pinned in
+ * `$lib/notifications/processingJob.test.ts`, where durations are now computed.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { writable, get } from 'svelte/store';
 import type { Notification, NotificationType } from '../stores/websocket';
 
@@ -58,6 +55,25 @@ const removeNotification = vi.hoisted(() => vi.fn());
 const markAsRead = vi.hoisted(() => vi.fn());
 const markAllAsRead = vi.hoisted(() => vi.fn());
 const clearAll = vi.hoisted(() => vi.fn());
+const goto = vi.hoisted(() => vi.fn());
+const llmAvailable = vi.hoisted(() => {
+  let value = false;
+  const subscribers = new Set<(v: boolean) => void>();
+  return {
+    subscribe(run: (v: boolean) => void) {
+      subscribers.add(run);
+      run(value);
+      return () => subscribers.delete(run);
+    },
+    set(next: boolean) {
+      value = next;
+      subscribers.forEach((run) => run(value));
+    },
+  };
+});
+
+vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('$stores/llmStatus', () => ({ isLLMAvailable: { subscribe: llmAvailable.subscribe } }));
 
 vi.mock('../stores/websocket', () => ({
   websocketStore: {
@@ -90,13 +106,28 @@ function setNotifications(list: Notification[]) {
   notificationsStore.set({ notifications: list });
 }
 
+/** The panel body loads on first open (bundle budget), so wait for that chunk. */
+async function renderPanel() {
+  const result = render(NotificationsPanel);
+  await vi.dynamicImportSettled();
+  await tick();
+  return result;
+}
+
 function currentNotifications(): Notification[] {
   return notificationsStore.get().notifications;
 }
 
+// Transform the lazily loaded body once, up front: under a loaded full-suite run its first
+// compile alone can exceed a single test's timeout.
+beforeAll(async () => {
+  await import('./notifications/NotificationsPanelBody.svelte');
+}, 60_000);
+
 beforeEach(() => {
   vi.clearAllMocks();
   setNotifications([]);
+  llmAvailable.set(false);
   showNotificationsPanel.set(true);
 });
 
@@ -116,19 +147,19 @@ describe('icon coverage — every mapped type renders its own glyph, not the bel
     ['download_progress', 'download'],
   ];
 
-  it.each(cases)('%s does not fall back to the generic bell glyph', (type) => {
+  it.each(cases)('%s does not fall back to the generic bell glyph', async (type) => {
     setNotifications([baseNotification({ id: type, type })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     const icon = container.querySelector('.notification-icon svg');
     expect(icon?.innerHTML).not.toContain(BELL_PATH);
   });
 
-  it('transcription_status renders the OpenTranscribe logo, not a generic glyph (item 14)', () => {
+  it('transcription_status renders the OpenTranscribe logo, not a generic glyph (item 14)', async () => {
     setNotifications([baseNotification({ id: 'tx', type: 'transcription_status' })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     const img = container.querySelector('.notification-icon img');
     expect(img).not.toBeNull();
@@ -138,10 +169,10 @@ describe('icon coverage — every mapped type renders its own glyph, not the bel
     expect(container.querySelector('.notification-icon svg')).toBeNull();
   });
 
-  it('summarization_status keeps the file-text glyph (only transcription gets the logo)', () => {
+  it('summarization_status keeps the file-text glyph (only transcription gets the logo)', async () => {
     setNotifications([baseNotification({ id: 'sm', type: 'summarization_status' })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     expect(container.querySelector('.notification-icon img')).toBeNull();
     expect(container.querySelector('.notification-icon svg path')?.getAttribute('d')).toContain(
@@ -149,23 +180,23 @@ describe('icon coverage — every mapped type renders its own glyph, not the bel
     );
   });
 
-  it('topic and tag notifications share one glyph, and collections use the folder glyph (item 14)', () => {
-    const glyph = (type: NotificationType) => {
+  it('topic and tag notifications share one glyph, and collections use the folder glyph (item 14)', async () => {
+    const glyph = async (type: NotificationType) => {
       setNotifications([baseNotification({ id: type, type })]);
-      const { container, unmount } = render(NotificationsPanel);
+      const { container, unmount } = await renderPanel();
       const html = container.querySelector('.notification-icon svg')?.innerHTML;
       unmount();
       return html;
     };
-    expect(glyph('topic_extraction_status')).toBe(glyph('auto_label_status'));
-    expect(glyph('topic_extraction_status')).toContain('M20.59 13.41');
-    expect(glyph('collection_shared')).toContain('M22 19a2 2 0 0 1-2 2H4');
+    expect(await glyph('topic_extraction_status')).toBe(await glyph('auto_label_status'));
+    expect(await glyph('topic_extraction_status')).toContain('M20.59 13.41');
+    expect(await glyph('collection_shared')).toContain('M22 19a2 2 0 0 1-2 2H4');
   });
 
-  it('an unmapped type falls back to the bell on purpose (not a bug — most union members have no icon yet)', () => {
+  it('an unmapped type falls back to the bell on purpose (not a bug — most union members have no icon yet)', async () => {
     setNotifications([baseNotification({ id: 'x', type: 'echo' as NotificationType })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     const icon = container.querySelector('.notification-icon svg');
     expect(icon?.innerHTML).toContain(BELL_PATH);
@@ -173,12 +204,12 @@ describe('icon coverage — every mapped type renders its own glyph, not the bel
 });
 
 describe('getNotificationStatus fallback (issue #753 J3 / #569 N2)', () => {
-  it('colours a row from top-level notification.status when data.status is absent', () => {
+  it('colours a row from top-level notification.status when data.status is absent', async () => {
     // This is exactly the shape `addNotification` callers (audio extraction,
     // the #569 download bridge) produce when they pass no `data` object.
     setNotifications([baseNotification({ status: 'completed' })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     const item = container.querySelector('.notification-item');
     expect(item?.className).toContain('status-success');
@@ -189,85 +220,21 @@ describe('getNotificationStatus fallback (issue #753 J3 / #569 N2)', () => {
     expect(item?.className).not.toContain('status-default');
   });
 
-  it('still prefers data.status when both are present and they disagree', () => {
+  it('still prefers data.status when both are present and they disagree', async () => {
     setNotifications([baseNotification({ status: 'processing', data: { status: 'completed' } })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     expect(container.querySelector('.notification-item.status-success')).not.toBeNull();
     expect(container.querySelector('.notification-item.status-info')).toBeNull();
   });
 });
 
-describe('duration chip (issue #753 item 1)', () => {
-  it('renders "completed in" using data.duration_seconds, formatted compactly', () => {
-    setNotifications([
-      baseNotification({
-        status: 'completed',
-        data: { status: 'completed', duration_seconds: 134 },
-      }),
-    ]);
-
-    const { container } = render(NotificationsPanel);
-
-    const chip = container.querySelector('.duration-chip');
-    expect(chip?.textContent).toContain('notifications.completedIn');
-    expect(chip?.textContent).toContain('2m 14s');
-  });
-
-  it('does NOT render for a still-processing notification even if duration_seconds is somehow present', () => {
-    setNotifications([
-      baseNotification({
-        status: 'processing',
-        data: { status: 'processing', duration_seconds: 134 },
-      }),
-    ]);
-
-    const { container } = render(NotificationsPanel);
-
-    expect(container.querySelector('.duration-chip')).toBeNull();
-  });
-
-  it('does NOT render when duration_seconds is absent — no fabricated "0s"', () => {
-    setNotifications([baseNotification({ status: 'completed', data: { status: 'completed' } })]);
-
-    const { container } = render(NotificationsPanel);
-
-    expect(container.querySelector('.duration-chip')).toBeNull();
-  });
-
-  it('THE TRAP: uses data.duration_seconds, never data.duration (the recording length)', () => {
-    // `file_updated`'s `duration`/`formatted_duration` is how long the
-    // RECORDING is — a 90-minute meeting transcribed in 4 minutes. If this
-    // chip ever reads `duration` instead of `duration_seconds`, it renders a
-    // plausible-looking but completely wrong number on every file. A
-    // notification carrying both, with wildly different values, is the only
-    // way to prove which field actually drives the chip.
-    setNotifications([
-      baseNotification({
-        status: 'completed',
-        data: {
-          status: 'completed',
-          duration_seconds: 45, // real processing time: 45s
-          duration: 5400, // recording length: 90 minutes — must NOT be used
-        },
-      }),
-    ]);
-
-    const { container } = render(NotificationsPanel);
-
-    const chip = container.querySelector('.duration-chip');
-    expect(chip?.textContent).toContain('45s');
-    expect(chip?.textContent).not.toContain('1h 30m');
-    expect(chip?.textContent).not.toContain('90');
-  });
-});
-
 describe('sanity: the store subscription this file depends on is exercised', () => {
-  it('renders one row per notification and reflects clearAll', () => {
+  it('renders one row per notification and reflects clearAll', async () => {
     setNotifications([baseNotification({ id: 'a' }), baseNotification({ id: 'b' })]);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     expect(container.querySelectorAll('.notification-item')).toHaveLength(2);
     expect(currentNotifications()).toHaveLength(2);
@@ -282,7 +249,7 @@ describe('retention controls (issue #1217)', () => {
   });
 
   it("offers the three choices, defaults to '24 hours after reading', and persists a change", async () => {
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     const select = container.querySelector<HTMLSelectElement>('.retention-setting select');
     expect(select?.value).toBe('read24h');
@@ -298,8 +265,8 @@ describe('retention controls (issue #1217)', () => {
     expect(localStorage.getItem('opentr:notificationRetention')).toBe('never');
   });
 
-  it('says nothing when no older notifications were cleared', () => {
-    const { container } = render(NotificationsPanel);
+  it('says nothing when no older notifications were cleared', async () => {
+    const { container } = await renderPanel();
 
     expect(container.querySelector('.cleared-notice')?.textContent?.trim()).toBe('');
     expect(container.querySelector('.cleared-notice')?.getAttribute('aria-live')).toBe('polite');
@@ -310,7 +277,7 @@ describe('retention controls (issue #1217)', () => {
     showNotificationsPanel.set(false);
     showNotificationsPanel.set(true);
 
-    const { container } = render(NotificationsPanel);
+    const { container } = await renderPanel();
 
     const notice = container.querySelector('.cleared-notice');
     expect(notice?.textContent).toContain('notifications.clearedNotice');
@@ -322,5 +289,185 @@ describe('retention controls (issue #1217)', () => {
     showNotificationsPanel.set(false);
     showNotificationsPanel.set(true);
     expect(get(clearedNotice)).toBe(0);
+  });
+});
+
+describe('processing card: one card per file', () => {
+  const NOW = Date.now();
+
+  function fileRecord(type: NotificationType, status: string, over: Partial<Notification> = {}) {
+    return baseNotification({
+      id: `${type}-${status}`,
+      type,
+      status: status as Notification['status'],
+      dismissible: status !== 'processing',
+      timestamp: new Date(NOW),
+      ...over,
+      data: { file_id: 'f1', filename: 'meeting.mp3', status, ...(over.data ?? {}) },
+    });
+  }
+
+  const txDone = (over: Partial<Notification> = {}) =>
+    fileRecord('transcription_status', 'completed', {
+      startedAt: NOW - 200_000,
+      finishedAt: NOW - 1_000,
+      progress: { current: 100, total: 100, percentage: 100 },
+      ...over,
+      data: { duration_seconds: 140, ...(over.data ?? {}) },
+    });
+
+  it('renders one card and one badge count for four events of one file', async () => {
+    setNotifications([
+      fileRecord('topic_extraction_status', 'processing'),
+      fileRecord('summarization_status', 'processing'),
+      fileRecord('redaction_status', 'done'),
+      txDone(),
+    ]);
+
+    const { container } = await renderPanel();
+
+    expect(container.querySelectorAll('.notification-item')).toHaveLength(1);
+    expect(container.querySelectorAll('.processing-job')).toHaveLength(1);
+    expect(container.querySelector('.unread-badge')?.textContent).toBe('1');
+    expect(container.querySelector('.job-file')?.textContent).toBe('meeting.mp3');
+  });
+
+  it('the overall bar finishes without LLM tasks when no LLM is configured', async () => {
+    setNotifications([txDone()]);
+
+    const { container } = await renderPanel();
+
+    const bar = container.querySelector('[role="progressbar"]');
+    expect(bar?.getAttribute('aria-valuenow')).toBe('100');
+    expect(bar?.getAttribute('aria-label')).toContain('meeting.mp3');
+    expect(container.textContent).not.toContain('notifications.job.task.summary');
+  });
+
+  it('with an LLM configured the summary and topic chips wait and the bar holds at 67%', async () => {
+    llmAvailable.set(true);
+    setNotifications([txDone()]);
+
+    const { container } = await renderPanel();
+
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe(
+      '67'
+    );
+    const chipNames = [...container.querySelectorAll('.job-chip .visually-hidden')].map(
+      (c) => c.textContent
+    );
+    expect(
+      chipNames.some(
+        (n) =>
+          n?.includes('notifications.job.task.summary') &&
+          n.includes('notifications.job.state.pending')
+      )
+    ).toBe(true);
+
+    llmAvailable.set(false);
+    await tick();
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe(
+      '100'
+    );
+  });
+
+  it('the details toggle is wired for assistive tech and lists task durations', async () => {
+    setNotifications([txDone()]);
+
+    const { container } = await renderPanel();
+    const toggle = container.querySelector<HTMLButtonElement>('.job-toggle')!;
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('.job-breakdown')).toBeNull();
+
+    await fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const region = container.querySelector('.job-breakdown');
+    expect(region?.id).toBe(toggle.getAttribute('aria-controls'));
+    expect(region?.textContent).toContain('notifications.job.task.transcription');
+    expect(region?.textContent).toContain('2m 20s');
+  });
+
+  it('cannot be dismissed while any task runs; once finished, dismiss removes every record', async () => {
+    const summary = fileRecord('summarization_status', 'processing');
+    setNotifications([summary, txDone()]);
+    const { container } = await renderPanel();
+
+    expect(container.querySelector<HTMLButtonElement>('.notification-dismiss')?.disabled).toBe(
+      true
+    );
+
+    setNotifications([fileRecord('summarization_status', 'completed'), txDone()]);
+    await tick();
+    await fireEvent.click(container.querySelector('.notification-dismiss')!);
+
+    expect(removeNotification.mock.calls.map((c) => c[0]).sort()).toEqual(
+      ['summarization_status-completed', 'transcription_status-completed'].sort()
+    );
+  });
+
+  it('opening the file marks every unread record read, navigates and closes the panel', async () => {
+    setNotifications([fileRecord('summarization_status', 'completed'), txDone({ read: true })]);
+    const { container } = await renderPanel();
+
+    await fireEvent.click(container.querySelector('.job-file')!);
+
+    expect(markAsRead.mock.calls.map((c) => c[0])).toEqual(['summarization_status-completed']);
+    expect(goto).toHaveBeenCalledWith('/files/f1');
+    expect(get(showNotificationsPanel)).toBe(false);
+  });
+
+  it('announces the outcome once, politely, and never a progress tick', async () => {
+    const running = (p: number) =>
+      fileRecord('transcription_status', 'processing', {
+        startedAt: NOW - 10_000,
+        progress: { current: p, total: 100, percentage: p },
+      });
+    setNotifications([running(10)]);
+    const { container } = await renderPanel();
+    const region = container.querySelector('.job-announcer');
+
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent).toBe('');
+
+    setNotifications([running(60)]);
+    await tick();
+    expect(region?.textContent).toBe('');
+
+    setNotifications([txDone()]);
+    await tick();
+    expect(region?.textContent).toContain('notifications.job.announceDone');
+    expect(region?.textContent).toContain('meeting.mp3');
+  });
+
+  it('does not announce a card that was already finished when the panel opened', async () => {
+    setNotifications([txDone()]);
+    const { container } = await renderPanel();
+    expect(container.querySelector('.job-announcer')?.textContent).toBe('');
+  });
+});
+
+describe('bundle: the card model stays out of the root layout', () => {
+  // The panel shell is mounted by routes/+layout.svelte and the websocket store is imported
+  // by it too, so anything they import statically is paid on every page load (bundle budget
+  // gate, frontend/CLAUDE.md). The card model and its components load on first open.
+  const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8');
+  const STATIC_IMPORT = /^\s*import\s+(?!type\b)[^;]*?from\s+['"]([^'"]+)['"]/gm;
+  const staticImports = (source: string) => [...source.matchAll(STATIC_IMPORT)].map((m) => m[1]);
+
+  it('the shell loads its body with a dynamic import and imports no card code statically', () => {
+    const shell = read('NotificationsPanel.svelte');
+    expect(shell).toContain("import('./notifications/NotificationsPanelBody.svelte')");
+    expect(staticImports(shell).filter((s) => s.includes('notifications/'))).toEqual([]);
+  });
+
+  it('the websocket store and retention import only the small grouping module', () => {
+    for (const rel of ['../stores/websocket.ts', '../lib/notifications/retention.ts']) {
+      const imports = staticImports(read(rel));
+      expect(imports.some((s) => s.endsWith('jobGrouping'))).toBe(true);
+      expect(imports.filter((s) => s.endsWith('processingJob') || s.endsWith('display'))).toEqual(
+        []
+      );
+    }
   });
 });

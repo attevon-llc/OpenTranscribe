@@ -335,6 +335,18 @@ export interface ContextEstimate {
   warning_level: 'ok' | 'warn' | 'over';
 }
 
+/**
+ * The reply budget a turn would use for one model (`GET /chat/answer-budget`).
+ * Computed server-side by the same function the stream uses, so "default" is
+ * exactly what an unset conversation sends and `max_tokens` is where a larger
+ * override is clamped.
+ */
+export interface AnswerBudget {
+  default_tokens: number;
+  max_tokens: number;
+  context_window: number;
+}
+
 export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;

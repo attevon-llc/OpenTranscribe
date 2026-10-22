@@ -28,6 +28,15 @@
       .join(' › ');
   }
 
+  // Same progressive disclosure as a transcript hit: a summary can match 8+ leaves, which
+  // pushed every transcript result below the fold (docs/design/search_results_ux_audit.md).
+  const MAX_VISIBLE = 2;
+  let expanded = false;
+
+  $: visibleMatches = expanded ? hit.matches : hit.matches.slice(0, MAX_VISIBLE);
+  $: hiddenCount = hit.matches.length - MAX_VISIBLE;
+  $: matchListId = `summary-match-list-${hit.file_uuid}`;
+
   function openMatch(match: SummarySectionMatch) {
     dispatch('openMatch', {
       fileUuid: hit.file_uuid,
@@ -54,23 +63,20 @@
         <line x1="16" y1="13" x2="8" y2="13"></line>
         <line x1="16" y1="17" x2="8" y2="17"></line>
       </svg>
-      {hit.title}
+      <span dir="auto">{hit.title}</span>
     </a>
     {#if hit.matches.length > 0}
-      <span class="summary-match-count">
+      <p class="summary-match-count">
         {hit.matches.length === 1
           ? $t('search.summaryMatchFound', { count: hit.matches.length })
           : $t('search.summaryMatchesFound', { count: hit.matches.length })}
-      </span>
+      </p>
     {/if}
-    <button type="button" class="view-summary-btn" on:click={openSummary}>
-      {$t('search.viewSummary')}
-    </button>
   </div>
 
   {#if hit.matches.length > 0}
-    <div class="summary-match-list">
-      {#each hit.matches as match (match.key_path)}
+    <div class="summary-match-list" id={matchListId}>
+      {#each visibleMatches as match (match.key_path)}
         <button
           type="button"
           class="summary-match-row"
@@ -78,89 +84,74 @@
           aria-label="{$t('search.jumpToSummarySection')}: {formatKeyPath(match.key_path)}"
         >
           <span class="summary-match-path">{formatKeyPath(match.key_path)}</span>
-          <span class="summary-match-snippet">{match.snippet}</span>
+          <span class="summary-match-snippet" dir="auto">{match.snippet}</span>
         </button>
       {/each}
     </div>
   {/if}
+
+  <div class="summary-actions">
+    {#if hiddenCount > 0}
+      <button
+        type="button"
+        class="text-btn show-more"
+        aria-expanded={expanded}
+        aria-controls={matchListId}
+        on:click={() => (expanded = !expanded)}
+      >
+        {expanded ? $t('search.showLess') : $t('search.showMoreSections', { count: hiddenCount })}
+      </button>
+    {/if}
+    <button type="button" class="text-btn view-summary-btn" on:click={openSummary}>
+      {$t('search.viewSummary')}
+    </button>
+  </div>
 </article>
 
 <style>
   .summary-result-card {
-    background: var(--surface-color, #fff);
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 10px;
-    padding: 1rem 1.25rem;
-    margin-bottom: 0.75rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
-  }
-
-  .summary-result-card:hover {
-    border-color: var(--primary-color);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-  }
-
-  .summary-result-header {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.75rem;
+    padding: 0.875rem 1rem;
     margin-bottom: 0.5rem;
+    border-radius: 10px;
+    transition: background-color 0.15s;
+  }
+
+  .summary-result-card:hover,
+  .summary-result-card:focus-within {
+    background: var(--hover-color);
   }
 
   .summary-result-title {
+    display: block;
+    min-width: 0;
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     text-decoration: none;
-    line-height: 1.3;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .media-type-icon {
-    flex-shrink: 0;
-    opacity: 0.7;
+    line-height: var(--line-height-tight);
+    overflow-wrap: break-word;
   }
 
   .summary-result-title:hover {
     text-decoration: underline;
   }
 
+  .media-type-icon {
+    vertical-align: -2px;
+    margin-inline-end: 0.375rem;
+    opacity: 0.7;
+  }
+
   .summary-match-count {
-    font-size: 0.75rem;
-    color: var(--text-secondary, #6b7280);
-    white-space: nowrap;
-  }
-
-  .view-summary-btn {
-    flex-shrink: 0;
-    padding: 0.375rem 0.75rem;
-    background: none;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 6px;
-    color: var(--primary-on-surface);
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .view-summary-btn:hover {
-    background: rgba(var(--primary-color-rgb), 0.08);
-    border-color: var(--primary-color);
-  }
-
-  :global([data-theme='dark']) .view-summary-btn:hover {
-    background: rgba(var(--primary-color-rgb), 0.12);
+    margin: 0.25rem 0 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
   }
 
   .summary-match-list {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.25rem;
   }
 
   .summary-match-row {
@@ -169,66 +160,86 @@
     align-items: flex-start;
     gap: 0.125rem;
     width: 100%;
-    padding: 0.5rem 0.625rem;
-    background: var(--hover-color, #f8fafc);
-    border: 1px solid transparent;
-    border-radius: 6px;
+    padding: 0.375rem 0.625rem;
+    background: none;
+    border: none;
+    border-inline-start: 2px solid var(--border-color);
+    border-radius: 0;
+    box-shadow: none;
     text-align: start;
     cursor: pointer;
-    transition: all 0.15s;
+    transition:
+      border-color 0.15s,
+      background-color 0.15s;
   }
 
-  .summary-match-row:hover,
-  .summary-match-row:focus-visible {
-    border-color: var(--primary-color);
+  .summary-match-row:hover {
+    border-inline-start-color: var(--primary-color);
     background: rgba(var(--primary-color-rgb), 0.06);
+    box-shadow: none;
+    transform: none;
   }
 
-  :global([data-theme='dark']) .summary-match-row {
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  :global([data-theme='dark']) .summary-match-row:hover,
-  :global([data-theme='dark']) .summary-match-row:focus-visible {
-    background: rgba(var(--primary-color-rgb), 0.1);
+  .summary-match-row:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
   .summary-match-path {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
   }
 
+  /* Body text is regular; without this it inherits the global button's 500. */
   .summary-match-snippet {
-    font-size: 0.8125rem;
-    line-height: 1.5;
-    color: var(--text-color, #374151);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-body);
+    color: var(--text-color);
     overflow-wrap: break-word;
     word-break: break-word;
   }
 
+  .summary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .text-btn {
+    padding: 0.125rem 0;
+    background: none;
+    border: none;
+    /* form-elements.css styles every bare <button> with a drop shadow and a hover
+       scale + fill; a text link-button wants none of them. */
+    box-shadow: none;
+    color: var(--primary-on-surface);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+
+  .text-btn:hover {
+    text-decoration: underline;
+    background: none;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .text-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
   @media (max-width: 768px) {
     .summary-result-card {
-      padding: 0.75rem;
-    }
-
-    .summary-result-header {
-      flex-direction: column;
-      align-items: flex-start;
+      padding: 0.75rem 0.5rem;
     }
 
     .summary-result-title {
-      font-size: 0.9375rem;
-      word-break: break-word;
-      overflow-wrap: break-word;
-    }
-
-    .view-summary-btn {
-      align-self: flex-start;
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
+      font-size: var(--font-size-body);
     }
   }
 </style>

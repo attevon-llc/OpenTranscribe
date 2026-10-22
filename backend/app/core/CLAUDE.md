@@ -79,7 +79,9 @@ should import `app.api` or `app.services` at module scope.
   reconnects a dead pubsub socket and re-issues `parse_response(block=True)`, which reads with
   `timeout=None` by design and re-wedges the loop (reproduced with py-spy).
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
-  break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
+  break import cycles. `TranscriptionStage` is the wire vocabulary of
+  `transcription_status.stage`, shared by the engine and the task layer (see
+  `app/tasks/CLAUDE.md`). `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,
   and the chat path that gates on it).
 - **`LLM_REASONING_*` in `constants.py` are a probe's INSTRUMENT SETTINGS, not tunables** —

@@ -17,8 +17,9 @@
  */
 
 import createDOMPurify from 'dompurify';
-import { marked } from 'marked';
+import { Marked, type Token } from 'marked';
 
+import { chatMarkdownExtensions, isMathLoaded, loadChatMath } from './chatMarkdownExtensions';
 import { escapeHtml } from './sanitizeHtml';
 import type { ChatSourceKind } from '$lib/types/chat';
 
@@ -59,10 +60,84 @@ const ALLOWED_TAGS = [
   'th',
   'td',
   'span',
+  // MathML, as KaTeX emits it with `output: 'mathml'` (see chatMarkdownExtensions.ts).
+  // `semantics`/`annotation`/`annotation-xml` are absent: DOMPurify itself classes them as
+  // disallowed MathML (annotation-xml can carry an HTML subtree). renderMath unwraps them.
+  'math',
+  'mrow',
+  'mi',
+  'mn',
+  'mo',
+  'ms',
+  'mtext',
+  'mspace',
+  'msup',
+  'msub',
+  'msubsup',
+  'mfrac',
+  'msqrt',
+  'mroot',
+  'mover',
+  'munder',
+  'munderover',
+  'mtable',
+  'mtr',
+  'mtd',
+  'mstyle',
+  'mpadded',
+  'mphantom',
+  'menclose',
 ];
 
-// `class` is allowed only so `language-*` survives on code blocks.
-const ALLOWED_ATTR = ['href', 'class'];
+// `class` survives only as the allowlisted tokens in CLASS_TOKEN below.
+/**
+ * MathML layout attributes. Colour attributes (mathcolor/mathbackground) are excluded.
+ *
+ * They must ALSO be registered as URI-safe: DOMPurify validates the value of any attribute
+ * it does not know to be inert against ALLOWED_URI_REGEXP, and ours admits only
+ * http(s)/mailto, so `display="block"` would otherwise be silently stripped.
+ */
+const MATHML_ATTR = [
+  'alttext',
+  'display',
+  'mathvariant',
+  'stretchy',
+  'fence',
+  'separator',
+  'lspace',
+  'rspace',
+  'accent',
+  'accentunder',
+  'largeop',
+  'movablelimits',
+  'symmetric',
+  'minsize',
+  'maxsize',
+  'linethickness',
+  'scriptlevel',
+  'displaystyle',
+  'columnalign',
+  'columnspacing',
+  'columnlines',
+  'rowalign',
+  'rowspacing',
+  'rowlines',
+  'width',
+  'height',
+  'depth',
+  'voffset',
+  'notation',
+];
+
+const ALLOWED_ATTR = ['href', 'class', ...MATHML_ATTR];
+
+/**
+ * Class tokens model output may keep: a fence's `language-*`, highlight.js token classes,
+ * and the math wrappers. Everything else is dropped, because `.btn` and friends are GLOBAL
+ * classes in form-elements.css — without this, model output could render text styled as
+ * real application chrome.
+ */
+const CLASS_TOKEN = /^(?:language-[\w-]+|hljs(?:-[\w-]+)?|chat-math(?:-display)?)$/;
 
 /** http(s) and mailto only — relative hrefs are rejected on purpose. */
 const ALLOWED_URI_REGEXP = /^(?:https?:|mailto:)/i;
@@ -70,32 +145,61 @@ const ALLOWED_URI_REGEXP = /^(?:https?:|mailto:)/i;
 let hookInstalled = false;
 
 /**
- * Force safe link attributes on anchors, and keep `class` to `language-*`.
+ * Force safe link attributes on anchors, keep `href` on anchors only, and filter
+ * `class` down to CLASS_TOKEN.
  *
  * Registered on the chat-only instance above, so it cannot affect other
- * DOMPurify callers. The class restriction matters because `.btn` and friends
- * are GLOBAL classes in form-elements.css — without it, model output could
- * render text styled as real application chrome.
+ * DOMPurify callers. `href` is removed from every non-anchor because MathML
+ * elements accept it too (Firefox makes them clickable) and they would escape the
+ * target/rel hardening below.
  */
 function installHook(): void {
   if (hookInstalled) return;
   chatPurify.addHook('afterSanitizeAttributes', (node: Element) => {
-    if (node.tagName === 'A' && node.hasAttribute('href')) {
-      node.setAttribute('target', '_blank');
-      node.setAttribute('rel', 'noopener noreferrer nofollow');
+    if (!node.getAttribute) return;
+    if (node.tagName === 'A') {
+      if (node.hasAttribute('href')) {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer nofollow');
+      }
+    } else {
+      node.removeAttribute('href');
     }
-    const className = node.getAttribute?.('class');
-    if (className && !/^language-[\w-]+$/.test(className)) {
-      node.removeAttribute('class');
+    const className = node.getAttribute('class');
+    if (className !== null) {
+      const kept = className.split(/\s+/).filter((token) => CLASS_TOKEN.test(token));
+      if (kept.length) node.setAttribute('class', kept.join(' '));
+      else node.removeAttribute('class');
     }
   });
   hookInstalled = true;
 }
 
-marked.setOptions({
-  gfm: true,
-  breaks: true,
-});
+/**
+ * A dedicated parser instance — like the DOMPurify one above — so these
+ * extensions never leak into any other `marked` user.
+ */
+const chatMarked = new Marked({ gfm: true, breaks: true }, chatMarkdownExtensions);
+
+export { loadChatMath };
+
+/**
+ * True when `markdown` contains math that will render once KaTeX loads, i.e. the
+ * caller should render again after `loadChatMath()` resolves. Lexes rather than
+ * pattern-matching, so `$` in code or currency never counts.
+ */
+export function mathPending(markdown: string | null | undefined): boolean {
+  if (!markdown || isMathLoaded()) return false;
+  let found = false;
+  try {
+    chatMarked.walkTokens(chatMarked.lexer(markdown), (token: Token) => {
+      if (token.type === 'chatMath') found = true;
+    });
+  } catch {
+    return false;
+  }
+  return found;
+}
 
 /**
  * Render assistant markdown to sanitized HTML safe for `{@html}`.
@@ -109,8 +213,8 @@ export function renderChatMarkdown(markdown: string | null | undefined): string 
 
   let parsed: string;
   try {
-    // `marked.parse` is sync unless async options are set, which we never set.
-    parsed = marked.parse(markdown) as string;
+    // `parse` is sync unless async options are set, which we never set.
+    parsed = chatMarked.parse(markdown) as string;
   } catch {
     // A half-written table mid-stream shouldn't blank the message; fall back to
     // escaped plain text until the next tick completes the markdown.
@@ -121,6 +225,7 @@ export function renderChatMarkdown(markdown: string | null | undefined): string 
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOWED_URI_REGEXP,
+    ADD_URI_SAFE_ATTR: MATHML_ATTR,
     KEEP_CONTENT: true,
   }) as unknown as string;
 }

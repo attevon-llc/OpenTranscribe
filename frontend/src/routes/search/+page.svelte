@@ -6,10 +6,9 @@
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence, type SearchSource, SEARCH_SOURCES } from '$stores/search';
-  import SearchResultCard from '$components/search/SearchResultCard.svelte';
+  import SearchResultsBody from '$components/search/SearchResultsBody.svelte';
   import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';
-  import SummaryResultCard from '$components/search/SummaryResultCard.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import FilterPanelToggle from '$components/ui/FilterPanelToggle.svelte';
@@ -17,7 +16,6 @@
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
-  import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
@@ -41,6 +39,7 @@
   // *after* a newer one and overwrite the results with stale hits. Aborting the
   // previous request makes the most recent call the only one that can win.
   let searchController: AbortController | null = null;
+  let removeViewportListeners: (() => void) | null = null;
 
   // FilterSidebar state
   let filterSelectedTags: string[] = [];
@@ -65,7 +64,18 @@
 
   // Sticky preview player state
   let previewData: { fileUuid: string; title: string; startTime: number; speaker: string; contentType: string } | null = null;
-  let activePreview: { fileUuid: string; startTime: number } | null = null;
+  // `playing` follows the real player (Plyr play/pause; `ended` also reports pause), so a
+  // result card shows pause only while audio is actually running.
+  let activePreview: { fileUuid: string; startTime: number; playing: boolean } | null = null;
+  let previewPlayer: FloatingPreviewPlayer | null = null;
+  // Each click bumps this; a stream-URL fetch that resolves after a newer click is dropped.
+  let previewRequest = 0;
+
+  // The knowledge-panel aside needs ~44rem column + 2rem gap + 19rem panel of CONTENT width;
+  // the filter sidebar takes 320px open / 50px collapsed (docs/design/search_results_ux_audit.md).
+  let wideViewport = false;
+  let midViewport = false;
+  $: panelMode = showFilters ? wideViewport : midViewport;
   let previewCurrentTime = 0;
   let previewCurrentSpeaker = '';
   let previewUrlRefresher: { stop: () => void } | null = null;
@@ -210,6 +220,20 @@
     requestAnimationFrame(() => {
       sidebarMounted = true;
     });
+
+    const wideMq = window.matchMedia('(min-width: 1440px)');
+    const midMq = window.matchMedia('(min-width: 1180px)');
+    const syncViewport = () => {
+      wideViewport = wideMq.matches;
+      midViewport = midMq.matches;
+    };
+    syncViewport();
+    wideMq.addEventListener('change', syncViewport);
+    midMq.addEventListener('change', syncViewport);
+    removeViewportListeners = () => {
+      wideMq.removeEventListener('change', syncViewport);
+      midMq.removeEventListener('change', syncViewport);
+    };
 
     // Check neural search availability
     axiosInstance.get('/search/models/neural').then((res) => {
@@ -468,6 +492,11 @@
       return;
     }
 
+    // Mark the new occurrence active right away (not playing yet), so the previous card
+    // drops its pause state at the click rather than after the URL round trip.
+    const request = ++previewRequest;
+    activePreview = { fileUuid: data.fileUuid, startTime: data.startTime, playing: false };
+
     // Tear down existing preview to force full re-render
     previewData = null;
     await tick();
@@ -479,30 +508,50 @@
     }
 
     // Fetch presigned URL before rendering the media element
+    let mediaUrl: string;
     try {
       clearMediaUrlCache(data.fileUuid);
-      previewMediaUrl = await getMediaStreamUrl(data.fileUuid, 'video');
-
-      // Set up automatic URL refresh to prevent 401 on long playback, using the URL's
-      // real expiry rather than a hardcoded interval.
-      const info = getCachedUrlInfo(data.fileUuid, 'video');
-      const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
-      previewUrlRefresher = createUrlRefresher(
-        data.fileUuid,
-        (newUrl) => {
-          previewMediaUrl = newUrl;
-        },
-        expiresIn
-      );
+      mediaUrl = await getMediaStreamUrl(data.fileUuid, 'video');
     } catch (err) {
       console.error('Failed to get media stream URL:', err);
+      if (request === previewRequest) activePreview = null;
       return;
     }
+    if (request !== previewRequest) return;
+    previewMediaUrl = mediaUrl;
+
+    // Set up automatic URL refresh to prevent 401 on long playback, using the URL's
+    // real expiry rather than a hardcoded interval.
+    const info = getCachedUrlInfo(data.fileUuid, 'video');
+    const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
+    previewUrlRefresher = createUrlRefresher(
+      data.fileUuid,
+      (newUrl) => {
+        previewMediaUrl = newUrl;
+      },
+      expiresIn
+    );
 
     previewData = data;
-    activePreview = { fileUuid: data.fileUuid, startTime: data.startTime };
     previewCurrentTime = data.startTime;
     previewCurrentSpeaker = data.speaker || '';
+  }
+
+  function setPreviewPlaying(playing: boolean) {
+    if (activePreview && activePreview.playing !== playing) {
+      activePreview = { ...activePreview, playing };
+    }
+  }
+
+  // The result card's control for the clip already loaded: pause it, or resume it.
+  function handleTogglePlayback() {
+    const player = previewPlayer?.getPlayer();
+    if (!player || !activePreview) return;
+    if (activePreview.playing) {
+      player.pause();
+    } else {
+      void player.play();
+    }
   }
 
   function handleViewTranscript(event: CustomEvent) {
@@ -523,6 +572,7 @@
       previewUrlRefresher.stop();
       previewUrlRefresher = null;
     }
+    previewRequest++;
     previewData = null;
     activePreview = null;
   }
@@ -545,13 +595,11 @@
     return (ms / 1000).toFixed(2);
   }
 
-  // Check if all results are semantic-only (for informational banner)
-  $: allSemanticOnly = $searchStore.results.length > 0 && $searchStore.results.every(r => r.semantic_only);
-
   onDestroy(() => {
     saveState();
     searchController?.abort();
     searchController = null;
+    removeViewportListeners?.();
     if (previewUrlRefresher) {
       previewUrlRefresher.stop();
       previewUrlRefresher = null;
@@ -738,86 +786,34 @@
             <p class="state-hint">{$t('search.noSourcesSelectedHint')}</p>
           </div>
         {:else}
-          <!-- Issue #760: sections render side by side, one per selected source
-               plane (OR-union — never AND-intersected). `.summary-results-list`
-               is a SIBLING of `.results-list`, never nested inside it —
-               test_search.py's `.results-list > *` count must stay a pure
-               transcript-hit count with both sections on screen. -->
-          {#if showSummarySection}
-            <div class="summary-results-section">
-              <h2 class="section-heading">{$t('search.summaryResultsHeading')}</h2>
-              {#if $searchStore.summaryUnavailable}
-                <div class="summary-unavailable-notice">
-                  <p class="state-title">{$t('search.summaryUnavailableTitle')}</p>
-                  <p class="state-hint">{$t('search.summaryUnavailableBody')}</p>
-                </div>
-              {:else if $searchStore.summaryResults.length === 0}
-                <p class="summary-results-info">
-                  {$t('search.noSummaryResults', { query: $searchStore.query })}
-                </p>
-              {:else}
-                <p class="summary-results-info">
-                  {$t('search.summariesFound', { count: $searchStore.summaryTotal })}
-                </p>
-                <div class="summary-results-list">
-                  {#each $searchStore.summaryResults as hit (hit.file_uuid)}
-                    <SummaryResultCard {hit} on:openMatch={handleOpenSummaryMatch} />
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
-
-          {#if showTranscriptSection}
-            <div class="transcript-results-section">
-              {#if showSummarySection}
-                <h2 class="section-heading">{$t('search.transcriptResultsHeading')}</h2>
-              {/if}
-              <!-- Smart mode only: Exact mode is literal BM25 keyword matching and is
-                   untouched by the fusion ranking #461 measured. Kept OUTSIDE
-                   .results-list because test_search.py counts `.results-list > *`. -->
-              {#if $searchStore.searchMode === 'hybrid'}
-                <div class="quality-notice-slot">
-                  <RetrievalQualityNotice surface="search" />
-                </div>
-              {/if}
-
-              {#if $searchStore.results.length === 0}
-                <div class="state-container">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  </svg>
-                  <p class="state-title">{$t('searchPage.noResults', { query: $searchStore.query })}</p>
-                  <p class="state-hint">{$t('search.noResultsHint')}</p>
-                </div>
-              {:else}
-                <div class="results-list">
-                    {#if allSemanticOnly}
-                      <div class="no-keyword-notice">
-                        <p>{$t('search.noKeywordMatches')}</p>
-                      </div>
-                    {/if}
-
-                    {#each $searchStore.results as hit (hit.file_uuid)}
-                      <SearchResultCard
-                        {hit}
-                        {activePreview}
-                        on:preview={handlePreview}
-                        on:viewTranscript={handleViewTranscript}
-                      />
-                    {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
+          <!-- Issue #760: one collapsible section per selected source plane (OR-union, never
+               AND-intersected). Markup and the E2E selectors it carries live in
+               SearchResultsBody. -->
+          <SearchResultsBody
+            query={$searchStore.query}
+            searchMode={$searchStore.searchMode}
+            {showSummarySection}
+            {showTranscriptSection}
+            results={$searchStore.results}
+            summaryResults={$searchStore.summaryResults}
+            summaryTotal={$searchStore.summaryTotal}
+            summaryUnavailable={$searchStore.summaryUnavailable}
+            {activePreview}
+            {panelMode}
+            on:openMatch={handleOpenSummaryMatch}
+            on:preview={handlePreview}
+            on:togglePlayback={handleTogglePlayback}
+            on:viewTranscript={handleViewTranscript}
+          />
 
           {#if $searchStore.totalPages > 1}
-            <SearchPagination
-              page={$searchStore.page}
-              totalPages={$searchStore.totalPages}
-              on:pageChange={handlePageChange}
-            />
+            <div class="pagination-slot">
+              <SearchPagination
+                page={$searchStore.page}
+                totalPages={$searchStore.totalPages}
+                on:pageChange={handlePageChange}
+              />
+            </div>
           {/if}
         {/if}
       </div>
@@ -827,6 +823,7 @@
   <!-- Sticky Floating Preview Player -->
   {#if previewData}
     <FloatingPreviewPlayer
+      bind:this={previewPlayer}
       title={previewData.title}
       subtitle={previewCurrentSpeaker}
       currentTime={previewCurrentTime}
@@ -840,6 +837,8 @@
       autoplay={true}
       on:close={closePreview}
       on:timeupdate={handlePreviewTimeUpdate}
+      on:play={() => setPreviewPlaying(true)}
+      on:pause={() => setPreviewPlaying(false)}
     />
   {/if}
 
@@ -929,7 +928,10 @@
   }
 
   /* Header */
+  /* Header and results share one start-aligned measure (results column + info panel) so
+     a wide monitor does not stretch a result line across the whole screen. */
   .search-header {
+    max-width: 65rem;
     margin-bottom: 1.5rem;
   }
 
@@ -1084,51 +1086,16 @@
     border: 0;
   }
 
-  .section-heading {
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-color, #111827);
-    margin: 0 0 0.75rem;
-  }
-
-  .summary-results-section {
-    margin-bottom: 2rem;
-  }
-
-  .summary-unavailable-notice {
-    padding: 1rem;
-    border-radius: 8px;
-    background: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-border, #f59e0b);
-    margin-bottom: 0.75rem;
-  }
-
   /* Results */
   .results {
     min-height: 300px;
     width: 100%;
+    max-width: 65rem;
   }
 
-  .results-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Summary results (issue #462) - a SIBLING container to .results-list, never
-     nested inside it; see the template comment above .summary-results-list. */
-  .summary-results-info {
-    font-size: 0.8125rem;
-    color: var(--text-secondary, #6b7280);
-    margin-bottom: 0.75rem;
-  }
-
-  .summary-results-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .quality-notice-slot {
-    margin-bottom: 12px;
+  /* Pagination belongs to the results column, not under the info panel. */
+  .pagination-slot {
+    max-width: 44rem;
   }
 
   /* Empty / Loading States */
@@ -1182,20 +1149,6 @@
 
   .empty-icon {
     opacity: 0.35;
-  }
-
-  .no-keyword-notice {
-    padding: 12px 16px;
-    margin-bottom: 12px;
-    background: var(--color-warning-bg, #fef3c7);
-    color: var(--color-warning-text, #92400e);
-    border-radius: 8px;
-    font-size: 0.9rem;
-  }
-
-  :global([data-theme='dark']) .no-keyword-notice {
-    background: rgba(245, 158, 11, 0.1);
-    color: #fbbf24;
   }
 
   /* Responsive */
@@ -1263,10 +1216,6 @@
     }
 
     .results {
-      min-width: 0;
-    }
-
-    .results-list {
       min-width: 0;
     }
   }

@@ -100,7 +100,7 @@
             {$t('about.serverVersion')} {serverVersion}
           </span>
         {/if}
-        <span class="header-version-sep">&middot;</span>
+        <span class="header-version-sep tagline-sep">&middot;</span>
         <span class="header-version-tagline">{$t('about.version')}</span>
       </div>
     </div>
@@ -537,6 +537,18 @@
     color: var(--text-secondary);
     opacity: 0.5;
     font-size: 0.9rem;
+  }
+
+  /* On a phone the tagline wraps; give it its own line so the separator
+     before it is not left dangling at the end of the version row. */
+  @media (max-width: 480px) {
+    .tagline-sep {
+      display: none;
+    }
+
+    .header-version-tagline {
+      flex-basis: 100%;
+    }
   }
 
   .version-mismatch {

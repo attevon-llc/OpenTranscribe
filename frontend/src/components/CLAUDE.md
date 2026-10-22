@@ -20,8 +20,19 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   through to one branch's copy for any surface it wasn't written to handle. Dismissal is
   per-surface in `localStorage` (`opentr:retrievalQualityNotice:<surface>`) and, being a UI
   preference, is deliberately NOT cleared by `clearUserState`.
-- `NotificationsPanel.svelte` — bell panel. `ICON_BY_TYPE` maps every notification type to an
-  icon name and **each name needs a render branch** (an unmapped name silently shows the bell;
+- `NotificationsPanel.svelte` — bell panel **shell** (open state, scroll lock, click-outside,
+  backdrop). Its contents, `notifications/NotificationsPanelBody.svelte`, load with a dynamic
+  `import()` on first open so the card model stays out of the root bundle (bundle budget; a
+  source test in `NotificationsPanel.test.ts` pins it). **One card per file**: a file's
+  `transcription_status` / `summarization_status` / `topic_extraction_status` / `redaction_status` /
+  `youtube_processing_status` records render as ONE `notifications/ProcessingJobCard.svelte` (weighted
+  bar, task chips, expandable per-task timing) and count once in the badge. The store still keeps one
+  record per type, because the file page, gallery and status page dispatch on `type`. Grouping lives in
+  `$lib/notifications/jobGrouping.ts` (badge + retention), the card model in
+  `$lib/notifications/processingJob.ts` (LLM weight follows `isLLMAvailable`), run timing in
+  `runTiming.ts`. Design: `docs/design/consolidated_processing_notification_plan.md`.
+  Icons: `ICON_BY_TYPE` (`$lib/notifications/display.ts`) maps types to icon names and **each name needs a
+  render branch** in `notifications/NotificationIcon.svelte` (an unmapped name silently shows the bell;
   `NotificationsPanel.test.ts` asserts coverage). `transcription_status` is the `logo` icon, an
   `<img>` of `assets/logo-icon.png` (the only non-SVG entry, so tests query `.notification-icon img`);
   topic/auto-label share the tag glyph and collection notifications use the folder glyph.
@@ -29,7 +40,8 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   pure function in `$lib/notifications/retention.ts` (injected `now`, no timers); `websocket.ts`
   runs it on load, on add and on panel close, and it is a no-op while the panel is open. Never
   removed: errors/warnings (`status`/`data.status` anything but completed), in-flight items,
-  `persistent` types, unread items under 14 days. `RETENTION_BY_TYPE` classifies every
+  `persistent` types, unread items under 14 days. A file's card is retained as ONE unit (all its
+  records go together, a failure anywhere pins it, a skipped LLM task does not). `RETENTION_BY_TYPE` classifies every
   `NotificationType` (compile-time `Record` + a test against `NOTIFICATION_TYPES`); an unknown
   wire type is never clearable, so a new type is NOT auto-clearable until someone classifies it.
   `readAt` (set by `markAsRead`/`markAllAsRead`, cleared when a progress update re-marks a row

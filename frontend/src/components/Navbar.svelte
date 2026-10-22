@@ -38,10 +38,17 @@
 
   // About modal state
   let showAboutModal = false;
-  // Fetched on first open; once loaded it stays mounted so the close state is preserved.
+  // Fetched on first open (keeps ~700 lines out of the root-layout bundle budget). A failed fetch
+  // (stale chunk hash after a release, flaky network) must not leave the logo a silent no-op:
+  // we reset and tell the user, and the next click retries.
   let AboutModal: typeof import('svelte').SvelteComponent<{ showModal: boolean }> | null = null;
   $: if (showAboutModal && !AboutModal) {
-    void import('./AboutModal.svelte').then((m) => (AboutModal = m.default as typeof AboutModal));
+    import('./AboutModal.svelte')
+      .then((m) => (AboutModal = m.default as typeof AboutModal))
+      .catch(() => {
+        showAboutModal = false;
+        toastStore.error($t('nav.aboutLoadFailed'));
+      });
   }
 
   // Mobile menu state
@@ -116,6 +123,9 @@
    */
   function handleToggleNotifications(event: MouseEvent) {
     event.stopPropagation(); // Prevent event from bubbling up
+    // On a phone the bell sits inside the open menu, which stacks above the panel: leave
+    // it open and the panel opens hidden behind it.
+    mobileMenuOpen = false;
     toggleNotificationsPanel();
     // Close user dropdown when opening notifications
     if (!showNotifs) {
@@ -811,6 +821,12 @@
       overflow-y: auto;
     }
 
+    /* The open menu is a full-width list: bring back the labels the <=1330px icon-only
+       tier hides, or each row is a lone icon in a 358px-wide tap target. */
+    .nav-links.open .nav-label {
+      display: inline;
+    }
+
     /* Make nav items full-width in mobile menu */
     .nav-links.open :global(.nav-link),
     .nav-links.open :global(.nav-btn) {
@@ -857,7 +873,7 @@
 
     .nav-links.open :global(.dropdown-icon) {
       display: inline;
-      margin-left: auto;
+      margin-inline-start: auto;
     }
 
     .nav-links.open :global(.dropdown-menu) {

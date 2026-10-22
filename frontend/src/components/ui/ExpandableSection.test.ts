@@ -11,4 +11,17 @@ describe('ExpandableSection', () => {
     await fireEvent.click(btn);
     expect(btn).toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('keeps the toggle inside a heading when headingLevel is set', () => {
+    render(ExpandableSection, { props: { title: 'Summaries', headingLevel: 2, expanded: true } });
+    const heading = screen.getByRole('heading', { level: 2, name: 'Summaries' });
+    const btn = screen.getByRole('button', { name: 'Summaries' });
+    expect(heading).toContainElement(btn);
+    expect(btn).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('renders no heading by default', () => {
+    render(ExpandableSection, { props: { title: 'Details' } });
+    expect(screen.queryByRole('heading')).toBeNull();
+  });
 });

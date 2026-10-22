@@ -37,6 +37,7 @@ from datetime import UTC
 from datetime import datetime
 from enum import StrEnum
 
+from app.core.enums import TranscriptionStage
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import record_infra_requeue
@@ -194,7 +195,11 @@ def _retry_file(
         from app.tasks.transcription.notifications import send_progress_notification
 
         send_progress_notification(
-            int(media_file.user_id), file_id, 0.0, "Retrying after a temporary problem"
+            int(media_file.user_id),
+            file_id,
+            0.0,
+            "Retrying after a temporary problem",
+            stage=TranscriptionStage.PREPARE,
         )
     except Exception as e:  # noqa: BLE001 - a missed notification must not undo the retry
         logger.debug("Retry notification for file %s failed: %s", file_id, e)

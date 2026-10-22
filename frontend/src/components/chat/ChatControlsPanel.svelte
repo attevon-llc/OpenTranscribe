@@ -15,9 +15,10 @@
   import ModelSwitcher from './ModelSwitcher.svelte';
   import RangeSlider from '$components/ui/RangeSlider.svelte';
   import { LLMSettingsApi } from '$lib/api/llmSettings';
+  import { getAnswerBudget } from '$lib/api/chatApi';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import type { ReasoningOffSwitch } from '$lib/api/llmSettings';
-  import type { ConversationSettings, SearchMode } from '$lib/types/chat';
+  import type { AnswerBudget, ConversationSettings, SearchMode } from '$lib/types/chat';
 
   export let isOpen = false;
   export let settings: ConversationSettings = {};
@@ -86,6 +87,36 @@
   $: if (isOpen && reasoningLoadedFor !== llmConfigUuid) {
     loadReasoningCapability(llmConfigUuid);
   }
+
+  /**
+   * The reply budget for the model in play: what an unset conversation sends, and the
+   * ceiling a larger override is clamped to. Shown rather than applied silently — an
+   * invisible clamp is how a `max_tokens` of 8192 once capped four evaluation runs.
+   * Null (unknown) falls back to the generic "Default" label and the schema's bound.
+   */
+  const MAX_TOKENS_SCHEMA_LIMIT = 200000;
+  let answerBudget: AnswerBudget | null = null;
+  let budgetLoadedFor: string | null | undefined = undefined;
+
+  async function loadAnswerBudget(pinned: string | null): Promise<void> {
+    budgetLoadedFor = pinned;
+    try {
+      const budget = await getAnswerBudget(pinned);
+      if (budgetLoadedFor === pinned) answerBudget = budget;
+    } catch {
+      if (budgetLoadedFor === pinned) answerBudget = null;
+    }
+  }
+
+  $: if (isOpen && budgetLoadedFor !== llmConfigUuid) {
+    loadAnswerBudget(llmConfigUuid);
+  }
+
+  $: maxTokensOverride = settings.max_tokens ?? null;
+  $: maxTokensClamped =
+    answerBudget !== null &&
+    maxTokensOverride !== null &&
+    maxTokensOverride > answerBudget.max_tokens;
 
   function toggleContext(): void {
     dispatch('change', { use_context: !useContext });
@@ -249,26 +280,66 @@
       <div class="control-group">
         <label class="field-label" for="chat-max-tokens">
           {$t('chat.controls.maxTokens')}
-          <span class="value">
-            {settings.max_tokens ?? $t('chat.controls.inherit')}
+          <span class="value" data-testid="chat-max-tokens-value">
+            {#if maxTokensOverride !== null}
+              {maxTokensOverride.toLocaleString()}
+            {:else if answerBudget}
+              {$t('chat.controls.inherit')} · {answerBudget.default_tokens.toLocaleString()}
+            {:else}
+              {$t('chat.controls.inherit')}
+            {/if}
           </span>
         </label>
-        <input
-          id="chat-max-tokens"
-          type="number"
-          min="256"
-          max="200000"
-          step="256"
-          placeholder={$t('chat.controls.inherit')}
-          value={settings.max_tokens ?? ''}
-          on:change={(e) => {
-            const raw = (e.target as HTMLInputElement).value.trim();
-            dispatch('change', { max_tokens: raw === '' ? null : Number(raw) });
-          }}
-          {disabled}
-          data-testid="chat-max-tokens"
-        />
-        <span class="range-hint">{$t('chat.controls.maxTokensHint')}</span>
+        <div class="number-row">
+          <input
+            id="chat-max-tokens"
+            type="number"
+            min="256"
+            max={answerBudget?.max_tokens ?? MAX_TOKENS_SCHEMA_LIMIT}
+            step="256"
+            placeholder={answerBudget
+              ? String(answerBudget.default_tokens)
+              : $t('chat.controls.inherit')}
+            value={maxTokensOverride ?? ''}
+            aria-describedby="chat-max-tokens-hint"
+            on:change={(e) => {
+              const raw = (e.target as HTMLInputElement).value.trim();
+              dispatch('change', { max_tokens: raw === '' ? null : Number(raw) });
+            }}
+            {disabled}
+            data-testid="chat-max-tokens"
+          />
+          {#if maxTokensOverride !== null}
+            <button
+              type="button"
+              class="btn btn-secondary btn-small"
+              on:click={() => dispatch('change', { max_tokens: null })}
+              {disabled}
+              data-testid="chat-max-tokens-reset"
+            >
+              {$t('chat.controls.maxTokensReset')}
+            </button>
+          {/if}
+        </div>
+        <span id="chat-max-tokens-hint" class="range-hint">
+          {#if answerBudget}
+            <span class="hint-line" data-testid="chat-max-tokens-default">
+              {$t('chat.controls.maxTokensDefault', {
+                tokens: answerBudget.default_tokens.toLocaleString(),
+                max: answerBudget.max_tokens.toLocaleString(),
+                window: answerBudget.context_window.toLocaleString(),
+              })}
+            </span>
+          {/if}
+          {#if maxTokensClamped && answerBudget}
+            <span class="hint-line clamped" role="status" data-testid="chat-max-tokens-clamped">
+              {$t('chat.controls.maxTokensClamped', {
+                max: answerBudget.max_tokens.toLocaleString(),
+              })}
+            </span>
+          {/if}
+          <span class="hint-line">{$t('chat.controls.maxTokensHint')}</span>
+        </span>
       </div>
 
       <div class="control-group">
@@ -400,8 +471,33 @@
   /* form-elements.css gives every <input> width:100% and a surface fill; the
      number field wants that, but it must not inherit the button transform. */
   .advanced input[type='number'] {
+    flex: 1;
+    min-width: 0;
     padding: 0.4rem 0.6rem;
     font-size: 0.85rem;
+  }
+
+  .number-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .number-row .btn {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .hint-line {
+    display: block;
+  }
+
+  .hint-line + .hint-line {
+    margin-top: 0.2rem;
+  }
+
+  .hint-line.clamped {
+    color: var(--warning-text);
   }
 
   .toggle-row {

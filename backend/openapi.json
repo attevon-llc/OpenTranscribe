@@ -284,6 +284,30 @@
         "title": "Analytics",
         "type": "object"
       },
+      "AnswerBudget": {
+        "description": "The reply budget a turn would use for one model, so the UI can show it.\n\nComputed by the same ``resolve_answer_tokens`` the stream uses, so what the\nsettings panel calls \"default\" is exactly what an unset conversation sends,\nand ``max_tokens`` is exactly where a larger override is clamped — the clamp\nis shown to the user rather than applied silently.",
+        "properties": {
+          "context_window": {
+            "title": "Context Window",
+            "type": "integer"
+          },
+          "default_tokens": {
+            "title": "Default Tokens",
+            "type": "integer"
+          },
+          "max_tokens": {
+            "title": "Max Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "default_tokens",
+          "max_tokens",
+          "context_window"
+        ],
+        "title": "AnswerBudget",
+        "type": "object"
+      },
       "ApplyTopicSuggestionsRequest": {
         "description": "Request to apply approved tag/collection suggestions\n\nAttributes:\n    accepted_collections: Collection names to create/add to\n    accepted_tags: Tag names to apply",
         "properties": {
@@ -29869,6 +29893,62 @@
         "summary": "Resend Verification Endpoint",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/chat/answer-budget": {
+      "get": {
+        "description": "Report the reply budget a turn would use, for the chat settings panel.\n\n``llm_config_uuid`` is the conversation's pinned model; omitted means the\naccount default — the same choice ``_prepare_turn`` makes. Both numbers come\nfrom ``resolve_answer_tokens`` with the same inputs the stream passes, so the\npanel can never advertise a default the turn does not actually send.\n\nRaises:\n    HTTPException: 404 for a config the caller may not use, 400 when no LLM\n        is configured.",
+        "operationId": "answer_budget_api_chat_answer_budget_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "llm_config_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Llm Config Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerBudget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Answer Budget",
+        "tags": [
+          "chat"
         ]
       }
     },

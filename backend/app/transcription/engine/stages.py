@@ -30,6 +30,7 @@ import numpy as np
 # stop for good) — so a checkpoint cannot accidentally honour only one of them. That is why
 # #823 extended these call sites instead of adding a second set beside them.
 from app.core import stage_timing
+from app.core.enums import TranscriptionStage
 from app.core.task_cancellation import stand_down_if_requested
 from app.core.worker_shutdown import shutdown_requested
 
@@ -199,7 +200,7 @@ def _collect_diarization(
     total_vram_mb = _get_total_vram_mb()
     profiler.snapshot("models_warm_no_inference")
 
-    emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
+    emit(callback, 0.55, "Analyzing speaker patterns", TranscriptionStage.DIARIZE)
     step_start = time.perf_counter()
     overlapped = None
     provider: str | None = None
@@ -421,8 +422,11 @@ class _GpuStage:
 
         profiler.snapshot("pipeline_start")
 
-        # Steps 1+2: Load audio and ensure model is warm in parallel
-        emit(progress_callback, 0.42, "Loading audio", "preprocess")
+        # Steps 1+2: Load audio and ensure model is warm in parallel.
+        # TRANSCRIBE, not PREPARE: the task layer has already announced transcription
+        # (0.40) by now, and the client must not see a finished step reopen. The same
+        # applies to every in-stage "Loading audio" below.
+        emit(progress_callback, 0.42, "Loading audio", TranscriptionStage.TRANSCRIBE)
         audio_result: list = [None]
         audio_error: list = [None]
 
@@ -479,7 +483,7 @@ class _GpuStage:
                 diarizer_preload_thread.start()
 
             # Transcribe
-            emit(progress_callback, 0.43, "Running AI transcription", "transcribe")
+            emit(progress_callback, 0.43, "Running AI transcription", TranscriptionStage.TRANSCRIBE)
             step_start = time.perf_counter()
             with profiler.step("transcription"):
                 transcript = transcriber.transcribe(audio, options=tc)
@@ -604,7 +608,7 @@ class _GpuStage:
     ) -> tuple[dict, Any]:
         from app.transcription.engine.progress import emit
 
-        emit(progress_callback, 0.52, "Preparing speaker analysis", "diarize")
+        emit(progress_callback, 0.52, "Preparing speaker analysis", TranscriptionStage.DIARIZE)
         diarize_df, overlap_info, native_embeddings, diar_provider, diar_model = (
             _collect_diarization(
                 audio, tc, manager, hw, profiler, progress_callback, async_diarization
@@ -625,7 +629,9 @@ class _GpuStage:
             )
 
         # Step 6: Assign speakers
-        emit(progress_callback, 0.65, "Assigning speakers to transcript", "finalize")
+        emit(
+            progress_callback, 0.65, "Assigning speakers to transcript", TranscriptionStage.FINALIZE
+        )
         step_start = time.perf_counter()
         with stage_timing.stage("speaker_assignment"), profiler.step("speaker_assignment"):
             from app.transcription.speaker_assigner import assign_speakers
@@ -700,7 +706,7 @@ class _PreprocessStage:
         from app.transcription.engine.job import PreprocessResult
         from app.transcription.engine.progress import emit
 
-        emit(callback, 0.10, "Decoding audio", "preprocess")
+        emit(callback, 0.10, "Decoding audio", TranscriptionStage.PREPARE)
         t0 = time.perf_counter()
 
         from faster_whisper.audio import decode_audio  # type: ignore[import]
@@ -760,7 +766,7 @@ class _GpuRawStage:
 
         profiler.snapshot("pipeline_start")
 
-        emit(callback, 0.42, "Loading audio", "preprocess")
+        emit(callback, 0.42, "Loading audio", TranscriptionStage.TRANSCRIBE)
 
         audio = load_from_shared_volume(pre.local_wav_path)
         if audio is None:
@@ -803,7 +809,7 @@ class _GpuRawStage:
                 )
                 diarizer_preload_thread.start()
 
-            emit(callback, 0.43, "Running AI transcription", "transcribe")
+            emit(callback, 0.43, "Running AI transcription", TranscriptionStage.TRANSCRIBE)
             step_start = time.perf_counter()
             with profiler.step("transcription"):
                 transcript = transcriber.transcribe(audio, options=tc)
@@ -956,7 +962,7 @@ class _FinalizeStage:
 
                 transcript["segments"] = clean_segments(transcript["segments"])
 
-            emit(callback, 0.65, "Assigning speakers to transcript", "finalize")
+            emit(callback, 0.65, "Assigning speakers to transcript", TranscriptionStage.FINALIZE)
             from app.transcription.speaker_assigner import assign_speakers
 
             with stage_timing.stage("speaker_assignment"):
@@ -1027,7 +1033,7 @@ class _TranscribeOnlyStage:
 
         profiler.snapshot("pipeline_start")
 
-        emit(callback, 0.42, "Loading audio", "preprocess")
+        emit(callback, 0.42, "Loading audio", TranscriptionStage.TRANSCRIBE)
 
         audio = load_from_shared_volume(pre.local_wav_path)
         if audio is None:
@@ -1041,7 +1047,7 @@ class _TranscribeOnlyStage:
 
         profiler.snapshot("after_transcriber_loaded")
 
-        emit(callback, 0.43, "Running AI transcription", "transcribe")
+        emit(callback, 0.43, "Running AI transcription", TranscriptionStage.TRANSCRIBE)
         step_start = time.perf_counter()
         with profiler.step("transcription"):
             transcript = transcriber.transcribe(audio, options=tc)
@@ -1113,7 +1119,7 @@ class _DiarizerOnlyStage:
 
         profiler.snapshot("pipeline_start")
 
-        emit(callback, 0.52, "Preparing speaker analysis", "diarize")
+        emit(callback, 0.52, "Preparing speaker analysis", TranscriptionStage.DIARIZE)
 
         audio = load_from_shared_volume(transcript.local_wav_path)
         if audio is None:
@@ -1135,7 +1141,7 @@ class _DiarizerOnlyStage:
             # constructs an _AsyncDiarization (it IS the diarization leg).
             stand_down_if_requested("_DiarizerOnlyStage.run before diarization")
 
-            emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
+            emit(callback, 0.55, "Analyzing speaker patterns", TranscriptionStage.DIARIZE)
             step_start = time.perf_counter()
             with stage_timing.stage("diarization"), profiler.step("diarization"):
                 diarizer = manager.get_diarizer(tc)

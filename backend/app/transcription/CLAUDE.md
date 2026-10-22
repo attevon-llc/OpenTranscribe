@@ -238,6 +238,11 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
 
 ## Gotchas
 
+- Engine progress (`engine/progress.emit`) takes a `core/enums.TranscriptionStage`, the same
+  value the client receives as `transcription_status.stage`; there is no separate engine stage
+  vocabulary. `adapt_legacy` passes it to a callback that accepts `stage=` and still drives a
+  plain `(progress, message)` one. An in-stage "Loading audio" is `TRANSCRIBE`, not `PREPARE`:
+  the task layer has already announced transcription by then.
 - `EngineConfig` is deliberately **DB-free** — settings are resolved and passed in, not read
   from the DB inside the engine. Keep it that way so the engine stays unit-testable.
 - **Overlapped diarization requires a REACHABLE sidecar**, not merely a configured one.

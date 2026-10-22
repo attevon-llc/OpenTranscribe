@@ -31,6 +31,29 @@ class FileStatus(str, enum.Enum):  # noqa: UP042
     QUARANTINED = "quarantined"
 
 
+class TranscriptionStage(enum.StrEnum):
+    """The user-facing sub-stage a ``transcription_status`` progress frame belongs to.
+
+    The single source of truth for the ``stage`` key on the wire. Member order is the
+    display order; the values are the step keys the notification card renders
+    (``frontend/src/lib/notifications/processingJob.ts`` ``TRANSCRIPTION_STAGES``, pinned by
+    ``tests/unit/test_transcription_stage_wire.py``). The engine emits these directly, so
+    there is no second, engine-internal stage vocabulary to translate.
+
+    ``SPEAKERS`` is the pipeline tail after the transcript is saved: voiceprint matching,
+    handing speaker detection to the post stage, and completion. ``rediarize_task`` (the
+    post stage, also the manual re-detect) runs ``DIARIZE`` -> ``FINALIZE`` (assign + save)
+    -> ``SPEAKERS`` (voiceprints); its first frame follows a completed frame, so the client
+    sees it as a new run.
+    """
+
+    PREPARE = "prepare"
+    TRANSCRIBE = "transcribe"
+    DIARIZE = "diarize"
+    FINALIZE = "finalize"
+    SPEAKERS = "speakers"
+
+
 #: ``StrEnum``, unlike its neighbour ``FileStatus`` above. Nothing pins ``str(...)`` of
 #: this one — it is new, and the values go to the database and the wire as ``.value`` —
 #: so there is no reason to carry ``FileStatus``'s deliberate exception.

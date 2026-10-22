@@ -336,7 +336,7 @@
     font-weight: 500;
     border: none;
     width: calc(100% - 1rem);
-    text-align: left;
+    text-align: start;
     background-color: transparent;
     cursor: pointer;
     font-family: inherit;
@@ -367,7 +367,7 @@
     color: var(--primary-on-surface) !important;
     text-decoration: none !important;
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
-    transform: translateX(2px) !important;
+    padding-inline-start: calc(1rem + 2px) !important;
   }
 
   /* Entries contributed by child components (e.g. UserMenuExtras) live in their
@@ -383,7 +383,7 @@
     font-weight: 500;
     border: none;
     width: calc(100% - 1rem);
-    text-align: left;
+    text-align: start;
     background-color: transparent;
     cursor: pointer;
     font-family: inherit;
@@ -396,6 +396,16 @@
   .dropdown-menu :global(.dropdown-item:hover) {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
     color: var(--primary-on-surface);
+  }
+
+  /* The global `button` rule (form-elements.css) adds a drop shadow and a
+     scale(1.02) on hover. Menu rows are flat list items: without this the
+     <button> rows rendered as raised cards next to the flat <a> row, and the
+     hover scale reintroduced the overflow the padding nudge below avoids. */
+  .dropdown-menu :global(.dropdown-item),
+  .dropdown-menu :global(.dropdown-item:hover) {
+    box-shadow: none;
+    transform: none;
   }
 
   .dropdown-menu :global(.dropdown-item:focus-visible) {
@@ -425,10 +435,14 @@
     color: var(--primary-on-surface) !important;
   }
 
+  /* The hover nudge is a padding shift, never a transform: items are exactly
+     the menu's content width (100% - 1rem plus 0.5rem margins), so a
+     translateX pushed them past the scrollport and, with overflow-y:auto
+     computing overflow-x to auto, produced a horizontal scrollbar on hover. */
   .dropdown-item:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
     color: var(--primary-on-surface);
-    transform: translateX(2px);
+    padding-inline-start: calc(1rem + 2px);
   }
 
   .dropdown-item:hover svg {
@@ -453,7 +467,7 @@
   .dropdown-item.logout:hover {
     background-color: rgba(239, 68, 68, 0.1);
     color: var(--error-color, #dc2626);
-    transform: translateX(2px);
+    padding-inline-start: calc(1rem + 2px);
   }
 
   .dropdown-item.logout:hover svg {
@@ -463,7 +477,7 @@
 
   /* Active state for dropdown items */
   .dropdown-item:active {
-    transform: translateX(1px);
+    padding-inline-start: calc(1rem + 1px);
     background-color: var(--primary-color-light, rgba(59, 130, 246, 0.1));
   }
 
@@ -509,7 +523,7 @@
     }
 
     .dropdown-item:hover {
-      transform: none; /* Disable transform on mobile for better touch experience */
+      padding-inline-start: 1rem; /* No hover nudge on touch */
     }
 
     /* Hide username text on mobile, show avatar only */

@@ -511,6 +511,9 @@ celery_app.conf.update(
         # (docker-compose.lite.yml) scales the GPU worker to zero replicas, so
         # pinning this to 'gpu' left it queued forever there (issue #584).
         "extract_speaker_embeddings": {"queue": CeleryQueues.CPU},
+        # One-off operator backfill (priority CPUPriority.MAINTENANCE); not in include=, so it is
+        # registered only where a process imports app.tasks.tenant_backfill_task.
+        "tenant_backfill_organization_id": {"queue": CeleryQueues.CPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": CeleryQueues.NLP},
         "ai.identify_speakers": {"queue": CeleryQueues.NLP},
@@ -1300,6 +1303,10 @@ def unrouted_task_names() -> list[str]:
         name
         for name in celery_app.tasks
         if not name.startswith("celery.")
+        # Celery shares @app.task registrations across apps, so a test that builds its own
+        # throwaway Celery app leaks its tasks (e.g. ``guard.errback``) into this registry
+        # when a whole suite runs in one process. Only tasks this codebase defines count.
+        and getattr(celery_app.tasks[name], "__module__", "").startswith("app.")
         and name not in INTENTIONALLY_UNROUTED_TASKS
         and name not in routed_names
     )

@@ -31,7 +31,12 @@ _ISSUE_1268_ROUTES = {
 
 def _registered_app_tasks() -> set[str]:
     celery_app.loader.import_default_modules()  # register every module in `include=`
-    return {name for name in celery_app.tasks if not name.startswith("celery.")}
+    return {
+        name
+        for name in celery_app.tasks
+        if not name.startswith("celery.")
+        and getattr(celery_app.tasks[name], "__module__", "").startswith("app.")
+    }
 
 
 def test_registry_is_populated_so_the_route_check_is_not_vacuous():
@@ -79,3 +84,31 @@ def test_no_task_pins_a_queue_in_its_decorator():
         "a decorator queue= overrides task_routes silently; route these in "
         "app/core/celery.py instead"
     )
+
+
+def test_a_task_leaked_from_another_celery_app_is_not_counted():
+    """Celery shares @app.task registrations across apps; a test's throwaway app must not trip this.
+
+    Reproduces the CI-only failure: ``test_abort_requeue_contract`` builds its own app, its tasks
+    appear in ``celery_app.tasks`` once the whole suite runs in one process, and the completeness
+    check used to fail on ``guard.*``.
+    """
+    from celery import Celery
+
+    throwaway = Celery("leak_probe", broker="memory://", backend="cache+memory://")
+
+    @throwaway.task(name="leak_probe.unrouted")
+    def _unrouted():
+        return None
+
+    celery_app.loader.import_default_modules()
+    celery_app.finalize()
+    assert "leak_probe.unrouted" in celery_app.tasks, "the leak this test guards did not occur"
+    assert "leak_probe.unrouted" not in unrouted_task_names()
+
+
+def test_the_tenant_backfill_task_is_routed_once_its_module_is_loaded():
+    import app.tasks.tenant_backfill_task  # noqa: F401  (registers the task; not in include=)
+
+    assert celery_app.conf.task_routes["tenant_backfill_organization_id"] == {"queue": "cpu"}
+    assert "tenant_backfill_organization_id" not in unrouted_task_names()

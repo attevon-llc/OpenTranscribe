@@ -151,7 +151,9 @@ class AssemblyAIProvider(ASRProvider):
             language_code=None if detect_language else config.language,
             punctuate=True,
             format_text=True,
-            word_boost=config.vocabulary[:1000] if config.vocabulary else None,
+            # The SDK types this `List[str]` (not Optional); an empty list is its "no
+            # boost" value — set_word_boost() stores None for any falsy list.
+            word_boost=(config.vocabulary or [])[:1000],
         )
 
         if progress_callback:

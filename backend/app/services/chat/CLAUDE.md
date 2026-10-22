@@ -29,6 +29,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `aggregation_service.py` | Counted answers, I/O half: OpenSearch aggs + Postgres |
 | `mapreduce/` | `tree_summarize` over the digest plane; two reducers, one no-LLM. A **package**, not a single module (split from a 1242-line `mapreduce.py` — see its own `__init__.py` docstring for the seam table); every pre-split name is still re-exported from `app.services.chat.mapreduce` |
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
+| `reranker_warmup.py` | Loads that singleton on a daemon thread at API startup (#1269) — see below |
 | `query_rewriter.py` | Follow-up → standalone query; every failure returns the original |
 | `retrieval_cache.py` | Redis exact-query cache, keyed by user+org+query+scope+settings-rev |
 | `redactor.py` | **Re-masks retrieved chunks before the LLM** (the *egress* control) |
@@ -40,6 +41,40 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `hooks.py` | Cloud seam, mirrors `tasks/transcription/hooks.py` exactly |
 | `trace.py` | **The query-trace vocabulary** (GH #514): 16 stages, 6 outcomes, a scrubbed detail allowlist, and a no-op-by-default `emit()` |
 | `trace_stream.py` | Bridges trace events from worker threads onto the turn's event loop |
+
+## The reranker is warmed at startup, not on the first chat (issue #1269)
+
+`get_reranker()` is lazy, so the first chat in each fresh API process paid the cold load
+inside retrieval. Measured in the dev backend container, fresh process, host load average
+59-90 on 48 cores: **9.9-12.3 s** for the first `get_reranker()` (6 runs); the cloud report
+was ~15 s. `main.lifespan` → `_start_reranker_warmup()` → `reranker_warmup.start_reranker_warmup()`
+now does that load on a daemon thread: the lifespan pays `Thread.start()` (**0.4-4 ms**, 3
+runs), and once the thread finishes the first `get_reranker()` is **0.000 s**.
+
+- **Same function, same model, so retrieval cannot change.** The warm-up calls
+  `get_reranker(C.CHAT_RERANKER_MODEL)` and scores one throwaway pair; a turn gets the object
+  it would have loaded itself.
+- **Loads once.** A chat arriving mid-warm-up blocks on `get_reranker`'s lock and gets the
+  warm-up's model — it waits for the remainder of the load, it does not start a second one.
+- **A failed warm-up does not start the 300 s cooldown** (`start_cooldown_on_failure=False`).
+  With the cooldown, a model cache mounted seconds after the API came up would have made every
+  chat for five minutes skip reranking — worse than not warming. The request path keeps its
+  cooldown.
+- **Gated where chat runs and uses it.** Only the ASGI lifespan starts it (Celery imports
+  `app.main` without running the lifespan; `TESTING=true` returns before it;
+  `test_only_the_api_lifespan_starts_the_warmup` fails on a second caller). Skipped when
+  `chat.rag.rerank_enabled` is off, and when the `SystemSettings` row
+  `chat.rag.rerank_warmup_enabled` is false (the opt-out, default
+  `DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED = True`; read once per process, so deliberately not a
+  `CHAT_FLAG_REGISTRY` admin-panel flag). A settings read that fails skips the warm-up.
+- **Only the English model.** The multilingual arm (`CHAT_RERANKER_MODEL_MULTILINGUAL`) is used
+  only for a non-English pool with its own flag on; its first such turn still pays its load.
+
+⚠️ **Not fixed by this, and measured beside it:** a warm `rerank()` of 50 ~150-word pairs took
+**7-16 s** under that host load with torch's default 24 intra-op threads, and **3.4-5.5 s** with
+`OMP_NUM_THREADS=4`/`8`. That is CPU oversubscription on a loaded shared host, not the load cost
+— but on a busy box the scoring itself, not the load, is now the larger first-chat cost.
+Tests: `tests/unit/test_chat_reranker_warmup.py`.
 
 ## The query trace (GH #514)
 

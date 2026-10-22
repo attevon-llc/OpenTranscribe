@@ -193,18 +193,19 @@ def _send_m365(
     if not sender:
         return False, "M365 requires a from_address (the sending mailbox)"
     token = _m365_token(config)
-    payload = {
-        "message": {
-            "subject": subject,
-            "body": {"contentType": "HTML", "content": html},
-            "toRecipients": [{"emailAddress": {"address": a}} for a in recipients],
-        },
-        "saveToSentItems": False,
-    }
+    # The body is written inline so mypy checks it against requests' `JsonType` in
+    # context; bound to a local first it widens to `dict[str, object]`, which is not JSON.
     resp = requests.post(
         _GRAPH_SENDMAIL.format(sender=sender),
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=payload,
+        json={
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "HTML", "content": html},
+                "toRecipients": [{"emailAddress": {"address": a}} for a in recipients],
+            },
+            "saveToSentItems": False,
+        },
         timeout=30,
     )
     if resp.status_code in (200, 202):

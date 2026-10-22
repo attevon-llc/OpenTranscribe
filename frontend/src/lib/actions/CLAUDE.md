@@ -12,7 +12,8 @@ Reusable `use:` actions for DOM behaviors that don't belong in a component. Impo
   `stopPropagation`.
 
 - `anchoredPanel.ts` — places every dropdown/menu/popover panel (portal to `<body>`, fixed, flips above,
-  caps height, clamps, RTL, `data-side`). Built on `$lib/popoverPosition.ts`; rule and usage in
+  caps height, clamps, RTL, `data-side`). It also marks the panel `data-floating-panel`, which
+  `styles/form-elements.css` uses to keep rows inside it flat (no global button shadow). Built on `$lib/popoverPosition.ts`; rule and usage in
   `components/ui/CLAUDE.md`. `portal.ts` is the bare portal it generalises.
 
 ## Conventions / patterns

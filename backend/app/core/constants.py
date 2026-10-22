@@ -1387,6 +1387,11 @@ DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 12  # chat.rag.max_chunks_per_file
 DEFAULT_CHAT_RAG_RERANK_ENABLED = True  # chat.rag.rerank_enabled
 DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS = 50  # chat.rag.rerank_max_pairs
 CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# Issue #1269: load CHAT_RERANKER_MODEL on a background thread at API startup so the
+# first chat does not pay the ~10-15 s cold load. Read once per process at startup
+# (SystemSettings row `chat.rag.rerank_warmup_enabled`, not an admin-panel flag); also
+# skipped whenever chat.rag.rerank_enabled is off. See chat/reranker_warmup.py.
+DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED = True
 
 # Multilingual reranker arm (issue #453/ML1) — a SELECTABLE second model, default OFF.
 # `chat/reranker.py` skips reranking outright when the candidate pool is predominantly

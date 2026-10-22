@@ -13,6 +13,10 @@ occupied by interactive requests. The model is ~90MB; first use adds roughly
 ``chat.rag.rerank_enabled``. If the model isn't in the cache, reranking disables
 itself with a warning rather than failing the chat, and retries periodically so a
 cache that appears later is picked up.
+
+The API process loads it at startup on a background thread (``reranker_warmup.py``,
+issue #1269) so the first chat does not pay the cold load; that warm-up goes through
+:func:`get_reranker` like any request does.
 """
 
 from __future__ import annotations
@@ -85,7 +89,9 @@ def _is_mostly_non_english(hits: list) -> bool:
     return non_english > len(voting) * _MAX_NON_ENGLISH_SHARE
 
 
-def get_reranker(model_name: str = C.CHAT_RERANKER_MODEL) -> Any:
+def get_reranker(
+    model_name: str = C.CHAT_RERANKER_MODEL, *, start_cooldown_on_failure: bool = True
+) -> Any:
     """Return the lazily-loaded CrossEncoder for ``model_name``, or None when unavailable.
 
     Double-checked locking: several concurrent first-chats must not each load a
@@ -104,6 +110,10 @@ def get_reranker(model_name: str = C.CHAT_RERANKER_MODEL) -> Any:
         model_name: HuggingFace model id. Defaults to the shipped English arm
             (:data:`C.CHAT_RERANKER_MODEL`); pass
             :data:`C.CHAT_RERANKER_MODEL_MULTILINGUAL` for the multilingual arm.
+        start_cooldown_on_failure: False for the startup warm-up
+            (``reranker_warmup.py``, issue #1269). A failed warm-up must leave the
+            next real request free to attempt its own load, as it could before
+            warm-up existed, instead of skipping reranking for the cooldown.
     """
     if model_name in _rerankers:
         return _rerankers[model_name]
@@ -140,11 +150,15 @@ def get_reranker(model_name: str = C.CHAT_RERANKER_MODEL) -> Any:
             _rerankers[model_name] = model
             logger.info(f"Chat reranker loaded on CPU: {model_name}")
         except Exception as exc:  # noqa: BLE001
-            _retry_after[model_name] = time.monotonic() + RETRY_COOLDOWN_S
+            if start_cooldown_on_failure:
+                _retry_after[model_name] = time.monotonic() + RETRY_COOLDOWN_S
+                retry_note = f"Retrying in {int(RETRY_COOLDOWN_S)}s. "
+            else:
+                retry_note = "The next request will retry. "
             logger.warning(
                 f"Chat reranker unavailable ({model_name}): {exc}. "
                 f"Reranking is disabled; retrieval order will be used as-is. "
-                f"Retrying in {int(RETRY_COOLDOWN_S)}s. "
+                f"{retry_note}"
                 "Run scripts/download-models.py to pre-fetch the model."
             )
             return None

@@ -48,6 +48,22 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,js}'],
     exclude: ['node_modules/**', '.svelte-kit/**'],
+    // Under load the suite failed 1-19 DIFFERENT tests per run (5 s test timeouts and
+    // 1 s waitFor timeouts), each passing alone. Cause: every module transform (Svelte
+    // compile, TS strip) runs on the ONE main vitest thread and is requested over RPC by
+    // every worker, so a test's first `import()` waits in a queue whose length scales
+    // with the worker count. Measured 2026-10-22, 48-core host, cold transform cache,
+    // load ~50: slowest `$app/*` route import 8.0-9.6 s at the default 47 workers,
+    // 4.3 s at 24, 3.0 s at 12; wall 72-78 s / 76 s / 104 s. At load ~120 with 47
+    // workers the same import exceeded 30 s and 19 tests failed. Hence:
+    //  - fsModuleCache: transforms persist in node_modules/.vitest-cache (keyed by file
+    //    content + plugin config; a reinstall clears it), so a warm run skips the queue.
+    //    Cold run transform share 53-58% of tracked time; warm 18-24%.
+    //  - maxWorkers 50%: the knee — halves the tail latency at no wall-time cost; 25%
+    //    starts costing wall time. A percentage, so it scales with the host's cores.
+    fsModuleCache: true,
+    maxWorkers: '50%',
+    fsModuleCache: true,
     // Coverage via `npm run test:coverage`. Thresholds are RATCHET FLOORS set just below
     // the measured baseline — raise them as component test coverage grows, never lower them.
     //

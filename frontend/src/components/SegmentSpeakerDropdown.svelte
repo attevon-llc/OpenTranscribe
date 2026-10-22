@@ -718,7 +718,7 @@
       transition: background-color 0.15s ease;
       color: var(--text-primary, #f1f5f9);
       font-size: 14px;
-      text-align: left;
+      text-align: start;
     }
 
     .speaker-dropdown-portal .dropdown-item:hover {

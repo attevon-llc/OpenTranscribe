@@ -20,6 +20,7 @@ from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
+from app.core.constants import UtilityPriority
 from app.core.enums import TranscriptionStage
 from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import clear_run_markers
@@ -488,13 +489,12 @@ def _schedule_timing_tail_flush(task_id: str, file_id: int, user_id: int) -> Non
         flush_pipeline_timing_tail.apply_async(
             args=[task_id, file_id, user_id],
             countdown=TIMING_TAIL_FLUSH_DELAY_S,
-            queue="utility",
         )
     except Exception as e:  # pragma: no cover — instrumentation must not break the pipeline
         logger.debug(f"Timing tail flush not scheduled for file {file_id}: {e}")
 
 
-@celery_app.task(name="pipeline_timing.flush_tail", priority=CPUPriority.MAINTENANCE)
+@celery_app.task(name="pipeline_timing.flush_tail", priority=UtilityPriority.BACKGROUND)
 def flush_pipeline_timing_tail(task_id: str, file_id: int, user_id: int) -> dict:
     """Fold the enrichment tail's markers into the durable timing row.
 

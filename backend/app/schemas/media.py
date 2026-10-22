@@ -353,7 +353,7 @@ class Speaker(SpeakerBase, UUIDBaseSchema):
         Fields already present in a dict input (a re-validated ``model_dump()``) win
         over the split, which would otherwise reset them from the numeric-only map.
         """
-        data = super().prepare_uuid_response(data)
+        data = cls._orm_row_to_dict(data)
         if isinstance(data, dict) and "attribute_confidence" in data:
             split = split_attribute_confidence(data["attribute_confidence"])
             data = {**split, **data, "attribute_confidence": split["attribute_confidence"]}

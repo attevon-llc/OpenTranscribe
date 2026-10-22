@@ -589,7 +589,7 @@
     color: var(--text-color);
     font-size: 0.8125rem;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     transition: background-color 0.15s ease;
     font-family: inherit;
   }

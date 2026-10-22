@@ -82,6 +82,16 @@ class UUIDBaseSchema(BaseModel):
         This runs before Pydantic validation, allowing us to transform
         the SQLAlchemy model's data structure.
         """
+        return cls._orm_row_to_dict(data)
+
+    @classmethod
+    def _orm_row_to_dict(cls, data: Any) -> Any:
+        """The body of ``prepare_uuid_response``, callable from a subclass override.
+
+        A subclass that overrides the validator by name cannot reach this through
+        ``super().prepare_uuid_response``: the decorated attribute is a Pydantic
+        descriptor proxy, which a type checker cannot see as callable.
+        """
         # Handle SQLAlchemy models
         if hasattr(data, "uuid") and hasattr(data, "__dict__"):
             data_dict = cls._convert_to_dict(data)

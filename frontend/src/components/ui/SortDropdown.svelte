@@ -273,7 +273,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.15s ease;
-    text-align: left;
+    text-align: start;
   }
 
   :global([data-theme='light']) .dropdown-item,

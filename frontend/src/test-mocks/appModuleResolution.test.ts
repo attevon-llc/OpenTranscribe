@@ -36,9 +36,16 @@ const APP_MODULE_CONSUMERS: Array<[string, () => Promise<unknown>]> = [
   ['stores/gallery.ts', () => import('$stores/gallery')],
 ];
 
+/**
+ * The route pages transitively import most of the app graph, so on a cold transform
+ * cache each import is a whole-app Vite transform. Measured 2026-10-22 (48-core shared
+ * host, cold cache): slowest import (search/+page) 8.0-9.6 s at load ~50 and >30 s at
+ * load ~120 with the old default of 47 workers; 4.3 s cold and well under 1 s warm with
+ * the vitest.config.ts worker cap + fsModuleCache. Not a hang.
+ */
+const ROUTE_GRAPH_IMPORT_TIMEOUT_MS = 30_000;
+
 describe('$app/* alias coverage', () => {
-  // 30s: `+layout.svelte` transitively transforms most of the app graph on a
-  // cold vitest cache and needs ~5-15s. Not a hang.
   it.each(APP_MODULE_CONSUMERS)(
     '%s resolves and transforms',
     async (_name, load) => {
@@ -47,7 +54,7 @@ describe('$app/* alias coverage', () => {
       // Either proves the module graph resolved — the point is that it did not throw.
       expect(['function', 'object']).toContain(typeof (mod.default ?? mod));
     },
-    30_000
+    ROUTE_GRAPH_IMPORT_TIMEOUT_MS
   );
 
   it('$app/stores page store exposes a URL, so route-guard code can be driven', async () => {

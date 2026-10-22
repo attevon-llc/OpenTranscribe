@@ -8,6 +8,7 @@ import logging
 
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
+from app.core.enums import TranscriptionStage
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
@@ -111,7 +112,13 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.52)
 
-            send_progress_notification(user_id, file_id, 0.52, "Analyzing speaker patterns")
+            send_progress_notification(
+                user_id,
+                file_id,
+                0.52,
+                "Analyzing speaker patterns",
+                stage=TranscriptionStage.DIARIZE,
+            )
 
             transcript = RawTranscriptResult.deserialize(transcript_data)
 
@@ -125,10 +132,14 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
             engine_config = EngineConfig.from_snapshot(transcript.config_snapshot)
             engine = Engine(engine_config)
 
-            def _progress(progress: float, message: str) -> None:
+            def _progress(
+                progress: float,
+                message: str,
+                stage: TranscriptionStage = TranscriptionStage.DIARIZE,
+            ) -> None:
                 with session_scope() as db:
                     update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-                send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+                send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
 
             raw = engine.run_diarize_only(transcript, progress_callback=_progress)
             job_result = engine.run_cpu_finalize(raw)

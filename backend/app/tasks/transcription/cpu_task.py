@@ -11,6 +11,7 @@ import tempfile
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.enums import TranscriptionStage
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
@@ -80,12 +81,22 @@ def _run_cpu_transcription(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running fast CPU transcription")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.4,
+        "Running fast CPU transcription",
+        stage=TranscriptionStage.TRANSCRIBE,
+    )
 
-    def progress_callback(progress, message):
+    def progress_callback(
+        progress: float,
+        message: str,
+        stage: TranscriptionStage = TranscriptionStage.TRANSCRIBE,
+    ) -> None:
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
 
     pipeline = TranscriptionPipeline(config)
     raw_result = pipeline.process(
@@ -185,7 +196,11 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
                     download_temp_audio(file_uuid, local_audio_path)
 
                 send_progress_notification(
-                    user_id, file_id, 0.25, "Starting fast CPU transcription"
+                    user_id,
+                    file_id,
+                    0.25,
+                    "Starting fast CPU transcription",
+                    stage=TranscriptionStage.TRANSCRIBE,
                 )
 
                 diarization_off = plan_of(preprocess_context).diarization.engine == "off"

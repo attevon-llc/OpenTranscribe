@@ -101,4 +101,34 @@ describe('SummaryResultCard', () => {
     expect(queryByText('Bluf')).not.toBeInTheDocument();
     expect(getByRole('button', { name: 'View summary' })).toBeInTheDocument();
   });
+
+  it('shows the first two matching sections and discloses the rest on demand', async () => {
+    const manyHit: SummaryHit = {
+      ...baseHit,
+      matches: [
+        ...baseHit.matches,
+        { key_path: 'action_items[0]', snippet: 'Book the venue.' },
+        { key_path: 'action_items[1]', snippet: 'Email the board.' },
+      ],
+    };
+    const { getByRole, queryByText, getByText, container } = render(SummaryResultCard, {
+      props: { hit: manyHit },
+    });
+
+    expect(queryByText('Book the venue.')).not.toBeInTheDocument();
+    const more = getByRole('button', { name: 'Show 2 more sections' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelector(`#${more.getAttribute('aria-controls')}`)).not.toBeNull();
+
+    await fireEvent.click(more);
+
+    expect(getByText('Book the venue.')).toBeInTheDocument();
+    expect(getByText('Email the board.')).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('offers no disclosure when every match already fits', () => {
+    const { queryByRole } = render(SummaryResultCard, { props: { hit: baseHit } });
+    expect(queryByRole('button', { name: /more sections/ })).not.toBeInTheDocument();
+  });
 });

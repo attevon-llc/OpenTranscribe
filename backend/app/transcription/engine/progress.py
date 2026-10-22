@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
+
+from app.core.enums import TranscriptionStage
 
 
 @dataclass
@@ -12,20 +15,40 @@ class ProgressEvent:
 
     progress: float  # 0.0–1.0
     message: str
-    stage: str = ""  # e.g. "preprocess", "transcribe", "diarize", "finalize"
+    stage: TranscriptionStage
 
 
 ProgressCallback = Callable[[ProgressEvent], None]
 
-# Legacy callback type used by TranscriptionPipeline and Celery tasks.
-# Signature: (progress: float, message: str) -> None
-LegacyProgressCallback = Callable[[float, str], None]
+# Callback type used by TranscriptionPipeline and Celery tasks: (progress, message), or
+# (progress, message, stage=...) for a callback that forwards the stage to the client.
+LegacyProgressCallback = Callable[..., None]
+
+
+def _accepts_stage(callback: Callable[..., None]) -> bool:
+    """Whether ``callback`` can be called as ``callback(progress, message, stage=...)``."""
+    try:
+        inspect.signature(callback).bind(0.0, "", stage=TranscriptionStage.PREPARE)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def adapt_legacy(callback: LegacyProgressCallback | None) -> ProgressCallback | None:
-    """Wrap a legacy (float, str) callback into a ProgressCallback."""
+    """Wrap a (progress, message) callback into a ProgressCallback.
+
+    A callback that also takes a ``stage`` keyword receives the event's stage; a plain
+    two-argument one keeps working and simply does not see it. Decided once, at wrap time.
+    """
     if callback is None:
         return None
+
+    if _accepts_stage(callback):
+
+        def _staged(evt: ProgressEvent) -> None:
+            callback(evt.progress, evt.message, stage=evt.stage)
+
+        return _staged
 
     def _wrapped(evt: ProgressEvent) -> None:
         callback(evt.progress, evt.message)
@@ -37,7 +60,7 @@ def emit(
     callback: ProgressCallback | None,
     progress: float,
     message: str,
-    stage: str = "",
+    stage: TranscriptionStage,
 ) -> None:
     """Helper: emit a ProgressEvent if a callback is set."""
     if callback is not None:

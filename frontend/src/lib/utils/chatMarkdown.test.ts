@@ -5,9 +5,15 @@
  * rendered as HTML, so these tests are the guard on that boundary.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
-import { citationHref, escapeHtml, formatClock, renderChatMarkdown } from './chatMarkdown';
+import {
+  citationHref,
+  escapeHtml,
+  formatClock,
+  loadChatMath,
+  renderChatMarkdown,
+} from './chatMarkdown';
 
 describe('renderChatMarkdown — XSS', () => {
   it('strips script tags', () => {
@@ -125,13 +131,128 @@ describe('renderChatMarkdown — formatting', () => {
     // into a paragraph and back once the closing fence arrives.
     const halfFence = renderChatMarkdown('```python\nprint(');
     expect(halfFence).toContain('language-python');
-    expect(halfFence).toContain('print(');
+    // Highlighting wraps tokens in spans; the TEXT is what must survive.
+    expect(halfFence.replace(/<[^>]+>/g, '')).toContain('print(');
   });
 
   it('returns empty string for empty input', () => {
     expect(renderChatMarkdown('')).toBe('');
     expect(renderChatMarkdown(null)).toBe('');
     expect(renderChatMarkdown(undefined)).toBe('');
+  });
+});
+
+describe('renderChatMarkdown — fenced code highlighting', () => {
+  it('highlights a known language with hljs token spans that survive sanitization', () => {
+    const html = renderChatMarkdown('```python\ndef greet(name):\n    return "hi"\n```');
+    expect(html).toContain('class="hljs language-python"');
+    expect(html).toMatch(/<span class="hljs-keyword">def<\/span>/);
+    expect(html).toMatch(/<span class="hljs-string">"hi"<\/span>/);
+  });
+
+  it('resolves a language alias (py, ts, sh)', () => {
+    expect(renderChatMarkdown('```ts\nconst x = 1;\n```')).toMatch(
+      /<span class="hljs-keyword">const<\/span>/
+    );
+  });
+
+  it('leaves an unknown language as escaped plain text, never guessing', () => {
+    const html = renderChatMarkdown('```klingon\nif <b>x</b>\n```');
+    expect(html).toContain('language-klingon');
+    expect(html).not.toContain('hljs-');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+  });
+
+  it('cannot smuggle markup through a highlighted block', () => {
+    const html = renderChatMarkdown('```html\n<img src=x onerror="alert(1)">\n```');
+    expect(html).not.toMatch(/<img/);
+    expect(html).toContain('onerror');
+    expect(html).toContain('&lt;');
+  });
+
+  it('keeps only allowlisted class tokens, so model HTML cannot borrow app chrome', () => {
+    const html = renderChatMarkdown('<span class="btn hljs-keyword modal-primary-button">x</span>');
+    expect(html).toContain('class="hljs-keyword"');
+    expect(html).not.toContain('btn');
+    expect(html).not.toContain('modal-primary-button');
+  });
+});
+
+describe('renderChatMarkdown — math', () => {
+  beforeAll(async () => {
+    await loadChatMath();
+  });
+
+  it('renders inline $..$ as MathML', () => {
+    const html = renderChatMarkdown('Energy is $E = mc^2$ here.');
+    expect(html).toContain('<math');
+    expect(html).toContain('<msup>');
+    expect(html).not.toContain('$E');
+    expect(html).toContain('Energy is');
+  });
+
+  it('renders $$..$$ on its own lines as display math', () => {
+    const html = renderChatMarkdown('Before\n\n$$\n\\frac{a}{b}\n$$\n\nAfter');
+    expect(html).toContain('<mfrac>');
+    expect(html).toContain('display="block"');
+    expect(html).toContain('chat-math-display');
+    expect(html).toContain('After');
+  });
+
+  it('renders \\( \\) and \\[ \\] delimiters', () => {
+    expect(renderChatMarkdown('so \\(x_1\\) is')).toContain('<msub>');
+    expect(renderChatMarkdown('\\[\\sqrt{2}\\]')).toContain('<msqrt>');
+  });
+
+  it('carries the TeX source as alttext, never as visible text inside the formula', () => {
+    const html = renderChatMarkdown('$a+b$');
+    expect(html).toContain('alttext="a+b"');
+    // An <annotation> the sanitizer unwrapped would leave its text in the formula.
+    expect(html).not.toContain('<annotation');
+    expect(html.replace(/<[^>]+>/g, '')).toBe('a+b\n');
+  });
+
+  it('does not treat currency as math', () => {
+    for (const text of ['It costs $5 and $10.', 'between $5-$10 per seat', 'from $3 to $4']) {
+      const html = renderChatMarkdown(text);
+      expect(html, text).not.toContain('<math');
+      expect(html, text).toContain('$');
+    }
+  });
+
+  it('leaves dollar signs inside code alone', () => {
+    const html = renderChatMarkdown('Use `$x$` or\n\n```bash\necho "$HOME $PATH"\n```');
+    expect(html).not.toContain('<math');
+    expect(html).toContain('$x$');
+  });
+
+  it('shows an unclosed delimiter as text mid-stream instead of blanking', () => {
+    const html = renderChatMarkdown('The ratio is $$\\frac{a}{');
+    expect(html).not.toContain('<math');
+    expect(html).toContain('\\frac{a}{');
+  });
+
+  it('falls back to the TeX source in code when KaTeX cannot parse it', () => {
+    const html = renderChatMarkdown('bad $\\frac{1}{$ math');
+    expect(html).not.toContain('<math');
+    expect(html).toContain('<code>');
+    expect(html).toContain('\\frac{1}{');
+  });
+
+  it('does not let math mint a link (KaTeX trust is off)', () => {
+    const html = renderChatMarkdown('$\\href{javascript:alert(1)}{x}$ $\\url{https://evil.test}$');
+    expect(html).toContain('<math');
+    expect(html).not.toContain('href=');
+    expect(html).not.toContain('<a');
+  });
+
+  it('strips href from raw MathML elements and keeps annotation-xml out', () => {
+    const html = renderChatMarkdown(
+      '<math><mi href="https://evil.test">x</mi><annotation-xml encoding="text/html"><img src=x onerror=alert(1)></annotation-xml></math>'
+    );
+    expect(html).not.toContain('href=');
+    expect(html).not.toContain('onerror');
+    expect(html).not.toContain('annotation-xml');
   });
 });
 

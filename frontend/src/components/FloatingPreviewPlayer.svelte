@@ -55,7 +55,7 @@
             <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
           </svg>
         {/if}
-        {title}
+        <span class="preview-title-text" dir="auto">{title}</span>
       </span>
       <span class="preview-playback-info">
         <span class="preview-time">{formatClock(currentTime)}</span>
@@ -144,6 +144,16 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* The text gets its own box: an anonymous flex item is clipped without an ellipsis, and
+     dir="auto" keeps an LTR title in the RTL UI truncating at its own end. */
+  .preview-title-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .preview-media-icon {

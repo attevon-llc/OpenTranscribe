@@ -1,5 +1,6 @@
 import logging
 
+from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -56,6 +57,7 @@ def send_notification_via_redis(
     message: str,
     progress: int = 0,
     duration_seconds: float | None = None,
+    stage: TranscriptionStage | None = None,
 ) -> bool:
     """
     Send notification via Redis pub/sub from synchronous context (like Celery worker).
@@ -66,6 +68,9 @@ def send_notification_via_redis(
         status: File status
         message: Status message
         progress: Progress percentage
+        stage: The transcription sub-stage this frame belongs to, sent as ``stage``.
+            Omitted from the payload when ``None`` (terminal frames); the client then
+            keeps the stage it last saw.
         duration_seconds: How long the task actually ran (issue #753's duration
             chip) — the caller's job to compute (see
             ``task_utils.update_task_status``), never derived from
@@ -105,6 +110,8 @@ def send_notification_via_redis(
         }
         if duration_seconds is not None:
             data["duration_seconds"] = duration_seconds
+        if stage is not None:
+            data["stage"] = TranscriptionStage(stage).value
 
         result = send_ws_event_for_file(user_id, "transcription_status", data, file_id=file_id)
 
@@ -126,6 +133,7 @@ def send_notification_with_retry(
     progress: int = 0,
     max_retries: int = 3,
     duration_seconds: float | None = None,
+    stage: TranscriptionStage | None = None,
 ) -> bool:
     """
     Send notification with retry logic.
@@ -138,6 +146,7 @@ def send_notification_with_retry(
         progress: Progress percentage
         max_retries: Maximum number of retry attempts
         duration_seconds: See ``send_notification_via_redis``.
+        stage: See ``send_notification_via_redis``.
 
     Returns:
         True if notification was eventually sent, False if all retries failed
@@ -145,7 +154,13 @@ def send_notification_with_retry(
     for retry in range(max_retries):
         try:
             success = send_notification_via_redis(
-                user_id, file_id, status, message, progress, duration_seconds=duration_seconds
+                user_id,
+                file_id,
+                status,
+                message,
+                progress,
+                duration_seconds=duration_seconds,
+                stage=stage,
             )
             if success:
                 logger.info(
@@ -187,11 +202,28 @@ def send_processing_notification(user_id: int, file_id: int) -> None:
     )
 
 
-def send_progress_notification(user_id: int, file_id: int, progress: float, message: str) -> None:
-    """Send progress update notification."""
+def send_progress_notification(
+    user_id: int,
+    file_id: int,
+    progress: float,
+    message: str,
+    stage: TranscriptionStage | None = None,
+) -> None:
+    """Send a ``transcription_status`` processing frame.
+
+    Args:
+        user_id: Recipient.
+        file_id: The file being processed.
+        progress: 0.0-1.0, sent as a whole percent.
+        message: English step text.
+        stage: The sub-stage the client files this frame under. Every call site in
+            ``app/`` passes one (``tests/unit/test_transcription_stage_wire.py`` fails on a
+            new site without it); optional only so an older caller keeps working, in which
+            case the client keeps its current stage.
+    """
     progress_percent = int(progress * 100)
     send_notification_with_retry(
-        user_id, file_id, FileStatus.PROCESSING, message, progress=progress_percent
+        user_id, file_id, FileStatus.PROCESSING, message, progress=progress_percent, stage=stage
     )
 
 

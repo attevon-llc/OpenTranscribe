@@ -10,6 +10,8 @@
  * system-notice types, and unread items younger than {@link UNREAD_RETENTION_MS}.
  */
 import type { Notification, NotificationType } from '$stores/websocket';
+import { jobKeyOf } from './jobGrouping';
+import { taskStateFromStatus } from './runTiming';
 
 export type RetentionClass = 'informational' | 'persistent';
 
@@ -96,12 +98,58 @@ export const MAX_NOTIFICATIONS = 100;
 export function isAutoClearable(n: Notification): boolean {
   const cls = (RETENTION_BY_TYPE as Record<string, RetentionClass | undefined>)[n.type];
   if (cls !== 'informational') return false;
-  if (n.status !== undefined && n.status !== 'completed') return false;
   // The backend status can be richer than the typed union ('failed',
-  // 'not_configured', 'pending', ...). Only an explicit success counts.
+  // 'not_configured', 'pending', 'done', ...). Only an explicit success counts.
+  if (n.status !== undefined && taskStateFromStatus(n.status) !== 'done') return false;
   const wire = n.data?.status;
-  if (typeof wire === 'string' && wire !== 'completed' && wire !== 'success') return false;
+  if (typeof wire === 'string' && taskStateFromStatus(wire) !== 'done') return false;
   return true;
+}
+
+/**
+ * A file's processing records render as ONE card, so they are retained as one unit: pruning
+ * them one by one would leave a card that says "transcription waiting" for a file whose
+ * transcription record merely expired first. Inside a card a skipped task (an LLM task with no
+ * provider) is not shown at all, so it must not pin the card forever either.
+ */
+function unitMemberClearable(n: Notification, inJob: boolean): boolean {
+  if (isAutoClearable(n)) return true;
+  if (!inJob || RETENTION_BY_TYPE[n.type] !== 'informational') return false;
+  return taskStateFromStatus(n.data?.status ?? n.status) === 'skipped';
+}
+
+interface Unit {
+  members: Notification[];
+  prunable: boolean;
+  silent: boolean;
+  read: boolean;
+  newest: number;
+}
+
+function unitsOf(list: Notification[]): Unit[] {
+  const order: Notification[][] = [];
+  const byKey = new Map<string, Notification[]>();
+  for (const n of list) {
+    const key = jobKeyOf(n);
+    const existing = key ? byKey.get(key) : undefined;
+    if (existing) {
+      existing.push(n);
+    } else {
+      const members = [n];
+      if (key) byKey.set(key, members);
+      order.push(members);
+    }
+  }
+  return order.map((members) => {
+    const inJob = jobKeyOf(members[0]) !== null;
+    return {
+      members,
+      prunable: members.every((n) => unitMemberClearable(n, inJob)),
+      silent: members.every((n) => n.silent),
+      read: members.every((n) => n.read),
+      newest: Math.max(...members.map((n) => toMs(n.timestamp))),
+    };
+  });
 }
 
 export interface PruneOptions {
@@ -122,57 +170,63 @@ function toMs(d: Date | string | number | undefined): number {
   return d instanceof Date ? d.getTime() : new Date(d ?? Number.NaN).getTime();
 }
 
+function expired(n: Notification, opts: PruneOptions): boolean {
+  if (opts.retention === 'never') return false;
+  if (n.read) {
+    const readAt = toMs(n.readAt);
+    // No/invalid readAt: the age cannot be proven, so keep it (fail safe).
+    return !Number.isNaN(readAt) && opts.now - readAt >= READ_RETENTION_MS[opts.retention];
+  }
+  const created = toMs(n.timestamp);
+  return !Number.isNaN(created) && opts.now - created >= UNREAD_RETENTION_MS;
+}
+
 /** Returns the notifications that survive retention. Never mutates the input. */
 export function pruneNotifications(list: Notification[], opts: PruneOptions): PruneResult {
   if (opts.panelOpen) return { kept: list, removedVisible: 0 };
 
-  const drop = new Set<Notification>();
-
-  if (opts.retention !== 'never') {
-    const readTtl = READ_RETENTION_MS[opts.retention];
-    for (const n of list) {
-      if (!isAutoClearable(n)) continue;
-      if (n.read) {
-        const readAt = toMs(n.readAt);
-        // No/invalid readAt: the age cannot be proven, so keep it (fail safe).
-        if (!Number.isNaN(readAt) && opts.now - readAt >= readTtl) drop.add(n);
-      } else {
-        const created = toMs(n.timestamp);
-        if (!Number.isNaN(created) && opts.now - created >= UNREAD_RETENTION_MS) drop.add(n);
-      }
-    }
+  const units = unitsOf(list);
+  const dropped = new Set<Unit>();
+  for (const u of units) {
+    if (u.prunable && u.members.every((n) => expired(n, opts))) dropped.add(u);
   }
 
-  // Hard cap, applied in every mode (it bounds localStorage, it is not time-based).
-  // Candidate order: invisible (silent) rows, then the oldest read informational,
-  // then the oldest unread informational. Errors, warnings, in-flight and
+  // Hard cap, applied in every mode (it bounds localStorage, it is not time-based), counted
+  // in records. Candidate order: invisible (silent) units, then the oldest read
+  // informational, then the oldest unread informational. Errors, warnings, in-flight and
   // actionable rows are never candidates, so they may exceed the cap.
-  const survivors = list.filter((n) => !drop.has(n));
-  let excess = survivors.length - MAX_NOTIFICATIONS;
+  let excess =
+    units.filter((u) => !dropped.has(u)).reduce((sum, u) => sum + u.members.length, 0) -
+    MAX_NOTIFICATIONS;
   if (excess > 0) {
-    const clearable = survivors.filter(isAutoClearable);
+    const clearable = units.filter((u) => u.prunable && !dropped.has(u));
     const tiers = [
-      clearable.filter((n) => n.silent),
-      clearable.filter((n) => !n.silent && n.read),
-      clearable.filter((n) => !n.silent && !n.read),
+      clearable.filter((u) => u.silent),
+      clearable.filter((u) => !u.silent && u.read),
+      clearable.filter((u) => !u.silent && !u.read),
     ];
     for (const tier of tiers) {
-      // The list is newest-first, so reversing gives oldest-first, and the stable
+      // Units are in newest-first order, so reversing gives oldest-first, and the stable
       // sort keeps that order for equal (or unparseable) timestamps.
       const oldestFirst = [...tier].reverse().sort((a, b) => {
-        const d = toMs(a.timestamp) - toMs(b.timestamp);
+        const d = a.newest - b.newest;
         return Number.isNaN(d) ? 0 : d;
       });
-      for (const n of oldestFirst) {
+      for (const u of oldestFirst) {
         if (excess <= 0) break;
-        drop.add(n);
-        excess -= 1;
+        dropped.add(u);
+        excess -= u.members.length;
       }
     }
   }
 
-  if (drop.size === 0) return { kept: list, removedVisible: 0 };
+  if (dropped.size === 0) return { kept: list, removedVisible: 0 };
+  const drop = new Set<Notification>();
   let removedVisible = 0;
-  for (const n of drop) if (!n.silent) removedVisible += 1;
+  for (const u of dropped) {
+    u.members.forEach((n) => drop.add(n));
+    // A card is one visible item however many records it held.
+    if (!u.silent) removedVisible += 1;
+  }
   return { kept: list.filter((n) => !drop.has(n)), removedVisible };
 }

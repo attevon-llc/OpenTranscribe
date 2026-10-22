@@ -109,6 +109,10 @@ describe('RTL-safe chat prose and search snippets', () => {
     'src/components/chat/ChatSources.svelte',
     'src/components/search/SearchOccurrence.svelte',
     'src/components/search/SearchResultCard.svelte',
+    'src/components/search/SearchResultInfoCard.svelte',
+    'src/components/search/SearchResultsBody.svelte',
+    'src/components/search/SearchPreviewButton.svelte',
+    'src/components/search/SummaryResultCard.svelte',
   ];
 
   it.each(FILES)('%s uses logical (inline-start/end) properties only', (rel) => {

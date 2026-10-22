@@ -31,6 +31,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
+from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import TranscriptSegment
@@ -559,7 +560,9 @@ def rediarize_task(
         )
         from app.tasks.transcription.notifications import send_progress_notification
 
-        send_progress_notification(user_id, file_id, 0.05, "Starting speaker detection")
+        send_progress_notification(
+            user_id, file_id, 0.05, "Starting speaker detection", stage=TranscriptionStage.DIARIZE
+        )
         transcript = _load_segments_as_transcript(file_id)
         if merge is None:
             has_words = any(seg.get("words") for seg in transcript["segments"])
@@ -571,7 +574,9 @@ def rediarize_task(
                 file_id,
             )
 
-        send_progress_notification(user_id, file_id, 0.15, "Preparing audio")
+        send_progress_notification(
+            user_id, file_id, 0.15, "Preparing audio", stage=TranscriptionStage.DIARIZE
+        )
         audio_file_path, temp_dir = _prepare_audio(
             meta["storage_path"], meta["content_type"], meta["filename"], file_uuid=file_uuid
         )
@@ -580,7 +585,9 @@ def rediarize_task(
         )
         detector = _build_detector(engine, user_id, diarizer_config_uuid)
 
-        send_progress_notification(user_id, file_id, 0.30, "Running speaker detection")
+        send_progress_notification(
+            user_id, file_id, 0.30, "Running speaker detection", stage=TranscriptionStage.DIARIZE
+        )
         step_start = time.perf_counter()
         benchmark_timing.mark(timing_id, "diarize_request_sent")
         try:
@@ -611,16 +618,26 @@ def rediarize_task(
             len(detection.frame),
         )
 
-        send_progress_notification(user_id, file_id, 0.60, "Assigning speakers")
+        send_progress_notification(
+            user_id, file_id, 0.60, "Assigning speakers", stage=TranscriptionStage.FINALIZE
+        )
         with stage_timing.stage("speaker_assignment", task_id=task_id, file_id=file_id):
             segments = _merge_turns(detection, transcript, merge)
-        send_progress_notification(user_id, file_id, 0.70, "Saving updated transcript")
+        send_progress_notification(
+            user_id, file_id, 0.70, "Saving updated transcript", stage=TranscriptionStage.FINALIZE
+        )
         with stage_timing.stage("finalize", task_id=task_id, file_id=file_id):
             processed, speaker_mapping, unique_speakers = _save(
                 meta, task_id, segments, detection, engine=engine, merge=merge
             )
 
-        send_progress_notification(user_id, file_id, 0.85, "Processing speaker voiceprints")
+        send_progress_notification(
+            user_id,
+            file_id,
+            0.85,
+            "Processing speaker voiceprints",
+            stage=TranscriptionStage.SPEAKERS,
+        )
         voiceprint_owns_audio = _voiceprint_stage(
             meta, file_uuid, task_id, detection, processed, speaker_mapping, pipeline_task_id
         )

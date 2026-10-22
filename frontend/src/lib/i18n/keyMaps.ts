@@ -15,6 +15,12 @@ import type { GrantableRole } from '$lib/api/groupMappings';
 import type { AccessLevel, GrantStatus } from '$lib/api/supportAccess';
 import type { StoredNoticeType } from '$lib/api/takedownNotices';
 import type { WATCH_FILE_STATUSES } from '$lib/api/watchSourcesApi';
+import type {
+  JobState,
+  JobTaskKey,
+  TaskState,
+  TranscriptionStageKey,
+} from '$lib/notifications/processingJob';
 
 type KeyMap = Readonly<Record<string, string>>;
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -166,6 +172,39 @@ export const ENRICHMENT_TASK_KEYS: Record<string, string> = {
   speaker_attributes: 'notifications.enrichment.speaker_attributes',
   speaker_identification: 'notifications.enrichment.speaker_identification',
   speaker_clustering: 'notifications.enrichment.speaker_clustering',
+};
+
+/** Consolidated processing card: task chips, task states and transcription steps. */
+export const JOB_TASK_KEYS: Record<JobTaskKey, string> = {
+  import: 'notifications.job.task.import',
+  transcription: 'notifications.job.task.transcription',
+  diarization: 'notifications.job.task.diarization',
+  redaction: 'notifications.job.task.redaction',
+  enrichment: 'notifications.job.task.enrichment',
+  summary: 'notifications.job.task.summary',
+  topics: 'notifications.job.task.topics',
+};
+
+export const JOB_TASK_STATE_KEYS: Record<TaskState, string> = {
+  pending: 'notifications.job.state.pending',
+  running: 'notifications.job.state.running',
+  done: 'notifications.job.state.done',
+  failed: 'notifications.job.state.failed',
+  skipped: 'notifications.job.state.skipped',
+};
+
+export const JOB_STEP_KEYS: Record<TranscriptionStageKey, string> = {
+  prepare: 'notifications.job.step.prepare',
+  transcribe: 'notifications.job.step.transcribe',
+  diarize: 'notifications.job.step.diarize',
+  finalize: 'notifications.job.step.finalize',
+  speakers: 'notifications.job.step.speakers',
+};
+
+export const JOB_STATE_KEYS: Record<JobState, string> = {
+  running: 'notifications.job.stateRunning',
+  done: 'notifications.job.stateDone',
+  failed: 'notifications.job.stateFailed',
 };
 
 /** Notification "Keep notifications for" choices, keyed by RetentionSetting (#1217). */

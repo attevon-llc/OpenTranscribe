@@ -34,6 +34,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.common import read_user_chat_settings
 from app.api.endpoints.chat.common import resolve_effective_scope
+from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
 from app.core.tenant_limits import resolve_allowed_models
@@ -43,7 +44,9 @@ from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
+from app.schemas.chat import MAX_ANSWER_TOKENS_REQUEST
 from app.schemas.chat import MAX_MESSAGE_CHARS
+from app.schemas.chat import AnswerBudget
 from app.schemas.chat import ChatScope
 from app.schemas.chat import ContextEstimate
 from app.schemas.chat import MessageCreate
@@ -56,6 +59,7 @@ from app.services.chat.hooks import ChatDispatchContext
 from app.services.chat.hooks import fire_before_message
 from app.services.chat.prompting import build_system_prompt
 from app.services.chat.service import ChatService
+from app.services.chat.service import resolve_answer_tokens
 from app.services.chat.service import sse
 from app.services.chat.settings import apply_tenant_limits
 from app.services.chat.settings import apply_user_preferences
@@ -615,4 +619,46 @@ def estimate_context(
         context_window=context_window,
         pct=round(pct, 1),
         warning_level=level,  # type: ignore[arg-type]
+    )
+
+
+@router.get("/answer-budget", response_model=AnswerBudget)
+def answer_budget(
+    llm_config_uuid: str | None = Query(default=None, max_length=64),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
+) -> AnswerBudget:
+    """Report the reply budget a turn would use, for the chat settings panel.
+
+    ``llm_config_uuid`` is the conversation's pinned model; omitted means the
+    account default — the same choice ``_prepare_turn`` makes. Both numbers come
+    from ``resolve_answer_tokens`` with the same inputs the stream passes, so the
+    panel can never advertise a default the turn does not actually send.
+
+    Raises:
+        HTTPException: 404 for a config the caller may not use, 400 when no LLM
+            is configured.
+    """
+    chat_settings = apply_tenant_limits(get_chat_settings(db), ctx.org_id)
+    config_id = resolve_llm_config_id(db, ctx, llm_config_uuid)
+    llm = (
+        LLMService.create_from_config_id(ctx.user.id, config_id)
+        if config_id is not None
+        else LLMService.create_from_settings(user_id=ctx.user.id)
+    )
+    if llm is None:
+        raise HTTPException(status_code=400, detail="No LLM is configured.")
+
+    def resolve(requested: int | None) -> int:
+        return resolve_answer_tokens(
+            requested=requested,
+            tenant_ceiling=chat_settings.max_output_tokens,
+            default_tokens=llm.response_tokens,
+            context_window=llm.user_context_window,
+        )
+
+    return AnswerBudget(
+        default_tokens=resolve(None),
+        max_tokens=resolve(MAX_ANSWER_TOKENS_REQUEST),
+        context_window=llm.user_context_window,
     )

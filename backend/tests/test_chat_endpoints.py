@@ -112,6 +112,7 @@ def test_every_chat_route_requires_authentication(client):
         ("post", "/api/chat/conversations"),
         ("get", f"/api/chat/conversations/{uuid_pkg.uuid4()}"),
         ("post", "/api/chat/context/estimate"),
+        ("get", "/api/chat/answer-budget"),
         ("get", "/api/user-settings/chat"),
     ):
         kwargs: dict = {"json": {}} if method == "post" else {}
@@ -835,6 +836,96 @@ def test_estimate_reports_a_shape_the_picker_can_render(client, auth_headers):
         "warning_level",
     }
     assert body["warning_level"] in ("ok", "warn", "over")
+
+
+# ---------------------------------------------------------------------------
+# Answer budget (the settings panel's "default" answer length)
+# ---------------------------------------------------------------------------
+
+
+def test_answer_budget_reports_what_an_unset_turn_sends(client, auth_headers, stub_llm):
+    """_FakeLLM: window 8192, derived reply budget 1000 -> default 1000, max 8192 // 2."""
+    response = client.get("/api/chat/answer-budget", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"default_tokens": 1000, "max_tokens": 4096, "context_window": 8192}
+
+
+def test_answer_budget_shows_the_tenant_cap_instead_of_applying_it_silently(
+    client, auth_headers, stub_llm
+):
+    from app.core import tenant_limits
+
+    tenant_limits.set_chat_limits_resolver(
+        lambda _org: tenant_limits.TenantChatLimits(max_output_tokens=600)
+    )
+    try:
+        response = client.get("/api/chat/answer-budget", headers=auth_headers)
+    finally:
+        tenant_limits.reset_resolvers()
+
+    assert response.status_code == 200, response.text
+    assert response.json()["default_tokens"] == 600
+    assert response.json()["max_tokens"] == 600
+
+
+def test_answer_budget_uses_the_pinned_model(client, auth_headers, db_session, normal_user):
+    """A pinned config is resolved by uuid, never the account default."""
+    from app.models.user_llm_settings import UserLLMSettings
+
+    config = UserLLMSettings(
+        user_id=normal_user.id,
+        name="big-window",
+        provider="ollama",
+        model_name="big",
+        base_url="http://ollama:11434/v1",
+        max_tokens=131_072,
+        temperature="0.3",
+    )
+    db_session.add(config)
+    db_session.commit()
+    db_session.refresh(config)
+
+    default_llm = _FakeLLM()
+    pinned_llm = _FakeLLM()
+    pinned_llm.user_context_window = 131_072
+    pinned_llm.response_tokens = 16_384
+    with (
+        patch("app.services.llm_service.LLMService.create_from_settings", return_value=default_llm),
+        patch(
+            "app.services.llm_service.LLMService.create_from_config_id", return_value=pinned_llm
+        ) as by_id,
+    ):
+        response = client.get(
+            "/api/chat/answer-budget",
+            params={"llm_config_uuid": str(config.uuid)},
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200, response.text
+    assert by_id.call_args.args == (normal_user.id, config.id)
+    assert response.json() == {
+        "default_tokens": 16_384,
+        "max_tokens": 65_536,
+        "context_window": 131_072,
+    }
+
+
+def test_answer_budget_404s_a_config_the_caller_cannot_use(client, auth_headers, stub_llm):
+    response = client.get(
+        "/api/chat/answer-budget",
+        params={"llm_config_uuid": str(uuid_pkg.uuid4())},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "LLM configuration not found"
+
+
+def test_answer_budget_400s_without_an_llm(client, auth_headers):
+    with patch("app.services.llm_service.LLMService.create_from_settings", return_value=None):
+        response = client.get("/api/chat/answer-budget", headers=auth_headers)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No LLM is configured."
 
 
 # ---------------------------------------------------------------------------

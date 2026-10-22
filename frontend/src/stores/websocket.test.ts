@@ -618,3 +618,150 @@ describe('notification management', () => {
     expect(socket.sent).toContain(JSON.stringify({ type: 'ping' }));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Consolidated processing card: what the store must record for it
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('processing card data (one card per file)', () => {
+  const T0 = Date.UTC(2026, 9, 21, 12, 0, 0);
+  const tx = () => notifications().find((n) => n.type === 'transcription_status');
+
+  it('counts one file with several processing events as ONE unread item', () => {
+    const socket = openSocket();
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'completed', progress: 100 },
+    });
+    socket.deliver({
+      type: 'summarization_status',
+      data: { file_id: 'f1', status: 'processing', progress: 10 },
+    });
+    socket.deliver({
+      type: 'topic_extraction_status',
+      data: { file_id: 'f1', status: 'processing' },
+    });
+
+    expect(notifications()).toHaveLength(3); // the file page still dispatches on each type
+    expect(get(unreadCount)).toBe(1);
+
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f2', status: 'processing', progress: 5 },
+    });
+    expect(get(unreadCount)).toBe(2);
+  });
+
+  it('records when a run started, each progress step, and when it finished', () => {
+    vi.setSystemTime(T0);
+    const socket = openSocket();
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'processing', progress: 25 },
+    });
+    vi.setSystemTime(T0 + 30_000);
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'processing', progress: 52 },
+    });
+    vi.setSystemTime(T0 + 50_000);
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'completed', progress: 100 },
+    });
+
+    expect(tx()?.startedAt).toBe(T0);
+    expect(tx()?.finishedAt).toBe(T0 + 50_000);
+    expect(tx()?.stepLog).toEqual([
+      { p: 25, at: T0 },
+      { p: 52, at: T0 + 30_000 },
+      { p: 100, at: T0 + 50_000 },
+    ]);
+  });
+
+  it('files each step under the stage the backend sent, keeping it across stage-less frames', () => {
+    vi.setSystemTime(T0);
+    const socket = openSocket();
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'processing', progress: 40, stage: 'transcribe' },
+    });
+    vi.setSystemTime(T0 + 10_000);
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'processing', progress: 40, stage: 'diarize' },
+    });
+    vi.setSystemTime(T0 + 20_000);
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'completed', progress: 100 },
+    });
+
+    expect(tx()?.stepLog).toEqual([
+      { p: 40, at: T0, stage: 'transcribe' },
+      { p: 40, at: T0 + 10_000, stage: 'diarize' },
+      { p: 100, at: T0 + 20_000, stage: 'diarize' },
+    ]);
+  });
+
+  it('times enrichment tasks on the transcription record, first report wins', () => {
+    vi.setSystemTime(T0);
+    const socket = openSocket();
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'completed', progress: 100 },
+    });
+    socket.deliver({
+      type: 'enrichment_started',
+      data: { file_id: 'f1', tasks: ['search_indexing', 'analytics'] },
+    });
+    vi.setSystemTime(T0 + 4_000);
+    socket.deliver({
+      type: 'enrichment_task_complete',
+      data: { file_id: 'f1', task: 'search_indexing' },
+    });
+    vi.setSystemTime(T0 + 9_000);
+    socket.deliver({
+      type: 'enrichment_task_complete',
+      data: { file_id: 'f1', task: 'search_indexing' },
+    });
+
+    expect(tx()?.enrichmentTasks).toEqual(['search_indexing', 'analytics']);
+    expect(tx()?.enrichmentStartedAt).toBe(T0);
+    expect(tx()?.enrichmentCompletedAt).toEqual({ search_indexing: T0 + 4_000 });
+    // Enrichment events never become rows of their own.
+    expect(notifications()).toHaveLength(1);
+  });
+
+  it('a retry after a failure starts a new run and forgets the old enrichment', () => {
+    vi.setSystemTime(T0);
+    const socket = openSocket();
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'completed', progress: 100 },
+    });
+    socket.deliver({ type: 'enrichment_started', data: { file_id: 'f1', tasks: ['analytics'] } });
+    vi.setSystemTime(T0 + 600_000);
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'processing', progress: 5 },
+    });
+
+    expect(tx()?.startedAt).toBe(T0 + 600_000);
+    expect(tx()?.finishedAt).toBeUndefined();
+    expect(tx()?.stepLog).toEqual([{ p: 5, at: T0 + 600_000 }]);
+    expect(tx()?.enrichmentTasks).toBeUndefined();
+  });
+
+  it('a skipped LLM task is dismissible from its very first frame', () => {
+    const socket = openSocket();
+    socket.deliver({
+      type: 'topic_extraction_status',
+      data: { file_id: 'f1', status: 'not_configured' },
+    });
+    socket.deliver({ type: 'summarization_status', data: { file_id: 'f1', status: 'disabled' } });
+    socket.deliver({ type: 'redaction_status', data: { file_id: 'f1', status: 'done' } });
+
+    expect(notifications().map((n) => n.dismissible)).toEqual([true, true, true]);
+  });
+});

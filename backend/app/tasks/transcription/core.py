@@ -26,6 +26,7 @@ from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
 from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import gpu_split_enabled
+from app.core.enums import TranscriptionStage
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested
@@ -520,7 +521,13 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                 with benchmark_timing.stage(task_id, "gpu_audio_load"):
                     pass  # no download — file is already local; mark stage for timing parity
 
-                send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
+                send_progress_notification(
+                    user_id,
+                    file_id,
+                    0.25,
+                    "Starting AI transcription",
+                    stage=TranscriptionStage.TRANSCRIBE,
+                )
 
                 # ── Phase 4: multi-GPU split path ─────────────────────────────────
                 # When ENGINE_GPU_SPLIT=true, transcription-only runs here on the
@@ -604,7 +611,13 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                     f"{time.perf_counter() - step_start:.3f}s"
                 )
 
-                send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
+                send_progress_notification(
+                    user_id,
+                    file_id,
+                    0.25,
+                    "Starting AI transcription",
+                    stage=TranscriptionStage.TRANSCRIBE,
+                )
 
                 if provider is not None:
                     # Per-task model override is only for local ASR

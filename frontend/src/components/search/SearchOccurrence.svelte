@@ -10,15 +10,6 @@
 
 <div class="occurrence">
   <div class="occurrence-header">
-    {#if occurrence.speaker}
-      <span class="speaker">
-        {#if occurrence.speaker_highlighted}
-          {@html sanitizeHighlightHtml(occurrence.speaker_highlighted)}
-        {:else}
-          {occurrence.speaker}
-        {/if}
-      </span>
-    {/if}
     <a
       class="timestamp-link"
       href="/files/{fileUuid}?t={occurrence.start_time}"
@@ -26,6 +17,15 @@
     >
       {formatClock(occurrence.start_time)}
     </a>
+    {#if occurrence.speaker}
+      <span class="speaker" dir="auto">
+        {#if occurrence.speaker_highlighted}
+          {@html sanitizeHighlightHtml(occurrence.speaker_highlighted)}
+        {:else}
+          {occurrence.speaker}
+        {/if}
+      </span>
+    {/if}
   </div>
   {#if occurrence.snippet}
     <div class="snippet" dir="auto" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'} class:semantic-snippet={occurrence.highlight_type === 'semantic'}>
@@ -36,51 +36,42 @@
 
 <style>
   .occurrence {
-    padding: 0.5rem 0;
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    min-width: 0;
   }
 
-  .occurrence:first-child {
-    border-top: none;
-    padding-top: 0;
-  }
-
+  /* One muted line above the snippet: timestamp link, then the speaker as plain text.
+     The old chip + bordered-timestamp pair made every row two boxes tall before the
+     snippet started (docs/design/search_results_ux_audit.md). */
   .occurrence-header {
     display: flex;
-    align-items: center;
+    align-items: baseline;
+    flex-wrap: wrap;
     gap: 0.5rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.125rem;
+    font-size: var(--font-size-xs);
   }
 
-  /* Speaker and timestamp are metadata above the snippet: link colour that reads on both
-     themes (`--primary-color` is 2.9:1 on the dark card), medium weight, not bold. */
   .speaker {
-    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    color: var(--primary-on-surface);
-    background: rgba(var(--primary-color-rgb), 0.1);
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
+    color: var(--text-secondary);
     overflow-wrap: break-word;
     word-break: break-word;
   }
 
   .timestamp-link {
-    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--primary-on-surface);
     text-decoration: none;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    background: var(--surface-color, #f9fafb);
-    border: 1px solid var(--border-color, #e5e7eb);
-    transition: all 0.15s;
   }
 
   .timestamp-link:hover {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+    text-decoration: underline;
+  }
+
+  .timestamp-link:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .snippet {

@@ -9,6 +9,7 @@
 
 import axiosInstance from '$lib/axios';
 import type {
+  AnswerBudget,
   ChatAdminSettings,
   ChatProject,
   ChatProjectDetail,
@@ -127,6 +128,14 @@ export async function exportConversation(
 
 export async function estimateContext(scope: ChatScope): Promise<ContextEstimate> {
   const { data } = await axiosInstance.post<ContextEstimate>('/chat/context/estimate', scope);
+  return data;
+}
+
+/** The reply budget for a pinned config, or the account default when null. */
+export async function getAnswerBudget(llmConfigUuid: string | null): Promise<AnswerBudget> {
+  const { data } = await axiosInstance.get<AnswerBudget>('/chat/answer-budget', {
+    params: llmConfigUuid ? { llm_config_uuid: llmConfigUuid } : undefined,
+  });
   return data;
 }
 

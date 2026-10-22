@@ -18,6 +18,7 @@ from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.constants import engine_shared_volume_enabled
 from app.core.constants import resolve_engine_shared_volume_path
+from app.core.enums import TranscriptionStage
 from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
@@ -208,7 +209,9 @@ def _run_preprocess(
 
             update_task_status(db, task_id, "in_progress", progress=0.05)
 
-        send_progress_notification(user_id, file_id, 0.05, "Preparing media file")
+        send_progress_notification(
+            user_id, file_id, 0.05, "Preparing media file", stage=TranscriptionStage.PREPARE
+        )
 
         file_ext = get_audio_file_extension(content_type, file_name)
         is_video = content_type.startswith("video/")
@@ -242,7 +245,13 @@ def _run_preprocess(
             _dispatch_playback_rendition_if_needed(file_id, file_uuid, media_source)
 
             # Upload preprocessed audio to MinIO temp for GPU worker
-            send_progress_notification(user_id, file_id, 0.18, "Staging audio for transcription")
+            send_progress_notification(
+                user_id,
+                file_id,
+                0.18,
+                "Staging audio for transcription",
+                stage=TranscriptionStage.PREPARE,
+            )
             audio_size_mb = os.path.getsize(temp_audio_path) / (1024 * 1024)
             with benchmark_timing.stage(task_id, "temp_upload"):
                 audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
@@ -273,7 +282,13 @@ def _run_preprocess(
         # Record preprocess end timestamp for inter-stage gap measurement
         benchmark_timing.mark(task_id, "preprocess_end")
 
-        send_progress_notification(user_id, file_id, 0.20, "Audio ready for transcription")
+        send_progress_notification(
+            user_id,
+            file_id,
+            0.20,
+            "Audio ready for transcription",
+            stage=TranscriptionStage.PREPARE,
+        )
 
         return {
             "file_uuid": file_uuid,
@@ -336,7 +351,9 @@ def _preprocess_video(
     from app.services.minio_service import download_file_to_path
     from app.services.minio_service import get_internal_presigned_url
 
-    send_progress_notification(user_id, file_id, 0.08, "Extracting audio from video")
+    send_progress_notification(
+        user_id, file_id, 0.08, "Extracting audio from video", stage=TranscriptionStage.PREPARE
+    )
 
     # Resolve the source once. The presigned URL lets FFmpeg + ffprobe read
     # only the byte ranges they need (no full download); we only fall back
@@ -413,7 +430,9 @@ def _preprocess_audio(
     """Download audio file and convert to WAV. Returns the downloaded original's path."""
     from app.services.minio_service import download_file_to_path
 
-    send_progress_notification(user_id, file_id, 0.08, "Processing audio file")
+    send_progress_notification(
+        user_id, file_id, 0.08, "Processing audio file", stage=TranscriptionStage.PREPARE
+    )
     temp_input_path = os.path.join(temp_dir, f"input{file_ext}")
     with benchmark_timing.stage(task_id, "media_download"):
         download_file_to_path(storage_path, temp_input_path)

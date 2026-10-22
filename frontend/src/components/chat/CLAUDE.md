@@ -27,6 +27,27 @@ able to mint an app-internal link (`/settings`, `/files/…`) that looks like it
 came from OpenTranscribe. Citations are rendered separately, from the structured
 `sources` frame, via `citationHref()`.
 
+### Code, math and the reading face
+
+- Fences are highlighted by highlight.js (`$lib/utils/chatMarkdownExtensions.ts`, a curated
+  language set, **named languages only**: auto-detection re-guesses every streaming tick and
+  flips colours). Token classes survive only via `chatMarkdown.ts`'s per-token `CLASS_TOKEN`
+  allowlist. `ChatMarkdown` injects each block's header (language label + copy button)
+  **inside** the `<pre>`: `{@html}` owns its top-level nodes, so re-parenting them would orphan
+  a wrapper per streaming tick.
+- Math (`$..$`, `$$..$$`, `\(..\)`, `\[..\]`) is KaTeX with `output: 'mathml'`, so no KaTeX
+  CSS, fonts or `style` attributes. KaTeX is lazy-loaded; until it lands the TeX source shows
+  in `<code>` and `mathPending()` tells `ChatMarkdown` to render once more. Two sanitizer traps:
+  DOMPurify validates unknown attribute VALUES against our http(s)-only `ALLOWED_URI_REGEXP`,
+  so MathML attributes must also be `ADD_URI_SAFE_ATTR` or `display="block"` silently vanishes;
+  and `<semantics>`/`<annotation>` are dropped as unsafe MathML but their TEXT is kept, so
+  `renderMath` unwraps them and moves the source to `alttext`.
+- Prose is set in `--font-family` (system text face), not the app's Poppins: Poppins regular
+  reads like medium, which is why answers looked bold.
+- "Answer length" (`ChatControlsPanel`) shows the real default and ceiling from
+  `GET /chat/answer-budget`, computed by the stream's own `resolve_answer_tokens`; an override
+  above the ceiling is shown as clamped, never clamped silently.
+
 ## Streaming
 
 `$lib/api/chatStream.ts` uses **fetch + ReadableStream, not EventSource**:

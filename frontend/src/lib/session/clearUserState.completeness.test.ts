@@ -38,6 +38,9 @@ const SCAN_ROOTS = ['stores', 'lib'];
  * `src`-relative, extension-less.
  */
 const EXEMPT: Record<string, string> = {
+  'lib/utils/chatMarkdownExtensions':
+    'Caches the lazily imported KaTeX library itself (static code, identical for every user); ' +
+    'no user data is held, so it is safe to survive a session change.',
   // ── Reset by a different, deliberate mechanism in logout() ──
   'stores/auth':
     'authStore.reset() is called explicitly by logout() and every failed-login path; ' +

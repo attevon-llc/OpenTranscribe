@@ -9,6 +9,7 @@ import os
 import time
 
 from app.core import stage_timing
+from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.utils.task_utils import update_task_status
 
@@ -141,7 +142,13 @@ def _process_and_save_critical(
     from app.transcription.boundary_resolver import BoundarySmoothingConfig
     from app.utils.segment_postprocess import finalize_segments
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.68,
+        "Processing speaker segments",
+        stage=TranscriptionStage.FINALIZE,
+    )
     pre_merge_count = len(result["segments"])
     with session_scope() as db:
         smoothing_cfg = BoundarySmoothingConfig.from_db_env(db)
@@ -182,7 +189,13 @@ def _process_and_save_critical(
         processed_segments, _ = apply_garbage_cleanup(db, ctx.user_id, processed_segments)
 
     # Save to database
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
+    send_progress_notification(
+        ctx.user_id,
+        ctx.file_id,
+        0.75,
+        "Saving transcript to database",
+        stage=TranscriptionStage.FINALIZE,
+    )
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     diarization_disabled = result.get("diarization_disabled", False)
     # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process

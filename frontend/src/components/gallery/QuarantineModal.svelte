@@ -13,12 +13,20 @@
    * GDPR erasure path: it calls only `AdminApi.quarantineFile`, names no user
    * (only files), and offers no destination beyond quarantine + an optional
    * legal hold. See `admin.gdpr.absence.test.ts` for the standing guard.
+   *
+   * Every takedown must say what it acts on (issue #1254): a recorded notice, a new notice
+   * recorded here first (once, before the loop, so a failure takes nothing down), or an
+   * explicit "no notice (operator action)". With a notice, the admin can also email the
+   * owners once per owner afterwards instead of once per file.
    */
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { AdminApi } from '$lib/api/admin';
+  import { TakedownNoticesApi } from '$lib/api/takedownNotices';
+  import TakedownBasisPicker from '$components/takedown/TakedownBasisPicker.svelte';
+  import { emptyBasis, isBasisValid, toNewNotice } from '$lib/takedownBasis';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { MediaFile } from '$lib/types/media';
@@ -34,6 +42,10 @@
   let reason = '';
   let legalHold = true;
   let submitting = false;
+  let basis = emptyBasis();
+  let notifyOwners = false;
+
+  $: citesNotice = basis.mode !== 'operator';
 
   // Matches the owner notice's precedence (title || filename) so the admin
   // sees the exact string the owner will read.
@@ -41,18 +53,56 @@
   $: previewNames = displayNames.slice(0, NAMES_PREVIEW_COUNT);
   $: extraCount = Math.max(0, displayNames.length - NAMES_PREVIEW_COUNT);
   $: reasonTrimmed = reason.trim();
-  $: canSubmit = reasonTrimmed.length > 0 && files.length > 0 && !submitting;
+  $: canSubmit =
+    reasonTrimmed.length > 0 && files.length > 0 && !submitting && isBasisValid(basis);
+
+  function resetForm() {
+    reason = '';
+    legalHold = true;
+    basis = emptyBasis();
+    notifyOwners = false;
+  }
 
   function handleClose() {
     if (submitting) return;
-    reason = '';
-    legalHold = true;
+    resetForm();
     dispatch('close');
+  }
+
+  /** Email the owners once for the whole notice, and say plainly what happened. */
+  async function notifyOnce(noticeUuid: string) {
+    try {
+      const result = await TakedownNoticesApi.notify(noticeUuid);
+      if (result.sent > 0) {
+        toastStore.success($t('gallery.quarantine.notifyResult', { count: result.sent }));
+      }
+      if (result.skipped_no_transport > 0) {
+        toastStore.warning($t('gallery.quarantine.notifyNoTransport'));
+      }
+      if (result.failed > 0) toastStore.error($t('gallery.quarantine.notifyFailed'));
+    } catch (err) {
+      toastStore.error(getErrorMessage(err, $t('gallery.quarantine.notifyFailed')));
+    }
   }
 
   async function handleSubmit() {
     if (!canSubmit) return;
     submitting = true;
+
+    // A new notice is recorded once, first. If that fails nothing has been taken down.
+    let noticeUuid = basis.mode === 'existing' ? basis.noticeUuid : '';
+    if (basis.mode === 'new') {
+      try {
+        noticeUuid = (await TakedownNoticesApi.create(toNewNotice(basis.draft))).uuid;
+      } catch (err) {
+        submitting = false;
+        toastStore.error(getErrorMessage(err, $t('gallery.quarantine.noticeCreateFailed')));
+        return;
+      }
+    }
+    const takedownBasis = noticeUuid
+      ? { noticeUuid }
+      : { operatorActionReason: basis.operatorReason.trim() };
 
     const succeededUuids: string[] = [];
     let failedCount = 0;
@@ -60,7 +110,7 @@
     // Sequential, deliberately — see the module docstring.
     for (const file of files) {
       try {
-        await AdminApi.quarantineFile(file.uuid, reasonTrimmed, legalHold);
+        await AdminApi.quarantineFile(file.uuid, reasonTrimmed, legalHold, takedownBasis);
         succeededUuids.push(file.uuid);
       } catch (err) {
         failedCount += 1;
@@ -78,16 +128,19 @@
       toastStore.error($t('gallery.quarantine.failed', { count: failedCount }));
     }
 
+    if (succeededUuids.length > 0 && notifyOwners && noticeUuid) {
+      await notifyOnce(noticeUuid);
+    }
+
     if (succeededUuids.length > 0) {
       dispatch('quarantined', { uuids: succeededUuids });
     }
-    reason = '';
-    legalHold = true;
+    resetForm();
     dispatch('close');
   }
 </script>
 
-<BaseModal {isOpen} title={$t('gallery.quarantine.title')} onClose={handleClose} size="sm">
+<BaseModal {isOpen} title={$t('gallery.quarantine.title')} onClose={handleClose} size="md">
   <div class="quarantine-modal-body">
     <div class="file-list">
       <p class="file-list-label">
@@ -116,6 +169,8 @@
       <span class="char-count">{reason.length} / {REASON_MAX_LENGTH}</span>
     </label>
 
+    <TakedownBasisPicker bind:basis disabled={submitting} />
+
     <label class="legal-hold-field">
       <input type="checkbox" bind:checked={legalHold} disabled={submitting} />
       <span>
@@ -124,6 +179,13 @@
         {$t('gallery.quarantine.legalHoldHelp')}
       </span>
     </label>
+
+    {#if citesNotice}
+      <label class="legal-hold-field">
+        <input type="checkbox" bind:checked={notifyOwners} disabled={submitting} />
+        <span>{$t('gallery.quarantine.notifyOwners')}</span>
+      </label>
+    {/if}
 
     <p class="notice">{$t('gallery.quarantine.notice')}</p>
     <p class="scope-notice">{$t('gallery.quarantine.scopeNotice')}</p>

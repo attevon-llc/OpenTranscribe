@@ -9,6 +9,7 @@ from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
 from .endpoints import admin_scim_tokens
 from .endpoints import admin_storage_integrity
+from .endpoints import admin_takedown_notices
 from .endpoints import admin_timing
 from .endpoints import asr_provider_policy
 from .endpoints import asr_settings
@@ -47,6 +48,7 @@ from .endpoints import summarization
 from .endpoints import support_access
 from .endpoints import system
 from .endpoints import tags
+from .endpoints import takedown_notices_user
 from .endpoints import tasks
 from .endpoints import topics
 from .endpoints import transcript_segments
@@ -155,6 +157,18 @@ include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(
     admin_storage_integrity.router, prefix="/admin", tags=["admin-storage-integrity"]
+)
+# Takedown notice records (issue #1254): the durable history of why a file was taken down.
+include_router_with_consistency(
+    admin_takedown_notices.router, prefix="/admin", tags=["admin-takedown-notices"]
+)
+# The signed-in owner's own takedown history. Refused under a support grant: a grant never
+# reads what a user was told about their own content.
+include_router_with_consistency(
+    takedown_notices_user.router,
+    prefix="/takedown-notices",
+    tags=["takedown-notices"],
+    refuse_under_grant=True,
 )
 # Working the approval queue is user management, so it sits at the admin tier next
 # to /admin/users — unlike the switch that creates the queue, which is deployment

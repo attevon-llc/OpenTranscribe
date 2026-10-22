@@ -33,7 +33,7 @@ class OrgReleaseRequest(BaseModel):
     reason: str | None = Field(
         None,
         max_length=2000,
-        description="Why the file is being released. Recorded in the audit log only.",
+        description="Why the file is being released. Recorded in the audit log and the takedown record.",
     )
 
 

@@ -162,6 +162,67 @@ describe('QuarantinePanel, platform scope is unchanged', () => {
   });
 });
 
+describe('QuarantinePanel notice records (issue #1254)', () => {
+  const platformFile = (notices: unknown[]) => ({
+    uuid: 'f1',
+    filename: 'a.wav',
+    title: null,
+    owner_uuid: 'o',
+    owner_email: 'owner@example.com',
+    organization_uuid: null,
+    quarantine_reason: 'dmca',
+    quarantined_at: null,
+    quarantined_by_email: 'op@example.com',
+    legal_hold: true,
+    is_quarantined: true,
+    takedown_origin: 'platform',
+    notices,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows one chip per notice covering the file, so a second notice is not hidden', async () => {
+    get.mockResolvedValue({
+      data: {
+        files: [
+          platformFile([
+            { notice_uuid: 'n1', link_uuid: 'l1', notice_type: 'dmca', status: 'open' },
+            { notice_uuid: 'n2', link_uuid: 'l2', notice_type: 'court_order', status: 'upheld' },
+          ]),
+        ],
+        total: 1,
+      },
+    } as never);
+
+    render(QuarantinePanel);
+
+    await waitFor(() => expect(screen.getByText('takedown.type.dmca')).toBeInTheDocument());
+    expect(screen.getByText('takedown.type.court_order')).toBeInTheDocument();
+    expect(screen.getByText('takedown.status.open')).toBeInTheDocument();
+    expect(screen.getByText('takedown.status.upheld')).toBeInTheDocument();
+  });
+
+  it('the organization queue never shows notice records', async () => {
+    get.mockResolvedValue({
+      data: {
+        files: [
+          {
+            ...orgRow(),
+            notices: [{ notice_uuid: 'n1', link_uuid: 'l1', notice_type: 'dmca', status: 'open' }],
+          },
+        ],
+        total: 1,
+      },
+    } as never);
+    render(QuarantinePanel, { scope: 'organization' });
+    await waitFor(() => expect(screen.getByText('own.wav')).toBeInTheDocument());
+    expect(screen.queryByText('takedown.type.dmca')).toBeNull();
+    expect(screen.queryByText('takedown.status.open')).toBeNull();
+  });
+});
+
 describe('toRows', () => {
   it('withholds the reason only for an operator takedown in the organization queue', () => {
     const [own, op] = toRows('organization', [orgRow(), operatorRow()] as never);

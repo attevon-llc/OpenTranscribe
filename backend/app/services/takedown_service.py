@@ -43,12 +43,15 @@ from app.auth.audit import AuditOutcome
 from app.core.enums import FileStatus
 from app.core.enums import TakedownOrigin
 from app.models.media import MediaFile
+from app.models.takedown import TakedownNotice
 from app.services.takedown_authority import TakedownActor
 from app.services.takedown_authority import TakedownRefusedError
 from app.services.takedown_authority import assert_may_quarantine
 from app.services.takedown_authority import assert_may_release
 from app.services.takedown_authority import current_origin
 from app.services.takedown_authority import origin_after_release
+from app.services.takedown_notice_service import close_links_on_release
+from app.services.takedown_notice_service import record_quarantine
 from app.services.takedown_notices import OWNER_RELEASE_EVENT
 from app.services.takedown_notices import OWNER_TAKEDOWN_EVENT
 from app.services.takedown_notices import audit_takedown
@@ -213,6 +216,8 @@ def quarantine_file(
     *,
     actor: TakedownActor,
     reason: str,
+    notice: TakedownNotice | None = None,
+    operator_action_reason: str | None = None,
     legal_hold: bool = True,
     source_ip: str = "",
     user_agent: str = "",
@@ -231,6 +236,13 @@ def quarantine_file(
     refused (:class:`TakedownRefusedError`, nothing changed) on a file the operator
     holds. See :mod:`app.services.takedown_authority` for the full table.
 
+    **Notice record (issue #1254):** every takedown is linked to a ``takedown_notice``,
+    in the same transaction as the flags. Pass either ``notice`` (a recorded legal notice)
+    or ``operator_action_reason`` (the explicit "no notice" reason, which creates an
+    ``operator_action`` notice); neither or both is a ``ValueError`` before anything is
+    touched. If the link cannot be written the flags are rolled back, so a quarantined
+    file without a record cannot exist.
+
     **Presigned-URL revocation (issue #907, FIXED):** browser-facing GET presigns
     (``GET /api/files/{uuid}/stream-url`` and the thumbnail/download equivalents) are
     signed by a dedicated, least-privilege MinIO service-account identity
@@ -248,7 +260,9 @@ def quarantine_file(
         db: Database session.
         file: The media file to take down.
         actor: Who is acting and with which authority (``quarantined_by`` + audit).
-        reason: Free-text takedown reason (DMCA notice ref, AUP clause, etc.).
+        reason: Free-text takedown reason shown to the owner (DMCA notice ref, AUP clause).
+        notice: The recorded notice this takedown acts on (XOR ``operator_action_reason``).
+        operator_action_reason: Why the operator acted with no notice (XOR ``notice``).
         legal_hold: Also place a legal-hold on the row + S3 object (default True).
         source_ip / user_agent: Request metadata for the audit event.
 
@@ -259,7 +273,11 @@ def quarantine_file(
 
     Raises:
         TakedownRefusedError: The actor may not take this file down.
+        ValueError: Neither or both of ``notice`` / ``operator_action_reason`` were given.
+        TakedownNoticeError: The notice was already closed for this file.
     """
+    if (notice is None) == (operator_action_reason is None):
+        raise ValueError("quarantine needs exactly one of notice or operator_action_reason")
     previous_origin = _lock_and_authorize(
         db,
         file,
@@ -272,7 +290,8 @@ def quarantine_file(
     previous_reason = file.quarantine_reason
     file.is_quarantined = True
     file.quarantine_reason = reason
-    file.quarantined_at = datetime.now(UTC)
+    quarantined_at = datetime.now(UTC)
+    file.quarantined_at = quarantined_at
     file.quarantined_by = actor.user.id
     file.takedown_origin = actor.authority.value
     # Preserve the true prior status ONCE (re-quarantine must not overwrite it
@@ -284,6 +303,24 @@ def quarantine_file(
     file.status = FileStatus.QUARANTINED
     if legal_hold:
         file.legal_hold = True
+
+    # The record goes in BEFORE the first commit: written afterwards it could fail alone
+    # and leave a quarantined file with no notice, which is what the record exists to forbid.
+    try:
+        link = record_quarantine(
+            db,
+            file,
+            actor=actor,
+            notice=notice,
+            operator_action_reason=operator_action_reason,
+            reason=reason,
+            legal_hold=legal_hold,
+            when=quarantined_at,
+        )
+        link_uuid, notice_uuid = str(link.uuid), str(link.notice.uuid)
+    except Exception:
+        db.rollback()
+        raise
 
     db.commit()
     db.refresh(file)
@@ -350,6 +387,8 @@ def quarantine_file(
         "legal_hold": bool(legal_hold),
         "presign_revoked": bool(tagged),
         "previous_origin": previous_origin.value if previous_origin else None,
+        "notice_uuid": notice_uuid,
+        "link_uuid": link_uuid,
     }
     if previous_reason is not None:
         # An escalation or refresh overwrites the reason; the earlier one survives here.
@@ -362,10 +401,9 @@ def quarantine_file(
         user_agent=user_agent,
         extra=extra,
     )
-    logger.info(
-        f"File {file.id} ({file.uuid}) quarantined by {actor.role_label} {actor.user.id}: {reason}"
-    )
-    notify_owner_takedown(file, reason=reason, origin=actor.authority)
+    # The reason is recorded in the audit event and the notice record, not in the log.
+    logger.info(f"File {file.id} ({file.uuid}) quarantined by {actor.role_label} {actor.user.id}")
+    notify_owner_takedown(file, reason=reason, origin=actor.authority, link_uuid=link_uuid)
     return file
 
 
@@ -410,7 +448,8 @@ def release_file(
         actor: Who is acting and with which authority (for the audit trail).
         restore_status: Explicit status override (default: the recorded prior status).
         clear_legal_hold: Also lift the DB + S3 legal-hold (default True).
-        reason: Optional free-text release reason, recorded in the audit event only.
+        reason: Optional free-text release reason, recorded in the audit event and as the
+            outcome note on every notice link the release closes.
         source_ip / user_agent: Request metadata for the audit event.
 
     Returns:
@@ -430,6 +469,9 @@ def release_file(
         source_ip=source_ip,
         user_agent=user_agent,
     )
+    # Close the notice links in the same commit as the flags, copying nothing from the live
+    # columns (they are wiped just below; the link already holds the reason it was shown).
+    closed_links = close_links_on_release(db, file, note=reason, when=datetime.now(UTC))
     file.is_quarantined = False
     file.quarantine_reason = None
     file.quarantined_at = None
@@ -502,6 +544,8 @@ def release_file(
     }
     if reason:
         extra["reason"] = reason
+    if closed_links:
+        extra["link_uuids"] = [str(link.uuid) for link in closed_links]
     audit_takedown(
         AuditEventType.ADMIN_FILE_RELEASE,
         actor=actor,
@@ -514,7 +558,7 @@ def release_file(
         f"File {file.id} ({file.uuid}) released from quarantine by "
         f"{actor.role_label} {actor.user.id}"
     )
-    notify_owner_release(file)
+    notify_owner_release(file, link_uuid=str(closed_links[0].uuid) if closed_links else None)
 
     # Lifting a hold can UNBLOCK a GDPR erasure (issue #442). An Art. 17 request that
     # hit this file was deferred, not abandoned — ``_purge_files`` skipped it under

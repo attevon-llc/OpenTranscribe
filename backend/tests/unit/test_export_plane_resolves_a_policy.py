@@ -60,6 +60,12 @@ _DEFERRED_DISPATCH = frozenset(
 #: A reason is mandatory: every one of these is a claim that the route emits no
 #: transcript-derived content, or that its content is masked somewhere this scan cannot see.
 EXEMPT: dict[str, str] = {
+    "GET /api/admin/takedown-notices/export": (
+        "Exports the takedown notice RECORD (#1254): notice type, dates, an opaque reference, "
+        "administrator-typed basis and reason text, status and snapshot uuids. 'export' is the "
+        "compliance register, not a transcript; no transcript-derived content exists on the "
+        "route, so there is nothing for a redaction policy to mask."
+    ),
     "POST /api/admin/local-models/download": (
         "Downloads a Whisper MODEL into the shared Hugging Face cache (#1246); 'download' is "
         "the model weights, not a transcript. The response is a progress state with a catalog "

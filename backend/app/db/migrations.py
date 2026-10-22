@@ -657,6 +657,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "AND NOT tgisinternal)"
     )
 
+    # v443: takedown notice records (issue #1254). Keyed on the LAST-created constraint, not on
+    # the tables: a table without its CHECKs is the state that must re-run the revision.
+    has_takedown_notice = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_takedown_notice_file_outcome_at')"
+    )
+
+    # v444: takedown notification delivery log. Same reasoning: keyed on its last CHECK.
+    has_takedown_notification = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_takedown_notification_status')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -714,9 +727,8 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_support_access_grant
         and has_requested_options
     )
-    # v442: same as v441 plus the takedown-origin column, CHECK and trigger. The newest
-    # revision on this chain, so this is the top of the ladder.
-    if (
+    # Bound to a name: v443 and v444 are each v442's fingerprint plus one more probe.
+    matches_v442 = (
         matches_v433
         and not has_unusable_pyannote_source
         and not has_lite_local_source
@@ -726,7 +738,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_password_last_self_changed
         and has_legal_acceptance
         and has_takedown_origin
-    ):
+    )
+    # v444: same as v443 plus the notification delivery log. The newest revision on this
+    # chain, so this is the top of the ladder.
+    if matches_v442 and has_takedown_notice and has_takedown_notification:
+        return "v444_add_takedown_notification"
+    # v443: same as v442 plus the takedown notice tables.
+    if matches_v442 and has_takedown_notice:
+        return "v443_add_takedown_notice_tables"
+    # v442: same as v441 plus the takedown-origin column, CHECK and trigger.
+    if matches_v442:
         return "v442_add_media_file_takedown_origin"
     # v441: same as v440 plus the legal acceptance table.
     if (

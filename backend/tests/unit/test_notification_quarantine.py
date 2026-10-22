@@ -147,7 +147,13 @@ class TestOwnerNoticesAreNeverSuppressed:
         admin = _mk_user(db, admin=True)
         file = _mk_file(db, owner=owner, quarantined=False)
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="DMCA notice #817")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="DMCA notice #817",
+            operator_action_reason="operator action (test)",
+        )
 
         assert len(sent) == 1, "the owner's takedown notice must still be delivered"
         assert sent[0]["user_id"] == owner.id
@@ -159,7 +165,13 @@ class TestOwnerNoticesAreNeverSuppressed:
         admin = _mk_user(db, admin=True)
         file = _mk_file(db, owner=owner, quarantined=False)
 
-        quarantine_file(db, file, actor=TakedownActor.platform(admin), reason="disputed")
+        quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(admin),
+            reason="disputed",
+            operator_action_reason="operator action (test)",
+        )
         sent.clear()  # only the release notice is under test here
 
         release_file(db, file, actor=TakedownActor.platform(admin))

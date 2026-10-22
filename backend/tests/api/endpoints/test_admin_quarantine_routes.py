@@ -95,7 +95,7 @@ def test_non_admin_is_refused_on_quarantine(client, user_token_headers, owned_fi
     response = client.post(
         f"/api/admin/files/{owned_file.uuid}/quarantine",
         headers=user_token_headers,
-        json={"reason": "DMCA-99999"},
+        json={"reason": "DMCA-99999", "operator_action_reason": "operator action (test)"},
     )
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -134,7 +134,11 @@ def test_admin_quarantine_flips_real_db_state(client, admin_token_headers, owned
     response = client.post(
         f"/api/admin/files/{owned_file.uuid}/quarantine",
         headers=admin_token_headers,
-        json={"reason": "DMCA-12345", "legal_hold": True},
+        json={
+            "reason": "DMCA-12345",
+            "legal_hold": True,
+            "operator_action_reason": "operator action (test)",
+        },
     )
     assert response.status_code == status.HTTP_200_OK
     body = response.json()

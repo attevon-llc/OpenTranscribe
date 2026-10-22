@@ -544,7 +544,12 @@ def test_takedown_revokes_and_release_restores_the_rendition_url(admin_user, db_
     store.objects[row.playback_path] = (b"x", "audio/mp4")
 
     quarantine_file(
-        db_session, row, actor=TakedownActor.platform(admin_user), reason="dmca", legal_hold=False
+        db_session,
+        row,
+        actor=TakedownActor.platform(admin_user),
+        reason="dmca",
+        legal_hold=False,
+        operator_action_reason="operator action (test)",
     )
     assert (row.playback_path, True) in store.tags
 

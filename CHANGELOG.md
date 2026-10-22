@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Thirteen migrations, `v397` to `v439`, run automatically at backend start.** They add columns
+- **Eighteen migrations, `v397` to `v444`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -122,6 +122,16 @@ off by default.
 
 ### Added
 
+- **Takedown notice records (#1254).** Quarantining a file now writes a durable record in the same
+  transaction: the legal notice it acts on (type, date received, an opaque reference, the internal
+  basis, who handled it) and, per file, its outcome (open, counter-notice, upheld, released), or an
+  explicit "no notice (operator action)" reason. The quarantine request must say which, so a
+  quarantined file without a record cannot exist (a wire change on
+  `POST /admin/files/{uuid}/quarantine`). The records survive a purge, an account deletion and an
+  organization erasure, and hold no requester name or contact detail. New: a Takedown notices panel
+  and a compliance export (CSV or JSON, spreadsheet-formula safe, audited), a "My takedown notices"
+  section so an owner whose file vanished can always see why and how to dispute it, and an optional
+  email to owners (one per owner per notice, with a delivery log). Migrations `v443` and `v444`.
 - **Missing authentication email is now obvious (#1240).** When no email configuration is
   designated and no `SMTP_*` settings exist, password resets, invitations and verification links
   cannot be delivered. The Auth Email tab now names the cause (never designated, deleted, or

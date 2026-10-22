@@ -23,7 +23,9 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import { AdminApi } from '$lib/api/admin';
   import { OrgAdminApi } from '$lib/api/orgAdmin';
+  import TakedownStatusChip from '$components/takedown/TakedownStatusChip.svelte';
   import { toRows, type QueueRow, type QueueScope } from './quarantineRows';
+  import { TAKEDOWN_NOTICE_TYPE_KEYS, labelFor } from '$lib/i18n/keyMaps';
 
   const PAGE_SIZE = 50;
 
@@ -173,6 +175,13 @@
               {:else}
                 {file.reason || '—'}
               {/if}
+              <!-- One chip per notice record (a file can carry two); issue #1254. -->
+              {#each file.notices as n (n.uuid)}
+                <div class="notice-ref">
+                  <span>{labelFor($t, TAKEDOWN_NOTICE_TYPE_KEYS, n.type)}</span>
+                  <TakedownStatusChip status={n.status as 'open'} />
+                </div>
+              {/each}
             </td>
             <td>{file.quarantinedAt || '—'}</td>
             <td>{file.by || '—'}</td>
@@ -310,6 +319,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .notice-ref {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.25rem;
+    white-space: normal;
+    font-size: 0.75rem;
   }
 
   .badge {

@@ -147,5 +147,11 @@ authority. See `backend/app/db/CLAUDE.md`.
   `takedown_service` only; a trigger keeps it consistent with the two flags (held with no origin
   reads as `platform`, nothing held means NULL), so a fixture that sets `is_quarantined` directly
   still produces the fail-closed value. The authority rules live in `services/takedown_authority.py`.
+  **A release wipes these live columns** (`quarantine_reason`, `quarantined_at`, `quarantined_by`); the
+  durable history is `takedown.py` (`TakedownNotice` / `TakedownNoticeFile` / `TakedownNotification`, issue
+  #1254), written in the same transaction as the flags by `services/takedown_notice_service`. Its FKs are
+  `SET NULL` with snapshot uuids beside them on purpose (CASCADE would delete the evidence with the file,
+  NO ACTION would block a purge), it has no column for a requester's name or contact, and a notice's own
+  status is derived from its links, never stored.
 - `TranscriptSegment.text` always holds the **original** text; `redactions`/`toxicity` are
   cached detection spans applied as a read-time transform.

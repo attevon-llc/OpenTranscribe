@@ -11109,6 +11109,46 @@
         "title": "MultipartRegexTestResponse",
         "type": "object"
       },
+      "NotifyRequest": {
+        "description": "Tell the affected owners about a notice's takedowns (or releases).",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/TakedownNotifyEvent",
+            "default": "quarantined"
+          }
+        },
+        "title": "NotifyRequest",
+        "type": "object"
+      },
+      "NotifyResponse": {
+        "description": "What one notify call did. Counts only: no address is ever echoed.",
+        "properties": {
+          "already_notified": {
+            "title": "Already Notified",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "skipped_no_transport": {
+            "title": "Skipped No Transport",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sent",
+          "failed",
+          "skipped_no_transport",
+          "already_notified"
+        ],
+        "title": "NotifyResponse",
+        "type": "object"
+      },
       "OpenSearchSnapshotResult": {
         "description": "Outcome of the OpenSearch snapshot leg of a backup run (independent of pg success).",
         "properties": {
@@ -11392,7 +11432,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why the file is being released. Recorded in the audit log only.",
+            "description": "Why the file is being released. Recorded in the audit log and the takedown record.",
             "title": "Reason"
           }
         },
@@ -11608,6 +11648,117 @@
           }
         },
         "title": "OverallAnalytics",
+        "type": "object"
+      },
+      "OwnerTakedownList": {
+        "description": "The caller's own takedown history.",
+        "properties": {
+          "takedowns": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerTakedownOut"
+            },
+            "title": "Takedowns",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "takedowns",
+          "total"
+        ],
+        "title": "OwnerTakedownList",
+        "type": "object"
+      },
+      "OwnerTakedownOut": {
+        "description": "What the owner of a taken-down file is told.",
+        "properties": {
+          "abuse_contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abuse Contact Email"
+          },
+          "dispute_to": {
+            "enum": [
+              "operator",
+              "organization"
+            ],
+            "title": "Dispute To",
+            "type": "string"
+          },
+          "file_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Title"
+          },
+          "file_uuid": {
+            "title": "File Uuid",
+            "type": "string"
+          },
+          "link_uuid": {
+            "title": "Link Uuid",
+            "type": "string"
+          },
+          "notice_type": {
+            "title": "Notice Type",
+            "type": "string"
+          },
+          "outcome_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome At"
+          },
+          "owner_reason": {
+            "title": "Owner Reason",
+            "type": "string"
+          },
+          "quarantined_at": {
+            "format": "date-time",
+            "title": "Quarantined At",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_uuid",
+          "file_uuid",
+          "notice_type",
+          "received_at",
+          "owner_reason",
+          "status",
+          "quarantined_at",
+          "dispute_to"
+        ],
+        "title": "OwnerTakedownOut",
         "type": "object"
       },
       "PaginatedMediaFileResponse": {
@@ -13070,6 +13221,35 @@
         "title": "QuarantineActionResponse",
         "type": "object"
       },
+      "QuarantineNoticeRef": {
+        "description": "A takedown notice link on a quarantine queue row.",
+        "properties": {
+          "link_uuid": {
+            "title": "Link Uuid",
+            "type": "string"
+          },
+          "notice_type": {
+            "title": "Notice Type",
+            "type": "string"
+          },
+          "notice_uuid": {
+            "title": "Notice Uuid",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notice_uuid",
+          "link_uuid",
+          "notice_type",
+          "status"
+        ],
+        "title": "QuarantineNoticeRef",
+        "type": "object"
+      },
       "QuarantineRequest": {
         "description": "Request to quarantine (take down) a media file for abuse/DMCA.",
         "properties": {
@@ -13078,6 +13258,33 @@
             "description": "Also place a legal-hold on the row + S3 object so it can't be deleted.",
             "title": "Legal Hold",
             "type": "boolean"
+          },
+          "notice_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The recorded takedown notice (POST /admin/takedown-notices) this acts on.",
+            "title": "Notice Uuid"
+          },
+          "operator_action_reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the operator acted with no notice. Exactly one of this and notice_uuid.",
+            "title": "Operator Action Reason"
           },
           "reason": {
             "description": "Takedown reason (DMCA notice reference, AUP clause, abuse report id).",
@@ -13116,6 +13323,13 @@
             "default": false,
             "title": "Legal Hold",
             "type": "boolean"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/QuarantineNoticeRef"
+            },
+            "title": "Notices",
+            "type": "array"
           },
           "organization_uuid": {
             "anyOf": [
@@ -13846,7 +14060,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why the file is being released. Recorded in the audit log only.",
+            "description": "Why the file is being released. Recorded in the audit log and as the outcome note on the takedown notice records the release closes.",
             "title": "Reason"
           }
         },
@@ -17504,6 +17718,314 @@
         ],
         "title": "TaggedFile",
         "type": "object"
+      },
+      "TakedownLinkOut": {
+        "description": "One file under a notice, as the administrator sees it.",
+        "properties": {
+          "counter_notice_received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counter Notice Received At"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "file_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Title"
+          },
+          "file_uuid": {
+            "title": "File Uuid",
+            "type": "string"
+          },
+          "legal_hold_placed": {
+            "title": "Legal Hold Placed",
+            "type": "boolean"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "outcome_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome At"
+          },
+          "outcome_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Note"
+          },
+          "owner_reason": {
+            "title": "Owner Reason",
+            "type": "string"
+          },
+          "owner_user_uuid": {
+            "title": "Owner User Uuid",
+            "type": "string"
+          },
+          "quarantined_at": {
+            "format": "date-time",
+            "title": "Quarantined At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "file_uuid",
+          "file_exists",
+          "owner_user_uuid",
+          "owner_reason",
+          "status",
+          "quarantined_at",
+          "legal_hold_placed"
+        ],
+        "title": "TakedownLinkOut",
+        "type": "object"
+      },
+      "TakedownLinkPatch": {
+        "description": "Record a counter-notice or an upheld decision for one file under a notice.",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the counter-notice arrived (default: now).",
+            "title": "Received At"
+          },
+          "status": {
+            "enum": [
+              "counter_notice",
+              "upheld"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "TakedownLinkPatch",
+        "type": "object"
+      },
+      "TakedownNoticeCreate": {
+        "description": "Record a legal notice. This changes no file's state.",
+        "properties": {
+          "basis": {
+            "description": "The internal legal basis. Never shown to the owner.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Basis",
+            "type": "string"
+          },
+          "notice_type": {
+            "$ref": "#/components/schemas/TakedownNoticeType"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "requester_reference": {
+            "description": "An opaque case number, ticket id or complainant organization. Never contact details.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Requester Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notice_type",
+          "received_at",
+          "requester_reference",
+          "basis"
+        ],
+        "title": "TakedownNoticeCreate",
+        "type": "object"
+      },
+      "TakedownNoticeList": {
+        "description": "A page of notices, newest received first.",
+        "properties": {
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/TakedownNoticeOut"
+            },
+            "title": "Notices",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notices",
+          "total"
+        ],
+        "title": "TakedownNoticeList",
+        "type": "object"
+      },
+      "TakedownNoticeOut": {
+        "description": "A notice with its files; ``status`` is derived from the links.",
+        "properties": {
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "handled_by_user_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled By User Uuid"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/TakedownLinkOut"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "notice_type": {
+            "title": "Notice Type",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "recorded_by_authority": {
+            "title": "Recorded By Authority",
+            "type": "string"
+          },
+          "requester_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requester Reference"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "notice_type",
+          "received_at",
+          "basis",
+          "recorded_by_authority",
+          "created_at",
+          "status"
+        ],
+        "title": "TakedownNoticeOut",
+        "type": "object"
+      },
+      "TakedownNoticeType": {
+        "description": "What kind of legal notice (or operator action) a takedown record documents (issue #1254).",
+        "enum": [
+          "dmca",
+          "court_order",
+          "abuse_report",
+          "aup",
+          "other",
+          "operator_action"
+        ],
+        "title": "TakedownNoticeType",
+        "type": "string"
+      },
+      "TakedownNotifyEvent": {
+        "description": "What a takedown notification told its recipient.",
+        "enum": [
+          "quarantined",
+          "released"
+        ],
+        "title": "TakedownNotifyEvent",
+        "type": "string"
       },
       "Task": {
         "description": "Task schema - uses Celery task ID (string), not UUID",
@@ -25895,6 +26417,486 @@
         "summary": "Update System Ai Summary Setting",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/admin/takedown-notices": {
+      "get": {
+        "description": "List notices, newest received first, with each notice's derived status.",
+        "operationId": "list_takedown_notices_api_admin_takedown_notices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "resolved"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "notice_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TakedownNoticeType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notice Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "file_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakedownNoticeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Takedown Notices",
+        "tags": [
+          "admin-takedown-notices"
+        ]
+      },
+      "post": {
+        "description": "Record a legal notice. No file is touched; cite it when quarantining.",
+        "operationId": "create_takedown_notice_api_admin_takedown_notices_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakedownNoticeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakedownNoticeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Takedown Notice",
+        "tags": [
+          "admin-takedown-notices"
+        ]
+      }
+    },
+    "/api/admin/takedown-notices/export": {
+      "get": {
+        "description": "Export one row per covered file for compliance reporting (does not need OpenSearch).\n\nCapped at ``TAKEDOWN_EXPORT_MAX_ROWS``; a partial export says so in\n``X-Export-Truncated``. Every CSV cell is spreadsheet-formula neutralised.",
+        "operationId": "export_takedown_notices_api_admin_takedown_notices_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Export Takedown Notices",
+        "tags": [
+          "admin-takedown-notices"
+        ]
+      }
+    },
+    "/api/admin/takedown-notices/{notice_uuid}": {
+      "get": {
+        "description": "One notice with every file it covers.",
+        "operationId": "get_takedown_notice_api_admin_takedown_notices__notice_uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notice Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakedownNoticeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Takedown Notice",
+        "tags": [
+          "admin-takedown-notices"
+        ]
+      }
+    },
+    "/api/admin/takedown-notices/{notice_uuid}/files/{file_uuid}": {
+      "patch": {
+        "description": "Record a counter-notice or an upheld decision. The file's state does not change.\n\n``released`` is not accepted: only the release action sets it, so the record cannot say\na file was restored while it is still hidden.",
+        "operationId": "update_takedown_notice_file_api_admin_takedown_notices__notice_uuid__files__file_uuid__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notice Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakedownLinkPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakedownNoticeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Takedown Notice File",
+        "tags": [
+          "admin-takedown-notices"
+        ]
+      }
+    },
+    "/api/admin/takedown-notices/{notice_uuid}/notify": {
+      "post": {
+        "description": "Email each affected owner once about this notice. Recipients come from the record.\n\nIdempotent: an owner already told about this event is skipped. The request carries no\naddresses and no user ids on purpose.",
+        "operationId": "notify_takedown_notice_api_admin_takedown_notices__notice_uuid__notify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notice Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/NotifyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Notify Takedown Notice",
+        "tags": [
+          "admin-takedown-notices"
         ]
       }
     },
@@ -43661,6 +44663,68 @@
         "summary": "Revoke Tag Share",
         "tags": [
           "tags"
+        ]
+      }
+    },
+    "/api/takedown-notices/mine": {
+      "get": {
+        "description": "Takedowns of the caller's own files: why, when, the status, and where to dispute.",
+        "operationId": "list_my_takedowns_api_takedown_notices_mine_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerTakedownList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List My Takedowns",
+        "tags": [
+          "takedown-notices"
         ]
       }
     },

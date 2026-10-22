@@ -51,6 +51,9 @@ from .sharing import TagShare
 from .support_access import SupportAccessGrant
 from .support_access import SupportAccessUse
 from .system_settings import SystemSettings
+from .takedown import TakedownNotice
+from .takedown import TakedownNoticeFile
+from .takedown import TakedownNotification
 from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
 from .usage_event import UsageEvent
@@ -92,6 +95,9 @@ __all__ = [
     "TopicSuggestion",
     "SCIMToken",
     "SystemSettings",
+    "TakedownNotice",
+    "TakedownNoticeFile",
+    "TakedownNotification",
     "RefreshToken",
     "UserMFA",
     "LegalAcceptance",

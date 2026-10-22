@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-Fifteen migrations run automatically when the backend starts, from `v397` to `v441`. On a
+Eighteen migrations run automatically when the backend starts, from `v397` to `v444`. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.
@@ -66,6 +66,9 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v439` | Records `suggestion_source` on legacy speaker suggestions that the database proves came from a voice match, so those speakers keep their names | Data fix only: it writes one column on provable rows and nothing else |
 | `v440` | Adds `user.password_last_self_changed_at`, so the first password change an account holder makes is never refused for being too recent | No (empty until a user changes their own password) |
 | `v441` | Adds the `legal_acceptance` table, which records an administrator's acknowledgment of the operator terms | No (empty until an administrator acknowledges) |
+| `v442` | Adds `media_file.takedown_origin`, recording whether the operator or an organization holds a taken-down file | Marks every file that is already quarantined or under legal hold as held by the operator, which is who placed it |
+| `v443` | Adds the `takedown_notice` and `takedown_notice_file` tables, the durable record of each takedown notice | Adds one "operator action" record for every file that is already quarantined or under legal hold, so none is left without a record |
+| `v444` | Adds the `takedown_notification` table, a log of who was told about a takedown | No (empty until an owner is emailed) |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.

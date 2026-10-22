@@ -46,7 +46,9 @@ def _release(client, headers, file_uuid, **body):
 
 def _platform_quarantine(client, headers, file_uuid, reason="operator notice", **body):
     return client.post(
-        f"{PLATFORM}/{file_uuid}/quarantine", headers=headers, json={"reason": reason, **body}
+        f"{PLATFORM}/{file_uuid}/quarantine",
+        headers=headers,
+        json={"reason": reason, "operator_action_reason": "operator action (test)", **body},
     )
 
 
@@ -576,7 +578,13 @@ class TestAudit:
         actor = TakedownActor.organization(w.org_admin, w.org.id)
 
         with pytest.raises(TakedownRefusedError) as refused:
-            quarantine_file(w.db, foreign, actor=actor, reason="probe")
+            quarantine_file(
+                w.db,
+                foreign,
+                actor=actor,
+                reason="probe",
+                operator_action_reason="operator action (test)",
+            )
 
         assert refused.value.status_code == 404
         (event,) = _events(audit)
@@ -707,7 +715,9 @@ class TestPlatformRoutesStayPlatformOnly:
             r = w.client.get(f"{PLATFORM}/quarantined", headers=headers)
         else:
             r = w.client.post(
-                f"{PLATFORM}/{w.file.uuid}/quarantine", headers=headers, json={"reason": "x"}
+                f"{PLATFORM}/{w.file.uuid}/quarantine",
+                headers=headers,
+                json={"reason": "x", "operator_action_reason": "operator action (test)"},
             )
         assert r.status_code == 403 and _code(r) == "support_grant_action_not_permitted"
         assert _state(w.db, w.file)[0] is False
@@ -723,3 +733,68 @@ class TestPlatformRoutesStayPlatformOnly:
             ]
         }
         assert rows == {str(w.file.uuid): "organization", str(w.file2.uuid): "platform"}
+
+
+class TestNoticeRecords:
+    """Every takedown carries a record, including one an organization placed (issue #1254)."""
+
+    @staticmethod
+    def _links(w):
+        from app.models.takedown import TakedownNoticeFile
+
+        w.db.expire_all()
+        return (
+            w.db.query(TakedownNoticeFile)
+            .filter(TakedownNoticeFile.file_uuid == w.file.uuid)
+            .order_by(TakedownNoticeFile.id)
+            .all()
+        )
+
+    def test_an_organization_takedown_is_recorded_with_the_organizations_authority(self, world):
+        w = world
+        assert (
+            _quarantine(w.client, w.admin_a_headers, w.file.uuid, "the org's reason").status_code
+            == 200
+        )
+
+        (link,) = self._links(w)
+        assert link.status == "open" and link.owner_reason == "the org's reason"
+        assert link.organization_id == w.org.id
+        assert link.notice.notice_type == "operator_action"
+        assert link.notice.recorded_by_authority == "organization"
+        assert link.notice.basis == "the org's reason"
+        assert link.notice.requester_reference is None
+
+    def test_releasing_it_closes_the_record_and_keeps_the_reason_the_owner_saw(self, world):
+        w = world
+        _quarantine(w.client, w.admin_a_headers, w.file.uuid, "the org's reason")
+
+        r = _release(w.client, w.admin_a_headers, w.file.uuid, reason="mistake")
+
+        assert r.status_code == 200
+        (link,) = self._links(w)
+        assert (link.status, link.outcome_note) == ("released", "mistake")
+        assert link.owner_reason == "the org's reason" and link.outcome_at is not None
+
+    def test_an_operator_escalation_adds_a_platform_record_beside_the_organizations(self, world):
+        w = world
+        _quarantine(w.client, w.admin_a_headers, w.file.uuid, "the org's reason")
+        assert _platform_quarantine(w.client, w.admin_headers, w.file.uuid).status_code == 200
+
+        first, second = self._links(w)
+        assert (first.notice.recorded_by_authority, second.notice.recorded_by_authority) == (
+            "organization",
+            "platform",
+        )
+        assert _release(w.client, w.admin_a_headers, w.file.uuid).status_code == 403
+        assert [lk.status for lk in self._links(w)] == ["open", "open"], "a refusal writes nothing"
+
+    def test_a_refused_organization_takedown_leaves_no_record(self, world):
+        w = world
+        _platform_quarantine(w.client, w.admin_headers, w.file.uuid)
+        before = len(self._links(w))
+
+        refused = _quarantine(w.client, w.admin_a_headers, w.file.uuid, "overwrite")
+
+        assert refused.status_code == 409
+        assert len(self._links(w)) == before

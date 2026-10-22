@@ -101,6 +101,12 @@ document key + SHA-256, `ON DELETE CASCADE` on the user; single-marker arm on th
 or held file, issue #1253; backfills every existing hold as `platform`, adds a value CHECK and a
 `BEFORE INSERT OR UPDATE` trigger that keeps the column consistent with the flags. Its detection arm
 keys on the trigger, created last, not the column.)
+`v443_add_takedown_notice_tables` (`takedown_notice` + `takedown_notice_file`, issue #1254: the durable record of
+each legal notice and the files it covers, with a backfill that gives every file already quarantined or held a
+synthetic `operator_action` notice; FKs `ON DELETE SET NULL` plus snapshot uuids so the record outlives the file,
+owner and organization; detection arm keys on `ck_takedown_notice_file_outcome_at`, the last CHECK created; the
+downgrade drops compliance evidence and is not executed by its test),
+`v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

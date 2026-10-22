@@ -142,8 +142,8 @@ and **never blocks the takedown or the release**.
 | Method & path | Purpose |
 | --- | --- |
 | `GET  /api/admin/files/quarantined` | List taken-down files for review (newest first). |
-| `POST /api/admin/files/{uuid}/quarantine` | Take a file down (`reason`, optional `legal_hold`). |
-| `POST /api/admin/files/{uuid}/release` | Release a file (restore access, optional clear legal-hold). |
+| `POST /api/admin/files/{uuid}/quarantine` | Take a file down. `reason` is what the owner is shown; **exactly one** of `notice_uuid` (a recorded notice) or `operator_action_reason` (the explicit "no notice" reason) is required; optional `legal_hold`. |
+| `POST /api/admin/files/{uuid}/release` | Release a file (restore access, optional clear legal-hold, optional `reason`, kept on the notice record as the outcome note). |
 
 Audit event types: `admin.file.quarantine`, `admin.file.release` (in the FedRAMP
 AU-2/AU-3 audit log). Every event records `actor_role` (`platform_admin` or `org_admin`),
@@ -153,6 +153,72 @@ optional `reason`.
 The platform routes need **no support-access grant** and accept none: every `/api/admin`
 route answers `support_grant_action_not_permitted` to a request carrying a grant header, and
 they are deliberately **not** behind a capability, so the operator can always act on a notice.
+
+### Takedown notice records (issue #1254)
+
+The quarantine flags on the file row are wiped by a release, and the audit trail is a log with a
+retention setting (`AUDIT_LOG_RETENTION_DAYS`). Neither answers "which notice did we receive
+three years ago, about which file, and what became of it" once the file is purged. The notice
+records do. They live in Postgres and are written **in the same transaction** as the quarantine
+flags, so a quarantined file with no record cannot exist.
+
+- `takedown_notice`: one row per legal notice, or per operator action that had none. Type
+  (`dmca`, `court_order`, `abuse_report`, `aup`, `other`, `operator_action`), when it was
+  received, an opaque `requester_reference`, the internal `basis`, and who recorded it.
+- `takedown_notice_file`: one row per file a notice covers, with **that file's** outcome:
+  `open`, `counter_notice`, `upheld` or `released`. One letter can end differently for each file,
+  so a notice's own status is derived (`open` while any file is open or contested, else
+  `resolved`), never stored. `released` is set only by the release action, never by a PATCH, so
+  the record cannot say a file was restored while it is still hidden.
+- `takedown_notification`: who was told, by which channel, with what result. Enums only.
+
+**What is deliberately not stored.** No requester name, address or contact detail: the reference
+is a case number or ticket id, and the operator keeps the complainant's details in their own
+system. The file, its owner and its organization are kept as snapshot uuids beside
+`ON DELETE SET NULL` keys, so a purge, an account deletion or an organization erasure leaves the
+record intact with only the live links nulled. The reason the owner was shown is copied onto the
+record at quarantine time, because a release wipes the live column. **Retention:** records are
+kept indefinitely; there is no purge task and no setting.
+
+**Every takedown names its basis.** The quarantine request cites a recorded notice or states an
+operator action; sending neither, or both, is a 422, and an unknown notice is a 404. An
+organization administrator has no notice to cite: their stated reason is recorded as an
+`operator_action` notice with organization authority. A notice that was closed for a file cannot
+be reused for it (409); record a new one.
+
+| Method & path (admin) | Purpose |
+| --- | --- |
+| `POST /api/admin/takedown-notices` | Record a notice. Changes no file. |
+| `GET  /api/admin/takedown-notices` | List, newest received first. Filters: `status` (`open`/`resolved`), `notice_type`, `from`, `to`, `organization_uuid`, `file_uuid`. |
+| `GET  /api/admin/takedown-notices/{uuid}` | One notice with its files. |
+| `PATCH /api/admin/takedown-notices/{uuid}/files/{file_uuid}` | Record `counter_notice` or `upheld`. The file stays hidden; 409 once released or when the file is not under takedown. |
+| `POST /api/admin/takedown-notices/{uuid}/notify` | Email each affected owner once for the notice (`event`: `quarantined` or `released`). |
+| `GET  /api/admin/takedown-notices/export` | CSV or JSON, one row per covered file. |
+
+**Export.** `format=csv|json`, optional `from`/`to` on the received date, capped at
+`TAKEDOWN_EXPORT_MAX_ROWS` rows (a partial export says so in `X-Export-Truncated`). Every CSV cell
+is spreadsheet-formula neutralised (`app/utils/csv_safe.py`), the filename is built from the date
+alone, and each export is itself audited (`admin.takedown_notice.export`, with the row count). It
+does not depend on OpenSearch.
+
+**The owner's view.** `GET /api/takedown-notices/mine` returns the signed-in user's own takedowns:
+the file, the notice type, the reason they were shown, the status, and where to send a
+counter-notice (the abuse contact, or their organization's administrators for an organization
+takedown). The response model has no field for the basis, the requester reference or the handler.
+This replaces reliance on the live notification, which is a publish with no server-side copy and
+so never reached an owner who had no open session at that moment. Settings shows a "My takedown
+notices" section to any user who has at least one.
+
+**Email.** Optional and best effort. Recipients come from the record (the file's owner, if the
+account is still active), never from the request. One email per owner per notice and event, however
+many files, and a repeat call sends nothing new. It uses the same transport as other transactional
+mail (the designated email configuration, else `SMTP_HOST`); with neither, the attempt is recorded
+as `skipped_no_transport` and nothing is logged beyond a one-line note. Every value in the message
+is HTML-escaped and the body is never written to the log. Organization administrators are not
+emailed yet.
+
+**Repeat-infringer strikes** stay a manual decision. The `upheld` and `released` outcomes are the
+data a strike count needs; counting them and acting on the count is not automated.
 
 ### Organization takedown (issue #1253)
 

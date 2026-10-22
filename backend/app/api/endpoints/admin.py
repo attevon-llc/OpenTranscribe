@@ -84,6 +84,7 @@ from app.schemas.admin import MediaSourceUpdate
 from app.schemas.admin import QuarantineActionResponse
 from app.schemas.admin import QuarantinedFile
 from app.schemas.admin import QuarantinedFilesList
+from app.schemas.admin import QuarantineNoticeRef
 from app.schemas.admin import QuarantineRequest
 from app.schemas.admin import ReleaseRequest
 from app.schemas.admin import RetentionConfig
@@ -3057,6 +3058,7 @@ def list_quarantined_files(
 
     from app.models.organization import Organization
     from app.services.takedown_authority import origin_value
+    from app.services.takedown_notice_queries import live_notice_refs
 
     # Two DIFFERENT FKs to `user` on the same row (owner, and the admin who acted),
     # so this needs two aliased OUTER joins, not a per-row lookup (issue #576
@@ -3091,6 +3093,7 @@ def list_quarantined_files(
         count=len(rows),
         organization_ids=(f.organization_id for f, _owner, _by, _org in rows),
     )
+    refs = live_notice_refs(db, [int(f.id) for f, _owner, _by, _org in rows])
     files = [
         QuarantinedFile(
             uuid=str(f.uuid),
@@ -3109,6 +3112,10 @@ def list_quarantined_files(
             legal_hold=bool(f.legal_hold),
             is_quarantined=bool(f.is_quarantined),
             takedown_origin=origin_value(f),
+            notices=[
+                QuarantineNoticeRef(notice_uuid=n, link_uuid=lk, notice_type=nt, status=st)
+                for n, lk, nt, st in refs.get(int(f.id), [])
+            ],
         )
         for f, owner, quarantined_by, org in rows
     ]
@@ -3129,21 +3136,34 @@ def quarantine_media_file(
     via ``/release`` and a legal-hold (default on) protects the object from
     deletion while a dispute/notice is open.
     """
+    from app.api.endpoints.admin_takedown_notices import takedown_notice_http_error
+    from app.services.takedown_notice_service import TakedownNoticeError
+    from app.services.takedown_notice_service import find_notice
     from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import quarantine_file
     from app.utils.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
     source_ip, user_agent = _request_meta(request)
-    file = quarantine_file(
-        db,
-        file,
-        actor=TakedownActor.platform(current_user),
-        reason=request_body.reason,
-        legal_hold=request_body.legal_hold,
-        source_ip=source_ip,
-        user_agent=user_agent,
-    )
+    try:
+        notice = (
+            find_notice(db, request_body.notice_uuid)
+            if request_body.notice_uuid is not None
+            else None
+        )
+        file = quarantine_file(
+            db,
+            file,
+            actor=TakedownActor.platform(current_user),
+            reason=request_body.reason,
+            notice=notice,
+            operator_action_reason=request_body.operator_action_reason,
+            legal_hold=request_body.legal_hold,
+            source_ip=source_ip,
+            user_agent=user_agent,
+        )
+    except TakedownNoticeError as error:
+        raise takedown_notice_http_error(error) from None
     return QuarantineActionResponse(
         uuid=str(file.uuid),
         is_quarantined=bool(file.is_quarantined),

@@ -80,17 +80,32 @@ describe('AdminApi quarantine (issue #576)', () => {
     });
   });
 
-  it('quarantineFile posts {reason, legal_hold} to the exact path', async () => {
+  it('quarantineFile posts the reason, the hold and a recorded notice to the exact path', async () => {
     post.mockResolvedValue({
       data: { uuid: 'f-1', is_quarantined: true, legal_hold: true, status: 'quarantined' },
     } as never);
 
-    await AdminApi.quarantineFile('f-1', 'DMCA notice #123', true);
+    await AdminApi.quarantineFile('f-1', 'DMCA notice #123', true, { noticeUuid: 'n-1' });
 
     expect(post).toHaveBeenCalledWith('/admin/files/f-1/quarantine', {
       reason: 'DMCA notice #123',
       legal_hold: true,
+      notice_uuid: 'n-1',
     });
+  });
+
+  it('quarantineFile states "no notice" with the operator-action reason, never both fields', async () => {
+    post.mockResolvedValue({ data: {} } as never);
+
+    await AdminApi.quarantineFile('f-1', 'r', false, { operatorActionReason: 'routine review' });
+
+    const body = post.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(body).toEqual({
+      reason: 'r',
+      legal_hold: false,
+      operator_action_reason: 'routine review',
+    });
+    expect(body).not.toHaveProperty('notice_uuid');
   });
 
   it('releaseFile posts {clear_legal_hold} to the exact path', async () => {

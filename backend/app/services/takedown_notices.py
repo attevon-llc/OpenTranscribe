@@ -27,7 +27,11 @@ OWNER_RELEASE_EVENT = "file_takedown_released"
 
 
 def notify_owner_takedown(
-    file: MediaFile, *, reason: str, origin: TakedownOrigin = TakedownOrigin.PLATFORM
+    file: MediaFile,
+    *,
+    reason: str,
+    origin: TakedownOrigin = TakedownOrigin.PLATFORM,
+    link_uuid: str | None = None,
 ) -> None:
     """Send the file OWNER the DMCA §512(g) takedown notice. Never raises.
 
@@ -82,13 +86,14 @@ def notify_owner_takedown(
                 "reason": reason,
                 "abuse_contact_email": contact,
                 "origin": origin.value,
+                "link_uuid": link_uuid,
             },
         )
     except Exception as e:  # noqa: BLE001 — the notice must never break the takedown
         logger.warning(f"Owner takedown notification failed for file {file.id}: {e}")
 
 
-def notify_owner_release(file: MediaFile) -> None:
+def notify_owner_release(file: MediaFile, *, link_uuid: str | None = None) -> None:
     """Notify the file OWNER that a taken-down file was restored. Never raises.
 
     Counterpart of :func:`notify_owner_takedown` — sent after a successful
@@ -110,6 +115,7 @@ def notify_owner_release(file: MediaFile) -> None:
                 "file_id": str(file.uuid),
                 "file_uuid": str(file.uuid),
                 "filename": display_name,
+                "link_uuid": link_uuid,
             },
         )
     except Exception as e:  # noqa: BLE001 — the notice must never break the release

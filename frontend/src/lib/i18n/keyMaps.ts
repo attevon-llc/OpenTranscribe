@@ -13,6 +13,7 @@ import type { DerivedSource } from '$lib/types/media';
 import type { ContextWindowStatus, ReasoningOffSwitch } from '$lib/api/llmSettings';
 import type { GrantableRole } from '$lib/api/groupMappings';
 import type { AccessLevel, GrantStatus } from '$lib/api/supportAccess';
+import type { StoredNoticeType } from '$lib/api/takedownNotices';
 import type { WATCH_FILE_STATUSES } from '$lib/api/watchSourcesApi';
 
 type KeyMap = Readonly<Record<string, string>>;
@@ -219,4 +220,23 @@ export const SUPPORT_SESSION_END_KEYS = {
   expired: 'supportAccess.session.expired',
   revoked: 'supportAccess.session.revoked',
   invalid: 'supportAccess.session.invalid',
+} as const;
+
+/** What kind of notice a takedown record documents (issue #1254). */
+export const TAKEDOWN_NOTICE_TYPE_KEYS: Record<StoredNoticeType, string> = {
+  dmca: 'takedown.type.dmca',
+  court_order: 'takedown.type.court_order',
+  abuse_report: 'takedown.type.abuse_report',
+  aup: 'takedown.type.aup',
+  other: 'takedown.type.other',
+  operator_action: 'takedown.type.operator_action',
+};
+
+/** A takedown link's status, plus the derived `resolved` of a whole notice (issue #1254). */
+export const TAKEDOWN_STATUS_KEYS = {
+  open: 'takedown.status.open',
+  counter_notice: 'takedown.status.counter_notice',
+  upheld: 'takedown.status.upheld',
+  released: 'takedown.status.released',
+  resolved: 'takedown.status.resolved',
 } as const;

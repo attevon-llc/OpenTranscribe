@@ -1755,6 +1755,16 @@ SUPPORT_ACCESS_REQUEST_RATE_LIMIT = "10/hour"
 #: release bumps the deployment-wide retrieval-cache version, so one tenant's churn costs every
 #: tenant their cache; a per-tenant version is a separate follow-up.
 ORG_TAKEDOWN_RATE_LIMIT = "30/hour"
+#: Recording notices and outcomes, notifying owners, and reading the notice list (issue #1254).
+#: Shared per user across the uuid-bearing routes: the limiter's default bucket includes the
+#: path, so a per-route limit would give every distinct uuid a fresh allowance.
+TAKEDOWN_NOTICE_RATE_LIMIT = "120/hour"
+#: The compliance export is the heaviest read here and returns other tenants' metadata.
+TAKEDOWN_EXPORT_RATE_LIMIT = "10/hour"
+#: Rows one export may return. A partial export says so (``X-Export-Truncated``).
+TAKEDOWN_EXPORT_MAX_ROWS = 20000
+#: The owner's own takedown history, read by the SPA on the settings page.
+TAKEDOWN_OWNER_READ_RATE_LIMIT = "120/hour"
 #: Header that carries a grant uuid. Never ambient: a request without it has no grant.
 SUPPORT_ACCESS_GRANT_HEADER = "X-Support-Access-Grant"
 

@@ -10,9 +10,9 @@ extension seams, API contracts, migrations and stored settings. User-facing rele
 Derived from `git diff v0.5.1..HEAD` of the v0.6.0 branch, with each item checked against the
 code. File references are to the v0.6.0 tree.
 
-## 1. Extension seam version: 3 -> 10
+## 1. Extension seam version: 3 -> 11
 
-`CLOUD_SEAM_VERSION` (`backend/app/auth/constants.py`) moved from `3` to `10`. The comment block
+`CLOUD_SEAM_VERSION` (`backend/app/auth/constants.py`) moved from `3` to `11`. The comment block
 above it is the authoritative description of each step; in summary:
 
 | Version | Change | Breaking for an extension? |
@@ -26,6 +26,7 @@ above it is the authoritative description of each step; in summary:
 | 8 | Platform-admin content access (#1122): in multi-tenant mode `admin`/`super_admin` have no implicit access to tenant content and need a support-access grant carried in `X-Support-Access-Grant`. `RequestContext` gained `bypass`; `get_current_context` was split from `get_base_context` | **Yes**, for staff tooling that read or edited tenant content through the platform role |
 | 9 | Legal document provider seam: `app.legal.registry.set_document_provider(provider)` replaces the document set served by `/api/legal/*`. Installing a provider turns `requires_acknowledgment` off for the operator acknowledgment; Alembic `v441` adds `legal_acceptance` | No, additive |
 | 10 | Viewer-aware `GET /api/system/capabilities` (#1274): the endpoint resolves the caller optionally and, for platform staff (an active `is_superuser`), every platform-audience key outside `NO_PLATFORM_BYPASS` reads `True` even when the resolver denied or omitted it, or raised. Tenants and anonymous callers get the resolver's answer unchanged. The resolver may now find `request.state.user_id` / `external_identity` there (external tokens only). The response is `Cache-Control: private, no-store` with `Vary: Cookie, Authorization`. `require_capability(..., platform_admin_bypass=False)` raises `ValueError` at import for a key not declared in `NO_PLATFORM_BYPASS`. `get_optional_current_user` now honours the per-user revocation epoch | No for the response shape. **Review** any edge-cache rule that cached the endpoint, any resolver that assumed `request.state` carries no user there, and any extension that registers its own `platform_admin_bypass=False` gate (declare the key) |
+| 11 | Privacy policy layer (#1280, #1279): `app.services.privacy.consent.register_voiceprint_consent_hook(hook)` (a `(Session, VoiceprintConsentRequest) -> bool` hook must return the literal `True`; a raise or any other value denies; no hook means allow) and `app.services.privacy.policy.set_privacy_ceiling_resolver(resolver)` (`(Session, organization_id \| None) -> PrivacyCeiling \| None`; can only switch voiceprint matching and gender inference off, a raising or malformed answer denies both, runs in Celery tasks with no request). Alembic `v445` adds `organization_policy`; the organization redaction floor stored there is unioned with the floor resolver's result (strictest wins). Instance switches `privacy.voiceprint_matching_enabled` and `privacy.gender_inference_enabled` default on | No, additive; an upgrade changes no behaviour until a switch is turned off |
 
 Frontend extension slots added in this range: a user-menu extras slot in
 `components/navbar/UserDropdown.svelte`, and a legal-gate modal mounted from the root layout

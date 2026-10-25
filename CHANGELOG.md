@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Eighteen migrations, `v397` to `v444`, run automatically at backend start.** They add columns
+- **Nineteen migrations, `v397` to `v445`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -132,6 +132,15 @@ off by default.
   and a compliance export (CSV or JSON, spreadsheet-formula safe, audited), a "My takedown notices"
   section so an owner whose file vanished can always see why and how to dispute it, and an optional
   email to owners (one per owner per notice, with a delivery log). Migrations `v443` and `v444`.
+- **A privacy policy layer for voiceprints and inferred gender (#1280).** One restrict-only policy
+  answers two questions for a person and organization: may voiceprints exist and be matched, and
+  may gender be inferred. The deployment, the organization and the user each hold a switch, an
+  extension may add a platform ceiling, and any layer that is off turns the feature off. Every
+  read that fails counts as off. A consent hook (`register_voiceprint_consent_hook`) lets a
+  consent implementation veto creating or sharing a voiceprint. Both switches default on and an
+  upgrade changes nothing: the new `organization_policy` table (migration `v445`) is empty until
+  an organization saves a choice. This release adds the layer; pipeline enforcement, the admin
+  and organization screens and purge follow in the same release.
 - **Missing authentication email is now obvious (#1240).** When no email configuration is
   designated and no `SMTP_*` settings exist, password resets, invitations and verification links
   cannot be delivered. The Auth Email tab now names the cause (never designated, deleted, or

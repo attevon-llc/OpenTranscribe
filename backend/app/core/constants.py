@@ -1781,3 +1781,24 @@ ASR_CLOUD_PROVIDERS_FOR_USERS_KEY = "asr.cloud_providers_for_users"
 #: ``SystemSettings`` key: ``"true"``/``"false"``. Whether a plain user may save a cloud
 #: provider configuration (and key) of their own. Absent means true.
 ASR_USERS_OWN_KEYS_KEY = "asr.users_may_add_own_keys"
+
+# --- Privacy policy layer (issues #1280, #1279) ------------------------------------------
+# Instance layer of the restrict-only privacy policy (``app.services.privacy.policy``).
+# Platform (extension resolver), instance, organization and user are ANDed; any layer off
+# means off. Defaults are coded here, not in ``.env``: an operator edits them in the admin UI.
+#: ``SystemSettings`` key: ``"true"``/``"false"``. May voiceprints exist and be matched at all?
+PRIVACY_VOICEPRINT_MATCHING_KEY = "privacy.voiceprint_matching_enabled"
+#: ``SystemSettings`` key: ``"true"``/``"false"``. May gender be inferred from voice or names?
+PRIVACY_GENDER_INFERENCE_KEY = "privacy.gender_inference_enabled"
+#: Both default ON: an upgrade is behaviour-neutral and gender inference stays on by default
+#: (owner decision 2026-10-25), with a user notice that it can be switched off.
+DEFAULT_PRIVACY_VOICEPRINT_MATCHING_ENABLED = True
+DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED = True
+#: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
+#: existing ``speaker_attribute_gender_detection_enabled``.
+PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"
+PRIVACY_USER_GENDER_DETECTION_KEY = "speaker_attribute_gender_detection_enabled"
+#: How long the write backstop (``assert_voiceprint_write_allowed``) trusts a per-scope answer.
+#: Entry gates read fresh; only the backstop caches, and the purge task's second pass runs
+#: later than this so a write that raced a switch-off is still caught.
+PRIVACY_WRITE_BACKSTOP_TTL_SECONDS = 10.0

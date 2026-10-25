@@ -39865,7 +39865,7 @@
             }
           },
           {
-            "description": "Filter by collection ID",
+            "description": "Filter by collection integer ID (API callers). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_uuid`.",
             "in": "query",
             "name": "collection_id",
             "required": false,
@@ -39878,8 +39878,27 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by collection ID",
+              "description": "Filter by collection integer ID (API callers). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_uuid`.",
               "title": "Collection Id"
+            }
+          },
+          {
+            "description": "Filter by collection UUID (what the SPA sends). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_id`.",
+            "in": "query",
+            "name": "collection_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by collection UUID (what the SPA sends). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_id`.",
+              "title": "Collection Uuid"
             }
           },
           {

@@ -295,6 +295,9 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'admin.file.quarantine': 'orgAudit.event.fileQuarantine',
   'admin.file.release': 'orgAudit.event.fileRelease',
   'audit.export': 'orgAudit.event.auditExport',
+  'content.hold.place': 'orgAudit.event.holdPlace',
+  'content.hold.release': 'orgAudit.event.holdRelease',
+  'content.hold.refused': 'orgAudit.event.holdRefused',
   'transcript.view_unredacted': 'orgAudit.event.transcriptRevealed',
 };
 

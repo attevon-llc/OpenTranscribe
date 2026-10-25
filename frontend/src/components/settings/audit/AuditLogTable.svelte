@@ -30,14 +30,22 @@
   }
 
   function formatDateTime(dateString: string): string {
-    const date = new Date(dateString);
-    // Compact format using current locale: MM/DD HH:MM:SS
-    const currentLocale = $locale || 'en';
-    return (
-      date.toLocaleDateString(currentLocale, { month: '2-digit', day: '2-digit' }) +
-      ' ' +
-      date.toLocaleTimeString(currentLocale, { hour12: false })
-    );
+    // One formatter call with Latin digits, shown in an LTR isolate: concatenating a date and
+    // a time formatted separately put strong right-to-left characters of the Arabic locale
+    // between the two, and the browser reordered the pieces (the date read "2513:04:32 10/").
+    return new Date(dateString)
+      .toLocaleString($locale || 'en', {
+        numberingSystem: 'latn',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      })
+      // The Arabic locale inserts a right-to-left mark after the day, which re-orders the
+      // slash and the month inside the LTR cell; the cell's own direction is what we want.
+      .replace(/[\u200e\u200f]/g, '');
   }
 
   function outcomeClass(outcome: string): string {
@@ -182,6 +190,10 @@
 
   .audit-table tr.failure:hover {
     background: rgba(239, 68, 68, 0.12);
+  }
+
+  .audit-table td:first-child {
+    unicode-bidi: isolate;
   }
 
   .audit-table td:first-child,

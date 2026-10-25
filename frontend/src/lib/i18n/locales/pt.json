@@ -1751,6 +1751,8 @@
   "fileDetail.invalidSegmentData": "Dados de segmento inválidos. Por favor, verifique sua entrada.",
   "fileDetail.failedToSaveSegment": "Falha ao salvar alterações do segmento",
   "fileDetail.failedToGenerateSummary": "Falha ao gerar resumo. Por favor, tente novamente.",
+  "fileDetail.topicSuggestionsQueued": "Também serão geradas sugestões de etiquetas e coleções para este arquivo.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "Sugestões de etiquetas e coleções ignoradas: as sugestões automáticas estão desativadas em Configurações > Rotulagem automática.",
   "fileDetail.failedToLoadSummary": "Falha ao carregar resumo.",
   "fileDetail.failedToStartSummaryReprocess": "Falha ao iniciar reprocessamento do resumo",
   "fileDetail.updateSpeakerProfileCounter": "Atualizar Perfil do Locutor ({{current}} de {{total}})",

@@ -550,7 +550,9 @@ deprecated alias for `anthropic`).
   (user > system > True). The AUTOMATIC dispatch sites consult it: `_dispatch_llm_speaker_identification`
   in `speaker_attribute_task.py` (every chain exit, `dispatch_speaker_attribute_pipeline`, and so
   postprocess/background/rediarize), `trigger_automatic_summarization` in `transcription/downstream.py`
-  (only when `tasks_to_run is None`), and `TaskDetectionService.identify_incomplete_post_transcription_files`
+  (only when `tasks_to_run is None`), `ai_insights_companion.queue_topic_extraction_with_summary`
+  (a manual Generate/Regenerate summary also queues topic extraction for a file that never had a
+  `TopicSuggestion`; Redis-guarded against double clicks, fails closed), and `TaskDetectionService.identify_incomplete_post_transcription_files`
   (the recovery sweep: a step the user turned off must not be flagged missing, or it is re-queued and
   re-detected every 10 minutes). Manual triggers and an explicit stage list (`speaker_llm` /
   `topic_extraction` via `dispatch_task_by_name` or `llm_requested=True`) never consult it. A new

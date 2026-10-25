@@ -1780,6 +1780,8 @@
   "fileDetail.invalidSegmentData": "Ongeldige segmentgegevens. Controleer uw invoer.",
   "fileDetail.failedToSaveSegment": "Opslaan van segmentwijzigingen mislukt",
   "fileDetail.failedToGenerateSummary": "Genereren van samenvatting mislukt. Probeer het opnieuw.",
+  "fileDetail.topicSuggestionsQueued": "Voor dit bestand worden ook suggesties voor tags en collecties gemaakt.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "Suggesties voor tags en collecties overgeslagen: automatische suggesties staan uit in Instellingen > Automatisch labelen.",
   "fileDetail.failedToLoadSummary": "Laden van samenvatting mislukt.",
   "fileDetail.failedToStartSummaryReprocess": "Starten van opnieuw verwerken van samenvatting mislukt",
   "fileDetail.updateSpeakerProfileCounter": "Sprekersprofiel bijwerken ({{current}} van {{total}})",

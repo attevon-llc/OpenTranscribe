@@ -1780,6 +1780,8 @@
   "fileDetail.invalidSegmentData": "세그먼트 데이터가 올바르지 않습니다. 입력 내용을 확인하세요.",
   "fileDetail.failedToSaveSegment": "세그먼트 변경 사항을 저장하지 못했습니다",
   "fileDetail.failedToGenerateSummary": "요약을 생성하지 못했습니다. 다시 시도하세요.",
+  "fileDetail.topicSuggestionsQueued": "이 파일의 태그 및 컬렉션 제안도 생성됩니다.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "태그 및 컬렉션 제안을 건너뛰었습니다. 설정 > 자동 라벨링에서 자동 제안이 꺼져 있습니다.",
   "fileDetail.failedToLoadSummary": "요약을 불러오지 못했습니다.",
   "fileDetail.failedToStartSummaryReprocess": "요약 재처리를 시작하지 못했습니다",
   "fileDetail.updateSpeakerProfileCounter": "화자 프로필 업데이트 ({{current}}/{{total}})",

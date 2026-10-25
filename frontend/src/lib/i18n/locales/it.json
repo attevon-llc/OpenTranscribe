@@ -1780,6 +1780,8 @@
   "fileDetail.invalidSegmentData": "Dati del segmento non validi. Controlla i dati inseriti.",
   "fileDetail.failedToSaveSegment": "Impossibile salvare le modifiche al segmento",
   "fileDetail.failedToGenerateSummary": "Impossibile generare il riepilogo. Riprova.",
+  "fileDetail.topicSuggestionsQueued": "Verranno generati anche suggerimenti di tag e raccolte per questo file.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "Suggerimenti di tag e raccolte saltati: i suggerimenti automatici sono disattivati in Impostazioni > Etichettatura automatica.",
   "fileDetail.failedToLoadSummary": "Impossibile caricare il riepilogo.",
   "fileDetail.failedToStartSummaryReprocess": "Impossibile avviare la rielaborazione del riepilogo",
   "fileDetail.updateSpeakerProfileCounter": "Aggiorna profilo parlante ({{current}} di {{total}})",

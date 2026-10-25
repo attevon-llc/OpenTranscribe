@@ -510,6 +510,8 @@
   "fileDetail.editDisplayName": "Modifier le nom d'affichage",
   "fileDetail.enterDisplayName": "Entrer le nom d'affichage",
   "fileDetail.failedToGenerateSummary": "Échec de la génération du résumé. Veuillez réessayer.",
+  "fileDetail.topicSuggestionsQueued": "Des suggestions d’étiquettes et de collections seront également générées pour ce fichier.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "Suggestions d’étiquettes et de collections ignorées : les suggestions automatiques sont désactivées dans Paramètres > Étiquetage automatique.",
   "fileDetail.failedToGenerateSummaryGeneric": "Échec de la génération du résumé",
   "fileDetail.failedToLoadFile": "Échec du chargement du fichier",
   "fileDetail.notFoundOrNoAccess": "Ce fichier n'existe pas ou vous n'y avez pas accès.",

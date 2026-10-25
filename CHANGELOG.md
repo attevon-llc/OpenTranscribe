@@ -548,6 +548,14 @@ off by default.
 
 ### Changed
 
+- **The capabilities endpoint knows who is asking (#1274).** `GET /api/system/capabilities` now
+  resolves the caller optionally. A platform surface a deployment hides from tenants (for example
+  the quarantine and takedown-notice queues) is still shown to platform staff, an active
+  `super_admin`, because the server already lets them use it; tenants, plain admins and anonymous
+  callers get exactly what they got before, and the community response is unchanged for every
+  role. Gates that admit no staff bypass (`NO_PLATFORM_BYPASS`) are never overlaid. The response
+  is now `Cache-Control: private, no-store` with `Vary: Cookie, Authorization`.
+  `CLOUD_SEAM_VERSION` is now 10; see `docs/design/v060_downstream_changes.md`.
 - **The bundle-budget build gate shows its margin, and derived builds can pass a capped allowance
   (#1255).** `npm run build` now prints the exact headroom of both the root layout node and its
   static closure on every run, pass or fail, and flags anything under 512 B as `LOW`; a failing
@@ -1332,6 +1340,12 @@ off by default.
 
 ### Security
 
+- **A revoked access token no longer resolves on optional-auth routes (#1274).** Logout-all, a
+  password reset and an admin session termination stamp a per-user revocation epoch that is the
+  only thing that ends a still-valid access token. `get_optional_current_user` did not pass the
+  token's issue time to that check, so such a token still resolved to its user on every route
+  that accepts an optional credential (media and thumbnails, the capability bypass, the
+  capabilities endpoint). It now behaves like the strict dependency.
 - **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
   deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
   credential could read, edit, delete and re-run any tenant's files, collections, speakers and

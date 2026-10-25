@@ -53,7 +53,9 @@ NO_LINE_START_LETTERS = (
     "\u30fc\u309d\u309e\u30fd\u30fe\u3005\u30fb"
 )
 
-_UNSPACED_RE = re.compile("[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u19e0-\u19ff]")
+# Thai, Lao, Myanmar, Khmer and New Tai Lue: scripts written without spaces between words.
+UNSPACED = "\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u19e0-\u19ff"
+_UNSPACED_RE = re.compile(f"[{UNSPACED}]")
 UNSPACED_MIN_RUN = 21
 
 # The five vowels written BEFORE their consonant: they always open a syllable.

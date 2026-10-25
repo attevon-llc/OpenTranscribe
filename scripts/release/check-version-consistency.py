@@ -213,6 +213,32 @@ def check_dockerfile_build_arg(ctx: Ctx) -> None:
     )
 
 
+def check_frontend_git_sha_arg(ctx: Ctx) -> None:
+    """The frontend bundle learns its commit ONLY via --build-arg GIT_SHA (issue #1273).
+
+    The ARG alone is not enough: vite reads process.env.GIT_SHA, so the ENV line is what
+    carries it into `npm run build`. Without both, __GIT_SHA__ is "unknown" and the About
+    modal cannot tell a stale tab from a current one against a dev-<sha> server.
+    """
+    path = REPO_ROOT / 'frontend' / 'Dockerfile.prod'
+    text = _read(path)
+    has_arg = re.search(r'^ARG\s+GIT_SHA\b', text, re.MULTILINE) is not None
+    has_env = re.search(r'^ENV\s+GIT_SHA\b', text, re.MULTILINE) is not None
+    ok = has_arg and has_env
+    missing = [
+        name
+        for name, present in (('ARG GIT_SHA', has_arg), ('ENV GIT_SHA', has_env))
+        if not present
+    ]
+    ctx.add(
+        'dockerfile-frontend-git-sha-arg',
+        ok,
+        'frontend/Dockerfile.prod declares ARG GIT_SHA and exports it as ENV',
+        detail='' if ok else f'missing: {", ".join(missing)}',
+        fix='restore `ARG GIT_SHA=unknown` / `ENV GIT_SHA=${GIT_SHA}` above `RUN npm run build`',
+    )
+
+
 def check_blog_slugs(ctx: Ctx) -> None:
     """Duplicate slugs break `npm run build` the moment a draft is un-drafted."""
     blog = REPO_ROOT / 'docs-site' / 'blog'
@@ -293,6 +319,7 @@ CHECKS = {
         check_package_lock,
         check_alembic_single_head,
         check_dockerfile_build_arg,
+        check_frontend_git_sha_arg,
         check_blog_slugs,
         check_changelog,
     ],

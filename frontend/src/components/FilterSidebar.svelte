@@ -817,7 +817,7 @@
       <p class="loading-text">{$t('filter.loadingSpeakers')}</p>
     {:else if errorSpeakers}
       <EmptyState
-        icon="⚠️"
+        icon="warning"
         title={$t('filter.speakersLoadFailed')}
         description={$t('filter.facetLoadFailedHelp')}
         padding="12px 0"
@@ -906,7 +906,7 @@
     <div class="filter-section">
       <h3>{$t('filter.duration')}</h3>
       <EmptyState
-        icon="⚠️"
+        icon="warning"
         title={$t('filter.rangesLoadFailed')}
         description={$t('filter.rangesLoadFailedHelp')}
         padding="12px 0"
@@ -999,7 +999,7 @@
       <p class="loading-text">{$t('filter.loadingTags')}</p>
     {:else if errorTags}
       <EmptyState
-        icon="⚠️"
+        icon="warning"
         title={$t('filter.tagsLoadFailed')}
         description={$t('filter.facetLoadFailedHelp')}
         padding="12px 0"
@@ -1094,7 +1094,7 @@
         <p class="loading-text">{$t('filter.loadingOwners')}</p>
       {:else if errorOwners}
         <EmptyState
-          icon="⚠️"
+          icon="warning"
           title={$t('filter.ownersLoadFailed')}
           description={$t('filter.facetLoadFailedHelp')}
           padding="12px 0"

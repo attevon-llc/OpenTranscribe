@@ -74,7 +74,7 @@
         id: spec.id,
         label,
         disabled: true,
-        badge: '🔒',
+        marker: { icon: 'lock', label: $t('settings.nav.requiresSuperAdmin') },
         title: $t('settings.nav.requiresSuperAdmin'),
       };
     }
@@ -82,7 +82,7 @@
       (spec.id === 'spk-detection' && dirty.detection) ||
       (spec.id === 'spk-attributes' && dirty.attributes) ||
       (spec.id === 'spk-engine' && dirty.engine);
-    return { id: spec.id, label, ...(hasEdits ? { badge: '●' } : {}) };
+    return { id: spec.id, label, ...(hasEdits ? { marker: { icon: 'dot', label: $t('common.unsavedChanges') } } : {}) };
   });
 
   $: activeSpec = specs.find((s) => s.id === activeId);
@@ -101,7 +101,7 @@
 
   {#if activeSpec?.locked}
     <EmptyState
-      icon="🔒"
+      icon="lock"
       title={$t('settings.permission.superAdminTitle')}
       description={$t('settings.permission.superAdminMessage')}
     />

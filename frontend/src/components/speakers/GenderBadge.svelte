@@ -17,6 +17,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import {
     showAttributesOnCards,
     refreshSpeakerAttributePrefs,
@@ -55,7 +56,7 @@
       <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
       <span class="gender-label">{$t('speakers.member.female')}</span>
     {/if}
-    {#if confirmed}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'✓'}</span>{/if}
+    {#if confirmed}<span class="gender-confirmed-tick" role="img" aria-label={$t('speakers.member.genderConfirmed')} title={$t('speakers.member.genderConfirmed')}><MenuIcon name="check" size={10} /></span>{/if}
   </span>
 {/if}
 
@@ -83,9 +84,9 @@
   }
 
   .gender-confirmed-tick {
-    font-size: 10px;
+    display: inline-flex;
     color: var(--success-color, #10b981);
-    margin-left: 1px;
+    margin-inline-start: 1px;
   }
 
   @media (max-width: 768px) {

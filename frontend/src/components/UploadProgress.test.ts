@@ -99,3 +99,67 @@ describe('UploadProgress — estimatedTime is a duration, not a status', () => {
     expect(container.textContent).not.toContain('remaining');
   });
 });
+
+/**
+ * DEFECT THESE CATCH: the status icon was a text glyph from a `switch` whose `default` was the
+ * hourglass emoji, so the tray flashed a colour emoji for the queued step of every retry. Every
+ * status now maps to a named SVG and carries a translated accessible name.
+ */
+describe('UploadProgress — status icons are SVG, named, and never a glyph', () => {
+  const statuses = [
+    ['queued', 'status-queued', 'Queued'],
+    ['preparing', 'status-working', 'Preparing'],
+    ['uploading', 'upload', 'Uploading'],
+    ['processing', 'status-working', 'Processing'],
+    ['completed', 'status-success', 'Completed'],
+    ['failed', 'status-error', 'Failed'],
+    ['cancelled', 'status-cancelled', 'Cancelled'],
+  ] as const;
+
+  it.each(statuses)('draws %s as the %s SVG named "%s"', (status, icon, label) => {
+    const { container } = render(UploadProgress, { props: { upload: uploadItem({ status }) } });
+    const holder = container.querySelector('.upload-icon');
+
+    expect(holder?.getAttribute('role')).toBe('img');
+    expect(holder?.getAttribute('aria-label')).toBe(label);
+    expect(holder?.querySelector('svg')?.getAttribute('data-icon')).toBe(icon);
+    expect(holder?.textContent?.trim()).toBe('');
+  });
+
+  it('spins the working icon only while preparing or processing', () => {
+    for (const [status] of statuses) {
+      const { container, unmount } = render(UploadProgress, {
+        props: { upload: uploadItem({ status }) },
+      });
+      const spinning = container.querySelector('.upload-icon svg')?.classList.contains('spin');
+      expect(spinning, status).toBe(status === 'preparing' || status === 'processing');
+      unmount();
+    }
+  });
+
+  it('keeps the progress track on a queued row, so a retry does not collapse and regrow it', () => {
+    const { container } = render(UploadProgress, {
+      props: { upload: uploadItem({ status: 'queued', progress: 0 }) },
+    });
+    const track = container.querySelector('.progress-container');
+    expect(track?.querySelector('.progress-fill')?.getAttribute('style')).toContain('width: 0%');
+    expect(track?.querySelector('.progress-text')?.textContent).toBe('0%');
+  });
+
+  it('draws the action buttons and the dedup badge with SVG and names the buttons', () => {
+    const { container } = render(UploadProgress, {
+      props: { upload: uploadItem({ status: 'failed', dedupSkipped: true }) },
+    });
+    const retry = container.querySelector('.upload-retry-btn');
+    const remove = container.querySelector('.upload-remove-btn');
+
+    expect(retry?.getAttribute('aria-label')).toBe('Retry upload');
+    expect(retry?.querySelector('svg')?.getAttribute('data-icon')).toBe('retry');
+    expect(remove?.getAttribute('aria-label')).toBe('Remove from list');
+    expect(remove?.querySelector('svg')?.getAttribute('data-icon')).toBe('x');
+    expect(container.querySelector('.upload-dedup-skipped svg')?.getAttribute('data-icon')).toBe(
+      'warning'
+    );
+    expect(container.textContent).not.toMatch(/[✓✗⊘↑↻⚙⏳⚠]/u);
+  });
+});

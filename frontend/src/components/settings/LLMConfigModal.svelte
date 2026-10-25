@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onDestroy, tick } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import {
@@ -653,7 +654,7 @@
   <svelte:fragment slot="header">
     <h2 class="modal-title">{editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}</h2>
     {#if isDirty}
-      <span class="unsaved-dot" title={$t('llm.unsavedChangesIndicator')}>●</span>
+      <span class="unsaved-dot" role="img" aria-label={$t('llm.unsavedChangesIndicator')} title={$t('llm.unsavedChangesIndicator')}><MenuIcon name="dot" size={10} /></span>
     {/if}
   </svelte:fragment>
 
@@ -1106,9 +1107,9 @@
   }
 
   .unsaved-dot {
+    display: inline-flex;
+    align-items: center;
     color: var(--warning-color);
-    font-size: 0.9rem;
-    line-height: 1;
     flex-shrink: 0;
   }
 

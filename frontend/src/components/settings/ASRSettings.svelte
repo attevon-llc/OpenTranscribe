@@ -1,4 +1,6 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { MenuIconName } from '$lib/ui/menuIcons';
   import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { onMount } from 'svelte';
@@ -330,10 +332,10 @@
     }
   }
 
-  function getTestStatusIcon(config: UserASRSettingsResponse): string {
-    if (config.test_status === 'success') return '✓';
-    if (config.test_status === 'failed') return '✗';
-    return '';
+  function getTestStatusIcon(config: UserASRSettingsResponse): MenuIconName | null {
+    if (config.test_status === 'success') return 'check';
+    if (config.test_status === 'failed') return 'x';
+    return null;
   }
 
   function getTestStatusClass(config: UserASRSettingsResponse): string {
@@ -402,7 +404,10 @@
                 />
               {/if}
               <span class="cap-badge" class:cap-yes={localModelInfo.supports_translation} class:cap-no={!localModelInfo.supports_translation}>
-                {localModelInfo.supports_translation ? '✓' : '✗'} {$t('settings.asrProvider.capTranslation')}
+                <span class="cap-mark" role="img" aria-label={$t(localModelInfo.supports_translation ? 'common.yes' : 'common.no')}>
+                  <MenuIcon name={localModelInfo.supports_translation ? 'check' : 'x'} size="xs" />
+                </span>
+                {$t('settings.asrProvider.capTranslation')}
               </span>
               <span class="cap-badge cap-neutral">
                 {localModelInfo.language_support === 'english_optimized'
@@ -498,7 +503,7 @@
                 {/if}
                 <CapabilityBadges {...capabilitiesFor(config)} />
                 {#if config.test_status && config.test_status !== 'untested'}
-                  <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(config.test_status === 'success' ? ASR_TEST_STATUS_KEYS.connected : ASR_TEST_STATUS_KEYS.failed)}</span>
+                  <span class="badge test-badge {getTestStatusClass(config)}">{#if getTestStatusIcon(config)}<MenuIcon name={getTestStatusIcon(config) ?? 'check'} size={10} />{/if} {$t(config.test_status === 'success' ? ASR_TEST_STATUS_KEYS.connected : ASR_TEST_STATUS_KEYS.failed)}</span>
                 {/if}
               </div>
               <div class="config-name">{config.name}
@@ -882,7 +887,8 @@
     border: 1px solid var(--success-border, rgba(16, 185, 129, 0.2));
   }
 
-  .test-badge { font-size: 0.7rem; }
+  .test-badge { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; }
+  .cap-mark { display: inline-flex; margin-inline-end: 0.25rem; }
   .test-badge.test-success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
   .test-badge.test-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 

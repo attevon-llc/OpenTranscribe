@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import {
     formatFileSize,
@@ -97,7 +98,7 @@
       <div class="comparison-label">{$t('extraction.totalVideoSize')}</div>
       <div class="comparison-value video">{formatFileSize(totalVideoSize)}</div>
     </div>
-    <div class="comparison-arrow">→</div>
+    <div class="comparison-arrow" aria-hidden="true"><MenuIcon name="arrow-right" size="lg" /></div>
     <div class="comparison-item">
       <div class="comparison-label">{$t('extraction.estimatedAudioSize')}</div>
       <div class="comparison-value audio">{formatFileSize(estimatedTotalAudioSize)}</div>
@@ -276,8 +277,9 @@
   }
 
   .comparison-arrow {
+    display: inline-flex;
+    align-items: center;
     color: var(--text-secondary);
-    font-size: 1.5rem;
   }
 
   .savings-badge {
@@ -356,6 +358,11 @@
 
     .comparison-arrow {
       transform: rotate(90deg);
+    }
+
+    /* The glyph is already mirrored in RTL; a quarter turn the other way still points down. */
+    :global([dir='rtl']) .comparison-arrow {
+      transform: rotate(-90deg);
     }
   }
 

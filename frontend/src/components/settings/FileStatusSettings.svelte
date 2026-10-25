@@ -18,6 +18,7 @@
   import { settingsReturnQuery, stampSettingsReturn } from '$lib/settings/returnToSettings';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
 
@@ -149,7 +150,7 @@
         {/each}
       </ul>
     {:else}
-      <p class="all-normal">{$t('fileStatus.allFilesNormal')}</p>
+      <p class="all-normal"><MenuIcon name="status-success" size="md" />{$t('fileStatus.allFilesNormal')}</p>
     {/if}
 
     <h4 class="list-title">{$t('fileStatus.recentFiles')}</h4>
@@ -273,6 +274,16 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     white-space: nowrap;
+  }
+
+  .all-normal {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .all-normal :global(.menu-icon) {
+    color: var(--success-color);
   }
 
   .all-normal,

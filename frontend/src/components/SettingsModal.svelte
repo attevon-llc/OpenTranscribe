@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy, tick } from 'svelte';
   import i18next from 'i18next';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
@@ -1035,7 +1036,7 @@
                       </svg>
                     </span>
                   {:else if rowDirty($settingsModalStore.dirtyState, item.id)}
-                    <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
+                    <span class="dirty-indicator" role="img" aria-label={$t('settings.unsavedChanges')} title={$t('settings.unsavedChanges')}><MenuIcon name="dot" size={10} /></span>
                   {/if}
                 </button>
               {/each}
@@ -1086,7 +1087,7 @@
            render nothing, which looked like a broken blank pane. -->
       <div class="content-section">
         <EmptyState
-          icon="🔒"
+          icon="lock"
           title={activeSectionRequires === 'super_admin'
             ? $t('settings.permission.superAdminTitle')
             : $t('settings.permission.adminTitle')}
@@ -1694,9 +1695,9 @@
   }
 
   .dirty-indicator {
+    display: inline-flex;
+    align-items: center;
     color: var(--warning-color);
-    font-size: 1.2em;
-    line-height: 1;
   }
 
   /* Pending-work count (currently the account-approval queue). Amber rather than

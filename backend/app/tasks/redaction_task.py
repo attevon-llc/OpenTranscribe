@@ -24,6 +24,8 @@ from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_REDACTION_STATUS
 from app.core.constants import REDACTION_MODEL_VERSION
 from app.core.constants import RedactionPriority
+from app.core.enums import PostProcessingTask
+from app.services.post_processing_status import tracks_post_processing
 from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,7 @@ def _mark_redaction_task(
     max_retries=2,
     default_retry_delay=30,
 )
+@tracks_post_processing(PostProcessingTask.REDACTION, file_param="file_id")
 def redaction_detect_task(
     self,
     file_id: int,

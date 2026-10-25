@@ -2,9 +2,10 @@ import logging
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.services.analytics_service import AnalyticsService
-from app.utils.websocket_notify import send_ws_event_for_file
+from app.services.post_processing_status import tracks_post_processing
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True, name="analytics.analyze_transcript", priority=CPUPriority.USER_TRIGGERED
 )
+@tracks_post_processing(PostProcessingTask.ANALYTICS, file_param="file_uuid")
 def analyze_transcript_task(self, file_uuid: str):
     """
     Analyze a transcript to extract comprehensive analytics:
@@ -64,14 +66,6 @@ def analyze_transcript_task(self, file_uuid: str):
 
             logger.info(
                 f"Successfully analyzed file {media_file.filename} with comprehensive analytics"
-            )
-
-            # Notify enrichment tracker
-            send_ws_event_for_file(
-                int(media_file.user_id),
-                "enrichment_task_complete",
-                {"file_id": file_uuid, "task": "analytics"},
-                file_id=file_id,
             )
 
             return {"status": "success", "file_id": file_id}

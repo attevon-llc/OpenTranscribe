@@ -15,6 +15,11 @@ import {
   type StepMark,
 } from '$lib/notifications/runTiming';
 import { countUnreadItems } from '$lib/notifications/jobGrouping';
+import {
+  upsertPostProcessingRecord,
+  type PostProcessingFrame,
+  type PostProcessingRun,
+} from '$lib/notifications/postProcessing';
 import { notificationRetention, clearedNotice } from '$stores/notificationRetention';
 import { showNotificationsPanel } from '$stores/notificationsPanel';
 
@@ -64,9 +69,7 @@ export const NOTIFICATION_TYPES = [
   'collection_share_updated',
   'group_member_added',
   'group_member_removed',
-  'enrichment_started',
-  'enrichment_task_complete',
-  'search_indexing_complete',
+  'post_processing_status',
   'file_takedown',
   'file_takedown_released',
 ] as const;
@@ -92,8 +95,6 @@ export interface NotificationData {
   suggested_count?: number;
   skipped_detectors?: string[];
   scope?: string;
-  task?: string;
-  tasks?: string[];
   eta_seconds?: number | null;
   // How long the just-finished task actually ran, in seconds — issue #753's
   // duration chip. Sent by the backend only on a terminal transcription_status
@@ -136,9 +137,9 @@ export interface Notification {
   startedAt?: number;
   finishedAt?: number;
   stepLog?: StepMark[];
-  enrichmentTasks?: string[]; // Expected enrichment tasks (from enrichment_started)
-  enrichmentStartedAt?: number;
-  enrichmentCompletedAt?: Record<string, number>; // task name -> when it reported done
+  // post_processing_status records only: the file's post-processing run
+  // ($lib/notifications/postProcessing).
+  postProcessing?: PostProcessingRun;
 }
 
 // WebSocket connection status
@@ -677,14 +678,10 @@ function createWebSocketStore() {
             const isSilentType =
               data.type === 'file_created' ||
               data.type === 'file_updated' ||
-              data.type === 'search_indexing_complete' ||
               data.type === 'clustering_file_complete' ||
               // Tells the open file view its transcript is readable; the reader sees the
               // transcript appear, which is the point — a toast about it would be noise.
               data.type === 'transcript_ready';
-
-            const isEnrichmentType =
-              data.type === 'enrichment_started' || data.type === 'enrichment_task_complete';
 
             if (
               (isProgressiveType &&
@@ -807,7 +804,7 @@ function createWebSocketStore() {
                 const dismissible =
                   isTerminalState(taskStateFromStatus(status)) ||
                   (data.type === 'youtube_processing_status' && status === 'pending');
-                const { timing, newRun } = advanceRunTiming(
+                const { timing } = advanceRunTiming(
                   existing,
                   existing ? existing.data?.status ?? existing.status : undefined,
                   status,
@@ -817,19 +814,9 @@ function createWebSocketStore() {
                 );
 
                 if (existing) {
-                  // A retry or reprocess starts over: the previous run's enrichment results
-                  // must not show as this run's.
-                  const previous = newRun
-                    ? {
-                        ...existing,
-                        enrichmentTasks: undefined,
-                        enrichmentStartedAt: undefined,
-                        enrichmentCompletedAt: undefined,
-                      }
-                    : existing;
                   // Update existing notification with new data (important for summary completion)
                   const updatedNotification: Notification = {
-                    ...previous,
+                    ...existing,
                     ...timing,
                     message: currentStep,
                     timestamp: new Date(),
@@ -872,37 +859,8 @@ function createWebSocketStore() {
                 saveNotificationsToStorage(s.notifications);
                 return s;
               });
-            } else if (isEnrichmentType) {
-              // Enrichment events are timed onto the parent transcription record; the
-              // processing card renders them as that file's "indexing and analysis" task.
-              const fileId = data.data.file_id;
-              const progressId = `transcription_status_${fileId}`;
-              const now = Date.now();
-
-              update((s: WebSocketState) => {
-                const parentIndex = s.notifications.findIndex((n) => n.progressId === progressId);
-
-                if (parentIndex !== -1) {
-                  const parent = { ...s.notifications[parentIndex] };
-
-                  if (data.type === 'enrichment_started') {
-                    parent.enrichmentTasks = data.data.tasks || [];
-                    parent.enrichmentStartedAt = now;
-                    parent.enrichmentCompletedAt = {};
-                  } else {
-                    const taskName = String(data.data.task ?? '');
-                    const doneAt = parent.enrichmentCompletedAt ?? {};
-                    // The first report wins: a duplicate must not stretch the duration.
-                    if (taskName && doneAt[taskName] === undefined) {
-                      parent.enrichmentCompletedAt = { ...doneAt, [taskName]: now };
-                    }
-                  }
-
-                  s.notifications[parentIndex] = parent;
-                  saveNotificationsToStorage(s.notifications);
-                }
-                return s;
-              });
+            } else if (data.type === 'post_processing_status') {
+              applyPostProcessing(data.data);
             } else if (isSilentType) {
               // Create a silent notification for gallery updates only
               const notification: Notification = {
@@ -1297,6 +1255,26 @@ function createWebSocketStore() {
     });
   };
 
+  // Fold a post_processing_status frame, or a REST snapshot the card asked for (`force`),
+  // into the file's post-processing record ($lib/notifications/postProcessing).
+  const applyPostProcessing = (frame: PostProcessingFrame, force = false) => {
+    update((s: WebSocketState) => {
+      const next = upsertPostProcessingRecord(
+        s.notifications,
+        frame,
+        Date.now(),
+        () => generateId('ws'),
+        getNotificationTitle('post_processing_status'),
+        force
+      );
+      if (next) {
+        s.notifications = retain(next);
+        saveNotificationsToStorage(s.notifications);
+      }
+      return s;
+    });
+  };
+
   // Recover active task progress from backend on connect/reconnect
   const recoverActiveProgress = async () => {
     try {
@@ -1424,6 +1402,8 @@ function createWebSocketStore() {
     removeNotification,
     addNotification,
     updateNotification,
+    applyPostProcessingSnapshot: (snapshot: PostProcessingFrame) =>
+      applyPostProcessing(snapshot, true),
   };
 }
 

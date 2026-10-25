@@ -704,7 +704,9 @@ describe('processing card data (one card per file)', () => {
     ]);
   });
 
-  it('times enrichment tasks on the transcription record, first report wins', () => {
+  const pp = () => notifications().find((n) => n.progressId === 'post_processing_status_f1');
+
+  it('keeps post-processing on a record of its own that the card folds in', () => {
     vi.setSystemTime(T0);
     const socket = openSocket();
     socket.deliver({
@@ -712,35 +714,125 @@ describe('processing card data (one card per file)', () => {
       data: { file_id: 'f1', status: 'completed', progress: 100 },
     });
     socket.deliver({
-      type: 'enrichment_started',
-      data: { file_id: 'f1', tasks: ['search_indexing', 'analytics'] },
+      type: 'post_processing_status',
+      data: {
+        file_id: 'f1',
+        run_at: 100,
+        tasks: {
+          search_indexing: { state: 'queued', at: 100 },
+          summary: { state: 'skipped', at: 100 },
+        },
+      },
     });
     vi.setSystemTime(T0 + 4_000);
     socket.deliver({
-      type: 'enrichment_task_complete',
-      data: { file_id: 'f1', task: 'search_indexing' },
-    });
-    vi.setSystemTime(T0 + 9_000);
-    socket.deliver({
-      type: 'enrichment_task_complete',
-      data: { file_id: 'f1', task: 'search_indexing' },
+      type: 'post_processing_status',
+      data: { file_id: 'f1', tasks: { search_indexing: { state: 'started', at: 101 } } },
     });
 
-    expect(tx()?.enrichmentTasks).toEqual(['search_indexing', 'analytics']);
-    expect(tx()?.enrichmentStartedAt).toBe(T0);
-    expect(tx()?.enrichmentCompletedAt).toEqual({ search_indexing: T0 + 4_000 });
-    // Enrichment events never become rows of their own.
-    expect(notifications()).toHaveLength(1);
+    expect(pp()?.postProcessing?.runAt).toBe(100);
+    expect(pp()?.postProcessing?.tasks.search_indexing).toEqual({
+      state: 'started',
+      at: 101,
+      startedAt: 101,
+    });
+    expect(pp()?.postProcessing?.updatedAt).toBe(T0 + 4_000);
+    // Outstanding work pins it; the transcription record is untouched.
+    expect(pp()?.status).toBe('processing');
+    expect(pp()?.dismissible).toBe(true);
+    expect(tx()?.status).toBe('completed');
   });
 
-  it('a retry after a failure starts a new run and forgets the old enrichment', () => {
+  it('finishes the record only when the last known task reports, and flags it unread', () => {
+    const socket = openSocket();
+    socket.deliver({
+      type: 'transcription_status',
+      data: { file_id: 'f1', status: 'completed', progress: 100 },
+    });
+    socket.deliver({
+      type: 'post_processing_status',
+      data: { file_id: 'f1', run_at: 100, tasks: { analytics: { state: 'queued', at: 100 } } },
+    });
+    websocketStore.markAllAsRead();
+    expect(pp()?.read).toBe(true);
+
+    socket.deliver({
+      type: 'post_processing_status',
+      data: { file_id: 'f1', tasks: { analytics: { state: 'done', at: 102 } } },
+    });
+
+    expect(pp()?.status).toBe('completed');
+    expect(pp()?.read).toBe(false);
+  });
+
+  it('drops a frame for a file that has no card at all', () => {
+    const socket = openSocket();
+    socket.deliver({
+      type: 'post_processing_status',
+      data: { file_id: 'old', tasks: { search_indexing: { state: 'started', at: 5 } } },
+    });
+    expect(notifications()).toHaveLength(0);
+  });
+
+  it('a REST snapshot creates the record even without a frame', () => {
+    openSocket();
+    websocketStore.applyPostProcessingSnapshot({ file_id: 'f9', run_at: null, tasks: {} });
+    const rec = notifications().find((n) => n.progressId === 'post_processing_status_f9');
+    expect(rec?.postProcessing?.unknown).toBe(true);
+    expect(rec?.status).toBe('completed');
+  });
+
+  it('a retroactive auto-label run updates each file card and keeps ONE batch row', async () => {
+    const { groupPanelItems, countUnreadItems } = await import('$lib/notifications/jobGrouping');
+    const socket = openSocket();
+    for (const id of ['f1', 'f2']) {
+      socket.deliver({
+        type: 'transcription_status',
+        data: { file_id: id, filename: `${id}.mp3`, status: 'completed', progress: 100 },
+      });
+    }
+    // The run: one batch-scoped row, updated in place.
+    for (const processed of [0, 1, 3]) {
+      socket.deliver({
+        type: 'auto_label_status',
+        data: { file_id: 'retroactive_apply', status: 'processing', processed, total: 3 },
+      });
+    }
+    // Each file: the auto_label step on its own card. f3 has no card and gets none.
+    for (const id of ['f1', 'f2', 'f3']) {
+      for (const [state, at] of [
+        ['queued', 10],
+        ['started', 11],
+        ['done', 12],
+      ] as const) {
+        socket.deliver({
+          type: 'post_processing_status',
+          data: { file_id: id, tasks: { auto_label: { state, at } } },
+        });
+      }
+    }
+
+    const list = notifications();
+    expect(list.filter((n) => n.type === 'auto_label_status')).toHaveLength(1);
+    expect(list.some((n) => n.data?.file_id === 'f3')).toBe(false);
+    for (const id of ['f1', 'f2']) {
+      const rec = list.find((n) => n.progressId === `post_processing_status_${id}`);
+      expect(rec?.postProcessing?.tasks.auto_label?.state).toBe('done');
+    }
+    const items = groupPanelItems(list);
+    expect(items.map((i) => i.key).sort()).toEqual(
+      ['job:f1', 'job:f2', list.find((n) => n.type === 'auto_label_status')?.id].sort()
+    );
+    expect(countUnreadItems(list)).toBe(3);
+  });
+
+  it('a retry after a failure starts a new transcription run', () => {
     vi.setSystemTime(T0);
     const socket = openSocket();
     socket.deliver({
       type: 'transcription_status',
       data: { file_id: 'f1', status: 'completed', progress: 100 },
     });
-    socket.deliver({ type: 'enrichment_started', data: { file_id: 'f1', tasks: ['analytics'] } });
     vi.setSystemTime(T0 + 600_000);
     socket.deliver({
       type: 'transcription_status',
@@ -750,7 +842,6 @@ describe('processing card data (one card per file)', () => {
     expect(tx()?.startedAt).toBe(T0 + 600_000);
     expect(tx()?.finishedAt).toBeUndefined();
     expect(tx()?.stepLog).toEqual([{ p: 5, at: T0 + 600_000 }]);
-    expect(tx()?.enrichmentTasks).toBeUndefined();
   });
 
   it('a skipped LLM task is dismissible from its very first frame', () => {

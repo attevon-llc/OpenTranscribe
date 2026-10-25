@@ -19,6 +19,7 @@ import type {
   JobState,
   JobTaskKey,
   TaskState,
+  TierKey,
   TranscriptionStageKey,
 } from '$lib/notifications/processingJob';
 
@@ -166,23 +167,28 @@ export const WATCH_FILE_STATUS_KEYS: Record<(typeof WATCH_FILE_STATUSES)[number]
   waiting_for_parts: 'settings.watchSources.files.status.waiting_for_parts',
 };
 
-export const ENRICHMENT_TASK_KEYS: Record<string, string> = {
-  search_indexing: 'notifications.enrichment.search_indexing',
-  analytics: 'notifications.enrichment.analytics',
-  speaker_attributes: 'notifications.enrichment.speaker_attributes',
-  speaker_identification: 'notifications.enrichment.speaker_identification',
-  speaker_clustering: 'notifications.enrichment.speaker_clustering',
-};
-
 /** Consolidated processing card: task chips, task states and transcription steps. */
 export const JOB_TASK_KEYS: Record<JobTaskKey, string> = {
   import: 'notifications.job.task.import',
   transcription: 'notifications.job.task.transcription',
   diarization: 'notifications.job.task.diarization',
   redaction: 'notifications.job.task.redaction',
-  enrichment: 'notifications.job.task.enrichment',
+  search_indexing: 'notifications.job.task.search_indexing',
+  file_facts: 'notifications.job.task.file_facts',
+  analytics: 'notifications.job.task.analytics',
+  speaker_attributes: 'notifications.job.task.speaker_attributes',
+  speaker_identification: 'notifications.job.task.speaker_identification',
+  speaker_clustering: 'notifications.job.task.speaker_clustering',
   summary: 'notifications.job.task.summary',
+  summary_indexing: 'notifications.job.task.summary_indexing',
   topics: 'notifications.job.task.topics',
+  auto_label: 'notifications.job.task.auto_label',
+};
+
+export const JOB_TIER_KEYS: Record<TierKey, string> = {
+  main: 'notifications.job.tier.main',
+  finishing: 'notifications.job.tier.finishing',
+  ai: 'notifications.job.tier.ai',
 };
 
 export const JOB_TASK_STATE_KEYS: Record<TaskState, string> = {
@@ -202,9 +208,11 @@ export const JOB_STEP_KEYS: Record<TranscriptionStageKey, string> = {
 };
 
 export const JOB_STATE_KEYS: Record<JobState, string> = {
-  running: 'notifications.job.stateRunning',
-  done: 'notifications.job.stateDone',
-  failed: 'notifications.job.stateFailed',
+  processing: 'notifications.job.stateRunning',
+  finishing: 'notifications.job.stateFinishing',
+  complete: 'notifications.job.stateComplete',
+  attention: 'notifications.job.stateAttention',
+  ready: 'notifications.job.stateReady',
 };
 
 /** Notification "Keep notifications for" choices, keyed by RetentionSetting (#1217). */

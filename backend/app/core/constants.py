@@ -592,6 +592,10 @@ NOTIFICATION_TYPE_FILE_CREATED = "file_created"
 NOTIFICATION_TYPE_TRANSCRIPTION_STATUS = "transcription_status"
 NOTIFICATION_TYPE_SUMMARIZATION_STATUS = "summarization_status"
 NOTIFICATION_TYPE_SPEAKER_MATCH = "speaker_match"
+# Per-file post-processing task states (app/services/post_processing_status.py).
+NOTIFICATION_TYPE_POST_PROCESSING_STATUS = "post_processing_status"
+# How long a file's post-processing states stay readable after the last report (seconds).
+POST_PROCESSING_STATUS_TTL_S = 2 * 24 * 3600
 
 # Sharing notifications
 NOTIFICATION_TYPE_COLLECTION_SHARED = "collection_shared"

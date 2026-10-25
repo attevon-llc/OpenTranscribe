@@ -185,7 +185,6 @@ def finalize_seams(monkeypatch):
         "send_progress_notification",
         "send_completion_notification",
         "update_task_status",
-        "send_ws_event_for_file",
         "_cleanup_temp",
         "_persist_timing_row",
         "_schedule_timing_tail_flush",

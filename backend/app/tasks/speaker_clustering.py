@@ -9,7 +9,9 @@ from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_FILE_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_PROGRESS
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
+from app.services.post_processing_status import tracks_post_processing
 from app.utils.websocket_notify import send_ws_event
 from app.utils.websocket_notify import send_ws_event_for_file
 
@@ -78,6 +80,7 @@ def _send_clustering_error(user_id: int, error_message: str):
     acks_late=True,
     reject_on_worker_lost=True,
 )
+@tracks_post_processing(PostProcessingTask.SPEAKER_CLUSTERING, file_param="file_uuid")
 def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
     """Cluster speakers in a media file after transcription.
 
@@ -125,14 +128,6 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
             _send_clustering_file_complete(user_id, file_uuid, len(clusters))
-
-            # Notify enrichment tracker that clustering is done
-            send_ws_event_for_file(
-                user_id,
-                "enrichment_task_complete",
-                {"file_id": file_uuid, "task": "speaker_clustering"},
-                file_uuid=file_uuid,
-            )
 
             return result
 

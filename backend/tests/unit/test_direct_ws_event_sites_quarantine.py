@@ -2,10 +2,14 @@
 plus the two display-name leaks, the rename-propagation multi-file case, and
 the three ``file_created`` sites.
 
+The post-processing completion events these modules used to send
+(``enrichment_started`` / ``enrichment_task_complete``) are gone: their replacement,
+``post_processing_status``, has one sender, tested end to end against the real
+quarantine predicate in ``test_post_processing_status.py``.
+
 Two test shapes, deliberately:
 
-  * **Wiring tests** (postprocess, analytics, speaker_attribute_task,
-    speaker_clustering, speaker_identification_task) — the wrapper's own
+  * **Wiring tests** (speaker_attribute_task, speaker_clustering) — the wrapper's own
     suppression logic is already exhaustively covered by
     ``test_ws_event_file_wrapper.py``; re-deriving it at every call site would
     just re-test the same code 16 times. What actually varies per call site,
@@ -32,7 +36,6 @@ import pytest
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from tests.unit._plan_contexts import plan_context
 
 
 def _mk_user(db, *, admin: bool = False) -> User:
@@ -105,106 +108,8 @@ def _capturing_send_ws_event(sink: list[tuple]) -> Callable[..., bool]:
 # --------------------------------------------------------------------------- #
 
 
-class TestPostprocessWiring:
-    def test_finalize_transcription_enrichment_started_uses_file_id(self, monkeypatch):
-        from app.tasks.transcription import postprocess
-
-        captured = {}
-
-        def _capture(user_id, ntype, data, **kw):
-            captured["call"] = (user_id, ntype, data, kw)
-            return True
-
-        monkeypatch.setattr(postprocess, "send_ws_event_for_file", _capture)
-        monkeypatch.setattr(postprocess, "send_progress_notification", lambda *a, **k: None)
-        monkeypatch.setattr(postprocess, "send_completion_notification", lambda *a, **k: None)
-        monkeypatch.setattr(postprocess, "update_task_status", lambda *a, **k: None)
-        monkeypatch.setattr(postprocess, "enrich_and_dispatch", MagicMock())
-        monkeypatch.setattr(
-            postprocess,
-            "session_scope",
-            lambda: _yield_session(MagicMock()),
-        )
-        monkeypatch.setattr(postprocess, "_fire_completion_metering", lambda *a, **k: None)
-
-        gpu_result = {
-            "file_uuid": "uuid-42",
-            "file_id": 42,
-            "user_id": 7,
-            "task_id": "task-1",
-            "speaker_mapping": {},
-            "native_embeddings": None,
-            "use_native_embeddings": False,
-            "asr_provider": "local",
-            "downstream_tasks": None,
-            "diarization_disabled": True,
-            "pipeline_plan": plan_context(source="off"),
-        }
-
-        postprocess.finalize_transcription.__wrapped__(gpu_result)
-
-        user_id, ntype, data, kw = captured["call"]
-        assert user_id == 7
-        assert ntype == "enrichment_started"
-        assert data["file_id"] == "uuid-42"
-        assert kw == {"file_id": 42}
-
-    def test_enrich_and_dispatch_search_indexing_uses_file_id(self, monkeypatch):
-        from app.tasks.transcription import postprocess
-
-        captured = {}
-
-        def _capture(user_id, ntype, data, **kw):
-            captured["call"] = (user_id, ntype, data, kw)
-            return True
-
-        monkeypatch.setattr(postprocess, "send_ws_event_for_file", _capture)
-        monkeypatch.setattr(postprocess, "_index_transcript", lambda *a, **k: None)
-
-        postprocess.enrich_and_dispatch(file_id=99, file_uuid="uuid-99", user_id=3)
-
-        user_id, ntype, data, kw = captured["call"]
-        assert user_id == 3
-        assert ntype == "enrichment_task_complete"
-        assert data == {"file_id": "uuid-99", "task": "search_indexing"}
-        assert kw == {"file_id": 99}
-
-
-class TestAnalyticsWiring:
-    def test_analyze_transcript_task_uses_file_id(self, bridge_session, monkeypatch):
-        from app.tasks import analytics as analytics_task
-
-        db = bridge_session
-        owner = _mk_user(db)
-        file = _mk_file(db, owner=owner)
-
-        captured = {}
-
-        def _capture(user_id, ntype, data, **kw):
-            captured["call"] = (user_id, ntype, data, kw)
-            return True
-
-        monkeypatch.setattr(analytics_task, "send_ws_event_for_file", _capture)
-        monkeypatch.setattr(analytics_task, "session_scope", lambda: _yield_session(db))
-        monkeypatch.setattr(
-            analytics_task.AnalyticsService, "compute_and_save_analytics", lambda db, fid: True
-        )
-
-        analytics_task.analyze_transcript_task.push_request(id="task-analytics")
-        try:
-            analytics_task.analyze_transcript_task.run(str(file.uuid))
-        finally:
-            analytics_task.analyze_transcript_task.pop_request()
-
-        user_id, ntype, data, kw = captured["call"]
-        assert user_id == owner.id
-        assert ntype == "enrichment_task_complete"
-        assert data == {"file_id": str(file.uuid), "task": "analytics"}
-        assert kw == {"file_id": file.id}
-
-
 class TestSpeakerAttributeTaskWiring:
-    def test_detect_speaker_attributes_uses_file_uuid_for_both_events(
+    def test_detect_speaker_attributes_speaker_updated_uses_file_uuid(
         self, bridge_session, monkeypatch
     ):
         from app.models.media import Speaker
@@ -261,19 +166,16 @@ class TestSpeakerAttributeTaskWiring:
 
         sat._detect_speaker_attributes(str(file.uuid), owner.id, "task-attr")
 
-        assert len(calls) == 2
+        # Completion is the post-processing status (test_post_processing_status.py), not a
+        # second event from this module.
+        assert len(calls) == 1
         _, ntype_1, _, kw_1 = calls[0]
         assert ntype_1 == "speaker_updated"
         assert kw_1 == {"file_uuid": str(file.uuid)}
-        _, ntype_2, _, kw_2 = calls[1]
-        assert ntype_2 == "enrichment_task_complete"
-        assert kw_2 == {"file_uuid": str(file.uuid)}
 
 
 class TestSpeakerClusteringWiring:
-    def test_cluster_speakers_for_file_uses_file_uuid_for_both_events(
-        self, bridge_session, monkeypatch
-    ):
+    def test_cluster_speakers_for_file_complete_uses_file_uuid(self, bridge_session, monkeypatch):
         from app.tasks import speaker_clustering as sc
 
         db = bridge_session
@@ -300,59 +202,10 @@ class TestSpeakerClusteringWiring:
         finally:
             sc.cluster_speakers_for_file.pop_request()
 
-        assert len(calls) == 2
+        assert len(calls) == 1
         _, ntype_1, data_1, kw_1 = calls[0]
         assert ntype_1 == "clustering_file_complete"
         assert kw_1 == {"file_uuid": str(file.uuid)}
-        _, ntype_2, data_2, kw_2 = calls[1]
-        assert ntype_2 == "enrichment_task_complete"
-        assert kw_2 == {"file_uuid": str(file.uuid)}
-
-
-class TestSpeakerIdentificationTaskWiring:
-    def test_identify_speakers_llm_task_uses_file_id(self, monkeypatch):
-        from app.tasks import speaker_identification_task as sid
-
-        captured = {}
-
-        def _capture(user_id, ntype, data, **kw):
-            captured["call"] = (user_id, ntype, data, kw)
-            return True
-
-        monkeypatch.setattr(sid, "send_ws_event_for_file", _capture)
-        monkeypatch.setattr(
-            sid,
-            "_load_identification_inputs",
-            lambda file_uuid, task_id: {
-                "file_id": 77,
-                "user_id": 4,
-                "full_transcript": "hello",
-                "speaker_segments": {},
-                "known_speakers": [],
-                "metadata_context": "",
-                "output_language": "en",
-            },
-        )
-        monkeypatch.setattr(
-            sid,
-            "_generate_predictions",
-            lambda *a, **k: {"speaker_predictions": [], "overall_confidence": "low"},
-        )
-        monkeypatch.setattr(sid, "_store_speaker_predictions", lambda *a, **k: None)
-        monkeypatch.setattr(sid, "session_scope", lambda: _yield_session(MagicMock()))
-        monkeypatch.setattr("app.utils.task_utils.update_task_status", lambda *a, **k: None)
-
-        sid.identify_speakers_llm_task.push_request(id="task-ident")
-        try:
-            sid.identify_speakers_llm_task.run("uuid-77")
-        finally:
-            sid.identify_speakers_llm_task.pop_request()
-
-        user_id, ntype, data, kw = captured["call"]
-        assert user_id == 4
-        assert ntype == "enrichment_task_complete"
-        assert data == {"file_id": "uuid-77", "task": "speaker_identification"}
-        assert kw == {"file_id": 77}
 
 
 # --------------------------------------------------------------------------- #

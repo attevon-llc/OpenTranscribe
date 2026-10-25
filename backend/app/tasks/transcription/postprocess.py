@@ -21,16 +21,18 @@ from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import UtilityPriority
+from app.core.enums import PostProcessingState
+from app.core.enums import PostProcessingTask
 from app.core.enums import TranscriptionStage
 from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import clear_run_markers
 from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
+from app.services import post_processing_status
 from app.services.file_provenance import record_inline_voiceprints
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 from app.utils.task_utils import update_task_status_with_duration
-from app.utils.websocket_notify import send_ws_event_for_file
 
 from .context import plan_of
 from .notifications import send_completion_notification
@@ -295,27 +297,15 @@ def _finalize(gpu_result: dict) -> dict:
             f"in {completion_elapsed:.3f}s for file {file_id}"
         )
 
-        # Dispatch background enrichment (search indexing + downstream tasks).
-        # Each task sends its own WebSocket event when done.
-        enrichment_tasks = _build_enrichment_task_list(downstream_tasks)
-
+        # Background enrichment (search indexing + downstream tasks). The fan-out reports
+        # what it dispatched as a post-processing plan, and each task reports its own
+        # outcome (app/services/post_processing_status.py).
         enrich_and_dispatch.delay(
             file_id=file_id,
             file_uuid=file_uuid,
             user_id=user_id,
             downstream_tasks=downstream_tasks,
             pipeline_task_id=task_id,
-        )
-
-        # Notify frontend that background enrichment tasks are running
-        send_ws_event_for_file(
-            user_id,
-            "enrichment_started",
-            {
-                "file_id": str(file_uuid),
-                "tasks": enrichment_tasks,
-            },
-            file_id=file_id,
         )
 
     except Exception as e:
@@ -522,22 +512,6 @@ def _persist_timing_row(task_id: str, file_id: int, user_id: int) -> None:
         logger.debug(f"Failed to persist pipeline timing row for {task_id}: {e}")
 
 
-def _build_enrichment_task_list(downstream_tasks: list[str] | None) -> list[str]:
-    """Build the list of enrichment task names that will run in background.
-
-    Only includes tasks that send enrichment_task_complete events (chip-worthy).
-    Summarization and topic extraction have their own progressive notification
-    bars and are NOT listed here.
-    """
-    tasks = ["search_indexing", "analytics"]
-    # Gender detection always runs — LLM speaker ID chains from it
-    tasks.append("speaker_attributes")
-    tasks.append("speaker_identification")
-    if downstream_tasks is None or "speaker_clustering" not in downstream_tasks:
-        tasks.append("speaker_clustering")
-    return tasks
-
-
 @celery_app.task(
     name="transcription.enrich_and_dispatch",
     priority=CPUPriority.SYSTEM,
@@ -553,45 +527,41 @@ def enrich_and_dispatch(
     downstream_tasks: list[str] | None = None,
     pipeline_task_id: str | None = None,
 ) -> None:
-    """Fire-and-forget: search indexing + downstream task dispatch.
+    """Fire-and-forget: search indexing + downstream task dispatch, then the plan.
 
-    Runs after the main postprocess marks the file as COMPLETED.
-    Each downstream task sends its own WebSocket event when done.
+    Runs after the transcript is committed. Every dispatch decision (queued, skipped by a
+    setting, failed to queue) is collected and reported as ONE post-processing plan, which
+    opens the run the notification card waits on; each task then reports its own outcome.
+    A task that is not dispatched at all is absent from the plan, so nothing waits for it.
 
     ``pipeline_task_id`` is the upstream application task_id; when supplied
     it is propagated into child tasks so their ``_start``/``_end`` benchmark
     markers land in the same ``benchmark:{task_id}`` Redis hash.
     """
-    # Search indexing (invisible to user)
-    try:
-        _index_transcript(file_id, file_uuid, user_id, pipeline_task_id=pipeline_task_id)
-        send_ws_event_for_file(
-            user_id,
-            "enrichment_task_complete",
-            {"file_id": str(file_uuid), "task": "search_indexing"},
-            file_id=file_id,
+    run_at = time.time()
+    plan: dict[PostProcessingTask, PostProcessingState] = {
+        PostProcessingTask.SEARCH_INDEXING: _index_transcript(
+            file_id, file_uuid, user_id, pipeline_task_id=pipeline_task_id
         )
-    except Exception as e:
-        logger.warning(f"Search indexing failed for file {file_id}: {e}")
+    }
 
     # Deterministic ingest artifacts (facts / extractive digest / keyphrases). NOT gated
     # on an LLM provider — this is the tier that exists precisely so a deployment without
     # one still has a summary and exact per-file statistics (#403 D6).
-    try:
-        from app.tasks.ingest_artifacts_task import dispatch_file_facts
+    from app.tasks.ingest_artifacts_task import dispatch_file_facts
 
-        dispatch_file_facts(file_id, pipeline_task_id=pipeline_task_id)
-    except Exception as e:
-        logger.warning(f"file_facts dispatch failed for file {file_id}: {e}")
+    plan[PostProcessingTask.FILE_FACTS] = (
+        PostProcessingState.QUEUED
+        if dispatch_file_facts(file_id, pipeline_task_id=pipeline_task_id)
+        else PostProcessingState.FAILED
+    )
 
     # Content redaction detection — gated on the owner's effective config (opt-out by
-    # default); _dispatch_redaction returns early when it's off, and detection then
-    # happens lazily on first open. Dedicated CPU service; masking applies at read
-    # time once spans land.
-    try:
-        _dispatch_redaction(file_id, user_id, pipeline_task_id=pipeline_task_id)
-    except Exception as e:
-        logger.warning(f"Redaction dispatch failed for file {file_id}: {e}")
+    # default); detection otherwise happens lazily on first open. Dedicated CPU service;
+    # masking applies at read time once spans land.
+    plan[PostProcessingTask.REDACTION] = _dispatch_redaction(
+        file_id, user_id, pipeline_task_id=pipeline_task_id
+    )
 
     # Downstream tasks — each wrapped individually so one failure
     # doesn't prevent the others from dispatching
@@ -600,19 +570,20 @@ def enrich_and_dispatch(
     try:
         from .core import trigger_automatic_summarization
 
-        trigger_automatic_summarization(file_id, file_uuid, tasks_to_run=downstream_tasks)
+        plan.update(
+            trigger_automatic_summarization(file_id, file_uuid, tasks_to_run=downstream_tasks)
+        )
     except Exception as e:
         logger.warning(f"Summarization dispatch failed for file {file_id}: {e}")
 
-    try:
-        _dispatch_speaker_attributes(file_uuid, user_id, downstream_tasks)
-    except Exception as e:
-        logger.warning(f"Speaker attribute dispatch failed for file {file_id}: {e}")
+    plan.update(_dispatch_speaker_attributes(file_uuid, user_id, downstream_tasks))
+    clustering = _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks)
+    if clustering is not None:
+        plan[PostProcessingTask.SPEAKER_CLUSTERING] = clustering
 
-    try:
-        _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks)
-    except Exception as e:
-        logger.warning(f"Speaker clustering dispatch failed for file {file_id}: {e}")
+    ref = post_processing_status.resolve_file(file_id=file_id)
+    if ref is not None:
+        post_processing_status.report_plan(ref, plan, run_at=run_at)
 
 
 def _process_native_embeddings(
@@ -691,7 +662,7 @@ def _store_v4_centroids(
 
 def _index_transcript(
     file_id: int, file_uuid: str, user_id: int, pipeline_task_id: str | None = None
-) -> None:
+) -> PostProcessingState:
     """Dispatch OpenSearch indexing for the completed transcript.
 
     Phase 2 PR #5: the full-document index used to be built inline on the
@@ -710,11 +681,15 @@ def _index_transcript(
             pipeline_task_id=pipeline_task_id,
         )
         logger.info(f"Dispatched search indexing task for file {file_uuid}")
+        return PostProcessingState.QUEUED
     except Exception as e:
         logger.warning(f"Failed to dispatch search indexing: {e}")
+        return PostProcessingState.FAILED
 
 
-def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None = None) -> None:
+def _dispatch_redaction(
+    file_id: int, user_id: int, pipeline_task_id: str | None = None
+) -> PostProcessingState:
     """Dispatch content-redaction detection — ONLY when the owner has redaction enabled
     (or an admin forces it). Redaction is opt-out by default, so we skip the (potentially
     expensive) scan for the common case. If a user enables redaction later, detection is
@@ -736,7 +711,7 @@ def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None
             cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
         if not cfg.enabled:
             logger.info(f"Redaction off for owner of file {file_id}; skipping detection")
-            return
+            return PostProcessingState.SKIPPED
 
         from app.tasks.redaction_task import redaction_detect_task
 
@@ -746,44 +721,55 @@ def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None
             pipeline_task_id=pipeline_task_id,
         )
         logger.info(f"Dispatched redaction detection for file {file_id}")
+        return PostProcessingState.QUEUED
     except Exception as e:
         logger.warning(f"Failed to dispatch redaction detection: {e}")
+        return PostProcessingState.FAILED
 
 
 def _dispatch_speaker_attributes(
     file_uuid: str, user_id: int, downstream_tasks: list[str] | None
-) -> None:
+) -> dict[PostProcessingTask, PostProcessingState]:
     """Dispatch speaker attribute detection and LLM speaker ID (fire-and-forget).
 
     LLM speaker ID chains from attribute detection (dispatched at the end of
     detect_speaker_attributes_task); with detection off it is queued directly, so the two
-    features stay independent (issue #1148).
+    features stay independent (issue #1148). Either way the LLM step's own dispatcher
+    reports it, so only the attribute step is returned for the plan.
     """
     try:
         from app.tasks.speaker_attribute_task import dispatch_speaker_attribute_pipeline
 
-        dispatch_speaker_attribute_pipeline(
+        queued = dispatch_speaker_attribute_pipeline(
             str(file_uuid),
             user_id,
             llm_requested=downstream_tasks is not None and "speaker_llm" in downstream_tasks,
         )
     except Exception as e:
         logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+        return {PostProcessingTask.SPEAKER_ATTRIBUTES: PostProcessingState.FAILED}
+    state = PostProcessingState.QUEUED if queued == "attributes" else PostProcessingState.SKIPPED
+    return {PostProcessingTask.SPEAKER_ATTRIBUTES: state}
 
 
 def _dispatch_speaker_clustering(
     file_uuid: str, user_id: int, downstream_tasks: list[str] | None
-) -> None:
-    """Dispatch speaker clustering (fire-and-forget)."""
+) -> PostProcessingState | None:
+    """Dispatch speaker clustering (fire-and-forget).
+
+    Returns None when the downstream stage list owns the dispatch (and reports it).
+    """
     if downstream_tasks is not None and "speaker_clustering" in downstream_tasks:
-        return
+        return None
     try:
         from app.tasks.speaker_clustering import cluster_speakers_for_file
 
         cluster_speakers_for_file.delay(str(file_uuid), user_id)
         logger.info(f"Dispatched speaker clustering for {file_uuid}")
+        return PostProcessingState.QUEUED
     except Exception as e:
         logger.warning(f"Failed to dispatch speaker clustering: {e}")
+        return PostProcessingState.FAILED
 
 
 def _cleanup_temp(file_uuid: str | None) -> None:

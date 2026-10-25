@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import io
 import zipfile
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -26,6 +27,10 @@ from lxml import etree
 from tests.unit._fake_liveness_redis import FakeRedis
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+#: Pinned Noto fixture fonts (SIL OFL 1.1, ``OFL.txt`` beside them): Latin regular and bold,
+#: Arabic, Hebrew and Thai. Tests never depend on whatever fonts the host happens to have.
+FIXTURE_FONT_DIR = Path(__file__).parent / "fonts"
 
 
 def docx_text(data: bytes) -> str:
@@ -38,6 +43,19 @@ def docx_text(data: bytes) -> str:
                     root = etree.fromstring(archive.read(name))
                     parts.extend(t.text or "" for t in root.iter(f"{_W}t"))
     return " ".join(parts)
+
+
+def pdf_text(data: bytes) -> str:
+    """The text of every page of a PDF, as a reader's text extraction would give it."""
+    from pypdf import PdfReader
+
+    return "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(data)).pages)
+
+
+def document_text(fmt: str, data: bytes) -> str:
+    """Whitespace-normalised visible text of a ``docx`` or ``pdf`` document."""
+    assert fmt in ("docx", "pdf"), fmt
+    return " ".join((docx_text(data) if fmt == "docx" else pdf_text(data)).split())
 
 
 def docx_body_xml(data: bytes) -> bytes:
@@ -77,6 +95,9 @@ class DocumentExportHarness:
             harness.presigned_names.append(str(kwargs.get("download_filename")))
             return f"http://minio.invalid/{key}"
 
+        monkeypatch.setattr(
+            "app.services.transcript_document.fonts.DOCUMENT_FONT_DIR", str(FIXTURE_FONT_DIR)
+        )
         monkeypatch.setattr(task_module, "session_scope", _scope)
         monkeypatch.setattr(task_module, "VideoProcessingService", _FakeService)
         monkeypatch.setattr(minio_service, "get_presigned_download_url", _presign)

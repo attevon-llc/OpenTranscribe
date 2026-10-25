@@ -11,7 +11,7 @@ import logging
 import uuid
 
 import pytest
-from fixtures.document_export import docx_text
+from fixtures.document_export import document_text
 from fixtures.redaction_export_world import CLEAN_TEXT
 from fixtures.redaction_export_world import PROFANITY
 from fixtures.redaction_export_world import enable_user_redaction
@@ -29,6 +29,7 @@ from app.tasks.transcript_document import prepare_transcript_document_task
 pytestmark = pytest.mark.xdist_group("redaction_system_settings")
 
 JOB = "a" * 64
+DOCUMENT_FORMATS = ("docx", "pdf")
 
 
 @pytest.fixture
@@ -212,19 +213,29 @@ def test_the_guard_is_released_when_the_job_ends(
 # --- run-time gates --------------------------------------------------------------------------
 
 
-def test_a_job_with_no_user_refuses_and_writes_nothing(db_session, normal_user, document_export):
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
+def test_a_job_with_no_user_refuses_and_writes_nothing(
+    db_session, normal_user, document_export, fmt
+):
     media_file = make_redactable_file(db_session, normal_user)
-    result = _run_task(media_file, None)
+    result = _run_task(media_file, None, format=fmt)
     assert result == {"status": "error", "reason": "unavailable"}
     assert document_export.uploaded == {}
     assert document_export.events[-1]["status"] == "error"
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_a_file_quarantined_after_dispatch_writes_nothing(
-    client, user_token_headers, normal_user, db_session, document_export
+    client,
+    user_token_headers,
+    normal_user,
+    db_session,
+    document_export,
+    fmt,
 ):
     media_file = make_redactable_file(db_session, normal_user)
-    assert document_export.post(client, user_token_headers, media_file).status_code == 202
+    response = document_export.post(client, user_token_headers, media_file, format=fmt)
+    assert response.status_code == 202
     media_file.is_quarantined = True
     db_session.commit()
 
@@ -236,12 +247,19 @@ def test_a_file_quarantined_after_dispatch_writes_nothing(
     assert document_export.events[-1]["message"] == DOCUMENT_EXPORT_ERRORS["failed"]
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_a_scan_started_after_dispatch_is_refused_and_the_refusal_is_cached(
-    client, user_token_headers, normal_user, db_session, document_export
+    client,
+    user_token_headers,
+    normal_user,
+    db_session,
+    document_export,
+    fmt,
 ):
     enable_user_redaction(client, user_token_headers)
     media_file = make_redactable_file(db_session, normal_user)
-    assert document_export.post(client, user_token_headers, media_file).status_code == 202
+    response = document_export.post(client, user_token_headers, media_file, format=fmt)
+    assert response.status_code == 202
     media_file.redaction_status = "processing"
     db_session.commit()
 
@@ -255,6 +273,7 @@ def test_a_scan_started_after_dispatch_is_refused_and_the_refusal_is_cached(
     assert cached is not None and "redaction_pending" in cached
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_a_non_owner_never_reveals_even_when_unlocked(
     client,
     super_admin_token_headers,
@@ -263,14 +282,17 @@ def test_a_non_owner_never_reveals_even_when_unlocked(
     other_user,
     db_session,
     document_export,
+    fmt,
 ):
     """Owner control and non-owner case on one file: only the owner's reveal is granted."""
     enable_user_redaction(client, user_token_headers)
     set_export_locked(client, super_admin_token_headers, False)
     media_file = make_redactable_file(db_session, normal_user)
 
-    owner = document_export.export(client, user_token_headers, media_file, reveal_original=True)
-    assert PROFANITY in docx_text(owner), "control: the owner's reveal must work here"
+    owner = document_export.export(
+        client, user_token_headers, media_file, format=fmt, reveal_original=True
+    )
+    assert PROFANITY in document_text(fmt, owner), "control: the owner's reveal must work here"
 
     # The other user masks on their own account and asks for the original of a file they do not own.
     from app.models.prompt import UserSetting
@@ -279,19 +301,25 @@ def test_a_non_owner_never_reveals_even_when_unlocked(
         db_session.add(UserSetting(user_id=other_user.id, setting_key=key, setting_value=value))
     db_session.commit()
     document_export.uploaded.clear()
-    result = _run_task(media_file, other_user.id, reveal_original=True)
+    result = _run_task(media_file, other_user.id, format=fmt, reveal_original=True)
     assert result["status"] == "success", result
-    text = docx_text(document_export.last_document)
+    text = document_text(fmt, document_export.last_document)
     assert PROFANITY not in text
     assert CLEAN_TEXT in text
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_the_task_never_writes_the_masked_text_back(
-    client, user_token_headers, normal_user, db_session, document_export
+    client,
+    user_token_headers,
+    normal_user,
+    db_session,
+    document_export,
+    fmt,
 ):
     enable_user_redaction(client, user_token_headers)
     media_file = make_redactable_file(db_session, normal_user)
-    document_export.export(client, user_token_headers, media_file)
+    document_export.export(client, user_token_headers, media_file, format=fmt)
     db_session.commit()  # what session_scope does when the task returns
     db_session.expire_all()
     texts = [
@@ -299,6 +327,23 @@ def test_the_task_never_writes_the_masked_text_back(
         for s in db_session.query(TranscriptSegment).filter_by(media_file_id=media_file.id).all()
     ]
     assert any(PROFANITY in t for t in texts), "the export overwrote the stored transcript"
+
+
+def test_an_image_without_the_fonts_fails_loudly_and_never_prints_a_fontless_pdf(
+    client, user_token_headers, normal_user, db_session, document_export, monkeypatch, tmp_path
+):
+    media_file = make_redactable_file(db_session, normal_user)
+    monkeypatch.setattr("app.services.transcript_document.fonts.DOCUMENT_FONT_DIR", str(tmp_path))
+    assert (
+        document_export.post(client, user_token_headers, media_file, format="pdf").status_code
+        == 202
+    )
+
+    result = document_export.run_dispatched()
+
+    assert result == {"status": "error", "reason": "fonts_unavailable"}
+    assert document_export.uploaded == {}
+    assert document_export.events[-1]["message"] == DOCUMENT_EXPORT_ERRORS["fonts_unavailable"]
 
 
 # --- hygiene ---------------------------------------------------------------------------------
@@ -324,17 +369,19 @@ def test_a_rendering_failure_logs_the_type_only_and_tells_the_user_a_fixed_sente
     assert PROFANITY not in str(document_export.events)
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_labels_are_printed_as_typed_not_formatted(
-    client, user_token_headers, normal_user, db_session, document_export
+    client, user_token_headers, normal_user, db_session, document_export, fmt
 ):
     media_file = make_redactable_file(db_session, normal_user)
     labels = {"exported_label": "{__class__} on {date}", "page_label": "{0} {page}/{pages}"}
-    text = docx_text(document_export.export(client, user_token_headers, media_file, labels=labels))
+    data = document_export.export(client, user_token_headers, media_file, format=fmt, labels=labels)
+    text = document_text(fmt, data)
     assert "{__class__} on 20" in text
     assert "{0}" in text
 
 
-def test_the_document_carries_no_author_identity(
+def test_the_docx_carries_no_author_identity(
     client, user_token_headers, normal_user, db_session, document_export
 ):
     import io
@@ -351,6 +398,7 @@ def test_the_document_carries_no_author_identity(
     assert b"python-docx" not in everything
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_a_reveal_is_audited_with_the_document_surface(
     client,
     super_admin_token_headers,
@@ -359,6 +407,7 @@ def test_a_reveal_is_audited_with_the_document_surface(
     db_session,
     document_export,
     monkeypatch,
+    fmt,
 ):
     events: list[dict] = []
     monkeypatch.setattr("app.auth.audit.audit_logger.log", lambda **kwargs: events.append(kwargs))
@@ -366,7 +415,7 @@ def test_a_reveal_is_audited_with_the_document_surface(
     set_export_locked(client, super_admin_token_headers, False)
     media_file = make_redactable_file(db_session, normal_user)
 
-    document_export.export(client, user_token_headers, media_file, reveal_original=True)
+    document_export.export(client, user_token_headers, media_file, format=fmt, reveal_original=True)
 
     revealed = [e for e in events if str(e["event_type"]) == "transcript.view_unredacted"]
     assert len(revealed) == 1, events
@@ -374,14 +423,20 @@ def test_a_reveal_is_audited_with_the_document_surface(
     assert revealed[0]["details"]["revealed_categories"] == ["profanity"]
 
 
+@pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)
 def test_a_non_ascii_title_downloads_under_its_own_name(
-    client, user_token_headers, normal_user, db_session, document_export
+    client,
+    user_token_headers,
+    normal_user,
+    db_session,
+    document_export,
+    fmt,
 ):
     media_file = make_redactable_file(db_session, normal_user)
     media_file.filename = f"اجتماع-{uuid.uuid4().hex[:4]}.wav"
     db_session.commit()
-    document_export.export(client, user_token_headers, media_file)
-    assert document_export.presigned_names[-1] == media_file.filename.rsplit(".", 1)[0] + ".docx"
+    document_export.export(client, user_token_headers, media_file, format=fmt)
+    assert document_export.presigned_names[-1] == media_file.filename.rsplit(".", 1)[0] + f".{fmt}"
 
 
 def test_the_file_row_is_untouched(

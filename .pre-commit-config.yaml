@@ -76,6 +76,11 @@ repos:
           # python-docx ships py.typed (services/transcript_document/docx_renderer.py, #1278);
           # without it every docx call degrades to Any in the hook's isolated env.
           - python-docx
+          # fpdf2, fonttools and pypdf ship py.typed (services/transcript_document/fonts.py,
+          # pdf_renderer.py and their tests, #1278).
+          - fpdf2
+          - fonttools
+          - pypdf
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

@@ -17,6 +17,31 @@
 #   (Then reference in docker-compose.blackwell.yml)
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# Fonts for DOCX / PDF transcript export (issue #1278)
+# -----------------------------------------------------------------------------
+# The PDF renderer embeds a pinned Noto set; this throwaway stage fetches it from Debian and
+# the final image copies only the files listed in third_party/fonts/SHA256SUMS. Every font is
+# SIL OFL 1.1 (see third_party/fonts/OFL.txt, copied beside them with Debian's per-package
+# copyright files), unmodified. The checksum file pins the CONTENT: if Debian rebuilds a
+# package the build fails here, loudly, instead of the PDFs silently changing glyphs.
+# Every backend image carries the same set, including the CJK collection.
+FROM python:3.13-slim-trixie AS fonts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-noto-core \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+COPY third_party/fonts/SHA256SUMS third_party/fonts/OFL.txt /tmp/fonts-meta/
+WORKDIR /usr/share/fonts
+RUN set -eux; \
+    sha256sum -c /tmp/fonts-meta/SHA256SUMS; \
+    mkdir -p /fonts; \
+    while read -r _ path; do cp "$path" /fonts/; done < /tmp/fonts-meta/SHA256SUMS; \
+    cp /tmp/fonts-meta/OFL.txt /fonts/OFL.txt; \
+    cp /usr/share/doc/fonts-noto-core/copyright /fonts/copyright-fonts-noto-core; \
+    cp /usr/share/doc/fonts-noto-cjk/copyright /fonts/copyright-fonts-noto-cjk
+
 FROM nvcr.io/nvidia/pytorch:26.07-py3
 
 # Make CUDA ordinals match nvidia-smi, NVML and Docker's `device_ids` (issue #719).
@@ -78,6 +103,9 @@ RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Fonts the PDF renderer embeds (DOCUMENT_FONT_DIR in app/core/constants.py), with their licence.
+COPY --from=fonts /fonts/ /usr/share/fonts/opentranscribe/
 
 # ---------------------------------------------------------------------------
 # Create directories for runtime and caches

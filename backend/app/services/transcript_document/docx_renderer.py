@@ -38,6 +38,7 @@ from app.services.transcript_document.model import DocumentMeta
 from app.services.transcript_document.model import DocumentOptions
 from app.services.transcript_document.model import PageSpec
 from app.services.transcript_document.model import TurnBlock
+from app.services.transcript_document.scripts import base_direction
 from app.services.transcript_document.scripts import cjk_font_family
 from app.services.transcript_document.scripts import sanitize_for_xml
 
@@ -62,6 +63,21 @@ _PPR_AFTER_BIDI = (
     "w:rPr",
     "w:sectPr",
     "w:pPrChange",
+)
+#: Elements the schema places AFTER ``w:suppressLineNumbers`` inside ``w:pPr``.
+_PPR_AFTER_SUPPRESS = (
+    "w:pBdr",
+    "w:shd",
+    "w:tabs",
+    "w:suppressAutoHyphens",
+    "w:kinsoku",
+    "w:wordWrap",
+    "w:overflowPunct",
+    "w:topLinePunct",
+    "w:autoSpaceDE",
+    "w:autoSpaceDN",
+    "w:bidi",
+    *_PPR_AFTER_BIDI,
 )
 _PLACEHOLDER = re.compile(r"(\{pages\}|\{page\})")
 #: Gap between the Word line number and the text, in twips (1/20 pt).
@@ -137,6 +153,13 @@ def _write(
     return paragraph
 
 
+def _suppress_line_numbers(paragraph: Paragraph) -> None:
+    """Keep a header/footer line out of the numbering (Word never numbers them; LibreOffice does)."""
+    paragraph._p.get_or_add_pPr().insert_element_before(
+        OxmlElement("w:suppressLineNumbers"), *_PPR_AFTER_SUPPRESS
+    )
+
+
 def _add_field(paragraph: Paragraph, instruction: str) -> None:
     """A ``w:fldSimple`` field (PAGE / NUMPAGES) with a placeholder result of ``1``."""
     field = OxmlElement("w:fldSimple")
@@ -153,6 +176,7 @@ def _fill_footer(footer: _Footer, label: str) -> None:
     """``page_label`` with ``{page}``/``{pages}`` as live fields; any other brace is literal."""
     paragraph = footer.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _suppress_line_numbers(paragraph)
     for part in _PLACEHOLDER.split(sanitize_for_xml(label)):
         if part == "{page}":
             _add_field(paragraph, "PAGE")
@@ -163,12 +187,14 @@ def _fill_footer(footer: _Footer, label: str) -> None:
 
 
 def _fill_header(header: _Header, meta: DocumentMeta, labels: DocumentLabels) -> None:
-    first = header.paragraphs[0]
-    _write(first, meta.title, "ltr", bold=True)
     exported = labels.exported_label.replace("{date}", meta.exported_on.isoformat())
-    _write(header.add_paragraph(), exported, "ltr")
+    lines = [(meta.title, True, False), (exported, False, False)]
     if meta.redacted:
-        _write(header.add_paragraph(), labels.redacted_label, "ltr", italic=True)
+        lines.append((labels.redacted_label, False, True))
+    for index, (text, bold, italic) in enumerate(lines):
+        paragraph = header.paragraphs[0] if index == 0 else header.add_paragraph()
+        _write(paragraph, text, "ltr", bold=bold, italic=italic)
+        _suppress_line_numbers(paragraph)
 
 
 def _add_block(doc: DocxDocument, block: Block) -> None:
@@ -177,7 +203,15 @@ def _add_block(doc: DocxDocument, block: Block) -> None:
         return
     assert isinstance(block, TurnBlock)
     if block.header:
-        _write(doc.add_paragraph(), block.header, block.direction, bold=True, keep_with_next=True)
+        # The header ("[00:00:15] Bo:") reads in ITS OWN direction: under a right-to-left base
+        # the colon would jump to the other side of the name. In a right-to-left turn it is
+        # right-aligned instead, so it still sits above the text it labels.
+        header_direction = base_direction(block.header)
+        paragraph = _write(
+            doc.add_paragraph(), block.header, header_direction, bold=True, keep_with_next=True
+        )
+        if block.direction == "rtl" and header_direction == "ltr":
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     _write(doc.add_paragraph(), block.text, block.direction, space_after=6)
 
 

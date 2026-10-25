@@ -10,7 +10,7 @@ there to be masked: a text extraction that returns nothing must fail, not pass.
 from __future__ import annotations
 
 import pytest
-from fixtures.document_export import docx_text
+from fixtures.document_export import document_text
 from fixtures.redaction_export_world import CLEAN_TEXT
 from fixtures.redaction_export_world import PROFANITY
 from fixtures.redaction_export_world import enable_user_redaction
@@ -19,12 +19,13 @@ from fixtures.redaction_export_world import set_export_locked
 
 pytestmark = pytest.mark.xdist_group("redaction_system_settings")
 
-DOCUMENT_FORMATS = ("docx",)
+DOCUMENT_FORMATS = ("docx", "pdf")
 
 
 def _text(fmt: str, data: bytes) -> str:
-    assert fmt == "docx"
-    return " ".join(docx_text(data).split())
+    text: str = document_text(fmt, data)
+    assert text.strip(), f"no text could be read back from the {fmt}: an empty read proves nothing"
+    return text
 
 
 @pytest.mark.parametrize("fmt", DOCUMENT_FORMATS)

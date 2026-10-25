@@ -11,6 +11,8 @@ from app.services.transcript_document.model import DocumentOptions
 from app.services.transcript_document.model import TurnBlock
 from app.services.transcript_document.scripts import base_direction
 from app.services.transcript_document.scripts import breaks_between_characters
+from app.services.transcript_document.scripts import cjk_font_family
+from app.services.transcript_document.scripts import cjk_region
 from app.services.transcript_document.scripts import needs_shaping
 from app.services.transcript_document.scripts import sanitize_for_xml
 from app.services.transcript_export_turns import Turn
@@ -100,3 +102,26 @@ def test_comments_merge_by_time_and_only_when_requested() -> None:
     assert isinstance(merged[1], CommentBlock)
     assert merged[1].text == "NOTE: Ana [00:00:10]: check slide 4"
     assert len(build_blocks(turns, comments, DocumentOptions(include_comments=False), labels)) == 2
+
+
+@pytest.mark.parametrize(
+    ("language", "region"),
+    [
+        ("ja", "JP"),
+        ("ja-JP", "JP"),
+        ("ko", "KR"),
+        ("zh", "SC"),
+        ("zh-CN", "SC"),
+        ("zh-Hans", "SC"),
+        ("zh-Hant", "TC"),
+        ("zh_TW", "TC"),
+        ("zh-HK", "TC"),
+        ("yue", "TC"),
+        ("en", "SC"),
+        (None, "SC"),
+        ("", "SC"),
+    ],
+)
+def test_the_cjk_region_follows_the_language(language: str | None, region: str) -> None:
+    assert cjk_region(language) == region
+    assert cjk_font_family(language) == f"Noto Sans CJK {region}"

@@ -71,6 +71,9 @@ def _outline(data: bytes) -> list[str]:
             flags.append("keepNext")
         if ppr.find(f"{W}bidi") is not None:
             flags.append("bidi")
+        jc = ppr.find(f"{W}jc")
+        if jc is not None:
+            flags.append("jc=" + jc.get(f"{W}val"))
         flags.append("after=" + ppr.find(f"{W}spacing").get(f"{W}after"))
         run = p.find(f"{W}r")
         rpr = run.find(f"{W}rPr")
@@ -84,7 +87,7 @@ def test_the_body_outline_matches_the_hand_written_golden() -> None:
     assert _outline(_render()) == [
         "P keepNext after=0 | b: [00:00:00] Ana:",
         "P after=120 | : Hello world",
-        "P keepNext bidi after=0 | b rtl: [00:00:05] Bo:",
+        "P keepNext jc=right after=0 | b: [00:00:05] Bo:",
         f"P bidi after=120 | rtl: {ARABIC}",
         "P after=80 | i: USER COMMENT: Ana [00:00:07]: check slide 4",
     ]
@@ -93,7 +96,7 @@ def test_the_body_outline_matches_the_hand_written_golden() -> None:
 def test_bidi_precedes_spacing_in_the_paragraph_properties() -> None:
     """Word rejects a ``w:pPr`` whose children are out of schema order."""
     body = _part(_render(), "word/document.xml").find(f"{W}body")
-    rtl_paragraph = body.findall(f"{W}p")[3]
+    rtl_paragraph = body.findall(f"{W}p")[3]  # the Arabic text; its Latin header is not bidi
     order = [child.tag.removeprefix(W) for child in rtl_paragraph.find(f"{W}pPr")]
     assert order.index("bidi") < order.index("spacing")
 
@@ -140,10 +143,24 @@ def test_page_size_in_twips(page: PageSizeName, width: str, height: str) -> None
 
 def test_rtl_marks_appear_on_the_arabic_turn_only() -> None:
     root = _part(_render(), "word/document.xml")
-    assert len(root.findall(f".//{W}bidi")) == 2  # header + body of the Arabic turn
-    assert len(root.findall(f".//{W}rtl")) == 2
+    # Only the Arabic TEXT is right-to-left. Its Latin header keeps its own direction (a bidi
+    # base would move the colon to the other side of the name) and is right-aligned instead.
+    assert len(root.findall(f".//{W}bidi")) == 1
+    assert len(root.findall(f".//{W}rtl")) == 1
     latin = _outline(_render([TurnBlock("Ana:", "Hello")]))
     assert all("bidi" not in line and "rtl" not in line for line in latin)
+
+
+def test_header_and_footer_lines_are_kept_out_of_the_line_numbering() -> None:
+    """Word never numbers them; LibreOffice does unless each paragraph says otherwise."""
+    headers = _part(_render(redacted=True), "word/header1.xml").findall(f"{W}p")
+    footers = _part(_render(), "word/footer1.xml").findall(f"{W}p")
+    assert len(headers) == 3 and len(footers) == 1
+    for paragraph in [*headers, *footers]:
+        assert paragraph.find(f"{W}pPr").find(f"{W}suppressLineNumbers") is not None
+    # Schema order: pStyle, suppressLineNumbers, ..., jc.
+    footer_order = [child.tag.removeprefix(W) for child in footers[0].find(f"{W}pPr")]
+    assert footer_order == ["pStyle", "suppressLineNumbers", "jc"]
 
 
 def test_header_has_the_title_the_iso_date_and_redaction_only_when_masked() -> None:

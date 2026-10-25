@@ -31,7 +31,7 @@ class TranscriptDocumentExportRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    format: Literal["docx"]
+    format: Literal["docx", "pdf"]
     include_comments: bool = False
     include_timestamps: bool = True
     include_speakers: bool = True

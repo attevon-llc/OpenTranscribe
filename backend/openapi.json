@@ -18390,7 +18390,10 @@
         "description": "What to put in the document and how to number it.",
         "properties": {
           "format": {
-            "const": "docx",
+            "enum": [
+              "docx",
+              "pdf"
+            ],
             "title": "Format",
             "type": "string"
           },

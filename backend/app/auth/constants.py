@@ -36,6 +36,17 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v11 (0.6.0): organization content governance (#1275-#1277). v10 is taken by the privacy
+# lane. File-read semantics changed: a member of an organization collection they may see now
+# reads the organization's files in it on EVERY surface (file page, gallery, search, chat
+# retrieval); before, only the collection's own file list honoured it. The rule is
+# ``services.collection_visibility`` (one predicate) and the search clause is
+# ``services.search.access_filter.access_filter_clause``. A deployment that registers hooks
+# reading collection or file visibility must call those rather than re-derive it. Index
+# documents are unchanged (``collection_ids`` already existed) and no reindex is needed.
+# New capability keys that a resolver must return (omitted keys fail closed, v6) are added
+# alongside the audit work: ``audit.content_access``, ``org.audit_logs``, ``org.legal_hold``.
+#
 # v9: legal document provider seam. ``app.legal.registry.set_document_provider`` lets an
 # extension replace the document set served by ``/api/legal/*``. Additive: with no provider
 # installed the vendored OSS set is served and the operator acknowledgment is required;
@@ -120,7 +131,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 9
+CLOUD_SEAM_VERSION = 11
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

@@ -1332,6 +1332,16 @@ off by default.
 
 ### Security
 
+- **Organization collections now open the organization's files everywhere, not only in the
+  collection list (#1275).** A member of an organization collection used to see a colleague's
+  file listed there and then get an error opening it; the gallery left it out; search and chat
+  returned none of its text (a chat scoped to the collection resolved the files and answered
+  from nothing). One rule now decides all of them: a member of an organization collection they
+  may see reads the organization's files in it, read-only, on the file page, in the gallery,
+  tags, search and chat. Search needs no reindex: the index filter gains a second arm on the
+  chunk's `collection_ids`, computed per request, and adding or removing a file from an
+  organization collection now refreshes those ids (it used to do so only for shared
+  collections). `CLOUD_SEAM_VERSION` 11.
 - **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
   deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
   credential could read, edit, delete and re-run any tenant's files, collections, speakers and

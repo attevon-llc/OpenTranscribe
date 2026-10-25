@@ -69,6 +69,7 @@ from app.schemas.sharing import ShareCreate
 from app.schemas.sharing import SharedCollectionInfo
 from app.schemas.sharing import ShareUpdate
 from app.schemas.user import UserBrief
+from app.services.collection_visibility import visible_collection_ids
 from app.services.formatting_service import FormattingService
 from app.services.permission_service import PermissionService
 from app.services.takedown_service import exclude_quarantined
@@ -408,9 +409,9 @@ def list_collections_on_files(
     one holding a few.
 
     Scoped to the caller's own collections in the request's tenant — in an
-    organization, the org's collections (v422); in the personal workspace, their
-    personal ones. Membership of anyone else's collection is not theirs to read
-    off a selection.
+    organization, the org's collections they may see (v422); in the personal
+    workspace, their personal ones. Membership of anyone else's collection, or of a
+    restricted one they cannot see, is not theirs to read off a selection.
 
     Registered before ``/{collection_uuid}`` so the literal path is not
     swallowed.
@@ -429,6 +430,7 @@ def list_collections_on_files(
         .filter(
             CollectionMember.media_file_id.in_(file_ids),
             PermissionService.collection_tenant_pred(current_user.id, ctx.org_id),
+            Collection.id.in_(visible_collection_ids(db, current_user.id, ctx.org_id)),
         )
         .group_by(Collection.id)
         .order_by(func.count(func.distinct(CollectionMember.media_file_id)).desc(), Collection.name)
@@ -484,12 +486,15 @@ def list_collections(
         collection_ids = [
             row[0]
             for row in db.query(Collection.id)
-            .filter(PermissionService.collection_tenant_pred(user_id, ctx.org_id), org_pred)
+            .filter(
+                PermissionService.collection_tenant_pred(user_id, ctx.org_id),
+                org_pred,
+                Collection.id.in_(list(accessible_perms)),
+            )
             .order_by(Collection.id)
             .offset(skip)
             .limit(limit)
             .all()
-            if row[0] in accessible_perms
         ]
         counts_dict = _visible_media_counts(
             db, collection_ids, include_quarantined=include_quarantined
@@ -851,20 +856,36 @@ def delete_collection(
             collection, current_user, forbidden_detail="Only the collection owner can delete it"
         )
 
-    # Reindex files BEFORE deletion (cascade will remove shares + members)
+    # Capture the members before the cascade removes them; reindex after the commit so the
+    # rewrite reads the collection as gone.
     file_ids = [
         cm.media_file_id
         for cm in db.query(CollectionMember.media_file_id)
         .filter(CollectionMember.collection_id == collection.id)
         .all()
     ]
-    if file_ids:
-        update_file_access_index.delay(file_ids)
 
     db.delete(collection)
     db.commit()
+    if file_ids:
+        update_file_access_index.delay(file_ids)
 
     return {"message": "Collection deleted successfully"}
+
+
+def _membership_affects_index(db: Session, collection: Collection) -> bool:
+    """True when adding/removing files changes who can read them in search.
+
+    An organization collection is a read route for its members (``search/access_filter``
+    matches the chunk's ``collection_ids``), a shared one grants its sharees. A private
+    personal collection changes neither.
+    """
+    if collection.organization_id is not None:
+        return True
+    return (
+        db.query(CollectionShare.id).filter(CollectionShare.collection_id == collection.id).first()
+        is not None
+    )
 
 
 @router.post("/{collection_uuid}/media", response_model=dict)
@@ -933,13 +954,8 @@ def add_media_to_collection(
 
     db.commit()
 
-    # If collection has shares, reindex newly added files
-    if added_file_ids:
-        share_count = (
-            db.query(CollectionShare).filter(CollectionShare.collection_id == collection_id).count()
-        )
-        if share_count > 0:
-            update_file_access_index.delay(added_file_ids)
+    if added_file_ids and _membership_affects_index(db, collection):
+        update_file_access_index.delay(added_file_ids)
 
     return {
         "message": f"Added {added_count} media files to collection",
@@ -986,13 +1002,8 @@ def remove_media_from_collection(
 
     db.commit()
 
-    # If collection has shares, reindex removed files
-    if media_file_ids:
-        share_count = (
-            db.query(CollectionShare).filter(CollectionShare.collection_id == collection_id).count()
-        )
-        if share_count > 0:
-            update_file_access_index.delay(media_file_ids)
+    if media_file_ids and _membership_affects_index(db, collection):
+        update_file_access_index.delay(media_file_ids)
 
     return {
         "message": f"Removed {removed_count} media files from collection",

@@ -381,6 +381,16 @@ SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprec
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 
+# Org-collection read route for search (#1275, governance plan D-3): a chunk is readable by a
+# caller when its ``collection_ids`` names an organization collection they may see. The ids
+# are sent in a ``terms`` clause, so above this many the arm is dropped (falling back to the
+# per-file ``accessible_user_ids`` term alone) and a WARNING is logged.
+MAX_VISIBLE_COLLECTION_TERMS = 10_000
+
+# Content-access audit (#1277, governance plan D-10): a view-class event for the same
+# (event, actor, resource, surface) is written at most once per this window.
+CONTENT_AUDIT_DEDUP_SECONDS = 900
+
 # How long a mutation (segment edit, speaker reassignment/merge, rediarize) waits
 # before a real re-index actually runs (issue #666). A Redis SETNX debounce keyed
 # per file coalesces bursts of edits — a user correcting twenty segments in a row

@@ -33,6 +33,15 @@ You can also assign files to collections during upload -- see [Organizing During
 - Export collection data
 - View collection analytics
 
+## Collections in an organization
+
+In an organization, collections belong to the organization. Every member sees them, and
+every member can open the files in them: **seeing a collection means being able to open,
+search and ask questions about the organization's files in it**, on every page (the file
+page, the gallery, search and chat), not only in the collection's own list. That access is
+read-only. Only a file's owner edits it, and only a collection's creator or an organization
+admin deletes it or manages who it is shared with.
+
 ## Collection Sharing Model
 
 ```mermaid

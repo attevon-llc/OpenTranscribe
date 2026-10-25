@@ -28,6 +28,7 @@ from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.ingest_artifacts.index_mapping import summary_plane_clause
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
+from app.services.search.access_filter import access_filter_clause
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import resolve_fusion
 from app.services.search.fusion import search_pipeline_id
@@ -1440,7 +1441,7 @@ class HybridSearchService:
         from app.services.search.tenant_scope import org_filter_clauses
 
         scope_filter = [
-            {"terms": {"accessible_user_ids": [user_id]}},
+            access_filter_clause(user_id, organization_id),
             *org_filter_clauses(organization_id),
             # Addendum G3: this reader builds its own filter list and so does not
             # inherit `_build_filters`' chunk-plane gate. Without the clause a
@@ -1568,7 +1569,7 @@ class HybridSearchService:
         from app.services.search.tenant_scope import org_filter_clauses
 
         query_filter: list[dict[str, Any]] = [
-            {"terms": {"accessible_user_ids": [user_id]}},
+            access_filter_clause(user_id, organization_id),
             *org_filter_clauses(organization_id),
             # Addendum G3: facet counts are per-document, so
             # digest sections would inflate every speaker and
@@ -1681,7 +1682,7 @@ class HybridSearchService:
         """
         from app.services.search.tenant_scope import org_filter_clauses
 
-        filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
+        filters: list[dict[str, Any]] = [access_filter_clause(user_id, organization_id)]
         filters.extend(org_filter_clauses(organization_id))
         # The chunk plane, compatibility-armed, UNLESS a caller passed its own
         # plane clause (issue #963: `search_summary_plane` passes

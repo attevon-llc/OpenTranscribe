@@ -39,12 +39,23 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
   cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
-- **Collection visibility** — `collection_visibility.py` is the one place a surface asks
-  which collections a caller may see named on a file or filter by: `visible_collection_ids`
-  (the predicate #1275's restricted collections will replace), `collections_on_files`
-  (batched, constant queries per page; the file page's `get_file_collections` and the search
-  card's `collections` both use it) and `resolve_collection_filter` (a hidden collection
-  filters to nothing, never 403/404). Don't add a raw `Collection` join beside it.
+- **Collection visibility** — `collection_visibility.py` is the one place that answers "which
+  collections may this caller see, and which files does that make readable" (#1051, #1275).
+  `collection_permission_ranks` / `collection_permission` are the ONE statement behind
+  `PermissionService.get_collection_permission` and `get_accessible_collection_ids` (an org
+  collection by membership, a personal one by ownership, either by a share). On top of it:
+  `visible_collection_ids` / `visible_collections_by_uuid` (what a surface may name),
+  `usable_collections` (what a file may be put into: editor on a collection of the tenant, one
+  statement, used by uploads, URL/YouTube/watch imports and auto-label), `collections_on_files`
+  (batched, constant queries per page; the file page and the search card), `resolve_collection_filter`
+  (a hidden collection filters to nothing, never 403/404), and `org_collection_file_ids_stmt`:
+  **membership of an organization collection you may see is a file-READ route** (decision D-3), which
+  `get_file_permission` (answers `viewer`) and `get_accessible_file_ids_subquery` (gallery, tags,
+  chat scope) both include. The index side of the same route is
+  `search/access_filter.access_filter_clause` (see `search/CLAUDE.md`). Don't add a raw
+  `Collection` join beside any of this: `tests/unit/test_collection_visibility_discipline.py`
+  fails on one that has no written reason. Never answer a hidden collection with a different
+  status than a missing one (404, or an empty page).
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.

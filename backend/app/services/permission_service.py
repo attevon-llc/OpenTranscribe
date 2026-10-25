@@ -11,7 +11,6 @@ from typing import Any
 from sqlalchemy import and_
 from sqlalchemy import case
 from sqlalchemy import func
-from sqlalchemy import literal_column
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import union_all
@@ -26,7 +25,6 @@ from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
-from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 
 logger = logging.getLogger(__name__)
@@ -38,21 +36,6 @@ PERMISSION_NAMES = {1: "viewer", 2: "editor", 3: "owner"}
 
 #: Membership role that makes a user an owner of every collection of their org.
 ORG_ADMIN_ROLE = "org:admin"
-
-
-def org_collection_permission(creator_id: int | None, user_id: int, role: str | None) -> str | None:
-    """A member's permission on one of their organization's collections (v422).
-
-    Organization collections are shared by the organization: every member is an
-    editor (view, add/remove the org's files, edit the details); the creator and
-    org admins are owners (delete, manage explicit shares). ``role`` is the
-    caller's membership role in the collection's org, ``None`` = not a member.
-    """
-    if role is None:
-        return None
-    if role == ORG_ADMIN_ROLE or (creator_id is not None and creator_id == user_id):
-        return "owner"
-    return "editor"
 
 
 def org_scope_pred(column: Any, organization_id: OrgScope) -> Any:
@@ -101,12 +84,10 @@ class PermissionService:
     ) -> str | None:
         """Get highest permission level for user on a collection.
 
-        Checks in order:
-        1. Organization collection: membership of its org -> 'owner' for the
-           creator or an org admin, 'editor' for every other member (v422).
-           Personal collection: direct ownership -> 'owner'.
-        2. Direct share (CollectionShare.target_user_id == user_id)
-        3. Group share (CollectionShare.target_group_id in user's groups)
+        Decided by ``collection_visibility.collection_permission``, the one statement
+        for it: an organization collection through membership of its org ('owner' for
+        the creator or an org admin, 'editor' for every other member, v422), a personal
+        collection through ownership, and either through a direct or group share.
 
         Returns highest of all matching permissions, or None if no access.
 
@@ -114,7 +95,6 @@ class PermissionService:
         personal/org-less, ``UNSCOPED`` = no gate / legacy): a collection outside
         the active scope resolves to None even via the sharing path.
         """
-        # Check direct ownership first (fast path)
         collection = db.query(Collection).filter(Collection.id == collection_id).first()
         if not collection:
             return None
@@ -124,53 +104,9 @@ class PermissionService:
             and collection.organization_id != organization_id
         ):
             return None
-        base_perm: str | None = None
-        if collection.organization_id is not None:
-            role = (
-                db.query(OrganizationMembership.role)
-                .filter(
-                    OrganizationMembership.organization_id == collection.organization_id,
-                    OrganizationMembership.user_id == user_id,
-                )
-                .scalar()
-            )
-            base_perm = org_collection_permission(collection.user_id, user_id, role)
-        elif collection.user_id == user_id:
-            base_perm = "owner"
-        if base_perm == "owner":
-            return base_perm
+        from app.services.collection_visibility import collection_permission
 
-        # Check direct user share and group shares in one query
-        user_group_ids = (
-            select(UserGroupMember.group_id)
-            .where(UserGroupMember.user_id == user_id)
-            .scalar_subquery()
-        )
-
-        max_perm = (
-            db.query(
-                func.max(
-                    case(
-                        (CollectionShare.permission == "editor", 2),
-                        (CollectionShare.permission == "viewer", 1),
-                        else_=0,
-                    )
-                )
-            )
-            .filter(
-                CollectionShare.collection_id == collection_id,
-                or_(
-                    CollectionShare.target_user_id == user_id,
-                    CollectionShare.target_group_id.in_(user_group_ids),
-                ),
-            )
-            .scalar()
-        )
-
-        best = max(max_perm or 0, PERMISSION_LEVELS.get(base_perm or "", 0))
-        if best > 0:
-            return PERMISSION_NAMES[best]
-        return None
+        return collection_permission(db, collection_id, user_id)
 
     @staticmethod
     def get_file_permission(
@@ -185,6 +121,8 @@ class PermissionService:
         Checks:
         1. Direct ownership (file.user_id == user_id) -> 'owner'
         2. File is in a shared collection that user has access to
+        3. File is in an organization collection the user is a member of and may see
+           -> 'viewer' (read route only; see ``collection_visibility``)
 
         Returns highest permission, or None if no access.
 
@@ -242,6 +180,12 @@ class PermissionService:
 
         if max_perm and max_perm > 0:
             return PERMISSION_NAMES[max_perm]
+
+        # A member of an organization collection they may see reads the files in it.
+        from app.services.collection_visibility import file_readable_via_org_collection
+
+        if file_readable_via_org_collection(db, file_id, user_id):
+            return "viewer"
         return None
 
     @staticmethod
@@ -323,6 +267,7 @@ class PermissionService:
         Union of:
         - Files owned by user
         - Files in collections shared with user (directly or via groups)
+        - Files in organization collections the user is a member of and may see
 
         ``organization_id`` is a default-deny tenant gate applied to BOTH
         branches: an int restricts to same-org files; ``None`` (personal)
@@ -371,7 +316,10 @@ class PermissionService:
             CollectionShare.collection_id == CollectionMember.collection_id,
         ).where(*share_where)
 
-        return union_all(owned, shared).subquery()
+        from app.services.collection_visibility import org_collection_file_ids_stmt
+
+        via_org_collection = org_collection_file_ids_stmt(user_id, organization_id)
+        return union_all(owned, shared, via_org_collection).subquery()
 
     @staticmethod
     def get_accessible_collection_ids(db: Session, user_id: int) -> list[tuple[int, str]]:
@@ -379,60 +327,12 @@ class PermissionService:
 
         Returns list of (collection_id, permission) tuples: the caller's personal
         collections, every collection of each organization they belong to (v422,
-        see :func:`org_collection_permission`), and explicit shares. Not
+        see ``collection_visibility``), and explicit shares. Not
         tenant-gated — callers apply their own tenant predicate.
         """
-        # Owned personal collections
-        owned: list[Any] = (
-            db.query(Collection.id, literal_column("'owner'").label("permission"))
-            .filter(Collection.user_id == user_id, Collection.organization_id.is_(None))
-            .all()
-        )
+        from app.services.collection_visibility import collection_permission_ranks
 
-        # Collections of the caller's organizations
-        org_rows = (
-            db.query(Collection.id, Collection.user_id, OrganizationMembership.role)
-            .join(
-                OrganizationMembership,
-                and_(
-                    OrganizationMembership.organization_id == Collection.organization_id,
-                    OrganizationMembership.user_id == user_id,
-                ),
-            )
-            .all()
-        )
-        owned += [
-            (cid, org_collection_permission(creator_id, user_id, role))
-            for cid, creator_id, role in org_rows
-        ]
-
-        # Shared collections
-        user_group_ids = (
-            select(UserGroupMember.group_id)
-            .where(UserGroupMember.user_id == user_id)
-            .scalar_subquery()
-        )
-
-        shared = (
-            db.query(CollectionShare.collection_id, CollectionShare.permission)
-            .filter(
-                or_(
-                    CollectionShare.target_user_id == user_id,
-                    CollectionShare.target_group_id.in_(user_group_ids),
-                )
-            )
-            .all()
-        )
-
-        # Merge: highest permission wins
-        result: dict[int, str] = {}
-        for cid, perm in owned + shared:
-            if cid not in result or PERMISSION_LEVELS.get(perm, 0) > PERMISSION_LEVELS.get(
-                result[cid], 0
-            ):
-                result[cid] = perm
-
-        return [(cid, perm) for cid, perm in result.items()]
+        return list(collection_permission_ranks(db, user_id).items())
 
     @staticmethod
     def get_users_with_file_access(db: Session, file_id: int) -> list[int]:

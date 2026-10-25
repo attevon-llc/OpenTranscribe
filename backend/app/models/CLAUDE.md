@@ -108,7 +108,7 @@ authority. See `backend/app/db/CLAUDE.md`.
 - **`Collection` belongs to a TENANT** (`v422_add_collection_tenancy`, issue #1051). **personal**
   = `organization_id IS NULL`, `user_id` = owner; **organization** = `organization_id` set,
   shared by every member of the org (members are editors, the creator and org admins are
-  owners — `permission_service.org_collection_permission`), `user_id` = creator, NULL once
+  owners — `collection_visibility.collection_permission_ranks`), `user_id` = creator, NULL once
   that account is gone (`ck_collection_owner_or_org` keeps a personal row owned). Names are
   unique per tenant (`uq_collection_user_name` personal, `uq_collection_org_name`). Create in
   the request's tenant (`ctx.org_id`), or on background paths the **file's** tenant; scope any

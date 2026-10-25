@@ -1,28 +1,45 @@
-"""Which collections a caller may see, for the surfaces that name a collection on a file.
+"""The one rule for which collections a caller may see, and which files that makes readable.
 
-The file page's collection list, the search result card and the search collection filter all
-ask the same question, so it is answered here once, on top of ``PermissionService``. Issue
-#1275 (restricted organization collections, ``docs/design/v060_org_content_governance_plan.md``
-section 3.1) replaces the body of :func:`visible_collection_ids` with its visibility
-predicate; every function below inherits the change without being edited.
+Every surface that can name a collection, filter by one, or reach a file through one asks
+here (issues #1051, #1275; ``docs/design/v060_org_content_governance_plan.md`` section 3.1):
+the collection lists, the file page's collection list, search cards and the search filter,
+chat scope, auto-label and topic suggestions, and the upload targets.
+
+``PermissionService.get_collection_permission`` / ``get_accessible_collection_ids`` delegate
+to :func:`collection_permission_ranks`, so there is exactly one statement that decides a
+caller's permission on a collection. :func:`org_collection_file_ids_stmt` is the file-read
+route that statement gives: a member of a collection they may see can read the files in it
+(the organization model of v422; before #1275 only the collection LIST honoured it).
 
 Never join ``Collection`` to a file outside this module to show or filter by it: a raw join
-names collections the caller cannot open, which is exactly what restricted collections must
-hide.
+names collections the caller cannot open.
 """
 
 from collections.abc import Iterable
+from typing import Any
 from uuid import UUID
 
+from sqlalchemy import ColumnElement
+from sqlalchemy import Select
+from sqlalchemy import and_
+from sqlalchemy import case
+from sqlalchemy import func
+from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
+from app.models.group import UserGroupMember
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
+from app.models.organization import OrganizationMembership
+from app.models.sharing import CollectionShare
+from app.services.permission_service import ORG_ADMIN_ROLE
+from app.services.permission_service import PERMISSION_LEVELS
+from app.services.permission_service import PERMISSION_NAMES
 from app.services.permission_service import PermissionService
 from app.services.permission_service import org_scope_pred
 
@@ -32,17 +49,130 @@ from app.services.permission_service import org_scope_pred
 NO_VISIBLE_COLLECTION = -1
 
 
+def _org_base_rank(user_id: int) -> Any:
+    """SQL rank (0 none, 2 editor, 3 owner) a caller holds on a collection by being its tenant.
+
+    Personal collection: its owner. Organization collection: a member of its org (the creator
+    and org admins own it, every other member edits it, v422). Explicit shares are NOT part of
+    this rank; :func:`_share_rank` adds them.
+    """
+    role = (
+        select(OrganizationMembership.role)
+        .where(
+            OrganizationMembership.organization_id == Collection.organization_id,
+            OrganizationMembership.user_id == user_id,
+        )
+        .correlate(Collection)
+        .scalar_subquery()
+    )
+    return case(
+        (Collection.organization_id.is_(None), case((Collection.user_id == user_id, 3), else_=0)),
+        (role.is_(None), 0),
+        (role == ORG_ADMIN_ROLE, 3),
+        (Collection.user_id == user_id, 3),
+        else_=2,
+    )
+
+
+def _share_rank(user_id: int) -> Any:
+    """SQL rank (0 none, 1 viewer, 2 editor) of the caller's best share on a collection."""
+    groups = select(UserGroupMember.group_id).where(UserGroupMember.user_id == user_id)
+    best = (
+        select(
+            func.max(
+                case(
+                    (CollectionShare.permission == "editor", 2),
+                    (CollectionShare.permission == "viewer", 1),
+                    else_=0,
+                )
+            )
+        )
+        .where(
+            CollectionShare.collection_id == Collection.id,
+            or_(
+                CollectionShare.target_user_id == user_id,
+                CollectionShare.target_group_id.in_(groups),
+            ),
+        )
+        .correlate(Collection)
+        .scalar_subquery()
+    )
+    return func.coalesce(best, 0)
+
+
+def collection_permission_ranks(db: Session, user_id: int) -> dict[int, str]:
+    """Permission name by collection id, for every collection ``user_id`` may see (any tenant).
+
+    The single statement behind ``PermissionService.get_collection_permission`` and
+    ``get_accessible_collection_ids``. Callers apply their own tenant predicate.
+    """
+    rank = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
+    rows = db.execute(select(Collection.id, rank).where(rank > 0)).all()
+    return {int(cid): PERMISSION_NAMES[int(r)] for cid, r in rows}
+
+
+def collection_permission(db: Session, collection_id: int, user_id: int) -> str | None:
+    """The caller's permission on one collection (``viewer`` | ``editor`` | ``owner``), or None."""
+    rank = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
+    value = db.execute(select(rank).where(Collection.id == collection_id)).scalar()
+    return PERMISSION_NAMES[int(value)] if value else None
+
+
+def org_collection_file_ids_stmt(user_id: int, organization_id: OrgScope) -> Select[Any]:
+    """``SELECT media_file_id`` of files readable through an organization collection.
+
+    A member of an organization collection they may see reads the organization's files in it
+    (decision D-3 of the governance plan). ``organization_id`` is the usual default-deny tenant
+    gate: an int keeps that org, ``None`` (personal) yields nothing, ``UNSCOPED`` spans every
+    org the caller belongs to. Quarantine is the caller's concern, as for every file query.
+    """
+    stmt = (
+        select(CollectionMember.media_file_id)
+        .join(Collection, Collection.id == CollectionMember.collection_id)
+        .join(
+            MediaFile,
+            and_(
+                MediaFile.id == CollectionMember.media_file_id,
+                MediaFile.organization_id == Collection.organization_id,
+            ),
+        )
+        .where(Collection.organization_id.is_not(None), _org_base_rank(user_id) > 0)
+    )
+    gate = org_scope_pred(Collection.organization_id, organization_id)
+    return stmt.where(gate) if gate is not None else stmt
+
+
+def file_readable_via_org_collection(db: Session, file_id: int, user_id: int) -> bool:
+    """True when ``file_id`` sits in an organization collection ``user_id`` may see."""
+    stmt = org_collection_file_ids_stmt(user_id, UNSCOPED).where(
+        CollectionMember.media_file_id == file_id
+    )
+    return db.execute(select(stmt.exists())).scalar() is True
+
+
+def org_readable_collection_ids(db: Session, user_id: int, organization_id: int) -> list[int]:
+    """Ids of ``organization_id``'s collections ``user_id`` reads files through (membership route).
+
+    The search index arm: a chunk whose ``collection_ids`` names one of these is readable by the
+    caller even when ``accessible_user_ids`` does not list them.
+    """
+    rows = db.execute(
+        select(Collection.id).where(
+            Collection.organization_id == organization_id, _org_base_rank(user_id) > 0
+        )
+    ).scalars()
+    return [int(cid) for cid in rows]
+
+
 def visible_collection_ids(db: Session, user_id: int, organization_id: OrgScope) -> set[int]:
     """Ids of the collections ``user_id`` may see in the tenant ``organization_id``.
 
-    Accessible means owned, a collection of one of the caller's organizations, or shared with
-    the caller or one of their groups (``PermissionService.get_accessible_collection_ids``).
+    Visible means owned, a collection of one of the caller's organizations, or shared with
+    the caller or one of their groups (:func:`collection_permission_ranks`).
     ``organization_id`` is the default-deny tenant gate of ``org_scope_pred``: an int keeps
     that organization's collections, ``None`` keeps personal ones, ``UNSCOPED`` applies none.
     """
-    accessible = {
-        cid for cid, _perm in PermissionService.get_accessible_collection_ids(db, user_id)
-    }
+    accessible = collection_permission_ranks(db, user_id)
     if not accessible:
         return set()
     stmt = select(Collection.id).where(Collection.id.in_(accessible))
@@ -50,6 +180,55 @@ def visible_collection_ids(db: Session, user_id: int, organization_id: OrgScope)
     if tenant_pred is not None:
         stmt = stmt.where(tenant_pred)
     return set(db.execute(stmt).scalars().all())
+
+
+def visible_collections_by_uuid(
+    db: Session, user_id: int, organization_id: OrgScope, collection_uuids: Iterable[str | UUID]
+) -> list[Collection]:
+    """The named collections the caller may see in the tenant; anything else is absent."""
+    visible = visible_collection_ids(db, user_id, organization_id)
+    if not visible:
+        return []
+    stmt = select(Collection).where(
+        Collection.id.in_(visible), Collection.uuid.in_([str(c) for c in collection_uuids])
+    )
+    return list(db.execute(stmt.order_by(Collection.id)).scalars().all())
+
+
+def usable_collections(
+    db: Session,
+    user_id: int,
+    organization_id: int | None | ColumnElement[Any],
+    *,
+    min_permission: str = "editor",
+    collection_uuids: Iterable[str | UUID] | None = None,
+) -> list[Collection]:
+    """The tenant's collections ``user_id`` holds at least ``min_permission`` on, by id.
+
+    The one lookup for "put a file into a collection" and "match a suggested name against
+    the collections this person can actually use": the tenant gate
+    (``PermissionService.collection_tenant_pred``: an org's collections, or the caller's own
+    personal ones) intersected with the caller's permission, in ONE statement. A collection
+    the caller cannot see is simply absent, so a caller cannot tell it from one that does
+    not exist. ``collection_uuids`` narrows to those collections. ``organization_id`` may be
+    a scalar SQL expression (a file's own org column) so a batched caller keeps its
+    statement count constant.
+    """
+    rank = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
+    if isinstance(organization_id, int) or organization_id is None:
+        tenant = PermissionService.collection_tenant_pred(user_id, organization_id)
+    else:
+        tenant = or_(
+            and_(
+                organization_id.is_(None),
+                PermissionService.collection_tenant_pred(user_id, None),
+            ),
+            Collection.organization_id == organization_id,
+        )
+    stmt = select(Collection).where(rank >= PERMISSION_LEVELS[min_permission], tenant)
+    if collection_uuids is not None:
+        stmt = stmt.where(Collection.uuid.in_([str(c) for c in collection_uuids]))
+    return list(db.execute(stmt.order_by(Collection.id)).scalars().all())
 
 
 def collections_on_files(

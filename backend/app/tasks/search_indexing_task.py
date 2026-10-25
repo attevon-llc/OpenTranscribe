@@ -413,7 +413,7 @@ def index_transcript_search_task(  # noqa: C901
     default_retry_delay=10,
 )
 def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
-    """Reindex accessible_user_ids for specified MEDIA files.
+    """Reindex accessible_user_ids and collection_ids for specified MEDIA files.
 
     Called when:
     - Collection share is created/updated/revoked
@@ -421,7 +421,10 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     - File is added to/removed from a collection
 
     Computes the full set of user IDs with access to each file and
-    performs a bulk partial update on the OpenSearch index.
+    performs a bulk partial update on the OpenSearch index. ``collection_ids`` is
+    refreshed in the same pass: it is the second arm of the read-access clause
+    (``search/access_filter``, organization collections), so it must follow every
+    add to or removal from a collection, not only the ones that change a share.
 
     Args:
         file_ids: List of media file integer IDs to update.
@@ -437,6 +440,7 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     """
     from app.core.config import settings
     from app.db.session_utils import session_scope
+    from app.models.media import CollectionMember
     from app.services.opensearch_service import get_opensearch_client
     from app.services.permission_service import PermissionService
 
@@ -458,6 +462,12 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
             # Compute all user IDs with access to this file
             with session_scope() as db:
                 accessible_ids = PermissionService.get_users_with_file_access(db, file_id)
+                collection_ids = [
+                    int(cid)
+                    for (cid,) in db.query(CollectionMember.collection_id).filter(
+                        CollectionMember.media_file_id == file_id
+                    )
+                ]
 
             if not accessible_ids:
                 # get_users_with_file_access always seeds the set with the file's
@@ -478,9 +488,12 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
                 body={
                     "query": {"term": {"file_id": file_id}},
                     "script": {
-                        "source": "ctx._source.accessible_user_ids = params.ids",
+                        "source": (
+                            "ctx._source.accessible_user_ids = params.ids; "
+                            "ctx._source.collection_ids = params.cids"
+                        ),
                         "lang": "painless",
-                        "params": {"ids": accessible_ids},
+                        "params": {"ids": accessible_ids, "cids": collection_ids},
                     },
                 },
                 refresh=True,

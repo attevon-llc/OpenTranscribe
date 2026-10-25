@@ -7,8 +7,6 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
-from sqlalchemy import and_
-from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -22,15 +20,13 @@ from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
-from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.organization import OrganizationMembership
 from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
-from app.services.permission_service import PermissionService
+from app.services.collection_visibility import usable_collections
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
@@ -136,22 +132,11 @@ def add_file_to_collections(
 
     wanted = [str(coll_uuid) for coll_uuid in collection_ids]
 
-    # The file's tenant is a correlated subquery, not a separate SELECT, so the
-    # lookup stays one round trip (the batching contract above).
+    # The file's tenant is a correlated subquery, not a separate SELECT, so the lookup stays
+    # one round trip (the batching contract above); a collection qualifies when it belongs to
+    # that tenant and ``user_id`` may edit it (collection_visibility.usable_collections).
     file_org = select(MediaFile.organization_id).where(MediaFile.id == file_id).scalar_subquery()
-    is_member = (
-        select(OrganizationMembership.id)
-        .where(
-            OrganizationMembership.organization_id == Collection.organization_id,
-            OrganizationMembership.user_id == user_id,
-        )
-        .exists()
-    )
-    same_tenant = or_(
-        and_(file_org.is_(None), PermissionService.collection_tenant_pred(user_id, None)),
-        and_(Collection.organization_id == file_org, is_member),
-    )
-    collections = db.query(Collection).filter(Collection.uuid.in_(wanted), same_tenant).all()
+    collections = usable_collections(db, user_id, file_org, collection_uuids=wanted)
     by_uuid = {str(collection.uuid): collection for collection in collections}
 
     for coll_uuid in wanted:

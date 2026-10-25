@@ -195,6 +195,20 @@ Not masked, deliberately: `title_highlighted` and `speaker_highlighted`. Both ar
 user-assigned labels rather than transcript text, and masking a speaker name is what the
 speaker plane exists to let people *set*.
 
+## Who may read a chunk: `access_filter_clause` (#1275)
+
+Every transcript-plane reader builds its ACL term through `search/access_filter.access_filter_clause`
+(`_build_filters`, the autocomplete and facet readers, chat aggregation). The clause is
+`accessible_user_ids ∋ me` **or**, inside an organization, `collection_ids` ∈ the organization
+collections the caller is a member of and may see (`collection_visibility.org_readable_collection_ids`,
+one Postgres read per request, capped at `MAX_VISIBLE_COLLECTION_TERMS` = 10 000, above which it
+falls back to the per-file term and logs a WARNING). It is a query-time arm on purpose: joining or
+leaving an organization or switching a collection to restricted needs no reindex. What it does need
+is a fresh `collection_ids` on the chunks, so `update_file_access_index` rewrites it together with
+`accessible_user_ids`, and every add to / removal from an organization collection (and auto-label)
+dispatches it. A bare `{"terms": {"accessible_user_ids": ...}}` in a new reader hides files the rest
+of the app lets the caller open.
+
 ## Gotchas
 
 - **Do NOT add `aggs` to the collapsed hybrid body** (`hybrid_search_service.py:2320`, corrected

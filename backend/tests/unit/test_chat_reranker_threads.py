@@ -443,7 +443,7 @@ def _subprocess_env(tmp_path: Path, **extra: str) -> dict[str, str]:
 
 def test_real_torch_cap_is_thread_scoped(tmp_path):
     pytest.importorskip("torch", reason="needs real torch; requirements-ci.txt installs it")
-    cap = 2
+    cap = 1  # below any host default; a 2-CPU CI runner defaults to 2, which made the "keeps its own count" check vacuous
     probe = subprocess.run(
         [sys.executable, "-m", "app.scripts.probe_torch_thread_scope", "--cap", str(cap)],
         capture_output=True,

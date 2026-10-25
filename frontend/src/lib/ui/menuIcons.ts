@@ -57,6 +57,19 @@ export const MENU_ICONS = {
   ],
   'format-srt': [rect(3, 5, 18, 14, 2), d('M7 15h4M15 15h2M7 11h2M13 11h4')],
   'format-vtt': [poly('23 7 16 12 23 17 23 7'), rect(1, 5, 15, 14, 2)],
+  // Markdown: the "M down-arrow" mark in a frame.
+  'format-md': [rect(2, 5, 20, 14, 2), d('M6 15V9l3 3 3-3v6'), d('M17 9v6m-2.5-2.5L17 15l2.5-2.5')],
+  // Word and PDF documents: the page glyph with a W and a P on it, so the two stay distinct.
+  'format-docx': [
+    d('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'),
+    poly('14 2 14 8 20 8'),
+    d('M7.5 12l1.5 6 3-5 3 5 1.5-6'),
+  ],
+  'format-pdf': [
+    d('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'),
+    poly('14 2 14 8 20 8'),
+    d('M9 18v-6h2.2a1.9 1.9 0 0 1 0 3.8H9'),
+  ],
   // The Export trigger: a document with an arrow out of it, so it never reads as the Download button.
   'export-file': [
     d('M14 22h4a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4'),

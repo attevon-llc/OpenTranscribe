@@ -11,6 +11,11 @@
   import { formatDuration } from '$lib/utils/formatting';
   import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
   import { requestTranscriptExport } from '$lib/export/requestTranscriptExport';
+  import { exportErrorKey } from '$lib/export/exportErrors';
+  import { loadDocumentPrefs, saveDocumentPrefs } from '$lib/export/documentExportPrefs';
+  import { documentTemplateLabels, startDocumentExport } from '$lib/export/requestDocumentExport';
+  import { triggerAnchorDownload } from '$lib/export/anchorDownload';
+  import type { ExportJobStream } from '$lib/export/exportJobStream';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
@@ -266,6 +271,16 @@
   // TXT export options modal state (localStorage persistence in $lib/export/txtExportPrefs)
   let showTxtExportOptions = false;
   let txtExportOptions = { includeTimestamps: true, includeSpeakers: true, includeComments: false, hasComments: false };
+
+  // DOCX/PDF export (issue #1278). The options modal is a dynamic import: it is only ever
+  // needed after someone picks Word or PDF, so it stays out of this route's initial chunk.
+  let DocumentExportOptionsModal: typeof import('$components/fileDetail/DocumentExportOptionsModal.svelte').default | null = null;
+  let showDocumentExportOptions = false;
+  let documentFormat: 'docx' | 'pdf' = 'pdf';
+  let documentOptions = { ...loadDocumentPrefs(), includeComments: false, hasComments: false };
+  // True from the confirm click until the server job settles; the menu shows it as busy.
+  let documentBusy = false;
+  let documentStream: ExportJobStream | null = null;
 
   // Speaker profile confirmation modal state
   let showSpeakerProfileConfirmation = false;
@@ -1349,6 +1364,11 @@
     // options dialog.
     const hasComments = commentCount > 0;
 
+    if (format === 'docx' || format === 'pdf') {
+      await openDocumentExportOptions(format, hasComments);
+      return;
+    }
+
     if (format === 'txt') {
       // Show TXT-specific options modal (timestamps, speakers, comments)
       const prefs = loadTxtPrefs();
@@ -1429,6 +1449,7 @@
       // A refusal (503 policy unavailable, 409 redaction scan unfinished) stays a refusal;
       // falling back to a local copy here would reinstate the bypass this closes.
       console.error('Error copying transcript:', error);
+      toastStore.error($t(exportErrorKey(error)));
       settleCopyStatus('failed');
     }
   }
@@ -1472,7 +1493,10 @@
       window.URL.revokeObjectURL(url);
       // Transcript exported successfully
     } catch (error) {
+      // A refusal (409 redaction scan unfinished, 503 policy unavailable) is told to the user,
+      // never swallowed: a button that silently does nothing reads as a broken app.
       console.error('Error exporting transcript:', error);
+      toastStore.error($t(exportErrorKey(error)));
     }
   }
 
@@ -1502,6 +1526,63 @@
       includeTimestamps: txtExportOptions.includeTimestamps,
       includeSpeakers: txtExportOptions.includeSpeakers
     });
+  }
+
+  async function openDocumentExportOptions(format: 'docx' | 'pdf', hasComments: boolean) {
+    documentFormat = format;
+    documentOptions = {
+      ...loadDocumentPrefs(),
+      includeComments: false,
+      hasComments,
+      // When diarization is disabled, force speakers off
+      ...(diarizationDisabled ? { includeSpeakers: false } : {}),
+    };
+    DocumentExportOptionsModal ??= (
+      await import('$components/fileDetail/DocumentExportOptionsModal.svelte')
+    ).default;
+    showDocumentExportOptions = true;
+  }
+
+  // The document is built, masked and numbered on the SERVER (issue #1278); the browser only
+  // queues the job, waits for its presigned URL and saves it. No local fallback on failure.
+  async function handleDocumentExportConfirm() {
+    showDocumentExportOptions = false;
+    if (!file || documentBusy) return;
+    saveDocumentPrefs({
+      includeTimestamps: documentOptions.includeTimestamps,
+      includeSpeakers: documentOptions.includeSpeakers,
+      lineNumbering: documentOptions.lineNumbering,
+      pageSize: documentOptions.pageSize,
+    });
+    documentBusy = true;
+    try {
+      documentStream?.close();
+      documentStream = await startDocumentExport({
+        fileUuid: file.uuid,
+        format: documentFormat,
+        includeComments: documentOptions.includeComments,
+        includeTimestamps: documentOptions.includeTimestamps,
+        includeSpeakers: documentOptions.includeSpeakers,
+        lineNumbering: documentOptions.lineNumbering,
+        pageSize: documentOptions.pageSize,
+        showOriginal,
+        labels: {
+          speaker_default_label: $t('fileDetail.speakerDefault'),
+          user_comment_label: $t('fileDetail.userComment'),
+          redacted_label: $t('documentExport.redactedLabel'),
+          ...documentTemplateLabels($t),
+        },
+      });
+      const result = await documentStream.result;
+      documentStream = null;
+      triggerAnchorDownload(result.url, result.filename);
+      toastStore.success($t('documentExport.ready'));
+    } catch (error) {
+      console.error('Error exporting document:', error);
+      toastStore.error($t(exportErrorKey(error)));
+    } finally {
+      documentBusy = false;
+    }
   }
 
   async function handleSaveSpeakerNames() {
@@ -2175,6 +2256,8 @@
     // Clear the transcript store when leaving the page
     transcriptStore.clear();
 
+    documentStream?.close();
+
     // Release any scroll locks held by the custom modals on this page
     if (_prevTxtExport) unlockScroll();
     if (_prevSpeakerConfirm) unlockScroll();
@@ -2358,6 +2441,7 @@
             {currentDownload}
             {isVideoFile}
             {canEmbedSubtitles}
+            {documentBusy}
             on:exportTranscript={handleExportTranscript}
             on:toggleSpeakerEditor={() => (isEditingSpeakers = !isEditingSpeakers)}
             on:download={handleDownloadFromBar}
@@ -2532,6 +2616,27 @@
   on:confirm={handleTxtExportConfirm}
   on:close={() => showTxtExportOptions = false}
 />
+
+<!-- DOCX / PDF Export Options Modal (loaded on first use) -->
+{#if DocumentExportOptionsModal}
+  <svelte:component
+    this={DocumentExportOptionsModal}
+    bind:show={showDocumentExportOptions}
+    format={documentFormat}
+    bind:includeTimestamps={documentOptions.includeTimestamps}
+    bind:includeSpeakers={documentOptions.includeSpeakers}
+    bind:includeComments={documentOptions.includeComments}
+    bind:lineNumbering={documentOptions.lineNumbering}
+    bind:pageSize={documentOptions.pageSize}
+    hasComments={documentOptions.hasComments}
+    {diarizationDisabled}
+    {redactionActive}
+    {showOriginal}
+    {canViewOriginal}
+    on:confirm={handleDocumentExportConfirm}
+    on:close={() => (showDocumentExportOptions = false)}
+  />
+{/if}
 
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}

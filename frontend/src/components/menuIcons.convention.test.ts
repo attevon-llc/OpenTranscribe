@@ -64,8 +64,8 @@ describe('menu icon convention', () => {
       src,
       (open) => !/export-transcript-button|edit-speakers-button|action-button/.test(open)
     );
-    // 5 export formats + 2 conditional video entries + 3 audio entries.
-    expect(entries.length).toBe(10);
+    // 8 export formats (3 of them document/markdown) + 2 conditional video entries + 3 audio entries.
+    expect(entries.length).toBe(13);
     expect(entries.filter((e) => !hasIcon(e.body))).toEqual([]);
   });
 
@@ -73,7 +73,16 @@ describe('menu icon convention', () => {
     const src = sources['/src/components/transcript/TranscriptActionsBar.svelte'];
     const used = [...src.matchAll(/<MenuIcon name="(format-[a-z]+)"/g)].map((m) => m[1]);
     expect(used.sort()).toEqual(
-      ['format-csv', 'format-json', 'format-srt', 'format-txt', 'format-vtt'].sort()
+      [
+        'format-csv',
+        'format-docx',
+        'format-json',
+        'format-md',
+        'format-pdf',
+        'format-srt',
+        'format-txt',
+        'format-vtt',
+      ].sort()
     );
     const shapes = used.map((n) => JSON.stringify(MENU_ICONS[n as keyof typeof MENU_ICONS]));
     expect(new Set(shapes).size).toBe(used.length);

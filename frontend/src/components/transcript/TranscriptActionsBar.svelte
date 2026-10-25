@@ -3,6 +3,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
 
@@ -13,6 +14,11 @@
   export let currentDownload: any = undefined;
   export let isVideoFile: boolean = false;
   export let canEmbedSubtitles: boolean = false;
+  /** A DOCX/PDF export is rendering on the server; the two document entries wait for it. */
+  export let documentBusy: boolean = false;
+
+  // DOCX/PDF are server-gated by the `exports.documents` capability (the route 404s without it).
+  $: documentsEnabled = isCapabilityEnabled($capabilities, 'exports.documents');
 
   const dispatch = createEventDispatcher();
 
@@ -69,7 +75,7 @@
       on:click={toggleExportDropdown}
     >
       <MenuIcon name="export-file" size={16} />
-      {$t('transcript.export')}
+      {#if documentBusy}{$t('documentExport.preparing')}{:else}{$t('transcript.export')}{/if}
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <polyline points="6 9 12 15 18 9"></polyline>
       </svg>
@@ -117,6 +123,31 @@
           <MenuIcon name="format-vtt" size={16} />
           {$t('transcript.exportVtt')}
         </button>
+        <button
+          on:click={() => { exportTranscript('md'); closeExportDropdown(); }}
+          title={$t('transcript.exportMarkdownTitle')}
+        >
+          <MenuIcon name="format-md" size={16} />
+          {$t('transcript.exportMarkdown')}
+        </button>
+        {#if documentsEnabled}
+          <button
+            disabled={documentBusy}
+            on:click={() => { exportTranscript('docx'); closeExportDropdown(); }}
+            title={$t('transcript.exportDocxTitle')}
+          >
+            <MenuIcon name="format-docx" size={16} />
+            {$t('transcript.exportDocx')}
+          </button>
+          <button
+            disabled={documentBusy}
+            on:click={() => { exportTranscript('pdf'); closeExportDropdown(); }}
+            title={$t('transcript.exportPdfTitle')}
+          >
+            <MenuIcon name="format-pdf" size={16} />
+            {$t('transcript.exportPdf')}
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -273,6 +304,12 @@
 
   .export-dropdown-content button:hover {
     background: var(--surface-hover);
+  }
+
+  .export-dropdown-content button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: none;
   }
 
   .export-dropdown-content button:first-child {

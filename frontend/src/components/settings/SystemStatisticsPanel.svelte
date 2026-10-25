@@ -11,6 +11,8 @@
 </script>
 
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { taskStatusIcon } from '$lib/ui/menuIcons';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -51,23 +53,10 @@
     return result;
   }
 
-  // Helper function for formatting status text
-  // Uses compact symbols on small screens
+  // Narrow screens show a status glyph (named for screen readers) instead of the word.
   const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
 
   function formatStatus(status: string): string {
-    if (isMobileView) {
-      const compactMap: Record<string, string> = {
-        'completed': '✓',
-        'success': '✓',
-        'processing': '...',
-        'in_progress': '...',
-        'pending': '--',
-        'error': '✗',
-        'failed': '✗',
-      };
-      return compactMap[status.toLowerCase()] || status.slice(0, 4);
-    }
     const statusMap: Record<string, string> = {
       'completed': $t('common.completed'),
       'processing': $t('common.processing'),
@@ -113,7 +102,7 @@
            the user can act on it. -->
       <div class="cpu-mode-banner" role="alert">
         <div class="cpu-mode-banner-header">
-          <span class="cpu-mode-icon" aria-hidden="true">🧮</span>
+          <span class="cpu-mode-icon" aria-hidden="true"><MenuIcon name="cpu" size="lg" /></span>
           <strong>{$t('settings.statistics.cpuMode.title')}</strong>
         </div>
         <div class="cpu-mode-banner-reason">
@@ -239,7 +228,8 @@
                   configured: stats.models.diarization?.configured_description || stats.models.diarization?.configured_backend,
                   effective: stats.models.diarization?.description || stats.models.diarization?.effective_backend
                 })}>
-                  ⚠ {$t('settings.statistics.diarizationFallbackBadge')}
+                  <MenuIcon name="warning" size="xs" />
+                  {$t('settings.statistics.diarizationFallbackBadge')}
                 </span>
               {/if}
             </div>
@@ -339,9 +329,9 @@
               <span>{$t('settings.statistics.gpuVram')}</span>
               {#if gpuCount > 1}
                 <div class="gpu-stepper">
-                  <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex - 1 + gpuCount) % gpuCount} aria-label={$t('settings.statistics.previousGpu')}>&#8249;</button>
+                  <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex - 1 + gpuCount) % gpuCount} aria-label={$t('settings.statistics.previousGpu')}><MenuIcon name="chevron-left" size="xs" /></button>
                   <span class="gpu-step-label">GPU {currentGpuIndex + 1}/{gpuCount}</span>
-                  <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex + 1) % gpuCount} aria-label={$t('settings.statistics.nextGpu')}>&#8250;</button>
+                  <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex + 1) % gpuCount} aria-label={$t('settings.statistics.nextGpu')}><MenuIcon name="chevron-right" size="xs" /></button>
                 </div>
               {/if}
             </h4>
@@ -399,7 +389,7 @@
                   <td>{task.id.substring(0, 8)}...</td>
                   <td>{task.type}</td>
                   <td>
-                    <span class="status-badge status-{task.status}">{formatStatus(task.status)}</span>
+                    <span class="status-badge status-{task.status}">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</span>
                   </td>
                   <td>{new Date(task.created_at).toLocaleString()}</td>
                   <td>{formatTime(task.elapsed)}</td>
@@ -438,7 +428,8 @@
   }
 
   .cpu-mode-icon {
-    font-size: 1.15rem;
+    display: inline-flex;
+    align-items: center;
   }
 
   .cpu-mode-banner-reason {
@@ -731,6 +722,8 @@
   }
 
   .gpu-step-btn {
+    display: inline-flex;
+    align-items: center;
     background: none;
     border: 1px solid var(--border-color);
     border-radius: 3px;
@@ -824,7 +817,8 @@
   }
 
   .status-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     padding: 0.125rem 0.5rem;
     border-radius: 10px;
     font-size: 0.6875rem;
@@ -919,7 +913,9 @@
   }
 
   .model-fallback-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
     align-self: flex-start;
     margin-top: 0.125rem;
     font-size: 0.6875rem;

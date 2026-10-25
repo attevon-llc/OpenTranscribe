@@ -1,5 +1,9 @@
 <script lang="ts">
-  export let icon: string = '';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { MenuIconName } from '$lib/ui/menuIcons';
+
+  /** A named SVG glyph; pass the `icon` slot for anything richer. Never an emoji. */
+  export let icon: MenuIconName | '' = '';
   export let title: string = '';
   export let description: string = '';
   export let padding: string = '48px 24px';
@@ -14,7 +18,7 @@
   {#if $$slots.icon}
     <div class="empty-icon"><slot name="icon" /></div>
   {:else if icon}
-    <div class="empty-icon">{icon}</div>
+    <div class="empty-icon"><MenuIcon name={icon} size="xl" /></div>
   {/if}
   {#if title}
     <h3 class="empty-title">{title}</h3>

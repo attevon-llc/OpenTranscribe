@@ -132,7 +132,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(queryByTestId('chat-speaker-disambiguation')).toBeNull();
   });
 
-  it('renders plan steps joined with an arrow', async () => {
+  it('renders plan steps in order, separated by SVG chevrons rather than an arrow glyph', async () => {
     const { getByTestId, container } = render(ChatMessageMeta, {
       props: {
         message: assistantMessage({
@@ -141,8 +141,13 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
       },
     });
     await expandPanel(getByTestId);
-    expect(container.textContent).toContain('resolve scope');
-    expect(container.textContent).toContain('aggregate');
+    const steps = getByTestId('chat-meta-plan-steps');
+    expect([...steps.querySelectorAll('li')].map((li) => li.textContent?.trim())).toEqual([
+      'resolve scope',
+      'aggregate',
+    ]);
+    expect(steps.querySelectorAll('svg[data-icon="chevron-right"]')).toHaveLength(1);
+    expect(container.textContent).not.toContain('\u2192');
   });
 
   it('renders router_language_unmatched as an affirmative row', async () => {

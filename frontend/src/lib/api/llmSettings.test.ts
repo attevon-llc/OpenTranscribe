@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * `LLMSettingsApi` is mostly thin CRUD, so this file targets the one method with
- * real logic: `getStatusDisplay`, which switches on a connection status to build
- * an i18n'd display object. `llmProviderDisplayName` (a top-level exported
- * function, not a class method) is covered separately below. A couple of
- * representative CRUD calls are covered for request-shape only.
+ * `LLMSettingsApi` is mostly thin CRUD. `llmProviderDisplayName` (a top-level exported
+ * function, not a class method) is the logic covered here; a couple of representative
+ * CRUD calls are covered for request-shape only. (`getStatusDisplay`, which built a
+ * text-glyph status icon, had no caller and was deleted.)
  */
 const mockInstance = vi.hoisted(() => ({
   get: vi.fn(),
@@ -18,12 +17,6 @@ vi.mock('$lib/axios', async () => {
   const actual = await vi.importActual<typeof import('$lib/axios')>('$lib/axios');
   return { ...actual, default: mockInstance };
 });
-
-// Identity translator so assertions can match on the i18n key rather than
-// depending on the real locale copy.
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-}));
 
 import { LLMSettingsApi, llmProviderDisplayName } from './llmSettings';
 
@@ -56,48 +49,6 @@ describe('llmProviderDisplayName', () => {
 
   it('maps bedrock to its i18n key', () => {
     expect(llmProviderDisplayName('bedrock', identity)).toBe('llm.provider.bedrock');
-  });
-});
-
-describe('getStatusDisplay', () => {
-  it('renders the success case', () => {
-    expect(LLMSettingsApi.getStatusDisplay('success')).toEqual({
-      text: 'llm.status.connected',
-      class: 'success',
-      icon: '✓',
-    });
-  });
-
-  it('renders the failed case', () => {
-    expect(LLMSettingsApi.getStatusDisplay('failed')).toEqual({
-      text: 'llm.status.failed',
-      class: 'error',
-      icon: '✗',
-    });
-  });
-
-  it('renders the pending case', () => {
-    expect(LLMSettingsApi.getStatusDisplay('pending')).toEqual({
-      text: 'llm.status.testing',
-      class: 'pending',
-      icon: '...',
-    });
-  });
-
-  it('renders untested explicitly', () => {
-    expect(LLMSettingsApi.getStatusDisplay('untested')).toEqual({
-      text: 'llm.status.untested',
-      class: 'neutral',
-      icon: '?',
-    });
-  });
-
-  it('falls back to the untested display when status is undefined', () => {
-    expect(LLMSettingsApi.getStatusDisplay(undefined)).toEqual({
-      text: 'llm.status.untested',
-      class: 'neutral',
-      icon: '?',
-    });
   });
 });
 

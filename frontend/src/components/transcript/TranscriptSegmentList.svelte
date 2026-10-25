@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { GroupedSegmentView } from '$lib/types/media';
   import type { Segment, Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
@@ -494,7 +495,7 @@
               >
                 {@html sanitizeHighlightHtml(segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification))}
                 {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
-                  <span class="low-confidence-dot" title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}>●</span>
+                  <span class="low-confidence-dot" role="img" aria-label={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'} title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}><MenuIcon name="dot" size={8} /></span>
                 {/if}
               </div>
             </button>
@@ -785,10 +786,10 @@
   }
 
   .low-confidence-dot {
+    display: inline-flex;
     color: var(--warning-color, #f59e0b);
-    font-size: 0.6rem;
     vertical-align: super;
-    margin-left: 2px;
+    margin-inline-start: 2px;
     cursor: help;
   }
 

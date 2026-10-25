@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onDestroy } from 'svelte';
   import {
     uploadsStore,
@@ -216,8 +217,9 @@
               class="collapse-btn"
               on:click={handleToggle}
               title={$t('upload.minimize')}
+              aria-label={$t('upload.minimize')}
             >
-              ▼
+              <MenuIcon name="chevron-down" size="sm" />
             </button>
           </div>
         </div>
@@ -394,6 +396,8 @@
 
   .clear-btn,
   .collapse-btn {
+    display: inline-flex;
+    align-items: center;
     background: rgba(255, 255, 255, 0.2);
     border: none;
     color: white;

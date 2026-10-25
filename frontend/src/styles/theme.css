@@ -311,6 +311,14 @@
   --line-height-body: 1.6;
   --measure-prose: 72ch; /* readable line length for answers and long-form text */
 
+  /* Inline SVG icon sizes, ui/MenuIcon `size="xs|sm|md|lg|xl"`. The app draws no emoji or
+     text glyphs as icons (components/noEmoji.convention.test.ts). */
+  --icon-size-xs: 12px;
+  --icon-size-sm: 14px;
+  --icon-size-md: 16px;
+  --icon-size-lg: 20px;
+  --icon-size-xl: 32px;
+
   /* Empty-state rhythm (icon -> title -> description -> action), ui/EmptyState. */
   --empty-state-gap: 0.5rem;
   --empty-state-action-gap: 1rem;

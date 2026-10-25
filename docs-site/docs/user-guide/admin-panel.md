@@ -315,6 +315,9 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` (also written when an organization administrator acts on their own organization's files; the event records the actor's role and which authority held the file), `admin.takedown_notice.create`, `admin.takedown_notice.update`, `admin.takedown_notice.notify`, `admin.takedown_notice.export` (notice records: ids, the notice type and counts only, never the basis or a reason) |
 | **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
+| **Collections** | `collection.visibility.change` (a collection was restricted or opened up: the new mode and how many members lost sight of it, never its name) |
+| **Content access** | `content.file.view`, `content.media.access` (`details.kind`: `stream_url`, `download_prepare`, `download_stream`), `content.export` (format, surface and file count). Recorded only while [content access auditing](#content-access-auditing) is on |
+| **Transcripts** | `transcript.view_unredacted` (a transcript was revealed past the owner's redaction policy) |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
 | **User credentials** | `user.credential.set`, `user.credential.delete` (a user saved or removed their own pyannote.ai key; the key itself is never recorded) |
 
@@ -329,6 +332,31 @@ A few of these are worth knowing about specifically:
   driven by a directory group mapping rather than by a person.
 - **Login-banner refusals are deliberately not audited per request** — they would fire on every
   request of every pre-acknowledgment session. The acknowledgment itself is the artefact.
+
+### Content access auditing
+
+The `content.*` events record who opened a recording, asked for its media or exported a
+transcript. They are written in large numbers, so they are **off by default**: a **super admin**
+turns them on with **Content access auditing** at the top of the Audit Logs section, with no
+environment variable and no restart (it takes effect within about 30 seconds). Collection
+visibility and membership changes (and legal holds) are always recorded, whatever this switch says.
+
+- A repeat view of the same recording, or a repeat request for its stream URL, by the same person
+  within 15 minutes is recorded once. Downloads and exports are never collapsed: each is a copy
+  leaving the system.
+- No event ever contains transcript text, a filename or title, a collection name or a hold's
+  reason. Events carry ids, kinds, counts and formats; the file or collection is identified by
+  `resource_type` and `resource_uuid`, and `tenant_scope` says whether it belongs to an
+  organization or to one person's personal workspace.
+- An event about a file in an organization carries that organization's id, so its organization
+  admins see it. An event about a file in someone's personal workspace is never shown to the
+  administrators of the organizations that person belongs to.
+- Under a support-access grant the event records the grant's id.
+- **Storage:** roughly 0.8 KB per event. With the de-duplication above an active user writes about
+  34 KB a day, so about 1 GB a month for 1,000 active users (one index shard, no replicas, one
+  index per month, kept for the audit retention you configure). The switch shows this estimate.
+- A deployment edition can withhold the feature; the switch then says so, and nothing is
+  recorded even when it is on.
 
 ### Filtering
 

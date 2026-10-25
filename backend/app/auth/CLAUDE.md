@@ -269,6 +269,13 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
 - TOTP per RFC 6238/4226 (Google Authenticator / Authy compatible). MFA tokens are
   single-use — the JTI is blacklisted in Redis after verification.
 - Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
+- **A resource event names its OWN tenant** (#1277): `log(..., resource_type=, resource_uuid=,
+  tenant_scope="org"|"personal")` are typed top-level keywords (a pre-existing monthly index gets them
+  by `put_mapping`, once per process; a conflict is a WARNING and the next month is right).
+  `build_org_scope_clause`'s legacy branch (events with no `organization_id`, attributed by the actor's
+  membership) refuses any event that carries `tenant_scope`, so a member's personal-file event is never
+  readable by their org admins (finding F5). Content and governance events go through
+  `services/content_audit.record_content_event`, not `audit_logger.log` directly.
 - **`user_id` is the ACTOR; the subject goes in `target_user_id` / `target_username`**
   (issue #443). This is an access-control invariant, not a style rule: `query_audit_logs`
   filters on both `user_id` (actor) and `target_user_id` (subject, issue #828 — the write-side

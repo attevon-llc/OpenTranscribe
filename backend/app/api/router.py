@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from . import websockets
 from .endpoints import admin
 from .endpoints import admin_approvals
+from .endpoints import admin_audit_content_access
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
 from .endpoints import admin_scim_tokens
@@ -290,6 +291,12 @@ include_router_with_consistency(
     prefix="/admin/asr-providers",
     tags=["admin"],
     capability="asr.user_providers",
+)
+include_router_with_consistency(
+    admin_audit_content_access.router,
+    prefix="/admin/audit/content-access",
+    tags=["admin"],
+    capability="audit.logs",
 )
 include_router_with_consistency(
     admin_hf_token.router,

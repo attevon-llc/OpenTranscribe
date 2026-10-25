@@ -135,6 +135,15 @@ off by default.
   `can_change_visibility` on every collection response. Names stay unique per organization, so a
   hidden collection's name still blocks reuse (the one thing a member can infer). Migration
   `v446`.
+- **Content-access auditing (#1277).** A super admin can now record who opens a recording,
+  requests its media (a stream URL or a download) or exports a transcript, subtitles, a summary
+  or a chat: **Settings > Audit Logs > Content access auditing**. It is off by default because it
+  writes many events (about 34 KB a day per active user, shown on the switch); a repeat view
+  within 15 minutes is recorded once, downloads and exports never are. Events carry the file or
+  collection by id (`resource_type`, `resource_uuid`), never a name, title or text, and name the
+  resource's tenant (`tenant_scope`), so an organization admin sees events about their
+  organization's files and never a member's personal ones. New capability keys
+  `audit.content_access`, `org.audit_logs` and `org.legal_hold`.
 - **Takedown notice records (#1254).** Quarantining a file now writes a durable record in the same
   transaction: the legal notice it acts on (type, date received, an opaque reference, the internal
   basis, who handled it) and, per file, its outcome (open, counter-notice, upheld, released), or an
@@ -1345,6 +1354,11 @@ off by default.
 
 ### Security
 
+- **An organization admin could read a member's personal-file events (#1277).** The org audit
+  read attributed any event without an organization stamp to every organization its actor
+  belonged to, so `transcript.view_unredacted` on a member's personal file was readable by the
+  admins of each organization the member joined. Events now say whose tenant their resource
+  belongs to, and the org read refuses an event that names its own tenant.
 - **Organization collections now open the organization's files everywhere, not only in the
   collection list (#1275).** A member of an organization collection used to see a colleague's
   file listed there and then get an error opening it; the gallery left it out; search and chat

@@ -25,7 +25,12 @@ same depth. Read this before assuming a key protects anything:
    router 404, so the UI gate is genuinely cosmetic:
    ``watch_sources``, ``organizations``, ``auth.config_ui``,
    ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``,
-   ``chat.rag``, ``org.takedown`` (``/org-admin/files``; no platform-admin bypass).
+   ``chat.rag``, ``org.takedown`` (``/org-admin/files``; no platform-admin bypass),
+   ``org.legal_hold`` (``/org-admin/holds``; no platform-admin bypass),
+   ``org.audit_logs`` (``/org-admin/audit-logs/export``; no platform-admin bypass).
+   ``audit.content_access`` is enforced by its WRITER rather than a router:
+   ``services/content_audit.content_audit_enabled`` drops the view / media-access / export
+   events while it is off (a request-time read, so a resolver may answer it per tenant).
    The platform takedown queue (``admin.takedown``, tier 2) stays ungated on purpose:
    an operator must always be able to act on a legal notice.
 
@@ -135,6 +140,8 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "usage_dashboard": False,
     "organizations": False,  # member/seat management surface
     "org.takedown": False,  # org-admin quarantine/release of the org's own files (#1253)
+    "org.legal_hold": False,  # org-admin legal hold on the org's own files/collections (#1276)
+    "org.audit_logs": False,  # org-admin audit screen + export of the org's own events (#1277)
     "org.defaults": False,  # org-level default settings/policies
     "llm.byok": False,  # bring-your-own LLM key (cloud tier-gated extra)
     "redaction.policy": True,  # enforcement floor (org admin in cloud; operator here)
@@ -145,6 +152,10 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "engine.settings": True,  # diarization/boundary tuning admin panel
     "system.hardware_stats": True,  # GPU/CPU stats, benchmarks
     "audit.logs": True,  # audit log viewer (super-admin)
+    # Content-access auditing (#1277): whether the view / media-access / export events may be
+    # recorded at all. The super_admin setting `audit.content_access.enabled` (default off)
+    # must ALSO be on. A derived deployment's resolver may withhold it per tier.
+    "audit.content_access": True,
     "admin.data_integrity": True,  # orphaned-record / storage reconciliation panel
     "admin.retention": True,  # file retention + derived-media cache policy
     "admin.backup": True,  # scheduled database backups
@@ -189,6 +200,8 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "usage_dashboard": AUDIENCE_ORG_ADMIN,
     "organizations": AUDIENCE_ORG_ADMIN,
     "org.takedown": AUDIENCE_ORG_ADMIN,
+    "org.legal_hold": AUDIENCE_ORG_ADMIN,
+    "org.audit_logs": AUDIENCE_ORG_ADMIN,
     "org.defaults": AUDIENCE_ORG_ADMIN,
     "llm.byok": AUDIENCE_ORG_ADMIN,
     "redaction.policy": AUDIENCE_ORG_ADMIN,
@@ -198,6 +211,7 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "engine.settings": AUDIENCE_PLATFORM,
     "system.hardware_stats": AUDIENCE_PLATFORM,
     "audit.logs": AUDIENCE_PLATFORM,
+    "audit.content_access": AUDIENCE_PLATFORM,
     "admin.data_integrity": AUDIENCE_PLATFORM,
     "admin.retention": AUDIENCE_PLATFORM,
     "admin.backup": AUDIENCE_PLATFORM,

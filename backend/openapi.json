@@ -4119,6 +4119,62 @@
         "title": "ConnectionTestRequest",
         "type": "object"
       },
+      "ContentAccessAuditStatus": {
+        "description": "The switch, whether it is in effect, and what leaving it on costs.",
+        "properties": {
+          "active": {
+            "description": "enabled AND capability_available: events are being written.",
+            "title": "Active",
+            "type": "boolean"
+          },
+          "bytes_per_active_user_per_day_estimate": {
+            "title": "Bytes Per Active User Per Day Estimate",
+            "type": "integer"
+          },
+          "capability_available": {
+            "description": "False when this deployment's edition withholds content auditing.",
+            "title": "Capability Available",
+            "type": "boolean"
+          },
+          "dedup_seconds": {
+            "description": "A repeat view or stream-URL event inside this window is not written again.",
+            "title": "Dedup Seconds",
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "The super_admin setting.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event_bytes_estimate": {
+            "title": "Event Bytes Estimate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "capability_available",
+          "active",
+          "dedup_seconds",
+          "event_bytes_estimate",
+          "bytes_per_active_user_per_day_estimate"
+        ],
+        "title": "ContentAccessAuditStatus",
+        "type": "object"
+      },
+      "ContentAccessAuditUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ContentAccessAuditUpdate",
+        "type": "object"
+      },
       "ContentTypePromptsResponse": {
         "description": "Schema for getting prompts by content type",
         "properties": {
@@ -22920,6 +22976,78 @@
           }
         ],
         "summary": "Export Audit Logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/audit/content-access": {
+      "get": {
+        "description": "Whether view, media-access and export events are being recorded (super_admin only).",
+        "operationId": "get_content_access_audit_api_admin_audit_content_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentAccessAuditStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Content Access Audit",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Turn content-access auditing on or off. Takes effect within the settings cache TTL.",
+        "operationId": "set_content_access_audit_api_admin_audit_content_access_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentAccessAuditUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentAccessAuditStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Content Access Audit",
         "tags": [
           "admin"
         ]

@@ -390,6 +390,14 @@ MAX_VISIBLE_COLLECTION_TERMS = 10_000
 # Content-access audit (#1277, governance plan D-10): a view-class event for the same
 # (event, actor, resource, surface) is written at most once per this window.
 CONTENT_AUDIT_DEDUP_SECONDS = 900
+#: ``SystemSettings`` key (super_admin toggle, default OFF) that, together with the
+#: ``audit.content_access`` capability, switches on the view / media-access / export events.
+AUDIT_CONTENT_ACCESS_SETTING_KEY = "audit.content_access.enabled"
+AUDIT_CONTENT_ACCESS_DEFAULT = False
+#: Rough cost of content auditing, shown in the admin help text (governance plan 3.4): an
+#: event is ~0.8 KB; with de-dup an active user writes ~34 KB a day.
+AUDIT_EVENT_BYTES_ESTIMATE = 800
+AUDIT_ACTIVE_USER_BYTES_PER_DAY_ESTIMATE = 34_000
 
 # How long a mutation (segment edit, speaker reassignment/merge, rediarize) waits
 # before a real re-index actually runs (issue #666). A Redis SETNX debounce keyed

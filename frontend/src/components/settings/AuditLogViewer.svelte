@@ -2,6 +2,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
+  import AuditContentAccessToggle from '$components/settings/AuditContentAccessToggle.svelte';
   import { onMount } from 'svelte';
   import { AdminApi, type AuditLogEntry } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
@@ -157,6 +158,7 @@
       </p>
     </div>
   {:else}
+    <AuditContentAccessToggle />
     <div class="filters">
       <div class="filter-row">
         <label>

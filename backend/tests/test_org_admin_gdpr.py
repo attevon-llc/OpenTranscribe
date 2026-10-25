@@ -474,7 +474,8 @@ class TestAuditOrgAttribution:
     def test_org_scope_clause_shape(self):
         """The org-admin visibility clause: org-stamped events (incl. user_id
         NULL) OR legacy un-stamped events attributed via member ids. An event
-        stamped with a DIFFERENT org matches neither branch."""
+        stamped with a DIFFERENT org matches neither branch, and neither does one
+        that carries ``tenant_scope`` but no org (a personal-scope resource)."""
         from app.auth.audit import build_org_scope_clause
 
         clause = build_org_scope_clause(42, [1, 2])
@@ -484,7 +485,12 @@ class TestAuditOrgAttribution:
                     {"term": {"organization_id": 42}},
                     {
                         "bool": {
-                            "must_not": [{"exists": {"field": "organization_id"}}],
+                            "must_not": [
+                                {"exists": {"field": "organization_id"}},
+                                # An event naming its own tenant is never attributed to an
+                                # org through its actor (#1277, F5).
+                                {"exists": {"field": "tenant_scope"}},
+                            ],
                             "filter": [{"terms": {"user_id": [1, 2]}}],
                         }
                     },

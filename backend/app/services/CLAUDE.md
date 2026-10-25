@@ -56,6 +56,15 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `Collection` join beside any of this: `tests/unit/test_collection_visibility_discipline.py`
   fails on one that has no written reason. Never answer a hidden collection with a different
   status than a missing one (404, or an empty page).
+- **Content audit** — `content_audit.py` is the ONE write path for content-access and governance
+  audit events (#1277): `record_content_event(db, request, event=, actor=, resource=AuditedResource.file(row),
+  details=, dedup=)`. It stamps `organization_id`/`tenant_scope` from the RESOURCE (never the actor's role), sets
+  `target_user_id` to the owner when that is not the actor, drops the three opt-in events
+  (`content.file.view`, `content.media.access`, `content.export`) unless the `audit.content_access`
+  capability AND the super_admin setting `audit.content_access.enabled` are both on, collapses a repeat
+  view / stream URL per `(event, actor, resource, surface)` for 900 s with Redis `SET NX EX` (Redis down
+  writes the event), never collapses downloads or exports, never raises, and never carries a name, title,
+  text or reason in `details`. Don't call `audit_logger.log` directly for a content event.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.

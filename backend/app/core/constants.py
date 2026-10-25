@@ -592,6 +592,10 @@ NOTIFICATION_TYPE_FILE_CREATED = "file_created"
 NOTIFICATION_TYPE_TRANSCRIPTION_STATUS = "transcription_status"
 NOTIFICATION_TYPE_SUMMARIZATION_STATUS = "summarization_status"
 NOTIFICATION_TYPE_SPEAKER_MATCH = "speaker_match"
+# Per-file post-processing task states (app/services/post_processing_status.py).
+NOTIFICATION_TYPE_POST_PROCESSING_STATUS = "post_processing_status"
+# How long a file's post-processing states stay readable after the last report (seconds).
+POST_PROCESSING_STATUS_TTL_S = 2 * 24 * 3600
 
 # Sharing notifications
 NOTIFICATION_TYPE_COLLECTION_SHARED = "collection_shared"
@@ -1393,6 +1397,20 @@ CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # skipped whenever chat.rag.rerank_enabled is off. See chat/reranker_warmup.py.
 DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED = True
 
+# Issue #1270: the cross-encoder scores 50 pairs per turn, and torch's default intra-op
+# thread count (physical cores: 24 on the 48-thread dev host) oversubscribes a busy box,
+# so a warm rerank measured 7-16 s at the default against 3.4-5.5 s at 4-8 threads.
+# `chat/reranker_threads.py` applies a cap to the scoring call only. The cap is a
+# DEPLOYMENT setting (env `CHAT_RERANKER_TORCH_THREADS`, `auto` or a positive integer),
+# not a SystemSettings row: torch latches the count once per thread, so a live admin
+# value would not take effect until a restart. `auto` is
+# min(CHAT_RERANKER_TORCH_THREADS_AUTO_MAX, max(1, effective_cpu_count() // 2)).
+DEFAULT_CHAT_RERANKER_TORCH_THREADS = "auto"
+CHAT_RERANKER_TORCH_THREADS_AUTO_MAX = 8  # value from scripts benchmark, see chat/CLAUDE.md
+# Threads in the dedicated scoring pool: at most this many reranks run at once, each at the
+# cap, instead of N concurrent turns each running at torch's default.
+CHAT_RERANKER_SCORING_WORKERS = 2
+
 # Multilingual reranker arm (issue #453/ML1) — a SELECTABLE second model, default OFF.
 # `chat/reranker.py` skips reranking outright when the candidate pool is predominantly
 # non-English, because CHAT_RERANKER_MODEL above is an English MS MARCO model and
@@ -1797,3 +1815,24 @@ DOCUMENT_EXPORT_SOFT_TIME_LIMIT_S = 300
 DOCUMENT_FONT_DIR = "/usr/share/fonts/opentranscribe"
 #: Expiry of the Redis guard that collapses a repeated identical export request onto one job.
 DOCUMENT_EXPORT_GUARD_TTL_S = 300
+
+# --- Privacy policy layer (issues #1280, #1279) ------------------------------------------
+# Instance layer of the restrict-only privacy policy (``app.services.privacy.policy``).
+# Platform (extension resolver), instance, organization and user are ANDed; any layer off
+# means off. Defaults are coded here, not in ``.env``: an operator edits them in the admin UI.
+#: ``SystemSettings`` key: ``"true"``/``"false"``. May voiceprints exist and be matched at all?
+PRIVACY_VOICEPRINT_MATCHING_KEY = "privacy.voiceprint_matching_enabled"
+#: ``SystemSettings`` key: ``"true"``/``"false"``. May gender be inferred from voice or names?
+PRIVACY_GENDER_INFERENCE_KEY = "privacy.gender_inference_enabled"
+#: Both default ON: an upgrade is behaviour-neutral and gender inference stays on by default
+#: (owner decision 2026-10-25), with a user notice that it can be switched off.
+DEFAULT_PRIVACY_VOICEPRINT_MATCHING_ENABLED = True
+DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED = True
+#: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
+#: existing ``speaker_attribute_gender_detection_enabled``.
+PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"
+PRIVACY_USER_GENDER_DETECTION_KEY = "speaker_attribute_gender_detection_enabled"
+#: How long the write backstop (``assert_voiceprint_write_allowed``) trusts a per-scope answer.
+#: Entry gates read fresh; only the backstop caches, and the purge task's second pass runs
+#: later than this so a write that raced a switch-off is still caught.
+PRIVACY_WRITE_BACKSTOP_TTL_SECONDS = 10.0

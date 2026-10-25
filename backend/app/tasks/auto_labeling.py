@@ -1,5 +1,12 @@
 """
 Celery tasks for auto-labeling: batch grouping and retroactive apply.
+
+Progress has two planes, on purpose. The RUN is one batch-scoped ``auto_label_status``
+row (``file_id="retroactive_apply"``): "N of M files", a single unit for the bell badge
+and retention. Each FILE reports the ``auto_label`` post-processing task
+(``app/services/post_processing_status.py``): queued when the coordinator plans it,
+started/done/failed as a batch worker applies it, so the file's own card shows the step
+instead of a second, stand-alone notification for that file.
 """
 
 import contextlib
@@ -9,7 +16,10 @@ import time
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_AUTO_LABEL_STATUS
 from app.core.constants import NLPPriority
+from app.core.enums import PostProcessingState
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
+from app.services import post_processing_status
 from app.services.notification_service import send_file_cache_invalidation
 
 logger = logging.getLogger(__name__)
@@ -119,6 +129,26 @@ def pending_suggestion_ids(
     return [r[0] for r in query.all()]
 
 
+def _file_refs_for_suggestions(
+    db, suggestion_ids: list[int]
+) -> list[post_processing_status.FileRef]:
+    """The files the given suggestions belong to, one entry per file, as plain data."""
+    from app.models.media import MediaFile
+    from app.models.topic import TopicSuggestion
+
+    rows = (
+        db.query(MediaFile.id, MediaFile.uuid, MediaFile.user_id)
+        .join(TopicSuggestion, TopicSuggestion.media_file_id == MediaFile.id)
+        .filter(TopicSuggestion.id.in_(suggestion_ids))
+        .distinct()
+        .all()
+    )
+    return [
+        post_processing_status.FileRef(id=int(fid), uuid=str(fuuid), owner_id=int(owner))
+        for fid, fuuid, owner in rows
+    ]
+
+
 @celery_app.task(name="ai.retroactive_auto_label", priority=NLPPriority.BACKGROUND)
 def retroactive_auto_label_task(
     user_id: int,
@@ -163,6 +193,7 @@ def retroactive_auto_label_task(
                 tenant_scoped=tenant_scoped,
                 organization_id=organization_id,
             )
+            file_refs = _file_refs_for_suggestions(db, suggestion_ids) if suggestion_ids else []
 
         total = len(suggestion_ids)
         if total == 0:
@@ -199,6 +230,12 @@ def retroactive_auto_label_task(
             data={"total": total, "processed": 0, "progress": 0},
             file_id="retroactive_apply",
         )
+
+        # Every file is outstanding on its own card until its batch worker reports it.
+        for ref in file_refs:
+            post_processing_status.report(
+                PostProcessingTask.AUTO_LABEL, PostProcessingState.QUEUED, ref=ref
+            )
 
         # Partition into batches and dispatch
         batches = [
@@ -282,14 +319,20 @@ def auto_label_batch_task(
                 if not media_file:
                     continue
 
-                apply_result = service.auto_apply_suggestions(
-                    media_file=media_file,
-                    suggestion=suggestion,
-                    user_id=user_id,
-                    confidence_threshold=confidence_threshold,
-                    apply_tags=apply_tags,
-                    apply_collections=apply_collections,
+                ref = post_processing_status.FileRef(
+                    id=int(media_file.id),
+                    uuid=str(media_file.uuid),
+                    owner_id=int(media_file.user_id),
                 )
+                with post_processing_status.reporting_step(PostProcessingTask.AUTO_LABEL, ref):
+                    apply_result = service.auto_apply_suggestions(
+                        media_file=media_file,
+                        suggestion=suggestion,
+                        user_id=user_id,
+                        confidence_threshold=confidence_threshold,
+                        apply_tags=apply_tags,
+                        apply_collections=apply_collections,
+                    )
 
                 batch_result["processed"] += 1
                 batch_result["tags_applied"] += len(apply_result["auto_applied_tags"])

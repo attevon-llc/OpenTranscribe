@@ -382,14 +382,12 @@ class TestSplitPathReachesCompletedExactlyOnce:
     """
 
     @patch(f"{_POSTPROCESS}.enrich_and_dispatch")
-    @patch(f"{_POSTPROCESS}.send_ws_event_for_file")
     @patch(f"{_POSTPROCESS}.send_completion_notification")
     @patch(f"{_POSTPROCESS}.send_progress_notification")
     def test_outer_noop_then_real_finalize_completes_exactly_once(
         self,
         mock_progress,
         mock_completion,
-        mock_ws,
         mock_enrich,
         db_session,
         normal_user,

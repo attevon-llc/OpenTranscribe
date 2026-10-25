@@ -10,7 +10,9 @@ daemon thread started by the lifespan costs the lifespan only ``Thread.start()``
 This is a scheduling change and nothing else. It calls the same
 :func:`~app.services.chat.reranker.get_reranker` with the same model name, so the
 object a chat turn gets is the one it would have loaded itself: same weights, same
-``device="cpu"``, same ``max_length``. Retrieval order cannot change.
+``device="cpu"``, same ``max_length``. Retrieval order cannot change. The probe pair is
+scored through ``reranker_threads.score_pairs``, so the scoring pool (issue #1270) starts and
+latches its torch thread cap here, at startup, rather than inside the first chat.
 
 Constraints, each of which rules out an obvious alternative:
 
@@ -71,6 +73,7 @@ def warm_reranker() -> bool:
         logged by ``get_reranker`` and never raised.
     """
     from app.services.chat import reranker
+    from app.services.chat import reranker_threads
 
     started = time.perf_counter()
     model = reranker.get_reranker(C.CHAT_RERANKER_MODEL, start_cooldown_on_failure=False)
@@ -82,7 +85,7 @@ def warm_reranker() -> bool:
         return False
 
     try:
-        model.predict([_PROBE_PAIR])
+        reranker_threads.score_pairs(model, [_PROBE_PAIR])
     except Exception:  # noqa: BLE001 — a warm-up must never be load-bearing
         logger.warning("Chat reranker loaded, but the warm-up probe failed", exc_info=True)
 

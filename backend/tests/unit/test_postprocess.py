@@ -1,336 +1,135 @@
-"""Tests for transcription postprocess: enrichment task list and background dispatch."""
+"""Tests for transcription postprocess: the background enrichment fan-out."""
 
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
+
+from app.core.enums import PostProcessingState
+from app.core.enums import PostProcessingTask
 from tests.unit._plan_contexts import plan_context
 
-# Patch paths — these are imported at the top of postprocess.py
 _POSTPROCESS = "app.tasks.transcription.postprocess"
-_INDEX_TRANSCRIPT = f"{_POSTPROCESS}._index_transcript"
-_SEND_WS = f"{_POSTPROCESS}.send_ws_event_for_file"
-_DISPATCH_ATTRS = f"{_POSTPROCESS}._dispatch_speaker_attributes"
-_DISPATCH_CLUSTERING = f"{_POSTPROCESS}._dispatch_speaker_clustering"
-
-# Lazy import inside enrich_and_dispatch
-_TRIGGER_SUMMARIZATION = "app.tasks.transcription.core.trigger_automatic_summarization"
-
-# Full enrichment task list when nothing is excluded. Summarization is NOT
-# included here — it has its own progressive notification bar. Only
-# speaker_clustering is conditionally excluded (when already in downstream_tasks).
-_FULL_TASK_LIST = [
-    "search_indexing",
-    "analytics",
-    "speaker_attributes",
-    "speaker_identification",
-    "speaker_clustering",
-]
 
 
-class TestBuildEnrichmentTaskList:
-    """Tests for _build_enrichment_task_list()."""
+@pytest.fixture
+def fanout(monkeypatch):
+    """enrich_and_dispatch with every dispatcher recorded and the plan captured."""
+    from app.services import post_processing_status as pps
+    from app.tasks.transcription import postprocess
 
-    def test_none_returns_all_tasks(self):
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
+    calls: dict[str, tuple] = {}
+    plans: list[dict] = []
 
-        result = _build_enrichment_task_list(None)
-        assert result == _FULL_TASK_LIST
+    def record(name, result):
+        def _fn(*a, **k):
+            calls[name] = (a, k)
+            return result
 
-    def test_empty_list_returns_all_tasks(self):
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
+        return _fn
 
-        result = _build_enrichment_task_list([])
-        assert result == _FULL_TASK_LIST
-
-    def test_speaker_llm_no_longer_changes_list(self):
-        """speaker_llm in downstream_tasks no longer excludes speaker_attributes.
-
-        That exclusion was removed — speaker_attributes (gender detection) always
-        runs because LLM speaker ID chains from it. speaker_llm now has no effect
-        on the enrichment task list.
-        """
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
-
-        result = _build_enrichment_task_list(["speaker_llm"])
-        assert result == _FULL_TASK_LIST
-        assert "speaker_attributes" in result
-        assert "speaker_clustering" in result
-        assert "summarization" not in result
-
-    def test_speaker_clustering_excludes_clustering(self):
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
-
-        result = _build_enrichment_task_list(["speaker_clustering"])
-        assert "speaker_clustering" not in result
-        assert "speaker_attributes" in result
-        assert "summarization" not in result
-        # Everything except speaker_clustering remains, in order.
-        assert result == [t for t in _FULL_TASK_LIST if t != "speaker_clustering"]
-
-    def test_summarization_in_downstream_has_no_effect(self):
-        """summarization in downstream_tasks does not change the enrichment list.
-
-        Summarization is never listed in the enrichment chips (it has its own
-        progress bar), and it does not exclude any other task.
-        """
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
-
-        result = _build_enrichment_task_list(["summarization"])
-        assert result == _FULL_TASK_LIST
-        assert "summarization" not in result
-        assert "speaker_attributes" in result
-        assert "speaker_clustering" in result
-
-    def test_only_speaker_clustering_is_conditionally_excluded(self):
-        """Of the historical exclusions, only speaker_clustering still applies.
-
-        speaker_llm and summarization no longer exclude anything; passing all
-        three only drops speaker_clustering.
-        """
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
-
-        result = _build_enrichment_task_list(["speaker_llm", "speaker_clustering", "summarization"])
-        assert result == [t for t in _FULL_TASK_LIST if t != "speaker_clustering"]
-
-    def test_search_indexing_always_present(self):
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
-
-        # search_indexing cannot be excluded and is always first.
-        for input_val in [None, [], ["speaker_llm"], ["speaker_clustering", "summarization"]]:
-            result = _build_enrichment_task_list(input_val)
-            assert result[0] == "search_indexing"
-
-    def test_unrelated_tasks_no_effect(self):
-        from app.tasks.transcription.postprocess import _build_enrichment_task_list
-
-        result = _build_enrichment_task_list(["topic_extraction", "something_else"])
-        assert result == _FULL_TASK_LIST
+    monkeypatch.setattr(
+        postprocess, "_index_transcript", record("index", PostProcessingState.QUEUED)
+    )
+    monkeypatch.setattr(
+        postprocess, "_dispatch_redaction", record("redaction", PostProcessingState.SKIPPED)
+    )
+    monkeypatch.setattr(
+        postprocess,
+        "_dispatch_speaker_attributes",
+        record("attrs", {PostProcessingTask.SPEAKER_ATTRIBUTES: PostProcessingState.QUEUED}),
+    )
+    monkeypatch.setattr(
+        postprocess,
+        "_dispatch_speaker_clustering",
+        record("cluster", PostProcessingState.QUEUED),
+    )
+    monkeypatch.setattr(
+        "app.tasks.transcription.core.trigger_automatic_summarization",
+        record("summarize", {PostProcessingTask.ANALYTICS: PostProcessingState.QUEUED}),
+    )
+    monkeypatch.setattr(
+        "app.tasks.ingest_artifacts_task.dispatch_file_facts", record("facts", True)
+    )
+    monkeypatch.setattr(
+        postprocess.post_processing_status,
+        "resolve_file",
+        lambda file_id: pps.FileRef(id=file_id, uuid="u", owner_id=1),
+    )
+    monkeypatch.setattr(
+        postprocess.post_processing_status,
+        "report_plan",
+        lambda ref, decisions, run_at: plans.append(dict(decisions)),
+    )
+    return postprocess, calls, plans
 
 
 class TestEnrichAndDispatch:
     """Tests for enrich_and_dispatch() Celery task."""
 
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_calls_all_downstream_tasks(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
+    def test_calls_all_downstream_tasks_with_the_file_params(self, fanout):
+        postprocess, calls, plans = fanout
 
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=1,
-            downstream_tasks=None,
-        )
+        postprocess.enrich_and_dispatch(file_id=42, file_uuid="abc-def-123", user_id=7)
 
-        mock_index.assert_called_once_with(1, "uuid-1", 1, pipeline_task_id=None)
-        mock_summarize.assert_called_once_with(1, "uuid-1", tasks_to_run=None)
-        mock_attrs.assert_called_once_with("uuid-1", 1, None)
-        mock_cluster.assert_called_once_with("uuid-1", 1, None)
+        assert calls["index"] == ((42, "abc-def-123", 7), {"pipeline_task_id": None})
+        assert calls["summarize"] == ((42, "abc-def-123"), {"tasks_to_run": None})
+        assert calls["attrs"] == (("abc-def-123", 7, None), {})
+        assert calls["cluster"] == (("abc-def-123", 7, None), {})
+        assert calls["facts"] == ((42,), {"pipeline_task_id": None})
+        assert len(plans) == 1
 
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_sends_search_indexing_ws_event(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
-
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=7,
-            downstream_tasks=None,
-        )
-
-        mock_ws.assert_called_once_with(
-            7,
-            "enrichment_task_complete",
-            {"file_id": "uuid-1", "task": "search_indexing"},
-            file_id=1,
-        )
-
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_indexing_failure_doesnt_block_others(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
-
-        mock_index.side_effect = RuntimeError("OpenSearch down")
-
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=1,
-            downstream_tasks=None,
-        )
-
-        # WebSocket event NOT sent (indexing failed)
-        mock_ws.assert_not_called()
-        # But all other tasks still dispatched
-        mock_summarize.assert_called_once()
-        mock_attrs.assert_called_once()
-        mock_cluster.assert_called_once()
-
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_summarization_failure_doesnt_block_others(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
-
-        mock_summarize.side_effect = RuntimeError("LLM unavailable")
-
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=1,
-            downstream_tasks=None,
-        )
-
-        mock_index.assert_called_once()
-        mock_attrs.assert_called_once()
-        mock_cluster.assert_called_once()
-
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_speaker_attr_failure_doesnt_block_clustering(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
-
-        mock_attrs.side_effect = RuntimeError("Speaker service down")
-
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=1,
-            downstream_tasks=None,
-        )
-
-        mock_cluster.assert_called_once()
-
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_passes_downstream_tasks_through(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
-
+    def test_passes_downstream_tasks_through(self, fanout):
+        postprocess, calls, _ = fanout
         downstream = ["summarization"]
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=1,
-            downstream_tasks=downstream,
+
+        postprocess.enrich_and_dispatch(
+            file_id=1, file_uuid="uuid-1", user_id=1, downstream_tasks=downstream
         )
 
-        mock_summarize.assert_called_once_with(1, "uuid-1", tasks_to_run=downstream)
-        mock_attrs.assert_called_once_with("uuid-1", 1, downstream)
-        mock_cluster.assert_called_once_with("uuid-1", 1, downstream)
+        assert calls["summarize"] == ((1, "uuid-1"), {"tasks_to_run": downstream})
+        assert calls["attrs"] == (("uuid-1", 1, downstream), {})
+        assert calls["cluster"] == (("uuid-1", 1, downstream), {})
 
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_passes_file_params_correctly(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
-
-        enrich_and_dispatch(
-            file_id=42,
-            file_uuid="abc-def-123",
-            user_id=7,
-            downstream_tasks=None,
-        )
-
-        mock_index.assert_called_once_with(42, "abc-def-123", 7, pipeline_task_id=None)
-        mock_summarize.assert_called_once_with(42, "abc-def-123", tasks_to_run=None)
-        mock_attrs.assert_called_once_with("abc-def-123", 7, None)
-        mock_cluster.assert_called_once_with("abc-def-123", 7, None)
-
-    @patch(_DISPATCH_CLUSTERING)
-    @patch(_DISPATCH_ATTRS)
-    @patch(_TRIGGER_SUMMARIZATION)
-    @patch(_SEND_WS)
-    @patch(_INDEX_TRANSCRIPT)
-    def test_propagates_pipeline_task_id_to_indexing(
-        self,
-        mock_index,
-        mock_ws,
-        mock_summarize,
-        mock_attrs,
-        mock_cluster,
-    ):
+    def test_propagates_pipeline_task_id_to_indexing(self, fanout):
         """pipeline_task_id is forwarded into _index_transcript for benchmark markers."""
-        from app.tasks.transcription.postprocess import enrich_and_dispatch
+        postprocess, calls, _ = fanout
 
-        enrich_and_dispatch(
-            file_id=1,
-            file_uuid="uuid-1",
-            user_id=1,
-            downstream_tasks=None,
-            pipeline_task_id="task-abc",
+        postprocess.enrich_and_dispatch(
+            file_id=1, file_uuid="uuid-1", user_id=1, pipeline_task_id="task-abc"
         )
 
-        mock_index.assert_called_once_with(1, "uuid-1", 1, pipeline_task_id="task-abc")
+        assert calls["index"] == ((1, "uuid-1", 1), {"pipeline_task_id": "task-abc"})
+
+    def test_summarization_failure_doesnt_block_others(self, fanout, monkeypatch):
+        postprocess, calls, plans = fanout
+
+        def broken(*a, **k):
+            raise RuntimeError("LLM unavailable")
+
+        monkeypatch.setattr("app.tasks.transcription.core.trigger_automatic_summarization", broken)
+
+        postprocess.enrich_and_dispatch(file_id=1, file_uuid="uuid-1", user_id=1)
+
+        assert {"index", "attrs", "cluster", "facts"} <= set(calls)
+        # The summary step decided nothing, so nothing waits for it.
+        assert PostProcessingTask.ANALYTICS not in plans[0]
+        assert plans[0][PostProcessingTask.SEARCH_INDEXING] is PostProcessingState.QUEUED
+
+    def test_an_indexing_dispatch_failure_is_planned_failed_and_does_not_block(self, monkeypatch):
+        """The REAL _index_transcript: a broker error becomes FAILED, never an exception."""
+        from app.services import post_processing_status as pps
+        from app.tasks.transcription import postprocess
+
+        def broken(*a, **k):
+            raise ConnectionError("broker down")
+
+        monkeypatch.setattr(
+            "app.tasks.search_indexing_task.index_transcript_search_task.delay", broken
+        )
+        assert postprocess._index_transcript(1, "uuid-1", 1) is PostProcessingState.FAILED
+        assert pps.outcome_of({"status": "failed"}) is PostProcessingState.FAILED
 
 
 @contextmanager
@@ -369,7 +168,6 @@ class TestSpeakerEmbeddingQueueRouting:
         return base
 
     @patch(f"{_POSTPROCESS}.enrich_and_dispatch")
-    @patch(f"{_POSTPROCESS}.send_ws_event_for_file")
     @patch(f"{_POSTPROCESS}.send_completion_notification")
     @patch(f"{_POSTPROCESS}.send_progress_notification")
     @patch(f"{_POSTPROCESS}.update_task_status")
@@ -381,7 +179,6 @@ class TestSpeakerEmbeddingQueueRouting:
         mock_update_task_status,
         mock_progress,
         mock_completion,
-        mock_ws,
         mock_enrich,
     ):
         """Cloud ASR + provider diarization: embedding extraction must NOT land on 'gpu'.
@@ -410,7 +207,6 @@ class TestSpeakerEmbeddingQueueRouting:
         assert mock_apply_async.call_args.kwargs["queue"] == CeleryQueues.CPU
 
     @patch(f"{_POSTPROCESS}.enrich_and_dispatch")
-    @patch(f"{_POSTPROCESS}.send_ws_event_for_file")
     @patch(f"{_POSTPROCESS}.send_completion_notification")
     @patch(f"{_POSTPROCESS}.send_progress_notification")
     @patch(f"{_POSTPROCESS}.update_task_status")
@@ -422,7 +218,6 @@ class TestSpeakerEmbeddingQueueRouting:
         mock_update_task_status,
         mock_progress,
         mock_completion,
-        mock_ws,
         mock_enrich,
     ):
         """Cloud ASR + LOCAL diarization: rediarize_task genuinely runs PyAnnote

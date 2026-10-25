@@ -42,6 +42,10 @@ caches of API responses.
   keep event names stable when refactoring. `local_model_download` (#1246, sent only to the admin who started the
   download) becomes the `local-model-download` window event and creates NO notification: the model library toasts on a
   finish itself.
+- `llmStatus.ts` (`isLLMAvailable`, every AI button) is kept current by a poll, a re-check on
+  tab focus/visibility, and `invalidate()`: **any flow that changes LLM settings calls
+  `llmStatusStore.invalidate()`**. Never `reset()` there; that is sign-out only and also stops
+  every re-check, which is how adding a provider left Generate summary disabled until a reload.
 - `supportSession.ts` is the tab-scoped (sessionStorage) support-access session: it owns the grant
   header, the skew-corrected countdown and the purge/flip ordering on start and end. Do not mirror
   it in another store; read `supportSessionGate` for hide/readonly decisions (#1122).

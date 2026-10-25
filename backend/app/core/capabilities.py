@@ -63,6 +63,14 @@ same depth. Read this before assuming a key protects anything:
    ``collections.shared``, ``speakers.shared``, ``prompts.shared``,
    ``org.defaults``, ``asr.model_selection``, ``llm.byok``.
 
+**Viewer overlay** (issue #1274). ``GET /system/capabilities`` resolves the caller optionally
+and returns ``get_capabilities_for_viewer``: for platform staff (an active ``is_superuser``),
+every platform-audience key outside ``NO_PLATFORM_BYPASS`` reads ``True`` whatever the
+resolver said, which is exactly what the ``require_capability`` bypass admits on the server.
+Tenants and anonymous callers get the resolver's answer unchanged. The overlay is owned by
+core, not by resolvers, so it is identical in every deployment and can never flip a
+deployment-locked key. User, team and org-admin keys are never overlaid.
+
 Tiers 2 and 3 are a to-do list, not a contract. A key becomes authoritative
 only when a router (or task/beat) reads it — attaching one is a behavior
 change and needs its own review.
@@ -76,11 +84,15 @@ was finally declared.
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 from fastapi import Request
 
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +294,61 @@ def get_capabilities(request: Request | None = None) -> dict[str, bool]:
     return caps
 
 
+#: Gates that admit NO platform-staff bypass: the deployment owns these values, so the
+#: server refuses staff exactly as it refuses tenants. Declared in one place because the
+#: viewer overlay below must never flip them on, and ``require_capability`` refuses
+#: (at import, when routers register) a ``platform_admin_bypass=False`` gate that is
+#: not listed here, so a new no-bypass gate cannot be added without telling the overlay.
+#: ``admin.flower`` and the ``transcription.*`` keys are enforced outside
+#: ``require_capability`` (``auth/flower.py``, ``core/locked_settings.py``) and are listed
+#: for the same reason.
+NO_PLATFORM_BYPASS: frozenset[str] = frozenset(
+    {
+        "org.takedown",
+        "speaker_attributes.migration",
+        "url_ingest",
+        "audio_extraction",
+        "media_sources",
+        "admin.flower",
+        "transcription.model_choice",
+        "transcription.diarization_source",
+        "transcription.advanced",
+    }
+)
+
+#: Keys a platform-staff viewer sees as enabled whatever the resolver said: the
+#: platform-audience surfaces the server lets staff use through a disabled capability.
+#: User, team and org-admin keys are never overlaid (they describe the tenant's product).
+PLATFORM_OVERLAY_KEYS: frozenset[str] = (
+    frozenset(key for key, aud in CAPABILITY_AUDIENCE.items() if aud == AUDIENCE_PLATFORM)
+    - NO_PLATFORM_BYPASS
+)
+
+
+def is_platform_staff(user: "User | None") -> bool:
+    """Whether *user* is platform staff: an active ``is_superuser`` account.
+
+    The one predicate shared by ``require_capability``'s bypass and the viewer overlay, so
+    the UI shows exactly what the server lets staff use. ``is_superuser`` mirrors
+    ``role == super_admin`` by CHECK constraint; a plain ``admin`` is not platform staff.
+    """
+    return user is not None and bool(user.is_active) and bool(user.is_superuser)
+
+
+def get_capabilities_for_viewer(request: Request | None, user: "User | None") -> dict[str, bool]:
+    """Capability map as shown to *user*: ``get_capabilities`` plus the staff overlay.
+
+    For platform staff every key in ``PLATFORM_OVERLAY_KEYS`` reads ``True`` whether the
+    resolver omitted it, denied it, raised, or returned a non-dict (the server bypass
+    behaves the same way). For anyone else, anonymous included, the result is the
+    resolver's answer unchanged. Always returns a new dict.
+    """
+    caps = get_capabilities(request)
+    if not is_platform_staff(user):
+        return caps
+    return {**caps, **dict.fromkeys(PLATFORM_OVERLAY_KEYS, True)}
+
+
 #: Resolver-drift warnings already logged — one line per distinct problem per
 #: process, not one per request (this runs on every gated request).
 _warned: set[str] = set()
@@ -305,11 +372,18 @@ def require_capability(key: str, *, platform_admin_bypass: bool = True) -> Calla
     at all for this deployment, exactly like an unknown route.
 
     ``platform_admin_bypass`` (default on) lets platform staff
-    (``is_superuser``) through even when the capability is hidden from
+    (``is_platform_staff``) through even when the capability is hidden from
     tenants — cloud tenants can never become superusers (external_sync never
     grants it), so this exactly implements the capabilities matrix's
-    "invisible to org users / available to platform staff" column.
+    "invisible to org users / available to platform staff" column. Turning it
+    off is only allowed for a key declared in ``NO_PLATFORM_BYPASS`` (ValueError
+    otherwise), because ``get_capabilities_for_viewer`` must know not to overlay it.
     """
+    if not platform_admin_bypass and key not in NO_PLATFORM_BYPASS:
+        raise ValueError(
+            f"require_capability({key!r}, platform_admin_bypass=False): declare the key in "
+            "NO_PLATFORM_BYPASS so the viewer overlay does not show it to platform staff"
+        )
 
     def _dependency(request: Request) -> None:
         if capability_enabled(key, request):
@@ -321,8 +395,7 @@ def require_capability(key: str, *, platform_admin_bypass: bool = True) -> Calla
 
                 db = SessionLocal()
                 try:
-                    user = get_optional_current_user(request, db)
-                    if user is not None and bool(user.is_superuser):
+                    if is_platform_staff(get_optional_current_user(request, db)):
                         return
                 finally:
                     db.close()

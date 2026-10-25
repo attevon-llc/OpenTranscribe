@@ -15,8 +15,6 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import Analytics
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import FileStatus
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -199,30 +197,16 @@ def get_file_collections(
     That is the caller's personal collections for a personal file and the
     organization's collections (shared by every member, v422) for an org file.
     ``organization_id`` is the request's tenant; ``UNSCOPED`` falls back to the
-    file's own, which is the tenant any collection holding it lives in.
+    file's own, which is the tenant any collection holding it lives in. The rule
+    itself is ``collection_visibility.collections_on_files``, shared with the
+    search result card so the two surfaces always name the same collections.
     """
-    from app.services.permission_service import PermissionService
+    from app.services.collection_visibility import collections_on_files
 
     try:
-        tenant: int | None = (
-            db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
-            if isinstance(organization_id, _Unscoped)
-            else organization_id
-        )
-        accessible = {
-            cid for cid, _perm in PermissionService.get_accessible_collection_ids(db, user_id)
-        }
-        collection_objs = [
-            col
-            for col in db.query(Collection)
-            .join(CollectionMember)
-            .filter(
-                CollectionMember.media_file_id == file_id,
-                PermissionService.collection_tenant_pred(user_id, tenant),
-            )
-            .all()
-            if col.id in accessible
-        ]
+        collection_objs = collections_on_files(
+            db, [file_id], user_id, organization_id=organization_id
+        ).get(file_id, [])
 
         return [
             {

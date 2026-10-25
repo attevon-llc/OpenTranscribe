@@ -41,6 +41,7 @@ export function searchHit(overrides: Partial<SearchHit> = {}): SearchHit {
     title: 'Roadmap review',
     speakers: ['Alice', 'Bob'],
     tags: ['planning'],
+    collections: [{ uuid: 'coll-1', name: 'Q4 board' }],
     upload_time: '2026-10-01T12:00:00Z',
     language: 'en',
     content_type: 'video/mp4',

@@ -166,6 +166,10 @@ async def trigger_summarization(
             f"AI summary {'regeneration' if request.force_regenerate else 'generation'} has been queued for processing",
         )
 
+        # A file transcribed before any LLM existed also never had topic extraction, so the
+        # summary request fills that in when the owner's automatic setting allows it.
+        topic_extraction = _queue_topic_companion(db, media_file, current_user.id)
+
         # Get LLM provider info for response
         from app.core.config import settings
 
@@ -186,6 +190,7 @@ async def trigger_summarization(
             "file_id": str(media_file.uuid),  # Use UUID for frontend
             "provider": provider,
             "model": model,
+            "topic_extraction": topic_extraction,
         }
 
     except HTTPException:
@@ -201,6 +206,18 @@ async def trigger_summarization(
             status_code=500,
             detail="An internal error occurred. Please try again.",
         ) from e
+
+
+def _queue_topic_companion(db: Session, media_file: MediaFile, user_id: int) -> str:
+    """Topic extraction alongside the summary; its failure never fails the summary request."""
+    from app.services.ai_insights_companion import TopicCompanion
+    from app.services.ai_insights_companion import queue_topic_extraction_with_summary
+
+    try:
+        return queue_topic_extraction_with_summary(db, media_file, notify_user_id=user_id).value
+    except Exception:
+        logger.exception("Topic companion check failed for file %s", media_file.id)
+        return TopicCompanion.UNAVAILABLE.value
 
 
 @router.get("/{file_uuid}/summary", response_model=SummaryResponse)

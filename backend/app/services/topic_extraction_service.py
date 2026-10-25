@@ -25,11 +25,13 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
 from app.schemas.topic import LLMSuggestionResponse
+from app.services import post_processing_status
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.llm_service import LLMProvider
@@ -734,14 +736,22 @@ IMPORTANT GUIDELINES:
 
                 if user_settings.get("enabled", True):
                     threshold = user_settings.get("confidence_threshold", 0.75)
-                    auto_label_service.auto_apply_suggestions(
-                        media_file=media_file,
-                        suggestion=suggestion,
-                        user_id=int(media_file.user_id),
-                        confidence_threshold=threshold,
-                        apply_tags=user_settings.get("tags_enabled", True),
-                        apply_collections=user_settings.get("collections_enabled", True),
-                    )
+                    with post_processing_status.reporting_step(
+                        PostProcessingTask.AUTO_LABEL,
+                        post_processing_status.FileRef(
+                            id=int(media_file.id),
+                            uuid=str(media_file.uuid),
+                            owner_id=int(media_file.user_id),
+                        ),
+                    ):
+                        auto_label_service.auto_apply_suggestions(
+                            media_file=media_file,
+                            suggestion=suggestion,
+                            user_id=int(media_file.user_id),
+                            confidence_threshold=threshold,
+                            apply_tags=user_settings.get("tags_enabled", True),
+                            apply_collections=user_settings.get("collections_enabled", True),
+                        )
                     logger.info(f"Auto-applied suggestions for file {media_file.id}")
             except Exception as e:
                 logger.warning(f"Auto-apply failed for file {media_file.id}: {e}")

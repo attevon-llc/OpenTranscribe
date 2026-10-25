@@ -39,6 +39,12 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
   cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
+- **Collection visibility** — `collection_visibility.py` is the one place a surface asks
+  which collections a caller may see named on a file or filter by: `visible_collection_ids`
+  (the predicate #1275's restricted collections will replace), `collections_on_files`
+  (batched, constant queries per page; the file page's `get_file_collections` and the search
+  card's `collections` both use it) and `resolve_collection_filter` (a hidden collection
+  filters to nothing, never 403/404). Don't add a raw `Collection` join beside it.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.
@@ -566,7 +572,9 @@ deprecated alias for `anthropic`).
   (user > system > True). The AUTOMATIC dispatch sites consult it: `_dispatch_llm_speaker_identification`
   in `speaker_attribute_task.py` (every chain exit, `dispatch_speaker_attribute_pipeline`, and so
   postprocess/background/rediarize), `trigger_automatic_summarization` in `transcription/downstream.py`
-  (only when `tasks_to_run is None`), and `TaskDetectionService.identify_incomplete_post_transcription_files`
+  (only when `tasks_to_run is None`), `ai_insights_companion.queue_topic_extraction_with_summary`
+  (a manual Generate/Regenerate summary also queues topic extraction for a file that never had a
+  `TopicSuggestion`; Redis-guarded against double clicks, fails closed), and `TaskDetectionService.identify_incomplete_post_transcription_files`
   (the recovery sweep: a step the user turned off must not be flagged missing, or it is re-queued and
   re-detected every 10 minutes). Manual triggers and an explicit stage list (`speaker_llm` /
   `topic_extraction` via `dispatch_task_by_name` or `llm_requested=True`) never consult it. A new

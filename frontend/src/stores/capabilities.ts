@@ -83,9 +83,10 @@ export function isCapabilityEnabled(state: CapabilitiesState, key: string): bool
  *
  * Registered in `$lib/session/clearUserState`. Without it, the cloud edition
  * leaked one user's TIER-SCOPED capability map into the next session on the same
- * tab: `loadCapabilities()` has exactly one call site (`routes/+layout.svelte`
- * `onMount`), and an SPA login does not re-run `onMount`, so User B saw User A's
- * enabled surfaces until a hard reload.
+ * tab: the map is per viewer (the backend also overlays platform surfaces for staff,
+ * issue #1274), and the sign-in flows in `stores/auth.ts` re-fetch it once a session
+ * exists, so User B would otherwise keep seeing User A's enabled surfaces until that
+ * fetch lands.
  *
  * Resetting to `loaded: false` (not `loaded: true`) is deliberate: consumers that
  * wait for `loaded` must wait for the NEXT user's fetch, not read the fail-open

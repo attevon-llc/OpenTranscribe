@@ -119,6 +119,18 @@ should import `app.api` or `app.services` at module scope.
   (`effective_whisper_model`, `locked_transcription_fields`): enforce them wherever the value is
   USED (endpoint and task), with no platform-admin bypass. Task-time reads pass no request, so
   those keys must resolve per deployment, not per tier.
+  **Viewer overlay (#1274, `CLOUD_SEAM_VERSION` 10).** `GET /system/capabilities` resolves the caller
+  optionally and returns `get_capabilities_for_viewer(request, user)`: for platform staff
+  (`is_platform_staff` = active `is_superuser`, the same predicate `require_capability`'s bypass now
+  uses) every key in `PLATFORM_OVERLAY_KEYS` (platform audience minus `NO_PLATFORM_BYPASS`) reads
+  `True` whatever the resolver said, including when it raised. Tenants, plain admins and anonymous
+  callers get the resolver's answer untouched, and user/team/org-admin keys are never overlaid. The
+  overlay is core's, so resolvers do not re-implement it. **Adding a
+  `require_capability(key, platform_admin_bypass=False)` gate (or a deployment-locked key enforced
+  elsewhere) means declaring the key in `NO_PLATFORM_BYPASS`**; `require_capability` raises
+  `ValueError` at import otherwise. The response is `private, no-store` with `Vary: Cookie,
+  Authorization`, since the body is per viewer. A resolver must still handle `request=None`
+  (task-time reads) and an anonymous request.
 - `settings_cache.py` — in-process TTL cache in front of `SystemSettings` reads.
 - `opensearch_auth.py` — `opensearch_connection_kwargs()`, the single builder for every
   `OpenSearch(...)` client (search plane ×2, audit writer + reader, admin audit export).

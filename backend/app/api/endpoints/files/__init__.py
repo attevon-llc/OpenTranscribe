@@ -80,6 +80,7 @@ from .filtering import apply_all_filters
 from .filtering import get_accessible_owners
 from .filtering import get_metadata_filters
 from .filtering import resolve_owner_user_ids
+from .post_processing import router as post_processing_router
 from .reprocess import process_file_reprocess
 from .segments import router as segments_router
 from .streaming import get_thumbnail_streaming_response
@@ -164,6 +165,7 @@ router.include_router(
 router.include_router(segments_router, prefix="", tags=["files"])
 router.include_router(captions_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
+router.include_router(post_processing_router, prefix="", tags=["files"])
 
 
 @router.post("", response_model=MediaFileSchema, dependencies=[Depends(refuse_under_support_grant)])

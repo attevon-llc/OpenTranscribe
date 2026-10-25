@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -18,10 +19,12 @@ from app.api.endpoints.admin import get_gpu_usage
 from app.api.endpoints.admin import get_memory_usage
 from app.api.endpoints.admin import get_system_uptime
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_optional_current_user
 from app.core.capabilities import require_capability
 from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.user import User
+from app.services.chat.reranker_threads import describe_thread_cap
 from app.services.protected_media_providers import get_protected_media_auth_config
 
 logger = logging.getLogger(__name__)
@@ -30,27 +33,41 @@ router = APIRouter()
 
 
 @router.get("/capabilities")
-def get_system_capabilities(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_system_capabilities(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> dict[str, Any]:
     """Edition + capability map driving server-side feature gating.
 
-    The frontend calls this once at bootstrap and renders only the surfaces
-    listed as enabled; gated endpoints independently 404 when off (the
+    The frontend reads this after a session exists (and at bootstrap) and renders only
+    the surfaces listed as enabled; gated endpoints independently 404 when off (the
     backend gate is the authority — see app.core.capabilities). Community
     edition returns everything-on defaults; the cloud edition's resolver
     computes edition ∩ subscription tier.
+
+    The caller is resolved optionally (issue #1274): platform staff additionally see the
+    platform surfaces the server lets them use through a disabled capability. Anonymous
+    and invalid credentials fall back to the resolver's own answer; this route never 401s.
+    The body therefore depends on the caller, so the response is never cacheable by a
+    shared cache.
     """
     from app.core.capabilities import CAPABILITY_AUDIENCE
     from app.core.capabilities import edition
-    from app.core.capabilities import get_capabilities
+    from app.core.capabilities import get_capabilities_for_viewer
     from app.core.config import settings
     from app.services.platform_access import tenancy_mode
+
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Cookie, Authorization"
 
     return {
         "edition": edition(),
         # "single" | "multi". In multi, platform admins reach tenant content only through a
         # support-access grant (issue #1122). Fails closed to "multi" when undeterminable.
         "tenancy_mode": tenancy_mode(db).value,
-        "capabilities": get_capabilities(request),
+        "capabilities": get_capabilities_for_viewer(request, current_user),
         # WHO each surface is for (user|team|org_admin|platform) — drives
         # which UI area renders it; roles below the audience see nothing.
         "audience": CAPABILITY_AUDIENCE,
@@ -219,6 +236,8 @@ def get_system_stats(
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 **_device_mode_info(system_stats["gpu"]),
+                # Read-only: a deployment setting latched once per process (issue #1270).
+                "chat_reranker_threads": describe_thread_cap(),
             },
             "tasks": {**task_stats, "recent": recent},
             "throughput": throughput,

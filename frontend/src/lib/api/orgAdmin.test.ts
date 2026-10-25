@@ -44,4 +44,33 @@ describe('OrgAdminApi (issue #1253)', () => {
       reason: 'withdrawn',
     });
   });
+
+  it('lists the organization audit log with the member by uuid and the paging params', async () => {
+    get.mockResolvedValue({ data: { logs: [{ id: 1 }], total: 7 } } as never);
+
+    const result = await OrgAdminApi.listAuditLogs({
+      user_uuid: 'u-1',
+      resource_uuid: 'r-1',
+      limit: 50,
+      offset: 100,
+    });
+
+    expect(get).toHaveBeenCalledWith('/org-admin/audit-logs', {
+      params: { user_uuid: 'u-1', resource_uuid: 'r-1', limit: 50, offset: 100 },
+    });
+    expect(result).toEqual({ logs: [{ id: 1 }], total: 7 });
+  });
+
+  it('exports as a blob with the format and the same filters', async () => {
+    const blob = new Blob(['x']);
+    get.mockResolvedValue({ data: blob } as never);
+
+    const result = await OrgAdminApi.exportAuditLogs('csv', { event_type: 'content.export' });
+
+    expect(get).toHaveBeenCalledWith('/org-admin/audit-logs/export', {
+      params: { event_type: 'content.export', format: 'csv' },
+      responseType: 'blob',
+    });
+    expect(result).toBe(blob);
+  });
 });

@@ -22,6 +22,16 @@ export interface AuditLogEntry {
   source_ip: string;
   user_agent: string;
   details: Record<string, any>;
+  target_user_id?: number | null;
+  organization_id?: number | null;
+  /** Whose tenant the resource belongs to: an organization or one person's workspace. */
+  tenant_scope?: 'org' | 'personal' | null;
+  resource_type?: string | null;
+  resource_uuid?: string | null;
+  /** Resolved by the server at read time, inside the organization only (org audit view). */
+  actor_display?: string | null;
+  target_display?: string | null;
+  resource_display?: string | null;
 }
 
 /** `GET/PUT /admin/audit/content-access` (issue #1277). */

@@ -468,3 +468,9 @@ someone else's product.
   only offers `ldap`/`oidc` as the source, so a `proxy`-sourced mapping still has to be created
   through the API. `require_email_verification` also gained a control, in
   `LocalAuthSettings.svelte`.
+
+- **Audit export** — `audit_export.py` is the one writer for `GET /admin/audit-logs/export` and
+  `GET /org-admin/audit-logs/export` (columns `EXPORT_COLUMNS`, formula-neutral CSV via `utils/csv_safe`,
+  `X-Export-Truncated`, filename from a fixed prefix and the date). Both read through `query_audit_logs`,
+  capped at `AUDIT_EXPORT_MAX_ROWS` (OpenSearch's `max_result_window`), and both write `audit.export`.
+  Don't add a third hand-rolled export.

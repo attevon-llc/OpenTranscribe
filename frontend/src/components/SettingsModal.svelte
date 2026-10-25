@@ -406,7 +406,7 @@
     // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
     // so regular org members never see these. Community never reaches here
     // (isCloudEdition is false), so the section is empty and drops out.
-    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') || orgAdminCapOn(capState, 'org.takedown') ? [
+    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') || orgAdminCapOn(capState, 'org.takedown') || orgAdminCapOn(capState, 'org.audit_logs') ? [
       {
         title: $t('settings.sections.billingTeam'),
         items: [
@@ -415,7 +415,8 @@
           ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }] : []),
           // issue #1253: the organization's own takedown queue. Server-enforced by the
           // `org.takedown` capability (unlike the platform queue's UI-only `admin.takedown`).
-          ...(orgAdminCapOn(capState, 'org.takedown') ? [{ id: 'org-takedown' as SettingsSection, label: $t('settings.quarantine.orgNavLabel'), icon: 'shield-off' }] : [])
+          ...(orgAdminCapOn(capState, 'org.takedown') ? [{ id: 'org-takedown' as SettingsSection, label: $t('settings.quarantine.orgNavLabel'), icon: 'shield-off' }] : []),
+          ...(orgAdminCapOn(capState, 'org.audit_logs') ? [{ id: 'org-audit-logs' as SettingsSection, label: $t('orgAudit.navLabel'), icon: 'clipboard' }] : [])
         ]
       }
     ] : []),
@@ -1525,6 +1526,16 @@
       <div class="content-section">
         <LazySection load={sectionLoaders.orgTakedown} let:Component>
           <Component scope="organization" />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Cloud edition — organization audit log (org admins only, issue #1277) -->
+    {#if activeSection === 'org-audit-logs' && orgAdminCapOn(capState, 'org.audit_logs')}
+      <div class="content-section">
+        <h3 class="section-title">{$t('orgAudit.title')}</h3>
+        <LazySection load={sectionLoaders.orgAuditLog} let:Component>
+          <Component />
         </LazySection>
       </div>
     {/if}

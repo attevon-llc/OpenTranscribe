@@ -1,4 +1,5 @@
 import axiosInstance from '$lib/axios';
+import type { AuditLogEntry } from '$lib/api/admin';
 
 /**
  * Organization-scoped takedown (issue #1253): `/org-admin/files/...`.
@@ -46,6 +47,17 @@ export interface OrgTakedownActionResult {
   takedown_origin: TakedownOrigin | null;
 }
 
+/** The filters shared by the organization audit list and its export. Empty values are omitted. */
+export interface OrgAuditQuery {
+  start_date?: string;
+  end_date?: string;
+  event_type?: string;
+  outcome?: string;
+  user_uuid?: string;
+  resource_type?: string;
+  resource_uuid?: string;
+}
+
 export class OrgAdminApi {
   /** This organization's taken-down files, newest first. */
   static async listQuarantinedFiles(params?: {
@@ -83,6 +95,30 @@ export class OrgAdminApi {
       `/org-admin/files/${fileUuid}/release`,
       reason ? { reason } : {}
     );
+    return response.data;
+  }
+
+  /**
+   * This organization's audit events (`GET /org-admin/audit-logs`). Members are given by uuid:
+   * a uuid outside the organization is a 403, so the filter is never a probe for who exists.
+   */
+  static async listAuditLogs(params: OrgAuditQuery & { limit?: number; offset?: number }): Promise<{
+    logs: AuditLogEntry[];
+    total: number;
+  }> {
+    const response = await axiosInstance.get('/org-admin/audit-logs', { params });
+    return { logs: response.data.logs ?? [], total: response.data.total ?? 0 };
+  }
+
+  /**
+   * Download the same view (`GET /org-admin/audit-logs/export`, up to 10,000 rows). A 404
+   * means the deployment withholds the export capability.
+   */
+  static async exportAuditLogs(format: 'csv' | 'json', params: OrgAuditQuery): Promise<Blob> {
+    const response = await axiosInstance.get('/org-admin/audit-logs/export', {
+      params: { ...params, format },
+      responseType: 'blob',
+    });
     return response.data;
   }
 }

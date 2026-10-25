@@ -135,6 +135,7 @@ class GovWorld:
     ) -> Iterator[None]:
         """Run requests as ``user`` in the tenant ``org`` (``None`` = personal workspace)."""
         from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_base_context
         from app.api.deps_context import get_current_context
         from app.api.endpoints.auth import get_current_active_user
         from app.main import app
@@ -143,13 +144,17 @@ class GovWorld:
         if role is None:
             role = {self.admin.id: "org:admin"}.get(user.id, "org:member")
         app.dependency_overrides[get_current_active_user] = lambda: user
-        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+        context = RequestContext(
             user=user, org_id=org_id, org_role=role if org_id is not None else None
         )
+        # ``require_org_admin`` hangs off the base context, not the full one.
+        app.dependency_overrides[get_base_context] = lambda: context
+        app.dependency_overrides[get_current_context] = lambda: context
         try:
             yield
         finally:
             app.dependency_overrides.pop(get_current_active_user, None)
+            app.dependency_overrides.pop(get_base_context, None)
             app.dependency_overrides.pop(get_current_context, None)
 
 

@@ -147,6 +147,16 @@ off by default.
   Adding or removing files in a collection (by hand, by the AI auto-labeller or by bulk grouping)
   is always recorded as `collection.membership.change`, and collection and tag shares now carry
   the typed resource fields and no longer put the collection's name in the event.
+- **Organization audit log (#1277).** An organization administrator now has **Settings > Audit
+  log** (capability `org.audit_logs`, off in the community edition): the organization's own events
+  filtered by member, event, outcome, dates and a file or collection id ("everything that happened
+  to this file"), with names and titles resolved at read time inside the organization only, plus a
+  CSV or JSON export of up to 10,000 rows. New: `GET /api/org-admin/audit-logs/export`, and
+  `user_uuid`, `target_user_uuid`, `resource_type` and `resource_uuid` filters on
+  `GET /api/org-admin/audit-logs`. The platform export `GET /api/admin/audit-logs/export` now
+  shares the organization export's reader and writer, so the two cannot drift: it gains the
+  tenant and resource columns, always writes a header row, and reports a cut-off in
+  `X-Export-Truncated`. Every export is itself an `audit.export` event.
 - **Takedown notice records (#1254).** Quarantining a file now writes a durable record in the same
   transaction: the legal notice it acts on (type, date received, an opaque reference, the internal
   basis, who handled it) and, per file, its outcome (open, counter-notice, upheld, released), or an

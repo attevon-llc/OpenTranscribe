@@ -279,3 +279,21 @@ export const TAKEDOWN_STATUS_KEYS = {
   released: 'takedown.status.released',
   resolved: 'takedown.status.resolved',
 } as const;
+
+/**
+ * The audit events an organization admin sees, by wire identifier (issue #1277). An event this
+ * build has no string for renders as its raw identifier (`labelFor`), never a dotted key.
+ */
+export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
+  'content.file.view': 'orgAudit.event.contentFileView',
+  'content.media.access': 'orgAudit.event.contentMediaAccess',
+  'content.export': 'orgAudit.event.contentExport',
+  'collection.membership.change': 'orgAudit.event.membershipChange',
+  'collection.visibility.change': 'orgAudit.event.visibilityChange',
+  'resource.share': 'orgAudit.event.resourceShare',
+  'resource.unshare': 'orgAudit.event.resourceUnshare',
+  'admin.file.quarantine': 'orgAudit.event.fileQuarantine',
+  'admin.file.release': 'orgAudit.event.fileRelease',
+  'audit.export': 'orgAudit.event.auditExport',
+  'transcript.view_unredacted': 'orgAudit.event.transcriptRevealed',
+};

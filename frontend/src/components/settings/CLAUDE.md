@@ -358,3 +358,14 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   content. Beside a modal-level title, wrap `<h3 class="section-title">` and the tip in `.section-title-row`
   (Organization Context does). Do not re-add a bottom/top `.info-box` card to a panel; the remaining ones
   (OIDC, SAML, SCIM token, Group mappings, Audio extraction) are candidates to convert the same way.
+- **Audit screens: `AuditLogViewer` (super_admin, platform-wide) and `OrgAuditLogPanel`
+  (org admin, issue #1277) are two thin shells over the SAME `audit/AuditLogFilters.svelte` and
+  `audit/AuditLogTable.svelte`.** `orgView` is the only difference: a member picker
+  (`AuditUserPicker`, `GET /users/search`, tenant-limited, sends a uuid) and a resource-id field on
+  the filter bar; resolved names (`actor_display`, `resource_display`, which the server fills in at
+  read time and only inside the org) and a translated event label on the table. Don't fork the
+  table for a third screen. The org panel is a lazy section (`org-audit-logs`, `orgAuditLog` in
+  `sectionLoaders`), shown only on `orgAdminCapOn(capState, 'org.audit_logs')`; its event list
+  offers the `content.*` types only while `audit.content_access` is available, and a 404 from the
+  export hides the export buttons. Event labels are `ORG_AUDIT_EVENT_KEYS` in `lib/i18n/keyMaps.ts`
+  (a literal-key map, with the raw identifier as fallback): add a key there, not a template string.

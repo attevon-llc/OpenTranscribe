@@ -315,6 +315,7 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` (also written when an organization administrator acts on their own organization's files; the event records the actor's role and which authority held the file), `admin.takedown_notice.create`, `admin.takedown_notice.update`, `admin.takedown_notice.notify`, `admin.takedown_notice.export` (notice records: ids, the notice type and counts only, never the basis or a reason) |
 | **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
+| **Audit** | `audit.export` (an audit log was exported: platform or organization scope, format, row count, whether it was truncated) |
 | **Collections** | `collection.visibility.change` (a collection was restricted or opened up: the new mode and how many members lost sight of it, never its name), `collection.membership.change` (files were added to or removed from a collection: the counts, up to 100 file ids, and `details.source`: `manual`, `auto_label` or `bulk_group`; the file or collection name is never recorded), `resource.share` and `resource.unshare` (a collection or tag was shared: the typed `resource_type`, `resource_uuid` and `tenant_scope` fields identify it) |
 | **Content access** | `content.file.view`, `content.media.access` (`details.kind`: `stream_url`, `download_prepare`, `download_stream`), `content.export` (format, surface and file count; `details.surface` is `transcript`, `subtitles`, `summary`, `chat` or `bulk`, and a bulk export writes one event per file). Opening a recording is `surface: detail`, and its thumbnail, captions and transcript pages are part of that one view. Recorded only while [content access auditing](#content-access-auditing) is on |
 | **Transcripts** | `transcript.view_unredacted` (a transcript was revealed past the owner's redaction policy) |
@@ -382,6 +383,19 @@ Click **Apply** to reload with the selected filters.
 ### Exporting
 
 Export filtered logs in **CSV** or **JSON** format using the export buttons. The downloaded file is named `audit-logs-YYYY-MM-DD.{format}`.
+
+The export holds up to **10,000** of the newest matching events, with the same columns in both views (time, event, outcome, user, target user, organization, tenant scope, resource type and id, address, user agent, error code, details). A larger result is cut at that cap: narrow the dates or the filters to get the rest. CSV cells that start like a spreadsheet formula are neutralised. Every export is itself an audit event (`audit.export`: the format and the row count, never the rows).
+
+### Organization audit log
+
+An **organization administrator** has their own screen, **Settings > Audit log**, shown when the deployment edition enables it (the `org.audit_logs` capability; it does not appear in the community edition, which has no organizations). It reads only that organization's events, and never the events of anyone's personal workspace, even a member's.
+
+- **Filters:** dates, event, outcome, a **member** (searched from your organization's members) and a **file or collection ID**. Paste a file's ID to see everything that happened to it: who opened it, requested or downloaded its media, exported it, added it to a collection or shared it.
+- **Names:** the log stores ids only. The screen resolves a person's name and a file's or collection's title when you open it, and only inside your organization: a person who left, or a file that was deleted, shows as an id.
+- **Content access events** (`content.*`) appear only while a super admin has turned on [content access auditing](#content-access-auditing); the event list offers them only on deployments that can record them.
+- **Export** (**CSV** or **JSON**, the same 10,000-row cap) adds the resolved names as extra columns. It is behind its own capability, so a deployment can offer the screen without the download; without it the buttons are hidden and the API answers 404. A platform administrator without an organization role cannot use either.
+
+API: `GET /api/org-admin/audit-logs` (filters `user_uuid`, `target_user_uuid`, `resource_type`, `resource_uuid`; a uuid outside your organization is a 403) and `GET /api/org-admin/audit-logs/export?format=csv|json`.
 
 ## Search Settings
 

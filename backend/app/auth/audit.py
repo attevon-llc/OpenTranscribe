@@ -126,6 +126,10 @@ class AuditEventType(StrEnum):
     ADMIN_TAKEDOWN_NOTICE_NOTIFY = "admin.takedown_notice.notify"
     ADMIN_TAKEDOWN_NOTICE_EXPORT = "admin.takedown_notice.export"
 
+    # An audit-log export, by a platform admin or an organization admin (issue #1277):
+    # ``details`` holds the format, the row count and whether it was truncated, never the rows.
+    AUDIT_EXPORT = "audit.export"
+
     # A forced OpenSearch orphan purge that overrode the sweep's ratio guard
     ADMIN_DATA_INTEGRITY_PURGE = "admin.data_integrity.purge"
 
@@ -797,6 +801,7 @@ def query_audit_logs(
     scope_org_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
+    index_pattern: str = "audit-logs-*",
 ) -> dict[str, Any]:
     """Query the OpenSearch audit-log indices with optional scoping.
 
@@ -829,6 +834,8 @@ def query_audit_logs(
             legacy-window semantics. Events stamped with another org are never
             returned.
         limit / offset: pagination.
+        index_pattern: the indices to read. Only an integration test changes it, to read a
+            throwaway index instead of the deployment's own audit history.
 
     Returns:
         ``{"logs": [...], "total": int, "offset": int, "limit": int}`` or
@@ -887,7 +894,7 @@ def query_audit_logs(
             "size": limit,
         }
 
-        response = client.search(index="audit-logs-*", body=query)
+        response = client.search(index=index_pattern, body=query)
         logs = [hit["_source"] for hit in response["hits"]["hits"]]
         total = response["hits"]["total"]["value"]
         return {"logs": logs, "total": total, "offset": offset, "limit": limit}

@@ -2535,17 +2535,26 @@ def get_audit_logs(
 
 @router.get("/audit-logs/export")
 def export_audit_logs(
+    request: Request,
     export_format: str = Query("csv", description="Export format (csv or json)"),
     start_date: datetime | None = Query(None, description="Start date for export"),
     end_date: datetime | None = Query(None, description="End date for export"),
     current_user: User = Depends(get_current_super_admin_user),
 ):
-    """Export audit logs for compliance reporting. Super admin only."""
-    import csv
-    import io
-    import json
+    """Export audit logs for compliance reporting. Super admin only (all tenants).
 
-    from fastapi.responses import StreamingResponse
+    Reads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two
+    pieces the organization admin's export uses, so the columns and the CSV neutralisation
+    are one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;
+    ``X-Export-Truncated`` says when that cut something off. The export is itself audited.
+    """
+    from app.auth.audit import AuditEventType
+    from app.auth.audit import AuditOutcome
+    from app.auth.audit import audit_logger
+    from app.auth.audit import query_audit_logs
+    from app.auth.audit_export import audit_export_response
+    from app.core.constants import AUDIT_EXPORT_MAX_ROWS
+    from app.middleware.audit import get_request_context
 
     if export_format not in ("csv", "json"):
         raise HTTPException(status_code=400, detail="Format must be csv or json")
@@ -2557,77 +2566,36 @@ def export_audit_logs(
             detail="Audit log export requires AUDIT_LOG_TO_OPENSEARCH=true",
         )
 
-    try:
-        from opensearchpy import OpenSearch
-
-        from app.core.opensearch_auth import opensearch_connection_kwargs
-
-        client = OpenSearch(**opensearch_connection_kwargs())
-
-        # Build query
-        must_clauses = []
-        if start_date:
-            must_clauses.append({"range": {"timestamp": {"gte": start_date.isoformat()}}})
-        if end_date:
-            must_clauses.append({"range": {"timestamp": {"lte": end_date.isoformat()}}})
-
-        query = {
-            "query": {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}},
-            "sort": [{"timestamp": {"order": "desc"}}],
-            "size": 10000,  # Maximum export size
-        }
-
-        index_pattern = "audit-logs-*"
-        response = client.search(index=index_pattern, body=query)
-        logs = [hit["_source"] for hit in response["hits"]["hits"]]
-
-        if export_format == "json":
-            content = json.dumps(logs, indent=2, default=str)
-            media_type = "application/json"
-        else:
-            # CSV format
-            output = io.StringIO()
-            if logs:
-                fieldnames = [
-                    "timestamp",
-                    "event_type",
-                    "outcome",
-                    "user_id",
-                    "username",
-                    "source_ip",
-                    "user_agent",
-                    "error_code",
-                    "details",
-                ]
-                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
-                writer.writeheader()
-                for log in logs:
-                    # Convert details dict to string for CSV
-                    if "details" in log and isinstance(log["details"], dict):
-                        log["details"] = json.dumps(log["details"])
-                    writer.writerow(log)
-            content = output.getvalue()
-            media_type = "text/csv"
-
-        filename = f"audit-logs-{datetime.now(UTC).strftime('%Y%m%d')}.{export_format}"
-
-        return StreamingResponse(
-            iter([content]),
-            media_type=media_type,
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
-        )
-
-    except HTTPException:
-        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
-        # anything it catches into a 500, which would report a deliberate 401/403/404/422
-        # raised inside this block as an internal server error (issue #431).
-        raise
-    except Exception as e:
-        logger.error("Error exporting audit logs: %s", e, exc_info=True)
+    result = query_audit_logs(
+        start_date=start_date, end_date=end_date, limit=AUDIT_EXPORT_MAX_ROWS, offset=0
+    )
+    if "error" in result:
+        logger.error("Error exporting audit logs: %s", result["error"])
         raise HTTPException(
             status_code=500,
             detail="An internal error occurred. Please try again.",
-        ) from e
+        )
+
+    logs = result["logs"]
+    truncated = int(result["total"]) > len(logs)
+    ctx_info = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.AUDIT_EXPORT,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=ctx_info["source_ip"],
+        user_agent=ctx_info["user_agent"],
+        details={
+            "scope": "platform",
+            "format": export_format,
+            "rows": len(logs),
+            "truncated": truncated,
+        },
+    )
+    return audit_export_response(
+        logs, export_format, filename_prefix="audit-logs", truncated=truncated
+    )
 
 
 # ============== GDPR / Right-to-Erasure (super-admin / platform) ==============

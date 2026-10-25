@@ -1790,6 +1790,11 @@ TAKEDOWN_NOTICE_RATE_LIMIT = "120/hour"
 TAKEDOWN_EXPORT_RATE_LIMIT = "10/hour"
 #: Rows one export may return. A partial export says so (``X-Export-Truncated``).
 TAKEDOWN_EXPORT_MAX_ROWS = 20000
+#: Rows one audit-log export may return, for the super-admin and the organization-admin export alike
+#: (issue #1277). It is also OpenSearch's default ``max_result_window``, so a larger page would fail.
+AUDIT_EXPORT_MAX_ROWS = 10000
+#: An organization admin's audit export: it reads the whole tenant's history in one request.
+ORG_AUDIT_EXPORT_RATE_LIMIT = "10/hour"
 #: The owner's own takedown history, read by the SPA on the settings page.
 TAKEDOWN_OWNER_READ_RATE_LIMIT = "120/hour"
 #: Header that carries a grant uuid. Never ambient: a request without it has no grant.

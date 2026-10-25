@@ -70,6 +70,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   refusal. `AuditedResource.conversation` covers chat exports. Membership changes
   (`collection.membership.change`) are governance events: always written, after the commit.
   `tests/api/test_content_audit_events.py` pins one event per emit site.
+- **Org audit view** — `org_audit_view.py` resolves `actor_display` / `target_display` /
+  `resource_display` for the organization admin's audit screen at READ time (three queries per page), and
+  only inside the org: a non-member (left, operator, failed login) or another tenant's / personal /
+  deleted resource gets `None`, never a label. Names are never stored in an event. `member_id_for_uuid`
+  answers `None` for both an unknown uuid and a non-member's, so a 403 on it is not an existence oracle.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.

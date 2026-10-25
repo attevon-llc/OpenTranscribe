@@ -22896,7 +22896,7 @@
     },
     "/api/admin/audit-logs/export": {
       "get": {
-        "description": "Export audit logs for compliance reporting. Super admin only.",
+        "description": "Export audit logs for compliance reporting. Super admin only (all tenants).\n\nReads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two\npieces the organization admin's export uses, so the columns and the CSV neutralisation\nare one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;\n``X-Export-Truncated`` says when that cut something off. The export is itself audited.",
         "operationId": "export_audit_logs_api_admin_audit_logs_export_get",
         "parameters": [
           {
@@ -38544,7 +38544,7 @@
     },
     "/api/org-admin/audit-logs": {
       "get": {
-        "description": "Read audit events for the caller's OWN organization (org-admin only).\n\nVisibility (issue #262a): events STAMPED with this org's id — including\nevents with ``user_id`` NULL, e.g. failed logins, which become visible to\nthe org once stamped — plus **legacy** un-stamped events attributed via the\norg's member user-ids (the pre-v372 rule, kept so history written before\norg stamping stays readable; see ``build_org_scope_clause`` for the\nlegacy-window caveat about shared members). Events stamped with another\norg are never visible. The ``user_id`` filter, if given, is constrained to\na member of the org (403 otherwise) so it can't be used to probe outside\nthe tenant. ``target_user_id`` (the subject — e.g. the erased user in a GDPR\nerasure, issue #443/#828) gets the identical membership guard: without it,\nan org-admin could enumerate erasure/action history for a user outside\ntheir own org merely by supplying an ID and reading whether any rows came\nback, even though the org-scope clause on the query itself already narrows\nthe result set to nothing for a non-member — the guard exists so that\nprobe fails loudly (403) rather than silently (empty list indistinguishable\nfrom \"no such events\").",
+        "description": "Read audit events for the caller's OWN organization (org-admin only).\n\nVisibility (issue #262a): events STAMPED with this org's id — including\nevents with ``user_id`` NULL, e.g. failed logins, which become visible to\nthe org once stamped — plus **legacy** un-stamped events attributed via the\norg's member user-ids (the pre-v372 rule, kept so history written before\norg stamping stays readable; see ``build_org_scope_clause`` for the\nlegacy-window caveat about shared members). Events stamped with another\norg are never visible. The ``user_id`` filter, if given, is constrained to\na member of the org (403 otherwise) so it can't be used to probe outside\nthe tenant. ``target_user_id`` (the subject — e.g. the erased user in a GDPR\nerasure, issue #443/#828) gets the identical membership guard: without it,\nan org-admin could enumerate erasure/action history for a user outside\ntheir own org merely by supplying an ID and reading whether any rows came\nback, even though the org-scope clause on the query itself already narrows\nthe result set to nothing for a non-member — the guard exists so that\nprobe fails loudly (403) rather than silently (empty list indistinguishable\nfrom \"no such events\"). ``user_uuid`` / ``target_user_uuid`` are the same\nfilters by uuid, which is what the SPA holds.\n\nEach event gains ``actor_display``, ``target_display`` and ``resource_display``, resolved at\nread time and only inside this organization (see ``services/org_audit_view``); an id that\ncannot be resolved there is ``null``, never another tenant's label.",
         "operationId": "get_org_audit_logs_api_org_admin_audit_logs_get",
         "parameters": [
           {
@@ -38622,6 +38622,25 @@
             }
           },
           {
+            "description": "Filter by the actor's uuid (must be an org member)",
+            "in": "query",
+            "name": "user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the actor's uuid (must be an org member)",
+              "title": "User Uuid"
+            }
+          },
+          {
             "description": "Filter by the affected/erased subject's user ID (must be an org member)",
             "in": "query",
             "name": "target_user_id",
@@ -38640,6 +38659,25 @@
             }
           },
           {
+            "description": "Filter by the subject's uuid (must be an org member)",
+            "in": "query",
+            "name": "target_user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the subject's uuid (must be an org member)",
+              "title": "Target User Uuid"
+            }
+          },
+          {
             "description": "Filter by outcome",
             "in": "query",
             "name": "outcome",
@@ -38655,6 +38693,44 @@
               ],
               "description": "Filter by outcome",
               "title": "Outcome"
+            }
+          },
+          {
+            "description": "Filter by resource type (media_file, collection, ...)",
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource type (media_file, collection, ...)",
+              "title": "Resource Type"
+            }
+          },
+          {
+            "description": "Filter by the resource's uuid: everything that happened to one file",
+            "in": "query",
+            "name": "resource_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the resource's uuid: everything that happened to one file",
+              "title": "Resource Uuid"
             }
           },
           {
@@ -38710,6 +38786,243 @@
           }
         ],
         "summary": "Get Org Audit Logs",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/audit-logs/export": {
+      "get": {
+        "description": "Download the caller's organization's audit events, newest first, up to 10,000 rows.\n\nA larger result is cut at the cap and says so in ``X-Export-Truncated``; narrow the dates or\nthe filters to get the rest. CSV cells are spreadsheet-formula neutralised. Names are\nresolved at read time inside this organization only (``actor_display`` and friends).",
+        "operationId": "export_org_audit_logs_api_org_admin_audit_logs_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Start date for the export",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start date for the export",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "End date for the export",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "End date for the export",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Filter by event type",
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type",
+              "title": "Event Type"
+            }
+          },
+          {
+            "description": "Filter by actor user ID (an org member)",
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by actor user ID (an org member)",
+              "title": "User Id"
+            }
+          },
+          {
+            "description": "Filter by actor uuid (an org member)",
+            "in": "query",
+            "name": "user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by actor uuid (an org member)",
+              "title": "User Uuid"
+            }
+          },
+          {
+            "description": "Filter by subject user ID (a member)",
+            "in": "query",
+            "name": "target_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by subject user ID (a member)",
+              "title": "Target User Id"
+            }
+          },
+          {
+            "description": "Filter by subject uuid (a member)",
+            "in": "query",
+            "name": "target_user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by subject uuid (a member)",
+              "title": "Target User Uuid"
+            }
+          },
+          {
+            "description": "Filter by outcome",
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by outcome",
+              "title": "Outcome"
+            }
+          },
+          {
+            "description": "Filter by resource type",
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource type",
+              "title": "Resource Type"
+            }
+          },
+          {
+            "description": "Filter by resource uuid",
+            "in": "query",
+            "name": "resource_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource uuid",
+              "title": "Resource Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Export Org Audit Logs",
         "tags": [
           "org-admin"
         ]

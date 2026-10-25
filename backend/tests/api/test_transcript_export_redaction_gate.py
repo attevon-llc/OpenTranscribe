@@ -18,102 +18,15 @@ fix" #2).
 
 from __future__ import annotations
 
-import uuid as uuid_pkg
-
 import pytest
 from fastapi import status
-
-from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import TranscriptSegment
-
-PROFANITY = "damn"
-CLEAN_TEXT = "the quarterly numbers look fine"
-SENSITIVE_TEXT = f"this is a {PROFANITY} mess and here is more of it"
+from fixtures.redaction_export_world import CLEAN_TEXT
+from fixtures.redaction_export_world import PROFANITY
+from fixtures.redaction_export_world import enable_user_redaction
+from fixtures.redaction_export_world import make_redactable_file
+from fixtures.redaction_export_world import set_export_locked
 
 ALL_FORMATS = ("txt", "json", "csv", "srt", "vtt", "md")
-
-_USER_PREFS = "/api/user-settings/redaction"
-_ADMIN_POLICY = "/api/admin/redaction-policy"
-
-
-def _set_export_locked(client, super_admin_token_headers, locked: bool) -> None:
-    resp = client.post(
-        f"{_ADMIN_POLICY}/update",
-        json={"force_export_redacted": locked},
-        headers=super_admin_token_headers,
-    )
-    assert resp.status_code == status.HTTP_200_OK
-
-
-def _enable_user_redaction(client, user_token_headers) -> None:
-    resp = client.put(
-        _USER_PREFS,
-        json={"enabled": True, "categories": ["profanity"]},
-        headers=user_token_headers,
-    )
-    assert resp.status_code == status.HTTP_200_OK
-
-
-def _make_file(db_session, owner) -> MediaFile:
-    file_uuid = str(uuid_pkg.uuid4())
-    media_file = MediaFile(
-        uuid=file_uuid,
-        filename="export673.wav",
-        title="export673",
-        storage_path=f"media/test/{file_uuid}.wav",
-        content_type="audio/wav",
-        file_size=4096,
-        status="completed",
-        is_public=False,
-        user_id=owner.id,
-        redaction_status="done",
-    )
-    db_session.add(media_file)
-    db_session.commit()
-    db_session.refresh(media_file)
-
-    speaker = Speaker(
-        user_id=owner.id,
-        media_file_id=media_file.id,
-        name="SPEAKER_00",
-        display_name="Alice",
-    )
-    db_session.add(speaker)
-    db_session.commit()
-    db_session.refresh(speaker)
-
-    start = SENSITIVE_TEXT.find(PROFANITY)
-    db_session.add(
-        TranscriptSegment(
-            media_file_id=media_file.id,
-            speaker_id=speaker.id,
-            start_time=0.0,
-            end_time=1.5,
-            text=CLEAN_TEXT,
-        )
-    )
-    db_session.add(
-        TranscriptSegment(
-            media_file_id=media_file.id,
-            speaker_id=speaker.id,
-            start_time=1.5,
-            end_time=3.0,
-            text=SENSITIVE_TEXT,
-            redactions=[
-                {
-                    "char_start": start,
-                    "char_end": start + len(PROFANITY),
-                    "category": "profanity",
-                    "entity_type": "PROFANITY",
-                    "detector": "wordlist",
-                    "confidence": 1.0,
-                }
-            ],
-        )
-    )
-    db_session.commit()
-    return media_file
 
 
 def _export(client, headers, media_file, fmt: str, *, redact: bool | None = None):
@@ -132,9 +45,9 @@ def _export(client, headers, media_file, fmt: str, *, redact: bool | None = None
 def test_export_locked_masks_every_format(
     client, super_admin_token_headers, user_token_headers, normal_user, db_session, fmt
 ):
-    _enable_user_redaction(client, user_token_headers)
-    _set_export_locked(client, super_admin_token_headers, True)
-    media_file = _make_file(db_session, normal_user)
+    enable_user_redaction(client, user_token_headers)
+    set_export_locked(client, super_admin_token_headers, True)
+    media_file = make_redactable_file(db_session, normal_user)
 
     response = _export(client, user_token_headers, media_file, fmt)
 
@@ -151,9 +64,9 @@ def test_export_locked_cannot_be_bypassed_by_redact_false(
     client, super_admin_token_headers, user_token_headers, normal_user, db_session, fmt
 ):
     """The owner's own ``?redact=false`` reveal request must not defeat the admin floor."""
-    _enable_user_redaction(client, user_token_headers)
-    _set_export_locked(client, super_admin_token_headers, True)
-    media_file = _make_file(db_session, normal_user)
+    enable_user_redaction(client, user_token_headers)
+    set_export_locked(client, super_admin_token_headers, True)
+    media_file = make_redactable_file(db_session, normal_user)
 
     response = _export(client, user_token_headers, media_file, fmt, redact=False)
 
@@ -170,8 +83,8 @@ def test_export_locked_cannot_be_bypassed_by_redact_false(
 def test_export_locked_off_and_redaction_disabled_exports_unmasked(
     client, super_admin_token_headers, user_token_headers, normal_user, db_session, fmt
 ):
-    _set_export_locked(client, super_admin_token_headers, False)
-    media_file = _make_file(db_session, normal_user)
+    set_export_locked(client, super_admin_token_headers, False)
+    media_file = make_redactable_file(db_session, normal_user)
 
     response = _export(client, user_token_headers, media_file, fmt)
 
@@ -185,9 +98,9 @@ def test_export_locked_off_but_user_enabled_masks_by_default(
 ):
     """A user's own redaction preference still applies; export_locked being off just
     means it is not admin-mandated."""
-    _enable_user_redaction(client, user_token_headers)
-    _set_export_locked(client, super_admin_token_headers, False)
-    media_file = _make_file(db_session, normal_user)
+    enable_user_redaction(client, user_token_headers)
+    set_export_locked(client, super_admin_token_headers, False)
+    media_file = make_redactable_file(db_session, normal_user)
 
     response = _export(client, user_token_headers, media_file, fmt)
 
@@ -200,9 +113,9 @@ def test_export_locked_off_owner_reveal_shows_original(
     client, super_admin_token_headers, user_token_headers, normal_user, db_session, fmt
 ):
     """Without the admin floor, the owner's own ``?redact=false`` reveals their content."""
-    _enable_user_redaction(client, user_token_headers)
-    _set_export_locked(client, super_admin_token_headers, False)
-    media_file = _make_file(db_session, normal_user)
+    enable_user_redaction(client, user_token_headers)
+    set_export_locked(client, super_admin_token_headers, False)
+    media_file = make_redactable_file(db_session, normal_user)
 
     response = _export(client, user_token_headers, media_file, fmt, redact=False)
 
@@ -222,7 +135,7 @@ def test_unsupported_format_is_400(client, user_token_headers, normal_user, db_s
     ``markdown`` is deliberately refused: the token is ``md`` (token == extension).
     ``docx``/``pdf`` are not synchronous formats and do not exist yet on this route.
     """
-    media_file = _make_file(db_session, normal_user)
+    media_file = make_redactable_file(db_session, normal_user)
     response = client.get(
         f"/api/files/{media_file.uuid}/export",
         headers=user_token_headers,
@@ -234,7 +147,7 @@ def test_unsupported_format_is_400(client, user_token_headers, normal_user, db_s
 def test_md_is_served_as_markdown_not_plain_text(
     client, user_token_headers, normal_user, db_session
 ):
-    media_file = _make_file(db_session, normal_user)
+    media_file = make_redactable_file(db_session, normal_user)
     response = client.get(
         f"/api/files/{media_file.uuid}/export",
         headers=user_token_headers,
@@ -247,6 +160,6 @@ def test_md_is_served_as_markdown_not_plain_text(
 
 
 def test_export_requires_auth(client, normal_user, db_session):
-    media_file = _make_file(db_session, normal_user)
+    media_file = make_redactable_file(db_session, normal_user)
     response = client.get(f"/api/files/{media_file.uuid}/export", params={"format": "txt"})
     assert response.status_code == status.HTTP_401_UNAUTHORIZED

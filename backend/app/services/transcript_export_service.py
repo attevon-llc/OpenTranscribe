@@ -41,6 +41,7 @@ from app.services.transcript_export_text import build_txt
 from app.services.transcript_export_turns import comment_rows_from
 from app.services.transcript_export_turns import group_turns
 from app.services.transcript_export_turns import masked_segments
+from app.services.transcript_export_turns import speaker_namer
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ def build_export_content(
     speaker_map: dict[int, str] = {
         int(sp.id): canonical_speaker_label_for_row(sp) for sp in speakers
     }
+    speaker_name = speaker_namer(speakers, speaker_default_label)
     comment_rows = comment_rows_from(comments, include_comments)
 
     if export_format in ("srt", "vtt"):
@@ -96,11 +98,6 @@ def build_export_content(
 
     masked = masked_segments(segments, redaction_cfg, reveal_categories)
     masked.sort(key=lambda s: s["start_time"])
-
-    def speaker_name(seg: dict[str, Any]) -> str:
-        if seg["speaker_id"] is None:
-            return speaker_default_label
-        return speaker_map.get(seg["speaker_id"], speaker_default_label)
 
     if export_format == "txt":
         return build_txt(

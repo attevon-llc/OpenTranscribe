@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     from app.services.redaction.config import EffectiveRedactionConfig
 
 from app.models.media import Comment
+from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,19 @@ def comment_rows_from(
             {"timestamp": float(c.timestamp or 0.0), "text": c.text, "user_name": user_name}
         )
     return rows
+
+
+def speaker_namer(speakers: list[Speaker], default_label: str) -> SpeakerNamer:
+    """A :data:`SpeakerNamer` over ``speakers``: a segment with no (or an unknown) speaker gets
+    ``default_label``, every other one its canonical label."""
+    names: dict[int, str] = {int(sp.id): canonical_speaker_label_for_row(sp) for sp in speakers}
+
+    def speaker_name(seg: dict[str, Any]) -> str:
+        if seg["speaker_id"] is None:
+            return default_label
+        return names.get(seg["speaker_id"], default_label)
+
+    return speaker_name
 
 
 @dataclass

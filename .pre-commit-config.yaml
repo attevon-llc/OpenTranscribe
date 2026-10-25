@@ -73,6 +73,9 @@ repos:
           # that Any from a function declared -> str trips no-any-return even
           # though backend/venv (which has it installed) reports no issue.
           - playwright
+          # python-docx ships py.typed (services/transcript_document/docx_renderer.py, #1278);
+          # without it every docx call degrades to Any in the hook's isolated env.
+          - python-docx
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

@@ -148,3 +148,7 @@ class DocumentLayout:
 
 class DocumentTooLongError(Exception):
     """The transcript lays out to more lines than ``DOCUMENT_EXPORT_MAX_LINES``."""
+
+
+class FontsUnavailableError(Exception):
+    """The fonts a PDF needs are not installed in this image (it never prints without them)."""

@@ -25,7 +25,9 @@ same depth. Read this before assuming a key protects anything:
    router 404, so the UI gate is genuinely cosmetic:
    ``watch_sources``, ``organizations``, ``auth.config_ui``,
    ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``,
-   ``chat.rag``, ``org.takedown`` (``/org-admin/files``; no platform-admin bypass).
+   ``chat.rag``, ``org.takedown`` (``/org-admin/files``; no platform-admin bypass),
+   ``exports.documents`` (``POST /files/{uuid}/export/document`` 404s; the render task never
+   asks, because it has no request, so a resolver must not make it depend on one).
    The platform takedown queue (``admin.takedown``, tier 2) stays ungated on purpose:
    an operator must always be able to act on a legal notice.
 
@@ -103,6 +105,7 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "url_ingest": True,  # yt-dlp URL ingestion (POST /files/process-url, GET /files/youtube/quota)
     "search": True,  # hybrid/semantic search
     "exports": True,  # SRT/VTT/TXT/bulk exports
+    "exports.documents": True,  # DOCX/PDF transcript documents (POST /files/{uuid}/export/document)
     "comments": True,  # per-transcript comments
     "transcription.prefs": True,  # language/translate/speaker prefs
     "vocab.user": True,  # custom vocabulary (own terms)
@@ -166,6 +169,7 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "url_ingest": AUDIENCE_USER,
     "search": AUDIENCE_USER,
     "exports": AUDIENCE_USER,
+    "exports.documents": AUDIENCE_USER,
     "comments": AUDIENCE_USER,
     "transcription.prefs": AUDIENCE_USER,
     "vocab.user": AUDIENCE_USER,

@@ -82,3 +82,29 @@ def breaks_between_characters(text: str) -> bool:
 def sanitize_for_xml(text: str) -> str:
     """Drop the characters XML 1.0 forbids; python-docx raises ``ValueError`` on any of them."""
     return _XML_ILLEGAL.sub("", text)
+
+
+#: Han glyph variants differ by region, so one CJK collection has a face per region.
+CJK_REGIONS = ("SC", "TC", "JP", "KR")
+
+
+def cjk_region(language: str | None) -> str:
+    """The Noto CJK region (``SC`` / ``TC`` / ``JP`` / ``KR``) for a language code.
+
+    Chinese defaults to Simplified; a Traditional marker (``zh-Hant``, ``zh-TW``, ``zh-HK``) and
+    Cantonese (``yue``) choose Traditional. An unknown or absent language gets Simplified, whose
+    face also covers the kana and Hangul a stray Japanese or Korean phrase needs.
+    """
+    code = (language or "").lower().replace("_", "-")
+    if code.startswith("ja"):
+        return "JP"
+    if code.startswith("ko"):
+        return "KR"
+    if code.startswith("yue") or any(marker in code for marker in ("hant", "-tw", "-hk", "-mo")):
+        return "TC"
+    return "SC"
+
+
+def cjk_font_family(language: str | None) -> str:
+    """The font family name a DOCX asks for East Asian text, e.g. ``Noto Sans CJK JP``."""
+    return f"Noto Sans CJK {cjk_region(language)}"

@@ -148,6 +148,12 @@ def export_transcript(
     the rest of the backend), with English defaults if omitted.
     """
     fmt = export_format.lower()
+    if fmt in ("docx", "pdf"):
+        # Rendered on a worker, not in this request: see files/transcript_document_export.py.
+        raise HTTPException(
+            status_code=400,
+            detail="Use POST /files/{uuid}/export/document for docx and pdf",
+        )
     if fmt not in VALID_FORMATS:
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {export_format}")
 

@@ -39,6 +39,9 @@ joserfc==1.7.5
 # no system libxmlsec1 package needed in the image).
 python3-saml==1.16.0
 python-multipart==0.0.32
+# DOCX transcript export (issue #1278, services/transcript_document/docx_renderer.py).
+# MIT. Its only other runtime dependencies (lxml, typing_extensions) are already in the image.
+python-docx==1.2.0
 passlib[bcrypt]==1.7.4
 # bcrypt>=5.0.0 removed the __about__ shim passlib 1.7.4 (unmaintained since 2020)
 # reads to detect the backend version, hard-breaking bcrypt_sha256/bcrypt verification

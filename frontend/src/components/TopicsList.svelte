@@ -2,27 +2,41 @@
   import type { MajorTopic } from '$lib/types/summary';
   import { t } from '$stores/locale';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { MenuIconName } from '$lib/ui/menuIcons';
 
   export let topics: MajorTopic[];
   // searchQuery prop removed - not used internally
 
-  function getImportanceIndicator(importance: string): string {
-    switch (importance) {
-      case 'high': return '●';
-      case 'medium': return '○';
-      case 'low': return '◦';
-      default: return '○';
-    }
-  }
+  type Importance = 'high' | 'medium' | 'low';
+  // Filled, ring and small dot: the three levels stay distinct with colour removed.
+  const IMPORTANCE_ICON: Record<Importance, MenuIconName> = {
+    high: 'dot',
+    medium: 'circle-outline',
+    low: 'dot-small',
+  };
+  const IMPORTANCE_LABEL: Record<Importance, string> = {
+    high: 'summary.importance.high',
+    medium: 'summary.importance.medium',
+    low: 'summary.importance.low',
+  };
+  const importanceOf = (value: string | undefined): Importance =>
+    value === 'high' || value === 'low' ? value : 'medium';
 </script>
 
 <section class="topics-section">
   <h3 class="section-title">{$t('topics.majorTopics')}</h3>
   <div class="topics-list">
     {#each topics as topic}
+      {@const level = importanceOf(topic.importance)}
       <div class="topic-item">
         <h4 class="topic-heading">
-          <span class="importance-indicator importance-{topic.importance || 'medium'}">{getImportanceIndicator(topic.importance || 'medium')}</span>
+          <span
+            class="importance-indicator importance-{level}"
+            role="img"
+            aria-label={$t(IMPORTANCE_LABEL[level])}
+            title={$t(IMPORTANCE_LABEL[level])}
+          ><MenuIcon name={IMPORTANCE_ICON[level]} size={12} /></span>
           {@html sanitizeHighlightHtml(topic.topic)}
         </h4>
 
@@ -86,8 +100,9 @@
   }
 
   .importance-indicator {
-    font-size: 0.8rem;
-    margin-right: 0.25rem;
+    display: inline-flex;
+    vertical-align: middle;
+    margin-inline-end: 0.25rem;
   }
 
   .importance-high {

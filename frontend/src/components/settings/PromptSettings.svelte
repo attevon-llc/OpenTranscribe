@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '../../lib/api/prompts';
@@ -818,7 +819,7 @@
     <svelte:fragment slot="header">
       <h2 class="modal-title">{editingPrompt ? $t('prompts.editExisting') : $t('prompts.createNew')}</h2>
       {#if isDirty}
-        <span class="unsaved-dot" title={$t('prompts.unsavedChanges')}>●</span>
+        <span class="unsaved-dot" role="img" aria-label={$t('prompts.unsavedChanges')} title={$t('prompts.unsavedChanges')}><MenuIcon name="dot" size={10} /></span>
       {/if}
     </svelte:fragment>
     <form id="prompt-form" on:submit|preventDefault={savePrompt} class="prompt-form">
@@ -1726,9 +1727,9 @@
   }
 
   .unsaved-dot {
+    display: inline-flex;
+    align-items: center;
     color: var(--warning-color);
-    font-size: 0.9rem;
-    line-height: 1;
     flex-shrink: 0;
   }
 </style>

@@ -79,11 +79,11 @@
         id: spec.id,
         label,
         disabled: true,
-        badge: '🔒',
+        marker: { icon: 'lock', label: $t('settings.nav.requiresSuperAdmin') },
         title: $t('settings.nav.requiresSuperAdmin'),
       };
     }
-    return { id: spec.id, label, ...(spec.id === 'data-cache' && cacheDirty ? { badge: '●' } : {}) };
+    return { id: spec.id, label, ...(spec.id === 'data-cache' && cacheDirty ? { marker: { icon: 'dot', label: $t('common.unsavedChanges') } } : {}) };
   });
 
   $: activeSpec = specs.find((s) => s.id === activeId);
@@ -97,7 +97,7 @@
 
   {#if activeSpec?.locked}
     <EmptyState
-      icon="🔒"
+      icon="lock"
       title={$t('settings.permission.superAdminTitle')}
       description={$t('settings.permission.superAdminMessage')}
     />

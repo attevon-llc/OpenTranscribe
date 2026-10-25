@@ -7,6 +7,7 @@
   whether retrieval or generation is at fault.
 -->
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { ChatMessage } from '$lib/types/chat';
@@ -169,7 +170,15 @@
 
         {#if meta.plan?.steps?.length}
           <dt>{$t('chat.meta.plan')}</dt>
-          <dd>{meta.plan.steps.join(' → ')}</dd>
+          <dd>
+            <ol class="plan-steps" data-testid="chat-meta-plan-steps">
+              {#each meta.plan.steps as step, i}
+                <li>
+                  {#if i > 0}<MenuIcon name="chevron-right" size="xs" />{/if}<span dir="auto">{step}</span>
+                </li>
+              {/each}
+            </ol>
+          </dd>
         {/if}
 
         {#if meta.router_language_unmatched}
@@ -228,6 +237,27 @@
 
   .rewritten {
     font-style: italic;
+  }
+
+  .plan-steps {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .plan-steps li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: inherit;
+  }
+
+  .plan-steps li :global(.menu-icon) {
+    color: var(--text-secondary);
   }
 
   .estimated {

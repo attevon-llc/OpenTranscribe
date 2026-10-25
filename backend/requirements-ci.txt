@@ -127,6 +127,14 @@ presidio-analyzer==2.2.364
 # anonymizer capped at 2.2.362 -- see requirements.txt for the cryptography
 # conflict this avoids (verified ResolutionImpossible).
 presidio-anonymizer==2.2.362
+# preshed capped <3.0.14: 3.0.14 (released 2026-10-24) makes spaCy's Tokenizer.from_disk raise
+# `OverflowError: Python int too large to convert to C ssize_t` (tokenizer.pyx _flush_specials,
+# `del self._specials[k]`), so en_core_web_sm cannot load and Presidio's analyzer build fails
+# -- PII detection is disabled and every redaction-gated summary/export returns "Redaction is
+# temporarily unavailable". Bisected: preshed alone (cymem 2.0.16 / murmurhash 1.0.16 are fine).
+# Transitive via spacy/thinc/blis, so it is pinned here in its own right. Lift once a preshed
+# release loads spaCy models again (re-test with spacy.load("en_core_web_sm")).
+preshed==3.0.13
 gliner==0.2.29
 detoxify==0.5.2
 

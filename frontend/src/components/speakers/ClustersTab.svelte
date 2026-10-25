@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import SpeakerClusterCard from '$components/speakers/SpeakerClusterCard.svelte';
@@ -136,8 +137,8 @@
 
     <div class="cluster-list">
       {#if labeledCount > 0}
-        <button class="section-heading-btn identified" on:click={() => dispatch('toggleSection', 'identified')} title={identifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
-          <span class="section-chevron" class:collapsed={identifiedCollapsed}>{identifiedCollapsed ? '▸' : '▾'}</span>
+        <button class="section-heading-btn identified" aria-expanded={!identifiedCollapsed} on:click={() => dispatch('toggleSection', 'identified')} title={identifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
+          <span class="section-chevron" class:collapsed={identifiedCollapsed} aria-hidden="true"><MenuIcon name={identifiedCollapsed ? 'chevron-right' : 'chevron-down'} size="xs" /></span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           {$t('speakers.cluster.identifiedSpeakers')} ({labeledCount})
         </button>
@@ -197,8 +198,8 @@
       {/if}
 
       {#if unlabeledCount > 0}
-        <button class="section-heading-btn unidentified" on:click={() => dispatch('toggleSection', 'unidentified')} title={unidentifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
-          <span class="section-chevron" class:collapsed={unidentifiedCollapsed}>{unidentifiedCollapsed ? '▸' : '▾'}</span>
+        <button class="section-heading-btn unidentified" aria-expanded={!unidentifiedCollapsed} on:click={() => dispatch('toggleSection', 'unidentified')} title={unidentifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
+          <span class="section-chevron" class:collapsed={unidentifiedCollapsed} aria-hidden="true"><MenuIcon name={unidentifiedCollapsed ? 'chevron-right' : 'chevron-down'} size="xs" /></span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           {$t('speakers.cluster.unidentifiedClusters')} ({unlabeledCount})
         </button>
@@ -444,7 +445,9 @@
   }
 
   .section-chevron {
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 16px;
     flex-shrink: 0;
     transition: transform 0.15s ease;

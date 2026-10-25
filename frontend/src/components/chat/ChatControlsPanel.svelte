@@ -7,6 +7,7 @@
   account-wide equivalents live in Settings → Chat.
 -->
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { SEARCH_MODE_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
@@ -158,7 +159,7 @@
     <div class="panel-header">
       <h2>{$t('chat.controls.title')}</h2>
       {#if promptDirty}
-        <span class="dirty-indicator" title={$t('common.unsavedChanges')}>●</span>
+        <span class="dirty-indicator" role="img" aria-label={$t('common.unsavedChanges')} title={$t('common.unsavedChanges')}><MenuIcon name="dot" size={10} /></span>
       {/if}
       <button
         type="button"
@@ -415,8 +416,9 @@
   }
 
   .dirty-indicator {
+    display: inline-flex;
+    align-items: center;
     color: var(--primary-on-surface);
-    font-size: 0.9rem;
   }
 
   .close-btn {

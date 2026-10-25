@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
@@ -265,7 +266,7 @@
   <svelte:fragment slot="header">
     <h2 class="modal-title">{editingConfig ? $t('settings.asrProvider.editConfig') : $t('settings.asrProvider.addConfig')}</h2>
     {#if isDirty}
-      <span class="unsaved-dot" title={$t('settings.asrProvider.unsavedChanges')}>●</span>
+      <span class="unsaved-dot" role="img" aria-label={$t('settings.asrProvider.unsavedChanges')} title={$t('settings.asrProvider.unsavedChanges')}><MenuIcon name="dot" size={10} /></span>
     {/if}
   </svelte:fragment>
         <!-- Name -->
@@ -299,7 +300,7 @@
                   providerCapability(providers, p.provider),
                   $t
                 )}
-                {#if p.status === 'experimental'} &#9888; ({$t('settings.asrProvider.experimentalShort')}){/if}
+                {#if p.status === 'experimental'} ({$t('settings.asrProvider.experimentalShort')}){/if}
                 {#if !p.sdk_available} ({$t('settings.asrProvider.missingSDK')}){/if}
               </option>
             {/each}
@@ -322,7 +323,7 @@
 
           {#if selectedProvider.status === 'experimental'}
             <div class="experimental-warning">
-              <span class="warning-icon">&#9888;</span>
+              <span class="warning-icon" aria-hidden="true"><MenuIcon name="warning" size="md" /></span>
               <span>{selectedProvider.status_note || $t('settings.asrProvider.experimentalWarning')}</span>
             </div>
           {/if}
@@ -449,7 +450,8 @@
         <div role="status" aria-live="polite" aria-atomic="true">
           {#if testResult}
             <div class="test-result" class:success={testResult.success} class:failure={!testResult.success}>
-              {testResult.success ? '✓' : '✗'} {testResult.message}
+              <MenuIcon name={testResult.success ? 'status-success' : 'status-error'} size="md" />
+              <span>{testResult.message}</span>
             </div>
           {/if}
         </div>
@@ -513,9 +515,9 @@
   }
 
   .unsaved-dot {
+    display: inline-flex;
+    align-items: center;
     color: var(--warning-color);
-    font-size: 0.9rem;
-    line-height: 1;
     flex-shrink: 0;
   }
 
@@ -593,7 +595,7 @@
   }
 
   .experimental-warning .warning-icon {
-    font-size: 1rem;
+    display: inline-flex;
     flex-shrink: 0;
   }
 
@@ -625,6 +627,9 @@
   }
 
   .test-result {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     padding: 0.625rem 0.875rem;
     border-radius: 6px;
     font-size: 0.8125rem;

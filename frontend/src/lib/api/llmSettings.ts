@@ -3,8 +3,6 @@
  */
 
 import axiosInstance from '../axios';
-import { get } from 'svelte/store';
-import { t } from '$stores/locale';
 
 export type LLMProvider =
   | 'openai'
@@ -508,39 +506,5 @@ export class LLMSettingsApi {
       },
     });
     return response.data;
-  }
-
-  /**
-   * Get connection status display information
-   */
-  static getStatusDisplay(status?: ConnectionStatus): {
-    text: string;
-    class: string;
-    icon: string;
-  } {
-    const tFunc = get(t);
-    switch (status) {
-      case 'success':
-        return {
-          text: tFunc('llm.status.connected'),
-          class: 'success',
-          icon: '✓',
-        };
-      case 'failed':
-        return { text: tFunc('llm.status.failed'), class: 'error', icon: '✗' };
-      case 'pending':
-        return {
-          text: tFunc('llm.status.testing'),
-          class: 'pending',
-          icon: '...',
-        };
-      case 'untested':
-      default:
-        return {
-          text: tFunc('llm.status.untested'),
-          class: 'neutral',
-          icon: '?',
-        };
-    }
   }
 }

@@ -64,7 +64,7 @@
     const hasEdits =
       (spec.id === 'tx-language' && dirty.language) ||
       (spec.id === 'tx-accuracy' && dirty.accuracy);
-    return { id: spec.id, label: $t(labelKey[spec.id]), ...(hasEdits ? { badge: '●' } : {}) };
+    return { id: spec.id, label: $t(labelKey[spec.id]), ...(hasEdits ? { marker: { icon: 'dot', label: $t('common.unsavedChanges') } } : {}) };
   });
 
   const has = (id: TranscriptionTabId) => specs.some((s) => s.id === id);

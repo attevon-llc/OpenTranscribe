@@ -37,6 +37,8 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.auth.audit import TENANT_SCOPE_ORG
+from app.auth.audit import TENANT_SCOPE_PERSONAL
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -73,6 +75,9 @@ from app.schemas.sharing import ShareUpdate
 from app.schemas.user import UserBrief
 from app.services.collection_visibility import members_without_access
 from app.services.collection_visibility import visible_collection_ids
+from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import record_content_event
 from app.services.formatting_service import FormattingService
 from app.services.permission_service import PermissionService
 from app.services.takedown_service import exclude_quarantined
@@ -217,6 +222,11 @@ def _get_prompt_info(collection: Collection) -> tuple:
     if prompt:
         return (prompt.uuid, prompt.name)
     return (None, None)
+
+
+def _tenant_scope(collection: Collection) -> str:
+    """``tenant_scope`` of a collection event: whose tenant the collection belongs to."""
+    return TENANT_SCOPE_ORG if collection.organization_id is not None else TENANT_SCOPE_PERSONAL
 
 
 def _can_change_visibility(collection: Collection, permission: str | None) -> bool:
@@ -925,9 +935,10 @@ def set_collection_visibility(
             source_ip=req_ctx["source_ip"],
             user_agent=req_ctx["user_agent"],
             organization_id=collection.organization_id,
+            resource_type="collection",
+            resource_uuid=str(collection.uuid),
+            tenant_scope=_tenant_scope(collection),
             details={
-                "resource_type": "collection",
-                "resource_uuid": str(collection.uuid),
                 "from": previous,
                 "to": body.visibility,
                 "members_who_lost_access": len(lost_sight),
@@ -999,10 +1010,43 @@ def _membership_affects_index(db: Session, collection: Collection) -> bool:
     )
 
 
+def _record_membership_change(
+    db: Session,
+    request: Request,
+    actor: User,
+    collection: Collection,
+    *,
+    added: list[str],
+    removed: list[str],
+) -> None:
+    """Audit files added to / removed from a collection (always recorded, issue #1277).
+
+    ``added`` / ``removed`` are file uuids. The event carries the exact counts and at most
+    ``MAX_MEMBERSHIP_UUIDS`` uuids; never a name. Written after the change commits.
+    """
+    if not added and not removed:
+        return
+    record_content_event(
+        db,
+        request,
+        event=AuditEventType.COLLECTION_MEMBERSHIP_CHANGE,
+        actor=actor,
+        resource=AuditedResource.collection(collection),
+        details={
+            "added": len(added),
+            "removed": len(removed),
+            "file_uuids": (added + removed)[:MAX_MEMBERSHIP_UUIDS],
+            "source": "manual",
+        },
+        dedup=False,
+    )
+
+
 @router.post("/{collection_uuid}/media", response_model=dict)
 def add_media_to_collection(
     collection_uuid: str,
     media_data: CollectionMemberAdd,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1067,6 +1111,14 @@ def add_media_to_collection(
 
     if added_file_ids and _membership_affects_index(db, collection):
         update_file_access_index.delay(added_file_ids)
+    _record_membership_change(
+        db,
+        request,
+        current_user,
+        collection,
+        added=[str(f.uuid) for f in media_files if f.id in set(added_file_ids)],
+        removed=[],
+    )
 
     return {
         "message": f"Added {added_count} media files to collection",
@@ -1079,6 +1131,7 @@ def add_media_to_collection(
 def remove_media_from_collection(
     collection_uuid: str,
     media_data: CollectionMemberRemove,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1096,10 +1149,21 @@ def remove_media_from_collection(
     # Every member of an org collection may remove any of its (org) files — the
     # collection is the org's (v422).
     may_remove_any = permission == "owner" or collection.organization_id is not None
-    id_query = db.query(MediaFile.id).filter(MediaFile.uuid.in_(media_file_uuids))
+    id_query = db.query(MediaFile.id, MediaFile.uuid).filter(MediaFile.uuid.in_(media_file_uuids))
     if not may_remove_any:
         id_query = id_query.filter(MediaFile.user_id == current_user.id)
-    media_file_ids = [r[0] for r in id_query.all()]
+    resolved = id_query.all()
+    media_file_ids = [r[0] for r in resolved]
+
+    # The members actually present, for the audit event (a uuid that was never in the
+    # collection was not "removed").
+    present_ids = {
+        row[0]
+        for row in db.query(CollectionMember.media_file_id).filter(
+            CollectionMember.collection_id == collection_id,
+            CollectionMember.media_file_id.in_(media_file_ids),
+        )
+    }
 
     # Remove members
     removed_count = (
@@ -1115,6 +1179,14 @@ def remove_media_from_collection(
 
     if media_file_ids and _membership_affects_index(db, collection):
         update_file_access_index.delay(media_file_ids)
+    _record_membership_change(
+        db,
+        request,
+        current_user,
+        collection,
+        added=[],
+        removed=[str(uuid) for fid, uuid in resolved if fid in present_ids],
+    )
 
     return {
         "message": f"Removed {removed_count} media files from collection",
@@ -1506,12 +1578,12 @@ def create_collection_share(
         username=str(current_user.email),
         source_ip=req_ctx["source_ip"],
         user_agent=req_ctx["user_agent"],
-        organization_id=ctx.org_id,
+        organization_id=collection.organization_id,
         target_user_id=target_user_id,
+        resource_type="collection",
+        resource_uuid=str(collection.uuid),
+        tenant_scope=_tenant_scope(collection),
         details={
-            "resource_type": "collection",
-            "resource_uuid": str(collection.uuid),
-            "resource_name": collection.name,
             "target_group_id": target_group_id,
             "permission": share_in.permission,
         },
@@ -1589,12 +1661,12 @@ def update_collection_share(
         username=str(current_user.email),
         source_ip=req_ctx["source_ip"],
         user_agent=req_ctx["user_agent"],
-        organization_id=ctx.org_id,
+        organization_id=collection.organization_id,
         target_user_id=share.target_user_id,
+        resource_type="collection",
+        resource_uuid=str(collection.uuid),
+        tenant_scope=_tenant_scope(collection),
         details={
-            "resource_type": "collection",
-            "resource_uuid": str(collection.uuid),
-            "resource_name": collection.name,
             "target_group_id": share.target_group_id,
             "action": "permission_update",
             "previous_permission": previous_permission,
@@ -1667,12 +1739,12 @@ def delete_collection_share(
         username=str(current_user.email),
         source_ip=req_ctx["source_ip"],
         user_agent=req_ctx["user_agent"],
-        organization_id=ctx.org_id,
+        organization_id=collection.organization_id,
         target_user_id=revoked_target_user_id,
+        resource_type="collection",
+        resource_uuid=str(collection.uuid),
+        tenant_scope=_tenant_scope(collection),
         details={
-            "resource_type": "collection",
-            "resource_uuid": str(collection.uuid),
-            "resource_name": collection.name,
             "target_group_id": revoked_target_group_id,
             "permission": revoked_permission,
         },

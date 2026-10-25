@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.audit import AuditEventType
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.constants import TAG_SOURCE_AUTO_AI
@@ -28,6 +29,8 @@ from app.models.topic import TopicSuggestion
 from app.services.auto_llm_settings import TOPIC_USER_KEY
 from app.services.auto_llm_settings import resolve_auto_llm_flags
 from app.services.collection_visibility import usable_collections
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import record_content_event
 from app.services.permission_service import PermissionService
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
@@ -223,9 +226,8 @@ class AutoLabelService:
         # search refresh, so calling it per applied tag re-did that work T times
         # for what is one file of change.
         retagged_file_ids: list[int] = []
-        # An organization file that joined a collection needs its search ``collection_ids``
-        # rewritten (the org-collection read route, ``search/access_filter``).
-        reindex_access = False
+        # Collections this call put the file into: the post-commit announcement below needs them.
+        joined_collections: list[Collection] = []
 
         # Auto-apply tags
         if apply_tags:
@@ -279,7 +281,7 @@ class AutoLabelService:
                         organization_id=media_file.organization_id,
                     )
                     if self._add_file_to_collection(media_file, collection, confidence):
-                        reindex_access = reindex_access or media_file.organization_id is not None
+                        joined_collections.append(collection)
                     result["auto_applied_collections"].append(name)
                 except Exception as e:
                     logger.warning(f"Failed to auto-apply collection '{name}': {e}")
@@ -296,10 +298,7 @@ class AutoLabelService:
             self.db.rollback()
             raise
 
-        if reindex_access:
-            from app.tasks.search_indexing_task import update_file_access_index
-
-            update_file_access_index.delay([int(media_file.id)])
+        self._announce_collection_joins(media_file, joined_collections)
 
         if retagged_file_ids:
             # Auto-labeling is a back-door tag-mutation path that doesn't carry
@@ -312,6 +311,40 @@ class AutoLabelService:
         )
 
         return result
+
+    def _announce_collection_joins(
+        self,
+        media_file: MediaFile,
+        joined_collections: list[Collection],
+        source: str = "auto_label",
+    ) -> None:
+        """After the commit: refresh the search index and audit each collection joined.
+
+        An organization file that joined a collection needs its chunks' ``collection_ids``
+        rewritten (the org-collection read route, ``search/access_filter``). The audit event
+        is unattended, so the actor is the file's owner and ``source`` says so.
+        """
+        if not joined_collections:
+            return
+        if media_file.organization_id is not None:
+            from app.tasks.search_indexing_task import update_file_access_index
+
+            update_file_access_index.delay([int(media_file.id)])
+        for collection in joined_collections:
+            record_content_event(
+                self.db,
+                None,
+                event=AuditEventType.COLLECTION_MEMBERSHIP_CHANGE,
+                actor=media_file.user,
+                resource=AuditedResource.collection(collection),
+                details={
+                    "added": 1,
+                    "removed": 0,
+                    "file_uuids": [str(media_file.uuid)],
+                    "source": source,
+                },
+                dedup=False,
+            )
 
     def _get_or_create_tag_with_dedup(
         self,
@@ -520,7 +553,7 @@ class AutoLabelService:
         # Create collections for shared topics (2+ files)
         collections_created = 0
         files_grouped = set()
-        org_files_added: set[int] = set()
+        joined_by_file: dict[int, tuple[MediaFile, list[Collection]]] = {}
 
         for (organization_id, tag_name), files in tag_files.items():
             if len(files) < 2:
@@ -545,11 +578,8 @@ class AutoLabelService:
                 continue
 
             for mf in files:
-                if (
-                    self._add_file_to_collection(mf, collection, confidence=0.0)
-                    and mf.organization_id is not None
-                ):
-                    org_files_added.add(int(mf.id))
+                if self._add_file_to_collection(mf, collection, confidence=0.0):
+                    joined_by_file.setdefault(int(mf.id), (mf, []))[1].append(collection)
                 files_grouped.add(mf.id)
 
             if created:
@@ -562,10 +592,10 @@ class AutoLabelService:
             self.db.rollback()
             raise
 
-        if org_files_added:
-            from app.tasks.search_indexing_task import update_file_access_index
-
-            update_file_access_index.delay(sorted(org_files_added))
+        for grouped_file, grouped_collections in joined_by_file.values():
+            self._announce_collection_joins(
+                grouped_file, grouped_collections, source=TAG_SOURCE_BULK_GROUP
+            )
 
         return {
             "collections_created": collections_created,

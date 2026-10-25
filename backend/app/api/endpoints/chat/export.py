@@ -25,6 +25,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
+from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -33,10 +34,13 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.export_redaction import mask_citations
 from app.api.endpoints.chat.export_redaction import resolve_export_policy
+from app.auth.audit import AuditEventType
 from app.db.base import get_db
 from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED
 from app.models.chat import ChatMessage
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import record_content_event
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +205,7 @@ def _render_json(conversation: _ExportConversation, messages: list[_ExportMessag
 @router.get("/conversations/{conversation_uuid}/export")
 def export_conversation(
     conversation_uuid: str,
+    request: Request,
     # Named "format" on the wire (what callers expect) but bound to a
     # non-shadowing local.
     export_format: str = Query("markdown", alias="format", pattern="^(markdown|json)$"),
@@ -265,6 +270,20 @@ def export_conversation(
         dataclasses.replace(m, citations=citations)
         for m, citations in zip(raw_messages, filtered_citation_lists, strict=True)
     ]
+
+    # Recorded while the session is still open (it reads the audit switch), under the
+    # conversation's own organization: a conversation is private to its creator, but the
+    # copy that leaves belongs to that tenant's audit trail.
+    record_content_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_EXPORT,
+        actor=ctx.user,
+        resource=AuditedResource.conversation(conversation_row),
+        details={"surface": "chat", "format": export_format, "message_count": len(rows)},
+        dedup=False,
+        bypass=ctx.bypass,
+    )
 
     # Phase 2: end the read transaction before any detector runs. Everything above is
     # now plain data, so nothing can lazily re-open it.

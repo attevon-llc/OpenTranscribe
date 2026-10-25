@@ -65,6 +65,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   view / stream URL per `(event, actor, resource, surface)` for 900 s with Redis `SET NX EX` (Redis down
   writes the event), never collapses downloads or exports, never raises, and never carries a name, title,
   text or reason in `details`. Don't call `audit_logger.log` directly for a content event.
+  Routes call `record_file_event` (a row or a uuid; the uuid is resolved only after the opt-in gate, so
+  the file page pays no query when auditing is off) after the read or the content exists, never before a
+  refusal. `AuditedResource.conversation` covers chat exports. Membership changes
+  (`collection.membership.change`) are governance events: always written, after the commit.
+  `tests/api/test_content_audit_events.py` pins one event per emit site.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.

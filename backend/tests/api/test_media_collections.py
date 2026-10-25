@@ -514,8 +514,8 @@ def test_create_share_emits_resource_share_audit_event(
     assert event["event_type"] == collections_module.AuditEventType.RESOURCE_SHARE
     assert event["user_id"] == normal_user.id
     assert event["target_user_id"] == other_user.id
-    assert event["details"]["resource_type"] == "collection"
-    assert event["details"]["resource_uuid"] == str(col.uuid)
+    assert event["resource_type"] == "collection"
+    assert event["resource_uuid"] == str(col.uuid)
     assert event["details"]["permission"] == "viewer"
 
 
@@ -581,8 +581,8 @@ def test_delete_share_emits_resource_unshare_audit_event(
     assert event["event_type"] == collections_module.AuditEventType.RESOURCE_UNSHARE
     assert event["user_id"] == normal_user.id
     assert event["target_user_id"] == other_user.id
-    assert event["details"]["resource_type"] == "collection"
-    assert event["details"]["resource_uuid"] == str(col.uuid)
+    assert event["resource_type"] == "collection"
+    assert event["resource_uuid"] == str(col.uuid)
 
 
 # ---------------------------------------------------------------------------

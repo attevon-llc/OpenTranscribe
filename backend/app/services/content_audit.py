@@ -219,3 +219,45 @@ def record_content_event(
     except Exception:  # noqa: BLE001
         logger.warning("content-audit write failed (request unaffected)", exc_info=True)
         return False
+
+
+def record_file_event(
+    db: Session,
+    request: Request | None,
+    *,
+    event: AuditEventType,
+    actor: User,
+    file: Any,
+    details: dict[str, Any] | None = None,
+    dedup: bool = True,
+    bypass: PlatformBypass | None = None,
+) -> bool:
+    """:func:`record_content_event` for a media file, given its row or its uuid.
+
+    A uuid is resolved to the row only AFTER the opt-in gate, so a deployment with content
+    auditing off pays no extra query on the file page. ``file`` is typed ``Any`` because both
+    a ``MediaFile`` and a uuid (``str`` / ``UUID``) are legitimate.
+    """
+    try:
+        if event in GATED_EVENTS and not content_audit_enabled(db, request):
+            return False
+        row = file
+        if not hasattr(file, "organization_id"):
+            from app.models.media import MediaFile
+
+            row = db.query(MediaFile).filter(MediaFile.uuid == str(file)).first()
+            if row is None:
+                return False
+        return record_content_event(
+            db,
+            request,
+            event=event,
+            actor=actor,
+            resource=AuditedResource.file(row),
+            details=details,
+            dedup=dedup,
+            bypass=bypass,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("content-audit write failed (request unaffected)", exc_info=True)
+        return False

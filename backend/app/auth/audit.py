@@ -165,6 +165,9 @@ class AuditEventType(StrEnum):
     # An organization collection was restricted to, or opened up from, its named people
     # (issue #1275). ``details`` carries the new mode and counts, never the collection name.
     COLLECTION_VISIBILITY_CHANGE = "collection.visibility.change"
+    # Files added to or removed from a collection. ``details`` carries counts and at most 100
+    # file uuids, never a name.
+    COLLECTION_MEMBERSHIP_CHANGE = "collection.membership.change"
     # Content access (issue #1277). High volume, so the three below are recorded only when
     # ``services/content_audit.content_audit_enabled`` says so; governance events
     # (collection visibility and membership, legal holds) are always recorded. ``resource_type`` / ``resource_uuid`` / ``tenant_scope``

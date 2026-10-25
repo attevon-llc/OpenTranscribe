@@ -144,6 +144,9 @@ off by default.
   resource's tenant (`tenant_scope`), so an organization admin sees events about their
   organization's files and never a member's personal ones. New capability keys
   `audit.content_access`, `org.audit_logs` and `org.legal_hold`.
+  Adding or removing files in a collection (by hand, by the AI auto-labeller or by bulk grouping)
+  is always recorded as `collection.membership.change`, and collection and tag shares now carry
+  the typed resource fields and no longer put the collection's name in the event.
 - **Takedown notice records (#1254).** Quarantining a file now writes a durable record in the same
   transaction: the legal notice it acts on (type, date received, an opaque reference, the internal
   basis, who handled it) and, per file, its outcome (open, counter-notice, upheld, released), or an

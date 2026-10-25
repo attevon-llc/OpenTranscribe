@@ -17,6 +17,7 @@ from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi.responses import Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -26,9 +27,13 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.auth.audit import AuditEventType
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import record_content_event
+from app.services.content_audit import record_file_event
 from app.services.platform_bypass import PlatformBypass
 from app.services.subtitle_service import SubtitleService
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -98,6 +103,7 @@ def _resolve_subtitle_redaction(
 )
 def get_subtitles(
     file_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -175,6 +181,16 @@ def get_subtitles(
         base_filename = source_name.rsplit(".", 1)[0] if "." in source_name else source_name
         filename = f"{base_filename}.{format_lower}"
 
+        record_file_event(
+            db,
+            request,
+            event=AuditEventType.CONTENT_EXPORT,
+            actor=current_user,
+            file=media_file,
+            details={"surface": "subtitles", "format": format_lower, "file_count": 1},
+            dedup=False,
+            bypass=ctx.bypass,
+        )
         return Response(
             content=subtitle_content,
             media_type=content_type,
@@ -290,6 +306,7 @@ class BulkExportPrepareRequest(BaseModel):
 
 @router.post("/bulk-export/prepare", dependencies=[Depends(refuse_under_support_grant)])
 def prepare_bulk_export(
+    http_request: Request,
     request: BulkExportPrepareRequest = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -318,6 +335,7 @@ def prepare_bulk_export(
         )
 
     file_specs: list[tuple[int, str]] = []
+    exported_files = []
     for file_uuid in request.file_uuids:
         try:
             media_file = get_file_by_uuid_with_permission(
@@ -334,6 +352,7 @@ def prepare_bulk_export(
         filename = str(media_file.filename)
         base = filename.rsplit(".", 1)[0] if "." in filename else filename
         file_specs.append((media_file.id, base))
+        exported_files.append(media_file)
 
     if not file_specs:
         raise HTTPException(
@@ -342,6 +361,24 @@ def prepare_bulk_export(
         )
 
     from app.tasks.media_download import prepare_bulk_subtitles_task
+
+    # One event per file, so "everything that happened to this file" finds a bulk export; the
+    # archive is built on a worker, so the request IS the event.
+    for exported in exported_files:
+        record_content_event(
+            db,
+            http_request,
+            event=AuditEventType.CONTENT_EXPORT,
+            actor=current_user,
+            resource=AuditedResource.file(exported),
+            details={
+                "surface": "bulk",
+                "format": request.subtitle_format.lower(),
+                "file_count": len(exported_files),
+            },
+            dedup=False,
+            bypass=ctx.bypass,
+        )
 
     job_id = new_bulk_job_id(current_user.id)
     prepare_bulk_subtitles_task.delay(

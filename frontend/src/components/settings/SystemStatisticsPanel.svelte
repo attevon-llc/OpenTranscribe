@@ -32,6 +32,21 @@
   // Clamp index in case GPU count decreased (e.g. on a live stats update)
   $: if (currentGpuIndex >= gpuCount) currentGpuIndex = 0;
 
+  // Read-only: the cap is a deployment setting latched once per process (issue #1270).
+  $: rerankerThreads = stats.system?.chat_reranker_threads as
+    | { threads: number | null; source: string }
+    | undefined;
+  $: rerankerThreadsLabel = !rerankerThreads
+    ? ''
+    : rerankerThreads.threads === null
+      ? $t('settings.statistics.rerankerThreadsTorchEnv')
+      : $t(
+          rerankerThreads.source === 'configured'
+            ? 'settings.statistics.rerankerThreadsSet'
+            : 'settings.statistics.rerankerThreadsAuto',
+          { count: rerankerThreads.threads }
+        );
+
   function refreshStats() {
     dispatch('refresh');
   }
@@ -244,6 +259,13 @@
                 <span class="model-label">{$t('settings.statistics.llmModel')}:</span>
                 <span class="model-value">{stats.models.llm.name}</span>
               </div>
+            {/if}
+            {#if rerankerThreads}
+              <div class="model-item" data-testid="reranker-threads">
+                <span class="model-label">{$t('settings.statistics.rerankerThreads')}:</span>
+                <span class="model-value">{rerankerThreadsLabel}</span>
+              </div>
+              <div class="stat-detail stat-detail-hint">{$t('settings.statistics.rerankerThreadsHelp')}</div>
             {/if}
           </div>
         {:else}

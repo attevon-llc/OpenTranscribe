@@ -1397,6 +1397,20 @@ CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # skipped whenever chat.rag.rerank_enabled is off. See chat/reranker_warmup.py.
 DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED = True
 
+# Issue #1270: the cross-encoder scores 50 pairs per turn, and torch's default intra-op
+# thread count (physical cores: 24 on the 48-thread dev host) oversubscribes a busy box,
+# so a warm rerank measured 7-16 s at the default against 3.4-5.5 s at 4-8 threads.
+# `chat/reranker_threads.py` applies a cap to the scoring call only. The cap is a
+# DEPLOYMENT setting (env `CHAT_RERANKER_TORCH_THREADS`, `auto` or a positive integer),
+# not a SystemSettings row: torch latches the count once per thread, so a live admin
+# value would not take effect until a restart. `auto` is
+# min(CHAT_RERANKER_TORCH_THREADS_AUTO_MAX, max(1, effective_cpu_count() // 2)).
+DEFAULT_CHAT_RERANKER_TORCH_THREADS = "auto"
+CHAT_RERANKER_TORCH_THREADS_AUTO_MAX = 8  # value from scripts benchmark, see chat/CLAUDE.md
+# Threads in the dedicated scoring pool: at most this many reranks run at once, each at the
+# cap, instead of N concurrent turns each running at torch's default.
+CHAT_RERANKER_SCORING_WORKERS = 2
+
 # Multilingual reranker arm (issue #453/ML1) — a SELECTABLE second model, default OFF.
 # `chat/reranker.py` skips reranking outright when the candidate pool is predominantly
 # non-English, because CHAT_RERANKER_MODEL above is an English MS MARCO model and

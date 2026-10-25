@@ -34772,7 +34772,7 @@
     },
     "/api/files/{file_uuid}/export": {
       "get": {
-        "description": "Generate and download a full transcript export.\n\nSupports: txt, json, csv, srt, vtt. The label/header query params let the frontend\nkeep supplying resolved i18n strings (this module stays translation-free, matching\nthe rest of the backend), with English defaults if omitted.",
+        "description": "Generate and download a full transcript export.\n\nSupports: txt, json, csv, srt, vtt, md. The label/header query params let the frontend\nkeep supplying resolved i18n strings (this module stays translation-free, matching\nthe rest of the backend), with English defaults if omitted.",
         "operationId": "export_transcript_api_files__file_uuid__export_get",
         "parameters": [
           {
@@ -34785,12 +34785,12 @@
             }
           },
           {
-            "description": "txt|json|csv|srt|vtt",
+            "description": "txt|json|csv|srt|vtt|md",
             "in": "query",
             "name": "format",
             "required": true,
             "schema": {
-              "description": "txt|json|csv|srt|vtt",
+              "description": "txt|json|csv|srt|vtt|md",
               "title": "Format",
               "type": "string"
             }
@@ -34806,25 +34806,25 @@
             }
           },
           {
-            "description": "TXT format only",
+            "description": "TXT and Markdown only",
             "in": "query",
             "name": "include_timestamps",
             "required": false,
             "schema": {
               "default": true,
-              "description": "TXT format only",
+              "description": "TXT and Markdown only",
               "title": "Include Timestamps",
               "type": "boolean"
             }
           },
           {
-            "description": "TXT format only",
+            "description": "TXT and Markdown only",
             "in": "query",
             "name": "include_speakers",
             "required": false,
             "schema": {
               "default": true,
-              "description": "TXT format only",
+              "description": "TXT and Markdown only",
               "title": "Include Speakers",
               "type": "boolean"
             }

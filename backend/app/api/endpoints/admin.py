@@ -109,6 +109,7 @@ from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 from app.services.platform_bypass import audit_metadata_access
+from app.utils.content_disposition import attachment_header
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
@@ -2614,7 +2615,7 @@ def export_audit_logs(
         return StreamingResponse(
             iter([content]),
             media_type=media_type,
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            headers={"Content-Disposition": attachment_header(filename)},
         )
 
     except HTTPException:

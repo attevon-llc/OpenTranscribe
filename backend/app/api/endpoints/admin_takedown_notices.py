@@ -59,6 +59,7 @@ from app.services.takedown_notice_service import create_notice
 from app.services.takedown_notice_service import find_notice
 from app.services.takedown_notice_service import transition_link
 from app.services.takedown_notification_service import notify_owners
+from app.utils.content_disposition import attachment_header
 from app.utils.csv_safe import render_csv
 
 router = APIRouter()
@@ -259,7 +260,7 @@ def export_takedown_notices(
         content=body,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": attachment_header(filename),
             "X-Export-Truncated": "true" if truncated else "false",
         },
     )

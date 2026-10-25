@@ -1445,7 +1445,11 @@
       // floor is consulted for every format, not just subtitle downloads. The
       // resolved i18n strings still travel from here — the backend stays
       // translation-free, matching the rest of the API.
-      const { data, contentType } = await requestTranscriptExport<BlobPart>({
+      const {
+        data,
+        contentType,
+        filename: serverFilename,
+      } = await requestTranscriptExport<BlobPart>({
         fileUuid: file.uuid,
         format,
         includeComments,
@@ -1462,7 +1466,9 @@
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${filename}.${format}`;
+      // The server names the file (RFC 6266 `filename*`, any script); the recomputed name
+      // is only for a response that carried no Content-Disposition at all.
+      link.download = serverFilename ?? `${filename}.${format}`;
       link.click();
       window.URL.revokeObjectURL(url);
       // Transcript exported successfully

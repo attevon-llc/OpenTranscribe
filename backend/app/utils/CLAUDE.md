@@ -27,6 +27,14 @@ so keep heavy imports lazy.
   allowlist, plus any raw `.publish("websocket_notifications", …)` bypassing both functions
   entirely. Both return bool, never raise (`send_ws_event_for_file`'s `TypeError` on a bad
   selector is a programmer error, not a runtime failure mode).
+- `content_disposition.py` — `attachment_header(name, disposition=...)` is **the only place a
+  `Content-Disposition` value is built** (issue #1283). Starlette encodes headers latin-1, so a raw
+  `attachment; filename="<name>"` around an Arabic/CJK/accented name is an HTTP 500, and a quote or
+  CR/LF in a name breaks out of the header. It emits an ASCII `filename=` fallback plus an exact
+  `filename*=UTF-8''...`, strips control and bidi characters and path separators.
+  `tests/unit/test_content_disposition_convention.py` AST-scans `app/` and fails on any
+  `Content-Disposition` value that is not a constant or a call to it; the presign path
+  (`minio_service.get_presigned_download_url`) uses it too.
 - `speaker_labels.py` — **the only home for a speaker's canonical display label** (what search,
   chat, exports and the OpenSearch documents show as the name). Priority: `display_name` (a human)
   > a `suggested_name` that a **voiceprint** produced (`suggestion_source` in

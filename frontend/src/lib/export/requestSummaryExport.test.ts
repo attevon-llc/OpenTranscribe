@@ -83,6 +83,21 @@ describe('requestSummaryExport (issue #885)', () => {
     expect(result.contentType).toBe('text/markdown; charset=utf-8');
   });
 
+  it('returns the file name the server chose, decoded from filename*', async () => {
+    get.mockResolvedValue({
+      data: '# AI Summary',
+      headers: {
+        'content-type': 'text/markdown',
+        'content-disposition':
+          'attachment; filename="download-summary.md"; filename*=UTF-8\'\'%E4%BC%9A%E8%AE%AE-summary.md',
+      },
+    });
+
+    const result = await requestSummaryExport({ fileUuid: 'file-uuid', labels: LABELS });
+
+    expect(result.filename).toBe('会议-summary.md');
+  });
+
   it('propagates a rejection instead of falling back to anything local', async () => {
     get.mockRejectedValue(new Error('Request failed with status code 503'));
 

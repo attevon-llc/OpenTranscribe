@@ -94,23 +94,11 @@ export function findPictographs(source: string, { isCode = true } = {}): Finding
 /** `<path>::<character>` -> reason. Only for text no user ever sees; see the header. */
 const ALLOWLIST: Record<string, string> = {};
 
-/**
- * Files another lane is editing in a parallel worktree, so this change cannot touch them. Every
- * entry is asserted to STILL contain the glyph: when that lane's fix lands this test fails until
- * the entry is deleted, so an exemption cannot outlive its reason.
- */
-const PENDING_IN_ANOTHER_LANE: Record<string, string> = {
-  '/src/components/FirstRunWizard.svelte':
-    'The wizard progress mark draws a check mark glyph; FirstRunWizard.svelte is being rewritten ' +
-    'in a parallel worktree, which must replace it with <MenuIcon name="check" />.',
-};
-
 const short = (path: string) => path.replace(/^\/src\//, '');
 
 function codeFindings(): string[] {
   const found: string[] = [];
   for (const [path, src] of Object.entries(sources)) {
-    if (path in PENDING_IN_ANOTHER_LANE) continue;
     for (const f of findPictographs(src)) {
       const unexplained = [...f.chars].filter((c) => !(`${path}::${c}` in ALLOWLIST));
       if (unexplained.length) found.push(`${short(path)}:${f.line} ${unexplained.join('')}`);
@@ -162,17 +150,6 @@ describe('no emoji or emoji-like glyph is rendered', () => {
         hits.some((h) => h.chars.includes(char)),
         `stale allowlist entry ${key}`
       ).toBe(true);
-    }
-  });
-
-  it('keeps each other-lane exemption only while that file still needs it', () => {
-    for (const [path, reason] of Object.entries(PENDING_IN_ANOTHER_LANE)) {
-      expect(reason.trim().length, path).toBeGreaterThanOrEqual(20);
-      expect(sources[path], `${path} is not scanned`).toBeTypeOf('string');
-      expect(
-        findPictographs(sources[path]).length,
-        `${path} no longer draws a glyph: delete its PENDING_IN_ANOTHER_LANE entry`
-      ).toBeGreaterThan(0);
     }
   });
 });

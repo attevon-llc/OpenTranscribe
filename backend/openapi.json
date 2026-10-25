@@ -12263,6 +12263,102 @@
         "title": "PlaylistProcessingResponse",
         "type": "object"
       },
+      "PostProcessingEntry": {
+        "description": "One task's latest state. Times are server epoch seconds.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "number"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PostProcessingState"
+          }
+        },
+        "required": [
+          "state",
+          "at"
+        ],
+        "title": "PostProcessingEntry",
+        "type": "object"
+      },
+      "PostProcessingState": {
+        "description": "Where one :class:`PostProcessingTask` stands for one file.\n\n``QUEUED`` and ``SKIPPED`` are decided where the task is (or is not) dispatched;\n``STARTED``, ``DONE``, ``FAILED`` and a run-time ``SKIPPED`` come from the task itself.\nA Celery retry reports nothing, so the task stays ``STARTED`` across it.",
+        "enum": [
+          "queued",
+          "started",
+          "done",
+          "failed",
+          "skipped"
+        ],
+        "title": "PostProcessingState",
+        "type": "string"
+      },
+      "PostProcessingStatusResponse": {
+        "description": "Every task reported for the file's current run.\n\n``run_at`` is None when no run is known (never reported, or expired): the client must\nthen say it cannot confirm the final steps, never that they finished.",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PostProcessingEntry"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PostProcessingTask"
+            },
+            "title": "Tasks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "file_id",
+          "run_at",
+          "tasks"
+        ],
+        "title": "PostProcessingStatusResponse",
+        "type": "object"
+      },
+      "PostProcessingTask": {
+        "description": "A per-file task that runs after the transcript is committed.\n\nThe single source of truth for the ``tasks`` keys of the ``post_processing_status``\nWebSocket event and of ``GET /api/files/{uuid}/post-processing``\n(``app/services/post_processing_status.py``). The notification card files each key under\na tier (``frontend/src/lib/notifications/processingJob.ts`` ``POST_PROCESSING_TIERS``,\npinned to this enum by ``tests/unit/test_post_processing_status.py``), so a new member\nwithout a tier fails there rather than rendering nowhere.\n\nVoiceprints and speaker matching are not here: the stage that owns them sends\n``transcription_status`` frames (stage ``speakers``) and the run's completion.",
+        "enum": [
+          "search_indexing",
+          "file_facts",
+          "analytics",
+          "redaction",
+          "speaker_attributes",
+          "speaker_identification",
+          "speaker_clustering",
+          "summary",
+          "summary_indexing",
+          "topics",
+          "auto_label"
+        ],
+        "title": "PostProcessingTask",
+        "type": "string"
+      },
       "PrepareUploadRequest": {
         "description": "Request schema for preparing a file upload.\n\nThis schema is used to create a file record before the actual upload starts.\n\nAttributes:\n    filename: Name of the file to be uploaded\n    file_size: Size of the file in bytes\n    content_type: MIME type of the file\n    file_hash: Content fingerprint of the source, for duplicate detection\n    extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)\n    min_speakers: Optional minimum number of speakers for diarization\n    max_speakers: Optional maximum number of speakers for diarization\n    num_speakers: Optional fixed number of speakers for diarization (overrides min/max)\n    collection_ids: Optional collection UUIDs to add the file to after creation\n    tag_names: Optional tag names to apply to the file after creation",
         "properties": {
@@ -35124,6 +35220,55 @@
         ],
         "summary": "Get Media File Info",
         "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_uuid}/post-processing": {
+      "get": {
+        "description": "The states the file's post-processing tasks last reported.\n\nRead by the notification card when it may have missed ``post_processing_status``\nframes (a reload, a dropped socket). Tenant- and quarantine-gated like every file\nread; an unreadable store answers \"no run known\" rather than an error, because the\ncard must then say it cannot confirm the final steps.",
+        "operationId": "get_post_processing_status_api_files__file_uuid__post_processing_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostProcessingStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Post Processing Status",
+        "tags": [
+          "files",
           "files"
         ]
       }

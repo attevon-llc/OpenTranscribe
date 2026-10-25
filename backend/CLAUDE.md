@@ -122,6 +122,17 @@ One file per environment, all fully pinned:
 | `requirements-test.txt` | `Dockerfile.test` (GPU test image) **and** `requirements-dev.txt` |
 | `requirements-dev.txt` | the venv only — `requirements-test.txt` plus linters, pre-commit |
 
+⚠️ **`requirements-dev.txt`'s `mypy` pin and `types-*` stubs are mirrored in the mypy pre-commit hook**
+(`.pre-commit-config.yaml`: `rev` plus exact-pinned `additional_dependencies`). The hook runs in an
+isolated environment, so a `py.typed` package missing from it is `Any` there and the hook passes code
+this venv's mypy rejects (#1271). Change a pin in `requirements*.txt` and in the hook in the same
+commit; `tests/unit/test_precommit_mypy_env_parity.py` fails when they disagree, and when a newly
+imported typed package is neither a hook dependency nor in its `EXEMPT` table. Do not add a
+`types-X` stub for a package that ships inline types (it wins under PEP 561): the test rejects that
+too. `requirements-dev.txt` also pins a few packages backend code imports directly that would
+otherwise only be transitive (`aiohttp`, `pillow`, `playwright`, ...), so the hook has a source of
+truth to copy.
+
 `requirements-test.txt` holds pytest and the plugins `pyproject`'s `addopts` makes mandatory,
 and nothing else. It exists so a container can be made test-capable (`backend/Dockerfile.test`,
 issue #577) without also acquiring ruff/mypy/mutmut/Playwright; `requirements-dev.txt` includes

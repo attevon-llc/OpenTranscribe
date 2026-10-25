@@ -49,30 +49,65 @@ repos:
         files: ^(backend|scripts)/
 
   # Python type checking
+  #
+  # The hook runs in an ISOLATED virtualenv holding only `additional_dependencies`. A package that
+  # ships py.typed but is missing here resolves to Any, so the hook passes code that
+  # backend/venv/bin/mypy rejects (#1271: 0 findings from the hook against 55 from the venv over
+  # the same 2,269 files). The contract, enforced by
+  # backend/tests/unit/test_precommit_mypy_env_parity.py (do not hand-maintain it from memory):
+  #   * `rev` equals the mypy== pin in backend/requirements-dev.txt;
+  #   * every dependency is an exact pin equal to backend/requirements*.txt;
+  #   * every module under backend/ whose distribution ships py.typed is listed here, except the
+  #     few heavy ones named in the test's EXEMPT table (torch and friends: GBs);
+  #   * the types-* stubs here are exactly the ones in requirements-dev.txt. A stub must never
+  #     shadow a listed package that has inline types (types-redis hid redis 8's real signatures).
+  # To bump a package, change it in backend/requirements*.txt AND here in the same commit.
+  # scripts/mypy-hook-negative-control.sh proves the hook still rejects deliberately mistyped code.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+    rev: v2.3.1
     hooks:
       - id: mypy
         files: ^backend/
         additional_dependencies:
-          - types-requests
-          - types-python-dateutil
-          - types-pyyaml
-          - types-redis
-          # py.typed runtime deps the hook's isolated env must see, or their
-          # APIs degrade to Any and no-any-return fires in importing code.
-          - prometheus-client
-          # SQLAlchemy 2.0 ships py.typed — the hook's isolated env needs it so
-          # Mapped[...] columns resolve to real types (not Column[Any]); this is
-          # what makes the typed-models conversion's type info visible to mypy.
-          - sqlalchemy>=2.0
-          # joserfc ships py.typed (app/auth/oidc/claims.py, #33) — same reason.
-          - joserfc>=1.7.4
-          # playwright ships py.typed — without it Page.get_attribute()/Locator
-          # methods degrade to Any in the hook's isolated env, and returning
-          # that Any from a function declared -> str trips no-any-return even
-          # though backend/venv (which has it installed) reports no issue.
-          - playwright
+          - types-passlib==1.7.7.20260211
+          - types-python-dateutil==2.9.0.20261021
+          - types-PyYAML==6.0.12.20260906
+          - aiohttp==3.14.3
+          - alembic==1.20.0
+          - anyio==4.15.1
+          - assemblyai==1.5.4
+          - cachetools==7.1.8
+          - certifi==2026.7.22
+          - cryptography==50.0.1
+          - deepgram-sdk==7.9.0
+          - fastapi==0.136.3
+          - httpx==0.28.1
+          - huggingface-hub==0.36.2
+          - joserfc==1.7.5
+          - json-repair==0.63.4
+          - limits==5.8.0
+          - minio==7.2.20
+          - numpy==2.4.6
+          - openai==3.14.0
+          - opensearch-py==3.2.0
+          - packaging==26.3
+          - pillow==12.3.0
+          - playwright==1.63.0
+          - prometheus-client==0.26.0
+          - pydantic==2.13.5
+          - pydantic-settings==2.15.0
+          - pyotp==2.10.0
+          - pytest==9.1.1
+          - python-dotenv==1.2.3
+          - python-json-logger==4.2.0
+          - redis==8.1.0
+          - requests==2.34.2
+          - slowapi==0.1.10
+          - sqlalchemy==2.0.53
+          - starlette==1.6.0
+          - urllib3==2.8.0
+          - uvicorn==0.53.0
+          - watchdog==6.0.0
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

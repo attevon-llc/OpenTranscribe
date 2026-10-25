@@ -1,0 +1,23 @@
+"""Deliberately mistyped code: the mypy pre-commit hook MUST reject every line marked EXPECT.
+
+This is not a Python module in the repo's tree (the ``.txt`` suffix keeps every hook and every
+test collector away from it). ``scripts/mypy-hook-negative-control.sh`` copies it into a
+throwaway repository as ``backend/app/zz_mypy_negative_control.py`` and runs the real hook on
+it, so the hook's environment is proven able to see pydantic's and requests' own types
+(issue #1271). The marker is a trailing comment naming the mypy error code the line must raise.
+"""
+
+from __future__ import annotations
+
+import requests
+from pydantic import BaseModel
+
+
+class _Probe(BaseModel):
+    count: int
+
+
+def control(url: str) -> None:
+    _Probe(count="three")  # EXPECT: arg-type
+    _Probe(cnt=3)  # EXPECT: call-arg
+    requests.post(url, json={1, 2})  # EXPECT: arg-type

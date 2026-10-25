@@ -240,7 +240,7 @@ and read by nothing.
 
 Alembic runs automatically on dev backend startup — `alembic upgrade head` is production-only.
 
-Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at `backend/venv/` and already exists. If it doesn't: `cd backend && python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && pip install --no-deps -r requirements-nodeps.txt && pip install pre-commit mypy ruff bandit`. The `requirements-nodeps.txt` step is mandatory, not optional — it installs whisperx/faster-whisper/gliner, and skipping it leaves the venv without a working ASR/redaction stack. This is the exact two-step install `Dockerfile.prod` runs; see `requirements-nodeps.txt`'s header for why those three packages need `--no-deps`.
+Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at `backend/venv/` and already exists. If it doesn't: `cd backend && (python3.13 -m venv venv || python3.12 -m venv venv) && source venv/bin/activate && pip install -r requirements.txt && pip install --no-deps -r requirements-nodeps.txt && pip install -r requirements-dev.txt`. The venv here is **3.12.3** (the image is 3.13). Install `requirements-dev.txt`, not a bare `pip install mypy`: its mypy and `types-*` pins are the ones the mypy pre-commit hook mirrors. The `requirements-nodeps.txt` step is mandatory, not optional — it installs whisperx/faster-whisper/gliner, and skipping it leaves the venv without a working ASR/redaction stack. This is the exact two-step install `Dockerfile.prod` runs; see `requirements-nodeps.txt`'s header for why those three packages need `--no-deps`.
 
 ### Pre-commit / lint hooks
 
@@ -345,7 +345,16 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 >
 > `--all-files` is always correct in CI, where nothing else is writing.
 
-Hook inventory is in `.pre-commit-config.yaml`. The frontend hooks (`frontend-check` at commit stage, `frontend-build` at push stage) only fire when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
+Hook inventory is in `.pre-commit-config.yaml`. **The mypy hook runs in its own isolated environment, so it only
+sees the packages listed in its `additional_dependencies`** — a `py.typed` package missing from that list is `Any`
+there and the hook goes green on code `backend/venv/bin/mypy` rejects (#1271: 0 findings from the hook, 55 from the
+venv, same 2,269 files, found only by comparing them). Its `rev` and every dependency are therefore exact pins that
+must equal `backend/requirements*.txt`, and `backend/tests/unit/test_precommit_mypy_env_parity.py` derives the rest
+(every typed import under `backend/` must be a hook dependency or sit in that test's `EXEMPT` table with a reason:
+torch, transformers and friends are checked by the venv only). Bumping a package means changing it in
+`backend/requirements*.txt` **and** the hook in the same commit. `scripts/mypy-hook-negative-control.sh [--ref REF]`
+runs the real hook on deliberately mistyped code in a throwaway repo and must report `caught 3/3`; CI runs it. The
+frontend hooks (`frontend-check` at commit stage, `frontend-build` at push stage) only fire when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
 ### ⚠️ Fix the finding, never silence it
 

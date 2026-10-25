@@ -204,6 +204,28 @@ describe('connectionStatus (UI-facing)', () => {
 
     expect(get(connectionStatus)).toBe('disconnected');
   });
+
+  it('reports connecting, not reconnecting, while the first attempt is in flight', () => {
+    websocketStore.disconnect();
+    websocketStore.connect();
+
+    expect(get(websocketStore).status).toBe('connecting');
+    expect(get(connectionStatus)).toBe('connecting');
+  });
+
+  it('reports reconnecting once that first attempt fails and while the retry is in flight', () => {
+    websocketStore.disconnect();
+    websocketStore.connect();
+    // A refused handshake fires `error` then `close`; the gap must not read as a loss.
+    FakeWebSocket.latest().simulateError();
+    expect(get(connectionStatus)).toBe('connecting');
+    FakeWebSocket.latest().simulateServerClose(1006);
+    expect(get(connectionStatus)).toBe('reconnecting');
+
+    vi.advanceTimersByTime(60_000);
+    expect(get(websocketStore).status).toBe('connecting');
+    expect(get(connectionStatus)).toBe('reconnecting');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

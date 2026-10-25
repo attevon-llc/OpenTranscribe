@@ -131,6 +131,50 @@ def test_ws_block_forwards_the_client_facing_scheme(relative_path: str, _expecte
         )
 
 
+def _vite_ws_proxy_entry() -> str:
+    """Body of the ``'/api/ws': { ... }`` entry in the Vite dev server's proxy table."""
+    text = (REPO_ROOT / "frontend/vite.config.ts").read_text(encoding="utf-8")
+    start = re.search(r"""['"]/api/ws['"]\s*:\s*\{""", text)
+    assert start, "frontend/vite.config.ts: no '/api/ws' proxy entry — the parser read nothing"
+    depth, i = 1, start.end()
+    while depth and i < len(text):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        i += 1
+    body = text[start.end() : i - 1]
+    assert re.search(r"\bws\s*:\s*true\b", body), (
+        "frontend/vite.config.ts: the '/api/ws' entry is not the WebSocket proxy (no `ws: true`)"
+    )
+    return body
+
+
+def test_vite_dev_ws_proxy_forwards_the_browsers_own_host():
+    """The dev server is the nginx of ``./opentr.sh start dev``, so it owes the backend
+    the same thing nginx does: the ``Host`` the browser addressed.
+
+    http-proxy's ``changeOrigin: true`` rewrites ``Host`` to the target
+    (``backend:8080``), so ``_request_origin()`` rebuilt ``http://backend:8080`` and
+    the same-origin rule could never match. Only the two allowlisted localhost origins
+    connected; a dev app opened at its LAN address (``http://10.10.10.20:5173``) was
+    refused on every reconnect attempt and showed the reconnecting banner forever.
+    """
+    body = _vite_ws_proxy_entry()
+    match = re.search(r"\bchangeOrigin\s*:\s*(\w+)", body)
+    assert match is not None and match.group(1) == "false", (
+        "frontend/vite.config.ts '/api/ws': set `changeOrigin: false`. Rewriting Host to the "
+        "target makes every origin outside CORS_ORIGINS look cross-site to _origin_is_allowed()."
+    )
+
+
+def test_vite_dev_ws_proxy_never_rewrites_the_origin_header():
+    """Overwriting ``Origin`` makes every page's handshake look same-origin, which is
+    the cross-site WebSocket hijack #903 closed, reopened for anyone who can reach the
+    dev server. With ``Host`` preserved the browser's real ``Origin`` already matches."""
+    body = _vite_ws_proxy_entry()
+    assert not re.search(r"""\bOrigin['"]?\s*:""", body), (
+        "frontend/vite.config.ts '/api/ws': do not set an Origin header on the WebSocket proxy"
+    )
+
+
 @pytest.mark.parametrize(("relative_path", "_expected"), WS_CONFIGS)
 def test_ws_block_does_not_pass_the_clients_own_forwarding_headers_through(
     relative_path: str, _expected: int

@@ -7,6 +7,8 @@
 </script>
 
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { taskStatusIcon } from '$lib/ui/menuIcons';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { toastStore } from '$stores/toast';
@@ -193,24 +195,11 @@
     }
   }
 
-  // Helper function for formatting status text
-  // Uses compact symbols on small screens
+  // Narrow screens show a status glyph (named for screen readers) instead of the word.
   const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
 
   function formatStatus(rawStatus: string | null): string {
     const status = rawStatus ?? '';
-    if (isMobileView) {
-      const compactMap: Record<string, string> = {
-        'completed': '✓',
-        'success': '✓',
-        'processing': '...',
-        'in_progress': '...',
-        'pending': '--',
-        'error': '✗',
-        'failed': '✗',
-      };
-      return compactMap[status.toLowerCase()] || status.slice(0, 4);
-    }
     const statusMap: Record<string, string> = {
       'completed': $t('common.completed'),
       'processing': $t('common.processing'),
@@ -300,7 +289,7 @@
                   <tr>
                     <td>{task.id}</td>
                     <td>{task.task_type}</td>
-                    <td><Badge variant={badgeVariant(task.status)}>{formatStatus(task.status)}</Badge></td>
+                    <td><Badge variant={badgeVariant(task.status)}>{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</Badge></td>
                     <td>{new Date(task.created_at).toLocaleString()}</td>
                     <td>
                       <button type="button" class="btn btn-secondary btn-small" on:click={() => retryTask(task.id)}>
@@ -332,7 +321,7 @@
                   <tr>
                     <td>{file.uuid}</td>
                     <td>{file.filename}</td>
-                    <td><Badge variant={badgeVariant(file.status)}>{formatStatus(file.status)}</Badge></td>
+                    <td><Badge variant={badgeVariant(file.status)}>{#if isMobileView && taskStatusIcon(file.status)}<span class="status-glyph" role="img" aria-label={formatStatus(file.status)} title={formatStatus(file.status)}><MenuIcon name={taskStatusIcon(file.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(file.status)}{/if}</Badge></td>
                     <td>
                       <button type="button" class="btn btn-secondary btn-small" on:click={() => retryFile(file.uuid)}>
                         {$t('settings.taskHealth.retry')}
@@ -418,5 +407,10 @@
       padding: 0.4rem 0.5rem;
       font-size: var(--font-size-xs);
     }
+  }
+
+  .status-glyph {
+    display: inline-flex;
+    align-items: center;
   }
 </style>

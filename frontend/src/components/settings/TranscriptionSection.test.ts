@@ -149,7 +149,9 @@ describe('TranscriptionSection', () => {
     });
 
     await waitFor(() => expect(get(settingsModalStore).dirtyState.transcription).toBe(true));
-    expect(tab(container, 'tx-language')?.querySelector('.tab-badge')?.textContent).toBe('●');
+    expect(
+      tab(container, 'tx-language')?.querySelector('.tab-marker')?.getAttribute('data-marker')
+    ).toBe('dot');
     expect(tab(container, 'tx-accuracy')?.querySelector('.tab-badge')).toBeNull();
   });
 

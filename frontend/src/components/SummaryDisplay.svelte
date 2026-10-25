@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { SummaryData } from '$lib/types/summary';
   import TopicsList from './TopicsList.svelte';
   import { t } from '$stores/locale';
@@ -348,7 +349,7 @@
         <div class="action-items-list">
           {#each (highlightedContent?.actionItems || escapedActionItems) as item}
             <div class="action-item">
-              <div class="action-item-bullet">☐</div>
+              <div class="action-item-bullet" aria-hidden="true"><MenuIcon name="checkbox" size="sm" /></div>
               <div class="action-item-body">
                 <div class="action-item-text">{@html sanitizeHighlightHtml(item.text)}</div>
                 {#if item.owner || item.dueDate || item.priority}
@@ -377,7 +378,7 @@
         <div class="key-decisions-list">
           {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision}
             <div class="key-decision-item">
-              <div class="decision-bullet">✓</div>
+              <div class="decision-bullet" aria-hidden="true"><MenuIcon name="check" size="sm" /></div>
               <div class="decision-text">{@html sanitizeHighlightHtml(highlightedContent ? (decision as string) : escapeHtml(extractText(decision)))}</div>
             </div>
           {/each}
@@ -417,7 +418,7 @@
         <div class="follow-up-list">
           {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item}
             <div class="follow-up-item">
-              <div class="follow-up-bullet">→</div>
+              <div class="follow-up-bullet" aria-hidden="true"><MenuIcon name="arrow-right" size="sm" /></div>
               <div class="follow-up-text">{@html sanitizeHighlightHtml(highlightedContent ? (item as string) : escapeHtml(extractText(item)))}</div>
             </div>
           {/each}
@@ -493,9 +494,9 @@
   }
 
   .decision-bullet, .follow-up-bullet {
+    display: inline-flex;
     color: var(--success-color);
-    font-weight: 600;
-    margin-top: 0.1rem;
+    margin-top: 0.2rem;
   }
 
   .decision-text, .follow-up-text {
@@ -516,9 +517,9 @@
   }
 
   .action-item-bullet {
+    display: inline-flex;
     color: var(--primary-on-surface);
-    font-weight: 600;
-    margin-top: 0.1rem;
+    margin-top: 0.2rem;
   }
 
   .action-item-body {

@@ -48,6 +48,14 @@ primitive in the same spirit as this folder.
   `aria-hidden`). **Every `.dropdown-item` carries an icon** (gallery Organize/Process set the
   convention; `components/menuIcons.convention.test.ts` scans all markup and fails on a bare one).
   One distinct glyph per transcript export format. Add a glyph to `MENU_ICONS`; do not paste SVG.
+  It is also **the one inline status icon** (upload rows, toasts, issue rows, unsaved dots, tab
+  markers, `EmptyState`'s `icon` name): `size` is pixels or a token (`xs|sm|md|lg|xl` =
+  `--icon-size-*`), `spin` respects reduced motion, `RTL_MIRRORED` glyphs flip in RTL. **No emoji
+  and no emoji-like text glyph (check, cross, warning, hourglass, gear, padlock, dot, triangle,
+  arrow) is ever rendered or put in a locale string**: `components/noEmoji.convention.test.ts`
+  scans every component, script, stylesheet and locale value (escapes decoded, comments and
+  tests ignored); its `ALLOWLIST` may only hold never-rendered text, each with a reason.
+  `Tabs` takes `marker: { icon: 'dot' | 'lock', label }` for a glyph after a tab label.
 - `AuthMailNotice.svelte` — "authentication email cannot be delivered" notice (issue #1240), for
   the Invite form (`context="invite"`, self-fetching) and the Auth Email tab (`context="tab"`,
   given the designation). Renders ONLY on a definite `deliverable === false`; `null` (403 for a

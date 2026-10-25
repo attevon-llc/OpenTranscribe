@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
   import { t } from '$stores/locale';
   import BaseModal from '../ui/BaseModal.svelte';
@@ -202,7 +203,7 @@
                     </div>
                     {#if m.using_fallback}
                       <div class="detail-row fallback-warning-row" role="alert">
-                        <span class="fallback-warning-icon" aria-hidden="true">⚠</span>
+                        <span class="fallback-warning-icon" aria-hidden="true"><MenuIcon name="warning" size="md" /></span>
                         <span class="fallback-warning-text">
                           {$t('settings.statistics.diarizationFallbackWarning', {
                             configured: m.configured_description || m.configured_backend,
@@ -351,8 +352,8 @@
   }
 
   .fallback-warning-icon {
-    font-size: 0.9375rem;
-    line-height: 1.2;
+    display: inline-flex;
+    margin-top: 0.1rem;
     color: var(--warning-color, #f59e0b);
     flex-shrink: 0;
   }

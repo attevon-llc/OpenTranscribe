@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import type { SpeakerCluster } from '$lib/types/speakerCluster';
   import { t } from '$stores/locale';
@@ -70,9 +71,9 @@
 </script>
 
 <div class="cluster-card" class:expanded>
-  <div class="card-header" on:click={toggleExpand} on:keydown={toggleExpand} role="button" tabindex="0" title={$t('speakers.tooltip.expandCluster')}>
+  <div class="card-header" on:click={toggleExpand} on:keydown={toggleExpand} role="button" tabindex="0" aria-expanded={expanded} title={$t('speakers.tooltip.expandCluster')}>
     <div class="header-left">
-      <span class="expand-icon">{expanded ? '▾' : '▸'}</span>
+      <span class="expand-icon" aria-hidden="true"><MenuIcon name={expanded ? 'chevron-down' : 'chevron-right'} size="xs" /></span>
       {#if cluster.promoted_to_profile_avatar_url}
         <img
           class="cluster-avatar"
@@ -241,8 +242,10 @@
   }
 
   .expand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     color: var(--text-secondary, #9ca3af);
-    font-size: 12px;
     width: 16px;
   }
 

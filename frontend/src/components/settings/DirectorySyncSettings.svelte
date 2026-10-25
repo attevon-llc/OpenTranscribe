@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import { toastStore } from '../../stores/toast';
@@ -240,7 +241,7 @@
       <div class="status-item">
         <span class="status-label">{$t('settings.directorySync.nextDueSection')}:</span>
         {#if nextDue}
-          <span class="mount-ok">● {$t('settings.directorySync.due')}</span>
+          <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.directorySync.due')}</span>
         {:else}
           <span class="status-value">{$t('settings.directorySync.notDue')}</span>
         {/if}
@@ -367,6 +368,9 @@
   }
 
   .mount-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     color: var(--success-color, #16a34a);
   }
 

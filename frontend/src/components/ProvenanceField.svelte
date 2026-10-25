@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { PROVENANCE_SOURCE_KEYS, keyFor } from '$lib/i18n/keyMaps';
   /**
    * A derived value, WHERE IT CAME FROM, and a way to correct it.
@@ -94,7 +95,7 @@
           on:click={() => (showDetails = !showDetails)}
         >
           {sourceLabel}
-          {#if provenance.conflict}<span aria-hidden="true">⚠</span>{/if}
+          {#if provenance.conflict}<MenuIcon name="warning" size="xs" />{/if}
         </button>
       {:else if unresolved}
         <span class="source-badge unresolved">{$t('provenance.source.unresolved')}</span>

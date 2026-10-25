@@ -169,7 +169,9 @@ describe('SpeakerIdentificationSection mounting and dirty state', () => {
     await waitFor(() =>
       expect(get(settingsModalStore).dirtyState['speaker-identification']).toBe(true)
     );
-    expect(tab(container, 'spk-detection')?.querySelector('.tab-badge')?.textContent).toBe('●');
+    expect(
+      tab(container, 'spk-detection')?.querySelector('.tab-marker')?.getAttribute('data-marker')
+    ).toBe('dot');
 
     await fireEvent.change(select, { target: { value: 'always_prompt' } });
     await waitFor(() =>

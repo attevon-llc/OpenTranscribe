@@ -270,6 +270,15 @@ indexing → WebSocket notification.
   exporting it. Both re-resolve the admin bypass at RUN time via
   `takedown_service.is_review_admin(db, user_id)` — a task holds a user id, never a `User`,
   and a role captured at dispatch cannot reflect a privilege change made in the gap.
+- **`transcript_document.py` (`download.prepare_transcript_document`, #1278)** renders one
+  transcript to DOCX or PDF on the `download` queue. `max_retries=0` and a 300 s soft limit
+  (`DOCUMENT_EXPORT_SOFT_TIME_LIMIT_S`): a retry would re-run an audited, policy-resolving render, so
+  a failure is cached (`bulk_export_result:{job}`) and published once with a `reason` slug from
+  `download_events.DOCUMENT_EXPORT_ERRORS`. It holds a short DB session only for
+  `transcript_document.build.prepare_document` (which resolves the redaction policy from a
+  `user_id` at run time and re-checks quarantine and scan state), then renders with no session
+  open, because a long PDF takes about a minute. Result delivery rides the existing bulk-export SSE
+  channel; the object lands under `bulk/` (1-day lifecycle).
 - Queues (`core/constants.py:CeleryQueues`): `gpu`, `cpu`, `download`, `nlp`, `embedding`,
   `utility`, `redaction`, plus dynamic `cloud-asr`, `cpu-transcribe`, `gpu-transcribe`,
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at

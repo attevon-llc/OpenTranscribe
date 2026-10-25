@@ -33,6 +33,23 @@ writes to it, each with a written reason, so the next one has to answer the ques
   (issue #1283: the server owns the naming rule, and non-ASCII names only survive in `filename*`).
 - `clipboardSurfaces.test.ts` — the allowlist of clipboard-writing surfaces. It proves they
   are _enumerated_, not that each is correct; the reason text is the claim a human checks.
+- `requestDocumentExport.ts` — the ONE call for Word and PDF (#1278): `POST
+/files/{uuid}/export/document` queues a render and returns a signed job id, then
+  `exportJobStream.ts` delivers the presigned URL. Labels travel already translated (the backend is
+  translation-free); the two page-furniture ones are TEMPLATES built with `documentTemplateLabels`
+  so `{page}`/`{pages}`/`{date}` reach the server literally. ⚠️ Same fallback rule: never build a
+  document in the browser when the job fails.
+- `exportJobStream.ts` — the ONE `EventSource` consumer of `GET /files/bulk-export-stream?job=`,
+  shared by the gallery's bulk subtitle ZIP and the document export (two consumers of one protocol
+  drift). Resolves on `ready`, rejects with `ExportJobError` carrying the worker's `reason`; a
+  dropped connection with no `data` is retried by the browser, not a failure.
+- `exportErrors.ts` — `exportErrorKey(error)`: HTTP 409/503 and a job `reason` mapped to a
+  translation KEY. Every export or copy failure on the file page toasts it (a `console.error`-only
+  catch used to leave a button that silently did nothing; `routes/files/[id]/exportFailureToasts.test.ts`
+  pins the call sites).
+- `anchorDownload.ts` — `triggerAnchorDownload`: save a presigned URL through a transient anchor.
+- `documentExportPrefs.ts` — localStorage for line numbering, page size and the two toggles; a
+  stored value outside the allowed set is dropped so it can never reach the wire.
 - `txtExportPrefs.ts` — `loadTxtPrefs` / `saveTxtPrefs`: localStorage persistence for the TXT
   timestamps/speakers toggles (defaults both-on; partial blobs merge over defaults). Pure
   preference storage, not transcript content — nothing here handles redaction policy.
@@ -47,6 +64,8 @@ writes to it, each with a written reason, so the next one has to answer the ques
 
 ## Gotchas
 
+- Markdown is a sync format (`md` in `VALID_FORMATS`, served by `GET .../export`); Word and PDF
+  are async jobs. The menu hides the last two when the `exports.documents` capability is off.
 - Do not reintroduce a client-side transcript serializer. If a new export format is needed,
   add it to `transcript_export_service.VALID_FORMATS` and the backend builder functions — a
   client-side one would silently opt that format out of `export_locked` again.

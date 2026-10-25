@@ -26,7 +26,7 @@ Detection only runs for users who have it enabled.
    cached, changing categories or switching the mask style is **instant and never
    re-scans**. (If you enable redaction later, the scan runs the first time you open the
    file.)
-2. **Mask at read time.** Whenever the transcript is shown (UI), exported (SRT/VTT/TXT/…),
+2. **Mask at read time.** Whenever the transcript is shown (UI), exported (TXT, JSON, CSV, SRT, VTT, Markdown, Word, PDF),
    surfaced in search snippets, or sent to an AI summary, the cached spans are applied
    with your chosen style. This is microsecond-fast and requires no models.
 3. **Owner reveal.** The file owner (and admins) can flip **"Show original"** to view the
@@ -222,6 +222,16 @@ cannot be disabled by individual users — they may only add *more* redaction. A
 
 - Force PII / toxicity / profanity redaction org-wide (individually)
 - Mandate censored exports (no user can export the original)
+
+Word and PDF exports follow the same rules as every other format, with one difference in
+timing: they are built by a background job, so the policy is read **when the job runs**, for the
+person who asked for the export, not when the button was pressed. If the mandate is switched on
+in between, the document is masked. If your policy masks text and the file's redaction scan has
+not finished, the export is refused with a message to try again (it never falls back to the
+original text), and if the policy cannot be read at all the export is withheld. A document
+header says **Redacted** whenever any text in it is masked. An administrator's non-owner reveal
+is not offered for Word and PDF, because it applies to a live request that a background job does
+not have.
 - Mandate masking before external AI/LLM providers
 - Re-scan all existing files (e.g., after a model upgrade)
 

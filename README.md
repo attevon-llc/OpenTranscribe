@@ -74,6 +74,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Intelligent Upload System**: Duplicate detection, hash verification, and automatic recovery
 - **Metadata Extraction**: Comprehensive file information using ExifTool
 - **Subtitle Export**: Generate SRT/VTT files for accessibility
+- **Transcript Documents**: Export Markdown, Word (.docx) and PDF with numbered lines you can cite by page and line, with right-to-left and CJK support
 - **File Reprocessing**: Re-run AI analysis while preserving user comments and annotations
 - **Auto-Recovery System**: Intelligent detection and recovery of stuck or failed file processing
 

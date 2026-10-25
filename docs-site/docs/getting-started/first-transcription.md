@@ -259,11 +259,13 @@ Finds related concepts like "financial constraints", "cost overruns", etc.
 - **CSV** - Comma-separated values for spreadsheet analysis
 - **SRT** - SubRip subtitle file for video players
 - **VTT** - WebVTT subtitle format for web playback
+- **Markdown** - Notes with YAML front matter for Obsidian and similar tools
+- **Word** and **PDF** - Printable documents with numbered lines you can cite by page and line
 
 **Export Methods:**
 1. Click the **"Export"** dropdown on the transcript page
 2. Choose your **format**
-3. The file downloads immediately
+3. The file downloads immediately. Word and PDF first ask for a few options (line numbers, page size) and are built in the background, so the download starts a moment later.
 
 ![Export format options dropdown](/img/screenshots/transcript/export-options.png)
 

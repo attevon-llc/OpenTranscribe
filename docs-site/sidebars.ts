@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
         'features/speaker-diarization',
         'features/boundary-correction',
         'features/content-redaction',
+        'features/document-export',
         'features/watch-sources',
         'features/llm-integration',
         'features/rag-chat',

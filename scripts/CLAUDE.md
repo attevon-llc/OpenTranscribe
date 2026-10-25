@@ -26,6 +26,10 @@ this file is for.
   `/architecture` render's `spec-sha256` stamp, written by `generate-architecture-diagrams.sh`,
   with its spec; it is a pre-commit hook. Both are pinned by unit tests; see
   `docs-site/CLAUDE.md`.
+- **Document export timing** (issue #1278) — `bench-transcript-document.py` renders N hours of
+  synthetic speech to PDF/DOCX and prints wall time, peak RSS, pages and size. MANUAL ONLY, never a
+  test (a wall-clock budget is a flaky gate); run it on a quiet host, ideally inside the backend
+  image where the real fonts live (`--font-dir` otherwise).
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
   `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
   `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a

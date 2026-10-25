@@ -62,6 +62,13 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   data (no DB, no clock) so a batch collector can reuse it (#796). The dispatcher ends in an
   explicit `csv` branch and a raise: a token added to `VALID_FORMATS` without a builder used to be
   silently served as CSV. Format token == file extension, hence `md`, not `markdown`.
+- **Word and PDF transcript documents** — `transcript_document/` (**own CLAUDE.md**, #1278):
+  an async job (`POST /files/{uuid}/export/document` -> `tasks/transcript_document.py`), never the
+  sync `GET .../export` (which answers 400 for `docx`/`pdf`). One layout model feeds both
+  renderers; fpdf2 (LGPL-3.0, unmodified) writes the PDF, python-docx the DOCX. The export
+  decision (`redaction/export_policy.resolve_export_reveal`: `export_locked` beats any reveal) and
+  the reveal audit (`redaction/reveal_audit.py`) are shared by every export surface, so a new
+  surface calls them instead of re-deriving the rule.
 - **Captions** — `captions/` is the ONE caption cue segmenter (broadcast rules, sources in
   `captions/rules.py`): the player track (`GET /files/{uuid}/captions`), the subtitle
   download, the bulk ZIP, the burned-in video and the SRT/VTT transcript export all cut cues

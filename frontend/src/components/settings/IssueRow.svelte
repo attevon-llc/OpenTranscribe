@@ -13,6 +13,8 @@
   import { fixLinkKey } from '$lib/settings/pipelineIssues';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { MenuIconName } from '$lib/ui/menuIcons';
 
   export let code: string;
   export let severity: PipelineSeverity;
@@ -24,7 +26,11 @@
   export let linkTestId = 'pipeline-fix-link';
 
   const dispatch = createEventDispatcher<{ navigate: SettingsSection }>();
-  const GLYPH = { error: '✕', warning: '!', info: 'i' } as const;
+  const GLYPH: Record<PipelineSeverity, MenuIconName> = {
+    error: 'x',
+    warning: 'exclamation',
+    info: 'info-mark',
+  };
 </script>
 
 <li
@@ -33,7 +39,7 @@
   data-code={code}
   data-severity={severity}
 >
-  <span class="issue-glyph" aria-hidden="true">{GLYPH[severity]}</span>
+  <span class="issue-glyph" aria-hidden="true"><MenuIcon name={GLYPH[severity]} size={11} /></span>
   <span class="issue-text">
     <span class="sr-only">{$t(PIPELINE_SEVERITY_KEYS[severity])}</span>
     {messageKey ? $t(messageKey) : (fallbackText ?? '')}
@@ -89,8 +95,6 @@
     width: 1.1rem;
     height: 1.1rem;
     border-radius: 50%;
-    font-size: 0.7rem;
-    font-weight: var(--font-weight-semibold);
     color: #fff;
   }
 

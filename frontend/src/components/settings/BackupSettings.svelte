@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import MediaMirrorSettings from './MediaMirrorSettings.svelte';
@@ -391,9 +392,9 @@
           <input id="backup-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
           <span class="field-hint">
             {#if mountOk}
-              <span class="mount-ok">● {$t('settings.backup.mountOk')}</span>
+              <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mountOk')}</span>
             {:else}
-              <span class="mount-bad">● {$t('settings.backup.mountNotReady')}</span>
+              <span class="mount-bad"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mountNotReady')}</span>
             {/if}
           </span>
         </div>
@@ -436,9 +437,9 @@
           />
           <span class="field-hint">
             {#if s3SecretKeySet}
-              <span class="mount-ok">● {$t('settings.backup.s3SecretConfigured')}</span>
+              <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.s3SecretConfigured')}</span>
             {:else}
-              <span class="mount-bad">● {$t('settings.backup.s3SecretNotSet')}</span>
+              <span class="mount-bad"><MenuIcon name="dot" size={10} /> {$t('settings.backup.s3SecretNotSet')}</span>
             {/if}
           </span>
         </div>
@@ -450,9 +451,9 @@
         </button>
         {#if s3TestResult}
           {#if s3TestResult.ok}
-            <span class="mount-ok">● {$t('settings.backup.s3TestOk')}</span>
+            <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.s3TestOk')}</span>
           {:else}
-            <span class="mount-bad" title={s3TestResult.error ?? ''}>● {$t('settings.backup.s3TestFailed')}</span>
+            <span class="mount-bad" title={s3TestResult.error ?? ''}><MenuIcon name="dot" size={10} /> {$t('settings.backup.s3TestFailed')}</span>
           {/if}
         {/if}
       </div>
@@ -504,11 +505,11 @@
     {#if includeOpensearch && osSnapshotStatus}
       <div class="field-hint opensearch-status">
         {#if osSnapshotStatus.reachable && osSnapshotStatus.repository_registered}
-          <span class="mount-ok">● {$t('settings.backup.opensearchReady')}</span>
+          <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.opensearchReady')}</span>
         {:else if osSnapshotStatus.reachable}
-          <span class="mount-bad">● {$t('settings.backup.opensearchRepoMissing')}</span>
+          <span class="mount-bad"><MenuIcon name="dot" size={10} /> {$t('settings.backup.opensearchRepoMissing')}</span>
         {:else}
-          <span class="mount-bad">● {$t('settings.backup.opensearchUnreachable')}</span>
+          <span class="mount-bad"><MenuIcon name="dot" size={10} /> {$t('settings.backup.opensearchUnreachable')}</span>
         {/if}
         {#if osSnapshotStatus.last_snapshot}
           <span class="status-value"> · {$t('settings.backup.opensearchLastSnapshot', { name: osSnapshotStatus.last_snapshot })}</span>
@@ -760,10 +761,16 @@
   }
 
   .mount-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     color: var(--success-color, #16a34a);
   }
 
   .mount-bad {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     color: var(--warning-color, #b45309);
   }
 

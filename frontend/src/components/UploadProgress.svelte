@@ -2,6 +2,8 @@
   import type { UploadItem } from '../lib/services/uploadService';
   import { uploadsStore } from '../stores/uploads';
   import { t } from '$stores/locale';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { MenuIconName } from '$lib/ui/menuIcons';
 
   export let upload: UploadItem;
 
@@ -29,18 +31,37 @@
     }
   }
 
-  // Get status icon
-  function getStatusIcon(status: string): string {
-    switch (status) {
-      case 'completed': return '✓';
-      case 'failed': return '✗';
-      case 'cancelled': return '⊘';
-      case 'uploading':
-      case 'processing': return '↑';
-      case 'preparing': return '⚙';
-      default: return '⏳';
-    }
-  }
+  type Status = UploadItem['status'];
+
+  // A closed map, not a switch with a `default`: the old switch drew an hourglass emoji
+  // for any status it did not list, and that placeholder is what flashed in the tray.
+  const STATUS_ICON: Record<Status, MenuIconName> = {
+    queued: 'status-queued',
+    preparing: 'status-working',
+    uploading: 'upload',
+    processing: 'status-working',
+    completed: 'status-success',
+    failed: 'status-error',
+    cancelled: 'status-cancelled',
+  };
+  const STATUS_LABEL_KEY: Record<Status, string> = {
+    queued: 'upload.statusLabel.queued',
+    preparing: 'upload.statusLabel.preparing',
+    uploading: 'upload.statusLabel.uploading',
+    processing: 'upload.statusLabel.processing',
+    completed: 'upload.statusLabel.completed',
+    failed: 'upload.statusLabel.failed',
+    cancelled: 'upload.statusLabel.cancelled',
+  };
+  const SPINNING: ReadonlySet<Status> = new Set<Status>(['preparing', 'processing']);
+
+  // Queued rows keep the (empty) progress track: a retry passes failed -> queued ->
+  // preparing, and hiding the track for the queued step made the row collapse and regrow.
+  $: showProgress =
+    upload.status === 'queued' ||
+    upload.status === 'uploading' ||
+    upload.status === 'processing' ||
+    upload.status === 'preparing';
 
   // Handle actions
   function handleRetry() {
@@ -59,9 +80,20 @@
 <div class="upload-item">
   <div class="upload-header">
     <div class="upload-info">
-      <div class="upload-icon" style="color: {getStatusColor(upload.status)}">
-        {getStatusIcon(upload.status)}
-      </div>
+      <span
+        class="upload-icon"
+        style="color: {getStatusColor(upload.status)}"
+        role="img"
+        aria-label={$t(STATUS_LABEL_KEY[upload.status])}
+        title={$t(STATUS_LABEL_KEY[upload.status])}
+        data-status={upload.status}
+      >
+        <MenuIcon
+          name={STATUS_ICON[upload.status]}
+          size="md"
+          spin={SPINNING.has(upload.status)}
+        />
+      </span>
       <div class="upload-details">
         <div class="upload-name" title={upload.name}>
           {upload.name}
@@ -69,7 +101,7 @@
         <div class="upload-meta">
           <span class="upload-type">{upload.type}</span>
           {#if upload.size}
-            <span class="upload-size">{formatFileSize(upload.size)}</span>
+            <span class="upload-size" dir="ltr">{formatFileSize(upload.size)}</span>
           {/if}
           {#if upload.estimatedTime}
             <!-- `estimatedTime` is a DURATION only. It used to double as the
@@ -84,7 +116,8 @@
                  the library. Say so — a silently-skipped duplicate check is the
                  bug this replaced (issue #342). -->
             <span class="upload-dedup-skipped" title={$t('upload.dedupSkippedBadge')}>
-              ⚠ {$t('upload.dedupSkippedBadge')}
+              <MenuIcon name="warning" size="xs" />
+              {$t('upload.dedupSkippedBadge')}
             </span>
           {/if}
         </div>
@@ -97,8 +130,9 @@
           class="upload-action-btn upload-retry-btn"
           on:click={handleRetry}
           title={$t('upload.retryUpload')}
+          aria-label={$t('upload.retryUpload')}
         >
-          ↻
+          <MenuIcon name="retry" size="xs" />
         </button>
       {/if}
 
@@ -107,22 +141,24 @@
           class="upload-action-btn upload-cancel-btn"
           on:click={handleCancel}
           title={$t('upload.cancelUpload')}
+          aria-label={$t('upload.cancelUpload')}
         >
-          ✗
+          <MenuIcon name="x" size="xs" />
         </button>
       {:else}
         <button
           class="upload-action-btn upload-remove-btn"
           on:click={handleRemove}
           title={$t('upload.removeFromList')}
+          aria-label={$t('upload.removeFromList')}
         >
-          ✗
+          <MenuIcon name="x" size="xs" />
         </button>
       {/if}
     </div>
   </div>
 
-  {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
+  {#if showProgress}
     <div class="progress-container">
       <div class="progress-bar">
         <div
@@ -135,7 +171,7 @@
   {/if}
 
   {#if upload.error}
-    <div class="error-message">
+    <div class="error-message" dir="auto">
       {upload.error}
     </div>
   {/if}
@@ -167,10 +203,12 @@
   }
 
   .upload-icon {
-    font-size: 16px;
-    font-weight: var(--font-weight-semibold);
-    min-width: 20px;
-    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
   }
 
   .upload-details {
@@ -189,7 +227,9 @@
 
   .upload-meta {
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
@@ -202,9 +242,14 @@
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .upload-dedup-skipped {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-weight: 500;
     color: #b45309;
     background: rgba(245, 158, 11, 0.12);
@@ -219,6 +264,9 @@
   }
 
   .upload-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     padding: 4px 6px;
@@ -269,7 +317,7 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     min-width: 35px;
-    text-align: right;
+    text-align: end;
   }
 
   .error-message {

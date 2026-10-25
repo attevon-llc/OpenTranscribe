@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
@@ -148,7 +149,7 @@
 <div class="audit-log-viewer">
   {#if backendNotReady}
     <div class="coming-soon">
-      <div class="coming-soon-icon">📋</div>
+      <div class="coming-soon-icon" aria-hidden="true"><MenuIcon name="clipboard" size="xl" /></div>
       <h3>{$t('settings.auditLog.viewerTitle')}</h3>
       <p>{$t('settings.auditLog.comingSoonDesc')}</p>
       <p class="note">
@@ -267,7 +268,9 @@
   }
 
   .coming-soon-icon {
-    font-size: 2rem;
+    display: flex;
+    justify-content: center;
+    color: var(--text-secondary);
     margin-bottom: 0.5rem;
   }
 

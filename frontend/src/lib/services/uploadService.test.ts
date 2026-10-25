@@ -271,6 +271,26 @@ describe('presigned PUT flow', () => {
     expect(legacyCall).toBeUndefined();
   });
 
+  it('drops the dead attempt’s phase text when an upload fails, leaving only the error', async () => {
+    // The tray showed "Uploading..." (or "Calculating file hash...") under a failed row.
+    mockCreateStallWatchdog.mockReturnValue({
+      signal: undefined,
+      stalled: true,
+      notifyProgress: vi.fn(),
+      dispose: vi.fn(),
+    });
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared());
+    mockAxiosDefault.put.mockRejectedValueOnce(new Error('timed out'));
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const failed = uploadService.getUpload(id);
+    expect(failed?.error).toBeTruthy();
+    expect(failed?.statusText).toBeUndefined();
+    expect(failed?.estimatedTime).toBeUndefined();
+  });
+
   it('does NOT fall back to legacy on a user cancellation', async () => {
     mockAxiosInstance.post.mockResolvedValueOnce(prepared());
     const cancelled = Object.assign(new Error('canceled'), { __CANCEL__: true });

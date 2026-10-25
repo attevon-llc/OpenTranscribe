@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
   import type { SpeakerProfile } from '$lib/types/speakerCluster';
@@ -110,7 +111,7 @@
               >
                 <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
                 <span class="gender-toggle-label">{$t('speakers.member.male')}</span>
-                {#if profile.predicted_gender === 'male' && genderConfirmedProfiles.has(profile.uuid)}<span class="gender-confirmed-tick" aria-hidden="true">✓</span>{/if}
+                {#if profile.predicted_gender === 'male' && genderConfirmedProfiles.has(profile.uuid)}<span class="gender-confirmed-tick" aria-hidden="true"><MenuIcon name="check" size={10} /></span>{/if}
               </button>
               <button
                 class="gender-toggle-btn"
@@ -121,7 +122,7 @@
               >
                 <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
                 <span class="gender-toggle-label">{$t('speakers.member.female')}</span>
-                {#if profile.predicted_gender === 'female' && genderConfirmedProfiles.has(profile.uuid)}<span class="gender-confirmed-tick" aria-hidden="true">✓</span>{/if}
+                {#if profile.predicted_gender === 'female' && genderConfirmedProfiles.has(profile.uuid)}<span class="gender-confirmed-tick" aria-hidden="true"><MenuIcon name="check" size={10} /></span>{/if}
               </button>
             </span>
           </div>

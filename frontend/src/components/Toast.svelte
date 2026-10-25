@@ -4,6 +4,8 @@
   import { t } from '$stores/locale';
   import { retryWaitLabel } from '$lib/utils/formatting';
   import type { ToastAction } from '$stores/toast';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { MenuIconName } from '$lib/ui/menuIcons';
 
   export let message: string = '';
   export let type: 'success' | 'error' | 'info' | 'warning' = 'success';
@@ -50,11 +52,12 @@
     if (reenableTimer) clearTimeout(reenableTimer);
   });
 
-  const icons = {
-    success: '✓',
-    error: '✗',
-    warning: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="m12 17 .01 0"/></svg>`,
-    info: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`
+  // Drawn white on a disc of the toast colour, so these are bare marks, not circled icons.
+  const icons: Record<typeof type, MenuIconName> = {
+    success: 'check',
+    error: 'x',
+    warning: 'exclamation',
+    info: 'info-mark',
   };
 
   const colors = {
@@ -82,7 +85,7 @@
   transition:fly={{ y: 50, duration: 300 }}
   role={toastRole}
 >
-  <span class="toast-icon">{@html icons[type]}</span>
+  <span class="toast-icon" data-type={type}><MenuIcon name={icons[type]} size="xs" /></span>
   <span class="toast-message">
     {message}
     {#if retryLabel}
@@ -140,8 +143,6 @@
     background: var(--toast-color);
     color: white;
     border-radius: 50%;
-    font-size: 12px;
-    font-weight: var(--font-weight-semibold);
     flex-shrink: 0;
   }
 

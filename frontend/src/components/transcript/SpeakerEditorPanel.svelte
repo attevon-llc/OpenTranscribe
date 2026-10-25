@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
@@ -130,7 +131,7 @@
     <h4>
       {$t('transcript.editSpeakerNames')}
       {#if speakerNamesChanged}
-        <span class="unsaved-indicator" title={$t('transcript.unsavedChanges')}>•</span>
+        <span class="unsaved-indicator" role="img" aria-label={$t('transcript.unsavedChanges')} title={$t('transcript.unsavedChanges')}><MenuIcon name="dot" size={10} /></span>
       {/if}
     </h4>
 
@@ -449,10 +450,11 @@
                           <div class="compact-match" title={match.title || match.media_file_title || $t('transcript.unknownVideo')}>
                             <span class="match-text">{((match.title || match.media_file_title || $t('transcript.unknownVideo')).length > 35 ? (match.title || match.media_file_title || $t('transcript.unknownVideo')).substring(0, 35) + '...' : (match.title || match.media_file_title || $t('transcript.unknownVideo')))}</span>
                             <span class="match-confidence">
+                              <MenuIcon name="check" size={10} />
                               {#if match.same_speaker}
                                 {$t('transcript.currentVideo')}
                               {:else if match.confidence}
-                                ✓ {Math.round(match.confidence * 100)}%
+                                {Math.round(match.confidence * 100)}%
                               {:else}
                                 {$t('transcript.profileMatch')}
                               {/if}
@@ -469,10 +471,11 @@
                                 <div class="popup-match">
                                   <span class="popup-match-text">{match.title || match.media_file_title || $t('transcript.unknownVideo')}</span>
                                   <span class="popup-match-confidence">
+                                    <MenuIcon name="check" size={10} />
                                     {#if match.same_speaker}
                                       {$t('transcript.currentVideo')}
                                     {:else if match.confidence}
-                                      ✓ {Math.round(match.confidence * 100)}%
+                                      {Math.round(match.confidence * 100)}%
                                     {:else}
                                       {$t('transcript.profileMatch')}
                                     {/if}
@@ -788,6 +791,9 @@
 
 
   .match-confidence {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
     font-size: 0.75rem;
     font-weight: normal;
   }
@@ -863,9 +869,10 @@
 
   /* Unsaved changes indicator (yellow dot) - matches AI Prompts modal */
   .unsaved-indicator {
+    display: inline-flex;
+    align-items: center;
     color: #f59e0b; /* Amber/yellow warning color */
-    font-size: 1.2em;
-    margin-left: 0.5rem;
+    margin-inline-start: 0.5rem;
     animation: pulse 2s infinite;
   }
 
@@ -1047,6 +1054,9 @@
   }
 
   .popup-match-confidence {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
     font-size: 0.65rem;
     font-weight: 500;
     color: var(--success-color);

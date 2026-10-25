@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount } from 'svelte';
   import {
     AuthConfigApi,
@@ -349,7 +350,7 @@
   {#if backendNotReady}
     <!-- Database-backed configuration UI - Coming Soon -->
     <div class="coming-soon">
-      <div class="coming-soon-icon">🔐</div>
+      <div class="coming-soon-icon" aria-hidden="true"><MenuIcon name="lock" size="xl" /></div>
       <h3>{$t('settings.authentication.dbBackedTitle')}</h3>
       <p>{$t('settings.authentication.comingSoonDesc')}</p>
 
@@ -549,7 +550,9 @@
   }
 
   .coming-soon-icon {
-    font-size: 3rem;
+    display: flex;
+    justify-content: center;
+    color: var(--text-secondary);
     margin-bottom: 1rem;
   }
 

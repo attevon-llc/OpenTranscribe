@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onMount } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import { toastStore } from '../../stores/toast';
@@ -315,9 +316,9 @@
           <input id="mirror-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
           <span class="field-hint">
             {#if mountOk}
-              <span class="mount-ok">● {$t('settings.backup.mirror.mountOk')}</span>
+              <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.mountOk')}</span>
             {:else}
-              <span class="mount-bad">● {$t('settings.backup.mirror.mountNotReady')}</span>
+              <span class="mount-bad"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.mountNotReady')}</span>
             {/if}
           </span>
         </div>
@@ -358,9 +359,9 @@
           />
           <span class="field-hint">
             {#if s3SecretKeySet}
-              <span class="mount-ok">● {$t('settings.backup.mirror.s3SecretConfigured')}</span>
+              <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.s3SecretConfigured')}</span>
             {:else}
-              <span class="mount-bad">● {$t('settings.backup.mirror.s3SecretNotSet')}</span>
+              <span class="mount-bad"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.s3SecretNotSet')}</span>
             {/if}
           </span>
         </div>
@@ -372,9 +373,9 @@
         </button>
         {#if s3TestResult}
           {#if s3TestResult.ok}
-            <span class="mount-ok">● {$t('settings.backup.mirror.s3TestOk')}</span>
+            <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.s3TestOk')}</span>
           {:else}
-            <span class="mount-bad" title={s3TestResult.error ?? ''}>● {$t('settings.backup.mirror.s3TestFailed')}</span>
+            <span class="mount-bad" title={s3TestResult.error ?? ''}><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.s3TestFailed')}</span>
           {/if}
         {/if}
       </div>
@@ -541,10 +542,16 @@
   }
 
   .mount-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     color: var(--success-color, #16a34a);
   }
 
   .mount-bad {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     color: var(--warning-color, #b45309);
   }
 

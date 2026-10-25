@@ -53,7 +53,7 @@
         ? $t('settings.contentRedaction.title')
         : $t('settings.redactionPolicy.title');
     return spec.locked
-      ? { id: spec.id, label, disabled: true, badge: '🔒', title: $t('settings.nav.requiresSuperAdmin') }
+      ? { id: spec.id, label, disabled: true, marker: { icon: 'lock', label: $t('settings.nav.requiresSuperAdmin') }, title: $t('settings.nav.requiresSuperAdmin') }
       : { id: spec.id, label };
   });
 
@@ -67,7 +67,7 @@
 
   {#if activeSpec?.locked}
     <EmptyState
-      icon="🔒"
+      icon="lock"
       title={$t('settings.permission.superAdminTitle')}
       description={$t('settings.permission.superAdminMessage')}
     />

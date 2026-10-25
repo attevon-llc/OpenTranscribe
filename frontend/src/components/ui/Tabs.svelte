@@ -2,8 +2,13 @@
   export interface TabItem {
     id: string;
     label: string;
-    /** Optional count/badge shown after the label. */
+    /** Optional count shown after the label. Text only: a glyph goes in `marker`. */
     badge?: string | number | null;
+    /**
+     * A glyph after the label (unsaved edits, a locked tab), drawn as an SVG. `label` is its
+     * accessible name, because a bare dot or padlock tells a screen-reader user nothing.
+     */
+    marker?: { icon: 'dot' | 'lock'; label: string };
     disabled?: boolean;
     /** Native tooltip; used to say why a tab is disabled. */
     title?: string;
@@ -19,6 +24,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
 
   export let tabs: TabItem[] = [];
   /** The active tab id. Bindable: `<Tabs bind:activeId>`. */
@@ -131,6 +137,16 @@
       <span class="tab-label">{tab.label}</span>
       {#if tab.badge !== undefined && tab.badge !== null && tab.badge !== ''}
         <span class="tab-badge">{tab.badge}</span>
+      {/if}
+      {#if tab.marker}
+        <span
+          class="tab-badge tab-marker"
+          data-marker={tab.marker.icon}
+          role="img"
+          aria-label={tab.marker.label}
+        >
+          <MenuIcon name={tab.marker.icon} size={tab.marker.icon === 'dot' ? 12 : 11} />
+        </span>
       {/if}
       {#if tab.attention}
         <span class="tab-attention" role="img" aria-label={tab.attention}></span>

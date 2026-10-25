@@ -1,4 +1,5 @@
 <script>
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { supportSessionGate } from '$stores/supportSession';
   import { onMount, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -486,8 +487,9 @@
                   class="clear-button"
                   on:click|stopPropagation={() => timestampInput = null}
                   title={$t('comments.clearTimestampHint')}
+                  aria-label={$t('comments.clearTimestampHint')}
                 >
-                  ✖
+                  <MenuIcon name="x" size="xs" />
                 </button>
               </div>
             {/if}
@@ -806,7 +808,7 @@
     justify-content: center;
     border-radius: 50%;
     padding: 0;
-    margin-left: 0.5rem;
+    margin-inline-start: 0.5rem;
     opacity: 0.7;
     transition: all 0.2s ease;
   }

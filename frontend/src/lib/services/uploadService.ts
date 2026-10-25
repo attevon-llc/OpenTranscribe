@@ -403,9 +403,13 @@ class UploadService {
       // Log error through proper error handling below
 
       const errorMessage = this.getErrorMessage(error);
+      // The phase text belongs to the attempt that just died ("Calculating file hash…"
+      // stayed on failed rows); the error is what the row says now.
       this.updateUpload(uploadId, {
         status: 'failed',
         error: errorMessage,
+        statusText: undefined,
+        estimatedTime: undefined,
       });
 
       this.emit('failed', uploadId, { error: errorMessage });

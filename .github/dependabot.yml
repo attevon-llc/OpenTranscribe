@@ -97,6 +97,11 @@ updates:
       # presidio's own floor once it raises it.
       - dependency-name: "numpy"
         versions: [">=2.5.0"]
+      # preshed 3.0.14 breaks spaCy model loading (OverflowError in Tokenizer.from_disk),
+      # which disables Presidio PII detection. Cap documented beside the pin in
+      # requirements.txt; lift once a newer preshed loads en_core_web_sm again.
+      - dependency-name: "preshed"
+        versions: [">=3.0.14"]
       # tokenizers is capped by transformers==4.57.6's own declared metadata
       # (tokenizers<=0.23.0,>=0.22.0) -- `pip install tokenizers==0.23.2
       # transformers==4.57.6` is a real ResolutionImpossible, verified directly.

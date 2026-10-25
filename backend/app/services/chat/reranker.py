@@ -17,6 +17,11 @@ cache that appears later is picked up.
 The API process loads it at startup on a background thread (``reranker_warmup.py``,
 issue #1269) so the first chat does not pay the cold load; that warm-up goes through
 :func:`get_reranker` like any request does.
+
+Scoring goes through :func:`app.services.chat.reranker_threads.score_pairs`, which runs
+``model.predict`` on a small pool whose threads carry the deployment's torch thread cap
+(``CHAT_RERANKER_TORCH_THREADS``, issue #1270). Code that calls ``get_reranker(...).predict``
+directly bypasses that cap and should call ``score_pairs`` instead.
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ import time
 from typing import Any
 
 from app.core import constants as C  # noqa: N812
+from app.services.chat import reranker_threads
 
 logger = logging.getLogger(__name__)
 
@@ -166,10 +172,11 @@ def get_reranker(
 
 
 def reset_reranker_state() -> None:
-    """Clear every cached model and cooldown. For tests only."""
+    """Clear every cached model, cooldown and the scoring pool. For tests only."""
     with _lock:
         _rerankers.clear()
         _retry_after.clear()
+    reranker_threads.shutdown_for_tests()
 
 
 def rerank(
@@ -224,7 +231,7 @@ def rerank(
 
     try:
         pairs = [(query, hit.content) for hit in head]
-        scores = model.predict(pairs)
+        scores = reranker_threads.score_pairs(model, pairs)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Chat reranking failed, keeping retrieval order: {exc}")
         return hits

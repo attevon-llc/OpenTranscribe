@@ -22,6 +22,7 @@ from app.core.capabilities import require_capability
 from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.user import User
+from app.services.chat.reranker_threads import describe_thread_cap
 from app.services.protected_media_providers import get_protected_media_auth_config
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,8 @@ def get_system_stats(
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 **_device_mode_info(system_stats["gpu"]),
+                # Read-only: a deployment setting latched once per process (issue #1270).
+                "chat_reranker_threads": describe_thread_cap(),
             },
             "tasks": {**task_stats, "recent": recent},
             "throughput": throughput,

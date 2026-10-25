@@ -42,3 +42,5 @@ interface ImportMeta {
 declare const __APP_VERSION__: string;
 /** ISO-8601 timestamp of the build that produced this bundle. */
 declare const __BUILD_TIME__: string;
+/** Commit the bundle was built from (`abc1234`), or `unknown` when the build was not told. */
+declare const __GIT_SHA__: string;

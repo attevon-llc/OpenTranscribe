@@ -380,14 +380,28 @@ resolve_diar_native_models_dir() {
 build_prod_images() {
   echo "🥽 Building production Docker images locally..."
 
+  # Build identity (issue #1273). The backend build context is ./backend, so the repo-root
+  # VERSION file is not in the image: without these args a locally built prod backend reports
+  # "unknown", which silences the About modal's stale-tab warning and its exact source link.
+  # APP_VERSION and GIT_SHA are exported at the top of this script; the frontend takes the
+  # same GIT_SHA so both sides of one build name the same commit.
+  local build_time
+  build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
   echo "🧱 Building backend image (davidamacey/opentranscribe-backend:latest)..."
-  docker build -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend || {
+  docker build \
+    --build-arg "APP_VERSION=${APP_VERSION}" \
+    --build-arg "GIT_SHA=${GIT_SHA}" \
+    --build-arg "BUILD_TIME=${build_time}" \
+    -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend || {
     echo "❌ Backend image build failed"
     exit 1
   }
 
   echo "🧱 Building frontend image (davidamacey/opentranscribe-frontend:latest)..."
-  docker build -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend || {
+  docker build \
+    --build-arg "GIT_SHA=${GIT_SHA}" \
+    -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend || {
     echo "❌ Frontend image build failed"
     exit 1
   }

@@ -1,5 +1,7 @@
 # #1274 + #1273 + #1282: viewer-aware capabilities, build-identity comparison, UI verification pass
 
+> **Owner decisions of 2026-10-25 supersede this plan's open questions:** see `docs/design/v060_owner_decisions.md` (open-source/commercial-licence rule, CJK font pack, governance defaults, gender notice, #1132 moved to v0.9.0, adjustable reranker threads, migration numbering).
+
 Status: **PLAN ONLY.** Nothing here is implemented. Written 2026-10-25 against `master` @ `a236125a`
 (worktree `docs/v060-issue-plans`). Line numbers were verified on that commit. They drift, so
 search for the quoted symbol rather than trusting a number.

@@ -1,5 +1,7 @@
 # v0.6.0 organization content governance: restricted collections, org legal hold, content-access audit, grant proof
 
+> **Owner decisions of 2026-10-25 supersede this plan's open questions:** see `docs/design/v060_owner_decisions.md` (open-source/commercial-licence rule, CJK font pack, governance defaults, gender notice, #1132 moved to v0.9.0, adjustable reranker threads, migration numbering).
+
 **Status:** PLAN ONLY. Nothing here is implemented.
 **Written:** 2026-10-25 against `master` @ `a236125a` (Alembic head `v444_add_takedown_notification`).
 **Issues:** #1275 (restricted org collections), #1276 (org-admin legal hold), #1277 (content-access

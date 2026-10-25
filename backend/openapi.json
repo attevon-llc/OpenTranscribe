@@ -43743,7 +43743,7 @@
     },
     "/api/system/capabilities": {
       "get": {
-        "description": "Edition + capability map driving server-side feature gating.\n\nThe frontend calls this once at bootstrap and renders only the surfaces\nlisted as enabled; gated endpoints independently 404 when off (the\nbackend gate is the authority — see app.core.capabilities). Community\nedition returns everything-on defaults; the cloud edition's resolver\ncomputes edition ∩ subscription tier.",
+        "description": "Edition + capability map driving server-side feature gating.\n\nThe frontend reads this after a session exists (and at bootstrap) and renders only\nthe surfaces listed as enabled; gated endpoints independently 404 when off (the\nbackend gate is the authority — see app.core.capabilities). Community\nedition returns everything-on defaults; the cloud edition's resolver\ncomputes edition ∩ subscription tier.\n\nThe caller is resolved optionally (issue #1274): platform staff additionally see the\nplatform surfaces the server lets them use through a disabled capability. Anonymous\nand invalid credentials fall back to the resolver's own answer; this route never 401s.\nThe body therefore depends on the caller, so the response is never cacheable by a\nshared cache.",
         "operationId": "get_system_capabilities_api_system_capabilities_get",
         "responses": {
           "200": {

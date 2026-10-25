@@ -36,6 +36,21 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v10: viewer-aware ``GET /system/capabilities`` (issue #1274). The endpoint now resolves
+# the caller optionally and returns ``get_capabilities_for_viewer``: for platform staff
+# (an active ``is_superuser``), every platform-audience key outside
+# ``app.core.capabilities.NO_PLATFORM_BYPASS`` reads True even when the resolver denied it,
+# omitted it, or raised, mirroring what ``require_capability``'s bypass already admits on the
+# server. Anonymous and tenant callers get the resolver's answer unchanged. A resolver may
+# now find ``request.state.user_id`` / ``external_identity`` at that endpoint (external
+# tokens only; additive) and must still handle an anonymous request and ``request=None``.
+# The response is ``Cache-Control: private, no-store`` with ``Vary: Cookie, Authorization``:
+# remove any edge-cache rule that cached it. ``require_capability(..., platform_admin_bypass=False)``
+# now raises ValueError at import unless the key is declared in ``NO_PLATFORM_BYPASS``.
+# ``get_optional_current_user`` now honours the per-user revocation epoch (``iat``), so a
+# token revoked by logout-all or a password reset no longer resolves on optional-auth routes.
+# The response shape is unchanged.
+#
 # v9: legal document provider seam. ``app.legal.registry.set_document_provider`` lets an
 # extension replace the document set served by ``/api/legal/*``. Additive: with no provider
 # installed the vendored OSS set is served and the operator acknowledgment is required;
@@ -120,7 +135,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 9
+CLOUD_SEAM_VERSION = 10
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

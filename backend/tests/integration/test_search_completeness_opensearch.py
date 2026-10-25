@@ -268,6 +268,17 @@ def wired(corpus, monkeypatch):
     monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", bool(_MODEL_ID))
     monkeypatch.setattr(hss.HybridSearchService, "_get_neural_model_id", lambda self: _MODEL_ID)
+    # The collection filter resolves membership in Postgres (`_collection_filter_clause`);
+    # this corpus has no rows there, so give it the synthetic files' membership instead
+    # (the same `f % 3 + 1` each document's `collection_ids` records). Without this the
+    # `collection_id` filterset would match nothing on both sides and prove nothing.
+    monkeypatch.setattr(
+        hss,
+        "_collection_filter_clause",
+        lambda cid: {
+            "terms": {"file_uuid": [f"cmp-{f:04d}" for f in range(N_FILES) if f % 3 + 1 == cid]}
+        },
+    )
     return client, name, rng
 
 

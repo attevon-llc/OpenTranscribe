@@ -5,6 +5,7 @@ import logging
 import math
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Body
@@ -34,6 +35,8 @@ from app.schemas.search import RESULT_TYPE_TO_SOURCES
 from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SEARCH_SOURCES
 from app.schemas.search import SetEmbeddingModelSchema
+from app.services.collection_visibility import collections_on_files
+from app.services.collection_visibility import resolve_collection_filter
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
 from app.services.search.reindex_cancel import cancel_requested
@@ -115,6 +118,27 @@ def _search_response_to_schema(response) -> dict[str, Any]:
     }
 
 
+def _attach_visible_collections(
+    db: Session, ctx: RequestContext, hits: list[dict[str, Any]]
+) -> None:
+    """Add ``collections`` (``uuid`` + ``name``) to each hit, for the whole page in one batch.
+
+    Per caller, after the (possibly shared, cached) search response was copied into
+    ``hits``, so one user's collections never reach another user's cached page.
+    """
+    by_file = collections_on_files(
+        db,
+        [hit["file_id"] for hit in hits if hit.get("file_id")],
+        ctx.user.id,
+        organization_id=ctx.org_id,
+    )
+    for hit in hits:
+        hit["collections"] = [
+            {"uuid": str(collection.uuid), "name": collection.name}
+            for collection in by_file.get(hit.get("file_id") or 0, [])
+        ]
+
+
 def _require_iso_date_bounds(**bounds: str | None) -> None:
     """400 on an unparseable date bound, for both search legs.
 
@@ -156,7 +180,20 @@ def search_transcripts(
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     search_mode: str = Query("hybrid", description="Search mode: hybrid or keyword"),
     file_type: list[str] | None = Query(None, description="Filter by file type: audio, video"),
-    collection_id: int | None = Query(None, description="Filter by collection ID"),
+    collection_id: int | None = Query(
+        None,
+        description=(
+            "Filter by collection integer ID (API callers). A collection the caller "
+            "cannot see matches nothing. Mutually exclusive with `collection_uuid`."
+        ),
+    ),
+    collection_uuid: UUID | None = Query(
+        None,
+        description=(
+            "Filter by collection UUID (what the SPA sends). A collection the caller "
+            "cannot see matches nothing. Mutually exclusive with `collection_id`."
+        ),
+    ),
     min_duration: float | None = Query(None, description="Minimum duration in seconds"),
     max_duration: float | None = Query(None, description="Maximum duration in seconds"),
     min_file_size: int | None = Query(None, description="Minimum file size in bytes"),
@@ -252,6 +289,20 @@ def search_transcripts(
 
     _require_iso_date_bounds(date_from=date_from, date_to=date_to)
 
+    if collection_uuid is not None and collection_id is not None:
+        raise HTTPException(
+            status_code=400, detail="Pass collection_uuid or collection_id, not both"
+        )
+    # Every leg below filters by the RESOLVED id: one visibility rule, and a collection the
+    # caller cannot see narrows to nothing instead of answering differently for it.
+    collection_id = resolve_collection_filter(
+        db,
+        user_id=ctx.user.id,
+        organization_id=ctx.org_id,
+        collection_uuid=collection_uuid,
+        collection_id=collection_id,
+    )
+
     # Issue #760: `sources` wins outright over `result_type` when both are
     # supplied (never merged — two inputs that combine are one undebuggable
     # input). Omitting `sources` entirely preserves the legacy `result_type`
@@ -318,6 +369,7 @@ def search_transcripts(
             search_response = _drop_quarantined_search_hits(db, search_response)
 
         payload = _search_response_to_schema(search_response)
+        _attach_visible_collections(db, ctx, payload["results"])
     else:
         # Same shape a transcript-search response carries, with nothing found —
         # so a `summaries`-only caller still gets a well-formed SearchResponseSchema

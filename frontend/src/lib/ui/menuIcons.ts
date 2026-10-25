@@ -89,6 +89,26 @@ export const MENU_ICONS = {
       'M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z'
     ),
   ],
+  // Search result controls: pin the info panel, disclosure caret, filter chips, unpin.
+  pin: [
+    line(12, 17, 12, 22),
+    d(
+      'M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z'
+    ),
+  ],
+  'chevron-down': [poly('6 9 12 15 18 9')],
+  tag: [
+    d(
+      'M12.59 2.59A2 2 0 0 0 11.17 2H4a2 2 0 0 0-2 2v7.17a2 2 0 0 0 .59 1.42l8.7 8.7a2.43 2.43 0 0 0 3.42 0l6.58-6.58a2.43 2.43 0 0 0 0-3.42z'
+    ),
+    circle(7.5, 7.5, 0.5),
+  ],
+  folder: [
+    d(
+      'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z'
+    ),
+  ],
+  close: [line(18, 6, 6, 18), line(6, 6, 18, 18)],
   // Sort fields.
   'sort-date': [rect(3, 4, 18, 18, 2), line(16, 2, 16, 6), line(8, 2, 8, 6), line(3, 10, 21, 10)],
   'sort-completed': [
@@ -151,7 +171,6 @@ export const MENU_ICONS = {
   // Directional: MenuIcon mirrors these in RTL (see RTL_MIRRORED below).
   'chevron-right': [poly('9 18 15 12 9 6')],
   'chevron-left': [poly('15 18 9 12 15 6')],
-  'chevron-down': [poly('6 9 12 15 18 9')],
   'arrow-right': [line(5, 12, 19, 12), poly('12 5 19 12 12 19')],
   // View controls (the legal reader's full-screen toggle).
   maximize: [

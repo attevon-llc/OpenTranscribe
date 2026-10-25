@@ -13,12 +13,20 @@ export interface SearchOccurrence {
   highlight_type: 'keyword' | 'semantic';
 }
 
+/** A collection named on a hit. Mirrors `SearchHitCollectionSchema`. */
+export interface SearchHitCollection {
+  uuid: string;
+  name: string;
+}
+
 export interface SearchHit {
   file_uuid: string;
   file_id: number;
   title: string;
   speakers: string[];
   tags: string[];
+  /** Collections the caller may see that hold the file, sorted by name (server-filtered). */
+  collections: SearchHitCollection[];
   upload_time: string;
   language: string;
   content_type: string;
@@ -119,6 +127,12 @@ export interface SearchState {
   summaryUnavailable: string | null;
   summaryResults: SummaryHit[];
   summaryTotal: number;
+  /**
+   * A user's open/closed choice for a result card's match list, by file uuid, kept for the
+   * session (a new search keeps it; `reset` clears it). Absent = the default for the card's
+   * position (`SearchResultsBody`).
+   */
+  matchListOpen: Record<string, boolean>;
 }
 
 const initialState: SearchState = {
@@ -161,6 +175,7 @@ const initialState: SearchState = {
   summaryUnavailable: null,
   summaryResults: [],
   summaryTotal: 0,
+  matchListOpen: {},
 };
 
 function createSearchStore() {
@@ -205,6 +220,14 @@ function createSearchStore() {
     setFilters: (filters: Partial<SearchState>) => update((s) => ({ ...s, ...filters, page: 1 })),
     setLastSearchParams: (lastSearchParams: string) => update((s) => ({ ...s, lastSearchParams })),
     setScrollPosition: (scrollPosition: number) => update((s) => ({ ...s, scrollPosition })),
+    setMatchListsOpen: (fileUuids: string[], open: boolean) =>
+      update((s) => ({
+        ...s,
+        matchListOpen: {
+          ...s.matchListOpen,
+          ...Object.fromEntries(fileUuids.map((uuid) => [uuid, open])),
+        },
+      })),
     setResults: (response: SearchResponse) =>
       update((s) => ({
         ...s,

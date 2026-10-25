@@ -27,6 +27,8 @@ import uuid as uuid_pkg
 
 import pytest
 
+from app.models.media import Collection
+from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.services.search.hybrid_search_service import HybridSearchService
 from app.services.search.hybrid_search_service import SearchHit
@@ -80,6 +82,17 @@ def _make_file(db_session, user, *, quarantined: bool) -> MediaFile:
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
+    return row
+
+
+def _make_collection(db_session, owner, *files: MediaFile, name: str = "Coll") -> Collection:
+    row = Collection(name=f"{name} {uuid_pkg.uuid4().hex[:6]}", user_id=owner.id)
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    for media_file in files:
+        db_session.add(CollectionMember(collection_id=row.id, media_file_id=media_file.id))
+    db_session.commit()
     return row
 
 
@@ -187,12 +200,14 @@ class TestSearchParameterContract:
 # --------------------------------------------------------------------------- #
 class TestFilterForwarding:
     def test_every_filter_is_forwarded_to_the_search_service(
-        self, client, user_token_headers, search_recorder
+        self, client, user_token_headers, normal_user, db_session, search_recorder
     ):
         """11 of the 19 query parameters were never varied by any test. A filter
         accepted by the signature and then dropped from the service call is
         exactly the failure this catches — the response shape is identical either
-        way."""
+        way. The collection is the caller's own: a collection they cannot see
+        filters to nothing (``TestCollectionFilter``)."""
+        own = _make_collection(db_session, normal_user)
         response = client.get(
             SEARCH_PATH,
             params={
@@ -207,7 +222,7 @@ class TestFilterForwarding:
                 "sort_order": "asc",
                 "search_mode": "keyword",
                 "file_type": ["audio"],
-                "collection_id": 7,
+                "collection_id": own.id,
                 "min_duration": 10.5,
                 "max_duration": 900.0,
                 "min_file_size": 1000,
@@ -231,7 +246,7 @@ class TestFilterForwarding:
         assert sent["sort_order"] == "asc"
         assert sent["search_mode"] == "keyword"
         assert sent["file_type"] == ["audio"]
-        assert sent["collection_id"] == 7
+        assert sent["collection_id"] == own.id
         assert sent["min_duration"] == 10.5
         assert sent["max_duration"] == 900.0
         assert sent["min_file_size"] == 1000
@@ -365,6 +380,107 @@ class TestQuarantinedHitsAreDropped:
         body = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers).json()
         assert [row["file_uuid"] for row in body["results"]] == [str(visible.uuid)]
         assert body["total_results"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Collections on hits, and the collection filter                               #
+# --------------------------------------------------------------------------- #
+class TestCollectionsOnHits:
+    """The result card names the file's collections: display fields only, and only the
+    collections the caller may see (``services/collection_visibility``)."""
+
+    def test_each_hit_names_its_visible_collections(
+        self, client, user_token_headers, normal_user, other_user, db_session, stub_search
+    ):
+        tagged = _make_file(db_session, normal_user, quarantined=False)
+        bare = _make_file(db_session, normal_user, quarantined=False)
+        board = _make_collection(db_session, normal_user, tagged, name="Board")
+        archive = _make_collection(db_session, normal_user, tagged, name="Archive")
+        _make_collection(db_session, other_user, tagged, name="Someone else's")
+        stub_search([_hit(str(tagged.uuid), tagged.id), _hit(str(bare.uuid), bare.id)])
+
+        response = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers)
+
+        assert response.status_code == 200, response.text
+        by_file = {row["file_uuid"]: row["collections"] for row in response.json()["results"]}
+        assert by_file[str(tagged.uuid)] == [
+            {"uuid": str(archive.uuid), "name": archive.name},
+            {"uuid": str(board.uuid), "name": board.name},
+        ]
+        assert by_file[str(bare.uuid)] == []
+
+
+class TestCollectionFilter:
+    """The SPA's collection filter sends a UUID; the parameter used to accept only an
+    integer, so choosing any collection in the search sidebar answered 422."""
+
+    def test_a_collection_uuid_is_resolved_to_the_id_the_service_filters_by(
+        self, client, user_token_headers, normal_user, db_session, search_recorder
+    ):
+        own = _make_collection(db_session, normal_user)
+
+        response = client.get(
+            SEARCH_PATH,
+            params={"q": "test", "collection_uuid": str(own.uuid)},
+            headers=user_token_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        assert search_recorder[0]["collection_id"] == own.id
+
+    def test_a_collection_the_caller_cannot_see_filters_to_nothing(
+        self, client, user_token_headers, other_user, db_session, search_recorder
+    ):
+        """Not a 403/404 and not an unfiltered page: either would tell the caller the
+        collection exists, or widen the search past what they asked for."""
+        from app.services.collection_visibility import NO_VISIBLE_COLLECTION
+
+        theirs = _make_collection(db_session, other_user)
+
+        by_uuid = client.get(
+            SEARCH_PATH,
+            params={"q": "test", "collection_uuid": str(theirs.uuid)},
+            headers=user_token_headers,
+        )
+        by_id = client.get(
+            SEARCH_PATH,
+            params={"q": "test", "collection_id": theirs.id},
+            headers=user_token_headers,
+        )
+
+        assert by_uuid.status_code == 200, by_uuid.text
+        assert by_id.status_code == 200, by_id.text
+        assert [call["collection_id"] for call in search_recorder] == [
+            NO_VISIBLE_COLLECTION,
+            NO_VISIBLE_COLLECTION,
+        ]
+
+    def test_no_collection_parameter_means_no_collection_filter(
+        self, client, user_token_headers, search_recorder
+    ):
+        response = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers)
+        assert response.status_code == 200, response.text
+        assert search_recorder[0]["collection_id"] is None
+
+    def test_both_collection_parameters_at_once_is_400(
+        self, client, user_token_headers, normal_user, db_session, search_recorder
+    ):
+        own = _make_collection(db_session, normal_user)
+        response = client.get(
+            SEARCH_PATH,
+            params={"q": "test", "collection_uuid": str(own.uuid), "collection_id": own.id},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 400, response.text
+        assert search_recorder == []
+
+    def test_a_malformed_collection_uuid_is_422(self, client, user_token_headers):
+        response = client.get(
+            SEARCH_PATH,
+            params={"q": "test", "collection_uuid": "not-a-uuid"},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 422, response.text
 
 
 # --------------------------------------------------------------------------- #

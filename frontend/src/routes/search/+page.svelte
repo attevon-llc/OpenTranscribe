@@ -157,6 +157,8 @@
   })();
   $: urlSpeakers = $page.url.searchParams.getAll('speakers');
   $: urlTags = $page.url.searchParams.getAll('tags');
+  // A collection UUID, as the info card's collection chips link it.
+  $: urlCollection = $page.url.searchParams.get('collection');
 
   onMount(() => {
     // Restore search input: prefer URL param, fall back to store query
@@ -169,6 +171,7 @@
     if (urlSources) searchStore.setSources(urlSources);
     if (urlSpeakers.length) searchStore.setSpeakers(urlSpeakers);
     if (urlTags.length) searchStore.setTags(urlTags);
+    if (urlCollection) searchStore.setCollectionId(urlCollection);
 
     // Restore filter sidebar state from search store
     filterSelectedTags = [...$searchStore.selectedTags];
@@ -284,6 +287,7 @@
     }
     $searchStore.selectedSpeakers.forEach((s) => params.append('speakers', s));
     $searchStore.selectedTags.forEach((tag) => params.append('tags', tag));
+    if ($searchStore.selectedCollectionId) params.set('collection', $searchStore.selectedCollectionId);
 
     goto(`/search?${params.toString()}`, { replaceState: true, keepFocus: true });
 
@@ -313,8 +317,10 @@
         apiParams.language = $searchStore.selectedLanguage;
       }
 
+      // The sidebar's collection ids are UUIDs: `collection_uuid`, never the integer
+      // `collection_id` (sending a UUID there answered 422 for every collection filter).
       if ($searchStore.selectedCollectionId) {
-        apiParams.collection_id = $searchStore.selectedCollectionId;
+        apiParams.collection_uuid = $searchStore.selectedCollectionId;
       }
       if ($searchStore.durationRange.min !== null) {
         apiParams.min_duration = $searchStore.durationRange.min;
@@ -454,6 +460,22 @@
     if ($searchStore.query) {
       performSearch($searchStore.query, 1);
     }
+  }
+
+  // Tag / collection chips in the info card: filter the current query in place, keeping the
+  // other filters. With the sidebar open its own collection watcher applies the change (and
+  // would otherwise search a second time); collapsed, it is not mounted, so search here.
+  function handleFilterByTag(event: CustomEvent<string>) {
+    filterSelectedTags = [event.detail];
+    searchStore.setTags([event.detail]);
+    if ($searchStore.query) performSearch($searchStore.query, 1);
+  }
+
+  function handleFilterByCollection(event: CustomEvent<string>) {
+    filterSelectedCollectionId = event.detail;
+    if (showFilters) return;
+    searchStore.setCollectionId(event.detail);
+    if ($searchStore.query) performSearch($searchStore.query, 1);
   }
 
   function handleFilterReset() {
@@ -800,6 +822,10 @@
             summaryUnavailable={$searchStore.summaryUnavailable}
             {activePreview}
             {panelMode}
+            matchListOpen={$searchStore.matchListOpen}
+            on:setMatchListsOpen={(e) => searchStore.setMatchListsOpen(e.detail.fileUuids, e.detail.open)}
+            on:filterTag={handleFilterByTag}
+            on:filterCollection={handleFilterByCollection}
             on:openMatch={handleOpenSummaryMatch}
             on:preview={handlePreview}
             on:togglePlayback={handleTogglePlayback}
@@ -928,10 +954,10 @@
   }
 
   /* Header */
-  /* Header and results share one start-aligned measure (results column + info panel) so
-     a wide monitor does not stretch a result line across the whole screen. */
+  /* The header band (title, query field, source chips, results bar) spans the whole
+     content area like the gallery toolbar; only the results column below is capped at a
+     reading measure (SearchResultsBody). docs/design/search_polish_round2_plan.md, item 1. */
   .search-header {
-    max-width: 65rem;
     margin-bottom: 1.5rem;
   }
 
@@ -1090,7 +1116,6 @@
   .results {
     min-height: 300px;
     width: 100%;
-    max-width: 65rem;
   }
 
   /* Pagination belongs to the results column, not under the info panel. */

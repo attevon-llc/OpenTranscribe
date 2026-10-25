@@ -647,6 +647,38 @@ class SearchCountUnavailableError(QuarantineExclusionUnavailableError):
     """
 
 
+#: OpenSearch's default ``index.max_terms_count``: the largest file set one ``terms`` clause
+#: can carry. A collection larger than this falls back to the denormalized field.
+_COLLECTION_FILTER_UUID_CAP = 65536
+
+
+def _collection_filter_clause(collection_id: int) -> dict[str, Any]:
+    """The search filter for one collection, from its CURRENT membership in Postgres.
+
+    The chunk documents' ``collection_ids`` is written only when a file is (re)indexed, and
+    nothing rewrites it when a file joins or leaves a collection afterwards, so filtering on
+    it matched nothing for an AI auto-collection or any "add to collection" made after the
+    transcript was indexed (measured on the dev stack: every file's chunks carried
+    ``collection_ids: []`` while each sat in two collections). Membership is resolved here
+    instead, the same way RAG chat resolves its collection scope (``file_uuids`` above).
+    An empty collection, including ``collection_visibility.NO_VISIBLE_COLLECTION``, matches
+    nothing. Only past ``_COLLECTION_FILTER_UUID_CAP`` members does it fall back to the field.
+    """
+    from app.db.session_utils import session_scope
+    from app.services.collection_visibility import collection_member_file_uuids
+
+    with session_scope() as db:
+        uuids = collection_member_file_uuids(db, collection_id, _COLLECTION_FILTER_UUID_CAP)
+    if uuids is None:
+        logger.warning(
+            "Collection %s has more than %d files; filtering on the indexed collection_ids",
+            collection_id,
+            _COLLECTION_FILTER_UUID_CAP,
+        )
+        return {"term": {"collection_ids": collection_id}}
+    return {"terms": {"file_uuid": uuids}}
+
+
 def _quarantined_file_uuids() -> list[str]:
     """Every currently-quarantined file's uuid, for excluding facets built from it.
 
@@ -1671,7 +1703,7 @@ class HybridSearchService:
         if file_type:
             filters.append(_file_type_filter_clause(file_type))
         if collection_id is not None:
-            filters.append({"term": {"collection_ids": collection_id}})
+            filters.append(_collection_filter_clause(collection_id))
         if language:
             filters.append({"term": {"language": language}})
         if title_filter:

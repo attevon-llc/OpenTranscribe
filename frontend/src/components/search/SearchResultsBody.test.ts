@@ -21,7 +21,7 @@ vi.mock('svelte/transition', async (importOriginal) => ({
   slide: () => ({ duration: 0 }),
 }));
 
-import SearchResultsBody from './SearchResultsBody.svelte';
+import SearchResultsBody, { DEFAULT_OPEN_RESULTS } from './SearchResultsBody.svelte';
 import { searchHit } from './searchTestFixtures';
 import type { SummaryHit } from '$stores/search';
 
@@ -119,7 +119,7 @@ describe('SearchResultsBody — info panel', () => {
   it('a pinned result stays in the panel while another is hovered, until unpinned', async () => {
     const { container } = render(SearchResultsBody, { props: props() });
     const cards = container.querySelectorAll<HTMLElement>('.results-list > .result-card');
-    const pinA = within(cards[0]).getByRole('button', { name: 'Details' });
+    const pinA = within(cards[0]).getByRole('button', { name: 'Pin details' });
 
     await fireEvent.click(pinA);
     expect(pinA).toHaveAttribute('aria-pressed', 'true');
@@ -142,5 +142,117 @@ describe('SearchResultsBody — info panel', () => {
 
     expect(details).toHaveAttribute('aria-expanded', 'true');
     expect(within(card).getByText('Ann')).toBeInTheDocument();
+  });
+});
+
+describe('SearchResultsBody — pinning is visible', () => {
+  // Owner report: "Details" did nothing on transcript results. In the wide layout the panel
+  // already showed the hovered card, so pinning it changed nothing that could be seen.
+  it('pinning the hit the panel already shows marks the panel Pinned, with an Unpin control', async () => {
+    const { container } = render(SearchResultsBody, { props: props() });
+    const panel = () => within(aside(container)!);
+    expect(panel().queryByText('Pinned')).toBeNull();
+
+    const card = container.querySelector<HTMLElement>('.results-list > .result-card')!;
+    await fireEvent.mouseEnter(card);
+    await fireEvent.click(within(card).getByRole('button', { name: 'Pin details' }));
+
+    expect(panel().getByText('Pinned')).toBeInTheDocument();
+    expect(aside(container)!.querySelector('.info-card.pinned')).not.toBeNull();
+    expect(card).toHaveClass('selected');
+  });
+
+  it("the panel's Unpin releases the pin: the card unpresses and hover drives the panel again", async () => {
+    const { container } = render(SearchResultsBody, { props: props() });
+    const cards = container.querySelectorAll<HTMLElement>('.results-list > .result-card');
+    const pinA = within(cards[0]).getByRole('button', { name: 'Pin details' });
+    await fireEvent.click(pinA);
+
+    await fireEvent.click(within(aside(container)!).getByRole('button', { name: 'Unpin details' }));
+
+    expect(pinA).toHaveAttribute('aria-pressed', 'false');
+    expect(within(aside(container)!).queryByText('Pinned')).toBeNull();
+    await fireEvent.mouseEnter(cards[1]);
+    expect(within(aside(container)!).getByText('Ben')).toBeInTheDocument();
+  });
+});
+
+describe('SearchResultsBody — collapsible match lists', () => {
+  const many = Array.from({ length: DEFAULT_OPEN_RESULTS + 2 }, (_, i) =>
+    searchHit({ file_uuid: `h${i}`, title: `Hit ${i}` })
+  );
+
+  function carets(container: HTMLElement) {
+    return Array.from(
+      container.querySelectorAll<HTMLElement>('.results-list > .result-card .matches-toggle')
+    );
+  }
+
+  it('opens the first results and collapses the rest by default', () => {
+    const { container } = render(SearchResultsBody, { props: props({ results: many }) });
+    const states = carets(container).map((c) => c.getAttribute('aria-expanded'));
+    expect(states).toEqual([...Array(DEFAULT_OPEN_RESULTS).fill('true'), 'false', 'false']);
+  });
+
+  it('a remembered choice beats the position default, and a caret asks to flip it', async () => {
+    const setMatchListsOpen = vi.fn();
+    const { container } = render(SearchResultsBody, {
+      props: props({ results: many, matchListOpen: { h0: false, h6: true } }),
+      events: { setMatchListsOpen },
+    });
+    const all = carets(container);
+    expect(all[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(all[6]).toHaveAttribute('aria-expanded', 'true');
+
+    await fireEvent.click(all[1]);
+
+    expect(setMatchListsOpen.mock.calls[0][0].detail).toEqual({ fileUuids: ['h1'], open: false });
+  });
+
+  it('Collapse all / Expand all sits outside .results-list and sets every card on the page', async () => {
+    const setMatchListsOpen = vi.fn();
+    const { container, getByRole, rerender } = render(SearchResultsBody, {
+      props: props({ results: many }),
+      events: { setMatchListsOpen },
+    });
+    const collapseAll = getByRole('button', { name: 'Collapse all' });
+    expect(collapseAll.closest('.results-list')).toBeNull();
+    expect(container.querySelectorAll('.results-list > *')).toHaveLength(many.length);
+
+    await fireEvent.click(collapseAll);
+    expect(setMatchListsOpen.mock.calls[0][0].detail).toEqual({
+      fileUuids: many.map((h) => h.file_uuid),
+      open: false,
+    });
+
+    const allClosed = Object.fromEntries(many.map((h) => [h.file_uuid, false]));
+    await rerender(props({ results: many, matchListOpen: allClosed }));
+    await fireEvent.click(getByRole('button', { name: 'Expand all' }));
+    expect(setMatchListsOpen.mock.calls[1][0].detail.open).toBe(true);
+  });
+
+  it('a single result has no collapse-all control', () => {
+    const { queryByRole } = render(SearchResultsBody, {
+      props: props({ results: [hits[0]] }),
+    });
+    expect(queryByRole('button', { name: 'Collapse all' })).toBeNull();
+  });
+});
+
+describe('SearchResultsBody — chip filters reach the page', () => {
+  it('a tag or collection chip in the panel is forwarded as filterTag / filterCollection', async () => {
+    const filterTag = vi.fn();
+    const filterCollection = vi.fn();
+    const { container } = render(SearchResultsBody, {
+      props: props(),
+      events: { filterTag, filterCollection },
+    });
+    const panel = within(aside(container)!);
+
+    await fireEvent.click(panel.getByRole('link', { name: 'planning' }));
+    await fireEvent.click(panel.getByRole('link', { name: 'Q4 board' }));
+
+    expect(filterTag.mock.calls[0][0].detail).toBe('planning');
+    expect(filterCollection.mock.calls[0][0].detail).toBe('coll-1');
   });
 });

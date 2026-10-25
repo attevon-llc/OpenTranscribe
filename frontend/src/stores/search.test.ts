@@ -217,6 +217,7 @@ describe('setResults', () => {
         title: 'Meeting',
         speakers: ['Alice'],
         tags: ['work'],
+        collections: [],
         upload_time: '2026-01-01T00:00:00Z',
         language: 'en',
         content_type: 'audio/mp4',
@@ -388,6 +389,7 @@ describe('derived stores', () => {
           title: 'Meeting',
           speakers: [],
           tags: [],
+          collections: [],
           upload_time: '2026-01-01T00:00:00Z',
           language: 'en',
           content_type: 'audio/mp4',
@@ -418,5 +420,30 @@ describe('derived stores', () => {
     searchStore.setResults(response);
 
     expect(get(searchResults)).toEqual(response.results);
+  });
+});
+
+describe('setMatchListsOpen', () => {
+  it('records a per-file choice, merges later ones, survives new results and clears on reset', () => {
+    searchStore.reset();
+    searchStore.setMatchListsOpen(['a', 'b'], false);
+    searchStore.setMatchListsOpen(['b'], true);
+    expect(get(searchStore).matchListOpen).toEqual({ a: false, b: true });
+
+    searchStore.setResults({
+      query: 'q',
+      results: [],
+      total_results: 0,
+      total_files: 0,
+      page: 1,
+      page_size: 20,
+      total_pages: 0,
+      search_time_ms: 1,
+      filters_applied: {},
+    });
+    expect(get(searchStore).matchListOpen).toEqual({ a: false, b: true });
+
+    searchStore.reset();
+    expect(get(searchStore).matchListOpen).toEqual({});
   });
 });

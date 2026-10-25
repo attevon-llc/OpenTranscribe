@@ -70,6 +70,16 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   refusal. `AuditedResource.conversation` covers chat exports. Membership changes
   (`collection.membership.change`) are governance events: always written, after the commit.
   `tests/api/test_content_audit_events.py` pins one event per emit site.
+- **Holds** — `hold_guard.py` is the ONE answer to "is this file held by anyone"
+  (platform `media_file.legal_hold` OR an active organization `content_hold`): `hold_state` /
+  `hold_states` per file, `held_pred` / `not_held_pred` inside a query, `is_held(file)` for a loaded
+  row, `refusal_detail` for the 409 body (everyone learns `held_by`; only an org admin gets the hold
+  uuids; the reason never appears). Never read `MediaFile.legal_hold` to decide whether to destroy
+  or restart a clock (`test_hold_guard_single_source.py` fails on it). `content_hold_service.py`
+  places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`,
+  `on_collection_media_added`); it never commits, and what must follow the commit (storage object
+  lock, the erasure-sweep nudge, the audit event) is a `HoldChange` that `finish_hold_change`
+  performs. `content_hold_queries.py` holds the read-side questions.
 - **Org audit view** — `org_audit_view.py` resolves `actor_display` / `target_display` /
   `resource_display` for the organization admin's audit screen at READ time (three queries per page), and
   only inside the org: a non-member (left, operator, failed login) or another tenant's / personal /

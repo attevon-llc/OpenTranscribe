@@ -105,6 +105,15 @@ authority. See `backend/app/db/CLAUDE.md`.
   deletes personal tags and de-attributes org tags (`admin._delete_user_owned_records`,
   `gdpr_erasure_service._delete_owner_scoped_rows`); `erase_organization` deletes the org's
   tags, because `tag.organization_id` is a plain FK.
+- **`ContentHold` / `ContentHoldFile`** (`v447`, issue #1276, `models/content_hold.py`) are an
+  ORGANIZATION's holds: scope `file` or `collection`, active while `released_at IS NULL`, released
+  never deleted. `organization_id` CASCADEs, `collection_id` and both actor keys SET NULL (the
+  hold outlives its collection and its admins as history). `reason` / `matter_ref` are
+  administrator text: never in an audit event, a socket message or a file response. The
+  platform's own hold is still `media_file.legal_hold`, and the question "is this file held by
+  anyone" is `services/hold_guard` and nowhere else (`tests/unit/test_hold_guard_single_source.py`
+  fails on a new reader of the flag). A collection hold lists its files in `content_hold_file`,
+  and a file added later is covered by `content_hold_service.on_collection_media_added`.
 - **`Collection` belongs to a TENANT** (`v422_add_collection_tenancy`, issue #1051). **personal**
   = `organization_id IS NULL`, `user_id` = owner; **organization** = `organization_id` set,
   shared by every member of the org (members are editors, the creator and org admins are

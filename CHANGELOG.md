@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Nineteen migrations, `v397` to `v446`, run automatically at backend start.** They add columns
+- **Twenty migrations, `v397` to `v447`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -583,6 +583,17 @@ off by default.
 
 ### Changed
 
+- **A held file can no longer be reprocessed or retried, and a refusal says who holds it
+  (#1276).** The 409 `FILE_UNDER_LEGAL_HOLD` that a delete of a held file already answered now also
+  carries `held_by` (`platform`, `organization` or both), and a reprocess or retry of a held file
+  answers it too, because regenerating the transcript replaces the evidence a hold keeps. Editing
+  the transcript is still allowed. "Held" now means held by the operator OR by an organization
+  hold: delete, cancel-upload, account deletion, the retention sweep, GDPR erasure (which defers
+  the file, and keeps an organization's row while it has an active hold), the duration backfill
+  and the completion clock all ask one place, `hold_guard`, and a scan test fails on any new
+  reader of `media_file.legal_hold`. Releasing the operator's hold no longer lifts the storage
+  object lock while an organization hold still covers the file. New tables `content_hold` and
+  `content_hold_file` (`v447`); the screens and API to place a hold follow in the same release.
 - **The bundle-budget build gate shows its margin, and derived builds can pass a capped allowance
   (#1255).** `npm run build` now prints the exact headroom of both the root layout node and its
   static closure on every run, pass or fail, and flags anything under 512 B as `LOW`; a failing

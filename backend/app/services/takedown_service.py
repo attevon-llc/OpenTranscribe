@@ -44,6 +44,7 @@ from app.core.enums import FileStatus
 from app.core.enums import TakedownOrigin
 from app.models.media import MediaFile
 from app.models.takedown import TakedownNotice
+from app.services.hold_guard import is_held
 from app.services.takedown_authority import TakedownActor
 from app.services.takedown_authority import TakedownRefusedError
 from app.services.takedown_authority import assert_may_quarantine
@@ -125,7 +126,7 @@ def stamp_completion_time(file: MediaFile, when: datetime) -> None:
 
     ``completed_at`` is the column the retention sweep (``cleanup._select_expired_files``,
     issue #664) measures its window from -- but that predicate already excludes any row
-    with ``legal_hold`` or ``is_quarantined`` set, so writing this column while a file is
+    held by the platform or an organization, or quarantined, so writing this column while a file is
     held is inert until release, not a live hazard. The one real hazard is narrower: a
     file that ALREADY completed before takedown (so ``completed_at`` already holds a real
     timestamp) getting that timestamp MOVED FORWARD by a re-process while held, which
@@ -138,7 +139,7 @@ def stamp_completion_time(file: MediaFile, when: datetime) -> None:
         file: The media file to stamp.
         when: The real completion time (``datetime.now(UTC)`` at the call site).
     """
-    if file.completed_at is None or not (file.is_quarantined or file.legal_hold):
+    if file.completed_at is None or not (file.is_quarantined or is_held(file)):
         file.completed_at = when
 
 
@@ -499,7 +500,9 @@ def release_file(
 
     bump_corpus_version()
 
-    if clear_legal_hold and file.storage_path:
+    # The object lock mirrors "held by ANYONE": releasing the platform's hold must not lift it
+    # while an organization hold still covers the file (issue #1276).
+    if clear_legal_hold and file.storage_path and not is_held(file):
         try:
             from app.services.minio_service import set_object_legal_hold
 

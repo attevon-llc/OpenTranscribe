@@ -24636,7 +24636,7 @@
     },
     "/api/admin/files/{file_uuid}/release": {
       "post": {
-        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_files_under_legal_hold``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
+        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_held_files``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
         "operationId": "release_media_file_api_admin_files__file_uuid__release_post",
         "parameters": [
           {

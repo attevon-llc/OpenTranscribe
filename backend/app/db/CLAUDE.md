@@ -108,6 +108,7 @@ owner and organization; detection arm keys on `ck_takedown_notice_file_outcome_a
 downgrade drops compliance evidence and is not executed by its test),
 `v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`).
 `v446_add_collection_visibility` (`collection.visibility` `organization|restricted`, issue #1275, with `ck_collection_visibility` — restricted only on an organization collection — and `ix_collection_org_visibility`; `v445` belongs to the privacy lane; arm keys on the CHECK, created last).
+`v447_add_content_hold` (`content_hold` + `content_hold_file`, issue #1276: organization holds on files or a whole collection; `organization_id` CASCADE, `collection_id` and both actor keys SET NULL, `ck_content_hold_reason_length` 10-2000; arm keys on `ck_content_hold_collection_scope`, created last; the downgrade DROPS every hold and its history, so it is only for a database that never placed one).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

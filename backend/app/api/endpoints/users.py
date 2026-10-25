@@ -841,7 +841,7 @@ def delete_user(
     deleted_snapshot = DeletedUser.of(user)
 
     # Use the comprehensive cleanup from the admin endpoint to avoid orphaned records.
-    from app.api.endpoints.admin import _assert_no_files_under_legal_hold
+    from app.api.endpoints.admin import _assert_no_held_files
     from app.api.endpoints.admin import _delete_user_media_files
     from app.api.endpoints.admin import _delete_user_owned_records
     from app.api.endpoints.admin import _delete_user_speakers
@@ -853,7 +853,7 @@ def delete_user(
     # Before the first pass, not inside the third: this handler has no savepoint, so a
     # refusal raised after _delete_user_owned_records would leave the session holding
     # deletes of rows the caller was told were not deleted (issue #689).
-    _assert_no_files_under_legal_hold(db, user_id)
+    _assert_no_held_files(db, user_id)
 
     # Phase 0 — read the storage/OpenSearch plan while the rows still exist (issue
     # #695). See admin.delete_admin_user's docstring for the full phase-boundary

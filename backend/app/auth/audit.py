@@ -126,6 +126,12 @@ class AuditEventType(StrEnum):
     ADMIN_TAKEDOWN_NOTICE_NOTIFY = "admin.takedown_notice.notify"
     ADMIN_TAKEDOWN_NOTICE_EXPORT = "admin.takedown_notice.export"
 
+    # Organization content holds (issue #1276). ``details`` carries the scope, counts, the
+    # collection uuid and (on a refusal) the action and who holds the file: never the reason.
+    CONTENT_HOLD_PLACE = "content.hold.place"
+    CONTENT_HOLD_RELEASE = "content.hold.release"
+    CONTENT_HOLD_REFUSED = "content.hold.refused"
+
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.
     AUDIT_EXPORT = "audit.export"

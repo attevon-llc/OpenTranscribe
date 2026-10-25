@@ -72,15 +72,17 @@ class GovWorld:
         org_id = self.org.id if org is True else (org.id if org else None)
         file_uuid = uuid.uuid4()
         row = MediaFile(
-            uuid=file_uuid,
-            filename=f"gov_{file_uuid.hex[:8]}.mp3",
-            storage_path=f"gov/{file_uuid}.mp3",
-            content_type="audio/mpeg",
-            file_size=1,
-            user_id=owner.id,
-            organization_id=org_id,
-            status="completed",
-            **fields,
+            **{
+                "uuid": file_uuid,
+                "filename": f"gov_{file_uuid.hex[:8]}.mp3",
+                "storage_path": f"gov/{file_uuid}.mp3",
+                "content_type": "audio/mpeg",
+                "file_size": 1,
+                "user_id": owner.id,
+                "organization_id": org_id,
+                "status": "completed",
+                **fields,
+            }
         )
         self.db.add(row)
         self.db.commit()
@@ -138,12 +140,15 @@ class GovWorld:
         from app.api.deps_context import get_base_context
         from app.api.deps_context import get_current_context
         from app.api.endpoints.auth import get_current_active_user
+        from app.api.endpoints.auth import get_current_user
         from app.main import app
 
         org_id = self.org.id if org is True else (org.id if org else None)
         if role is None:
             role = {self.admin.id: "org:admin"}.get(user.id, "org:member")
         app.dependency_overrides[get_current_active_user] = lambda: user
+        # A few routes (the delete / cancel-upload route) depend on the bare user dependency.
+        app.dependency_overrides[get_current_user] = lambda: user
         context = RequestContext(
             user=user, org_id=org_id, org_role=role if org_id is not None else None
         )
@@ -154,6 +159,7 @@ class GovWorld:
             yield
         finally:
             app.dependency_overrides.pop(get_current_active_user, None)
+            app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_base_context, None)
             app.dependency_overrides.pop(get_current_context, None)
 

@@ -1216,19 +1216,21 @@ def delete_media_file(
 
     # Delegate the actual destroy to the single canonical implementation so the
     # interactive, bulk, retention, and orphan-cleanup paths all behave identically.
-    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
     from app.services.file_cleanup_service import purge_media_file
+    from app.services.hold_guard import refusal_detail
 
     result = purge_media_file(db, db_file)
     if result.get("refused_legal_hold"):
         # A legal hold is a deliberate, actionable refusal, not a server fault:
         # the admin has to release the hold first. Reporting it as a 500 told the
-        # caller the delete had broken rather than that it had been declined.
+        # caller the delete had broken rather than that it had been declined. The body says
+        # WHO holds the file; only an organization admin is given the hold uuids to release.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "error": LEGAL_HOLD_ERROR_CODE,
-                "message": result.get("error"),
+                **refusal_detail(
+                    result["hold_state"], reveal_uuids=is_org_admin, message=result.get("error")
+                ),
                 "file_id": str(db_file.uuid),
             },
         )

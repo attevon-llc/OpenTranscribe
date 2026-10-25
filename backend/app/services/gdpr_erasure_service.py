@@ -279,9 +279,10 @@ def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]])
 def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
     """Run the canonical per-file destroy for every file, accumulating counters.
 
-    Files under an active legal hold are SKIPPED, not destroyed: GDPR
+    Files under an active legal hold (the platform's, or an organization's:
+    ``hold_guard.hold_states``) are SKIPPED, not destroyed: GDPR
     Art. 17(3)(e) exempts data retained for legal claims, and the takedown
-    flow's evidence-preservation guarantee rests on the DB flag (S3
+    flow's evidence-preservation guarantee rests on the DB state (S3
     object-lock is best-effort only). Skips are reported in the summary so
     the erasure is auditable as partial, and the deferral is recorded in the
     **erasure ledger** (``models/erasure``) so a later hold release re-runs the
@@ -295,8 +296,11 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
     still in place is a partial erasure, and reading ``deleted: True`` alone
     reported it as a complete one.
     """
+    from app.services.hold_guard import hold_states
+
+    held = hold_states(db, [int(f.id) for f in files])
     for media_file in files:
-        if bool(media_file.legal_hold):
+        if int(media_file.id) in held:
             summary["legal_holds_skipped"] += 1
             summary["errors"].append(
                 {
@@ -863,9 +867,29 @@ def erase_organization(
         .count()
     )
     ledger_entry_id = ledger_entry.id if ledger_entry is not None else None
+    # An active organization hold means the organization's data is retained for a legal claim
+    # (issue #1276). The row delete would cascade the hold's own record away and, on a hold with
+    # no file left, nothing else would stop it. Keep the organization and defer the erasure: the
+    # sweep retries once the hold is released.
+    from app.models.content_hold import ContentHold
+
+    active_holds = (
+        db.query(ContentHold)
+        .filter(ContentHold.organization_id == org_id, ContentHold.released_at.is_(None))
+        .count()
+    )
+    if active_holds:
+        summary["legal_holds_skipped"] = max(int(summary["legal_holds_skipped"]), active_holds)
+        summary["errors"].append(
+            {
+                "org_id": org_id,
+                "error": f"organization row kept: {active_holds} active legal hold(s)",
+            }
+        )
     try:
-        db.delete(org)
-        db.commit()
+        if not active_holds:
+            db.delete(org)
+            db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
         # Same contract as erase_user's twin above: `summary` is returned verbatim as the

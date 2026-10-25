@@ -9,6 +9,8 @@ from .auth_config import AuthConfigAudit
 from .chat import ChatConversation
 from .chat import ChatMessage
 from .chat import ChatProject
+from .content_hold import ContentHold
+from .content_hold import ContentHoldFile
 from .custom_vocabulary import CustomVocabulary
 from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
@@ -79,6 +81,8 @@ __all__ = [
     "FileStatus",
     "Analytics",
     "Collection",
+    "ContentHold",
+    "ContentHoldFile",
     "CollectionMember",
     "SpeakerCluster",
     "SpeakerClusterMember",

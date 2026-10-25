@@ -675,6 +675,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_collection_visibility')"
     )
 
+    # v447: organization content holds (issue #1276). Keyed on its last-created CHECK.
+    has_content_hold = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_content_hold_collection_scope')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -744,8 +749,17 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v446: same as v444 plus the collection visibility mode. The newest revision on this
+    # v447: same as v446 plus the organization content holds. The newest revision on this
     # chain, so this is the top of the ladder.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_collection_visibility
+        and has_content_hold
+    ):
+        return "v447_add_content_hold"
+    # v446: same as v444 plus the collection visibility mode.
     if (
         matches_v442
         and has_takedown_notice

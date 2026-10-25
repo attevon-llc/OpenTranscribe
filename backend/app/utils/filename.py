@@ -11,6 +11,11 @@ _CONTROL_AND_BIDI_RE = re.compile(
 )
 
 
+def strip_control_and_bidi(text: str) -> str:
+    """Remove C0/C1 controls and bidirectional formatting characters from ``text``."""
+    return _CONTROL_AND_BIDI_RE.sub("", text)
+
+
 def sanitize_filename(filename: str, max_length: int = 255) -> str:
     """Sanitize a filename to be safe for storage and processing.
 
@@ -34,7 +39,7 @@ def sanitize_filename(filename: str, max_length: int = 255) -> str:
     if not filename:
         return "unnamed_file"
 
-    filename = _CONTROL_AND_BIDI_RE.sub("", filename)
+    filename = strip_control_and_bidi(filename)
     if not filename:
         return "unnamed_file"
 

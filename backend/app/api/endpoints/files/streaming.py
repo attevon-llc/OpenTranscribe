@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
+from app.utils.content_disposition import attachment_header
 from app.utils.error_handlers import ErrorHandler
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
             content=thumbnail_io,
             media_type=media_type,
             headers={
-                "Content-Disposition": f'inline; filename="thumbnail.{ext}"',
+                "Content-Disposition": attachment_header(f"thumbnail.{ext}", disposition="inline"),
                 "Cache-Control": cache_control,
                 "ETag": f'"{etag}"',
                 "Content-Length": str(content_length),

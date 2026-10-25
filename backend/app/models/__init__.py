@@ -41,6 +41,7 @@ from .media import Task
 from .media import TranscriptSegment
 from .organization import Organization
 from .organization import OrganizationMembership
+from .organization_policy import OrganizationPolicy
 from .password_history import PasswordHistory
 from .password_reset import PasswordResetToken
 from .pipeline_timing import FilePipelineTiming
@@ -125,6 +126,7 @@ __all__ = [
     "WatchSourceEmail",
     "Organization",
     "OrganizationMembership",
+    "OrganizationPolicy",
     "UsageEvent",
     "ChatConversation",
     "ChatMessage",

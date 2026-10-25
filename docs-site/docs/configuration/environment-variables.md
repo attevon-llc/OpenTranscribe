@@ -285,6 +285,34 @@ SEARCH_MAX_OVERFETCH=200
 SEARCH_RRF_RANK_CONSTANT=30
 ```
 
+### Chat Reranker Threads
+
+```bash
+# Torch intra-op threads used while the chat reranker scores passages: auto or a positive
+# integer (default: auto = min(8, half the container CPU budget))
+CHAT_RERANKER_TORCH_THREADS=auto
+```
+
+The cross-encoder that reranks retrieved passages scores up to 50 passages per chat turn on
+the CPU. With torch's own default (one thread per physical core) that oversubscribes a busy or
+shared host: on a 48-thread host under load a warm rerank took 7-16 s at 24 threads and
+3.4-5.5 s at 4-8. The cap applies to the reranker's scoring call only. Embeddings and output
+redaction in the same process keep torch's default.
+
+- **It is a deployment setting, not an admin-panel setting.** Torch fixes the thread count per
+  thread the first time it is used, so the value is applied once when the API process starts.
+  A change needs a restart. Set it in `.env`, in the container environment, or in the
+  environment block of a Kubernetes or Helm values file. The effective value is shown, read
+  only, on Settings → System Statistics under AI Models.
+- `auto` uses half of the CPU budget of the container (its CPU quota when one is set, else the
+  CPUs it may run on), at most 8, at least 1. Set a number to override it, for example a
+  larger one on a dedicated many-core host.
+- An explicit number always wins. `auto` steps aside when you set `OMP_NUM_THREADS` or
+  `TORCH_NUM_THREADS` yourself: then no cap is applied here and torch uses your value.
+- A value that is neither `auto` nor a positive integer stops the API at startup.
+- At most two reranks run at a time, each at the cap. A third concurrent chat waits for one to
+  finish instead of oversubscribing the CPU.
+
 ### Index Topology
 
 Shard and replica counts for the `transcript_chunks` index, applied **only when the index is

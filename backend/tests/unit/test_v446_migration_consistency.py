@@ -33,7 +33,7 @@ def test_v446_revision_chain():
     config = get_alembic_config()
     config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_revision(REVISION).down_revision == "v444_add_takedown_notification"
+    assert scripts.get_revision(REVISION).down_revision == "v445_add_organization_policy"
     assert len(set(scripts.get_heads())) == 1
 
 

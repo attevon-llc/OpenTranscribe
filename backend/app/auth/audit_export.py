@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import Response
 
+from app.utils.content_disposition import attachment_header
 from app.utils.csv_safe import render_csv
 
 #: The stored fields an export carries, in column order. ``details`` is serialised to one cell.
@@ -77,7 +78,7 @@ def audit_export_response(
         content=body,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": attachment_header(filename),
             "X-Export-Truncated": "true" if truncated else "false",
         },
     )

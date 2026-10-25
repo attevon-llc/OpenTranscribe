@@ -3,59 +3,86 @@
  *
  * Pure view model. The store keeps one record per event type per file (the file page, gallery
  * and status page dispatch on `notification.type`); `jobGrouping.ts` groups a file's records
- * and this module derives the card: task chips, transcription sub-stages (from the backend's
- * `stage` key), sub-task durations, and a weighted overall percent whose LLM share depends on
- * whether an LLM is available. Design and the event inventory:
+ * and this module derives the card in three tiers:
+ *
+ *   main       import, transcription (+ its backend-reported stages), diarization
+ *   finishing  search indexing, facts, analytics, redaction, speaker attributes /
+ *              suggestions / clustering
+ *   ai         summary, its index, topics, applying tag/collection suggestions
+ *
+ * The finishing and AI tiers come from the backend's post-processing run
+ * (`postProcessing.ts`): a plan names every task that will run (or was skipped by a
+ * setting), so the card is "Complete" only when every known task has finished, says
+ * "Finishing up" while any is outstanding, and says it cannot confirm the final steps when
+ * no plan was ever seen, rather than guessing. Design and the event inventory:
  * `docs/design/consolidated_processing_notification_plan.md`.
  */
 import type { Notification } from '$stores/websocket';
 import { formatCompactDuration } from '$lib/utils/formatting';
 import { JOB_TASK_BY_TYPE, type JobItem, type MemberTask } from './jobGrouping';
 import { taskStateFromStatus, type StepMark, type TaskState } from './runTiming';
+import type { PostProcessingEntry, PostProcessingRun } from './postProcessing';
 
 export type { TaskState } from './runTiming';
 
-export type JobTaskKey =
-  | 'import'
-  | 'transcription'
-  | 'diarization'
-  | 'redaction'
-  | 'enrichment'
-  | 'summary'
-  | 'topics';
+export type TierKey = 'main' | 'finishing' | 'ai';
 
 /**
- * Share of the overall bar. Diarization is reported inside the transcription percent and
- * enrichment has no reliable "all finished" signal, so neither carries weight of its own.
+ * The post-processing task keys, the backend's `PostProcessingTask` wire values, each filed
+ * under its tier. `backend/tests/unit/test_post_processing_status.py` fails if this map and
+ * the enum diverge, so a new backend task cannot render nowhere.
  */
+export const POST_PROCESSING_TIERS = {
+  speaker_attributes: 'finishing',
+  speaker_identification: 'finishing',
+  speaker_clustering: 'finishing',
+  search_indexing: 'finishing',
+  file_facts: 'finishing',
+  analytics: 'finishing',
+  redaction: 'finishing',
+  summary: 'ai',
+  topics: 'ai',
+  summary_indexing: 'ai',
+  auto_label: 'ai',
+} as const satisfies Record<string, Exclude<TierKey, 'main'>>;
+
+export type PostProcessingKey = keyof typeof POST_PROCESSING_TIERS;
+export type JobTaskKey = 'import' | 'transcription' | 'diarization' | PostProcessingKey;
+
+const POST_KEYS = Object.keys(POST_PROCESSING_TIERS) as PostProcessingKey[];
+
+/** Share of the overall bar. Diarization is reported inside the transcription percent. */
 export const TASK_WEIGHTS: Record<JobTaskKey, number> = {
   import: 10,
   transcription: 60,
   diarization: 0,
-  redaction: 5,
-  enrichment: 0,
-  summary: 20,
-  topics: 10,
+  speaker_attributes: 3,
+  speaker_identification: 2,
+  speaker_clustering: 1,
+  search_indexing: 4,
+  file_facts: 2,
+  analytics: 1,
+  redaction: 2,
+  summary: 10,
+  topics: 4,
+  summary_indexing: 1,
+  auto_label: 2,
 };
 
-export const TASK_ORDER: readonly JobTaskKey[] = [
-  'import',
-  'transcription',
-  'diarization',
-  'redaction',
-  'enrichment',
-  'summary',
-  'topics',
-];
-
-export const LLM_TASKS: readonly JobTaskKey[] = ['summary', 'topics'];
+/** Held by the finishing tier before the plan arrives, so the bar cannot reach 100%. */
+const FINISHING_PLACEHOLDER_WEIGHT = 15;
 
 /**
- * How long an expected-but-unannounced LLM task holds a finished transcription open. The
- * backend is silent when a user turned automatic topic extraction off, so without this the
- * card would wait forever.
+ * How long after the transcript is done the card waits for the post-processing plan before
+ * saying it cannot confirm the final steps (the plan normally lands within a second).
  */
-export const LLM_START_GRACE_MS = 3 * 60_000;
+export const PLAN_GRACE_MS = 2 * 60_000;
+/** An outstanding run with no frame for this long is flagged as possibly stale. */
+export const STALE_AFTER_MS = 10 * 60_000;
+/** When the card should ask the server for the run (a missed frame, a reload). */
+export const RECONCILE_AFTER_MS = 30_000;
+/** The server keeps a run this long (`POST_PROCESSING_STATUS_TTL_S`); older is unknowable. */
+export const RUN_RETENTION_MS = 2 * 24 * 3600_000;
 
 /**
  * Transcription sub-stages in display order. The keys are the backend's `TranscriptionStage`
@@ -83,6 +110,7 @@ export interface JobSubtask {
 
 export interface JobTask {
   key: JobTaskKey;
+  tier: TierKey;
   state: TaskState;
   percent: number;
   weight: number;
@@ -91,7 +119,29 @@ export interface JobTask {
   subtasks: JobSubtask[];
 }
 
-export type JobState = 'running' | 'done' | 'failed';
+export interface JobTier {
+  key: TierKey;
+  state: TaskState;
+  tasks: JobTask[];
+  done: number;
+  total: number;
+}
+
+/**
+ * processing  the transcript is not ready yet
+ * finishing   the transcript is ready, known post-processing is still outstanding
+ * complete    every task the backend said would run has finished
+ * attention   something failed (and nothing else is still running)
+ * ready       the transcript is ready, but the final steps cannot be confirmed
+ */
+export type JobState = 'processing' | 'finishing' | 'complete' | 'attention' | 'ready';
+
+export type FinalJobState = Extract<JobState, 'complete' | 'attention' | 'ready'>;
+
+/** The outcomes a card reaches: announced once, and the end of its live updates. */
+export function isFinalJobState(state: JobState): state is FinalJobState {
+  return state === 'complete' || state === 'attention' || state === 'ready';
+}
 
 export interface ProcessingJobModel {
   key: string;
@@ -99,7 +149,17 @@ export interface ProcessingJobModel {
   filename: string;
   state: JobState;
   percent: number;
+  tiers: JobTier[];
+  /** Every visible task, in tier order. */
   tasks: JobTask[];
+  /** Post-processing tasks still queued or running, in display order. */
+  outstanding: JobTaskKey[];
+  /** The plan has not arrived yet (finishing tier is preparing). */
+  awaitingPlan: boolean;
+  /** Outstanding work with no frame for {@link STALE_AFTER_MS}. */
+  stale: boolean;
+  /** The card should read the server's post-processing state for this file. */
+  reconcile: boolean;
   memberIds: string[];
   read: boolean;
   dismissible: boolean;
@@ -153,12 +213,20 @@ function stageIndexOf(stage: string | undefined): number {
   return TRANSCRIPTION_STAGES.indexOf(stage as TranscriptionStageKey);
 }
 
+function tierOf(key: JobTaskKey): TierKey {
+  return key in POST_PROCESSING_TIERS ? POST_PROCESSING_TIERS[key as PostProcessingKey] : 'main';
+}
+
+function isOutstanding(state: TaskState): boolean {
+  return state === 'pending' || state === 'running';
+}
+
 /**
  * Sub-stage steps from the stage the backend sent on each frame (recorded on the step log by
  * `runTiming`). The current stage is the latest one seen: a frame without a stage leaves it
- * where it was, and a record with none at all is at its start. Time is attributed to a stage from each mark
- * until the next mark of a different stage, or until the run finished, and summed, so a stage
- * the backend revisits is still timed correctly.
+ * where it was, and a record with none at all is at its start. Time is attributed to a stage
+ * from each mark until the next mark of a different stage, or until the run finished, and
+ * summed, so a stage the backend revisits is still timed correctly.
  */
 function transcriptionStages(tx: Notification, txState: TaskState): JobSubtask[] {
   const log: StepMark[] = (tx.stepLog ?? []).filter((m) => stageIndexOf(m.stage) >= 0);
@@ -186,6 +254,23 @@ function transcriptionStages(tx: Notification, txState: TaskState): JobSubtask[]
   });
 }
 
+function makeTask(
+  key: JobTaskKey,
+  state: TaskState,
+  over: Partial<Pick<JobTask, 'percent' | 'durationSeconds' | 'message' | 'subtasks'>> = {}
+): JobTask {
+  return {
+    key,
+    tier: tierOf(key),
+    state,
+    percent: state === 'done' ? 100 : 0,
+    weight: TASK_WEIGHTS[key],
+    durationSeconds: null,
+    subtasks: [],
+    ...over,
+  };
+}
+
 function recordTask(key: JobTaskKey, n: Notification, runningPercent: number | null): JobTask {
   const state = taskStateFromStatus(wireStatus(n));
   // A failed task keeps the progress it reached (0 when it never reported one): counting
@@ -198,27 +283,67 @@ function recordTask(key: JobTaskKey, n: Notification, runningPercent: number | n
         : state === 'failed'
           ? clamp(runningPercent ?? 0)
           : 0;
-  return {
-    key,
-    state,
+  return makeTask(key, state, {
     percent,
-    weight: TASK_WEIGHTS[key],
     durationSeconds: state === 'done' ? taskDuration(n) : null,
     message: state === 'running' || state === 'failed' ? messageOf(n) : undefined,
-    subtasks: [],
-  };
+  });
 }
 
-function pendingTask(key: JobTaskKey): JobTask {
-  return {
-    key,
-    state: 'pending',
-    percent: 0,
-    weight: TASK_WEIGHTS[key],
-    durationSeconds: null,
-    subtasks: [],
-  };
+const ENTRY_STATE: Record<PostProcessingEntry['state'], TaskState> = {
+  queued: 'pending',
+  started: 'running',
+  done: 'done',
+  failed: 'failed',
+  skipped: 'skipped',
+};
+
+/** A task from the post-processing run, with detail from its own record when it has one. */
+function entryTask(
+  key: PostProcessingKey,
+  entry: PostProcessingEntry,
+  rec?: Notification
+): JobTask {
+  const state = ENTRY_STATE[entry.state];
+  const recordPercent = rec ? percentOf(rec) : null;
+  const serverDuration = rec?.data?.duration_seconds;
+  const durationSeconds =
+    state !== 'done'
+      ? null
+      : typeof serverDuration === 'number' && serverDuration >= 0
+        ? serverDuration
+        : entry.startedAt !== undefined && entry.at >= entry.startedAt
+          ? entry.at - entry.startedAt
+          : null;
+  return makeTask(key, state, {
+    percent:
+      state === 'done'
+        ? 100
+        : state === 'running'
+          ? clamp(
+              key === 'summary' && recordPercent !== null ? recordPercent : INDETERMINATE_PERCENT
+            )
+          : 0,
+    durationSeconds,
+    message: rec && (state === 'running' || state === 'failed') ? messageOf(rec) : undefined,
+  });
 }
+
+function tierState(tasks: JobTask[]): TaskState {
+  if (tasks.length === 0) return 'skipped';
+  if (tasks.some((t) => t.state === 'running')) return 'running';
+  const pending = tasks.some((t) => t.state === 'pending');
+  if (pending)
+    return tasks.some((t) => t.state === 'done' || t.state === 'failed') ? 'running' : 'pending';
+  if (tasks.some((t) => t.state === 'failed')) return 'failed';
+  return 'done';
+}
+
+const RECORD_FOR_KEY: Partial<Record<PostProcessingKey, MemberTask>> = {
+  summary: 'summary',
+  topics: 'topics',
+  redaction: 'redaction',
+};
 
 /** Builds one file's card from its records. Never mutates them. */
 export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJobModel {
@@ -231,6 +356,7 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
 
   const tx = byTask.get('transcription');
   const imp = byTask.get('import');
+  const run: PostProcessingRun | undefined = byTask.get('postProcessing')?.postProcessing;
   const txStart = tx?.startedAt;
   // A downstream record older than the current transcription run is from a previous run.
   const current = (task: MemberTask) => {
@@ -239,92 +365,149 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
     return rec;
   };
 
-  const tasks: JobTask[] = [];
-  let importState: TaskState | undefined;
+  // ---- main tier ------------------------------------------------------------------------
+  const main: JobTask[] = [];
+  let mainState: TaskState | undefined;
   if (imp) {
     const t = recordTask('import', imp, percentOf(imp));
-    importState = t.state;
-    tasks.push(t);
+    mainState = t.state;
+    main.push(t);
   }
-
-  let txState: TaskState | undefined;
   if (tx) {
     const t = recordTask('transcription', tx, percentOf(tx));
-    txState = t.state;
     t.subtasks = transcriptionStages(tx, t.state);
-    tasks.push(t);
-
-    // The diarization chip is the diarize step, shown at task level.
+    main.push(t);
     const diarize = t.subtasks[DIARIZE_INDEX];
-    tasks.push({
-      key: 'diarization',
-      state: diarize.state,
-      percent: diarize.state === 'done' ? 100 : 0,
-      weight: TASK_WEIGHTS.diarization,
-      durationSeconds: diarize.durationSeconds,
-      subtasks: [],
+    main.push(makeTask('diarization', diarize.state, { durationSeconds: diarize.durationSeconds }));
+    mainState = t.state === 'done' && mainState === 'failed' ? 'failed' : t.state;
+  } else if (imp && mainState !== 'failed') {
+    main.push(makeTask('transcription', 'pending'));
+    mainState = mainState === 'done' ? 'pending' : mainState;
+  }
+  const hasMain = main.length > 0;
+  const mainDone = mainState === 'done';
+  const mainFailed = mainState === 'failed';
+
+  // ---- post-processing tiers --------------------------------------------------------------
+  const planned = run !== undefined && run.runAt !== null;
+  // A record saved before run timing existed has no finishedAt; its last frame is the end.
+  const txFinishedAt = tx && mainDone ? tx.finishedAt ?? ms(tx.timestamp) : undefined;
+  const graceOver = txFinishedAt !== undefined && opts.now - txFinishedAt > PLAN_GRACE_MS;
+  const planUnknown = !planned && (run?.unknown === true || graceOver);
+  const awaitingPlan = hasMain && mainDone && !planned && !planUnknown;
+
+  const post: JobTask[] = [];
+  for (const key of POST_KEYS) {
+    const entry = run?.tasks[key];
+    const recordType = RECORD_FOR_KEY[key];
+    const rec = recordType ? current(recordType) : undefined;
+    if (entry) {
+      post.push(entryTask(key, entry, rec));
+    } else if (rec) {
+      // A record with no run entry (an older backend, or a manual regenerate on a file
+      // whose card has no run) still shows what it says.
+      post.push(recordTask(key, rec, key === 'summary' ? percentOf(rec) : null));
+    } else if (
+      !planned &&
+      !planUnknown &&
+      hasMain &&
+      !mainFailed &&
+      opts.llmAvailable &&
+      (key === 'summary' || key === 'topics')
+    ) {
+      // Before the plan, an LLM deployment expects the AI tier; the plan then decides.
+      post.push(makeTask(key, 'pending'));
+    }
+  }
+
+  const visible = [...main, ...post].filter((t) => t.state !== 'skipped');
+  const finishingTasks = visible.filter((t) => t.tier === 'finishing');
+  const aiTasks = visible.filter((t) => t.tier === 'ai');
+
+  const tiers: JobTier[] = [];
+  if (hasMain) {
+    tiers.push({
+      key: 'main',
+      state: mainState ?? 'pending',
+      tasks: main.filter((t) => t.state !== 'skipped'),
+      done: mainDone ? 1 : 0,
+      total: 1,
     });
-
-    const expected = tx.enrichmentTasks ?? [];
-    if (expected.length > 0) {
-      const done = tx.enrichmentCompletedAt ?? {};
-      const subtasks: JobSubtask[] = expected.map((name) => ({
-        key: name,
-        state: done[name] !== undefined ? 'done' : 'running',
-        durationSeconds: seconds(tx.enrichmentStartedAt, done[name]),
-      }));
-      const allDone = subtasks.every((s) => s.state === 'done');
-      tasks.push({
-        key: 'enrichment',
-        state: allDone ? 'done' : 'running',
-        percent: allDone ? 100 : 0,
-        weight: TASK_WEIGHTS.enrichment,
-        durationSeconds: null,
-        subtasks,
-      });
-    }
-  } else if (imp && importState !== 'failed') {
-    txState = 'pending';
-    tasks.push(pendingTask('transcription'));
+  }
+  const finishingVisible = finishingTasks.length > 0 || (hasMain && !mainFailed && !planUnknown);
+  if (finishingVisible) {
+    let state = tierState(finishingTasks);
+    if (finishingTasks.length === 0)
+      state = awaitingPlan ? 'running' : planned ? 'done' : 'pending';
+    else if (awaitingPlan && state === 'done') state = 'running';
+    tiers.push({
+      key: 'finishing',
+      state,
+      tasks: finishingTasks,
+      done: finishingTasks.filter((t) => t.state === 'done').length,
+      total: finishingTasks.length,
+    });
+  }
+  if (aiTasks.length > 0) {
+    tiers.push({
+      key: 'ai',
+      state: tierState(aiTasks),
+      tasks: aiTasks,
+      done: aiTasks.filter((t) => t.state === 'done').length,
+      total: aiTasks.length,
+    });
   }
 
-  const redaction = current('redaction');
-  if (redaction) tasks.push(recordTask('redaction', redaction, null));
-
-  const pipelineAlive = txState !== undefined && txState !== 'failed' && txState !== 'skipped';
-  const graceOver =
-    txState === 'done' &&
-    tx?.finishedAt !== undefined &&
-    opts.now - tx.finishedAt > LLM_START_GRACE_MS;
-  for (const key of ['summary', 'topics'] as const) {
-    const rec = current(key);
-    if (rec) {
-      tasks.push(recordTask(key, rec, key === 'summary' ? percentOf(rec) : null));
-    } else if (opts.llmAvailable && pipelineAlive && !graceOver) {
-      tasks.push(pendingTask(key));
-    }
-  }
-
-  const visible = tasks
-    .filter((t) => t.state !== 'skipped')
-    .sort((a, b) => TASK_ORDER.indexOf(a.key) - TASK_ORDER.indexOf(b.key));
-
-  const counted = visible.filter((t) => t.weight > 0);
+  // ---- overall state ------------------------------------------------------------------------
+  const outstandingTasks = visible.filter((t) => t.tier !== 'main' && isOutstanding(t.state));
   const failedTask = visible.find((t) => t.state === 'failed');
-  const unfinished = counted.some((t) => t.state === 'pending' || t.state === 'running');
-  const state: JobState = failedTask ? 'failed' : unfinished ? 'running' : 'done';
+  let state: JobState;
+  if (mainFailed) state = 'attention';
+  else if (hasMain && !mainDone) state = 'processing';
+  else if (outstandingTasks.length > 0 || awaitingPlan)
+    state = hasMain ? 'finishing' : 'processing';
+  else if (failedTask) state = 'attention';
+  else if (hasMain && !planned) state = 'ready';
+  else state = 'complete';
 
-  const totalWeight = counted.reduce((sum, t) => sum + t.weight, 0);
-  const progressOf = (t: JobTask) =>
-    t.state === 'done' ? 100 : t.state === 'running' || t.state === 'failed' ? t.percent : 0;
-  let percent =
-    totalWeight > 0
-      ? Math.round(counted.reduce((sum, t) => sum + t.weight * progressOf(t), 0) / totalWeight)
-      : 0;
-  if (state === 'done') percent = 100;
-  else if (state === 'running') percent = Math.min(99, percent);
+  // ---- percent ----------------------------------------------------------------------------------
+  const counted = visible.filter((t) => t.weight > 0);
+  let totalWeight = counted.reduce((sum, t) => sum + t.weight, 0);
+  const weighted = counted.reduce(
+    (sum, t) =>
+      sum +
+      t.weight *
+        (t.state === 'done' ? 100 : isOutstanding(t.state) || t.state === 'failed' ? t.percent : 0),
+    0
+  );
+  if (hasMain && !mainFailed && !planned && !planUnknown && finishingTasks.length === 0) {
+    // Nothing known yet: a share of the bar stays empty until the plan names the tasks.
+    totalWeight += FINISHING_PLACEHOLDER_WEIGHT;
+  }
+  let percent = totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
+  if (state === 'complete' || state === 'ready') percent = 100;
+  else if (state !== 'attention') percent = Math.min(99, percent);
 
-  const runningTask = visible.find((t) => t.state === 'running' && t.message);
+  // ---- staleness and reconcile ---------------------------------------------------------------
+  const lastFrame = run?.updatedAt;
+  const stale =
+    state === 'finishing' &&
+    !awaitingPlan &&
+    lastFrame !== undefined &&
+    opts.now - lastFrame > STALE_AFTER_MS;
+  const sinceTxDone = txFinishedAt !== undefined ? opts.now - txFinishedAt : 0;
+  const reconcile =
+    hasMain &&
+    mainDone &&
+    run?.unknown !== true &&
+    sinceTxDone < RUN_RETENTION_MS &&
+    ((awaitingPlan && sinceTxDone > RECONCILE_AFTER_MS) ||
+      (state === 'ready' && !planned) ||
+      (state === 'finishing' &&
+        lastFrame !== undefined &&
+        opts.now - lastFrame > STALE_AFTER_MS / 2));
+
+  const runningMain = main.find((t) => t.state === 'running' && t.message);
   const newest = item.members[0];
   const filename =
     (item.members.map((m) => m.data?.filename).find((f) => typeof f === 'string' && f) as
@@ -332,11 +515,13 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
       | undefined) ?? '';
   const eta =
     tx &&
-    txState === 'running' &&
-    typeof tx.progress?.etaSeconds === 'number' &&
+    tx.progress &&
+    taskStateFromStatus(wireStatus(tx)) === 'running' &&
+    typeof tx.progress.etaSeconds === 'number' &&
     tx.progress.etaSeconds > 0
       ? formatCompactDuration(tx.progress.etaSeconds)
       : undefined;
+  const failureTask = state === 'attention' ? failedTask : undefined;
 
   return {
     key: item.key,
@@ -344,13 +529,20 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
     filename,
     state,
     percent,
+    tiers,
     tasks: visible,
+    outstanding: outstandingTasks.map((t) => t.key),
+    awaitingPlan,
+    stale,
+    reconcile,
     memberIds: item.members.map((m) => m.id),
     read: item.members.every((m) => m.read),
     dismissible: item.members.every((m) => m.dismissible === true),
     timestamp: newest.timestamp,
-    currentStep: state === 'running' ? runningTask?.message : undefined,
-    etaDisplay: eta,
-    failure: failedTask ? { task: failedTask.key, message: failedTask.message ?? '' } : undefined,
+    currentStep: state === 'processing' ? runningMain?.message : undefined,
+    etaDisplay: state === 'processing' ? eta : undefined,
+    failure: failureTask
+      ? { task: failureTask.key, message: failureTask.message ?? '' }
+      : undefined,
   };
 }

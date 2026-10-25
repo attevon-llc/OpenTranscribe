@@ -858,11 +858,18 @@ def get_optional_current_user(
         if payload.get("type") != TOKEN_TYPE_ACCESS:
             return None
 
-        # Check token revocation blacklist
+        # Check token revocation blacklist. Same as get_current_user, `issued_at` is what
+        # lets the per-user revocation epoch (logout-all, password reset, admin
+        # termination) cancel a still-valid stateless access token.
         if (
             settings.TOKEN_REVOCATION_ENABLED
             and token_jti
-            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_uuid_str)
+            and token_service.is_token_revoked(
+                token_jti,
+                db=db,
+                user_uuid=user_uuid_str,
+                issued_at=payload.get("iat"),
+            )
         ):
             return None
 

@@ -105,6 +105,35 @@ describe('requestTranscriptExport (issues #673, #821)', () => {
     expect(result.contentType).toBe('text/plain; charset=utf-8');
   });
 
+  it('returns the file name the server chose, decoded from filename*', async () => {
+    get.mockResolvedValue({
+      data: 'x',
+      headers: {
+        'content-type': 'text/plain',
+        'content-disposition':
+          'attachment; filename="download.txt"; filename*=UTF-8\'\'%D8%A7%D8%AC%D8%AA%D9%85%D8%A7%D8%B9.txt',
+      },
+    });
+
+    const result = await requestTranscriptExport({
+      fileUuid: 'file-uuid',
+      format: 'txt',
+      labels: LABELS,
+    });
+
+    expect(result.filename).toBe('اجتماع.txt');
+  });
+
+  it('reports a null file name when the server sent no Content-Disposition', async () => {
+    const result = await requestTranscriptExport({
+      fileUuid: 'file-uuid',
+      format: 'txt',
+      labels: LABELS,
+    });
+
+    expect(result.filename).toBeNull();
+  });
+
   it('propagates a refusal instead of falling back to anything local', async () => {
     // A 503 (policy unresolvable) or 409 (redaction scan unfinished) must surface. A
     // client-side fallback here would reinstate exactly the bypass #821 closed.

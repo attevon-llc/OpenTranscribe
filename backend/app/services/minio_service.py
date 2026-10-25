@@ -4,7 +4,6 @@ import io
 import logging
 import os
 from typing import BinaryIO
-from urllib.parse import quote
 
 import certifi
 import urllib3
@@ -18,6 +17,7 @@ from app.services import storage_backend
 from app.services import storage_presign_identity
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
+from app.utils.content_disposition import attachment_header
 
 logger = logging.getLogger(__name__)
 
@@ -438,12 +438,7 @@ def get_presigned_download_url(
     bucket = bucket_name or settings.MEDIA_BUCKET_NAME
     response_headers: dict[str, str | list[str] | tuple[str]] = {}
     if download_filename:
-        # RFC 6266 / 5987: ASCII fallback + UTF-8 form for non-ASCII names.
-        ascii_name = download_filename.encode("ascii", "ignore").decode("ascii") or "download"
-        quoted = quote(download_filename, safe="")
-        response_headers["response-content-disposition"] = (
-            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
-        )
+        response_headers["response-content-disposition"] = attachment_header(download_filename)
     if content_type:
         response_headers["response-content-type"] = content_type
 

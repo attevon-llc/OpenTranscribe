@@ -332,15 +332,77 @@ describe('processing card: one card per file', () => {
     expect(container.querySelector('.job-file')?.textContent).toBe('meeting.mp3');
   });
 
-  it('the overall bar finishes without LLM tasks when no LLM is configured', async () => {
-    setNotifications([txDone()]);
+  /** The backend's post-processing run for f1: a plan at server time 100, then outcomes. */
+  const postProcessing = (tasks: Record<string, 'queued' | 'started' | 'done' | 'skipped'>) =>
+    baseNotification({
+      id: 'post_processing_status-f1',
+      type: 'post_processing_status',
+      progressId: 'post_processing_status_f1',
+      status: Object.values(tasks).some((s) => s === 'queued' || s === 'started')
+        ? 'processing'
+        : 'completed',
+      dismissible: true,
+      timestamp: new Date(NOW),
+      data: { file_id: 'f1' },
+      postProcessing: {
+        runAt: 100,
+        tasks: Object.fromEntries(
+          Object.entries(tasks).map(([k, state]) => [k, { state, at: 101 }])
+        ),
+        updatedAt: NOW,
+      },
+    });
+
+  const ALL_FINISHED = {
+    search_indexing: 'done',
+    file_facts: 'done',
+    analytics: 'done',
+    redaction: 'skipped',
+    speaker_attributes: 'done',
+    speaker_clustering: 'done',
+    summary: 'skipped',
+    topics: 'skipped',
+  } as const;
+
+  it('a finished transcript with post-processing still running reads "Finishing up"', async () => {
+    setNotifications([
+      postProcessing({ ...ALL_FINISHED, speaker_attributes: 'started' }),
+      txDone(),
+    ]);
 
     const { container } = await renderPanel();
 
+    expect(container.querySelector('.job-state')?.textContent).toBe(
+      'notifications.job.stateFinishing'
+    );
+    expect(container.querySelector('.job-detail')?.textContent).toContain(
+      'notifications.job.task.speaker_attributes'
+    );
     const bar = container.querySelector('[role="progressbar"]');
-    expect(bar?.getAttribute('aria-valuenow')).toBe('100');
+    expect(Number(bar?.getAttribute('aria-valuenow'))).toBeLessThan(100);
     expect(bar?.getAttribute('aria-label')).toContain('meeting.mp3');
-    expect(container.textContent).not.toContain('notifications.job.task.summary');
+    // The finished main tier collapses to a chip; the running task is listed.
+    const tierNames = [...container.querySelectorAll('.tier-chips .visually-hidden')].map(
+      (c) => c.textContent
+    );
+    expect(tierNames.some((n) => n?.includes('notifications.job.tier.main'))).toBe(true);
+    expect(container.querySelectorAll('.task-chips .job-chip')).toHaveLength(1);
+  });
+
+  it('the bar reaches 100% and "Complete" only when every known task is finished', async () => {
+    setNotifications([postProcessing(ALL_FINISHED), txDone()]);
+
+    const { container } = await renderPanel();
+
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe(
+      '100'
+    );
+    expect(container.querySelector('.job-state')?.textContent).toBe(
+      'notifications.job.stateComplete'
+    );
+    // No LLM tasks ran, so there is no AI tier and no task row.
+    expect(container.textContent).not.toContain('notifications.job.tier.ai');
+    expect(container.querySelector('.task-chips')).toBeNull();
   });
 
   it('with an LLM configured the summary and topic chips wait and the bar holds at 67%', async () => {
@@ -363,11 +425,14 @@ describe('processing card: one card per file', () => {
       )
     ).toBe(true);
 
+    // Without an LLM the AI share goes, but the finishing tier still holds the bar back
+    // until the backend's plan says what will run: 60 / (60 + 15).
     llmAvailable.set(false);
     await tick();
     expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe(
-      '100'
+      '80'
     );
+    expect(container.querySelector('.job-detail')?.textContent).toBe('notifications.job.preparing');
   });
 
   it('the details toggle is wired for assistive tech and lists task durations', async () => {
@@ -434,14 +499,19 @@ describe('processing card: one card per file', () => {
     await tick();
     expect(region?.textContent).toBe('');
 
+    // A finished transcript is not the outcome: post-processing still follows, unannounced.
     setNotifications([txDone()]);
+    await tick();
+    expect(region?.textContent).toBe('');
+
+    setNotifications([postProcessing(ALL_FINISHED), txDone()]);
     await tick();
     expect(region?.textContent).toContain('notifications.job.announceDone');
     expect(region?.textContent).toContain('meeting.mp3');
   });
 
   it('does not announce a card that was already finished when the panel opened', async () => {
-    setNotifications([txDone()]);
+    setNotifications([postProcessing(ALL_FINISHED), txDone()]);
     const { container } = await renderPanel();
     expect(container.querySelector('.job-announcer')?.textContent).toBe('');
   });

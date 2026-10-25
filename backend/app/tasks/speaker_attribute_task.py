@@ -27,7 +27,10 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
+from app.core.enums import PostProcessingState
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
+from app.services import post_processing_status
 from app.services.audio_segment_utils import center_window
 from app.services.audio_segment_utils import extract_audio_segment_np
 from app.services.audio_segment_utils import merge_adjacent_segments
@@ -251,6 +254,9 @@ def _dispatch_llm_speaker_identification(
         user_id: Owner; looked up from the file when omitted.
         force: Skip the opt-out check (explicit user request).
     """
+    # Reported here, before the caller's own terminal state goes out, so a client never
+    # sees attribute detection finished with the step it hands off to still undeclared.
+    state = PostProcessingState.FAILED
     try:
         if not force:
             owner = user_id if user_id is not None else _owner_of_file(file_uuid)
@@ -259,16 +265,22 @@ def _dispatch_llm_speaker_identification(
                     f"Automatic LLM speaker identification is off for the owner of {file_uuid}; "
                     "not dispatching"
                 )
+                state = PostProcessingState.SKIPPED
                 return
 
         from app.tasks.speaker_tasks import identify_speakers_llm_task
 
         identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        state = PostProcessingState.QUEUED
         logger.info(
             f"Dispatched LLM speaker identification for {file_uuid} (gender attributes ready)"
         )
     except Exception as e:
         logger.warning(f"Failed to dispatch LLM speaker identification: {e}")
+    finally:
+        post_processing_status.report(
+            PostProcessingTask.SPEAKER_IDENTIFICATION, state, file_uuid=str(file_uuid)
+        )
 
 
 def _store_gender_results(
@@ -387,6 +399,9 @@ def _run_gender_inference_parallel(
     soft_time_limit=600,
     time_limit=660,
     max_retries=_SLOT_WAIT_MAX_RETRIES,
+)
+@post_processing_status.tracks_post_processing(
+    PostProcessingTask.SPEAKER_ATTRIBUTES, file_param="file_uuid"
 )
 def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     """Predict gender/age for all speakers in a media file.
@@ -688,14 +703,6 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
                 },
                 file_uuid=file_uuid,
             )
-
-        # Notify enrichment tracker that speaker attributes are done
-        send_ws_event_for_file(
-            user_id,
-            "enrichment_task_complete",
-            {"file_id": file_uuid, "task": "speaker_attributes"},
-            file_uuid=file_uuid,
-        )
 
         _update_attr_task(task_id, "completed", progress=1.0)
         _dispatch_llm_speaker_identification(file_uuid)

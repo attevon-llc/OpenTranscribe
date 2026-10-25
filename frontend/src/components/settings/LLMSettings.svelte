@@ -68,8 +68,13 @@
     }
   });
 
-  async function loadData() {
-    loading = true;
+  /**
+   * Read the configuration list. `silent` re-reads it behind what is shown (after a save or
+   * delete, whose server side effects the local list cannot know: the first configuration is
+   * auto-activated, deleting the active one promotes another).
+   */
+  async function loadData({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) loading = true;
 
     try {
       // Fetch providers and configurations in parallel
@@ -95,9 +100,6 @@
             || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
           hasSettings = true;
 
-          // Refresh global store from cached backend status (no external API call)
-          llmStatusStore.refreshStatus();
-
           // Use last test result from configurations data instead of re-testing
           if (currentSettings?.test_status === 'success') {
             connectionStatus = 'connected';
@@ -113,13 +115,15 @@
         } else {
           currentSettings = null;
           hasSettings = false;
-          llmStatusStore.reset();
         }
       } else {
         currentSettings = null;
         hasSettings = false;
-        llmStatusStore.reset();
       }
+
+      // Ask the server rather than inferring availability from this list: with no
+      // configuration of the user's own, the system provider may still answer.
+      void llmStatusStore.invalidate();
     } catch (err: unknown) {
       console.error('Error loading LLM providers:', err);
       const detailStr = getErrorMessage(err, '');
@@ -200,8 +204,7 @@
       statusLastChecked = new Date();
     } finally {
       checkingStatus = false;
-      // Refresh global store once after test completes
-      llmStatusStore.refreshStatus();
+      void llmStatusStore.invalidate();
     }
   }
 
@@ -269,6 +272,7 @@
       toastStore.error(`${config.name}: ${errorMsg}`, 8000);
     } finally {
       testing = false;
+      void llmStatusStore.invalidate();
     }
   }
 
@@ -361,15 +365,14 @@
       // Remove from saved configurations
       savedConfigurations = savedConfigurations.filter(c => c.uuid !== config.uuid);
 
-      // If this was the active configuration, clear it
+      // If this was the active configuration, clear it until the re-read below says which
+      // configuration (if any) the server promoted in its place.
       if (config.uuid === activeConfigurationId) {
         activeConfigurationId = null;
         currentSettings = null;
         hasSettings = false;
-
-        // Reset global LLM status store
-        llmStatusStore.reset();
       }
+      void loadData({ silent: true });
 
       toastStore.success($t('settings.llmProvider.configDeleted', { name: config.name }), 5000);
 
@@ -412,8 +415,7 @@
       statusMessage = '';
       statusLastChecked = null;
 
-      // Reset global LLM status store
-      llmStatusStore.reset();
+      void llmStatusStore.invalidate();
 
       toastStore.success($t('settings.llmProvider.allDeleted'), 5000);
 
@@ -449,6 +451,10 @@
 
     // Update hasSettings flag
     hasSettings = savedConfigurations.length > 0 || sharedConfigurations.length > 0;
+
+    // The server auto-activates a first configuration; re-read so the active marker and the
+    // LLM status store (and every AI button reading it) follow without a page reload.
+    void loadData({ silent: true });
 
     // Trigger parent component update
     if (onSettingsChange) {

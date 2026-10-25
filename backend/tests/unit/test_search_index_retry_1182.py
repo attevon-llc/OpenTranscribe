@@ -242,7 +242,7 @@ def _task_harness(*, retries: int, index_error: Exception):
             ),
             patch("app.services.search.indexing_service.reset_neural_pipeline_state"),
             patch("app.services.opensearch_service.index_transcript"),
-            patch.object(mod, "_send_indexing_notification"),
+            patch("app.services.post_processing_status.report"),
             patch.object(task, "retry", retry_mock),
         ):
             yield task, retry_mock, statuses

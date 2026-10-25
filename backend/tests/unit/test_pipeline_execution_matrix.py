@@ -196,7 +196,6 @@ def stage_seams(db_session, monkeypatch):
     for module in (postprocess, notifications):
         for name in ("send_progress_notification", "send_completion_notification"):
             monkeypatch.setattr(module, name, lambda *a, **k: None)
-    monkeypatch.setattr(postprocess, "send_ws_event_for_file", lambda *a, **k: None)
     monkeypatch.setattr(postprocess, "_persist_timing_row", lambda *a, **k: None)
     monkeypatch.setattr(postprocess, "_schedule_timing_tail_flush", lambda *a, **k: None)
     monkeypatch.setattr(postprocess, "_cleanup_temp", lambda *a, **k: None)

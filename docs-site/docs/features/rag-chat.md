@@ -366,6 +366,11 @@ itself with a warning and chat continues to work, retrying every few minutes so
 a model cache that appears later — a volume mounted after the container
 started, for instance — is picked up without a restart.
 
+Reranking runs on the CPU of the API container. How many threads each scoring call uses is a
+deployment setting, `CHAT_RERANKER_TORCH_THREADS` (`auto` by default), not something to change
+here: it is applied once when the server starts, so a change needs a restart. See
+[Chat Reranker Threads](../configuration/environment-variables.md#chat-reranker-threads).
+
 ### Per-user preferences
 
 Users can narrow two of these for their own chats in **Settings → Chat**:

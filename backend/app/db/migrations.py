@@ -670,6 +670,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'ck_takedown_notification_status')"
     )
 
+    # v445: per-organization privacy policy + redaction floor (issues #1280, #1279). Keyed on
+    # the LAST-created CHECK, not the table: a table without its CHECKs must re-run the
+    # revision.
+    has_organization_policy = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_organization_policy_floor_custom_words_array')"
+    )
+
     # v446: collection visibility mode (issue #1275). Keyed on its last-created CHECK.
     has_collection_visibility = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_collection_visibility')"
@@ -755,18 +763,28 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         matches_v442
         and has_takedown_notice
         and has_takedown_notification
+        and has_organization_policy
         and has_collection_visibility
         and has_content_hold
     ):
         return "v447_add_content_hold"
-    # v446: same as v444 plus the collection visibility mode.
+    # v446: same as v445 plus the collection visibility mode.
     if (
         matches_v442
         and has_takedown_notice
         and has_takedown_notification
+        and has_organization_policy
         and has_collection_visibility
     ):
         return "v446_add_collection_visibility"
+    # v445: same as v444 plus the organization policy table.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+    ):
+        return "v445_add_organization_policy"
     # v444: same as v443 plus the notification delivery log.
     if matches_v442 and has_takedown_notice and has_takedown_notification:
         return "v444_add_takedown_notification"

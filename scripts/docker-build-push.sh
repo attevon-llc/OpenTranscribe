@@ -614,10 +614,11 @@ build_identity_labels() {
 # they are the sole source of build identity inside the image, because the build
 # context is ./backend and the repo-root VERSION file is therefore absent.
 #
-# Deliberately NOT applied to the frontend: frontend/Dockerfile.prod declares no
-# ARGs at all, so the --build-arg APP_VERSION this script used to pass it was a
-# silent no-op. The frontend takes its version from frontend/package.json at
-# build time via vite's __APP_VERSION__ define.
+# Deliberately NOT applied to the frontend: frontend/Dockerfile.prod declares only
+# ARG GIT_SHA, so APP_VERSION and BUILD_TIME would be silent no-ops there. The frontend
+# takes its version from frontend/package.json at build time via vite's __APP_VERSION__
+# define; see build_frontend_identity_args below for the one arg it does take.
+#
 # APT_SECURITY_REFRESH is NOT build identity — it is a deliberate cache key for the
 # runtime `apt-get upgrade` layer in Dockerfile.prod/.lite. Docker caches a RUN by its
 # command string, so without a changing ARG that layer is built once and reused
@@ -636,6 +637,14 @@ build_backend_identity_args() {
         "--build-arg" "GIT_SHA=${COMMIT_SHA}" \
         "--build-arg" "BUILD_TIME=${BUILD_TIME}" \
         "--build-arg" "APT_SECURITY_REFRESH=${OT_APT_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}"
+}
+
+# Build args for the FRONTEND: only the commit. The About modal compares it against the
+# backend's git_sha so a stale tab is detected even when the server is a dev-<sha> image
+# (issue #1273). Same variable the backend gets, so the two sides of one release always
+# name the same commit.
+build_frontend_identity_args() {
+    printf '%s\n' "--build-arg" "GIT_SHA=${COMMIT_SHA}"
 }
 
 # Announce what a build is about to do, and short-circuit under DRY_RUN.
@@ -788,9 +797,10 @@ build_frontend() {
     local component="frontend"
     build_announce "Building frontend image" "${component}" || return 0
 
-    local tag_args identity_args cache_args
+    local tag_args identity_args build_args cache_args
     mapfile -t tag_args < <(build_tag_args "${REPO_FRONTEND}" "${component}")
     mapfile -t identity_args < <(build_identity_labels)
+    mapfile -t build_args < <(build_frontend_identity_args)
     mapfile -t cache_args < <(build_cache_args "${REPO_FRONTEND}" "$(build_platforms "${component}")")
 
     cd frontend
@@ -798,6 +808,7 @@ build_frontend() {
     docker buildx build \
         --platform "$(build_platforms "${component}")" \
         --file Dockerfile.prod \
+        "${build_args[@]}" \
         "${identity_args[@]}" \
         "${tag_args[@]}" \
         "${cache_args[@]}" \

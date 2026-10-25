@@ -23,7 +23,7 @@ Downgrade drops all three. Restricted collections become organization-wide again
 widens who can see them: restore from a backup instead if that is not acceptable.
 
 Revision ID: v446_add_collection_visibility
-Revises: v444_add_takedown_notification
+Revises: v445_add_organization_policy
 Create Date: 2026-10-25
 """
 
@@ -31,7 +31,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "v446_add_collection_visibility"
-down_revision = "v444_add_takedown_notification"
+down_revision = "v445_add_organization_policy"
 branch_labels = None
 depends_on = None
 

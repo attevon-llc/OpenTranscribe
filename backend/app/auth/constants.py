@@ -36,8 +36,9 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
-# v11 (0.6.0): organization content governance (#1275-#1277). v10 is taken by the privacy
-# lane. File-read semantics changed: a member of an organization collection they may see now
+# v12 (0.6.0): organization content governance (#1275-#1277). v11 is the privacy policy layer and
+# v10 the viewer-aware capabilities endpoint, both below.
+# File-read semantics changed: a member of an organization collection they may see now
 # reads the organization's files in it on EVERY surface (file page, gallery, search, chat
 # retrieval); before, only the collection's own file list honoured it. The rule is
 # ``services.collection_visibility`` (one predicate) and the search clause is
@@ -46,6 +47,34 @@ VALID_AUTH_TYPES = [
 # documents are unchanged (``collection_ids`` already existed) and no reindex is needed.
 # New capability keys that a resolver must return (omitted keys fail closed, v6) are added
 # alongside the audit work: ``audit.content_access``, ``org.audit_logs``, ``org.legal_hold``.
+#
+# v11: privacy policy layer (issues #1280, #1279). Additive. ``app.services.privacy.consent.
+# register_voiceprint_consent_hook(hook)``: a ``(Session, VoiceprintConsentRequest) -> bool``
+# hook must return the literal True for a voiceprint to be created (``purpose="create"``) or
+# matched across owners (``purpose="share"``); a hook that raises or returns anything else
+# denies, and with no hook registered nothing changes. ``app.services.privacy.policy.
+# set_privacy_ceiling_resolver(resolver)``: a ``(Session, organization_id | None) ->
+# PrivacyCeiling | None`` resolver is the platform layer of the restrict-only voiceprint and
+# gender policy; it can only switch features OFF, a raising or malformed answer denies both,
+# and it runs inside Celery tasks with no request, so it must answer per organization. Alembic
+# ``v445`` adds ``organization_policy`` (empty until an organization saves a choice; the
+# organization redaction floor stored there is unioned with ``resolve_redaction_floor``'s
+# resolver result, strictest wins, once the floor storage lands).
+#
+# v10: viewer-aware ``GET /system/capabilities`` (issue #1274). The endpoint now resolves
+# the caller optionally and returns ``get_capabilities_for_viewer``: for platform staff
+# (an active ``is_superuser``), every platform-audience key outside
+# ``app.core.capabilities.NO_PLATFORM_BYPASS`` reads True even when the resolver denied it,
+# omitted it, or raised, mirroring what ``require_capability``'s bypass already admits on the
+# server. Anonymous and tenant callers get the resolver's answer unchanged. A resolver may
+# now find ``request.state.user_id`` / ``external_identity`` at that endpoint (external
+# tokens only; additive) and must still handle an anonymous request and ``request=None``.
+# The response is ``Cache-Control: private, no-store`` with ``Vary: Cookie, Authorization``:
+# remove any edge-cache rule that cached it. ``require_capability(..., platform_admin_bypass=False)``
+# now raises ValueError at import unless the key is declared in ``NO_PLATFORM_BYPASS``.
+# ``get_optional_current_user`` now honours the per-user revocation epoch (``iat``), so a
+# token revoked by logout-all or a password reset no longer resolves on optional-auth routes.
+# The response shape is unchanged.
 #
 # v9: legal document provider seam. ``app.legal.registry.set_document_provider`` lets an
 # extension replace the document set served by ``/api/legal/*``. Additive: with no provider
@@ -131,7 +160,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 11
+CLOUD_SEAM_VERSION = 12
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

@@ -1,4 +1,4 @@
-"""API endpoint for full transcript export (txt / json / csv / srt / vtt).
+"""API endpoint for full transcript export (txt / json / csv / srt / vtt / md).
 
 This is a transcript read surface and is gated like one — see ``files/subtitles.py``'s
 module docstring for the shape of the guarantee. It replaces the client-side exporter that
@@ -10,6 +10,8 @@ same redaction policy, resolved the same fail-closed way.
 """
 
 import logging
+from datetime import UTC
+from datetime import datetime
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -26,13 +28,17 @@ from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
 from app.db.base import get_db
 from app.models.media import Comment
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.services.content_audit import record_file_event
 from app.services.platform_bypass import PlatformBypass
+from app.services.redaction.config import EffectiveRedactionConfig
+from app.services.transcript_export_markdown import MarkdownMeta
 from app.services.transcript_export_service import VALID_FORMATS
 from app.services.transcript_export_service import build_export_content
+from app.utils.content_disposition import attachment_header
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
@@ -47,7 +53,27 @@ _CONTENT_TYPES = {
     "csv": "text/csv",
     "srt": "application/x-subrip",
     "vtt": "text/vtt",
+    "md": "text/markdown; charset=utf-8",
 }
+
+
+def _markdown_meta(
+    media_file: MediaFile, cfg: EffectiveRedactionConfig, reveal: set[str]
+) -> MarkdownMeta:
+    """Front-matter facts for the ``md`` export, from the file row and the resolved policy."""
+    source_name = media_file.filename or str(media_file.uuid)
+    recorded = media_file.recorded_date
+    return MarkdownMeta(
+        title=media_file.title or source_name.rsplit(".", 1)[0] or source_name,
+        recorded_date=recorded.astimezone(UTC).date().isoformat() if recorded else None,
+        date_source=media_file.recorded_date_source,
+        duration_seconds=media_file.duration,
+        language=media_file.language,
+        file_uuid=str(media_file.uuid),
+        exported_at=datetime.now(UTC),
+        # True only when some enabled category is still masked after the reveal.
+        redacted=bool(cfg.masks_anything and (cfg.enabled_categories - reveal)),
+    )
 
 
 def _resolve_export_redaction(
@@ -105,10 +131,10 @@ def export_transcript(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-    export_format: str = Query(..., alias="format", description="txt|json|csv|srt|vtt"),
+    export_format: str = Query(..., alias="format", description="txt|json|csv|srt|vtt|md"),
     include_comments: bool = Query(False),
-    include_timestamps: bool = Query(True, description="TXT format only"),
-    include_speakers: bool = Query(True, description="TXT format only"),
+    include_timestamps: bool = Query(True, description="TXT and Markdown only"),
+    include_speakers: bool = Query(True, description="TXT and Markdown only"),
     redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
     speaker_default_label: str = Query("Speaker"),
     user_comment_label: str = Query("USER COMMENT"),
@@ -118,7 +144,7 @@ def export_transcript(
 ):
     """Generate and download a full transcript export.
 
-    Supports: txt, json, csv, srt, vtt. The label/header query params let the frontend
+    Supports: txt, json, csv, srt, vtt, md. The label/header query params let the frontend
     keep supplying resolved i18n strings (this module stays translation-free, matching
     the rest of the backend), with English defaults if omitted.
     """
@@ -191,6 +217,7 @@ def export_transcript(
             comment_type_label=comment_type_label,
             csv_header_default=csv_header_default,
             csv_header_with_comments=csv_header_with_comments,
+            markdown_meta=_markdown_meta(media_file, cfg, reveal) if fmt == "md" else None,
         )
     except HTTPException:
         raise
@@ -206,7 +233,7 @@ def export_transcript(
     source_name = media_file.filename or str(media_file.uuid)
     base_filename = source_name.rsplit(".", 1)[0] if "." in source_name else source_name
     filename = f"{base_filename}.{fmt}"
-    content_type = _CONTENT_TYPES.get(fmt, "text/plain")
+    content_type = _CONTENT_TYPES[fmt]
 
     # Recorded once the content exists; every export is a distinct copy, never collapsed.
     record_file_event(
@@ -224,7 +251,7 @@ def export_transcript(
         content=content,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": attachment_header(filename),
             "Content-Length": str(len(content.encode("utf-8"))),
         },
     )

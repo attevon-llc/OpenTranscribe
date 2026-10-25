@@ -39,6 +39,8 @@ export async function purgeTenantDataCaches(): Promise<void> {
     import('$stores/search').then(({ searchStore }) => searchStore.reset()),
     import('$stores/transcriptStore').then(({ transcriptStore }) => transcriptStore.clear()),
     import('$stores/chat').then(({ chatStore }) => chatStore.reset()),
+    // The processing card's missed-frame throttle is keyed by the previous tenant's file ids.
+    import('$lib/notifications/reconcile').then((m) => m.resetReconcileThrottle()),
   ]);
 }
 

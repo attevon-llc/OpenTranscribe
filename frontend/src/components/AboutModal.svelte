@@ -3,29 +3,27 @@
   import axios from 'axios';
   import BaseModal from './ui/BaseModal.svelte';
   import { SLOT, splitAtSlot } from '$lib/i18n/slots';
+  import { compareBuilds, normalizeCommit, sourceRefFor } from '$lib/utils/buildIdentity';
+  import { CLIENT_BUILD } from '$lib/utils/clientBuild';
 
   export let showModal = false;
 
   // Compile-time constants (vite.config.ts `define`) — the identity of the bundle this
   // tab is actually running, which can lag the server after a deploy.
-  const buildVersion = __APP_VERSION__;
+  const buildVersion = CLIENT_BUILD.version ?? '';
+  const buildCommit = normalizeCommit(CLIENT_BUILD.commit);
   const buildTime = __BUILD_TIME__;
+  const buildLabel = buildCommit ? `${buildVersion} (${buildCommit.sha})` : buildVersion;
 
   let serverVersion = '';
   /** The commit the running backend was built from, or 'unknown'. */
   let serverCommit = '';
 
-  // The backend reports the repo-root VERSION file verbatim (`v0.4.1`) while
-  // package.json carries a bare semver (`0.4.1`), and it falls back to the literal
-  // "unknown" when neither the file nor $APP_VERSION is present. Compare on the
-  // normalized form and stay silent when the server can't identify itself — a false
-  // "you are out of date" is worse than no warning at all.
-  const normalizeVersion = (value: string) => value.trim().replace(/^v/i, '');
-
-  $: versionMismatch =
-    Boolean(serverVersion) &&
-    serverVersion !== 'unknown' &&
-    normalizeVersion(serverVersion) !== normalizeVersion(buildVersion);
+  // Commit to commit when both sides know theirs, else release to release, else silent: a
+  // `dev-<sha>` server can never equal a release semver, and a false "you are out of date"
+  // is worse than no warning at all (issue #1273; rules in $lib/utils/buildIdentity).
+  $: serverBuild = { version: serverVersion, commit: serverCommit };
+  $: versionMismatch = compareBuilds(CLIENT_BUILD, serverBuild) === 'mismatch';
 
   // The licence and NOTICE links sit INSIDE one translated sentence each (issue #1222); the
   // translator places the {{license}} / {{notice}} placeholder, we render the link there.
@@ -70,14 +68,14 @@
    */
   const REPOSITORY_URL = 'https://github.com/attevon-llc/OpenTranscribe';
 
-  $: sourceCommitKnown = Boolean(serverCommit) && serverCommit !== 'unknown';
-  $: sourceVersionKnown = Boolean(serverVersion) && serverVersion !== 'unknown';
-  $: sourceUrl = sourceCommitKnown
-    ? REPOSITORY_URL + '/tree/' + serverCommit
-    : sourceVersionKnown
-      ? REPOSITORY_URL + '/releases/tag/v' + normalizeVersion(serverVersion)
-      : REPOSITORY_URL;
-  $: sourceIsExact = sourceCommitKnown || sourceVersionKnown;
+  $: sourceRef = sourceRefFor(serverBuild);
+  $: sourceUrl =
+    sourceRef.kind === 'commit'
+      ? REPOSITORY_URL + '/tree/' + sourceRef.sha
+      : sourceRef.kind === 'release'
+        ? REPOSITORY_URL + '/releases/tag/' + sourceRef.tag
+        : REPOSITORY_URL;
+  $: sourceIsExact = sourceRef.kind === 'release' || (sourceRef.kind === 'commit' && sourceRef.exact);
 
   $: if (showModal && !serverVersion) {
     fetchVersion();
@@ -92,12 +90,12 @@
       <h2 class="modal-title">{$t('about.title')}</h2>
       <div class="header-version">
         <span class="header-version-number" title={buildTime}>
-          {$t('about.buildVersion')} {buildVersion}
+          {$t('about.buildVersion')} <bdi dir="ltr">{buildLabel}</bdi>
         </span>
         {#if serverVersion}
           <span class="header-version-sep">&middot;</span>
           <span class="header-version-number" class:mismatch={versionMismatch}>
-            {$t('about.serverVersion')} {serverVersion}
+            {$t('about.serverVersion')} <bdi dir="ltr">{serverVersion}</bdi>
           </span>
         {/if}
         <span class="header-version-sep tagline-sep">&middot;</span>

@@ -1,6 +1,10 @@
 /**
  * Reactive LLM Status Store
- * Manages LLM availability status across the application with WebSocket integration
+ *
+ * The one client cache of `GET /llm/status`; every AI-gated button reads `isLLMAvailable`.
+ * Kept current by: `initialize()` (once per session), a 2-minute poll, a re-check when the
+ * page regains attention (tab visible / window focus), and `invalidate()`, which every LLM
+ * settings flow calls after a change. `reset()` is for sign-out only: it stops all of that.
  */
 
 import { writable, derived, get } from 'svelte/store';
@@ -22,11 +26,43 @@ const initialState: LLMStatusState = {
   lastChecked: null,
 };
 
+const POLL_INTERVAL_MS = 120_000;
+/** A burst of focus/visibility events (alt-tab back and forth) costs one request. */
+const ATTENTION_RECHECK_MIN_MS = 15_000;
+
 // Main LLM status store with centralized monitoring
 function createLLMStatusStore() {
   const { subscribe, set, update } = writable<LLMStatusState>(initialState);
-  let monitoringTimer: NodeJS.Timeout | undefined;
+  let monitoringTimer: ReturnType<typeof setInterval> | undefined;
   let initPromise: Promise<void> | null = null;
+  let lastAttentionCheck = 0;
+
+  function onAttention(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const state = get({ subscribe });
+    const now = Date.now();
+    const lastChecked = state.lastChecked?.getTime() ?? 0;
+    if (
+      state.checking ||
+      now - Math.max(lastChecked, lastAttentionCheck) < ATTENTION_RECHECK_MIN_MS
+    ) {
+      return;
+    }
+    lastAttentionCheck = now;
+    void store.refreshStatus();
+  }
+
+  function addAttentionListeners(): void {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('focus', onAttention);
+    document.addEventListener('visibilitychange', onAttention);
+  }
+
+  function removeAttentionListeners(): void {
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('focus', onAttention);
+    document.removeEventListener('visibilitychange', onAttention);
+  }
 
   const store = {
     subscribe,
@@ -40,8 +76,7 @@ function createLLMStatusStore() {
     // `SelectiveReprocessModal.svelte`) use `initialize()` as an idempotent "ensure ready"
     // call fired from multiple places, not as a way to force a refresh. Freshness after
     // the first success is instead kept up by `startMonitoring()`'s 2-minute polling
-    // interval (and by `refreshStatus()`/`handleNotification()` for push updates) — call
-    // `refreshStatus()` directly if you need an immediate re-check.
+    // interval and the attention re-check — after changing LLM settings call `invalidate()`.
     initialize() {
       if (!initPromise) {
         initPromise = (async () => {
@@ -69,16 +104,18 @@ function createLLMStatusStore() {
       return initPromise;
     },
 
-    // Start background monitoring
+    // Start background monitoring: the poll plus the attention re-check.
     startMonitoring() {
       if (monitoringTimer) clearInterval(monitoringTimer);
+      removeAttentionListeners();
 
       monitoringTimer = setInterval(async () => {
         const currentState = get({ subscribe });
         if (!currentState.checking) {
           await store.refreshStatus();
         }
-      }, 120000); // Check every 2 minutes
+      }, POLL_INTERVAL_MS);
+      addAttentionListeners();
     },
 
     // Stop monitoring
@@ -87,6 +124,18 @@ function createLLMStatusStore() {
         clearInterval(monitoringTimer);
         monitoringTimer = undefined;
       }
+      removeAttentionListeners();
+    },
+
+    /**
+     * LLM settings changed (a provider was added, edited, activated, tested or deleted):
+     * re-ask the server now and make sure the background re-check is running. The single
+     * call every settings flow makes; never `reset()`, which would also stop the re-check
+     * and leave every AI button frozen until a page reload.
+     */
+    async invalidate() {
+      if (!monitoringTimer) store.startMonitoring();
+      return store.refreshStatus();
     },
 
     // Refresh status from backend
@@ -138,18 +187,12 @@ function createLLMStatusStore() {
       update((state) => ({ ...state, checking }));
     },
 
-    // Clear status (reset to initial state)
+    // Sign-out: back to the initial state with every re-check stopped.
     reset: () => {
       set(initialState);
       store.stopMonitoring();
       initPromise = null;
-    },
-
-    // Handle WebSocket notifications
-    handleNotification: (type: string, _data: unknown) => {
-      if (type === 'llm_settings_changed' || type === 'llm_status_changed') {
-        store.refreshStatus();
-      }
+      lastAttentionCheck = 0;
     },
   };
 

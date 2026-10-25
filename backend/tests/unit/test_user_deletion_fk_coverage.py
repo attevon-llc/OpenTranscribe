@@ -314,6 +314,14 @@ _ACTOR: dict[str, Disposition] = {
         "v444 (#1254). The delivery log shows who was told; the row stays when the recipient's "
         "account is deleted and recipient_user_uuid keeps the pseudonymous snapshot.",
     ),
+    "organization_policy.updated_by_user_id": Disposition(
+        SET_NULL,
+        "OrganizationPolicy",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v445 (#1280). The policy belongs to the organization, not to the administrator who "
+        "last saved it; deleting that account keeps the policy and drops only the attribution.",
+    ),
     "summary_prompt.shared_by": Disposition(
         SET_NULL,
         "SummaryPrompt",

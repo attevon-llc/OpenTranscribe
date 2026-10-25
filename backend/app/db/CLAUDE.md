@@ -106,8 +106,12 @@ each legal notice and the files it covers, with a backfill that gives every file
 synthetic `operator_action` notice; FKs `ON DELETE SET NULL` plus snapshot uuids so the record outlives the file,
 owner and organization; detection arm keys on `ck_takedown_notice_file_outcome_at`, the last CHECK created; the
 downgrade drops compliance evidence and is not executed by its test),
-`v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`).
-`v446_add_collection_visibility` (`collection.visibility` `organization|restricted`, issue #1275, with `ck_collection_visibility` — restricted only on an organization collection — and `ix_collection_org_visibility`; `v445` belongs to the privacy lane; arm keys on the CHECK, created last).
+`v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`),
+`v445_add_organization_policy` (`organization_policy`, issues #1280/#1279: one row per organization holding the restrict-only
+voiceprint/gender switches and the org redaction floor; a missing row inherits everything; `organization_id` is the PK and
+`ON DELETE CASCADE`, `updated_by_user_id` is `SET NULL`; arm keys on `ck_organization_policy_floor_custom_words_array`, the last
+CHECK created; the downgrade drops every organization's saved choices),
+`v446_add_collection_visibility` (`collection.visibility` `organization|restricted`, issue #1275, with `ck_collection_visibility` — restricted only on an organization collection — and `ix_collection_org_visibility`; chained off `v445`; its arm also requires v445's fingerprint, and keys on the CHECK, created last).
 `v447_add_content_hold` (`content_hold` + `content_hold_file`, issue #1276: organization holds on files or a whole collection; `organization_id` CASCADE, `collection_id` and both actor keys SET NULL, `ck_content_hold_reason_length` 10-2000; arm keys on `ck_content_hold_collection_scope`, created last; the downgrade DROPS every hold and its history, so it is only for a database that never placed one).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`

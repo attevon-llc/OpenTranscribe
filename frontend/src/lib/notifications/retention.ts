@@ -34,10 +34,10 @@ export const RETENTION_BY_TYPE: Record<NotificationType, RetentionClass> = {
   analytics_status: 'informational',
   audio_extraction_status: 'informational',
   speaker_processing_complete: 'informational',
-  search_indexing_complete: 'informational',
   clustering_file_complete: 'informational',
-  enrichment_started: 'informational',
-  enrichment_task_complete: 'informational',
+  // Pinned by its status while a known task is outstanding ('processing'), and a failure
+  // ('error') is kept like any other; only a finished run is clearable.
+  post_processing_status: 'informational',
   // Gallery/connection chatter, mostly never shown as a panel row (silent).
   connection_established: 'informational',
   echo: 'informational',

@@ -54,6 +54,7 @@
   import { supportSessionGate } from '$stores/supportSession';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
+  import { requestSummary, topicExtractionNoticeKey, type SummarizeResponse } from '$lib/api/summarize';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
   import Spinner from '../../../components/ui/Spinner.svelte';
@@ -1444,7 +1445,11 @@
       // floor is consulted for every format, not just subtitle downloads. The
       // resolved i18n strings still travel from here — the backend stays
       // translation-free, matching the rest of the API.
-      const { data, contentType } = await requestTranscriptExport<BlobPart>({
+      const {
+        data,
+        contentType,
+        filename: serverFilename,
+      } = await requestTranscriptExport<BlobPart>({
         fileUuid: file.uuid,
         format,
         includeComments,
@@ -1461,7 +1466,9 @@
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${filename}.${format}`;
+      // The server names the file (RFC 6266 `filename*`, any script); the recomputed name
+      // is only for a response that carried no Content-Disposition at all.
+      link.download = serverFilename ?? `${filename}.${format}`;
       link.click();
       window.URL.revokeObjectURL(url);
       // Transcript exported successfully
@@ -1869,6 +1876,12 @@
   }
 
 
+  /** Say what happened to tag/collection suggestions queued alongside a summary, if anything. */
+  function announceTopicExtraction(res: SummarizeResponse): void {
+    const key = topicExtractionNoticeKey(res.topic_extraction);
+    if (key) toastStore.info($t(key), 6000);
+  }
+
   /**
    * Generate summary for the transcript
    */
@@ -1883,7 +1896,7 @@
     try {
       generatingSummary = true;
 
-      await axiosInstance.post(`/files/${file.uuid}/summarize`);
+      announceTopicExtraction(await requestSummary(file.uuid));
 
       // Don't refresh page - let WebSocket notifications handle status updates
       // This preserves user's editing state
@@ -2561,9 +2574,7 @@
 
       // 4. Trigger the API call for reprocessing
       try {
-        await axiosInstance.post(`/files/${file.uuid}/summarize`, {
-          force_regenerate: true
-        });
+        announceTopicExtraction(await requestSummary(file.uuid, { forceRegenerate: true }));
 
         // WebSocket will handle the rest of the status updates
       } catch (error) {
@@ -2583,10 +2594,12 @@
       }
 
       try {
-        await axiosInstance.post(`/files/${file.uuid}/summarize`, {
-          force_regenerate: true,
-          prompt_uuid: event.detail.promptUuid
-        });
+        announceTopicExtraction(
+          await requestSummary(file.uuid, {
+            forceRegenerate: true,
+            promptUuid: event.detail.promptUuid,
+          })
+        );
       } catch (error) {
         console.error('Failed to start regeneration with prompt:', error);
         toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);

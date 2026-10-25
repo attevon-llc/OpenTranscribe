@@ -54,6 +54,51 @@ class TranscriptionStage(enum.StrEnum):
     SPEAKERS = "speakers"
 
 
+class PostProcessingTask(enum.StrEnum):
+    """A per-file task that runs after the transcript is committed.
+
+    The single source of truth for the ``tasks`` keys of the ``post_processing_status``
+    WebSocket event and of ``GET /api/files/{uuid}/post-processing``
+    (``app/services/post_processing_status.py``). The notification card files each key under
+    a tier (``frontend/src/lib/notifications/processingJob.ts`` ``POST_PROCESSING_TIERS``,
+    pinned to this enum by ``tests/unit/test_post_processing_status.py``), so a new member
+    without a tier fails there rather than rendering nowhere.
+
+    Voiceprints and speaker matching are not here: the stage that owns them sends
+    ``transcription_status`` frames (stage ``speakers``) and the run's completion.
+    """
+
+    SEARCH_INDEXING = "search_indexing"
+    FILE_FACTS = "file_facts"
+    ANALYTICS = "analytics"
+    REDACTION = "redaction"
+    SPEAKER_ATTRIBUTES = "speaker_attributes"
+    SPEAKER_IDENTIFICATION = "speaker_identification"
+    SPEAKER_CLUSTERING = "speaker_clustering"
+    SUMMARY = "summary"
+    SUMMARY_INDEXING = "summary_indexing"
+    TOPICS = "topics"
+    #: Applying AI tag/collection suggestions to the file: inside topic extraction on the
+    #: pipeline, and per file in a retroactive auto-label run (whose progress is otherwise
+    #: one batch-scoped ``auto_label_status`` row).
+    AUTO_LABEL = "auto_label"
+
+
+class PostProcessingState(enum.StrEnum):
+    """Where one :class:`PostProcessingTask` stands for one file.
+
+    ``QUEUED`` and ``SKIPPED`` are decided where the task is (or is not) dispatched;
+    ``STARTED``, ``DONE``, ``FAILED`` and a run-time ``SKIPPED`` come from the task itself.
+    A Celery retry reports nothing, so the task stays ``STARTED`` across it.
+    """
+
+    QUEUED = "queued"
+    STARTED = "started"
+    DONE = "done"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 #: ``StrEnum``, unlike its neighbour ``FileStatus`` above. Nothing pins ``str(...)`` of
 #: this one — it is new, and the values go to the database and the wire as ``.value`` —
 #: so there is no reason to carry ``FileStatus``'s deliberate exception.

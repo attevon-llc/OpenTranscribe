@@ -75,7 +75,7 @@ def _decoded_filename(response) -> str:
     return unquote(match.group("value"))
 
 
-@pytest.mark.parametrize("fmt", ["txt", "json", "csv", "srt", "vtt"])
+@pytest.mark.parametrize("fmt", ["txt", "json", "csv", "srt", "vtt", "md"])
 @pytest.mark.parametrize("stem", NON_ASCII_STEMS.values(), ids=NON_ASCII_STEMS.keys())
 def test_transcript_export_with_a_non_ascii_name(
     client, user_token_headers, normal_user, db_session, stem, fmt

@@ -31,7 +31,7 @@ PROFANITY = "damn"
 CLEAN_TEXT = "the quarterly numbers look fine"
 SENSITIVE_TEXT = f"this is a {PROFANITY} mess and here is more of it"
 
-ALL_FORMATS = ("txt", "json", "csv", "srt", "vtt")
+ALL_FORMATS = ("txt", "json", "csv", "srt", "vtt", "md")
 
 _USER_PREFS = "/api/user-settings/redaction"
 _ADMIN_POLICY = "/api/admin/redaction-policy"
@@ -215,14 +215,35 @@ def test_export_locked_off_owner_reveal_shows_original(
 # ---------------------------------------------------------------------------
 
 
-def test_unsupported_format_is_400(client, user_token_headers, normal_user, db_session):
+@pytest.mark.parametrize("fmt", ["exe", "markdown", "docx", "pdf"])
+def test_unsupported_format_is_400(client, user_token_headers, normal_user, db_session, fmt):
+    """An unknown token is refused, never served as some other format.
+
+    ``markdown`` is deliberately refused: the token is ``md`` (token == extension).
+    ``docx``/``pdf`` are not synchronous formats and do not exist yet on this route.
+    """
     media_file = _make_file(db_session, normal_user)
     response = client.get(
         f"/api/files/{media_file.uuid}/export",
         headers=user_token_headers,
-        params={"format": "pdf"},
+        params={"format": fmt},
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+def test_md_is_served_as_markdown_not_plain_text(
+    client, user_token_headers, normal_user, db_session
+):
+    media_file = _make_file(db_session, normal_user)
+    response = client.get(
+        f"/api/files/{media_file.uuid}/export",
+        headers=user_token_headers,
+        params={"format": "md"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert response.text.startswith("---\ntitle: ")
+    assert "filename*=UTF-8''export673.md" in response.headers["content-disposition"]
 
 
 def test_export_requires_auth(client, normal_user, db_session):

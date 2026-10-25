@@ -53,6 +53,15 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
   **Every export surface takes a required redaction config** (#85, see the gotcha below).
+- **Transcript export** — `transcript_export_service.build_export_content` is the dispatcher for
+  `txt json csv srt vtt md`; the formats live beside it. `transcript_export_turns.py` is the shared
+  seam (`masked_segments` = the one masking path, `group_turns` = the one turn rule,
+  `merge_by_timestamp`), `transcript_export_text.py` holds TXT/JSON/CSV, and
+  `transcript_export_markdown.py` holds `md` (issue #564: YAML front matter written only through
+  `yaml_scalar`, body escaped by `escape_line`). Every builder is a pure function of already-masked
+  data (no DB, no clock) so a batch collector can reuse it (#796). The dispatcher ends in an
+  explicit `csv` branch and a raise: a token added to `VALID_FORMATS` without a builder used to be
+  silently served as CSV. Format token == file extension, hence `md`, not `markdown`.
 - **Captions** — `captions/` is the ONE caption cue segmenter (broadcast rules, sources in
   `captions/rules.py`): the player track (`GET /files/{uuid}/captions`), the subtitle
   download, the bulk ZIP, the burned-in video and the SRT/VTT transcript export all cut cues

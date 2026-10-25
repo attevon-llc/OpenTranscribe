@@ -1773,6 +1773,8 @@
   "fileDetail.invalidSegmentData": "Invalid segment data. Please check your input.",
   "fileDetail.failedToSaveSegment": "Failed to save segment changes",
   "fileDetail.failedToGenerateSummary": "Failed to generate summary. Please try again.",
+  "fileDetail.topicSuggestionsQueued": "Tag and collection suggestions will also be generated for this file.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "Tag and collection suggestions were skipped: automatic suggestions are off in Settings > Auto-Labeling.",
   "fileDetail.failedToLoadSummary": "Failed to load summary.",
   "fileDetail.failedToStartSummaryReprocess": "Failed to start summary reprocessing",
   "fileDetail.updateSpeakerProfileCounter": "Update Speaker Profile ({{current}} of {{total}})",

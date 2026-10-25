@@ -1773,6 +1773,8 @@
   "fileDetail.invalidSegmentData": "بيانات المقطع غير صالحة. يُرجى التحقق من المدخلات.",
   "fileDetail.failedToSaveSegment": "فشل حفظ تغييرات المقطع",
   "fileDetail.failedToGenerateSummary": "فشل إنشاء الملخص. يُرجى المحاولة مرة أخرى.",
+  "fileDetail.topicSuggestionsQueued": "سيتم أيضًا إنشاء اقتراحات الوسوم والمجموعات لهذا الملف.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "تم تخطي اقتراحات الوسوم والمجموعات: الاقتراحات التلقائية متوقفة في الإعدادات > الوسم التلقائي.",
   "fileDetail.failedToLoadSummary": "فشل تحميل الملخص.",
   "fileDetail.failedToStartSummaryReprocess": "فشل بدء إعادة معالجة الملخص",
   "fileDetail.updateSpeakerProfileCounter": "تحديث ملف المتحدث ({{current}} من {{total}})",

@@ -1743,6 +1743,8 @@
   "fileDetail.invalidSegmentData": "Неверные данные сегмента. Пожалуйста, проверьте ввод.",
   "fileDetail.failedToSaveSegment": "Не удалось сохранить изменения сегмента",
   "fileDetail.failedToGenerateSummary": "Не удалось создать сводку. Пожалуйста, попробуйте снова.",
+  "fileDetail.topicSuggestionsQueued": "Для этого файла также будут созданы предложения тегов и коллекций.",
+  "fileDetail.topicSuggestionsSkippedBySetting": "Предложения тегов и коллекций пропущены: автоматические предложения выключены в разделе Настройки > Автоматическая маркировка.",
   "fileDetail.failedToLoadSummary": "Не удалось загрузить сводку.",
   "fileDetail.failedToStartSummaryReprocess": "Не удалось запустить пересоздание сводки",
   "fileDetail.updateSpeakerProfileCounter": "Обновить профиль спикера ({{current}} из {{total}})",

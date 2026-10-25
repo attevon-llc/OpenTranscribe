@@ -1744,6 +1744,8 @@
   "fileDetail.invalidSegmentData": "无效的片段数据",
   "fileDetail.failedToSaveSegment": "保存片段失败",
   "fileDetail.failedToGenerateSummary": "生成摘要失败",
+  "fileDetail.topicSuggestionsQueued": "还将为此文件生成标签和合集建议。",
+  "fileDetail.topicSuggestionsSkippedBySetting": "已跳过标签和合集建议：“设置 > 自动标签”中的自动建议已关闭。",
   "fileDetail.failedToLoadSummary": "加载摘要失败",
   "fileDetail.failedToStartSummaryReprocess": "启动摘要重新处理失败",
   "fileDetail.updateSpeakerProfileCounter": "更新说话人档案（{{current}}/{{total}}）",

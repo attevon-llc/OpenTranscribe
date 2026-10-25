@@ -1744,6 +1744,8 @@
   "fileDetail.invalidSegmentData": "無効なセグメントデータです。入力内容を確認してください。",
   "fileDetail.failedToSaveSegment": "セグメントの変更の保存に失敗しました",
   "fileDetail.failedToGenerateSummary": "要約の生成に失敗しました。再度お試しください。",
+  "fileDetail.topicSuggestionsQueued": "このファイルのタグとコレクションの提案も作成されます。",
+  "fileDetail.topicSuggestionsSkippedBySetting": "タグとコレクションの提案はスキップされました。「設定 > 自動ラベル付け」で自動提案がオフになっています。",
   "fileDetail.failedToLoadSummary": "要約の読み込みに失敗しました。",
   "fileDetail.failedToStartSummaryReprocess": "要約の再処理の開始に失敗しました",
   "fileDetail.updateSpeakerProfileCounter": "話者プロフィールを更新 ({{current}} / {{total}})",

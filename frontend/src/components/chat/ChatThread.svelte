@@ -119,7 +119,9 @@
   .thread {
     flex: 1;
     overflow-y: auto;
-    padding: 1.5rem 0 0.5rem;
+    /* Full-width scroller (scrollbar at the pane edge); content stays a 52rem column. */
+    padding-block: 1.5rem 0.5rem;
+    padding-inline: max(var(--chat-gutter, 1.25rem), calc((100% - 52rem) / 2));
     scroll-behavior: auto;
   }
 

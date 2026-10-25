@@ -651,7 +651,8 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: 0 1.25rem;
+    --chat-gutter: 1.25rem;
+    padding: 0 var(--chat-gutter);
     transition: padding-right 180ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -672,7 +673,7 @@
      reservation applies — there is nothing behind it to click. */
   @media (min-width: 900px) {
     .chat-page.trace-open .chat-main {
-      padding-right: calc(min(24rem, 92vw) + 1.25rem);
+      padding-right: calc(min(24rem, 92vw) + var(--chat-gutter));
     }
   }
 
@@ -752,9 +753,9 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    max-width: 52rem;
-    width: 100%;
-    margin: 0 auto;
+    /* Bleed into the gutters so the thread's scrollbar sits at the pane edge;
+       ChatThread re-centres its content at 52rem with inline padding. */
+    margin-inline: calc(-1 * var(--chat-gutter));
   }
 
   .chat-footer {
@@ -768,7 +769,10 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    margin: 0.75rem 0 0;
+    box-sizing: border-box;
+    width: calc(100% - 2 * var(--chat-gutter));
+    max-width: 52rem;
+    margin: 0.75rem auto 0;
     padding: 0.6rem 0.85rem;
     border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.35);
     border-radius: 8px;
@@ -856,7 +860,7 @@
     }
 
     .chat-main {
-      padding: 0 0.85rem;
+      --chat-gutter: 0.85rem;
     }
   }
 

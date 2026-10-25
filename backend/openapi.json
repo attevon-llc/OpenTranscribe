@@ -3139,6 +3139,9 @@
             ],
             "title": "Description"
           },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
+          },
           "is_public": {
             "default": false,
             "title": "Is Public",
@@ -3361,6 +3364,9 @@
             ],
             "title": "Description"
           },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
+          },
           "is_public": {
             "default": false,
             "title": "Is Public",
@@ -3551,6 +3557,9 @@
               }
             ],
             "title": "Description"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
           },
           "is_public": {
             "default": false,
@@ -7210,6 +7219,42 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeldFile": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "title": "HeldFile",
+        "type": "object"
+      },
       "HfTokenStatus": {
         "description": "What the client may know. Never any part of the token.",
         "properties": {
@@ -7292,6 +7337,265 @@
           "token"
         ],
         "title": "HfTokenUpdate",
+        "type": "object"
+      },
+      "HoldCreate": {
+        "description": "Place a hold on named files, or on a whole collection.",
+        "properties": {
+          "collection_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Uuid"
+          },
+          "file_uuids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "File Uuids",
+            "type": "array"
+          },
+          "matter_ref": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An optional matter or case reference.",
+            "title": "Matter Ref"
+          },
+          "reason": {
+            "description": "Why the hold exists. Visible to this organization's administrators only.",
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "file",
+              "collection"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "reason"
+        ],
+        "title": "HoldCreate",
+        "type": "object"
+      },
+      "HoldList": {
+        "properties": {
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/HoldOut"
+            },
+            "title": "Holds",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "holds",
+          "total"
+        ],
+        "title": "HoldList",
+        "type": "object"
+      },
+      "HoldOut": {
+        "description": "An administrator's view of one hold.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "collection_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Name"
+          },
+          "collection_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Uuid"
+          },
+          "file_count": {
+            "default": 0,
+            "title": "File Count",
+            "type": "integer"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HeldFile"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "matter_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Ref"
+          },
+          "placed_at": {
+            "format": "date-time",
+            "title": "Placed At",
+            "type": "string"
+          },
+          "placed_by_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placed By Display"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "release_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Reason"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "released_by_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released By Display"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "scope",
+          "reason",
+          "placed_at",
+          "active"
+        ],
+        "title": "HoldOut",
+        "type": "object"
+      },
+      "HoldRelease": {
+        "properties": {
+          "reason": {
+            "description": "Why the hold is being released. Kept on the hold record.",
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "HoldRelease",
+        "type": "object"
+      },
+      "HoldSummary": {
+        "description": "Whether a file or collection is held, for the badge and the refusal messages.",
+        "properties": {
+          "held": {
+            "default": false,
+            "title": "Held",
+            "type": "boolean"
+          },
+          "held_by": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Held By",
+            "type": "array"
+          },
+          "hold_uuids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Hold Uuids",
+            "type": "array"
+          }
+        },
+        "title": "HoldSummary",
         "type": "object"
       },
       "InterruptionStats": {
@@ -9694,6 +9998,9 @@
             "default": false,
             "title": "Has Summary",
             "type": "boolean"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
           },
           "imohash": {
             "anyOf": [
@@ -39315,6 +39622,233 @@
           }
         ],
         "summary": "Erase Org Member",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds": {
+      "get": {
+        "description": "This organization's holds, newest first.",
+        "operationId": "list_org_holds_api_org_admin_holds_get",
+        "parameters": [
+          {
+            "description": "Only holds that are still in force",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Only holds that are still in force",
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Holds",
+        "tags": [
+          "org-admin"
+        ]
+      },
+      "post": {
+        "description": "Place a hold on named files, or on a whole collection (its files now and later).",
+        "operationId": "place_org_hold_api_org_admin_holds_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Place Org Hold",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds/{hold_uuid}": {
+      "get": {
+        "description": "One hold of this organization, with the files it covers (up to 500).",
+        "operationId": "get_org_hold_api_org_admin_holds__hold_uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hold_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hold Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Org Hold",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds/{hold_uuid}/release": {
+      "post": {
+        "description": "Release a hold. Files another hold or the platform still covers stay held.",
+        "operationId": "release_org_hold_api_org_admin_holds__hold_uuid__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hold_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hold Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldRelease"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Release Org Hold",
         "tags": [
           "org-admin"
         ]

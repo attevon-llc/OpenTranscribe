@@ -1795,6 +1795,9 @@ TAKEDOWN_EXPORT_MAX_ROWS = 20000
 AUDIT_EXPORT_MAX_ROWS = 10000
 #: An organization admin's audit export: it reads the whole tenant's history in one request.
 ORG_AUDIT_EXPORT_RATE_LIMIT = "10/hour"
+#: Placing and releasing organization holds (issue #1276): one budget per user across both POSTs.
+#: A hold is rare and deliberate; the limit is a brake on a runaway script, not a workflow.
+ORG_HOLD_RATE_LIMIT = "30/hour"
 #: The owner's own takedown history, read by the SPA on the settings page.
 TAKEDOWN_OWNER_READ_RATE_LIMIT = "120/hour"
 #: Header that carries a grant uuid. Never ambient: a request without it has no grant.

@@ -15,6 +15,9 @@ from sqlalchemy.orm import Session
 
 from app.models.content_hold import ContentHold
 from app.models.content_hold import ContentHoldFile
+from app.schemas.content_hold import HoldSummary
+from app.services.hold_guard import HELD_BY_ORGANIZATION
+from app.services.hold_guard import hold_state
 
 
 def collection_has_active_hold(db: Session, collection_id: int) -> bool:
@@ -66,3 +69,40 @@ def list_holds(
         ).scalars()
     )
     return rows, total
+
+
+def file_hold_summary(db: Session, file_id: int, *, reveal_uuids: bool) -> HoldSummary:
+    """The badge facts for one file; hold uuids only when ``reveal_uuids``."""
+    state = hold_state(db, file_id)
+    return HoldSummary(
+        held=state.held,
+        held_by=state.held_by,
+        hold_uuids=list(state.org_hold_uuids) if reveal_uuids else [],
+    )
+
+
+def collection_hold_summaries(
+    db: Session, collection_ids: Iterable[int], *, reveal_uuids: bool
+) -> dict[int, HoldSummary]:
+    """A summary for each collection that carries an active hold of its own.
+
+    Collections with no hold are absent; callers keep the default (not held) for them.
+    """
+    ids = {int(i) for i in collection_ids}
+    if not ids:
+        return {}
+    uuids: dict[int, list[str]] = {}
+    for collection_id, hold_uuid in db.execute(
+        select(ContentHold.collection_id, ContentHold.uuid)
+        .where(ContentHold.collection_id.in_(ids), ContentHold.released_at.is_(None))
+        .order_by(ContentHold.id)
+    ):
+        uuids.setdefault(int(collection_id), []).append(str(hold_uuid))
+    return {
+        collection_id: HoldSummary(
+            held=True,
+            held_by=[HELD_BY_ORGANIZATION],
+            hold_uuids=held if reveal_uuids else [],
+        )
+        for collection_id, held in uuids.items()
+    }

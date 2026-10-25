@@ -554,6 +554,7 @@ def get_media_file(
         redact=redact,
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
+        reveal_hold_uuids=ctx.is_org_admin,
     )
     # After the read succeeded, so a refused or missing file is never recorded as viewed.
     # Thumbnails, captions, the waveform and segment pages are part of this view.

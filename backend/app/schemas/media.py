@@ -14,6 +14,7 @@ from pydantic import model_validator
 from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
 from app.core.local_whisper_catalog import LOCAL_WHISPER_MODEL_IDS
 from app.schemas.base import UUIDBaseSchema
+from app.schemas.content_hold import HoldSummary
 from app.schemas.processing_provenance import ProcessingStepOut
 from app.schemas.user import UserBrief
 
@@ -709,6 +710,9 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
 
 
 class MediaFileDetail(MediaFile):
+    #: Who holds the file against deletion and reprocessing (issue #1276); never a reason.
+    hold: HoldSummary = Field(default_factory=HoldSummary)
+
     #: Detail-only takedown fields — kept off the list schema (§B.3): a `Text` reason
     #: is not free on a ~70-column row loaded for every gallery page, and nothing in
     #: the gallery renders it. `is_quarantined` itself is inherited from `MediaFile`.
@@ -1266,6 +1270,8 @@ class Collection(CollectionBase, UUIDBaseSchema):
     # Server-computed: the caller may switch ``visibility`` (an organization collection they
     # created, or any of their organization's as an admin). Never re-derive it client-side.
     can_change_visibility: bool = False
+    #: An organization hold on the collection itself (issue #1276); never a reason.
+    hold: HoldSummary = Field(default_factory=HoldSummary)
     created_at: datetime
     updated_at: datetime
 

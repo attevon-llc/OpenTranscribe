@@ -533,7 +533,9 @@ def dispatch_selective_tasks(
             dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
 
 
-def refuse_reprocess_if_held(db: Session, file_id: int) -> None:
+def refuse_reprocess_if_held(
+    db: Session, file_id: int, *, actor: User | None = None, action: str = "reprocess"
+) -> None:
     """409 ``FILE_UNDER_LEGAL_HOLD`` when the file is held by the platform or an organization.
 
     Reprocessing replaces the transcript, speakers and search copies, which a hold exists to
@@ -546,6 +548,20 @@ def refuse_reprocess_if_held(db: Session, file_id: int) -> None:
 
     state = hold_state(db, file_id)
     if state.held:
+        if actor is not None:
+            from app.services.content_audit import AuditedResource
+            from app.services.content_hold_service import record_hold_refusal
+
+            row = db.get(MediaFile, file_id)
+            if row is not None:
+                record_hold_refusal(
+                    db,
+                    None,
+                    actor,
+                    AuditedResource.file(row),
+                    action=action,
+                    held_by=state.held_by,
+                )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=refusal_detail(state, reveal_uuids=False, message=REPROCESS_REFUSAL),
@@ -607,7 +623,7 @@ def process_file_reprocess(
 
         file_id = media_file.id  # Get internal ID for task operations
 
-        refuse_reprocess_if_held(db, int(file_id))
+        refuse_reprocess_if_held(db, int(file_id), actor=current_user)
 
         # Check if file is currently processing
         if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:

@@ -91,6 +91,8 @@ def cancel_upload(
     # copies — including the verbatim transcript in the search index. The destroy is
     # therefore the canonical one; the only step this branch adds is aborting a
     # browser-side multipart upload, whose parts no other path knows to look for.
+    from app.services.content_audit import AuditedResource
+    from app.services.content_hold_service import record_hold_refusal
     from app.services.file_cleanup_service import purge_media_file
     from app.services.hold_guard import refusal_detail
 
@@ -104,6 +106,14 @@ def cancel_upload(
 
         result = purge_media_file(db, db_file)
         if result.get("refused_legal_hold"):
+            record_hold_refusal(
+                db,
+                None,
+                current_user,
+                AuditedResource.file(db_file),
+                action="cancel_upload",
+                held_by=result["hold_state"].held_by,
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={

@@ -76,8 +76,8 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   row, `refusal_detail` for the 409 body (everyone learns `held_by`; only an org admin gets the hold
   uuids; the reason never appears). Never read `MediaFile.legal_hold` to decide whether to destroy
   or restart a clock (`test_hold_guard_single_source.py` fails on it). `content_hold_service.py`
-  places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`,
-  `on_collection_media_added`); it never commits, and what must follow the commit (storage object
+  places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`);
+  it never commits, and what must follow the commit (storage object
   lock, the erasure-sweep nudge, the audit event) is a `HoldChange` that `finish_hold_change`
   performs. `content_hold_queries.py` holds the read-side questions.
 - **Org audit view** — `org_audit_view.py` resolves `actor_display` / `target_display` /

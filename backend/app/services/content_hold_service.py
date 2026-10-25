@@ -40,7 +40,6 @@ from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
-from app.services.hold_guard import HoldState
 from app.services.hold_guard import hold_states
 
 if TYPE_CHECKING:
@@ -170,41 +169,6 @@ def place_collection_hold(
     )
 
 
-def on_collection_media_added(
-    db: Session, collection_id: int, files: Iterable[MediaFile]
-) -> list[str]:
-    """Cover files just added to a collection with that collection's active holds.
-
-    Returns the storage paths to lock after the commit. Idempotent: a file already covered by a
-    hold is not added twice.
-    """
-    new_files = {int(f.id): f for f in files}
-    if not new_files:
-        return []
-    hold_ids = list(
-        db.execute(
-            select(ContentHold.id).where(
-                ContentHold.collection_id == collection_id, ContentHold.released_at.is_(None)
-            )
-        ).scalars()
-    )
-    paths: list[str] = []
-    for hold_id in hold_ids:
-        present = set(
-            db.execute(
-                select(ContentHoldFile.media_file_id).where(
-                    ContentHoldFile.hold_id == hold_id,
-                    ContentHoldFile.media_file_id.in_(new_files),
-                )
-            ).scalars()
-        )
-        missing = [fid for fid in new_files if fid not in present]
-        db.add_all(ContentHoldFile(hold_id=hold_id, media_file_id=fid) for fid in missing)
-        paths.extend(_paths(new_files[fid] for fid in missing))
-    db.flush()
-    return paths
-
-
 def release_hold(
     db: Session, *, org_id: int, actor: User, hold: ContentHold, reason: str
 ) -> HoldChange:
@@ -213,9 +177,10 @@ def release_hold(
         raise HoldRequestError("not_found", "Hold not found.")
     if hold.released_at is not None:
         raise HoldRequestError("already_released", "This hold was already released.")
+    release_reason = clean_reason(reason, what="release reason")  # before any write
     hold.released_at = datetime.now(UTC)
     hold.released_by_user_id = int(actor.id)
-    hold.release_reason = clean_reason(reason, what="release reason")
+    hold.release_reason = release_reason
     db.flush()
 
     covered = [
@@ -283,18 +248,21 @@ def record_hold_refusal(
     db: Session,
     request: Request | None,
     actor: User,
-    file: MediaFile,
+    resource: AuditedResource,
     *,
     action: str,
-    state: HoldState,
+    held_by: list[str],
 ) -> None:
-    """Audit that ``actor`` tried ``action`` on a held file and was refused. Never raises."""
+    """Audit that ``actor`` tried ``action`` on a held file or collection and was refused.
+
+    ``details`` names the action and who holds it; never the hold's reason. Never raises.
+    """
     record_content_event(
         db,
         request,
         event=AuditEventType.CONTENT_HOLD_REFUSED,
         actor=actor,
-        resource=AuditedResource.file(file),
-        details={"action": action, "held_by": state.held_by},
+        resource=resource,
+        details={"action": action, "held_by": held_by},
         dedup=False,
     )

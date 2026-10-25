@@ -297,3 +297,21 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'audit.export': 'orgAudit.event.auditExport',
   'transcript.view_unredacted': 'orgAudit.event.transcriptRevealed',
 };
+
+/** What a legal hold on a file or collection says to the person it stopped (issue #1276). */
+export const HOLD_REFUSAL_KEYS: Record<string, string> = {
+  organization: 'holds.refusal.organization',
+  platform: 'holds.refusal.platform',
+  'organization,platform': 'holds.refusal.both',
+};
+
+/** The hover text of the "Legal hold" badge, by who holds the item (issue #1276). */
+export const HOLD_BADGE_TITLE_KEYS: Record<string, string> = {
+  organization: 'holds.badgeTitle.organization',
+  platform: 'holds.badgeTitle.platform',
+  'organization,platform': 'holds.badgeTitle.both',
+};
+
+/** The key a `held_by` list selects in :data:`HOLD_REFUSAL_KEYS` / :data:`HOLD_BADGE_TITLE_KEYS`. */
+export const holdAuthorityKey = (heldBy: readonly string[] | null | undefined): string =>
+  [...(heldBy ?? [])].sort().join(',');

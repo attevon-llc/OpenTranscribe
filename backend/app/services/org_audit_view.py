@@ -45,7 +45,7 @@ def member_id_for_uuid(db: Session, org_id: int, user_uuid: UUID | str) -> int |
     return int(row[0]) if row else None
 
 
-def _member_labels(db: Session, org_id: int, user_ids: set[int]) -> dict[int, str]:
+def member_labels(db: Session, org_id: int, user_ids: set[int]) -> dict[int, str]:
     if not user_ids:
         return {}
     rows = (
@@ -98,7 +98,7 @@ def with_display_fields(
         if kind in (RESOURCE_MEDIA_FILE, RESOURCE_COLLECTION) and ident:
             wanted.setdefault(str(kind), set()).add(str(ident))
 
-    names = _member_labels(db, org_id, people)
+    names = member_labels(db, org_id, people)
     titles = _resource_labels(db, org_id, viewer_id, wanted)
 
     enriched = []

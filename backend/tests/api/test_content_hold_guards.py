@@ -113,12 +113,11 @@ def test_a_collection_hold_covers_files_added_later_and_refuses_their_removal(go
     gov.db.commit()
     assert hold_state(gov.db, early.id).held and not hold_state(gov.db, late.id).held
 
+    # No call into the hold service: joining the collection is what covers the file.
     gov.put(collection, late)
-    holds.on_collection_media_added(gov.db, collection.id, [late])
-    gov.db.commit()
     assert hold_state(gov.db, late.id).held
-    # Idempotent: adding the same file again does not duplicate its cover.
-    assert holds.on_collection_media_added(gov.db, collection.id, [late]) == []
+    gov.put(gov.collection(gov.alice), late)  # a second membership elsewhere changes nothing
+    assert hold_state(gov.db, late.id).org_hold_uuids == (str(change.hold.uuid),)
 
     from app.services.content_hold_queries import held_by_collection_hold
 

@@ -10,6 +10,7 @@
   import { t } from '$stores/locale';
   import ShareBadge from '$components/sharing/ShareBadge.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { Collection } from '$lib/types/collection';
 
   // Props
@@ -54,6 +55,7 @@
             {$t('collectionsPanel.restrictedBadge')}
           </span>
         {/if}
+        <HoldBadge hold={collection.hold} />
         {#if collection.is_public}
           <span class="badge public">{$t('collectionsPanel.public')}</span>
         {/if}

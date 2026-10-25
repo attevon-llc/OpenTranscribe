@@ -358,6 +358,15 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   content. Beside a modal-level title, wrap `<h3 class="section-title">` and the tip in `.section-title-row`
   (Organization Context does). Do not re-add a bottom/top `.info-box` card to a panel; the remaining ones
   (OIDC, SAML, SCIM token, Group mappings, Audio extraction) are candidates to convert the same way.
+- **`OrgLegalHoldsPanel` (org admin, issue #1276)** is a lazy section (`org-holds`, `orgHolds`),
+  shown only on `orgAdminCapOn(capState, 'org.legal_hold')`. It lists, places (a collection, or file
+  ids one per line) and releases holds; the server decides what a hold may name and what stays held
+  after a release, so the panel only keeps "Place"/"Release" disabled until the input is one the
+  server accepts (reason 10 to 2,000 characters, valid uuids). The reason is shown in this panel
+  and nowhere else. The "Legal hold" pill on a file header and a collection card is
+  `ui/HoldBadge.svelte` over the server's `hold` field (who holds it, never why), and a delete,
+  remove or reprocess refusal is translated by `getErrorMessage` from `held_by`
+  (`HOLD_REFUSAL_KEYS` in `lib/i18n/keyMaps.ts`).
 - **Audit screens: `AuditLogViewer` (super_admin, platform-wide) and `OrgAuditLogPanel`
   (org admin, issue #1277) are two thin shells over the SAME `audit/AuditLogFilters.svelte` and
   `audit/AuditLogTable.svelte`.** `orgView` is the only difference: a member picker

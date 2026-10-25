@@ -113,7 +113,7 @@ authority. See `backend/app/db/CLAUDE.md`.
   platform's own hold is still `media_file.legal_hold`, and the question "is this file held by
   anyone" is `services/hold_guard` and nowhere else (`tests/unit/test_hold_guard_single_source.py`
   fails on a new reader of the flag). A collection hold lists its files in `content_hold_file`,
-  and a file added later is covered by `content_hold_service.on_collection_media_added`.
+  and a file added later is covered by the `after_insert` listener on `CollectionMember` at the bottom of `models/content_hold.py` (every path that adds a member inserts one, so none can forget).
 - **`Collection` belongs to a TENANT** (`v422_add_collection_tenancy`, issue #1051). **personal**
   = `organization_id IS NULL`, `user_id` = owner; **organization** = `organization_id` set,
   shared by every member of the org (members are editors, the creator and org admins are

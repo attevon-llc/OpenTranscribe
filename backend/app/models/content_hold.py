@@ -21,6 +21,7 @@ from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import event
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -29,6 +30,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.media import CollectionMember
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -122,3 +124,24 @@ class ContentHoldFile(Base):
 
     hold: Mapped[ContentHold] = relationship("ContentHold", back_populates="files")
     media_file: Mapped["MediaFile"] = relationship("MediaFile")
+
+
+@event.listens_for(CollectionMember, "after_insert")
+def _cover_new_member_with_collection_holds(mapper, connection, target) -> None:
+    """A file that joins a held collection is held from that moment (issue #1276).
+
+    Every path that adds a collection member (the collection routes, an upload that names a
+    target collection, the AI auto-labeller, bulk grouping) inserts a ``CollectionMember``, so
+    covering it here is the one place that cannot be forgotten. The insert is idempotent
+    (``ON CONFLICT DO NOTHING``), runs in the same flush and so the same transaction as the
+    membership, and touches nothing when the collection has no active hold.
+    """
+    connection.execute(
+        text(
+            "INSERT INTO content_hold_file (hold_id, media_file_id) "
+            "SELECT id, :file_id FROM content_hold "
+            "WHERE collection_id = :collection_id AND released_at IS NULL "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {"file_id": target.media_file_id, "collection_id": target.collection_id},
+    )

@@ -37,6 +37,7 @@ from .endpoints import media_collections
 from .endpoints import media_mirror_settings
 from .endpoints import org_admin
 from .endpoints import org_admin_audit
+from .endpoints import org_admin_holds
 from .endpoints import org_admin_takedown
 from .endpoints import pipeline_settings
 from .endpoints import prompts
@@ -205,6 +206,17 @@ include_router_with_consistency(
     prefix="/org-admin/audit-logs",
     tags=["org-admin"],
     capability="org.audit_logs",
+    platform_admin_bypass=False,
+    refuse_under_grant=True,
+)
+# Organization legal holds (issue #1276): own capability, no platform-admin bypass (platform staff
+# are not organization administrators and cannot place or release an organization's hold), and
+# refused under a support grant.
+include_router_with_consistency(
+    org_admin_holds.router,
+    prefix="/org-admin/holds",
+    tags=["org-admin"],
+    capability="org.legal_hold",
     platform_admin_bypass=False,
     refuse_under_grant=True,
 )

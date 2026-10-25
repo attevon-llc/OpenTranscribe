@@ -147,6 +147,18 @@ off by default.
   Adding or removing files in a collection (by hand, by the AI auto-labeller or by bulk grouping)
   is always recorded as `collection.membership.change`, and collection and tag shares now carry
   the typed resource fields and no longer put the collection's name in the event.
+- **Organization legal holds (#1276).** An organization administrator can hold files, or a whole
+  collection (its files now and every file added later), from **Settings > Legal holds**
+  (capability `org.legal_hold`, off in the community edition). A held file cannot be deleted, purged
+  by retention, erased with an account or reprocessed; a held collection cannot be deleted and a held
+  file cannot be taken out of it. Releasing a hold keeps its record, frees only the files nothing else
+  holds, and retries any account or erasure request that was waiting on them. The reason is visible to
+  the organization's administrators only and is never copied into an audit event; placing, releasing
+  and every refusal are audited (`content.hold.place`, `content.hold.release`,
+  `content.hold.refused`). Files and collections show a **Legal hold** badge saying who holds them.
+  New: `GET/POST /api/org-admin/holds`, `GET /api/org-admin/holds/{uuid}`,
+  `POST /api/org-admin/holds/{uuid}/release`, and a `hold` field on `GET /api/files/{uuid}` and on
+  collections. The bulk delete reports a held file as `FILE_UNDER_LEGAL_HOLD` per file.
 - **Organization audit log (#1277).** An organization administrator now has **Settings > Audit
   log** (capability `org.audit_logs`, off in the community edition): the organization's own events
   filtered by member, event, outcome, dates and a file or collection id ("everything that happened

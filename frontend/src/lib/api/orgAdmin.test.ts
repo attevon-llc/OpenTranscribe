@@ -73,4 +73,35 @@ describe('OrgAdminApi (issue #1253)', () => {
     });
     expect(result).toBe(blob);
   });
+
+  it('lists holds with the active-only filter and unwraps the page', async () => {
+    get.mockResolvedValue({ data: { holds: [{ uuid: 'h-1' }], total: 3 } } as never);
+
+    const result = await OrgAdminApi.listHolds({ active_only: false, limit: 200 });
+
+    expect(get).toHaveBeenCalledWith('/org-admin/holds', {
+      params: { active_only: false, limit: 200 },
+    });
+    expect(result).toEqual({ holds: [{ uuid: 'h-1' }], total: 3 });
+  });
+
+  it('places a hold with the body as given and releases with only a reason', async () => {
+    post.mockResolvedValue({ data: { uuid: 'h-1' } } as never);
+
+    await OrgAdminApi.placeHold({
+      scope: 'collection',
+      collection_uuid: 'c-1',
+      reason: 'Matter 14 hold',
+    });
+    await OrgAdminApi.releaseHold('h-1', 'Matter closed');
+
+    expect(post).toHaveBeenNthCalledWith(1, '/org-admin/holds', {
+      scope: 'collection',
+      collection_uuid: 'c-1',
+      reason: 'Matter 14 hold',
+    });
+    expect(post).toHaveBeenNthCalledWith(2, '/org-admin/holds/h-1/release', {
+      reason: 'Matter closed',
+    });
+  });
 });

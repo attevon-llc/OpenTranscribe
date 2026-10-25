@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { isRequestCancelled } from '$lib/axios';
+import { HOLD_REFUSAL_KEYS, holdAuthorityKey } from '$lib/i18n/keyMaps';
 import { readAccountLifecycle } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
@@ -41,6 +42,18 @@ export function getErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
+const LEGAL_HOLD_ERROR_CODE = 'FILE_UNDER_LEGAL_HOLD';
+
+/** The translated refusal for a `FILE_UNDER_LEGAL_HOLD` detail, or `null` for any other detail. */
+function holdRefusalMessage(detail: unknown): string | null {
+  const d = detail as { error?: unknown; held_by?: unknown } | null | undefined;
+  if (!d || typeof d !== 'object' || d.error !== LEGAL_HOLD_ERROR_CODE) return null;
+  const heldBy = Array.isArray(d.held_by) ? d.held_by.map(String) : [];
+  const key = HOLD_REFUSAL_KEYS[holdAuthorityKey(heldBy)];
+  // An unrecognised `held_by` falls back to the server's sentence rather than a dotted key.
+  return key ? get(t)(key) : null;
+}
+
 /**
  * Extracts a human-readable message from an unknown error, preferring the FastAPI
  * `response.data.detail` shape, then `response.data.message`, then `error.message`,
@@ -53,6 +66,10 @@ export function getErrorMessage(
 ): string {
   const e = error as AxiosLikeError;
   const detail = e?.response?.data?.detail;
+  // A legal hold refusal (issue #1276) is translated here, once, from WHO holds the item: the
+  // server's own sentence is English, and every delete, remove and reprocess site reads this.
+  const held = holdRefusalMessage(detail);
+  if (held) return held;
   if (typeof detail === 'string' && detail.trim()) return detail;
   // FastAPI's default 422 shape is an ARRAY of validation-error objects
   // (`detail: [{msg: "field required", ...}, ...]`). Without this the chain fell

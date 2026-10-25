@@ -58,6 +58,7 @@ from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.sharing import CollectionShare
 from app.models.user import User
+from app.schemas.content_hold import HoldSummary
 from app.schemas.media import Collection as CollectionSchema
 from app.schemas.media import CollectionCreate
 from app.schemas.media import CollectionMemberAdd
@@ -78,7 +79,14 @@ from app.services.collection_visibility import visible_collection_ids
 from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
+from app.services.content_hold_queries import collection_has_active_hold
+from app.services.content_hold_queries import collection_hold_summaries
+from app.services.content_hold_queries import held_by_collection_hold
+from app.services.content_hold_service import record_hold_refusal
 from app.services.formatting_service import FormattingService
+from app.services.hold_guard import HELD_BY_ORGANIZATION
+from app.services.hold_guard import HoldState
+from app.services.hold_guard import refusal_detail
 from app.services.permission_service import PermissionService
 from app.services.takedown_service import exclude_quarantined
 from app.tasks.search_indexing_task import update_file_access_index
@@ -227,6 +235,41 @@ def _get_prompt_info(collection: Collection) -> tuple:
 def _tenant_scope(collection: Collection) -> str:
     """``tenant_scope`` of a collection event: whose tenant the collection belongs to."""
     return TENANT_SCOPE_ORG if collection.organization_id is not None else TENANT_SCOPE_PERSONAL
+
+
+def _collection_held(db: Session, collection: Collection, ctx: RequestContext) -> HoldSummary:
+    """The hold badge facts for one collection (hold uuids only for its organization's admin)."""
+    return collection_hold_summaries(db, [collection.id], reveal_uuids=ctx.is_org_admin).get(
+        int(collection.id), HoldSummary()
+    )
+
+
+def _hold_refusal(
+    message: str, *, db: Session, collection: Collection, ctx: RequestContext, action: str
+):
+    """409 ``FILE_UNDER_LEGAL_HOLD`` for a collection change a hold forbids (and audit it).
+
+    ``held_by`` is for everybody; the hold uuids only for the holding organization's admin.
+    """
+    record_hold_refusal(
+        db,
+        None,
+        ctx.user,
+        AuditedResource.collection(collection),
+        action=action,
+        held_by=[HELD_BY_ORGANIZATION],
+    )
+    actual = collection_hold_summaries(db, [collection.id], reveal_uuids=True).get(
+        int(collection.id), HoldSummary()
+    )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=refusal_detail(
+            HoldState(platform=False, org_hold_uuids=tuple(actual.hold_uuids)),
+            reveal_uuids=ctx.is_org_admin,
+            message=message,
+        ),
+    )
 
 
 def _can_change_visibility(collection: Collection, permission: str | None) -> bool:
@@ -593,6 +636,10 @@ def list_collections(
         .all()
     )
 
+    held_by_collection = collection_hold_summaries(
+        db, collection_ids, reveal_uuids=ctx.is_org_admin
+    )
+
     # Bulk-fetch share counts for all collections
     share_counts_query = (
         db.query(
@@ -616,6 +663,7 @@ def list_collections(
         my_perm = perm_dict.get(collection.id, "owner")
         collection_with_count.my_permission = my_perm
         collection_with_count.can_change_visibility = _can_change_visibility(collection, my_perm)
+        collection_with_count.hold = held_by_collection.get(collection.id, HoldSummary())
         collection_with_count.is_shared = collection.user_id != current_user.id
         collection_with_count.share_count = share_counts_dict.get(collection.id, 0)
         if collection.id in shared_by_dict:
@@ -793,6 +841,7 @@ def get_collection(
     result.can_change_visibility = _can_change_visibility(
         collection, PermissionService.get_collection_permission(db, collection.id, current_user.id)
     )
+    result.hold = _collection_held(db, collection, ctx)
 
     return result
 
@@ -863,6 +912,7 @@ def update_collection(
     result.default_prompt_id = prompt_uuid_val
     result.default_prompt_name = prompt_name
     result.can_change_visibility = _can_change_visibility(collection, permission)
+    result.hold = _collection_held(db, collection, ctx)
     return result
 
 
@@ -950,6 +1000,7 @@ def set_collection_visibility(
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name
     result.can_change_visibility = _can_change_visibility(collection, permission)
+    result.hold = _collection_held(db, collection, ctx)
     return result
 
 
@@ -976,6 +1027,18 @@ def delete_collection(
     if collection.organization_id is None:
         require_resource_owner(
             collection, current_user, forbidden_detail="Only the collection owner can delete it"
+        )
+
+    # A collection under a hold is evidence in its own right (issue #1276): it cannot be deleted
+    # until the hold is released, even when it is empty.
+    if collection_has_active_hold(db, int(collection.id)):
+        raise _hold_refusal(
+            "refused: this collection is under an active legal hold and cannot be deleted. "
+            "Release the hold before deleting.",
+            db=db,
+            collection=collection,
+            ctx=ctx,
+            action="delete_collection",
         )
 
     # Capture the members before the cascade removes them; reindex after the commit so the
@@ -1109,6 +1172,16 @@ def add_media_to_collection(
 
     db.commit()
 
+    # Joining a held collection holds the file (the CollectionMember insert covers it); mirror
+    # that into the storage object lock, best effort and after the commit.
+    covered = held_by_collection_hold(db, collection_id, added_file_ids)
+    if covered:
+        from app.services.minio_service import set_object_legal_hold
+
+        for f in media_files:
+            if f.id in covered and f.storage_path:
+                set_object_legal_hold(str(f.storage_path), True)
+
     if added_file_ids and _membership_affects_index(db, collection):
         update_file_access_index.delay(added_file_ids)
     _record_membership_change(
@@ -1164,6 +1237,20 @@ def remove_media_from_collection(
             CollectionMember.media_file_id.in_(media_file_ids),
         )
     }
+
+    # A file a hold on THIS collection covers cannot leave it (issue #1276): moving it out would
+    # be the way to slip evidence from under a hold. The whole request is refused so nothing is
+    # half removed; release the hold first.
+    protected = held_by_collection_hold(db, collection_id, present_ids)
+    if protected:
+        raise _hold_refusal(
+            f"refused: {len(protected)} of these files are under this collection's legal hold "
+            "and cannot be removed from it. Release the hold first.",
+            db=db,
+            collection=collection,
+            ctx=ctx,
+            action="remove_from_collection",
+        )
 
     # Remove members
     removed_count = (

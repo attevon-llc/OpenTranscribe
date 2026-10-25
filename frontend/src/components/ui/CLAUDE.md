@@ -23,6 +23,15 @@ primitive in the same spirit as this folder.
   (`btn`, `modal-button`, ad hoc) — colour stays the caller's; order is dismiss first, primary last;
   a form in the body is submitted from the footer with `<button type="submit" form="the-form-id">`.
   Its `zIndex` prop defaults to the shared `--z-modal` tier (H5, see `src/styles/theme.css`).
+  **Escape closes only the topmost open BaseModal** (a module-level open stack): every instance
+  listens on `window`, so before this a reader opened over the first-run wizard closed both.
+  `fullscreen` fills the viewport (a document reader; header and footer stay pinned, the body
+  scrolls) and the `header-actions` slot puts controls before the close button
+  (`legal/LegalDocumentViewer`'s full-screen toggle).
+- `Stepper.svelte` — progress-only step indicator (`steps`, `current`, `label`, `doneLabel`): dots on a
+  connector, check icon (`MenuIcon` `check`) on complete steps, `aria-current="step"`, labels under the
+  dots and only the current one (as a caption) in a container under 520px. Same visual language as
+  the upload and watch-source steppers, which are clickable navigation and still hand-rolled.
 - `ConfirmationModal.svelte` (`src/components/`, not `ui/`) — confirm/cancel dialog; use instead
   of hand-rolled `{#if show}+BaseModal`.
 - `Tabs.svelte` — `role=tablist` with roving-tabindex keyboard nav (arrows/Home/End), badges;

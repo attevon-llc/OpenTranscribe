@@ -39,6 +39,13 @@ describe('renderLegalMarkdown', () => {
     expect(html).not.toContain('<script');
   });
 
+  // A list interrupted by a quote or table resumes at its own number; the sanitizer used to
+  // strip `start`, so a tenth clause was printed as "1.".
+  it('keeps the start number of a resumed ordered list', async () => {
+    const html = await renderLegalMarkdown('1. first\n\n> aside\n\n10. tenth');
+    expect(html).toMatch(/<ol start="10">/);
+  });
+
   // chatMarkdown builds DOMPurify from `window` at import time. A static import from a
   // component the root layout mounts therefore crashes server-side rendering (every page
   // answered 500 on the dev server) and drags marked and DOMPurify into the root bundle.

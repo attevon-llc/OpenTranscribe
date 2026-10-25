@@ -235,6 +235,10 @@ another literal size (the tree had ~60 distinct ones).
   are `--font-size-md`; metadata `--font-size-sm`/`xs`, in `--text-secondary`.
 - Chat: the user's turn is the tinted bubble, the assistant's answer is plain text with no
   surface. Assistant markdown styling lives ONLY in `chat/ChatMarkdown.svelte`.
+- Legal documents (terms, privacy, operator acknowledgment) are typeset ONLY by
+  `legal/LegalProse.svelte`: hanging-indent list numbers, `1.` / `(a)` / `(i)` nesting, heading
+  rhythm, scrollable tables. `app.html`'s `* { margin: 0; padding: 0 }` reset means rendered
+  markdown has no list gutter or paragraph spacing unless a component restores them.
 - Search results follow search-engine hierarchy: title (`--font-size-lg`, medium, link colour
   `--primary-on-surface`), then muted meta, then the snippet with a `--highlight-bg` mark. A
   bare `<mark>` anywhere gets that highlight from `theme.css`.

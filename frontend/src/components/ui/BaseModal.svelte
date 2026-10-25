@@ -13,6 +13,15 @@
       </svelte:fragment>
     </BaseModal>
 -->
+<script context="module" lang="ts">
+  /**
+   * Open dialogs, oldest first. Only the last one answers Escape: every instance listens on
+   * `window`, so without this one key press closed a dialog AND the one it was opened from
+   * (the legal reader over the first-run wizard).
+   */
+  const openStack: symbol[] = [];
+</script>
+
 <script lang="ts">
   import { t } from '$stores/locale';
   import { onDestroy } from 'svelte';
@@ -42,6 +51,11 @@
    * every smaller consumer (confirmations, pickers) wants.
    */
   export let height = '';
+  /**
+   * Fill the whole viewport (a document reader). The header and footer stay put and only the
+   * body scrolls, as in the sized dialog; the width cap from `size` is dropped.
+   */
+  export let fullscreen = false;
   /** CSS z-index value. Defaults to the shared `--z-modal` tier (H5) — pass a
    *  higher value (e.g. a toast/critical tier) only for a modal that must
    *  layer above another modal it can be opened from. */
@@ -73,14 +87,28 @@
   const generatedTitleId = `modal-title-${Math.random().toString(36).slice(2, 10)}`;
   $: resolvedTitleId = titleId || generatedTitleId;
 
+  const stackToken = Symbol('modal');
+
+  function leaveStack() {
+    const at = openStack.indexOf(stackToken);
+    if (at !== -1) openStack.splice(at, 1);
+  }
+
   let _wasOpen = false;
   $: if (typeof document !== 'undefined' && isOpen !== _wasOpen) {
-    isOpen ? lockScroll() : unlockScroll();
+    if (isOpen) {
+      lockScroll();
+      openStack.push(stackToken);
+    } else {
+      unlockScroll();
+      leaveStack();
+    }
     _wasOpen = isOpen;
   }
 
   onDestroy(() => {
     if (_wasOpen) unlockScroll();
+    leaveStack();
   });
 
   function handleBackdropClick(event: MouseEvent) {
@@ -89,7 +117,9 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') onClose();
+    if (event.key !== 'Escape' || !isOpen) return;
+    if (openStack[openStack.length - 1] !== stackToken) return;
+    onClose();
   }
 </script>
 
@@ -101,7 +131,8 @@
   <div class="modal-backdrop" style="z-index: {zIndex}; --modal-instance-z-index: {zIndex};" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
     <div
       class="modal-container"
-      style="max-width: {maxWidth}{height ? `; height: ${height}` : ''}"
+      class:fullscreen
+      style="{fullscreen ? '' : `max-width: ${maxWidth}`}{height && !fullscreen ? `; height: ${height}` : ''}"
       role="dialog"
       aria-modal="true"
       aria-labelledby={$$slots.header ? undefined : resolvedTitleId}
@@ -115,6 +146,11 @@
           </div>
         {:else}
           <h2 id={resolvedTitleId}>{title}</h2>
+        {/if}
+        {#if $$slots['header-actions']}
+          <div class="modal-header-actions">
+            <slot name="header-actions" />
+          </div>
         {/if}
         <button class="modal-close-button" on:click={onClose} aria-label={$t('modal.closeDialog')}>
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -165,6 +201,16 @@
     animation: slideIn 0.2s ease-out;
   }
 
+  .modal-container.fullscreen {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .modal-header {
     display: flex;
     justify-content: space-between;
@@ -189,19 +235,32 @@
     gap: 0.75rem;
   }
 
+  .modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-inline-start: auto;
+    padding-inline-start: 1rem;
+    flex-shrink: 0;
+  }
+
   .modal-close-button {
     background: none;
     border: none;
     cursor: pointer;
     color: var(--text-secondary, #666);
     padding: 0.5rem;
-    margin-left: 1rem;
+    margin-inline-start: 1rem;
     border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: color 0.2s ease, background-color 0.2s ease;
     flex-shrink: 0;
+  }
+
+  .modal-header-actions + .modal-close-button {
+    margin-inline-start: 0.5rem;
   }
 
   .modal-close-button:hover {

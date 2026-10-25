@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
@@ -63,5 +63,29 @@ describe('LegalDocumentViewer', () => {
 
     await screen.findByTestId('legal-prose');
     expect(screen.queryByTestId('legal-draft-banner')).toBeNull();
+  });
+
+  it('switches between the dialog and full screen from a labelled header control', async () => {
+    render(LegalDocumentViewer, { isOpen: true, docKey: doc.key });
+    await screen.findByTestId('legal-prose');
+
+    const dialog = screen.getByRole('dialog');
+    const toggle = screen.getByTestId('legal-fullscreen-toggle');
+    expect(dialog.classList.contains('fullscreen')).toBe(false);
+    expect(toggle.textContent).toContain('legal.viewer.enterFullscreen');
+
+    await fireEvent.click(toggle);
+    expect(dialog.classList.contains('fullscreen')).toBe(true);
+    expect(toggle.textContent).toContain('legal.viewer.exitFullscreen');
+
+    await fireEvent.click(toggle);
+    expect(dialog.classList.contains('fullscreen')).toBe(false);
+  });
+
+  it('opens straight into full screen when the caller asks for it', async () => {
+    render(LegalDocumentViewer, { isOpen: true, docKey: doc.key, startFullscreen: true });
+    await screen.findByTestId('legal-prose');
+
+    expect(screen.getByRole('dialog').classList.contains('fullscreen')).toBe(true);
   });
 });

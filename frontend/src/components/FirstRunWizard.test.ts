@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
@@ -93,6 +93,27 @@ describe('FirstRunWizard keep-current-password choice', () => {
     expect(completeCalls()).toHaveLength(0);
     const first = screen.getByText('firstRunWizard.stepPassword').closest('li');
     expect(first?.getAttribute('data-done')).toBe('true');
+  });
+});
+
+describe('FirstRunWizard step change', () => {
+  // The dialog body keeps its scroll position, so after a long step (the terms) the next
+  // step opened scrolled to the middle with the stepper out of view.
+  it('brings the step indicator back into view when the step changes', async () => {
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      statusReturns();
+      render(FirstRunWizard);
+      await fireEvent.click(await screen.findByText('firstRunWizard.keepPasswordButton'));
+
+      expect(stepOf()).toBe('2');
+      const calls = scrollIntoView.mock.instances as unknown as Element[];
+      expect(calls).toContain(screen.getByTestId('wizard-step-indicator'));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 });
 
@@ -363,5 +384,45 @@ describe('FirstRunWizard terms step', () => {
     render(FirstRunWizard);
     await screen.findByTestId('terms-panel');
     expect(screen.queryByTestId('terms-draft-badge')).toBeNull();
+  });
+
+  it('presents the acknowledgment as a labelled, focusable region, not a text box', async () => {
+    legalStatus();
+    render(FirstRunWizard);
+
+    const panel = await screen.findByTestId('terms-panel');
+    expect(panel.getAttribute('role')).toBe('region');
+    expect(panel.getAttribute('aria-label')).toBe('Operator acknowledgment');
+    expect(panel.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('opens the acknowledgment itself in the full-screen reader', async () => {
+    legalStatus();
+    render(FirstRunWizard);
+    await screen.findByTestId('terms-panel');
+
+    await fireEvent.click(screen.getByTestId('terms-fullscreen'));
+
+    const reader = await waitFor(() => {
+      const found = screen.getAllByRole('dialog').find((d) => d.classList.contains('fullscreen'));
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    const prose = await within(reader).findByTestId('legal-prose');
+    await waitFor(() => expect(prose.textContent).toContain('I accept responsibility'));
+  });
+
+  it('marks the current step with aria-current and draws no text check glyph', async () => {
+    legalStatus({ legal_acknowledged: true });
+    render(FirstRunWizard);
+    await fireEvent.click(await screen.findByText('firstRunWizard.keepPasswordButton'));
+
+    const indicator = screen.getByTestId('wizard-step-indicator');
+    const current = indicator.querySelector('[aria-current="step"]');
+    expect(current?.textContent).toContain('firstRunWizard.stepPosture');
+    expect(indicator.textContent).not.toContain('✓');
+    expect(
+      within(indicator).getByRole('list', { name: 'firstRunWizard.stepperLabel' })
+    ).toBeTruthy();
   });
 });

@@ -102,6 +102,20 @@ export const MENU_ICONS = {
     line(10, 16, 10.01, 16),
   ],
   'sort-relevance': [circle(12, 12, 10), circle(12, 12, 6), circle(12, 12, 2)],
+  // Status and view controls (the stepper's done mark, the legal reader's full-screen toggle).
+  check: [poly('20 6 9 17 4 12')],
+  maximize: [
+    poly('15 3 21 3 21 9'),
+    poly('9 21 3 21 3 15'),
+    line(21, 3, 14, 10),
+    line(3, 21, 10, 14),
+  ],
+  minimize: [
+    poly('4 14 10 14 10 20'),
+    poly('20 10 14 10 14 4'),
+    line(14, 10, 21, 3),
+    line(3, 21, 10, 14),
+  ],
 } as const satisfies Record<string, readonly IconShape[]>;
 
 export type MenuIconName = keyof typeof MENU_ICONS;

@@ -129,7 +129,11 @@ const MATHML_ATTR = [
   'notation',
 ];
 
-const ALLOWED_ATTR = ['href', 'class', ...MATHML_ATTR];
+// `start` keeps a list that resumes after a quote, table or code block at its own number
+// (otherwise "10." renders as "1."). An integer, never a URL, so it is also URI-safe below:
+// DOMPurify otherwise tests every non-URI-safe value against ALLOWED_URI_REGEXP and drops it.
+const LIST_ATTR = ['start'];
+const ALLOWED_ATTR = ['href', 'class', ...LIST_ATTR, ...MATHML_ATTR];
 
 /**
  * Class tokens model output may keep: a fence's `language-*`, highlight.js token classes,
@@ -225,7 +229,7 @@ export function renderChatMarkdown(markdown: string | null | undefined): string 
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOWED_URI_REGEXP,
-    ADD_URI_SAFE_ATTR: MATHML_ATTR,
+    ADD_URI_SAFE_ATTR: [...LIST_ATTR, ...MATHML_ATTR],
     KEEP_CONTENT: true,
   }) as unknown as string;
 }

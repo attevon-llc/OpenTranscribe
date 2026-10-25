@@ -102,7 +102,7 @@ describe('nothing is heavier than semibold', () => {
   });
 });
 
-describe('RTL-safe chat prose and search snippets', () => {
+describe('RTL-safe chat prose, search snippets, legal prose and the stepper', () => {
   const FILES = [
     'src/components/chat/ChatMarkdown.svelte',
     'src/components/chat/ChatMessage.svelte',
@@ -113,6 +113,8 @@ describe('RTL-safe chat prose and search snippets', () => {
     'src/components/search/SearchResultsBody.svelte',
     'src/components/search/SearchPreviewButton.svelte',
     'src/components/search/SummaryResultCard.svelte',
+    'src/components/legal/LegalProse.svelte',
+    'src/components/ui/Stepper.svelte',
   ];
 
   it.each(FILES)('%s uses logical (inline-start/end) properties only', (rel) => {

@@ -28,7 +28,10 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import BaseModal from './ui/BaseModal.svelte';
+  import MenuIcon from './ui/MenuIcon.svelte';
+  import Stepper from './ui/Stepper.svelte';
   import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
+  import LegalProse from '$components/legal/LegalProse.svelte';
   import {
     OPERATOR_ACK_KEY,
     TERMS_KEY,
@@ -54,6 +57,7 @@
   let termsChecked = false;
   let viewerKey = '';
   let viewerOpen = false;
+  let viewerFullscreen = false;
 
   /**
    * Whether auth mail can be delivered: true / false, or null when it could not be read
@@ -87,6 +91,20 @@
   let defaultsApplied = false;
   /** @type {string[]} */
   let appliedDefaults = [];
+
+  // The dialog body keeps its scroll position across steps; without this the step after the
+  // long terms text opened scrolled to its middle, with the indicator out of view.
+  /** @type {HTMLElement|null} */
+  let progressEl = null;
+  let shownStep = step;
+  $: onStepShown(step);
+
+  /** @param {number} next */
+  function onStepShown(next) {
+    if (next === shownStep) return;
+    shownStep = next;
+    progressEl?.scrollIntoView?.({ block: 'nearest' });
+  }
 
   $: passwordDone = passwordChanged || passwordKept;
   $: offset = includeTerms ? 1 : 0;
@@ -190,9 +208,13 @@
     }
   }
 
-  /** @param {string} key */
-  function openViewer(key) {
+  /**
+   * @param {string} key
+   * @param {boolean} [fullscreen]
+   */
+  function openViewer(key, fullscreen = false) {
     viewerKey = key;
+    viewerFullscreen = fullscreen;
     viewerOpen = true;
   }
 
@@ -324,21 +346,16 @@
 </script>
 
 <BaseModal isOpen={visible} title={$t('firstRunWizard.title')} size="lg" onClose={hide}>
-  <div class="wizard-progress" data-testid="wizard-step-indicator" data-step={step + offset}>
+  <div class="wizard-progress" data-testid="wizard-step-indicator" data-step={step + offset} bind:this={progressEl}>
     <p class="wizard-progress-label">
       {$t('firstRunWizard.stepIndicator', { current: step + offset, total: totalSteps })}
     </p>
-    <ol class="wizard-progress-list">
-      {#each steps as item, index (item.id)}
-        <li class:current={step + offset === index + 1} class:done={item.done} data-done={item.done}>
-          <span class="wizard-progress-mark" aria-hidden="true">{item.done ? '✓' : index + 1}</span>
-          <span>{item.label}</span>
-          {#if item.done}
-            <span class="sr-only">{$t('firstRunWizard.stepDoneMark')}</span>
-          {/if}
-        </li>
-      {/each}
-    </ol>
+    <Stepper
+      {steps}
+      current={step + offset - 1}
+      label={$t('firstRunWizard.stepperLabel')}
+      doneLabel={$t('firstRunWizard.stepDoneMark')}
+    />
   </div>
 
   {#if step === 0}
@@ -352,9 +369,25 @@
             <strong>{$t('legal.draftBadge')}</strong>
           </div>
         {/if}
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderLegalMarkdown -->
-        <div class="terms-panel" tabindex="0" role="textbox" aria-readonly="true" aria-multiline="true" aria-label={termsDoc.title} dir="ltr" data-testid="terms-panel">{@html termsHtml}</div>
-        <p class="wizard-hint">{$t('legal.viewer.officialText')}</p>
+        <div class="terms-document">
+          <div class="terms-toolbar">
+            <span class="terms-toolbar-meta">{$t('legal.viewer.officialText')}</span>
+            <button
+              type="button"
+              class="btn btn-secondary btn-small"
+              data-testid="terms-fullscreen"
+              on:click={() => openViewer(OPERATOR_ACK_KEY, true)}
+            >
+              <MenuIcon name="maximize" />
+              {$t('legal.viewer.enterFullscreen')}
+            </button>
+          </div>
+          <!-- A focusable region, so the panel scrolls from the keyboard. -->
+          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+          <div class="terms-panel" tabindex="0" role="region" aria-label={termsDoc.title} data-testid="terms-panel">
+            <LegalProse html={termsHtml} density="compact" />
+          </div>
+        </div>
         <div class="wizard-actions">
           <button class="btn btn-secondary" on:click={() => openViewer(TERMS_KEY)}>
             {$t('firstRunWizard.termsReadTerms')}
@@ -581,38 +614,58 @@
   </svelte:fragment>
 </BaseModal>
 
-<LegalDocumentViewer isOpen={viewerOpen} docKey={viewerKey} onClose={() => (viewerOpen = false)} />
+<LegalDocumentViewer
+  isOpen={viewerOpen}
+  docKey={viewerKey}
+  startFullscreen={viewerFullscreen}
+  onClose={() => (viewerOpen = false)}
+/>
 
 <style>
-  .terms-panel {
-    max-height: 40vh;
-    overflow-y: auto;
-    padding: 10px 14px;
+  .terms-document {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--bg-secondary);
+    overflow: hidden;
+  }
+
+  .terms-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 6px 8px;
+    padding-inline-start: 16px;
+    border-block-end: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+  }
+
+  .terms-toolbar-meta {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  .terms-panel {
+    max-height: 40vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px 18px;
     color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    line-height: var(--line-height-body);
-    text-align: start;
   }
 
   .terms-panel:focus-visible {
     outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
 
-  .terms-panel :global(h1),
-  .terms-panel :global(h2),
-  .terms-panel :global(h3) {
-    margin-block: 0.8em 0.3em;
-    font-size: var(--font-size-md);
-  }
-
-  .terms-panel :global(blockquote) {
-    margin-inline: 0;
-    padding-inline-start: 12px;
-    border-inline-start: 3px solid var(--border-color);
+  /* Below 768px the dialog is already full screen and scrolls; a second scroll box inside it
+     traps the reader, so the panel grows with its text instead. */
+  @media (max-width: 768px) {
+    .terms-panel {
+      max-height: none;
+      overflow-y: visible;
+    }
   }
 
   .wizard-step {
@@ -622,72 +675,16 @@
   }
 
   .wizard-progress {
-    margin-block-end: 16px;
+    margin-block-end: 20px;
+    /* Room above it when a step change scrolls it back into view (the body's own padding). */
+    scroll-margin-block-start: 24px;
   }
 
   .wizard-progress-label {
-    margin: 0 0 8px;
-    color: var(--text-secondary, #6b7280);
-    font-size: var(--font-size-sm, 0.85rem);
-  }
-
-  .wizard-progress-list {
-    display: flex;
-    flex-wrap: wrap;
-    flex-wrap: nowrap;
-    gap: 6px 10px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: var(--font-size-sm, 0.85rem);
-    color: var(--text-secondary, #6b7280);
-  }
-
-  .wizard-progress-list li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /* Five steps must fit one line at the dialog width: only the current step keeps its label. */
-  .wizard-progress-list li:not(.current) > span:not(.wizard-progress-mark):not(.sr-only) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-
-  .wizard-progress-list li.current {
-    color: var(--text-primary, #111827);
-    font-weight: var(--font-weight-semibold, 600);
-  }
-
-  .wizard-progress-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border: 1px solid var(--border-color, #d1d5db);
-    border-radius: 50%;
-    font-size: var(--font-size-xs, 0.75rem);
-  }
-
-  .wizard-progress-list li.done .wizard-progress-mark {
-    border-color: var(--success-color, #10b981);
-    background-color: rgba(var(--success-color-rgb, 16, 185, 129), 0.15);
-    color: var(--text-primary, #111827);
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
+    margin: 0 0 12px;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
   }
 
   .wizard-callout {
@@ -748,20 +745,27 @@
     gap: 4px;
     text-align: start;
     padding: 14px 16px;
-    border: 2px solid var(--border-color, #d1d5db);
+    border: 2px solid var(--border-color);
     border-radius: 8px;
-    background-color: var(--bg-secondary, white);
-    color: var(--text-primary, #111827);
+    background-color: var(--bg-secondary);
+    box-shadow: none;
+    color: var(--text-primary);
     cursor: pointer;
   }
 
   .posture-card.selected {
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
+    background-color: rgba(var(--primary-color-rgb), 0.06);
+  }
+
+  .posture-card strong {
+    font-size: var(--font-size-md);
   }
 
   .posture-card span {
-    font-size: 0.85rem;
-    color: var(--text-secondary, #6b7280);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    color: var(--text-secondary);
   }
 
   .wizard-checkbox {
@@ -785,14 +789,25 @@
     flex: 1;
   }
 
+  /* A text link, not a button: the global button rule's surface, radius and shadow must not
+     leak onto it (it used to render as a raised white box). */
   .wizard-skip-link {
-    background: none;
-    border: none;
-    color: var(--text-secondary, #6b7280);
-    text-decoration: underline;
-    cursor: pointer;
     padding: 8px 4px;
-    font-size: 0.9rem;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    box-shadow: none;
+    color: var(--text-secondary);
+    font-size: var(--font-size-md);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+  }
+
+  .wizard-skip-link:hover:not(:disabled) {
+    background: none;
+    box-shadow: none;
+    color: var(--text-primary);
   }
 
   .wizard-skip-link:disabled {

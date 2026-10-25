@@ -80,6 +80,12 @@ RUN chmod -R 755 static/fonts
 COPY --from=ffmpeg-wasm-builder /src/dist/esm/ffmpeg-core.js /src/dist/esm/ffmpeg-core.wasm static/ffmpeg/
 RUN chmod -R 755 static/ffmpeg
 
+# Build identity: vite.config.ts inlines process.env.GIT_SHA as __GIT_SHA__, which is how the
+# About dialog tells a stale tab from a current one when the server is a dev-<sha> image
+# (issue #1273). Declared here, after COPY, so a new commit does not bust the npm ci layer.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+
 # Build the application
 RUN npm run build
 

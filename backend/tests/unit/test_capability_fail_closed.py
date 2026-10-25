@@ -62,15 +62,15 @@ def test_partial_result_does_not_inherit_community_grants():
 
 
 def test_one_missing_key_is_denied_and_the_gate_404s():
-    without_rag = {k: v for k, v in COMMUNITY_CAPABILITIES.items() if k != "chat.rag"}
-    set_capability_resolver(lambda _req: dict(without_rag))
+    without_url_ingest = {k: v for k, v in COMMUNITY_CAPABILITIES.items() if k != "url_ingest"}
+    set_capability_resolver(lambda _req: dict(without_url_ingest))
 
     caps = get_capabilities()
 
-    assert caps["chat.rag"] is False
-    assert {k: v for k, v in caps.items() if k != "chat.rag"} == without_rag
-    assert capability_enabled("chat.rag") is False
-    dep = require_capability("chat.rag", platform_admin_bypass=False)
+    assert caps["url_ingest"] is False
+    assert {k: v for k, v in caps.items() if k != "url_ingest"} == without_url_ingest
+    assert capability_enabled("url_ingest") is False
+    dep = require_capability("url_ingest", platform_admin_bypass=False)
     with pytest.raises(HTTPException) as exc:
         dep(cast(Any, None))
     assert exc.value.status_code == 404

@@ -1,9 +1,12 @@
 <script lang="ts">
   /**
    * One transcript hit as a compact search-engine result: title, one muted meta line,
-   * 1-2 snippets. Everything else is progressive disclosure: "Show N more matches", and
-   * "Details", which pins this hit in the page's info panel (wide layout) or expands the
-   * same info card inline (narrow layout). See docs/design/search_results_ux_audit.md.
+   * 1-2 snippets. Everything else is progressive disclosure: the caret at the top
+   * inline-end corner collapses the whole match list (`matchesOpen`, owned by the page so
+   * it survives navigation), "Show N more matches", and the details control, which pins
+   * this hit in the page's info panel (wide layout, "Pin details", `aria-pressed`) or
+   * expands the same info card inline (narrow layout, "Details", `aria-expanded`). See
+   * docs/design/search_results_ux_audit.md and search_polish_round2_plan.md.
    */
   import { createEventDispatcher } from 'svelte';
   import type { SearchHit, SearchOccurrence as SearchOccurrenceType } from '$stores/search';
@@ -11,18 +14,23 @@
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock, formatDate } from '$lib/utils/formatting';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SearchOccurrence from './SearchOccurrence.svelte';
   import SearchPreviewButton, { type PreviewPlaybackState } from './SearchPreviewButton.svelte';
   import SearchResultInfoCard from './SearchResultInfoCard.svelte';
 
   export let hit: SearchHit;
   export let activePreview: { fileUuid: string; startTime: number; playing: boolean } | null = null;
-  /** Wide layout: "Details" pins the page's info panel instead of expanding inline. */
+  /** Wide layout: the details control pins the page's info panel instead of expanding inline. */
   export let panelMode = false;
   /** This hit is pinned in the info panel. */
   export let selected = false;
   /** id of the page's info panel, for `aria-controls` in panel mode. */
   export let panelId: string | undefined = undefined;
+  /** The match list is shown; the caret toggles it via `toggleMatches`. */
+  export let matchesOpen = true;
+  /** The current query, for the inline info card's filtered-search chip links. */
+  export let query = '';
 
   const dispatch = createEventDispatcher();
 
@@ -32,6 +40,7 @@
   $: maxVisible = hit.has_both_match_types ? 2 : 1;
   $: visibleOccurrences = expanded ? hit.occurrences : hit.occurrences.slice(0, maxVisible);
   $: hiddenCount = hit.occurrences.length - maxVisible;
+  $: hasMatches = hit.occurrences.length > 0;
   $: occurrencesId = `search-result-occurrences-${hit.file_uuid}`;
   $: inlineDetailsId = `search-result-details-${hit.file_uuid}`;
 
@@ -116,10 +125,23 @@
         >{$t('search.relevanceShort', { percent: hit.relevance_percent })}</span>
       {/if}
     </p>
+    {#if hasMatches}
+      <button
+        type="button"
+        class="matches-toggle"
+        aria-expanded={matchesOpen}
+        aria-controls={occurrencesId}
+        aria-label={$t('search.matchesToggle')}
+        title={$t('search.matchesToggle')}
+        on:click={() => dispatch('toggleMatches', hit.file_uuid)}
+      >
+        <MenuIcon name="chevron-down" size={18} />
+      </button>
+    {/if}
   </div>
 
-  <ul class="occurrence-list" id={occurrencesId}>
-    {#each visibleOccurrences as occurrence (occurrence.chunk_index)}
+  <ul class="occurrence-list" id={occurrencesId} hidden={!matchesOpen}>
+    {#each matchesOpen ? visibleOccurrences : [] as occurrence (occurrence.chunk_index)}
       <li class="occurrence-row">
         <SearchPreviewButton
           state={playbackState(occurrence, activePreview)}
@@ -138,7 +160,7 @@
   </ul>
 
   <div class="result-actions">
-    {#if hiddenCount > 0}
+    {#if matchesOpen && hiddenCount > 0}
       <button
         type="button"
         class="text-btn show-more"
@@ -149,16 +171,27 @@
         {expanded ? $t('search.showLess') : $t('search.showMore', { count: hiddenCount })}
       </button>
     {/if}
-    <button
-      type="button"
-      class="text-btn details-btn"
-      aria-pressed={panelMode ? selected : undefined}
-      aria-expanded={panelMode ? undefined : detailsOpen}
-      aria-controls={panelMode ? panelId : inlineDetailsId}
-      on:click={handleDetailsClick}
-    >
-      {$t('search.showDetails')}
-    </button>
+    {#if panelMode}
+      <button
+        type="button"
+        class="text-btn details-btn pin"
+        aria-pressed={selected}
+        aria-controls={panelId}
+        on:click={handleDetailsClick}
+      >
+        <MenuIcon name="pin" size={14} />{$t('search.pinDetails')}
+      </button>
+    {:else}
+      <button
+        type="button"
+        class="text-btn details-btn disclosure"
+        aria-expanded={detailsOpen}
+        aria-controls={inlineDetailsId}
+        on:click={handleDetailsClick}
+      >
+        {$t('search.showDetails')}<MenuIcon name="chevron-down" size={14} />
+      </button>
+    {/if}
     <button
       type="button"
       class="text-btn view-transcript-btn"
@@ -175,7 +208,14 @@
   </div>
 
   {#if !panelMode && detailsOpen}
-    <SearchResultInfoCard {hit} variant="inline" id={inlineDetailsId} />
+    <SearchResultInfoCard
+      {hit}
+      {query}
+      variant="inline"
+      id={inlineDetailsId}
+      on:filterTag
+      on:filterCollection
+    />
   {/if}
 </article>
 
@@ -198,6 +238,73 @@
   .result-card.selected {
     border-color: var(--primary-color);
     background: rgba(var(--primary-color-rgb), 0.06);
+  }
+
+  :global([data-theme='dark']) .result-card.selected {
+    background: rgba(var(--primary-color-rgb), 0.1);
+  }
+
+  /* Title and meta on the start side; the match-list caret pinned to the top inline-end
+     corner (top-left in RTL), whatever the title's length. */
+  .result-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.5rem;
+  }
+
+  .result-header > :not(.matches-toggle) {
+    grid-column: 1;
+  }
+
+  .matches-toggle {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-block-start: -0.25rem;
+    margin-inline-end: -0.375rem;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    /* form-elements.css gives a bare <button> a shadow and a hover scale + fill. */
+    box-shadow: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .matches-toggle:hover {
+    background: var(--surface-color);
+    color: var(--text-color);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .matches-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  /* Collapsed: chevron points down ("open me"); open: it turns to point up. */
+  .matches-toggle :global(.menu-icon),
+  .details-btn.disclosure :global(.menu-icon) {
+    transition: transform 0.2s ease;
+  }
+
+  .matches-toggle[aria-expanded='true'] :global(.menu-icon),
+  .details-btn.disclosure[aria-expanded='true'] :global(.menu-icon) {
+    transform: rotate(180deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .matches-toggle :global(.menu-icon),
+    .details-btn.disclosure :global(.menu-icon) {
+      transition: none;
+    }
   }
 
   /* Search-engine convention: one run of link-coloured text, not a flex row — as
@@ -248,6 +355,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  /* `display: flex` above would otherwise override the `hidden` attribute. */
+  .occurrence-list[hidden] {
+    display: none;
   }
 
   .occurrence-row {
@@ -322,8 +434,38 @@
     border-radius: 2px;
   }
 
-  .details-btn[aria-pressed='true'],
-  .details-btn[aria-expanded='true'] {
+  .details-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  /* Pinned is a real pressed state: a tinted pill with a filled pin, not just a weight
+     change, so the click always shows. */
+  .details-btn.pin {
+    padding: 0.125rem 0.5rem;
+    margin-inline: -0.5rem;
+    border-radius: 999px;
+  }
+
+  .details-btn.pin[aria-pressed='true'] {
+    background: rgba(var(--primary-color-rgb), 0.12);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .details-btn.pin[aria-pressed='true']:hover {
+    background: rgba(var(--primary-color-rgb), 0.18);
+  }
+
+  .details-btn.pin[aria-pressed='true'] :global(.menu-icon) {
+    fill: currentColor;
+  }
+
+  :global([data-theme='dark']) .details-btn.pin[aria-pressed='true'] {
+    background: rgba(var(--primary-color-rgb), 0.22);
+  }
+
+  .details-btn.disclosure[aria-expanded='true'] {
     font-weight: var(--font-weight-medium);
   }
 

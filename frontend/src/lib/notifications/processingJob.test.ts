@@ -1,25 +1,30 @@
 /**
  * Consolidated processing card model.
  *
- * DEFECTS THESE CATCH: one file still producing several panel items (the bug this replaces);
- * the overall bar counting LLM tasks when no LLM is configured (stuck below 100% forever) or
- * ignoring them when one is (100% while the summary still runs); a user who turned automatic
- * topic extraction off getting a card that never finishes; a reprocess showing the previous
- * run's summary as done; durations taken from the recording length instead of the processing
- * time; and enrichment, which has no reliable completion signal, blocking "done".
+ * DEFECTS THESE CATCH: one file still producing several panel items; the card saying
+ * "All tasks complete" while speaker attributes, search indexing or other post-processing
+ * was still running (the reported bug: those tasks carried no weight and had no completion
+ * signal); a card claiming completion when no plan of the final steps was ever seen; a
+ * skipped task (feature off, no LLM) holding the card open forever; a failed post-processing
+ * task reading as success; a reprocess showing the previous run's summary as done; and
+ * durations taken from the recording length instead of the processing time.
  */
 import { describe, it, expect } from 'vitest';
 import type { Notification, NotificationType } from '$stores/websocket';
 import {
-  LLM_START_GRACE_MS,
+  PLAN_GRACE_MS,
+  STALE_AFTER_MS,
   buildJobModel,
   type JobTaskKey,
   type ProcessingJobModel,
 } from './processingJob';
+import type { PostProcessingRun } from './postProcessing';
 import { countUnreadItems, groupPanelItems, jobKeyOf, type JobItem } from './jobGrouping';
 
 const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const S = 1000;
+/** Server clock of the plan (epoch seconds); only ordering matters to the model. */
+const RUN = NOW / 1000 - 50;
 
 let seq = 0;
 function rec(
@@ -45,6 +50,34 @@ function rec(
   };
 }
 
+type EntryState = 'queued' | 'started' | 'done' | 'failed' | 'skipped';
+
+/** A post-processing record: a plan (runAt) plus task states at server times after it. */
+function pp(
+  tasks: Partial<Record<string, EntryState>>,
+  over: Partial<PostProcessingRun> = {},
+  fileId = 'f1'
+): Notification {
+  const run: PostProcessingRun = {
+    runAt: RUN,
+    tasks: Object.fromEntries(
+      Object.entries(tasks).map(([k, state]) => [
+        k,
+        state === 'done' || state === 'failed'
+          ? { state, at: RUN + 10, startedAt: RUN + 2 }
+          : { state: state as EntryState, at: RUN + 1 },
+      ])
+    ),
+    updatedAt: NOW - 5 * S,
+    ...over,
+  };
+  return {
+    ...rec('post_processing_status', 'processing', { fileId, timestamp: new Date(NOW - 5 * S) }),
+    dismissible: true,
+    postProcessing: run,
+  };
+}
+
 function jobOf(list: Notification[]): JobItem {
   const item = groupPanelItems(list).find((i) => i.kind === 'job');
   if (!item || item.kind !== 'job') throw new Error('no job item');
@@ -59,6 +92,10 @@ function chips(m: ProcessingJobModel): Array<[JobTaskKey, string]> {
   return m.tasks.map((t) => [t.key, t.state]);
 }
 
+function tiers(m: ProcessingJobModel): Array<[string, string]> {
+  return m.tiers.map((t) => [t.key, t.state]);
+}
+
 const txDone = (over: Partial<Notification> = {}) =>
   rec('transcription_status', 'completed', {
     startedAt: NOW - 300 * S,
@@ -66,6 +103,17 @@ const txDone = (over: Partial<Notification> = {}) =>
     progress: { current: 100, total: 100, percentage: 100 },
     ...over,
   });
+
+/** Every finishing task the default pipeline runs, all done. */
+const FINISHING_DONE: Partial<Record<string, EntryState>> = {
+  search_indexing: 'done',
+  file_facts: 'done',
+  analytics: 'done',
+  redaction: 'skipped',
+  speaker_attributes: 'done',
+  speaker_identification: 'done',
+  speaker_clustering: 'done',
+};
 
 describe('grouping', () => {
   it('folds every processing event of one file into ONE item, newest first', () => {
@@ -115,90 +163,210 @@ describe('grouping', () => {
   });
 });
 
-describe('weights adapt to LLM availability', () => {
-  it('no LLM configured: no LLM chips and 100% on transcription alone', () => {
-    const m = model([txDone()], false);
+describe('THE BUG: complete means every known task is finished', () => {
+  it('AI done but speaker attributes still running reads "Finishing up", never complete', () => {
+    const m = model(
+      [
+        pp({
+          ...FINISHING_DONE,
+          speaker_attributes: 'started',
+          speaker_identification: undefined,
+          summary: 'done',
+          topics: 'done',
+        }),
+        txDone(),
+      ],
+      true
+    );
 
-    expect(m.state).toBe('done');
-    expect(m.percent).toBe(100);
-    expect(chips(m)).toEqual([
-      ['transcription', 'done'],
-      ['diarization', 'done'],
+    expect(m.state).toBe('finishing');
+    expect(m.outstanding).toEqual(['speaker_attributes']);
+    expect(m.percent).toBeLessThan(100);
+    expect(tiers(m)).toEqual([
+      ['main', 'done'],
+      ['finishing', 'running'],
+      ['ai', 'done'],
     ]);
   });
 
-  it('LLM configured: the expected LLM tasks wait and hold the bar below 100%', () => {
-    const m = model([txDone()], true);
+  it('a queued task holds the card exactly like a running one', () => {
+    const m = model([pp({ ...FINISHING_DONE, search_indexing: 'queued' }), txDone()], false);
+    expect(m.state).toBe('finishing');
+    expect(m.outstanding).toEqual(['search_indexing']);
+    expect(m.percent).toBeLessThanOrEqual(99);
+  });
 
-    expect(m.state).toBe('running');
-    // 60 * 100 / (60 + 20 + 10)
-    expect(m.percent).toBe(67);
-    expect(chips(m)).toEqual([
-      ['transcription', 'done'],
-      ['diarization', 'done'],
-      ['summary', 'pending'],
-      ['topics', 'pending'],
+  it('completes only when every planned task is done or skipped', () => {
+    const m = model([pp({ ...FINISHING_DONE, summary: 'done', topics: 'done' }), txDone()], true);
+    expect(m.state).toBe('complete');
+    expect(m.percent).toBe(100);
+    expect(m.outstanding).toEqual([]);
+  });
+
+  it('a task declared after the plan (a hand-off) re-opens the card until it finishes', () => {
+    const declared = pp({ ...FINISHING_DONE, summary: 'done', summary_indexing: 'queued' });
+    expect(model([declared, txDone()], true).state).toBe('finishing');
+    const finished = pp({ ...FINISHING_DONE, summary: 'done', summary_indexing: 'done' });
+    expect(model([finished, txDone()], true).state).toBe('complete');
+  });
+
+  it('never claims completion before the plan arrives', () => {
+    const m = model([txDone({ finishedAt: NOW - 10 * S })], false);
+    expect(m.state).toBe('finishing');
+    expect(m.awaitingPlan).toBe(true);
+    expect(tiers(m)).toEqual([
+      ['main', 'done'],
+      ['finishing', 'running'],
     ]);
+    // 60 * 100 / (60 + the 15 the unknown finishing work holds back)
+    expect(m.percent).toBe(80);
+  });
+
+  it('without a plan after the grace period says it cannot confirm, not "complete"', () => {
+    const m = model([txDone({ finishedAt: NOW - PLAN_GRACE_MS - S })], false);
+    expect(m.state).toBe('ready');
+    expect(m.awaitingPlan).toBe(false);
+    expect(m.reconcile).toBe(true);
+    expect(tiers(m)).toEqual([['main', 'done']]);
+    // ...and not one second before the grace ends.
+    expect(model([txDone({ finishedAt: NOW - PLAN_GRACE_MS + S })], false).state).toBe('finishing');
+  });
+
+  it('a server that knows no run for the file reads "ready" and stops asking', () => {
+    const m = model(
+      [pp({}, { runAt: null, unknown: true }), txDone({ finishedAt: NOW - 10 * S })],
+      true
+    );
+    expect(m.state).toBe('ready');
+    expect(m.reconcile).toBe(false);
+  });
+});
+
+describe('skipped and failed tasks', () => {
+  it('skipped tasks do not block and do not render', () => {
+    const m = model(
+      [pp({ ...FINISHING_DONE, summary: 'skipped', topics: 'skipped' }), txDone()],
+      true
+    );
+    expect(m.state).toBe('complete');
+    expect(chips(m).map(([k]) => k)).not.toContain('redaction');
+    expect(chips(m).map(([k]) => k)).not.toContain('summary');
+    // No AI tier when every AI task was skipped (no LLM, or switched off).
+    expect(tiers(m).map(([k]) => k)).toEqual(['main', 'finishing']);
+  });
+
+  it('a failed task surfaces "needs attention" once nothing else is running', () => {
+    const m = model([pp({ ...FINISHING_DONE, search_indexing: 'failed' }), txDone()], false);
+    expect(m.state).toBe('attention');
+    expect(m.failure).toEqual({ task: 'search_indexing', message: '' });
+    expect(tiers(m)).toContainEqual(['finishing', 'failed']);
+    expect(m.percent).toBeLessThan(100);
+  });
+
+  it('a failure while other tasks still run keeps "Finishing up" with the failed chip', () => {
+    const m = model(
+      [
+        pp({ ...FINISHING_DONE, search_indexing: 'failed', speaker_clustering: 'started' }),
+        txDone(),
+      ],
+      false
+    );
+    expect(m.state).toBe('finishing');
+    expect(chips(m)).toContainEqual(['search_indexing', 'failed']);
+    expect(m.failure).toBeUndefined();
+  });
+
+  it('carries the failed summary message from its own record', () => {
+    const m = model(
+      [
+        pp({ ...FINISHING_DONE, summary: 'failed' }),
+        rec('summarization_status', 'failed', {
+          timestamp: new Date(NOW),
+          message: 'Provider returned 500',
+        }),
+        txDone(),
+      ],
+      true
+    );
+    expect(m.state).toBe('attention');
+    expect(m.failure).toEqual({ task: 'summary', message: 'Provider returned 500' });
+  });
+});
+
+describe('missed frames', () => {
+  it('outstanding work with no frame for a long time is flagged stale, not completed', () => {
+    const stale = pp(
+      { ...FINISHING_DONE, speaker_clustering: 'started' },
+      { updatedAt: NOW - STALE_AFTER_MS - S }
+    );
+    const m = model([stale, txDone()], false);
+    expect(m.state).toBe('finishing');
+    expect(m.stale).toBe(true);
+    expect(m.reconcile).toBe(true);
+  });
+
+  it('asks the server when the plan is late', () => {
+    expect(model([txDone({ finishedAt: NOW - 45 * S })], false).reconcile).toBe(true);
+    expect(model([txDone({ finishedAt: NOW - 5 * S })], false).reconcile).toBe(false);
+  });
+
+  it('a record saved before run timing existed waits from its timestamp, not forever', () => {
+    const legacy = rec('transcription_status', 'completed', {
+      timestamp: new Date(NOW - PLAN_GRACE_MS - S),
+    });
+    expect(model([legacy], false).state).toBe('ready');
+  });
+});
+
+describe('the AI tier follows LLM availability and the plan', () => {
+  it('no LLM configured: no AI tier at all', () => {
+    const m = model([txDone({ finishedAt: NOW - 5 * S })], false);
+    expect(tiers(m).map(([k]) => k)).not.toContain('ai');
+  });
+
+  it('LLM configured, before the plan: the AI tier waits', () => {
+    const m = model([txDone({ finishedAt: NOW - 5 * S })], true);
+    expect(chips(m)).toContainEqual(['summary', 'pending']);
+    expect(chips(m)).toContainEqual(['topics', 'pending']);
+    expect(tiers(m)).toContainEqual(['ai', 'pending']);
+  });
+
+  it('the plan decides: a skipped summary takes the AI tier away', () => {
+    const m = model(
+      [pp({ ...FINISHING_DONE, summary: 'skipped', topics: 'skipped' }), txDone()],
+      true
+    );
+    expect(tiers(m).map(([k]) => k)).not.toContain('ai');
   });
 
   it('weights a running summary by its own progress', () => {
     const m = model(
       [
+        pp({ ...FINISHING_DONE, summary: 'started', topics: 'done' }),
         rec('summarization_status', 'processing', {
           data: { progress: 50 },
           timestamp: new Date(NOW),
         }),
-        rec('topic_extraction_status', 'completed', { timestamp: new Date(NOW) }),
         txDone(),
       ],
       true
     );
-    // (60*100 + 20*50 + 10*100) / 90
-    expect(m.percent).toBe(89);
-    expect(m.state).toBe('running');
+    const summary = m.tasks.find((t) => t.key === 'summary');
+    expect(summary?.state).toBe('running');
+    expect(summary?.percent).toBe(50);
+    expect(m.state).toBe('finishing');
   });
 
-  it('counts an LLM task that actually ran even when the status store says unavailable', () => {
-    const m = model(
-      [rec('summarization_status', 'processing', { timestamp: new Date(NOW) }), txDone()],
-      false
-    );
-    expect(chips(m)).toContainEqual(['summary', 'running']);
-    // No progress number on the frame counts as half: (60*100 + 20*50) / 80. Topics never ran.
-    expect(m.percent).toBe(88);
-    expect(chips(m).map(([k]) => k)).not.toContain('topics');
-    expect(m.state).toBe('running');
+  it('a summary regenerated on an old file is a card with just the summary', () => {
+    const m = model([rec('summarization_status', 'processing', { data: { progress: 30 } })], true);
+    expect(chips(m)).toEqual([['summary', 'running']]);
+    expect(m.percent).toBe(30);
+    expect(m.state).toBe('processing');
   });
+});
 
-  it('an LLM task that never starts stops holding the card after the grace period', () => {
-    const tx = txDone({ finishedAt: NOW - LLM_START_GRACE_MS - S });
-    const m = model([tx], true);
-
-    expect(m.state).toBe('done');
-    expect(m.percent).toBe(100);
-    expect(chips(m).map(([k]) => k)).toEqual(['transcription', 'diarization']);
-    // ...but not one second before it ends.
-    expect(model([txDone({ finishedAt: NOW - LLM_START_GRACE_MS + S })], true).state).toBe(
-      'running'
-    );
-  });
-
-  it('hides skipped LLM tasks (disabled / not configured) and completes without them', () => {
-    const m = model(
-      [
-        rec('summarization_status', 'disabled', { timestamp: new Date(NOW) }),
-        rec('topic_extraction_status', 'not_configured', { timestamp: new Date(NOW) }),
-        txDone(),
-      ],
-      true
-    );
-    expect(m.state).toBe('done');
-    expect(m.percent).toBe(100);
-    expect(chips(m).map(([k]) => k)).not.toContain('summary');
-    expect(chips(m).map(([k]) => k)).not.toContain('topics');
-  });
-
-  it('never shows 100% while something is still running', () => {
+describe('main processing', () => {
+  it('never shows 100% while transcription is still running', () => {
     const m = model(
       [
         rec('transcription_status', 'processing', {
@@ -207,8 +375,9 @@ describe('weights adapt to LLM availability', () => {
       ],
       false
     );
-    expect(m.state).toBe('running');
-    expect(m.percent).toBe(99);
+    expect(m.state).toBe('processing');
+    // Transcription at 100% is not the whole job: the finishing tier still holds its share.
+    expect(m.percent).toBe(80);
   });
 });
 
@@ -263,7 +432,8 @@ describe('transcription steps and durations', () => {
       'pending',
     ]);
     expect(chips(m)).toContainEqual(['diarization', 'running']);
-    expect(m.percent).toBe(55);
+    // 60 * 55 / (60 + 15 held for the finishing tier)
+    expect(m.percent).toBe(44);
     expect(m.currentStep).toBe('Analyzing speaker patterns');
     expect(m.etaDisplay).toBe('1m 30s');
   });
@@ -278,8 +448,10 @@ describe('transcription steps and durations', () => {
     });
     const m = model([tx], true);
 
-    expect(m.state).toBe('failed');
+    expect(m.state).toBe('attention');
     expect(m.failure).toEqual({ task: 'transcription', message: 'Diarization ran out of memory' });
+    // Nothing after a failed transcription will run, so no later tier waits.
+    expect(tiers(m)).toEqual([['main', 'failed']]);
     expect(chips(m)).toEqual([
       ['transcription', 'failed'],
       ['diarization', 'failed'],
@@ -307,7 +479,7 @@ describe('transcription steps and durations', () => {
       message: 'Diarization ran out of memory',
     });
     const m = model([midway], false);
-    expect(m.state).toBe('failed');
+    expect(m.state).toBe('attention');
     expect(m.percent).toBeGreaterThan(0);
     expect(m.percent).toBeLessThan(100);
   });
@@ -405,26 +577,6 @@ describe('transcription steps and durations', () => {
   });
 });
 
-describe('enrichment', () => {
-  it('times each background task from enrichment start, and never blocks done', () => {
-    const tx = txDone({
-      enrichmentTasks: ['search_indexing', 'speaker_clustering'],
-      enrichmentStartedAt: NOW - 50 * S,
-      enrichmentCompletedAt: { search_indexing: NOW - 45 * S },
-    });
-    const m = model([tx], false);
-    const enrichment = m.tasks.find((t) => t.key === 'enrichment');
-
-    expect(enrichment?.state).toBe('running');
-    expect(enrichment?.subtasks).toEqual([
-      { key: 'search_indexing', state: 'done', durationSeconds: 5 },
-      { key: 'speaker_clustering', state: 'running', durationSeconds: null },
-    ]);
-    expect(m.state).toBe('done');
-    expect(m.percent).toBe(100);
-  });
-});
-
 describe('runs and pipelines', () => {
   it('treats a summary older than the current transcription run as a previous run', () => {
     const m = model(
@@ -454,14 +606,8 @@ describe('runs and pipelines', () => {
       ['import', 'running'],
       ['transcription', 'pending'],
     ]);
-    // (10*40 + 60*0) / 70
-    expect(m.percent).toBe(6);
-  });
-
-  it('a summary regenerated on an old file is a card with just the summary', () => {
-    const m = model([rec('summarization_status', 'processing', { data: { progress: 30 } })], true);
-    expect(chips(m)).toEqual([['summary', 'running']]);
-    expect(m.percent).toBe(30);
+    // (10*40 + 60*0) / (70 + 15 held for the finishing tier)
+    expect(m.percent).toBe(5);
   });
 });
 

@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Eighteen migrations, `v397` to `v444`, run automatically at backend start.** They add columns
+- **Nineteen migrations, `v397` to `v445`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -132,6 +132,15 @@ off by default.
   and a compliance export (CSV or JSON, spreadsheet-formula safe, audited), a "My takedown notices"
   section so an owner whose file vanished can always see why and how to dispute it, and an optional
   email to owners (one per owner per notice, with a delivery log). Migrations `v443` and `v444`.
+- **A privacy policy layer for voiceprints and inferred gender (#1280).** One restrict-only policy
+  answers two questions for a person and organization: may voiceprints exist and be matched, and
+  may gender be inferred. The deployment, the organization and the user each hold a switch, an
+  extension may add a platform ceiling, and any layer that is off turns the feature off. Every
+  read that fails counts as off. A consent hook (`register_voiceprint_consent_hook`) lets a
+  consent implementation veto creating or sharing a voiceprint. Both switches default on and an
+  upgrade changes nothing: the new `organization_policy` table (migration `v445`) is empty until
+  an organization saves a choice. This release adds the layer; pipeline enforcement, the admin
+  and organization screens and purge follow in the same release.
 - **Missing authentication email is now obvious (#1240).** When no email configuration is
   designated and no `SMTP_*` settings exist, password resets, invitations and verification links
   cannot be delivered. The Auth Email tab now names the cause (never designated, deleted, or
@@ -548,6 +557,14 @@ off by default.
 
 ### Changed
 
+- **The capabilities endpoint knows who is asking (#1274).** `GET /api/system/capabilities` now
+  resolves the caller optionally. A platform surface a deployment hides from tenants (for example
+  the quarantine and takedown-notice queues) is still shown to platform staff, an active
+  `super_admin`, because the server already lets them use it; tenants, plain admins and anonymous
+  callers get exactly what they got before, and the community response is unchanged for every
+  role. Gates that admit no staff bypass (`NO_PLATFORM_BYPASS`) are never overlaid. The response
+  is now `Cache-Control: private, no-store` with `Vary: Cookie, Authorization`.
+  `CLOUD_SEAM_VERSION` is now 10; see `docs/design/v060_downstream_changes.md`.
 - **The bundle-budget build gate shows its margin, and derived builds can pass a capped allowance
   (#1255).** `npm run build` now prints the exact headroom of both the root layout node and its
   static closure on every run, pass or fail, and flags anything under 512 B as `LOW`; a failing
@@ -1350,6 +1367,12 @@ off by default.
 
 ### Security
 
+- **A revoked access token no longer resolves on optional-auth routes (#1274).** Logout-all, a
+  password reset and an admin session termination stamp a per-user revocation epoch that is the
+  only thing that ends a still-valid access token. `get_optional_current_user` did not pass the
+  token's issue time to that check, so such a token still resolved to its user on every route
+  that accepts an optional credential (media and thumbnails, the capability bypass, the
+  capabilities endpoint). It now behaves like the strict dependency.
 - **Platform administrators no longer read or change tenant content by UUID in a multi-tenant
   deployment (#1122).** `admin` and `super_admin` used to skip every tenant gate, so one admin
   credential could read, edit, delete and re-run any tenant's files, collections, speakers and

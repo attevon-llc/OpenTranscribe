@@ -36,3 +36,28 @@ def effective_cpu_count() -> int:
     if quota is not None:
         cpus = min(cpus, quota)
     return max(1, cpus)
+
+
+def parse_thread_count_setting(raw: str) -> int | None:
+    """Parse a deployment thread-count setting that is ``auto`` or a positive integer.
+
+    Args:
+        raw: The raw value. Surrounding whitespace and case are ignored.
+
+    Returns:
+        ``None`` for ``auto``, otherwise the positive integer.
+
+    Raises:
+        ValueError: For anything else (zero, negative, non-numeric), so a typo fails
+            loudly at startup rather than silently meaning ``auto``.
+    """
+    value = raw.strip().lower()
+    if value == "auto":
+        return None
+    try:
+        count = int(value)
+    except ValueError:
+        count = 0
+    if count < 1:
+        raise ValueError(f"{raw!r} is not valid: use 'auto' or a positive integer")
+    return count

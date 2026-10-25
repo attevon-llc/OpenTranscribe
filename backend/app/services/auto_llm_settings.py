@@ -9,7 +9,9 @@ Resolution per flag: user ``UserSetting`` row > system ``auto_llm.*`` setting > 
 The default is on so nothing changes for anyone who never touches the switch.
 
 Only the AUTOMATIC dispatch consults these. Manual triggers (the "suggest speaker names" and
-"extract topics" buttons, an explicit reprocess stage list) never do.
+"extract topics" buttons, an explicit reprocess stage list) never do. Topic extraction queued
+as a companion of a manual summary (``ai_insights_companion``) is automatic: the user did not
+ask for topics by name, so it does.
 """
 
 from __future__ import annotations

@@ -106,7 +106,11 @@ each legal notice and the files it covers, with a backfill that gives every file
 synthetic `operator_action` notice; FKs `ON DELETE SET NULL` plus snapshot uuids so the record outlives the file,
 owner and organization; detection arm keys on `ck_takedown_notice_file_outcome_at`, the last CHECK created; the
 downgrade drops compliance evidence and is not executed by its test),
-`v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`).
+`v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`),
+`v445_add_organization_policy` (`organization_policy`, issues #1280/#1279: one row per organization holding the restrict-only
+voiceprint/gender switches and the org redaction floor; a missing row inherits everything; `organization_id` is the PK and
+`ON DELETE CASCADE`, `updated_by_user_id` is `SET NULL`; arm keys on `ck_organization_policy_floor_custom_words_array`, the last
+CHECK created; the downgrade drops every organization's saved choices).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

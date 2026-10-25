@@ -61,3 +61,64 @@ def test_json_output_is_machine_readable():
 def test_exit_code_two_on_misuse():
     """Distinct exit codes let an agent tell "gate failed" from "I called it wrong"."""
     assert _run("--mode", "not-a-mode").returncode == 2
+
+
+def _load_checker():
+    """Import the dash-named script as a module so one check can run against a fixture tree."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("check_version_consistency", CHECKER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # @dataclass resolves annotations through sys.modules[cls.__module__].
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _frontend_git_sha_result(monkeypatch, tmp_path: Path, dockerfile_text: str):
+    checker = _load_checker()
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "frontend" / "Dockerfile.prod").write_text(dockerfile_text, encoding="utf-8")
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    ctx = checker.Ctx(mode="ci")
+    checker.check_frontend_git_sha_arg(ctx)
+    (result,) = ctx.results
+    return result
+
+
+@pytest.mark.parametrize(
+    ("dockerfile_text", "missing"),
+    [
+        ("FROM node\nRUN npm run build\n", "ARG GIT_SHA, ENV GIT_SHA"),
+        # An ARG alone never reaches vite: process.env only sees the ENV line.
+        ("FROM node\nARG GIT_SHA=unknown\nRUN npm run build\n", "ENV GIT_SHA"),
+        ("FROM node\nENV GIT_SHA=x\nRUN npm run build\n", "ARG GIT_SHA"),
+    ],
+)
+def test_frontend_git_sha_arg_check_fails_when_incomplete(
+    monkeypatch, tmp_path, dockerfile_text, missing
+):
+    """#1273: without ARG+ENV GIT_SHA the bundle bakes `unknown` and the stale-tab check goes blind."""
+    result = _frontend_git_sha_result(monkeypatch, tmp_path, dockerfile_text)
+
+    assert result.status == "fail"
+    assert result.detail == f"missing: {missing}"
+
+
+def test_frontend_git_sha_arg_check_passes_when_declared_and_exported(monkeypatch, tmp_path):
+    result = _frontend_git_sha_result(
+        monkeypatch,
+        tmp_path,
+        "FROM node\nARG GIT_SHA=unknown\nENV GIT_SHA=${GIT_SHA}\nRUN npm run build\n",
+    )
+
+    assert result.status == "pass"
+
+
+def test_real_frontend_dockerfile_passes_the_git_sha_check():
+    """The shipped Dockerfile.prod, through the shipped check, in the shipped criteria list."""
+    payload = json.loads(_run("--mode", "ci", "--json").stdout)
+    by_id = {c["id"]: c for c in payload["criteria"]}
+
+    assert by_id["dockerfile-frontend-git-sha-arg"]["status"] == "pass"

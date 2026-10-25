@@ -13,9 +13,11 @@ from pydantic_settings import BaseSettings
 from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
+from app.core.constants import DEFAULT_CHAT_RERANKER_TORCH_THREADS
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
+from app.utils.cpu_budget import parse_thread_count_setting
 
 _config_logger = logging.getLogger(__name__)
 
@@ -701,6 +703,22 @@ class Settings(BaseSettings):
         """
         floor = 1 if info.field_name == "OPENSEARCH_CHUNKS_INDEX_SHARDS" else 0
         return max(v, floor)
+
+    # Torch intra-op threads for the chat reranker's scoring call (issue #1270): "auto" or a
+    # positive integer. Deployment-scoped, not a SystemSettings row, because torch latches the
+    # count per thread, so a live change would only apply after a restart. See
+    # app/services/chat/reranker_threads.py.
+    CHAT_RERANKER_TORCH_THREADS: str = DEFAULT_CHAT_RERANKER_TORCH_THREADS
+
+    @field_validator("CHAT_RERANKER_TORCH_THREADS", mode="after")
+    @classmethod
+    def _validate_reranker_torch_threads(cls, v: str) -> str:
+        """Refuse a value that is neither ``auto`` nor a positive integer."""
+        try:
+            parse_thread_count_setting(v)
+        except ValueError as exc:
+            raise ValueError(f"CHAT_RERANKER_TORCH_THREADS={exc}") from exc
+        return v.strip().lower()
 
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
 

@@ -670,6 +670,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'ck_takedown_notification_status')"
     )
 
+    # v445: per-organization privacy policy + redaction floor (issues #1280, #1279). Keyed on
+    # the LAST-created CHECK, not the table: a table without its CHECKs must re-run the
+    # revision.
+    has_organization_policy = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_organization_policy_floor_custom_words_array')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -739,8 +747,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v444: same as v443 plus the notification delivery log. The newest revision on this
+    # v445: same as v444 plus the organization policy table. The newest revision on this
     # chain, so this is the top of the ladder.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+    ):
+        return "v445_add_organization_policy"
+    # v444: same as v443 plus the notification delivery log.
     if matches_v442 and has_takedown_notice and has_takedown_notification:
         return "v444_add_takedown_notification"
     # v443: same as v442 plus the takedown notice tables.

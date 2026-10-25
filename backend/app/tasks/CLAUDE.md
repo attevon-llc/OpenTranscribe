@@ -251,6 +251,17 @@ indexing → WebSocket notification.
   (including `rediarize_task`'s diarize -> finalize -> speakers) is in
   `docs/design/consolidated_processing_notification_plan.md`.
 
+- **Every per-file task that runs after the transcript is committed reports its state through
+  `services/post_processing_status.py`, never an ad-hoc event.** Decorate the task with
+  `@tracks_post_processing(PostProcessingTask.X, file_param=...)` (start + outcome from the
+  returned `{"status": ...}`; a `Retry` reports nothing), use `reporting_step()` for a step inside
+  another task, report `QUEUED`/`SKIPPED` where you decide whether to dispatch it (the enrichment
+  fan-out does this as one plan), and report a hand-off BEFORE the parent's own outcome. A task
+  that returns `success` when it did nothing must return `skipped` instead (the summary's no-LLM
+  path does). That is what lets the notification card say "Complete" truthfully; the old
+  `enrichment_task_complete` reported search indexing done at dispatch time. Keys:
+  `core/enums.PostProcessingTask`; a new key also needs a card tier (frontend
+  `POST_PROCESSING_TIERS`), pinned by `tests/unit/test_post_processing_status.py`.
 - **Any WebSocket event naming a `MediaFile` must go through
   `app/utils/websocket_notify.py:send_ws_event_for_file`, never the raw `send_ws_event`**
   (issue #908). `send_ws_event` has no notion of quarantine at all — a filename, title, or

@@ -137,6 +137,26 @@ def test_stats_system_block_has_device_mode_fields(client, user_token_headers):
     assert isinstance(system_block["gpus"], list)
 
 
+def test_stats_system_block_reports_the_reranker_thread_cap(
+    client, user_token_headers, monkeypatch
+):
+    """The effective reranker cap is served read-only (issue #1270); it is a deployment setting."""
+    from app.core.config import settings
+
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    monkeypatch.delenv("TORCH_NUM_THREADS", raising=False)
+    monkeypatch.setitem(settings.__dict__, "CHAT_RERANKER_TORCH_THREADS", "3")
+
+    response = client.get("/api/system/stats", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["system"]["chat_reranker_threads"] == {
+        "threads": 3,
+        "source": "configured",
+        "setting": "3",
+    }
+
+
 def test_stats_files_and_speakers_blocks_typed(client, user_token_headers):
     """File/speaker aggregate sub-blocks expose their documented numeric fields."""
     response = client.get("/api/system/stats", headers=user_token_headers)

@@ -2,26 +2,21 @@
   import { t } from '$stores/locale';
   import { formatCompactDuration } from '$lib/utils/formatting';
   import {
-    ENRICHMENT_TASK_KEYS,
     JOB_STEP_KEYS,
     JOB_TASK_KEYS,
     JOB_TASK_STATE_KEYS,
+    JOB_TIER_KEYS,
     labelFor,
   } from '$lib/i18n/keyMaps';
-  import type { JobSubtask, JobTask, TaskState } from '$lib/notifications/processingJob';
+  import type { JobTier, TaskState } from '$lib/notifications/processingJob';
   import TaskStateGlyph from './TaskStateGlyph.svelte';
 
-  /** Per-task timing for one processing card; diarization is listed as a transcription step. */
-  export let tasks: JobTask[];
+  /**
+   * Per-tier timing for one processing card. Diarization is listed as a transcription
+   * step, not as a task of its own.
+   */
+  export let tiers: JobTier[];
   export let id: string;
-
-  $: rows = tasks.filter((task) => task.key !== 'diarization');
-
-  function subLabel(task: JobTask, sub: JobSubtask): string {
-    return task.key === 'enrichment'
-      ? labelFor($t, ENRICHMENT_TASK_KEYS, sub.key)
-      : labelFor($t, JOB_STEP_KEYS, sub.key);
-  }
 
   function timing(state: TaskState, seconds: number | null): string {
     return state === 'done' && seconds !== null
@@ -31,31 +26,42 @@
 </script>
 
 <div class="job-breakdown" {id}>
-  <ul class="task-list">
-    {#each rows as task (task.key)}
-      <li class="task-row state-{task.state}">
-        <div class="line">
-          <TaskStateGlyph state={task.state} />
-          <span class="label">{$t(JOB_TASK_KEYS[task.key])}</span>
-          <span class="time">{timing(task.state, task.durationSeconds)}</span>
-        </div>
-        {#if task.state === 'failed' && task.message}
-          <p class="task-message" dir="auto">{task.message}</p>
-        {/if}
-        {#if task.subtasks.length > 0}
-          <ul class="sub-list">
-            {#each task.subtasks as sub (sub.key)}
-              <li class="line sub state-{sub.state}">
-                <TaskStateGlyph state={sub.state} />
-                <span class="label">{subLabel(task, sub)}</span>
-                <span class="time">{timing(sub.state, sub.durationSeconds)}</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </li>
-    {/each}
-  </ul>
+  {#each tiers as tier (tier.key)}
+    <section class="tier state-{tier.state}">
+      <h5 class="line tier-head">
+        <TaskStateGlyph state={tier.state} />
+        <span class="label">{$t(JOB_TIER_KEYS[tier.key])}</span>
+        <span class="time">{$t(JOB_TASK_STATE_KEYS[tier.state])}</span>
+      </h5>
+      {#if tier.tasks.length > 0}
+        <ul class="task-list">
+          {#each tier.tasks.filter((task) => task.key !== 'diarization') as task (task.key)}
+            <li class="task-row state-{task.state}">
+              <div class="line">
+                <TaskStateGlyph state={task.state} />
+                <span class="label">{$t(JOB_TASK_KEYS[task.key])}</span>
+                <span class="time">{timing(task.state, task.durationSeconds)}</span>
+              </div>
+              {#if task.state === 'failed' && task.message}
+                <p class="task-message" dir="auto">{task.message}</p>
+              {/if}
+              {#if task.subtasks.length > 0}
+                <ul class="sub-list">
+                  {#each task.subtasks as sub (sub.key)}
+                    <li class="line sub state-{sub.state}">
+                      <TaskStateGlyph state={sub.state} />
+                      <span class="label">{labelFor($t, JOB_STEP_KEYS, sub.key)}</span>
+                      <span class="time">{timing(sub.state, sub.durationSeconds)}</span>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/each}
 </div>
 
 <style>
@@ -74,10 +80,24 @@
     padding: 0;
   }
 
-  .task-row + .task-row {
-    margin-top: 6px;
-    padding-top: 6px;
+  .tier + .tier {
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid var(--border-color);
+  }
+
+  .tier-head {
+    margin: 0 0 4px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .task-list {
+    padding-inline-start: 8px;
+  }
+
+  .task-row + .task-row {
+    margin-top: 4px;
   }
 
   .sub-list {

@@ -12263,6 +12263,102 @@
         "title": "PlaylistProcessingResponse",
         "type": "object"
       },
+      "PostProcessingEntry": {
+        "description": "One task's latest state. Times are server epoch seconds.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "number"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PostProcessingState"
+          }
+        },
+        "required": [
+          "state",
+          "at"
+        ],
+        "title": "PostProcessingEntry",
+        "type": "object"
+      },
+      "PostProcessingState": {
+        "description": "Where one :class:`PostProcessingTask` stands for one file.\n\n``QUEUED`` and ``SKIPPED`` are decided where the task is (or is not) dispatched;\n``STARTED``, ``DONE``, ``FAILED`` and a run-time ``SKIPPED`` come from the task itself.\nA Celery retry reports nothing, so the task stays ``STARTED`` across it.",
+        "enum": [
+          "queued",
+          "started",
+          "done",
+          "failed",
+          "skipped"
+        ],
+        "title": "PostProcessingState",
+        "type": "string"
+      },
+      "PostProcessingStatusResponse": {
+        "description": "Every task reported for the file's current run.\n\n``run_at`` is None when no run is known (never reported, or expired): the client must\nthen say it cannot confirm the final steps, never that they finished.",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PostProcessingEntry"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PostProcessingTask"
+            },
+            "title": "Tasks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "file_id",
+          "run_at",
+          "tasks"
+        ],
+        "title": "PostProcessingStatusResponse",
+        "type": "object"
+      },
+      "PostProcessingTask": {
+        "description": "A per-file task that runs after the transcript is committed.\n\nThe single source of truth for the ``tasks`` keys of the ``post_processing_status``\nWebSocket event and of ``GET /api/files/{uuid}/post-processing``\n(``app/services/post_processing_status.py``). The notification card files each key under\na tier (``frontend/src/lib/notifications/processingJob.ts`` ``POST_PROCESSING_TIERS``,\npinned to this enum by ``tests/unit/test_post_processing_status.py``), so a new member\nwithout a tier fails there rather than rendering nowhere.\n\nVoiceprints and speaker matching are not here: the stage that owns them sends\n``transcription_status`` frames (stage ``speakers``) and the run's completion.",
+        "enum": [
+          "search_indexing",
+          "file_facts",
+          "analytics",
+          "redaction",
+          "speaker_attributes",
+          "speaker_identification",
+          "speaker_clustering",
+          "summary",
+          "summary_indexing",
+          "topics",
+          "auto_label"
+        ],
+        "title": "PostProcessingTask",
+        "type": "string"
+      },
       "PrepareUploadRequest": {
         "description": "Request schema for preparing a file upload.\n\nThis schema is used to create a file record before the actual upload starts.\n\nAttributes:\n    filename: Name of the file to be uploaded\n    file_size: Size of the file in bytes\n    content_type: MIME type of the file\n    file_hash: Content fingerprint of the source, for duplicate detection\n    extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)\n    min_speakers: Optional minimum number of speakers for diarization\n    max_speakers: Optional maximum number of speakers for diarization\n    num_speakers: Optional fixed number of speakers for diarization (overrides min/max)\n    collection_ids: Optional collection UUIDs to add the file to after creation\n    tag_names: Optional tag names to apply to the file after creation",
         "properties": {
@@ -34772,7 +34868,7 @@
     },
     "/api/files/{file_uuid}/export": {
       "get": {
-        "description": "Generate and download a full transcript export.\n\nSupports: txt, json, csv, srt, vtt. The label/header query params let the frontend\nkeep supplying resolved i18n strings (this module stays translation-free, matching\nthe rest of the backend), with English defaults if omitted.",
+        "description": "Generate and download a full transcript export.\n\nSupports: txt, json, csv, srt, vtt, md. The label/header query params let the frontend\nkeep supplying resolved i18n strings (this module stays translation-free, matching\nthe rest of the backend), with English defaults if omitted.",
         "operationId": "export_transcript_api_files__file_uuid__export_get",
         "parameters": [
           {
@@ -34785,12 +34881,12 @@
             }
           },
           {
-            "description": "txt|json|csv|srt|vtt",
+            "description": "txt|json|csv|srt|vtt|md",
             "in": "query",
             "name": "format",
             "required": true,
             "schema": {
-              "description": "txt|json|csv|srt|vtt",
+              "description": "txt|json|csv|srt|vtt|md",
               "title": "Format",
               "type": "string"
             }
@@ -34806,25 +34902,25 @@
             }
           },
           {
-            "description": "TXT format only",
+            "description": "TXT and Markdown only",
             "in": "query",
             "name": "include_timestamps",
             "required": false,
             "schema": {
               "default": true,
-              "description": "TXT format only",
+              "description": "TXT and Markdown only",
               "title": "Include Timestamps",
               "type": "boolean"
             }
           },
           {
-            "description": "TXT format only",
+            "description": "TXT and Markdown only",
             "in": "query",
             "name": "include_speakers",
             "required": false,
             "schema": {
               "default": true,
-              "description": "TXT format only",
+              "description": "TXT and Markdown only",
               "title": "Include Speakers",
               "type": "boolean"
             }
@@ -35124,6 +35220,55 @@
         ],
         "summary": "Get Media File Info",
         "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_uuid}/post-processing": {
+      "get": {
+        "description": "The states the file's post-processing tasks last reported.\n\nRead by the notification card when it may have missed ``post_processing_status``\nframes (a reload, a dropped socket). Tenant- and quarantine-gated like every file\nread; an unreadable store answers \"no run known\" rather than an error, because the\ncard must then say it cannot confirm the final steps.",
+        "operationId": "get_post_processing_status_api_files__file_uuid__post_processing_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostProcessingStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Post Processing Status",
+        "tags": [
+          "files",
           "files"
         ]
       }
@@ -39865,7 +40010,7 @@
             }
           },
           {
-            "description": "Filter by collection ID",
+            "description": "Filter by collection integer ID (API callers). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_uuid`.",
             "in": "query",
             "name": "collection_id",
             "required": false,
@@ -39878,8 +40023,27 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by collection ID",
+              "description": "Filter by collection integer ID (API callers). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_uuid`.",
               "title": "Collection Id"
+            }
+          },
+          {
+            "description": "Filter by collection UUID (what the SPA sends). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_id`.",
+            "in": "query",
+            "name": "collection_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by collection UUID (what the SPA sends). A collection the caller cannot see matches nothing. Mutually exclusive with `collection_id`.",
+              "title": "Collection Uuid"
             }
           },
           {
@@ -43743,7 +43907,7 @@
     },
     "/api/system/capabilities": {
       "get": {
-        "description": "Edition + capability map driving server-side feature gating.\n\nThe frontend calls this once at bootstrap and renders only the surfaces\nlisted as enabled; gated endpoints independently 404 when off (the\nbackend gate is the authority — see app.core.capabilities). Community\nedition returns everything-on defaults; the cloud edition's resolver\ncomputes edition ∩ subscription tier.",
+        "description": "Edition + capability map driving server-side feature gating.\n\nThe frontend reads this after a session exists (and at bootstrap) and renders only\nthe surfaces listed as enabled; gated endpoints independently 404 when off (the\nbackend gate is the authority — see app.core.capabilities). Community\nedition returns everything-on defaults; the cloud edition's resolver\ncomputes edition ∩ subscription tier.\n\nThe caller is resolved optionally (issue #1274): platform staff additionally see the\nplatform surfaces the server lets them use through a disabled capability. Anonymous\nand invalid credentials fall back to the resolver's own answer; this route never 401s.\nThe body therefore depends on the caller, so the response is never cacheable by a\nshared cache.",
         "operationId": "get_system_capabilities_api_system_capabilities_get",
         "responses": {
           "200": {

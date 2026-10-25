@@ -4,7 +4,9 @@
  * calls must share one in-flight request rather than double-firing, a failed
  * initialize must be retryable rather than permanently wedging the store, and
  * a failed refresh must overwrite stale "available" state with an honest
- * failure status rather than silently leaving the old value on screen.
+ * failure status rather than silently leaving the old value on screen. And a
+ * settings change must reach every gated button without a page reload: that is
+ * `invalidate()` plus the focus/visibility re-check.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
@@ -155,26 +157,98 @@ describe('monitoring', () => {
   });
 });
 
-describe('handleNotification', () => {
-  it('refreshes on llm_settings_changed / llm_status_changed, ignores everything else', async () => {
-    mockGetStatus.mockResolvedValue(AVAILABLE_STATUS);
-    expect(get(llmStatusStore).available).toBe(false); // baseline: nothing fetched yet
-
-    llmStatusStore.handleNotification('some_other_event', {});
-    expect(mockGetStatus).not.toHaveBeenCalled();
+describe('invalidate (the one call every LLM settings flow makes)', () => {
+  it('re-fetches at once, even after a successful initialize made initialize() a no-op', async () => {
+    mockGetStatus.mockResolvedValueOnce({ ...AVAILABLE_STATUS, available: false });
+    await llmStatusStore.initialize();
     expect(get(llmStatusStore).available).toBe(false);
 
-    llmStatusStore.handleNotification('llm_settings_changed', {});
-    await vi.waitFor(() => expect(get(llmStatusStore).available).toBe(true));
-    expect(mockGetStatus).toHaveBeenCalledTimes(1);
+    mockGetStatus.mockResolvedValueOnce(AVAILABLE_STATUS);
+    await llmStatusStore.invalidate();
 
-    llmStatusStore.reset();
-    mockGetStatus.mockClear();
+    expect(mockGetStatus).toHaveBeenCalledTimes(2);
+    expect(get(llmStatusStore).available).toBe(true);
+  });
+
+  it('restarts the background re-check that a reset() had stopped', async () => {
+    vi.useFakeTimers();
     mockGetStatus.mockResolvedValue(AVAILABLE_STATUS);
+    await llmStatusStore.initialize();
+    llmStatusStore.reset(); // what the settings panel used to do with no configuration
 
-    llmStatusStore.handleNotification('llm_status_changed', {});
-    await vi.waitFor(() => expect(get(llmStatusStore).available).toBe(true));
+    mockGetStatus.mockResolvedValueOnce({ ...AVAILABLE_STATUS, available: false });
+    await llmStatusStore.invalidate();
+    expect(get(llmStatusStore).available).toBe(false);
+    mockGetStatus.mockClear();
+    await vi.advanceTimersByTimeAsync(120000);
+
     expect(mockGetStatus).toHaveBeenCalledTimes(1);
+    expect(get(llmStatusStore).available).toBe(true); // the poll's answer landed
+  });
+});
+
+describe('re-check when the page regains attention', () => {
+  function setVisibility(state: 'visible' | 'hidden') {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }
+
+  afterEach(() => {
+    // jsdom's own getter lives on the prototype; drop the instance override.
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+  });
+
+  it('re-checks when the tab becomes visible, not when it is hidden', async () => {
+    vi.useFakeTimers();
+    mockGetStatus.mockResolvedValueOnce({ ...AVAILABLE_STATUS, available: false });
+    await llmStatusStore.initialize();
+    mockGetStatus.mockResolvedValue(AVAILABLE_STATUS);
+    await vi.advanceTimersByTimeAsync(60_000); // past the throttle window
+
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetStatus).toHaveBeenCalledTimes(1);
+
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetStatus).toHaveBeenCalledTimes(2);
+    expect(get(llmStatusStore).available).toBe(true);
+  });
+
+  it('re-checks on window focus, and a burst of focus events costs one request', async () => {
+    vi.useFakeTimers();
+    mockGetStatus.mockResolvedValueOnce({ ...AVAILABLE_STATUS, available: false });
+    await llmStatusStore.initialize();
+    mockGetStatus.mockResolvedValue(AVAILABLE_STATUS);
+    await vi.advanceTimersByTimeAsync(60_000);
+    mockGetStatus.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockGetStatus).toHaveBeenCalledTimes(1);
+    expect(get(llmStatusStore).available).toBe(true);
+  });
+
+  it('does nothing after stopMonitoring (sign-out)', async () => {
+    vi.useFakeTimers();
+    mockGetStatus.mockResolvedValueOnce({ ...AVAILABLE_STATUS, available: false });
+    await llmStatusStore.initialize();
+    mockGetStatus.mockResolvedValue(AVAILABLE_STATUS);
+    await vi.advanceTimersByTimeAsync(60_000);
+    llmStatusStore.stopMonitoring();
+    const lastCheckedBefore = get(llmStatusStore).lastChecked;
+    mockGetStatus.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockGetStatus).not.toHaveBeenCalled();
+    expect(get(llmStatusStore).available).toBe(false);
+    expect(get(llmStatusStore).lastChecked).toEqual(lastCheckedBefore);
   });
 });
 

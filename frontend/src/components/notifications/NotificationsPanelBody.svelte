@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { buildJobModel, type ProcessingJobModel } from '$lib/notifications/processingJob';
   import { countUnreadItems, groupPanelItems } from '$lib/notifications/jobGrouping';
+  import { reconcileJobs } from '$lib/notifications/reconcile';
   import { websocketStore } from '$stores/websocket';
   import { showNotificationsPanel } from '$stores/notificationsPanel';
   import { isLLMAvailable } from '$stores/llmStatus';
@@ -20,7 +21,7 @@
    * the panel is open, so its clock runs only then.
    */
 
-  /** Re-evaluates relative times and the LLM start grace while the panel is open. */
+  /** Re-evaluates relative times, the plan grace and staleness while the panel is open. */
   const CLOCK_MS = 30_000;
 
   let now = Date.now();
@@ -42,6 +43,8 @@
     )
   );
   $: jobs = [...jobModels.values()];
+  // A card that cannot tell what post-processing is doing (a missed frame) asks the server.
+  $: reconcileJobs(jobs, now, websocketStore.applyPostProcessingSnapshot);
 
   function closePanel() {
     showNotificationsPanel.set(false);

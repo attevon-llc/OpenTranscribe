@@ -37,6 +37,7 @@ from app.db.base import get_db
 from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED
 from app.models.chat import ChatMessage
+from app.utils.content_disposition import attachment_header
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,8 @@ def _clock(seconds: float | None) -> str:
 
 
 def _safe_filename(title: str | None, extension: str) -> str:
-    """Build a download filename that is safe in a Content-Disposition header."""
+    """Build a tidy download filename from a conversation title (header-safe via
+    ``attachment_header``)."""
     base = (title or "conversation").strip() or "conversation"
     cleaned = "".join(ch if ch.isalnum() or ch in " -_" else "-" for ch in base)[:60]
     cleaned = cleaned.strip() or "conversation"
@@ -292,5 +294,5 @@ def export_conversation(
     return Response(
         content=body,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": attachment_header(filename)},
     )

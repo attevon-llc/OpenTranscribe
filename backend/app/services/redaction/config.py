@@ -248,9 +248,11 @@ def resolve_effective_config(
             (``core.tenant_limits.resolve_redaction_floor``). Threaded by the
             caller from the originating request/record — never guessed from
             membership, for the reason ``services.organization_service``'s module
-            docstring gives. Community edition has no resolver registered, so the
-            value is unused there and every existing two-argument caller is
-            unaffected.
+            docstring gives. Production callers all pass it; ``None`` means
+            personal scope and is what scripts without a record get. The org floor
+            comes from core's stored organization policy unioned with whatever
+            floor a registered resolver returns (strictest wins), so an org with
+            no stored floor and no resolver adds nothing.
 
     Returns:
         The resolved config. A tenant floor can only make it stricter.

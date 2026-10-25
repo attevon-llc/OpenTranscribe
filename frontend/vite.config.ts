@@ -169,6 +169,10 @@ export default defineConfig(({ mode }) => {
       // The timestamp is what discriminates two builds of the same release.
       __APP_VERSION__: JSON.stringify(pkg.version),
       __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+      // Commit the bundle was built from. Only the prod image is told (Dockerfile.prod
+      // ARG GIT_SHA); the Vite dev server stays 'unknown' on purpose, because dev
+      // bind-mounts this code while the backend image's baked sha lags it.
+      __GIT_SHA__: JSON.stringify(process.env.GIT_SHA?.trim() || 'unknown'),
     },
     base: '/',
     optimizeDeps: {

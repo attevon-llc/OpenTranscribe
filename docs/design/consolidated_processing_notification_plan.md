@@ -1,6 +1,8 @@
 # Consolidated processing notification (one card per file)
 
-Status: implemented on `feat/ui-polish-batch-oct21` (Task 8). Frontend only.
+Status: implemented on `feat/ui-polish-batch-oct21` (Task 8, frontend only); post-processing
+stages and the honest "Complete" added on `fix/notification-finishing-stages` (backend + frontend,
+see "Post-processing stages" below).
 
 ## Problem
 
@@ -16,13 +18,16 @@ enrichment events were folded into the transcription row as green "done" chips w
 | `youtube_processing_status` | `tasks/youtube_processing.py` | yes | pending, processing, completed, error | 0-100 | no |
 | `transcription_status` | `tasks/transcription/notifications.py` | yes | pending, processing, completed, error | 0-100 | on completion |
 | `transcript_ready` | same | yes | (none) | - | - | silent, data plane only |
-| `enrichment_started` | `transcription/postprocess.py` | yes | - | - | `tasks: string[]` |
-| `enrichment_task_complete` | postprocess, analytics, speaker_* tasks | yes | - | - | `task: string` |
+| `post_processing_status` | `services/post_processing_status.py` (only sender) | yes | per task: queued, started, done, failed, skipped | - | `started_at`/`at` per task |
 | `redaction_status` | `tasks/redaction_task.py` | yes | done, failed, skipped, (pending) | - | no |
 | `summarization_status` | `tasks/summarization.py`, `downstream.py` | yes | processing, completed, failed, disabled | 10/30/50/100 | on completion |
 | `topic_extraction_status` | `tasks/topic_extraction.py` | yes | processing, completed, failed, not_configured | - | on completion |
-| `auto_label_status` | `tasks/auto_labeling.py` | **no** (`file_id="auto_label_batch"`) | | | stays a plain row |
+| `auto_label_status` | `tasks/auto_labeling.py` | **no** (`file_id="retroactive_apply"` / `"batch_grouping"`) | | | ONE batch row per run |
 | admin `*_progress/_complete`, sharing, takedown, downloads, audio extraction | various | no | | | stay plain rows |
+
+Removed by the post-processing work: `enrichment_started`, `enrichment_task_complete` (postprocess,
+analytics, speaker attribute/identification/clustering) and `search_indexing_complete` (which also
+bypassed the quarantine gate: it passed the file id in `extra`, not to the suppression check).
 
 Every `transcription_status` processing frame carries a `stage` key
 (`prepare|transcribe|diarize|finalize|speakers`), from one enum,
@@ -32,9 +37,9 @@ forwards it to a stage-aware task callback). Terminal frames omit it. Every
 `TRANSCRIPTION_STAGES`, by `backend/tests/unit/test_transcription_stage_wire.py`. The frontend
 reads the stage; the percent never decides a step.
 
-Silent LLM paths that matter for the weights: an unconfigured LLM sends nothing for summary
-(`_handle_no_llm_configured`), and a user who turned off automatic topic extraction gets no
-topic event at all (`downstream._auto_topic_extraction_enabled`).
+Silent LLM paths (an unconfigured LLM sends no `summarization_status`; a user who turned
+automatic topic extraction off gets no topic event) are no longer guessed at: the plan reports
+both as `skipped`.
 
 ## Architecture
 
@@ -44,7 +49,8 @@ The store keeps **one record per event type per file** exactly as before: the fi
 Consolidation happens in a pure view model, and every panel/badge surface reads only that:
 
 ```
-WS frame -> websocket.ts (records + run timing via lib/notifications/runTiming.ts)
+WS frame -> websocket.ts (records + run timing via lib/notifications/runTiming.ts;
+                          post_processing_status via lib/notifications/postProcessing.ts)
          -> notifications[]  -- pages read raw records (unchanged)
          -> lib/notifications/jobGrouping.ts   (root bundle: badge + retention need it)
               groupPanelItems(list)     -> PanelItem[] ('job' per file | 'single')
@@ -52,6 +58,8 @@ WS frame -> websocket.ts (records + run timing via lib/notifications/runTiming.t
          -> lib/notifications/processingJob.ts (lazy, loads with the panel body)
               buildJobModel(item, {llmAvailable, now}) -> ProcessingJobModel
          -> lib/notifications/retention.ts prunes a file's records as ONE unit
+         -> lib/notifications/reconcile.ts (lazy) GET /files/{uuid}/post-processing when the
+              model says a frame may have been missed
 ```
 
 Bundle: `NotificationsPanel.svelte` (mounted by the root layout) is only the shell; the body
@@ -60,44 +68,118 @@ loads with `import()` on first open. Measured on `HEAD` + only these changes: ro
 
 Job member types (`JOB_TASK_BY_TYPE`): `youtube_processing_status -> import`,
 `transcription_status -> transcription`, `redaction_status -> redaction`,
-`summarization_status -> summary`, `topic_extraction_status -> topics`. A record is a member only
+`summarization_status -> summary`, `topic_extraction_status -> topics`,
+`post_processing_status -> postProcessing`. A record is a member only
 when it is non-silent and has a `data.file_id`; the group key is `job:<file_id>`.
 
 ### Run timing captured in the store (`runTiming.ts`, pure)
 
 Added to `Notification`: `startedAt`, `finishedAt` (epoch ms), `stepLog: {p, at, stage?}[]` (one
 entry per change of progress value or stage, capped at 40, first entry kept; a frame without a
-stage keeps the previous entry's), and for transcription
-`enrichmentStartedAt` + `enrichmentCompletedAt: Record<task, ms>` (replaces the old
-`completedEnrichments: string[]`). A processing frame on a record that was terminal starts a new
-run (timing and enrichment reset), which is how retry/reprocess are told apart from progress.
+stage keeps the previous entry's). A processing frame on a record that was terminal starts a new
+run (timing reset), which is how retry/reprocess are told apart from progress. (The
+`enrichment*` fields that rode on the transcription record are gone: post-processing has a
+record of its own, so a rediarize post stage restarting the transcription run no longer wipes it.)
+
+## Post-processing stages (`fix/notification-finishing-stages`)
+
+**The bug.** The card said "All tasks complete" while speaker gender, search indexing and other
+post-processing were still running. "Indexing and analysis" had weight 0 because nothing said
+when it finished; worse, `enrich_and_dispatch` sent `enrichment_task_complete` for search
+indexing right after *dispatching* it, several tasks reported nothing when a setting turned them
+off, and failures sent nothing at all.
+
+### Inventory: what runs after the transcript is committed
+
+Dispatch order: `postprocess._finalize` marks the file completed (or hands off to the
+`rediarize` post stage / the CPU voiceprint stage, which own completion) and queues
+`transcription.enrich_and_dispatch`, which dispatches, in order: search indexing, file facts,
+redaction, then `trigger_automatic_summarization` (analytics, summary, topics), speaker
+attributes (which chains LLM speaker suggestions), speaker clustering. Summary chains its index;
+topic extraction applies tag/collection suggestions inline.
+
+| Task (key) | Celery task | Event before | Completion signal before | Now |
+|---|---|---|---|---|
+| voiceprints / speaker matching | inline in `postprocess`, or `rediarize`, `extract_speaker_embeddings` | `transcription_status` stage `speakers` | the run's completed frame | unchanged (main tier) |
+| `search_indexing` | `index_transcript_search` | `enrichment_task_complete` sent at DISPATCH (`postprocess.py`); `search_indexing_complete` (raw, unsuppressed) on success | none on failure; "done" before it ran | decorator: started / done / skipped (no segments) / failed after the retry horizon; retries keep it started; a debounced reindex reports queued |
+| `file_facts` | `artifacts.generate_file_facts` | none | none | decorator |
+| `analytics` | `analytics.analyze_transcript` | `enrichment_task_complete` on success | none on failure | decorator |
+| `redaction` | `redaction.detect` | `redaction_status` done/skipped | none on failure; nothing when off | plan says skipped when off; decorator |
+| `speaker_attributes` | `detect_speaker_attributes` | `enrichment_task_complete` on success only | none on the 6 skip paths or failure; listed even when detection is off | plan queued/skipped; decorator |
+| `speaker_identification` | `ai.identify_speakers` | `enrichment_task_complete` | none when the auto switch is off | its dispatcher reports queued/skipped BEFORE the attribute task's own outcome; decorator |
+| `speaker_clustering` | `speaker.cluster_for_file` | `enrichment_task_complete` | none on failure | decorator (retries keep it started) |
+| `summary` | `ai.generate_summary` | `summarization_status` | silent when no LLM | plan skipped with no LLM / disabled; decorator with a deferred start (no "running" flash without an LLM) |
+| `summary_indexing` | `index_file_summary` | none | none | summary reports it queued before its own done; decorator |
+| `topics` | `ai.extract_topics` | `topic_extraction_status` | silent when the auto switch is off | plan skipped; decorator with a deferred start |
+| `auto_label` | inline in topic extraction; `ai.auto_label_batch` per file in a retroactive run | batch-scoped `auto_label_status` only | per file: none | `reporting_step` started/done/failed per file; the retroactive coordinator reports each file queued; the run stays ONE `auto_label_status` row |
+
+Not tracked, deliberately: `ai.group_batch_files` (upload-batch grouping across files) stays a
+batch row; manual triggers (summary regenerate, identify speakers, reprocess stages) report
+through the same decorators, so an open card shows them, but they are not part of a plan.
+
+### Backend (single source of truth)
+
+- `app/core/enums.PostProcessingTask` (keys) and `PostProcessingState`
+  (`queued | started | done | failed | skipped`).
+- `app/services/post_processing_status.py` is the only sender. `report()` (one task),
+  `report_plan()` (the fan-out's decisions; opens a run with `run_at`), `@tracks_post_processing`
+  (start + outcome of a task body: return `{"status": ...}` mapped by `outcome_of`; a Celery
+  `Retry` or an `autoretry_for` exception reports nothing), `reporting_step()` (a step inside
+  another task). Frames go to the file OWNER via `send_ws_event_for_file` (quarantine-suppressed),
+  carry `{file_id: uuid, tasks: {key: {state, at, started_at?}}, run_at?}` and nothing else (no
+  filename, no transcript text).
+- Each report is also written to Redis `post_processing:{file_id}` (Lua: last write wins per task
+  by server time; a newer plan drops older entries; 2-day TTL) and served by
+  `GET /api/files/{uuid}/post-processing` (tenant- and quarantine-gated; `run_at: null` = no run
+  known).
+- The plan is sent from `enrich_and_dispatch` after every dispatch decision. A task not
+  dispatched at all is absent, so nothing waits for it. Pinned by
+  `backend/tests/unit/test_post_processing_status.py` (enum <-> card tiers, a reporter per key,
+  ordering, quarantine, Redis semantics, the REST fallback, the retroactive auto-label run).
+
+### Frontend
+
+`post_processing_status` frames become ONE record per file (`postProcessing.ts`,
+`upsertPostProcessingRecord`): created only beside an existing transcription record (an admin
+reindex of an old file creates no card), status `processing` while any task is queued/started
+(retention pins it), `error` on a failure (kept), `completed` otherwise; always dismissible.
+
 
 ## Model (`processingJob.ts`)
 
 Task states: `pending | running | done | failed | skipped`. Wire status mapping:
 completed/success/complete/finished/done -> done; error/failed -> failed;
 disabled/not_configured/skipped -> skipped; pending/queued -> pending; anything else -> running.
+Post-processing entries map queued -> pending, started -> running.
 
-| Task | Chip | Weight | Percent source | Duration source |
-|---|---|---|---|---|
-| import | if a record exists | 10 | `progress.percentage` | observed `finishedAt - startedAt` |
-| transcription | always | 60 | `progress.percentage` | server `duration_seconds`, else observed |
-| diarization | always (derived) | 0 (inside transcription) | the `diarize` step | the `diarize` step |
-| redaction | if a record exists | 5 | running = 50 | observed |
-| enrichment ("Indexing and analysis") | once `enrichment_started` | 0 (never blocks done) | - | per sub-task: `completedAt - enrichmentStartedAt` |
-| summary (LLM) | see LLM rule | 20 | `data.progress` | server, else observed |
-| topics (LLM) | see LLM rule | 10 | running = 50 | server, else observed |
+Three tiers, shown only when they apply:
 
-Overall percent = `round(sum(w*p) / sum(w))` over counted tasks (weight > 0, not skipped);
-done/failed count as 100 so a finished-with-failure bar ends full. Clamped to 99 while the job is
-not finished, forced to 100 when done.
+| Tier | Tasks | Shown when |
+|---|---|---|
+| Main processing | import, transcription (+ steps), diarization | a transcription/import record exists |
+| Finishing | speaker gender, speaker suggestions, speaker clustering, search indexing, facts and keyphrases, analytics, redaction | always after transcription (placeholder "Preparing the final steps" until the plan) |
+| AI enrichment | AI summary, AI topics, summary indexing, tags and collections | any AI task is not skipped; before the plan, only when an LLM is available |
 
-**LLM rule.** A summary/topics task is counted when a record exists with a non-skip status, or
-when `llmAvailable` (`$isLLMAvailable` from `stores/llmStatus.ts`) is true and transcription has
-not failed and has not been finished for longer than `LLM_START_GRACE_MS` (3 min). So: no LLM
-configured -> no LLM chips and 100% on transcription alone; LLM configured but the user's
-automatic topic extraction is off -> the topic chip waits as "Waiting" for 3 minutes, then drops
-out and the job completes. An event arriving later brings the chip back.
+`POST_PROCESSING_TIERS` maps every backend key to a tier (pinned to the enum by the backend test).
+
+Overall state, in order: **Needs attention** if main processing failed; **Processing** until the
+transcript is ready; **Finishing up** while any post-processing task is queued/running or the plan
+has not arrived (within `PLAN_GRACE_MS`, 2 min); **Needs attention** if a post-processing task
+failed; **Transcript ready** ("final steps could not be confirmed") when no plan was ever seen
+(grace over, or the server knows no run); **Complete** otherwise. Never "Complete" with a known
+task outstanding or with no plan.
+
+Weights: import 10, transcription 60, then per task (gender 3, suggestions 2, clustering 1,
+indexing 4, facts 2, analytics 1, redaction 2, summary 10, topics 4, summary index 1, tags 2);
+before the plan the finishing tier holds 15. Percent = weighted mean, clamped to 99 unless
+Complete / Transcript ready (100); a failure keeps the progress reached.
+
+Missed frames: an outstanding run with no frame for `STALE_AFTER_MS` (10 min) is flagged "No
+update for a while" (still Finishing up, never Complete). The model sets `reconcile` when the
+plan is late (> 30 s), when it would say Transcript ready, or when a finishing run is quiet for
+5 min; the open panel then reads `GET /files/{uuid}/post-processing` (throttled to once a minute
+per file, `reconcile.ts`) and folds the snapshot in like a plan. A 403/404 (file gone) folds in
+"no run known"; a network error changes nothing.
 
 **Stale downstream records.** A summary/topics/redaction record older than the current
 transcription run's `startedAt` belongs to a previous run (reprocess) and is treated as absent.
@@ -119,23 +201,27 @@ the post stage or voiceprint stage, completion) -> `speakers`. The post stage
 (`rediarize_task`, also the manual re-detect) follows a completed frame, so the client sees a new
 run: `diarize` (start, audio, detection) -> `finalize` (assign, save) -> `speakers` (voiceprints).
 
-Job state: `failed` if any counted task failed; `done` if all counted tasks are done/skipped;
-else `running`. The card is dismissible only when every member record is dismissible.
+The card is dismissible only when every member record is dismissible (the post-processing
+record always is).
 
 ## UI states (`components/notifications/ProcessingJobCard.svelte`)
 
 - Header: product logo, filename as the link to `/files/<id>` (marks every member read), state
-  line (Processing / All tasks complete / A task failed + the failing task's message), relative
-  time, and "Completed in X" when done with a known total.
+  line (Processing + current step / Finishing up + "Waiting on: A, B, C +N" or "Preparing the
+  final steps" / Complete / Needs attention + "X failed: message" / Transcript ready + "Final steps
+  could not be confirmed"), plus "No update for a while" when stale.
 - Primary bar: `role="progressbar"`, `aria-valuenow/min/max`, `aria-valuetext`, labelled by
   filename; percent text and ETA beside it. Shimmer only while running.
-- Chip row: one chip per visible task, glyph + label, colour by state; accessible name
-  "Task: State". Skipped tasks have no chip.
-- Details toggle: `aria-expanded` + `aria-controls`, lists groups: Transcription (total, then
-  steps), Indexing and analysis (each enrichment task), AI tasks (summary, topics), each with
-  state and duration.
+- Tier chip row: one chip per shown tier (finished tiers collapse to a single done chip), with a
+  `done/total` count while the tier is open; accessible name "Tier: State, N of M done".
+- Task chip row (live or failed cards only): the running and failed tasks, or, when nothing is
+  running yet, the waiting ones. Skipped tasks never have a chip.
+- Details toggle: `aria-expanded` + `aria-controls`, lists each tier (state) and its tasks
+  (state or duration from server `started_at`/`at`), transcription steps nested.
 - Live region: `JobAnnouncer.svelte`, one polite `role="status"` region for the panel, speaks
-  only a job's transition into done/failed, never progress ticks, and seeds silently on mount.
+  only a job's transition into Complete / Needs attention / Transcript ready, never progress
+  ticks or the move into Finishing up, and seeds silently on mount.
+- SVG glyphs only (`TaskStateGlyph`), no emoji or text glyphs.
 - `prefers-reduced-motion`: no shimmer, pulse or width transition.
 
 Component split (the old panel was 1062 lines), all under `components/notifications/` unless noted:
@@ -163,9 +249,16 @@ shortening in `lib/notifications/display.ts`.
   `not_configured`/`disabled`/`done` was undismissable); both use the terminal-state mapping.
 - Retention treated redaction's `done` as not-a-success, pinning such rows forever.
 - The `notifications.completedIn` string (all 12 locales), dead with the duration chip.
+- (post-processing) `enrichment_started` / `enrichment_task_complete` / `search_indexing_complete`,
+  `postprocess._build_enrichment_task_list`, `search_indexing_task._send_indexing_notification`,
+  `Notification.enrichment*`, `ENRICHMENT_TASK_KEYS`, the "Indexing and analysis" task,
+  `LLM_START_GRACE_MS`, and the strings `notifications.enrichment.*`, `job.task.enrichment`,
+  `job.stateDone`, `job.stateFailed`, `job.announceFailed`.
 
 ## Verification
 
 `npx vitest run src/lib/notifications src/stores/websocket src/components/NotificationsPanel.test.ts src/components/notifications src/components/Navbar.notificationsMount.test.ts`,
-`npm run check`, `npm run check:i18n`, `npm run build`. Visual: open the bell during a real
-upload (light + dark, `ar` RTL), with and without an LLM configured, and a forced failure.
+`npm run check`, `npm run check:i18n`, `npm run build`; backend
+`pytest tests/unit/test_post_processing_status.py`. Visual: inject frames with Playwright
+`routeWebSocket` on `/api/ws` (normal flow, finishing after AI done, skipped tasks, failure,
+no LLM; light + dark, `ar` RTL, 1440 and 390), or open the bell during a real upload.

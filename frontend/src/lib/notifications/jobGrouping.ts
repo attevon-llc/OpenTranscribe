@@ -8,7 +8,13 @@
  */
 import type { Notification, NotificationType } from '$stores/websocket';
 
-export type MemberTask = 'import' | 'transcription' | 'redaction' | 'summary' | 'topics';
+export type MemberTask =
+  | 'import'
+  | 'transcription'
+  | 'redaction'
+  | 'summary'
+  | 'topics'
+  | 'postProcessing';
 
 /** Event types that fold into a file's card. `auto_label_status` is batch-scoped, so it is not. */
 export const JOB_TASK_BY_TYPE: Partial<Record<NotificationType, MemberTask>> = {
@@ -17,6 +23,7 @@ export const JOB_TASK_BY_TYPE: Partial<Record<NotificationType, MemberTask>> = {
   redaction_status: 'redaction',
   summarization_status: 'summary',
   topic_extraction_status: 'topics',
+  post_processing_status: 'postProcessing',
 };
 
 export type JobItem = { kind: 'job'; key: string; fileId: string; members: Notification[] };

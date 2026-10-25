@@ -22,9 +22,11 @@ import logging
 
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.services.ingest_artifacts.recorded_date_service import resolve_for_file
 from app.services.ingest_artifacts.service import generate_file_artifacts
+from app.services.post_processing_status import tracks_post_processing
 from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
     retry_backoff=True,
     ignore_result=True,
 )
+@tracks_post_processing(PostProcessingTask.FILE_FACTS, file_param="file_id")
 def generate_file_facts_task(
     self,
     file_id: int,
@@ -94,8 +97,8 @@ def generate_file_facts_task(
         benchmark_timing.mark(pipeline_task_id, "file_facts_end")
 
 
-def dispatch_file_facts(file_id: int, pipeline_task_id: str | None = None) -> None:
-    """Fire-and-forget dispatch, contained.
+def dispatch_file_facts(file_id: int, pipeline_task_id: str | None = None) -> bool:
+    """Fire-and-forget dispatch, contained. Returns whether the task was queued.
 
     Wrapped because it is called from the enrichment fan-out: a broker hiccup must cost
     the digest, not the whole enrichment pass.
@@ -103,5 +106,7 @@ def dispatch_file_facts(file_id: int, pipeline_task_id: str | None = None) -> No
     try:
         generate_file_facts_task.delay(file_id=file_id, pipeline_task_id=pipeline_task_id)
         logger.info("Dispatched file_facts generation for file %s", file_id)
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to dispatch file_facts generation for file %s: %s", file_id, exc)
+        return False

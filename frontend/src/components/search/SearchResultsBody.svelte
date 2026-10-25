@@ -1,3 +1,8 @@
+<script context="module" lang="ts">
+  /** Cards whose match list starts open; past this a page reads as a compact list. */
+  export const DEFAULT_OPEN_RESULTS = 5;
+</script>
+
 <script lang="ts">
   /**
    * The results area of `/search` once a query has run: the collapsible Summaries and
@@ -5,9 +10,14 @@
    * column. The page still owns the fetch, the store, the preview player and pagination.
    *
    * E2E contract (`backend/tests/e2e/test_search.py`): `.results-list > *` counts transcript
-   * hits, so the aside and every notice live OUTSIDE `.results-list`; `.summary-results-list`
-   * is a sibling of it, never nested inside it.
+   * hits, so the aside, the collapse-all control and every notice live OUTSIDE
+   * `.results-list`; `.summary-results-list` is a sibling of it, never nested inside it.
+   *
+   * Match lists: the first `DEFAULT_OPEN_RESULTS` cards start open and the rest collapsed;
+   * a user's choice per file arrives in `matchListOpen` (the page keeps it in `searchStore`
+   * for the session) and changes leave as `setMatchListsOpen`.
    */
+  import { createEventDispatcher } from 'svelte';
   import type { SearchHit, SummaryHit } from '$stores/search';
   import { t } from '$stores/locale';
   import ExpandableSection from '$components/ui/ExpandableSection.svelte';
@@ -27,6 +37,12 @@
   export let activePreview: { fileUuid: string; startTime: number; playing: boolean } | null = null;
   /** Wide enough for the info aside; otherwise "Details" expands inline in each card. */
   export let panelMode = false;
+  /** The user's per-file open/closed choice for each card's match list. */
+  export let matchListOpen: Record<string, boolean> = {};
+
+  const dispatch = createEventDispatcher<{
+    setMatchListsOpen: { fileUuids: string[]; open: boolean };
+  }>();
 
   const PANEL_ID = 'search-result-info-panel';
 
@@ -44,6 +60,11 @@
     results[0] ??
     null;
   $: showAside = panelMode && showTranscriptSection && transcriptOpen && infoHit !== null;
+  $: pinnedHit = results.find((r) => r.file_uuid === pinnedUuid) ?? null;
+  $: openByUuid = Object.fromEntries(
+    results.map((r, index) => [r.file_uuid, matchListOpen[r.file_uuid] ?? index < DEFAULT_OPEN_RESULTS])
+  ) as Record<string, boolean>;
+  $: anyOpen = results.some((r) => openByUuid[r.file_uuid]);
 
   function handleInspect(event: CustomEvent<string>) {
     hoveredUuid = event.detail;
@@ -51,6 +72,15 @@
 
   function handleToggleDetails(event: CustomEvent<string>) {
     pinnedUuid = pinnedUuid === event.detail ? null : event.detail;
+  }
+
+  function handleToggleMatches(event: CustomEvent<string>) {
+    const uuid = event.detail;
+    dispatch('setMatchListsOpen', { fileUuids: [uuid], open: !openByUuid[uuid] });
+  }
+
+  function setAllMatchLists() {
+    dispatch('setMatchListsOpen', { fileUuids: results.map((r) => r.file_uuid), open: !anyOpen });
   }
 </script>
 
@@ -93,7 +123,21 @@
 
   {#if showAside && infoHit}
     <aside class="result-info-aside" id={PANEL_ID} aria-label={$t('search.resultDetails')}>
-      <SearchResultInfoCard hit={infoHit} variant="panel" />
+      <!-- Re-keyed on the pin so a newly pinned file gets a short highlight: in the wide
+           layout the panel often already shows the hit being pinned. -->
+      {#key pinnedHit?.file_uuid}
+        <div class="aside-inner" class:just-pinned={pinnedHit !== null}>
+          <SearchResultInfoCard
+            hit={infoHit}
+            {query}
+            variant="panel"
+            pinned={pinnedHit !== null}
+            on:unpin={() => (pinnedUuid = null)}
+            on:filterTag
+            on:filterCollection
+          />
+        </div>
+      {/key}
     </aside>
   {/if}
 </div>
@@ -117,6 +161,13 @@
       <p class="state-hint">{$t('search.noResultsHint')}</p>
     </div>
   {:else}
+    {#if results.length > 1}
+      <div class="results-toolbar">
+        <button type="button" class="text-btn collapse-all" on:click={setAllMatchLists}>
+          {anyOpen ? $t('search.collapseAll') : $t('search.expandAll')}
+        </button>
+      </div>
+    {/if}
     <div class="results-list">
       {#if allSemanticOnly}
         <div class="no-keyword-notice">
@@ -128,13 +179,18 @@
           {hit}
           {activePreview}
           {panelMode}
+          {query}
           panelId={PANEL_ID}
           selected={pinnedUuid === hit.file_uuid}
+          matchesOpen={openByUuid[hit.file_uuid] ?? true}
           on:preview
           on:togglePlayback
           on:viewTranscript
           on:inspect={handleInspect}
           on:toggleDetails={handleToggleDetails}
+          on:toggleMatches={handleToggleMatches}
+          on:filterTag
+          on:filterCollection
         />
       {/each}
     </div>
@@ -151,13 +207,67 @@
     align-items: start;
   }
 
+  /* The reading column takes its full 44rem first; the panel gets what is left (at least
+     19rem, at most 24rem on a wide monitor). */
   .results-layout.with-aside {
-    grid-template-columns: minmax(0, 44rem) 19rem;
+    grid-template-columns: minmax(0, 44rem) minmax(19rem, 1fr);
   }
 
   .result-info-aside {
     position: sticky;
     top: 0;
+    max-width: 24rem;
+  }
+
+  .aside-inner.just-pinned {
+    border-radius: 12px;
+    animation: pinned-pulse 0.6s ease-out;
+  }
+
+  @keyframes pinned-pulse {
+    from {
+      box-shadow: 0 0 0 6px rgba(var(--primary-color-rgb), 0.35);
+    }
+    to {
+      box-shadow: 0 0 0 0 rgba(var(--primary-color-rgb), 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aside-inner.just-pinned {
+      animation: none;
+    }
+  }
+
+  .results-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin: -0.25rem 0 0.25rem;
+  }
+
+  .text-btn {
+    padding: 0.125rem 0;
+    background: none;
+    border: none;
+    /* form-elements.css styles every bare <button> with a drop shadow and a hover
+       scale + fill; a text link-button wants none of them. */
+    box-shadow: none;
+    color: var(--primary-on-surface);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+
+  .text-btn:hover {
+    text-decoration: underline;
+    background: none;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .text-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .summary-results-section {

@@ -120,9 +120,18 @@ second client-side exporter believing this exception still applies.
   core via `ffmpeg-wasm-build/` (issue #473 — the published `@ffmpeg/core` is GPL 2+, not just
   license-ambiguous). `Dockerfile.prod` compiles the same core as its own build stage, so prod
   images ship fully self-contained with no CDN dependency at all.
-- **Build identity**: `__APP_VERSION__` / `__BUILD_TIME__` are `define`d in `vite.config.ts` (and
-  mirrored in `vitest.config.ts`). The About dialog compares `__APP_VERSION__` against the
-  backend's `/health` version so a stale cached tab is visible rather than silent.
+- **Build identity**: `__APP_VERSION__` / `__BUILD_TIME__` / `__GIT_SHA__` are `define`d in
+  `vite.config.ts` (and mirrored in `vitest.config.ts`) and read through `$lib/utils/clientBuild`
+  (a `define` constant cannot be stubbed in a test, a module can). The About dialog compares them
+  against the backend's `/api/version` (`version`, `git_sha`) with `$lib/utils/buildIdentity`:
+  **commit to commit when both sides know theirs, else release to release, else silent**. A
+  `dev-<sha>` server version never equals a release semver, so comparing versions alone showed a
+  false "app build doesn't match" banner on every dev image (#1273). `__GIT_SHA__` is set ONLY by
+  the prod image (`Dockerfile.prod` `ARG`+`ENV GIT_SHA`, fed by `docker-build-push.sh` and
+  `opentr.sh build_prod_images`; `check-version-consistency.py` enforces both lines); the Vite dev
+  server stays `unknown` on purpose, because dev bind-mounts this code while the backend image's
+  baked sha lags it. The same helpers pick the AGPL source link (`/tree/<sha>`, never
+  `/releases/tag/vdev-<sha>`; a `-dirty` tree is not "exact").
 
 ## Where things live
 

@@ -171,7 +171,6 @@ export const MENU_ICONS = {
   // Directional: MenuIcon mirrors these in RTL (see RTL_MIRRORED below).
   'chevron-right': [poly('9 18 15 12 9 6')],
   'chevron-left': [poly('15 18 9 12 15 6')],
-  'chevron-down': [poly('6 9 12 15 18 9')],
   'arrow-right': [line(5, 12, 19, 12), poly('12 5 19 12 12 19')],
   // View controls (the legal reader's full-screen toggle).
   maximize: [

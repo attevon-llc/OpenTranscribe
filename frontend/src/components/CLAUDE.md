@@ -25,12 +25,19 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   `import()` on first open so the card model stays out of the root bundle (bundle budget; a
   source test in `NotificationsPanel.test.ts` pins it). **One card per file**: a file's
   `transcription_status` / `summarization_status` / `topic_extraction_status` / `redaction_status` /
-  `youtube_processing_status` records render as ONE `notifications/ProcessingJobCard.svelte` (weighted
-  bar, task chips, expandable per-task timing) and count once in the badge. The store still keeps one
-  record per type, because the file page, gallery and status page dispatch on `type`. Grouping lives in
-  `$lib/notifications/jobGrouping.ts` (badge + retention), the card model in
-  `$lib/notifications/processingJob.ts` (LLM weight follows `isLLMAvailable`), run timing in
-  `runTiming.ts`. Design: `docs/design/consolidated_processing_notification_plan.md`.
+  `youtube_processing_status` / `post_processing_status` records render as ONE
+  `notifications/ProcessingJobCard.svelte` (weighted bar, one chip per tier: Main processing /
+  Finishing / AI enrichment, the running or failed tasks, expandable per-tier timing) and count once in
+  the badge. The store still keeps one record per type, because the file page, gallery and status page
+  dispatch on `type`. Grouping lives in `$lib/notifications/jobGrouping.ts` (badge + retention), the
+  card model in `$lib/notifications/processingJob.ts`, run timing in `runTiming.ts`, the post-processing
+  run reducer in `postProcessing.ts` (root bundle, keep it small) and the missed-frame REST fallback in
+  `reconcile.ts` (lazy). **"Complete" means every task the backend's plan named has finished**: while
+  any is queued/running the card says "Finishing up", and with no plan it says "Transcript ready / final
+  steps could not be confirmed", never Complete. A new backend `PostProcessingTask` key needs a tier in
+  `POST_PROCESSING_TIERS` and a `JOB_TASK_KEYS` label (a backend test fails otherwise). The batch-scoped
+  `auto_label_status` run stays ONE plain row; per-file auto-labeling arrives as the `auto_label` task on
+  the file's own card. Design: `docs/design/consolidated_processing_notification_plan.md`.
   Icons: `ICON_BY_TYPE` (`$lib/notifications/display.ts`) maps types to icon names and **each name needs a
   render branch** in `notifications/NotificationIcon.svelte` (an unmapped name silently shows the bell;
   `NotificationsPanel.test.ts` asserts coverage). `transcription_status` is the `logo` icon, an

@@ -1,13 +1,24 @@
 <script lang="ts">
   import { t } from '$stores/locale';
-  import type { ProcessingJobModel } from '$lib/notifications/processingJob';
+  import {
+    isFinalJobState,
+    type FinalJobState,
+    type ProcessingJobModel,
+  } from '$lib/notifications/processingJob';
 
   /**
    * The panel's one polite live region for processing cards. It speaks a card's OUTCOME
-   * (finished or failed) once, never progress ticks, and says nothing about the cards that
-   * were already present when the panel opened.
+   * (complete, needs attention, transcript ready) once, never progress ticks or the move
+   * into "Finishing up", and says nothing about the cards that were already present when
+   * the panel opened.
    */
   export let jobs: ProcessingJobModel[];
+
+  const ANNOUNCE_KEYS: Record<FinalJobState, string> = {
+    complete: 'notifications.job.announceDone',
+    attention: 'notifications.job.announceAttention',
+    ready: 'notifications.job.announceReady',
+  };
 
   let seen: Map<string, ProcessingJobModel['state']> | null = null;
   let message = '';
@@ -17,18 +28,13 @@
   function announce(list: ProcessingJobModel[]) {
     const next = new Map(list.map((j) => [j.key, j.state] as const));
     if (seen !== null) {
-      const changed = list.filter(
-        (j) => j.state !== 'running' && seen?.has(j.key) && seen.get(j.key) !== j.state
-      );
-      if (changed.length > 0) {
-        message = changed
-          .map((j) =>
-            $t(j.state === 'done' ? 'notifications.job.announceDone' : 'notifications.job.announceFailed', {
-              filename: j.filename,
-            })
-          )
-          .join(' ');
+      const lines: string[] = [];
+      for (const j of list) {
+        if (isFinalJobState(j.state) && seen.has(j.key) && seen.get(j.key) !== j.state) {
+          lines.push($t(ANNOUNCE_KEYS[j.state], { filename: j.filename }));
+        }
       }
+      if (lines.length > 0) message = lines.join(' ');
     }
     seen = next;
   }

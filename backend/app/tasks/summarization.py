@@ -37,6 +37,8 @@ from sqlalchemy.orm import joinedload
 
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
+from app.core.enums import PostProcessingState
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
@@ -44,6 +46,9 @@ from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.ingest_artifacts.service import source_fingerprint
 from app.services.llm_service import LLMService
+from app.services.post_processing_status import announce_started
+from app.services.post_processing_status import report as report_post_processing
+from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
@@ -140,8 +145,11 @@ def _handle_no_llm_configured(
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
     logger.info(f"Transcription completed for file {filename} (no LLM summary generated)")
+    # "skipped", not "success": nothing was summarized, and the post-processing status
+    # reports this run as skipped rather than as a finished AI summary.
     return {
-        "status": "success",
+        "status": "skipped",
+        "reason": "llm_not_configured",
         "file_id": file_id,
         "message": "Transcription completed successfully. AI summary not available - no LLM provider configured.",
     }
@@ -668,6 +676,7 @@ def _handle_task_error(
 
 
 @celery_app.task(bind=True, name="ai.generate_summary", priority=NLPPriority.USER_TRIGGERED)
+@tracks_post_processing(PostProcessingTask.SUMMARY, file_param="file_uuid", announce_start=False)
 def summarize_transcript_task(
     self,
     file_uuid: str,
@@ -704,6 +713,7 @@ def summarize_transcript_task(
         # ahead of it has nothing to close it out. See `_llm_is_configured`.
         if not _llm_is_configured(user_id):
             return _handle_no_llm_configured(file_id, user_id, inputs["filename"], task_id)
+        announce_started(PostProcessingTask.SUMMARY, file_id=file_id)
 
         action = "regeneration" if force_regenerate else "generation"
         send_summary_notification(
@@ -737,6 +747,11 @@ def summarize_transcript_task(
         from app.tasks.search_indexing_task import index_file_summary
 
         index_file_summary.delay(file_id)
+        # Declared before this task reports done, so the summary's index is never an
+        # undeclared tail behind a "finished" summary.
+        report_post_processing(
+            PostProcessingTask.SUMMARY_INDEXING, PostProcessingState.QUEUED, file_id=file_id
+        )
 
         _send_completion_notification(
             user_id,

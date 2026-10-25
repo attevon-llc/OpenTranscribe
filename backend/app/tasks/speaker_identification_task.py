@@ -26,6 +26,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.celery import celery_app
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.constants import NLPPriority
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
@@ -36,13 +37,13 @@ from app.services.llm_service import LLMService
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
 from app.services.metadata_speaker_extractor import build_cross_reference_context
 from app.services.metadata_speaker_extractor import cross_reference_attributes
+from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
 from app.utils.transcript_builders import build_full_transcript
 from app.utils.transcript_builders import build_speaker_segments
 from app.utils.user_settings_helpers import get_user_llm_output_language
-from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
 
@@ -526,6 +527,7 @@ def _mark_identification_failed(task_id: str, error_msg: str) -> None:
 
 
 @celery_app.task(bind=True, name="ai.identify_speakers", priority=NLPPriority.USER_TRIGGERED)
+@tracks_post_processing(PostProcessingTask.SPEAKER_IDENTIFICATION, file_param="file_uuid")
 def identify_speakers_llm_task(self, file_uuid: str):
     """
     Use LLM to provide speaker identification suggestions
@@ -566,26 +568,12 @@ def identify_speakers_llm_task(self, file_uuid: str):
             # this file gets. Same outcome shape as ai.extract_topics.
             with session_scope() as db:
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            send_ws_event_for_file(
-                user_id,
-                "enrichment_task_complete",
-                {"file_id": file_uuid, "task": "speaker_identification"},
-                file_id=file_id,
-            )
             return {"status": "skipped", "reason": "LLM not configured", "file_id": file_id}
 
         # Phase 3 — write (short sessions, Postgres only).
         _store_speaker_predictions(file_id, predictions, predictions.pop("llm_provenance", None))
         with session_scope() as db:
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-        # Notify enrichment tracker
-        send_ws_event_for_file(
-            user_id,
-            "enrichment_task_complete",
-            {"file_id": file_uuid, "task": "speaker_identification"},
-            file_id=file_id,
-        )
 
         return {
             "status": "success",

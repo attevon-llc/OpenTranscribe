@@ -8,6 +8,8 @@ from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.constants import EmbeddingPriority
 from app.core.constants import UtilityPriority
+from app.core.enums import PostProcessingTask
+from app.services.post_processing_status import tracks_post_processing
 from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
@@ -117,6 +119,7 @@ class FileGoneError(ValueError):
     default_retry_delay=30,
 )
 @stage_timing.stage("search_indexing")
+@tracks_post_processing(PostProcessingTask.SEARCH_INDEXING, file_param="file_id")
 def index_transcript_search_task(  # noqa: C901
     self,
     file_id: int,
@@ -336,9 +339,6 @@ def index_transcript_search_task(  # noqa: C901
         # Mark task as completed
         with session_scope() as db:
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-        # Send notification
-        _send_indexing_notification(user_id, file_id, timing)
 
         logger.info(
             f"Search indexing completed for file {file_uuid}: "
@@ -639,6 +639,7 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
     name="index_file_summary",
     priority=UtilityPriority.ROUTINE,
 )
+@tracks_post_processing(PostProcessingTask.SUMMARY_INDEXING, file_param="file_id")
 def index_file_summary(file_id: int) -> dict[str, Any]:
     """Rebuild ONE file's summary plane from ``media_file.summary_data`` (issue #963).
 
@@ -835,17 +836,3 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
         "dispatched_files": dispatched_files,
         "dispatched_users": len(by_user),
     }
-
-
-def _send_indexing_notification(user_id: int, file_id: int, timing: dict[str, Any]) -> None:
-    """Send search indexing completion notification via WebSocket."""
-    try:
-        from app.services.notification_service import send_task_notification
-
-        send_task_notification(
-            user_id,
-            "search_indexing_complete",
-            extra={"file_id": file_id, "timing": timing},
-        )
-    except Exception as e:
-        logger.debug(f"Failed to send search indexing notification: {e}")

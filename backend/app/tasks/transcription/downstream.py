@@ -5,6 +5,8 @@ Summarization, topic extraction, analytics, and speaker clustering.
 
 import logging
 
+from app.core.enums import PostProcessingState
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 
@@ -12,9 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 def _dispatch_automatic_summary(
-    file_id: int, file_uuid: str, collection_prompt_uuid: str | None
-) -> None:
-    """Check summary disable settings and dispatch if enabled."""
+    file_id: int, file_uuid: str, collection_prompt_uuid: str | None, llm_configured: bool
+) -> PostProcessingState:
+    """Check summary disable settings and dispatch if enabled.
+
+    Returns the post-processing state for the plan. With no LLM configured the task is
+    still dispatched (it records ``not_configured`` for the file page) but reported
+    SKIPPED, since no summary will be produced.
+    """
     from app.tasks.summarization import send_summary_notification
     from app.tasks.summarization import summarize_transcript_task
     from app.utils.summary_settings import get_summary_disable_reason
@@ -23,7 +30,7 @@ def _dispatch_automatic_summary(
         media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
         if not media_file:
             logger.warning(f"File {file_uuid} not found for summary dispatch")
-            return
+            return PostProcessingState.SKIPPED
 
         if str(media_file.summary_status) == "disabled":
             logger.info(f"Summary disabled for file {file_id} (per-file flag)")
@@ -34,7 +41,7 @@ def _dispatch_automatic_summary(
                 "AI summary generation is disabled for this file",
                 0,
             )
-            return
+            return PostProcessingState.SKIPPED
 
         disable_reason = get_summary_disable_reason(db, int(media_file.user_id))
         if disable_reason:
@@ -53,13 +60,27 @@ def _dispatch_automatic_summary(
                 reason_msg,
                 0,
             )
-            return
+            return PostProcessingState.SKIPPED
 
     summary_task = summarize_transcript_task.delay(
         file_uuid=file_uuid,
         prompt_uuid=collection_prompt_uuid,
     )
     logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
+    return PostProcessingState.QUEUED if llm_configured else PostProcessingState.SKIPPED
+
+
+def _owner_llm_configured(file_id: int) -> bool:
+    """The repo's one answer to "is an LLM configured?" for the file's owner (DB only)."""
+    from app.services.llm_service import LLMService
+
+    try:
+        with session_scope() as db:
+            owner = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).scalar()
+            return owner is not None and LLMService.is_configured_for_user(db, int(owner))
+    except Exception as e:  # noqa: BLE001 — the plan then waits for the tasks to report
+        logger.warning(f"LLM availability check failed for file {file_id}: {e}")
+        return True
 
 
 def _auto_topic_extraction_enabled(file_uuid: str) -> bool:
@@ -110,7 +131,7 @@ def _get_collection_prompt_uuid(file_id: int) -> str | None:
 # Import for automatic summarization, speaker identification, and analytics
 def trigger_automatic_summarization(
     file_id: int, file_uuid: str, tasks_to_run: list[str] | None = None
-):
+) -> dict[PostProcessingTask, PostProcessingState]:
     """Trigger automatic summarization, speaker identification, and analytics after transcription completes.
 
     Note: In the default (full) flow, LLM speaker identification is dispatched by
@@ -124,13 +145,20 @@ def trigger_automatic_summarization(
         tasks_to_run: Optional list of specific stages to run. None = run all tasks.
             Valid values: 'analytics', 'speaker_llm', 'summarization',
             'topic_extraction', 'search_indexing', 'speaker_clustering'
+
+    Returns:
+        The post-processing state of every task this decided on (queued, or skipped by a
+        setting or a missing LLM). A task it did not get to is absent, so nothing waits
+        for it.
     """
+    decisions: dict[PostProcessingTask, PostProcessingState] = {}
     try:
         # Analytics computation
         if tasks_to_run is None or "analytics" in tasks_to_run:
             from app.tasks.analytics import analyze_transcript_task
 
             analytics_task = analyze_transcript_task.delay(file_uuid=file_uuid)
+            decisions[PostProcessingTask.ANALYTICS] = PostProcessingState.QUEUED
             logger.info(
                 f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
             )
@@ -146,9 +174,13 @@ def trigger_automatic_summarization(
         # Look up collection default prompt for this file
         collection_prompt_uuid = _get_collection_prompt_uuid(file_id)
 
+        llm_configured = _owner_llm_configured(file_id)
+
         # Summarization
         if tasks_to_run is None or "summarization" in tasks_to_run:
-            _dispatch_automatic_summary(file_id, file_uuid, collection_prompt_uuid)
+            decisions[PostProcessingTask.SUMMARY] = _dispatch_automatic_summary(
+                file_id, file_uuid, collection_prompt_uuid, llm_configured
+            )
 
         # Topic extraction
         # An explicit stage list is a manual request, so only the automatic path
@@ -162,6 +194,11 @@ def trigger_automatic_summarization(
             logger.info(
                 f"Automatic topic extraction task {topic_task.id} started for file {file_id}"
             )
+            decisions[PostProcessingTask.TOPICS] = (
+                PostProcessingState.QUEUED if llm_configured else PostProcessingState.SKIPPED
+            )
+        elif tasks_to_run is None:
+            decisions[PostProcessingTask.TOPICS] = PostProcessingState.SKIPPED
 
         # Speaker clustering (selective reprocessing only)
         _clustering_stages = {"speaker_clustering"}
@@ -182,13 +219,20 @@ def trigger_automatic_summarization(
                                 from app.tasks.speaker_clustering import cluster_speakers_for_file
 
                                 cluster_speakers_for_file.delay(file_uuid, _uid)
+                                decisions[PostProcessingTask.SPEAKER_CLUSTERING] = (
+                                    PostProcessingState.QUEUED
+                                )
                                 logger.info(
                                     f"Selective speaker clustering dispatched for file {file_id}"
                                 )
                             except Exception as sc_err:
                                 logger.warning(f"Failed to dispatch speaker clustering: {sc_err}")
+                                decisions[PostProcessingTask.SPEAKER_CLUSTERING] = (
+                                    PostProcessingState.FAILED
+                                )
 
             except Exception as e:
                 logger.warning(f"Failed to look up file for clustering dispatch: {e}")
     except Exception as e:
         logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
+    return decisions

@@ -114,12 +114,24 @@ def queue_transcript_reindex(
             f"Queued debounced re-index for file {file_uuid} "
             f"(fires in {TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS}s)"
         )
+        _report_queued(file_id)
         return ReindexDispatch.QUEUED
     except Exception:  # noqa: BLE001 — a dispatch failure must not break the mutation
         logger.exception(f"Could not queue transcript re-index for file {file_uuid}")
         if claimed:
             _release_claim(key, file_uuid)
         return ReindexDispatch.FAILED
+
+
+def _report_queued(file_id: int) -> None:
+    """The file's search index is outstanding again until the queued rebuild reports."""
+    from app.core.enums import PostProcessingState
+    from app.core.enums import PostProcessingTask
+    from app.services import post_processing_status
+
+    post_processing_status.report(
+        PostProcessingTask.SEARCH_INDEXING, PostProcessingState.QUEUED, file_id=file_id
+    )
 
 
 def _release_claim(key: str, file_uuid: str) -> None:

@@ -442,7 +442,7 @@ def test_speaker_name_suggestions_record_their_llm(db_session, media, scope_of):
         patch.object(mod, "session_scope", scope_of),
         patch.object(mod, "_load_identification_inputs", return_value=inputs),
         patch.object(mod, "_create_llm_service", return_value=service),
-        patch.object(mod, "send_ws_event_for_file"),
+        patch("app.services.post_processing_status.report"),
     ):
         result = mod.identify_speakers_llm_task.apply(kwargs={"file_uuid": str(media.uuid)}).result
 
@@ -470,7 +470,7 @@ def test_a_failed_speaker_name_run_records_nothing(db_session, media, scope_of):
         patch.object(mod, "session_scope", scope_of),
         patch.object(mod, "_load_identification_inputs", return_value=inputs),
         patch.object(mod, "_create_llm_service", return_value=service),
-        patch.object(mod, "send_ws_event_for_file"),
+        patch("app.services.post_processing_status.report"),
     ):
         mod.identify_speakers_llm_task.apply(kwargs={"file_uuid": str(media.uuid)})
 

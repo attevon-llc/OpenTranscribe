@@ -31,7 +31,10 @@ from celery.exceptions import Retry
 
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
+from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
+from app.services.post_processing_status import announce_started
+from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
@@ -249,6 +252,7 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
 
 
 @celery_app.task(bind=True, name="ai.extract_topics", priority=NLPPriority.AUTO_PIPELINE)
+@tracks_post_processing(PostProcessingTask.TOPICS, file_param="file_uuid", announce_start=False)
 def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     """
     Extract AI tag and collection suggestions from a completed transcript.
@@ -296,6 +300,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             }
 
         _record_task_start(task_id, user_id, file_id)
+        announce_started(PostProcessingTask.TOPICS, file_id=file_id)
 
         # Phase 1b — read (DB session open, Postgres only).
         try:

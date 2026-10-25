@@ -533,7 +533,9 @@ class TestMockedAsrPlusMockedLlm:
         # or the grounded turn below has nothing to retrieve and answers empty.
         _wait_for_indexed(api_session, backend_url, uploaded_file)
 
-        headers = {"X-CSRF-Token": api_session.cookies.get("csrf_token")}
+        csrf_token = api_session.cookies.get("csrf_token")
+        assert csrf_token, "api_session has no csrf_token cookie"
+        headers = {"X-CSRF-Token": csrf_token}
         llm_resp = api_session.post(
             f"{backend_url}/api/llm-settings",
             json={
@@ -585,10 +587,8 @@ class TestMockedAsrPlusMockedLlm:
                 with response:
                     response.raise_for_status()
                     event_name = None
-                    for raw_line in response.iter_lines(decode_unicode=True):
-                        if raw_line is None:
-                            continue
-                        line = raw_line.strip("\r")
+                    for raw_line in response.iter_lines():
+                        line = raw_line.decode("utf-8").strip("\r")
                         if line == "":
                             event_name = None
                             continue

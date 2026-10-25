@@ -43,7 +43,7 @@ class TestSpeakerAttributeSettings:
 
     def test_non_boolean_value_is_rejected(self):
         with pytest.raises(ValidationError):
-            SpeakerAttributeSettings(detection_enabled="not-a-bool")
+            SpeakerAttributeSettings.model_validate({"detection_enabled": "not-a-bool"})
 
 
 class TestSpeakerAttributeSettingsUpdate:
@@ -72,13 +72,13 @@ class TestSpeakerAttributeSettingsUpdate:
 
     def test_non_boolean_value_is_rejected(self):
         with pytest.raises(ValidationError):
-            SpeakerAttributeSettingsUpdate(age_detection_enabled="maybe")
+            SpeakerAttributeSettingsUpdate.model_validate({"age_detection_enabled": "maybe"})
 
 
 class TestSpeakerAttributeSystemDefaults:
     def test_requires_every_field_no_defaults(self):
         with pytest.raises(ValidationError) as excinfo:
-            SpeakerAttributeSystemDefaults()
+            SpeakerAttributeSystemDefaults.model_validate({})
         missing = {err["loc"][0] for err in excinfo.value.errors()}
         assert missing == {
             "detection_enabled",
@@ -106,12 +106,14 @@ class TestSpeakerAttributeSystemDefaults:
 
     def test_missing_a_single_field_still_raises(self):
         with pytest.raises(ValidationError) as excinfo:
-            SpeakerAttributeSystemDefaults(
-                detection_enabled=True,
-                gender_detection_enabled=True,
-                age_detection_enabled=True,
-                auto_llm_speaker_identification=True,
-                # show_attributes_on_cards omitted
+            SpeakerAttributeSystemDefaults.model_validate(
+                {
+                    "detection_enabled": True,
+                    "gender_detection_enabled": True,
+                    "age_detection_enabled": True,
+                    "auto_llm_speaker_identification": True,
+                    # show_attributes_on_cards omitted
+                }
             )
         missing = {err["loc"][0] for err in excinfo.value.errors()}
         assert missing == {"show_attributes_on_cards"}

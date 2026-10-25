@@ -35,6 +35,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services import file_cleanup_service
 from app.tasks import cleanup
+from tests.helpers import detail_dict
 
 #: The sweep window every test in this module measures against: a file whose
 #: reference timestamp predates this is past its retention.
@@ -260,5 +261,5 @@ def test_the_interactive_delete_reports_a_hold_as_a_conflict(db_session, sample_
         crud.delete_media_file(db_session, str(held.uuid), sample_user, force=True)
 
     assert excinfo.value.status_code == 409
-    assert excinfo.value.detail["error"] == "FILE_UNDER_LEGAL_HOLD"
+    assert detail_dict(excinfo.value)["error"] == "FILE_UNDER_LEGAL_HOLD"
     assert db_session.query(MediaFile).filter(MediaFile.id == file_id).first() is not None

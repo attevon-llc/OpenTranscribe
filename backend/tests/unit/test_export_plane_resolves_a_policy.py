@@ -30,6 +30,7 @@ import uuid
 from functools import cache
 
 import pytest
+from starlette.routing import Route
 
 pytestmark = pytest.mark.unit
 
@@ -259,12 +260,14 @@ def _plane() -> list[tuple[str, str, object]]:
     """``(key, path, endpoint)`` for every route whose path names the export plane."""
     from app.main import app
 
-    found = []
+    found: list[tuple[str, str, object]] = []
     for route in app.routes:
-        path = getattr(route, "path", "")
+        if not isinstance(route, Route):
+            continue
+        path = route.path
         if not any(keyword in path for keyword in _PLANE_KEYWORDS):
             continue
-        for method in sorted(getattr(route, "methods", None) or []):
+        for method in sorted(route.methods or []):
             if method in ("HEAD", "OPTIONS"):
                 continue
             found.append((f"{method} {path}", path, route.endpoint))

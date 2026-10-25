@@ -105,9 +105,10 @@ def test_compute_from_minio_propagates_a_storage_outage(monkeypatch):
     a genuinely absent object returns — that silently degrades dedup to "found
     nothing new" with no signal it was actually a storage outage."""
     from minio.error import S3Error
+    from urllib3 import HTTPResponse
 
     outage = S3Error(
-        response=None,
+        response=HTTPResponse(status=500),
         code="InternalError",
         message="simulated storage outage",
         resource="/x",

@@ -35,6 +35,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from opensearchpy import OpenSearch
 
 
 def test_the_retry_budget_outlasts_a_multi_second_transient(monkeypatch):
@@ -158,16 +159,17 @@ def test_ml_settings_raise_the_jvm_heap_threshold(monkeypatch):
 
     captured: dict[str, Any] = {}
 
-    class _Cluster:
-        def put_settings(self, body: dict[str, Any]) -> None:
-            captured.update(body["persistent"])
+    def _put_settings(body: dict[str, Any], **_kwargs: Any) -> None:
+        captured.update(body["persistent"])
 
-    class _Client:
-        cluster = _Cluster()
+    # A real client: constructing one opens no connection, and only the one call the
+    # service makes is replaced.
+    client = OpenSearch(hosts=[{"host": "localhost", "port": 9200}])
+    monkeypatch.setattr(client.cluster, "put_settings", _put_settings)
 
     service = ml_model_service.OpenSearchMLModelService()
     monkeypatch.setattr(service, "_ensure_client", lambda: True)
-    service._client = _Client()
+    service._client = client
     service._ml_settings_configured = False
 
     assert service.configure_ml_settings() is True

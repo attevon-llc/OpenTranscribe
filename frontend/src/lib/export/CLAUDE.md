@@ -27,6 +27,10 @@ writes to it, each with a written reason, so the next one has to answer the ques
   from the same masked copy the summary read endpoint returns, so there is one masking
   implementation behind both. ⚠️ Same fallback rule as `requestTranscriptExport.ts` — never
   give it a local fallback.
+- `contentDisposition.ts` — `parseContentDispositionFilename`: reads the server's RFC 6266
+  `filename*=UTF-8''...` (ASCII `filename=` as fallback). Both request helpers return it as
+  `filename`, and the download flow saves under it instead of recomputing `${name}.${format}`
+  (issue #1283: the server owns the naming rule, and non-ASCII names only survive in `filename*`).
 - `clipboardSurfaces.test.ts` — the allowlist of clipboard-writing surfaces. It proves they
   are _enumerated_, not that each is correct; the reason text is the claim a human checks.
 - `txtExportPrefs.ts` — `loadTxtPrefs` / `saveTxtPrefs`: localStorage persistence for the TXT

@@ -52,6 +52,7 @@ from app.services.summary_export_service import SummaryExportLabels
 from app.services.summary_export_service import build_summary_export
 from app.tasks.speaker_tasks import identify_speakers_llm_task
 from app.tasks.summarization import summarize_transcript_task
+from app.utils.content_disposition import attachment_header
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
@@ -364,7 +365,7 @@ def export_summary(
         content=content,
         media_type="text/markdown; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": attachment_header(filename),
             "Content-Length": str(len(content.encode("utf-8"))),
         },
     )

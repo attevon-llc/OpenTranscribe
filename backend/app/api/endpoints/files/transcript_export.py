@@ -30,6 +30,7 @@ from app.models.user import User
 from app.services.platform_bypass import PlatformBypass
 from app.services.transcript_export_service import VALID_FORMATS
 from app.services.transcript_export_service import build_export_content
+from app.utils.content_disposition import attachment_header
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
@@ -208,7 +209,7 @@ def export_transcript(
         content=content,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": attachment_header(filename),
             "Content-Length": str(len(content.encode("utf-8"))),
         },
     )

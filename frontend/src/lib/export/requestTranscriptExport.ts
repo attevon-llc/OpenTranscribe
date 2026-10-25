@@ -19,6 +19,7 @@
  * translation-free; it renders whatever strings the caller resolved.
  */
 import axiosInstance from '$lib/axios';
+import { parseContentDispositionFilename } from '$lib/export/contentDisposition';
 
 /** Resolved i18n strings the server renders into the exported document. */
 export interface TranscriptExportLabels {
@@ -52,6 +53,8 @@ export interface TranscriptExportRequest {
 export interface TranscriptExportResult<T = unknown> {
   data: T;
   contentType: string;
+  /** The name the server chose (`Content-Disposition`), or `null` when it sent none. */
+  filename: string | null;
 }
 
 export async function requestTranscriptExport<T = unknown>(
@@ -74,5 +77,6 @@ export async function requestTranscriptExport<T = unknown>(
   return {
     data: response.data as T,
     contentType: String(response.headers['content-type'] || 'text/plain'),
+    filename: parseContentDispositionFilename(response.headers['content-disposition']),
   };
 }

@@ -1110,7 +1110,7 @@ app.add_middleware(
     # and prod (nginx), so a browser can already read these response headers
     # without this — but exposing them removes a trap for any future
     # split-host or third-party client that isn't.
-    expose_headers=["Retry-After", "X-RateLimit-Limit"],
+    expose_headers=["Retry-After", "X-RateLimit-Limit", "Content-Disposition"],
 )
 
 # Mark every API response as non-indexable (issue #668, finding 3). Response-header-only,

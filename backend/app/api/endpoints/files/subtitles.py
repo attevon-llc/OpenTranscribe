@@ -31,6 +31,7 @@ from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
 from app.services.platform_bypass import PlatformBypass
 from app.services.subtitle_service import SubtitleService
+from app.utils.content_disposition import attachment_header
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
@@ -179,7 +180,7 @@ def get_subtitles(
             content=subtitle_content,
             media_type=content_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Disposition": attachment_header(filename),
                 "Content-Length": str(len(subtitle_content.encode("utf-8"))),
             },
         )

@@ -119,3 +119,23 @@ def test_a_member_retrieves_a_colleagues_chunks_through_the_org_collection(chunk
     assert _visible_file_uuids(client, index, gov.outsider.id, gov.org.id) == set()
     # Personal scope never sees organization chunks, collection route or not.
     assert _visible_file_uuids(client, index, gov.bob.id, None) == set()
+
+
+def test_search_does_not_return_files_reachable_only_via_restricted_collection(chunk_index, gov):
+    """Restricting a collection removes it as a route at once: no reindex, no TTL."""
+    client, index = chunk_index
+    collection = gov.collection(gov.alice)
+    media_file = gov.file(gov.alice)
+    gov.put(collection, media_file)
+    _index(media_file, "the layoff plan for the northern region", collection_ids=[collection.id])
+
+    assert _visible_file_uuids(client, index, gov.bob.id, gov.org.id) == {str(media_file.uuid)}
+
+    collection.visibility = "restricted"
+    gov.db.commit()
+
+    assert _visible_file_uuids(client, index, gov.bob.id, gov.org.id) == set()
+    # Controls: an organization admin reads it through the collection, the file's owner by
+    # the per-file term, and nobody lost anything but the unnamed member.
+    assert _visible_file_uuids(client, index, gov.admin.id, gov.org.id) == {str(media_file.uuid)}
+    assert _visible_file_uuids(client, index, gov.alice.id, gov.org.id) == {str(media_file.uuid)}

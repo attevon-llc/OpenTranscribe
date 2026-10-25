@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Eighteen migrations, `v397` to `v444`, run automatically at backend start.** They add columns
+- **Nineteen migrations, `v397` to `v446`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -122,6 +122,19 @@ off by default.
 
 ### Added
 
+- **Restricted organization collections (#1275).** An organization collection is shared by every
+  member, which is wrong for a legal matter or an HR review. The creator or an organization admin
+  can now restrict one (**Edit collection**, or when creating it): only its creator, the
+  organization's admins and the people it is shared with can see the collection, open the files in
+  it through it, search it, or scope a chat to it. Everyone else gets "not found", exactly as for
+  a collection that does not exist: it is absent from every list, from a file's own collection
+  list, from upload and auto-label targets (an AI-suggested collection that matches a hidden name
+  is skipped, never created or joined), and from a support-access grant. Switching takes effect at
+  once, with no reindex; members who lose sight of a collection are told so (the notice carries no
+  name) and their list drops it. `PATCH /api/collections/{uuid}/visibility`; `visibility` and
+  `can_change_visibility` on every collection response. Names stay unique per organization, so a
+  hidden collection's name still blocks reuse (the one thing a member can infer). Migration
+  `v446`.
 - **Takedown notice records (#1254).** Quarantining a file now writes a durable record in the same
   transaction: the legal notice it acts on (type, date received, an opaque reference, the internal
   basis, who handled it) and, per file, its outcome (open, counter-notice, upheld, released), or an

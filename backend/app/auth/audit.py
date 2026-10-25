@@ -135,6 +135,10 @@ class AuditEventType(StrEnum):
     RESOURCE_SHARE = "resource.share"
     RESOURCE_UNSHARE = "resource.unshare"
 
+    # An organization collection was restricted to, or opened up from, its named people
+    # (issue #1275). ``details`` carries the new mode and counts, never the collection name.
+    COLLECTION_VISIBILITY_CHANGE = "collection.visibility.change"
+
     # Group membership (issue #443)
     GROUP_MEMBER_ADD = "group.member.add"
     GROUP_MEMBER_REMOVE = "group.member.remove"

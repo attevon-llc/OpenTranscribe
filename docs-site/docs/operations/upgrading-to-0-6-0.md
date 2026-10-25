@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-Eighteen migrations run automatically when the backend starts, from `v397` to `v444`. On a
+Nineteen migrations run automatically when the backend starts, from `v397` to `v446`. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.
@@ -69,6 +69,7 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v442` | Adds `media_file.takedown_origin`, recording whether the operator or an organization holds a taken-down file | Marks every file that is already quarantined or under legal hold as held by the operator, which is who placed it |
 | `v443` | Adds the `takedown_notice` and `takedown_notice_file` tables, the durable record of each takedown notice | Adds one "operator action" record for every file that is already quarantined or under legal hold, so none is left without a record |
 | `v444` | Adds the `takedown_notification` table, a log of who was told about a takedown | No (empty until an owner is emailed) |
+| `v446` | Adds `collection.visibility` (`organization` or `restricted`) so an organization collection can be limited to its creator, the organization admins and the people it is shared with | No: every existing collection stays visible to the whole organization until someone restricts it |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.

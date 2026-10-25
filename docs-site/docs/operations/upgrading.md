@@ -248,8 +248,9 @@ The migration chain progresses through these versions:
 | `v442` | `media_file.takedown_origin`: which authority (operator or organization) holds a taken-down file (#1253) |
 | `v443` | `takedown_notice` and `takedown_notice_file`: a durable record of each legal notice and the files it covers (#1254) |
 | `v444` | `takedown_notification`: a log of who was told about a takedown (#1254) |
+| `v446` | `collection.visibility`: an organization collection can be restricted to its named people (#1275) |
 
-What `v397` to `v444` mean for an existing install, including the few that change data, is
+What `v397` to `v446` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail

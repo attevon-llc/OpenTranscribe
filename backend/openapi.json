@@ -3095,6 +3095,11 @@
       "Collection": {
         "description": "Collection with UUID as public identifier.\n\n``user_id`` is the creator's UUID; NULL for an organization collection whose\ncreator's account is gone (the collection stays with the organization).",
         "properties": {
+          "can_change_visibility": {
+            "default": false,
+            "title": "Can Change Visibility",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3175,6 +3180,15 @@
             "format": "uuid",
             "title": "Uuid",
             "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -3218,6 +3232,16 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "description": "'organization' (every member of the organization sees it) or 'restricted' (only its creator, the organization admins and the people it is shared with). A personal collection can only be 'organization': anything else is a 422.",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -3293,6 +3317,11 @@
       },
       "CollectionResponse": {
         "properties": {
+          "can_change_visibility": {
+            "default": false,
+            "title": "Can Change Visibility",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3388,6 +3417,15 @@
             "format": "uuid",
             "title": "Uuid",
             "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -3450,8 +3488,31 @@
         "title": "CollectionUpdate",
         "type": "object"
       },
+      "CollectionVisibilityUpdate": {
+        "description": "Body of ``PATCH /collections/{uuid}/visibility``.",
+        "properties": {
+          "visibility": {
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "CollectionVisibilityUpdate",
+        "type": "object"
+      },
       "CollectionWithCount": {
         "properties": {
+          "can_change_visibility": {
+            "default": false,
+            "title": "Can Change Visibility",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3561,6 +3622,15 @@
           "uuid": {
             "format": "uuid",
             "title": "Uuid",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -30995,7 +31065,7 @@
     },
     "/api/collections/for-files": {
       "get": {
-        "description": "Which collections a set of selected files already belongs to.\n\nThe mirror of ``GET /tags/for-files``, so the gallery's two organizing\nmodals answer the same question the same way — `file_count` against\n`selection_size` distinguishes a collection holding every selected file from\none holding a few.\n\nScoped to the caller's own collections in the request's tenant — in an\norganization, the org's collections (v422); in the personal workspace, their\npersonal ones. Membership of anyone else's collection is not theirs to read\noff a selection.\n\nRegistered before ``/{collection_uuid}`` so the literal path is not\nswallowed.",
+        "description": "Which collections a set of selected files already belongs to.\n\nThe mirror of ``GET /tags/for-files``, so the gallery's two organizing\nmodals answer the same question the same way — `file_count` against\n`selection_size` distinguishes a collection holding every selected file from\none holding a few.\n\nScoped to the caller's own collections in the request's tenant — in an\norganization, the org's collections they may see (v422); in the personal\nworkspace, their personal ones. Membership of anyone else's collection, or of a\nrestricted one they cannot see, is not theirs to read off a selection.\n\nRegistered before ``/{collection_uuid}`` so the literal path is not\nswallowed.",
         "operationId": "list_collections_on_files_api_collections_for_files_get",
         "parameters": [
           {
@@ -31926,6 +31996,64 @@
           }
         ],
         "summary": "Update Collection Share",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/api/collections/{collection_uuid}/visibility": {
+      "patch": {
+        "description": "Restrict an organization collection to its named people, or open it to the organization.\n\n``restricted``: only the creator, the organization's admins and the people it is shared\nwith (``/shares``) see it or the files in it through it. ``organization``: every member.\nAuthority is the collection's owners (its creator or an organization admin); a person who\ncannot see a restricted collection gets 404, exactly as for a missing one, and a platform\nsupport grant never reaches it. A personal collection has no organization to hide it\nfrom: 422. This is the ONLY path that changes visibility (``PUT`` does not accept it).\n\nEffects: the audit event ``collection.visibility.change`` (always recorded, the\ncollection's name is never in it), a ``collection_access_changed`` WebSocket event\ncarrying only the collection uuid to the members who just lost sight of it so their UI\ndrops it, and a retrieval-cache bump so a cached chat answer cannot keep serving\nexcerpts to somebody who no longer may read them. No reindex is needed: search reads the\ncaller's visibility from Postgres per request.",
+        "operationId": "set_collection_visibility_api_collections__collection_uuid__visibility_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_uuid",
+            "required": true,
+            "schema": {
+              "title": "Collection Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionVisibilityUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Collection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Collection Visibility",
         "tags": [
           "collections"
         ]

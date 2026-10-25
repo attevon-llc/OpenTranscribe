@@ -26,4 +26,14 @@ export interface Collection {
   is_shared?: boolean;
   /** Caller's effective permission — `'owner' | 'editor' | 'viewer'`. Defaults to `'owner'` server-side. */
   my_permission?: string;
+  /**
+   * Who in the organization sees it (issue #1275): every member (`organization`) or only the
+   * creator, organization admins and the people it is shared with (`restricted`). A personal
+   * collection is always `organization`, which has no meaning there.
+   */
+  visibility?: CollectionVisibility;
+  /** Server-computed: the caller may switch `visibility`. Never re-derive it in the UI. */
+  can_change_visibility?: boolean;
 }
+
+export type CollectionVisibility = 'organization' | 'restricted';

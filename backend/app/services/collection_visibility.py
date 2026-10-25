@@ -28,6 +28,7 @@ from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.enums import CollectionVisibility
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -53,8 +54,9 @@ def _org_base_rank(user_id: int) -> Any:
     """SQL rank (0 none, 2 editor, 3 owner) a caller holds on a collection by being its tenant.
 
     Personal collection: its owner. Organization collection: a member of its org (the creator
-    and org admins own it, every other member edits it, v422). Explicit shares are NOT part of
-    this rank; :func:`_share_rank` adds them.
+    and org admins own it, every other member edits it, v422), except that a ``restricted``
+    collection gives a plain member nothing (#1275). Explicit shares are NOT part of this rank;
+    :func:`_share_rank` adds them.
     """
     role = (
         select(OrganizationMembership.role)
@@ -70,6 +72,9 @@ def _org_base_rank(user_id: int) -> Any:
         (role.is_(None), 0),
         (role == ORG_ADMIN_ROLE, 3),
         (Collection.user_id == user_id, 3),
+        # A restricted collection is not the organization's: a plain member holds nothing on
+        # it by membership. Only a share (``_share_rank``) can give them access.
+        (Collection.visibility == CollectionVisibility.RESTRICTED.value, 0),
         else_=2,
     )
 
@@ -116,6 +121,58 @@ def collection_permission(db: Session, collection_id: int, user_id: int) -> str 
     rank = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
     value = db.execute(select(rank).where(Collection.id == collection_id)).scalar()
     return PERMISSION_NAMES[int(value)] if value else None
+
+
+def collection_is_hidden_from(db: Session, collection: Collection, user_id: int) -> bool:
+    """True when ``collection`` is restricted and ``user_id`` holds no permission on it.
+
+    The 404 rule for a collection addressed by uuid: an unrestricted collection is never
+    "hidden" here (an out-of-tenant one is refused by the usual tenant gate), and a
+    restricted one is hidden from everyone who is not its creator, an organization admin or
+    a share target, including platform staff under a support-access grant.
+    """
+    if collection.visibility != CollectionVisibility.RESTRICTED.value:
+        return False
+    return collection_permission(db, collection.id, user_id) is None
+
+
+def members_without_access(db: Session, collection: Collection) -> list[int]:
+    """Ids of the collection's organization members who hold NO permission on it.
+
+    Set-based (three reads however large the organization): members who are neither its
+    creator, an organization admin, a direct share target nor in a share's group. For an
+    unrestricted collection that is nobody, so it doubles as "who just lost sight of it"
+    when a collection is restricted. Empty for a personal collection.
+    """
+    if (
+        collection.organization_id is None
+        or collection.visibility != CollectionVisibility.RESTRICTED.value
+    ):
+        return []
+    rows = db.execute(
+        select(OrganizationMembership.user_id, OrganizationMembership.role).where(
+            OrganizationMembership.organization_id == collection.organization_id
+        )
+    ).all()
+    shares = db.execute(
+        select(CollectionShare.target_user_id, CollectionShare.target_group_id).where(
+            CollectionShare.collection_id == collection.id
+        )
+    ).all()
+    named = {int(u) for u, _g in shares if u is not None}
+    group_ids = [int(g) for _u, g in shares if g is not None]
+    if group_ids:
+        named |= {
+            int(uid)
+            for uid in db.execute(
+                select(UserGroupMember.user_id).where(UserGroupMember.group_id.in_(group_ids))
+            ).scalars()
+        }
+    return [
+        int(uid)
+        for uid, role in rows
+        if role != ORG_ADMIN_ROLE and uid != collection.user_id and int(uid) not in named
+    ]
 
 
 def org_collection_file_ids_stmt(user_id: int, organization_id: OrgScope) -> Select[Any]:

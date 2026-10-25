@@ -107,6 +107,7 @@ synthetic `operator_action` notice; FKs `ON DELETE SET NULL` plus snapshot uuids
 owner and organization; detection arm keys on `ck_takedown_notice_file_outcome_at`, the last CHECK created; the
 downgrade drops compliance evidence and is not executed by its test),
 `v444_add_takedown_notification` (the delivery log, enum-only columns; arm keys on `ck_takedown_notification_status`).
+`v446_add_collection_visibility` (`collection.visibility` `organization|restricted`, issue #1275, with `ck_collection_visibility` — restricted only on an organization collection — and `ix_collection_org_visibility`; `v445` belongs to the privacy lane; arm keys on the CHECK, created last).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.

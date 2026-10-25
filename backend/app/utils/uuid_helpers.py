@@ -358,6 +358,20 @@ def get_file_by_uuid_with_permission(
     )
 
 
+def _refuse_unseen_restricted(db: Session, collection: Collection, user_id: int) -> None:
+    """404 a restricted collection the caller holds no permission on (issue #1275).
+
+    Decided BEFORE the platform bypass and before the tenant gate: a restricted collection
+    is need-to-know, so neither a support-access grant nor an out-of-scope request may
+    learn it exists, and a 403 would be an existence oracle for the organization's
+    members. It answers exactly like a missing collection.
+    """
+    from app.services.collection_visibility import collection_is_hidden_from
+
+    if collection_is_hidden_from(db, collection, user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+
+
 def get_collection_by_uuid_with_permission(
     db: Session,
     uuid: UUID | str,
@@ -390,6 +404,7 @@ def get_collection_by_uuid_with_permission(
     from app.services.permission_service import PermissionService
 
     collection = get_collection_by_uuid(db, uuid)
+    _refuse_unseen_restricted(db, collection, user_id)
 
     if bypass.allows(
         org_id=collection.organization_id,
@@ -460,6 +475,7 @@ def get_collection_by_uuid_with_sharing(
     from app.services.permission_service import PermissionService
 
     collection = get_collection_by_uuid(db, uuid)
+    _refuse_unseen_restricted(db, collection, user_id)
 
     if bypass.allows(
         org_id=collection.organization_id,

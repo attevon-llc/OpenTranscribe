@@ -45,3 +45,28 @@ describe('CollectionsList — manage actions follow my_permission', () => {
     expect(deleteButtons()).toHaveLength(1);
   });
 });
+
+describe('CollectionsList — restricted collections are marked', () => {
+  it('shows the lock badge, with its explanation, on a restricted collection only', () => {
+    const restricted: Collection = {
+      uuid: 'c4',
+      name: 'Matter 7',
+      media_count: 1,
+      visibility: 'restricted',
+    };
+    render(CollectionsList, { props: { collections: [restricted, owned] } });
+
+    const badges = document.querySelectorAll<HTMLElement>('.badge.restricted');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toContain('Restricted');
+    expect(badges[0].getAttribute('title')).toContain('organization admins');
+    expect(badges[0].querySelector('svg')).not.toBeNull();
+  });
+
+  it('shows no badge for an organization-wide or legacy collection', () => {
+    const open: Collection = { uuid: 'c5', name: 'Open', visibility: 'organization' };
+    const legacy: Collection = { uuid: 'c6', name: 'Legacy' };
+    render(CollectionsList, { props: { collections: [open, legacy] } });
+    expect(document.querySelectorAll('.badge.restricted')).toHaveLength(0);
+  });
+});

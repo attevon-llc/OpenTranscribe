@@ -607,6 +607,10 @@ NOTIFICATION_TYPE_SPEAKER_MATCH = "speaker_match"
 NOTIFICATION_TYPE_COLLECTION_SHARED = "collection_shared"
 NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED = "collection_share_revoked"
 NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED = "collection_share_updated"
+# Sent to the members who lose sight of a collection when it is restricted (#1275). The
+# payload is the collection uuid only: they already knew it, and a name would disclose a
+# restricted collection's existence to a person who no longer may know it.
+NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED = "collection_access_changed"
 NOTIFICATION_TYPE_GROUP_MEMBER_ADDED = "group_member_added"
 NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED = "group_member_removed"
 

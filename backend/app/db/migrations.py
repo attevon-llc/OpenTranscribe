@@ -670,6 +670,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'ck_takedown_notification_status')"
     )
 
+    # v446: collection visibility mode (issue #1275). Keyed on its last-created CHECK.
+    has_collection_visibility = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_collection_visibility')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -739,8 +744,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v444: same as v443 plus the notification delivery log. The newest revision on this
+    # v446: same as v444 plus the collection visibility mode. The newest revision on this
     # chain, so this is the top of the ladder.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_collection_visibility
+    ):
+        return "v446_add_collection_visibility"
+    # v444: same as v443 plus the notification delivery log.
     if matches_v442 and has_takedown_notice and has_takedown_notification:
         return "v444_add_takedown_notification"
     # v443: same as v442 plus the takedown notice tables.

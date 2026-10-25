@@ -40,6 +40,7 @@ from app.api.endpoints.files.filtering import apply_all_filters
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
@@ -62,6 +63,7 @@ from app.schemas.media import CollectionMemberRemove
 from app.schemas.media import CollectionOnSelection
 from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
+from app.schemas.media import CollectionVisibilityUpdate
 from app.schemas.media import CollectionWithCount
 from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.sharing import Share
@@ -69,6 +71,7 @@ from app.schemas.sharing import ShareCreate
 from app.schemas.sharing import SharedCollectionInfo
 from app.schemas.sharing import ShareUpdate
 from app.schemas.user import UserBrief
+from app.services.collection_visibility import members_without_access
 from app.services.collection_visibility import visible_collection_ids
 from app.services.formatting_service import FormattingService
 from app.services.permission_service import PermissionService
@@ -214,6 +217,16 @@ def _get_prompt_info(collection: Collection) -> tuple:
     if prompt:
         return (prompt.uuid, prompt.name)
     return (None, None)
+
+
+def _can_change_visibility(collection: Collection, permission: str | None) -> bool:
+    """Whether the caller may switch ``collection``'s visibility (server-computed for the UI).
+
+    Only an organization collection has a visibility to change, and only its owners may:
+    the creator or an administrator of its organization (``permission == "owner"`` is
+    exactly that for an organization collection; a share never grants it).
+    """
+    return collection.organization_id is not None and permission == "owner"
 
 
 def _build_share_response(db: Session, share: CollectionShare) -> Share:
@@ -592,6 +605,7 @@ def list_collections(
         # Set sharing metadata
         my_perm = perm_dict.get(collection.id, "owner")
         collection_with_count.my_permission = my_perm
+        collection_with_count.can_change_visibility = _can_change_visibility(collection, my_perm)
         collection_with_count.is_shared = collection.user_id != current_user.id
         collection_with_count.share_count = share_counts_dict.get(collection.id, 0)
         if collection.id in shared_by_dict:
@@ -659,6 +673,12 @@ def create_collection(
     otherwise; the response carries the uuid back, never the internal id. A new
     collection starts with no members and no shares.
     """
+    if collection.visibility != "organization" and ctx.org_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Only an organization collection can be restricted",
+        )
+
     # Check if a collection with the same name exists in this tenant
     existing = (
         db.query(Collection.id)
@@ -701,6 +721,7 @@ def create_collection(
     prompt_uuid, prompt_name = _get_prompt_info(db_collection)
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(db_collection, "owner")
     return result
 
 
@@ -759,6 +780,9 @@ def get_collection(
     prompt_uuid, prompt_name = _get_prompt_info(collection)
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(
+        collection, PermissionService.get_collection_permission(db, collection.id, current_user.id)
+    )
 
     return result
 
@@ -828,6 +852,93 @@ def update_collection(
     prompt_uuid_val, prompt_name = _get_prompt_info(collection)
     result.default_prompt_id = prompt_uuid_val
     result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(collection, permission)
+    return result
+
+
+@router.patch(
+    "/{collection_uuid}/visibility",
+    response_model=CollectionSchema,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
+def set_collection_visibility(
+    collection_uuid: str,
+    body: CollectionVisibilityUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Restrict an organization collection to its named people, or open it to the organization.
+
+    ``restricted``: only the creator, the organization's admins and the people it is shared
+    with (``/shares``) see it or the files in it through it. ``organization``: every member.
+    Authority is the collection's owners (its creator or an organization admin); a person who
+    cannot see a restricted collection gets 404, exactly as for a missing one, and a platform
+    support grant never reaches it. A personal collection has no organization to hide it
+    from: 422. This is the ONLY path that changes visibility (``PUT`` does not accept it).
+
+    Effects: the audit event ``collection.visibility.change`` (always recorded, the
+    collection's name is never in it), a ``collection_access_changed`` WebSocket event
+    carrying only the collection uuid to the members who just lost sight of it so their UI
+    drops it, and a retrieval-cache bump so a cached chat answer cannot keep serving
+    excerpts to somebody who no longer may read them. No reindex is needed: search reads the
+    caller's visibility from Postgres per request.
+    """
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
+    if collection.organization_id is None:
+        raise HTTPException(
+            status_code=422, detail="Only an organization collection has a visibility"
+        )
+    permission = PermissionService.get_collection_permission(db, collection.id, current_user.id)
+    if permission != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the collection's creator or an organization admin can change who sees it",
+        )
+
+    previous = collection.visibility
+    if body.visibility != previous:
+        collection.visibility = body.visibility
+        db.commit()
+        db.refresh(collection)
+
+        from app.services.chat.retrieval_cache import bump_corpus_version
+
+        lost_sight = members_without_access(db, collection)
+        for member_id in lost_sight:
+            send_ws_event(
+                member_id,
+                NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED,
+                {"collection_uuid": str(collection.uuid)},
+            )
+        bump_corpus_version()
+
+        req_ctx = get_request_context(request)
+        audit_logger.log(
+            event_type=AuditEventType.COLLECTION_VISIBILITY_CHANGE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=req_ctx["source_ip"],
+            user_agent=req_ctx["user_agent"],
+            organization_id=collection.organization_id,
+            details={
+                "resource_type": "collection",
+                "resource_uuid": str(collection.uuid),
+                "from": previous,
+                "to": body.visibility,
+                "members_who_lost_access": len(lost_sight),
+            },
+        )
+
+    result = CollectionSchema.model_validate(collection)
+    prompt_uuid, prompt_name = _get_prompt_info(collection)
+    result.default_prompt_id = prompt_uuid
+    result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(collection, permission)
     return result
 
 

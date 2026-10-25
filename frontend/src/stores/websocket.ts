@@ -62,6 +62,7 @@ export const NOTIFICATION_TYPES = [
   'collection_shared',
   'collection_share_revoked',
   'collection_share_updated',
+  'collection_access_changed',
   'group_member_added',
   'group_member_removed',
   'enrichment_started',
@@ -611,6 +612,23 @@ function createWebSocketStore() {
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
+            } else if (data.type === 'collection_access_changed') {
+              // A collection this user could see was restricted (issue #1275): the payload is
+              // the collection uuid only. Drop every cache that could still list it.
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('collection-access-changed', { detail: data.data })
+                );
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
             } else if (data.type === 'group_member_added') {
               // User added to a group — invalidate caches and notify
               if (typeof window !== 'undefined') {
@@ -1149,6 +1167,8 @@ function createWebSocketStore() {
         return translate('notifications.collectionShareRevoked');
       case 'collection_share_updated':
         return translate('notifications.collectionShareUpdated');
+      case 'collection_access_changed':
+        return translate('notifications.collectionAccessChanged');
       case 'group_member_added':
         return translate('notifications.groupMemberAdded');
       case 'group_member_removed':

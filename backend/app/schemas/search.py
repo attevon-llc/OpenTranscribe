@@ -24,6 +24,13 @@ class SearchOccurrenceSchema(BaseModel):
     )
 
 
+class SearchHitCollectionSchema(BaseModel):
+    """A collection named on a search hit: the display name and the uuid to filter by."""
+
+    uuid: str = Field(..., description="Collection UUID (the `collection_uuid` filter value)")
+    name: str = Field(..., description="Collection name")
+
+
 class SearchHitSchema(BaseModel):
     """A file-level search result with multiple occurrences."""
 
@@ -32,6 +39,13 @@ class SearchHitSchema(BaseModel):
     title: str = Field("", description="File title")
     speakers: list[str] = Field(default_factory=list, description="All speakers in file")
     tags: list[str] = Field(default_factory=list, description="Tags on the file")
+    collections: list[SearchHitCollectionSchema] = Field(
+        default_factory=list,
+        description=(
+            "Collections holding the file that the caller may see "
+            "(services/collection_visibility.collections_on_files), sorted by name"
+        ),
+    )
     upload_time: str = Field("", description="Upload timestamp ISO string")
     language: str = Field("", description="Language code")
     content_type: str = Field("", description="MIME content type (e.g. audio/mpeg, video/mp4)")

@@ -13,14 +13,29 @@ coordinator).
   `panelMode`, the sticky knowledge-panel `<aside>` beside a 44rem results column. The panel
   shows the pinned hit, else the hovered/focused one, else the top result. The page decides
   `panelMode` from viewport width (1440px with the filter sidebar open, 1180px collapsed).
-  Design and rationale: `docs/design/search_results_ux_audit.md`.
+  Pinning is VISIBLE (round 2): the panel gets a "Pinned" row with an Unpin button, a primary
+  border and a short pulse (none under reduced motion), because in the wide layout the panel
+  usually already shows the hit being pinned and a pin that changes nothing reads as a dead
+  button. Match lists: the first `DEFAULT_OPEN_RESULTS` (5) cards start open, the rest
+  collapsed; per-file choices live in `searchStore.matchListOpen` (passed in as
+  `matchListOpen`, changed via `setMatchListsOpen`). "Collapse all / Expand all" sits above,
+  never inside, `.results-list`. Design: `docs/design/search_results_ux_audit.md`,
+  `docs/design/search_polish_round2_plan.md`.
 - `SearchResultCard.svelte` — one file's hit as a compact search-engine result: title, one
-  muted meta line (date, duration, relevance), 1 snippet (2 when `has_both_match_types`),
-  "Show N more matches" and "Details" disclosures. Speakers, tags, size and match sources are
-  NOT in the card; they live in `SearchResultInfoCard.svelte` (`panel` in the aside,
-  `inline` inside the card on narrow layouts). Dispatches `preview` (start a clip),
-  `togglePlayback` (pause/resume the clip already loaded), `viewTranscript`, `inspect`
-  (hover/focus) and `toggleDetails` (pin). No API calls.
+  muted meta line (date, duration, relevance), 1 snippet (2 when `has_both_match_types`), a
+  caret at the header's top inline-end corner that collapses the match list (`matchesOpen`,
+  `toggleMatches`), "Show N more matches", and the details control: "Pin details"
+  (`aria-pressed`) in panel mode, "Details" (`aria-expanded`) inline otherwise. Speakers,
+  tags, collections, size and match sources are NOT in the card; they live in
+  `SearchResultInfoCard.svelte` (`panel` in the aside, `inline` inside the card on narrow
+  layouts). Dispatches `preview` (start a clip), `togglePlayback` (pause/resume the clip
+  already loaded), `viewTranscript`, `inspect` (hover/focus), `toggleDetails` (pin) and
+  `toggleMatches`, and forwards the info card's `filterTag` / `filterCollection`. No API calls.
+- `SearchResultInfoCard.svelte` — tag and collection chips are links to
+  `/search?q=..&tags=<name>` / `&collection=<uuid>`; a plain click dispatches `filterTag` /
+  `filterCollection` so the page filters in place. `collections` come from `/api/search`,
+  already restricted to what the caller may see (`services/collection_visibility.py`); never
+  look collections up client-side.
 - `SearchPreviewButton.svelte` — the per-occurrence play control, state
   `idle | playing | paused`. `activePreview.playing` follows the floating player's Plyr
   `play`/`pause` events (`ended` reports `pause`), so the glyph never claims "playing" for a
@@ -51,7 +66,9 @@ coordinator).
 
 - Children take props + `createEventDispatcher`; the page owns the `/search` fetch, `searchStore`,
   URL sync, and the floating preview player. i18n via `$t`; import via `$components/search/...`.
-- **State is URL-driven**: the page mirrors `q`/`page`/`sort`/`sort_order`/`mode`/`speakers`/`tags`
+- **State is URL-driven**: the page mirrors `q`/`page`/`sort`/`sort_order`/`mode`/`speakers`/`tags`/
+  `collection` (a collection UUID, sent to the API as `collection_uuid`; the integer
+  `collection_id` answered 422 for every sidebar collection filter until round 2)
   into `URLSearchParams` and re-queries. Filtering, sorting, and paging are server-side — never
   filter or sort the results array here.
 - **Every `{@html}` goes through `sanitizeHighlightHtml`** (`$lib/utils/sanitizeHtml`, DOMPurify;

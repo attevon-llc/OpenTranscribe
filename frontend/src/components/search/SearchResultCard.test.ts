@@ -71,13 +71,15 @@ describe('SearchResultCard — compact result', () => {
     expect(getByText('planning')).toBeInTheDocument();
   });
 
-  it('wide layout: "Details" pins the side panel instead of expanding inline', async () => {
+  it('wide layout: "Pin details" pins the side panel instead of expanding inline', async () => {
     const toggleDetails = vi.fn();
     const { getByRole, queryByText } = render(SearchResultCard, {
       props: { hit: searchHit(), panelMode: true, selected: true, panelId: 'panel-x' },
       events: { toggleDetails },
     });
-    const details = getByRole('button', { name: 'Details' });
+    // Owner report: in the wide layout "Details" changed nothing visible, because the panel
+    // already showed the hovered card. The control now says what it does.
+    const details = getByRole('button', { name: 'Pin details' });
     expect(details).toHaveAttribute('aria-pressed', 'true');
     expect(details).toHaveAttribute('aria-controls', 'panel-x');
     expect(details).not.toHaveAttribute('aria-expanded');
@@ -171,5 +173,45 @@ describe('SearchResultCard — playback state dependency', () => {
     const source = readFileSync(resolve(__dirname, 'SearchResultCard.svelte'), 'utf8');
     expect(source).toContain('state={playbackState(occurrence, activePreview)}');
     expect(source).not.toMatch(/playbackState\(occurrence\)/);
+  });
+});
+
+describe('SearchResultCard — collapsible match list', () => {
+  it('a caret in the header controls the match list (aria-expanded + aria-controls)', async () => {
+    const toggleMatches = vi.fn();
+    const { getByRole, container } = render(SearchResultCard, {
+      props: { hit: searchHit(), matchesOpen: true },
+      events: { toggleMatches },
+    });
+    const caret = getByRole('button', { name: 'Matches' });
+    expect(caret).toHaveAttribute('aria-expanded', 'true');
+    const list = container.querySelector(`#${caret.getAttribute('aria-controls')}`);
+    expect(list).toHaveClass('occurrence-list');
+    expect(caret.closest('.result-header')).not.toBeNull();
+
+    await fireEvent.click(caret);
+
+    expect(toggleMatches).toHaveBeenCalledTimes(1);
+    expect(toggleMatches.mock.calls[0][0].detail).toBe('file-1');
+  });
+
+  it('collapsed: no snippets and no "Show more", but the title, details and View transcript stay', () => {
+    const { getByRole, queryByRole, container } = render(SearchResultCard, {
+      props: { hit: searchHit(), matchesOpen: false },
+    });
+    expect(getByRole('button', { name: 'Matches' })).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelectorAll('.occurrence-row')).toHaveLength(0);
+    expect(container.querySelector('.occurrence-list')).toHaveAttribute('hidden');
+    expect(queryByRole('button', { name: 'Show 2 more matches' })).toBeNull();
+    expect(container.querySelector('.result-title')).not.toBeNull();
+    expect(container.querySelector('.view-transcript-btn')).not.toBeNull();
+    expect(getByRole('button', { name: 'Details' })).toBeInTheDocument();
+  });
+
+  it('a hit with no snippets has no caret to toggle', () => {
+    const { queryByRole } = render(SearchResultCard, {
+      props: { hit: searchHit({ occurrences: [], total_occurrences: 0 }) },
+    });
+    expect(queryByRole('button', { name: 'Matches' })).toBeNull();
   });
 });

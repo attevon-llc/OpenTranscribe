@@ -35,6 +35,7 @@ from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.platform_bypass import PlatformBypass
+from app.services.redaction.reveal_audit import audit_unredacted_reveal
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
 from app.utils.db_helpers import owned_in_tenant
@@ -609,48 +610,6 @@ def _resolve_redaction_for_request(
     audit_unredacted_reveal(db_file, current_user, reveal, surface="transcript")
 
     return cfg, reveal
-
-
-def audit_unredacted_reveal(
-    db_file: MediaFile, current_user: User, reveal: set[str], *, surface: str
-) -> None:
-    """Write the ``transcript.view_unredacted`` compliance event, if anything revealed.
-
-    The ONE implementation. It lived inline in ``_resolve_redaction_for_request`` while
-    ``files/subtitles.py`` — the path that writes the revealed transcript to a **file on
-    the user's disk** — wrote no audit event at all (issue #85). Two copies of a
-    compliance trail is how one of them silently stops matching the other.
-
-    Args:
-        db_file: The file whose transcript was revealed.
-        current_user: Who revealed it.
-        reveal: Categories actually revealed. Empty → nothing was revealed, no event.
-        surface: Which read surface (``transcript`` | ``subtitle_export``). Admin-forced
-            categories never appear here; they cannot be revealed on any surface.
-    """
-    if not reveal:
-        return
-    try:
-        from app.auth.audit import AuditOutcome
-        from app.auth.audit import audit_logger
-
-        audit_logger.log(
-            event_type="transcript.view_unredacted",  # type: ignore[arg-type]
-            outcome=AuditOutcome.SUCCESS,
-            user_id=current_user.id,
-            username=str(current_user.email),
-            # Org attribution (issue #262a): the reveal concerns this file's
-            # tenant, so its org admins see it in the org audit read.
-            organization_id=int(db_file.organization_id) if db_file.organization_id else None,
-            details={
-                "file_id": db_file.id,
-                "file_uuid": str(db_file.uuid),
-                "revealed_categories": sorted(reveal),
-                "surface": surface,
-            },
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"Audit log for unredacted view failed: {e}")
 
 
 class RedactionScanDispatch(NamedTuple):

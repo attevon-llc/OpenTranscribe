@@ -30,12 +30,13 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
 from app.services.platform_bypass import PlatformBypass
+from app.services.redaction.export_policy import resolve_export_reveal
+from app.services.redaction.reveal_audit import audit_unredacted_reveal
 from app.services.subtitle_service import SubtitleService
 from app.utils.content_disposition import attachment_header
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
-from .crud import audit_unredacted_reveal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -79,10 +80,12 @@ def _resolve_subtitle_redaction(
             detail="Redaction policy is temporarily unavailable; export withheld.",
         ) from e
 
-    if getattr(cfg, "export_locked", False):
-        return cfg, set()  # forced — never reveal on export
-    can_reveal = (media_file.user_id == current_user.id) or bypass.admin_reveal_allowed
-    reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+    reveal = resolve_export_reveal(
+        cfg,
+        reveal_requested=(redact is False),
+        is_owner=(media_file.user_id == current_user.id),
+        admin_reveal_allowed=bypass.admin_reveal_allowed,
+    )
     # Audit the reveal, exactly as the transcript read does (issue #85). This path
     # wrote NO audit event: an owner could download the unredacted original to disk —
     # the more consequential of the two, because the file leaves the application —

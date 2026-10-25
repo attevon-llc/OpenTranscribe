@@ -81,7 +81,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `resolve_effective_config` directly from a new LLM path; see the gotcha below for why.
 - Reveal via `?redact=false` → `cfg.reveal_categories(...)` in `api/endpoints/files/crud.py`
   (`_resolve_redaction_for_request`) and `files/subtitles.py`; both audited as
-  `transcript.view_unredacted` through the single `crud.audit_unredacted_reveal` (the export
+  `transcript.view_unredacted` through the single `reveal_audit.audit_unredacted_reveal` (the export
   half was missing until #85). **Admin-forced categories never reveal.**
 - **The three EXPORT surfaces** (single-file subtitles, the bulk ZIP, burned-in subtitles) each
   take a **required** config and resolve the **requesting user's** policy — the two worker paths

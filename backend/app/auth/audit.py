@@ -109,6 +109,10 @@ class AuditEventType(StrEnum):
     # A permanent delete refused by services/delete_permissions.py (issue #1103)
     FILE_DELETE_DENIED = "file.delete.denied"
 
+    # A reader revealed redacted transcript text on a read or export surface
+    # (services/redaction/reveal_audit.py). ``details`` names the revealed categories.
+    TRANSCRIPT_VIEW_UNREDACTED = "transcript.view_unredacted"
+
     # Prompt sharing events
     PROMPT_SHARE = "prompt.share"
     PROMPT_UNSHARE = "prompt.unshare"

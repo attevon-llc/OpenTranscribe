@@ -123,9 +123,9 @@ ctranslate2==4.8.2
 # constraint upstream). ctranslate2 and huggingface-hub above/below already
 # satisfy its other needs.
 #
-# tokenizers capped by transformers==4.57.6 below, which declares
+# tokenizers capped by transformers==5.9.0 below, which declares
 # tokenizers<=0.23.0,>=0.22.0 in its own metadata -- `pip install
-# tokenizers==0.23.2 transformers==4.57.6` is a real ResolutionImpossible,
+# tokenizers==0.23.2 transformers==5.9.0` is a real ResolutionImpossible,
 # verified directly via a full `pip install -r requirements.txt` run.
 # Dependabot PR #949 proposed 0.23.2; caught before it reached a built image.
 # Lift together with transformers' own major-version cap (dependabot.yml).
@@ -140,17 +140,17 @@ tqdm==4.70.1
 # whisperx ships a huggingface-hub>=1.0 compatible release.
 # Floor raised to 4.51.3 (gliner's actual "requires_dist" floor) now that gliner
 # is also --no-deps below and no longer has pip enforcing that constraint for us.
-transformers==4.57.6
+transformers==5.9.0
 huggingface-hub==0.36.2
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
-filelock==3.32.6
+filelock==4.2.1
 # Transitive (huggingface_hub, lightning, pytorch-lightning, torch) — same #492
 # failure mode as filelock above.
 fsspec==2026.9.0
 # Transitive (aiohttp, yarl) — same #492 failure mode as filelock above.
-multidict==6.9.0
+multidict==6.9.1
 # pandas is back as a transitive dep of the pyannote fork (pyannote-core,
 # pyannote-database, pyannote-metrics) and whisperx — pinned for the same #492
 # reason as the others above, not a reintroduction of the diarizer's own pandas use
@@ -246,7 +246,7 @@ sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # in scripts/common.sh, which runs at every startup — not an older NLTK. The old
 # floor-only `>=3.9.4` also let host (3.9.4) and container (3.10.3) diverge silently,
 # which is how this reached production undetected (issue #491).
-nltk==3.10.3
+nltk==3.10.4
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)

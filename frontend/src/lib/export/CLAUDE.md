@@ -41,7 +41,9 @@ writes to it, each with a written reason, so the next one has to answer the ques
   document in the browser when the job fails.
 - `exportJobStream.ts` — the ONE `EventSource` consumer of `GET /files/bulk-export-stream?job=`,
   shared by the gallery's bulk subtitle ZIP and the document export (two consumers of one protocol
-  drift). Resolves on `ready`, rejects with `ExportJobError` carrying the worker's `reason`; a
+  drift). The factory takes the JOB ID and the default one holds the literal `new EventSource(
+`/api/files/bulk-export-stream?...`)`: a URL passed in as an argument is invisible to
+  `test_route_has_a_caller.py`, which then reports the route as having no frontend caller. Resolves on `ready`, rejects with `ExportJobError` carrying the worker's `reason`; a
   dropped connection with no `data` is retried by the browser, not a failure.
 - `exportErrors.ts` — `exportErrorKey(error)`: HTTP 409/503 and a job `reason` mapped to a
   translation KEY. Every export or copy failure on the file page toasts it (a `console.error`-only

@@ -15,7 +15,7 @@ class FakeSource {
   static CLOSED = 2;
   readyState = 1;
   handlers: Record<string, ((event: MessageEvent) => void)[]> = {};
-  constructor(public url: string) {}
+  constructor(public jobId: string) {}
   addEventListener(name: string, handler: (event: MessageEvent) => void) {
     (this.handlers[name] ??= []).push(handler);
   }
@@ -47,8 +47,8 @@ const REQUEST: DocumentExportRequest = {
 };
 
 let source: FakeSource;
-const factory = (url: string) => {
-  source = new FakeSource(url);
+const factory = (jobId: string) => {
+  source = new FakeSource(jobId);
   return source as unknown as EventSource;
 };
 
@@ -83,7 +83,7 @@ describe('requestDocumentExport (issue #1278)', () => {
 
   it('listens on the stream for the job id the server issued', async () => {
     await startDocumentExport(REQUEST, factory);
-    expect(source.url).toBe(`/api/files/bulk-export-stream?job=${'j'.repeat(64)}`);
+    expect(source.jobId).toBe('j'.repeat(64));
   });
 
   it('resolves with the presigned URL when the job completes', async () => {

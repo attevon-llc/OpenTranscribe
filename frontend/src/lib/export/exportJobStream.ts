@@ -59,9 +59,16 @@ export interface ExportJobStream {
   close: () => void;
 }
 
-export type EventSourceFactory = (url: string) => EventSource;
+/**
+ * Opens the stream for a job id. It takes the ID, not a URL, so the one production
+ * `new EventSource(...)` below carries the route's literal path: that is what lets
+ * `test_route_has_a_caller.py` see that the SPA calls `/files/bulk-export-stream`. A URL passed
+ * in as an argument is invisible to it, and the route then reads as a dead one.
+ */
+export type EventSourceFactory = (jobId: string) => EventSource;
 
-const defaultFactory: EventSourceFactory = (url) => new EventSource(url);
+const defaultFactory: EventSourceFactory = (jobId) =>
+  new EventSource(`/api/files/bulk-export-stream?job=${encodeURIComponent(jobId)}`);
 
 function parse(data: unknown): Record<string, unknown> {
   try {
@@ -76,7 +83,7 @@ export function openExportJobStream(
   jobId: string,
   factory: EventSourceFactory = defaultFactory
 ): ExportJobStream {
-  const source = factory(`/api/files/bulk-export-stream?job=${encodeURIComponent(jobId)}`);
+  const source = factory(jobId);
   let settled = false;
 
   const result = new Promise<ExportJobResult>((resolve, reject) => {

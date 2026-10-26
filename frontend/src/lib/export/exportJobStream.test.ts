@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { openExportJobStream, ExportJobError } from './exportJobStream';
 
 /** A hand-driven EventSource: the test fires the events the server would send. */
@@ -24,17 +24,37 @@ class FakeSource {
 
 function open(jobId = 'a'.repeat(64)) {
   let source!: FakeSource;
-  const stream = openExportJobStream(jobId, (url) => {
-    source = new FakeSource(url);
+  const stream = openExportJobStream(jobId, (id) => {
+    source = new FakeSource(id);
     return source as unknown as EventSource;
   });
   return { stream, source };
 }
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe('openExportJobStream', () => {
-  it('opens the signed-job stream for the id, URL-encoded', () => {
+  it('hands the job id to the factory', () => {
     const { source } = open('x y');
-    expect(source.url).toBe('/api/files/bulk-export-stream?job=x%20y');
+    expect(source.url).toBe('x y');
+  });
+
+  it('by default opens the signed-job stream for the id, URL-encoded', () => {
+    const opened: string[] = [];
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        static CLOSED = 2;
+        readyState = 1;
+        constructor(url: string) {
+          opened.push(url);
+        }
+        addEventListener() {}
+        close() {}
+      }
+    );
+    openExportJobStream('x y');
+    expect(opened).toEqual(['/api/files/bulk-export-stream?job=x%20y']);
   });
 
   it('resolves on ready with the presigned URL and the server file name, then closes', async () => {

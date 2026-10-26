@@ -32,7 +32,6 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.core import constants as C  # noqa: N812
-from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -123,7 +122,7 @@ def _resolve_collections(db: Session, ctx: RequestContext, collection_uuids: lis
     No admin bypass, on purpose (same reasoning as ``_resolve_explicit_files``):
     an admin-only bypass here used to let a requested collection resolve
     without the caller actually having a share of it, but retrieval's
-    ``accessible_user_ids`` OpenSearch filter has no admin arm to match — the
+    read-access OpenSearch filter has no admin arm to match — the
     files would resolve into scope and then retrieve zero excerpts, an
     unexplained empty answer rather than the intended "admin can see
     everything". Resolving as an ordinary user keeps this axis honest about
@@ -132,23 +131,13 @@ def _resolve_collections(db: Session, ctx: RequestContext, collection_uuids: lis
     if not collection_uuids:
         return set()
 
-    from app.services.permission_service import PermissionService
+    from app.services.collection_visibility import visible_collections_by_uuid
 
-    requested = db.query(Collection.id).filter(Collection.uuid.in_(collection_uuids))
-    if ctx.org_id is not None:
-        requested = requested.filter(Collection.organization_id == ctx.org_id)
-    else:
-        requested = requested.filter(Collection.organization_id.is_(None))
-    requested_ids = {row[0] for row in requested.all()}
-    if not requested_ids:
-        return set()
-
-    # One query for everything the caller can reach (owned, their orgs' collections,
-    # direct + group shares); the tenant filter above keeps it to this tenant.
-    accessible = {
-        cid for cid, _perm in PermissionService.get_accessible_collection_ids(db, ctx.user.id)
-    }
-    allowed_ids = list(requested_ids & accessible)
+    # The caller's visible collections of THIS tenant (owned, their org's, shared in): a
+    # restricted collection they cannot see is simply not among them.
+    allowed_ids = [
+        c.id for c in visible_collections_by_uuid(db, ctx.user.id, ctx.org_id, collection_uuids)
+    ]
     if not allowed_ids:
         return set()
 

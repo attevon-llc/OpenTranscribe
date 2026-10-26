@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Collection } from '$lib/types/collection';
+  import type { Collection, CollectionVisibility } from '$lib/types/collection';
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
@@ -10,6 +10,8 @@
   import MetadataChips from './ui/MetadataChips.svelte';
   import ShareCollectionModal from './sharing/ShareCollectionModal.svelte';
   import { SharingApi } from '$lib/api/sharing';
+  import { CollectionsApi } from '$lib/api/collections';
+  import { user as userStore } from '$stores/auth';
   import type { SharedCollection } from '$lib/types/groups';
   import Spinner from './ui/Spinner.svelte';
   import EmptyState from './ui/EmptyState.svelte';
@@ -30,6 +32,7 @@
   let shareModalCollectionUuid = '';
   let shareModalCollectionName = '';
   let shareModalCanManage = false;
+  let shareModalRestricted = false;
   let loading = false;
   let showCreateModal = false;
   let showEditModal = false;
@@ -127,6 +130,11 @@
   let availablePrompts: any[] = [];
   let newCollectionPromptId: string | null = null;
   let editCollectionPromptId: string | null = null;
+  let newCollectionVisibility: CollectionVisibility = 'organization';
+  let editCollectionVisibility: CollectionVisibility = 'organization';
+  // Only an organization has anyone to hide a collection from; the server refuses a
+  // restricted personal collection (422), so the choice is not offered outside one.
+  $: inOrganization = !!$userStore?.org_id;
   let loadingPrompts = false;
 
   // Fetch collections
@@ -192,6 +200,7 @@
     // default 'owner' when absent). Only the owner may manage shares
     // (`_require_collection_owner`) — mirror that here instead of assuming true.
     shareModalCanManage = (collection.my_permission ?? 'owner') === 'owner';
+    shareModalRestricted = collection.visibility === 'restricted';
     showShareModal = true;
   }
 
@@ -211,7 +220,8 @@
       const response = await axiosInstance.post('/collections', {
         name: newCollectionName.trim(),
         description: newCollectionDescription.trim() || null,
-        default_prompt_id: newCollectionPromptId || null
+        default_prompt_id: newCollectionPromptId || null,
+        ...(inOrganization ? { visibility: newCollectionVisibility } : {})
       });
 
       collections = [...collections, { ...response.data, media_count: 0 }];
@@ -221,6 +231,7 @@
       newCollectionName = '';
       newCollectionDescription = '';
       newCollectionPromptId = systemDefaultPromptId;
+      newCollectionVisibility = 'organization';
 
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
@@ -263,6 +274,14 @@
         col.uuid === editing.uuid ? { ...col, ...response.data } : col
       );
 
+      // Visibility has its own owner-only route; PUT does not carry it.
+      if (
+        editing.can_change_visibility &&
+        editCollectionVisibility !== (editing.visibility ?? 'organization')
+      ) {
+        await changeVisibility(editing, editCollectionVisibility);
+      }
+
       toastStore.success($t('collectionsPanel.updatedSuccess', { name: editCollectionName }));
       showEditModal = false;
       collectionToEdit = null;
@@ -274,9 +293,30 @@
     }
   }
 
+  async function changeVisibility(collection: Collection, visibility: CollectionVisibility) {
+    try {
+      const updated = await CollectionsApi.setVisibility(collection.uuid, visibility);
+      collections = collections.map(col =>
+        col.uuid === collection.uuid ? { ...col, ...updated } : col
+      );
+      toastStore.success(
+        $t(
+          visibility === 'restricted'
+            ? 'collectionsPanel.visibility.nowRestricted'
+            : 'collectionsPanel.visibility.nowOrganization',
+          { name: collection.name }
+        )
+      );
+    } catch (err: unknown) {
+      console.error('Error changing collection visibility:', err);
+      toastStore.error(getErrorMessage(err, $t('collectionsPanel.visibility.failed')));
+    }
+  }
+
   // Open edit modal
   function openEditModal(collection: Collection) {
     collectionToEdit = collection;
+    editCollectionVisibility = collection.visibility ?? 'organization';
     editCollectionName = collection.name;
     editCollectionDescription = collection.description || '';
     editCollectionPromptId = collection.default_prompt_id || null;
@@ -373,10 +413,23 @@
     fetchSharedCollections();
   }
 
+  // A collection this person could see was restricted: drop the row at once (the event
+  // names only its uuid) instead of leaving a card that now 404s.
+  function handleAccessChanged(event: Event) {
+    const uuid = (event as CustomEvent<{ collection_uuid?: string }>).detail?.collection_uuid;
+    if (uuid) {
+      collections = collections.filter(col => col.uuid !== uuid);
+      if (selectedCollectionId === uuid) selectedCollectionId = null;
+    }
+    fetchCollections();
+    toastStore.info($t('collectionsPanel.visibility.accessChanged'));
+  }
+
   onMount(() => {
     window.addEventListener('collection-shared', handleShareWsEvent);
     window.addEventListener('share-revoked', handleShareWsEvent);
     window.addEventListener('share-updated', handleShareWsEvent);
+    window.addEventListener('collection-access-changed', handleAccessChanged);
     fetchCollections();
     fetchPrompts();
     fetchSharedCollections();
@@ -386,6 +439,7 @@
     window.removeEventListener('collection-shared', handleShareWsEvent);
     window.removeEventListener('share-revoked', handleShareWsEvent);
     window.removeEventListener('share-updated', handleShareWsEvent);
+    window.removeEventListener('collection-access-changed', handleAccessChanged);
   });
 </script>
 
@@ -516,6 +570,8 @@
       bind:name={newCollectionName}
       bind:description={newCollectionDescription}
       bind:promptId={newCollectionPromptId}
+      bind:visibility={newCollectionVisibility}
+      showVisibility={inOrganization}
       busy={creating}
       {loadingPrompts}
       {availablePrompts}
@@ -536,6 +592,8 @@
       bind:name={editCollectionName}
       bind:description={editCollectionDescription}
       bind:promptId={editCollectionPromptId}
+      bind:visibility={editCollectionVisibility}
+      showVisibility={collectionToEdit.can_change_visibility === true}
       busy={updating}
       {loadingPrompts}
       {availablePrompts}
@@ -550,6 +608,7 @@
     collectionUuid={shareModalCollectionUuid}
     collectionName={shareModalCollectionName}
     canManage={shareModalCanManage}
+    restricted={shareModalRestricted}
     on:shared={handleShared}
     on:close={() => showShareModal = false}
   />

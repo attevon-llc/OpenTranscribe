@@ -12,6 +12,8 @@
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import type { CollectionVisibility } from '$lib/types/collection';
 
   // Identity / wiring
   export let idPrefix: string;
@@ -25,6 +27,10 @@
   export let name: string;
   export let description: string;
   export let promptId: string | null;
+  /** Who sees an organization collection. Only rendered when `showVisibility` is true. */
+  export let visibility: CollectionVisibility = 'organization';
+  /** True for an organization collection the caller may restrict (create, or `can_change_visibility`). */
+  export let showVisibility = false;
 
   // State
   export let busy = false;
@@ -79,6 +85,39 @@
       </select>
       <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
     </div>
+
+    {#if showVisibility}
+      <fieldset class="form-group visibility-group" disabled={busy}>
+        <legend>{$t('collectionsPanel.visibility.label')}</legend>
+        <label class="visibility-option" class:chosen={visibility === 'organization'}>
+          <input
+            type="radio"
+            name={`${idPrefix}-visibility`}
+            value="organization"
+            bind:group={visibility}
+          />
+          <span class="visibility-text">
+            <span class="visibility-title">{$t('collectionsPanel.visibility.organization')}</span>
+            <span class="form-hint">{$t('collectionsPanel.visibility.organizationHint')}</span>
+          </span>
+        </label>
+        <label class="visibility-option" class:chosen={visibility === 'restricted'}>
+          <input
+            type="radio"
+            name={`${idPrefix}-visibility`}
+            value="restricted"
+            bind:group={visibility}
+          />
+          <span class="visibility-text">
+            <span class="visibility-title">
+              <MenuIcon name="lock" size={14} />
+              {$t('collectionsPanel.visibility.restricted')}
+            </span>
+            <span class="form-hint">{$t('collectionsPanel.visibility.restrictedHint')}</span>
+          </span>
+        </label>
+      </fieldset>
+    {/if}
   </form>
 
   <svelte:fragment slot="footer">
@@ -123,6 +162,53 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .visibility-group {
+    border: 0;
+    padding: 0;
+    min-inline-size: 0;
+  }
+
+  .visibility-group legend {
+    padding: 0;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .visibility-option {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 400;
+  }
+
+  .visibility-option.chosen {
+    border-color: var(--primary-color);
+    background: var(--hover-color);
+  }
+
+  .visibility-option input {
+    margin-top: 0.2rem;
+  }
+
+  .visibility-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .visibility-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     color: var(--text-color);
   }
 

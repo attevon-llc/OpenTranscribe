@@ -33,6 +33,39 @@ You can also assign files to collections during upload -- see [Organizing During
 - Export collection data
 - View collection analytics
 
+## Collections in an organization
+
+In an organization, collections belong to the organization. Every member sees them, and
+every member can open the files in them: **seeing a collection means being able to open,
+search and ask questions about the organization's files in it**, on every page (the file
+page, the gallery, search and chat), not only in the collection's own list. That access is
+read-only. Only a file's owner edits it, and only a collection's creator or an organization
+admin deletes it or manages who it is shared with.
+
+### Restricted collections
+
+Some collections should not be seen by the whole organization: a legal matter, an HR review.
+When you create a collection in an organization, or open **Edit collection** on one you created
+(organization admins can do this for any collection of their organization), choose **Who can see
+this collection**:
+
+- **Everyone in the organization** (the default): every member can open it.
+- **Only the people I name**: only its creator, the organization's admins and the people you
+  share it with (see below) can see the collection and the files in it. A restricted collection
+  shows a **Restricted** badge in your list.
+
+For everyone else a restricted collection does not exist. It is missing from their collection
+lists and search filters, from the collection list on a file, from upload and AI-suggested
+collections, and from chat scopes; opening its address answers "not found". Switching a
+collection to restricted takes effect immediately, and members who could see it are told it is no
+longer shown. Switching it back makes it visible to the whole organization again.
+
+A file is still readable by everyone who could read it another way: its owner, anyone it is
+shared with, and anyone who can see another collection it belongs to. Restricting a collection
+only removes that collection as a route to its files. Collection names stay unique within an
+organization, so you cannot reuse the name of a restricted collection you cannot see (the error
+does not say which collection holds it).
+
 ## Collection Sharing Model
 
 ```mermaid

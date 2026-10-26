@@ -462,6 +462,7 @@ def _select_expired_files(
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
+    from app.services.hold_guard import not_held_pred
 
     eligible_statuses = [FileStatus.COMPLETED.value]
     if config["delete_error_files"]:
@@ -477,7 +478,7 @@ def _select_expired_files(
         )
         .filter(
             MediaFile.status.in_(eligible_statuses),
-            MediaFile.legal_hold.is_(False),
+            not_held_pred(),
             MediaFile.is_quarantined.is_(False),
             ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
             | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),

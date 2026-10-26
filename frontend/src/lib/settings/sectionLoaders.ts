@@ -37,6 +37,8 @@ export const sectionLoaders = {
   lockedAccounts: () => import('$components/settings/LockedAccountsPanel.svelte'),
   quarantine: () => import('$components/settings/QuarantinePanel.svelte'),
   orgTakedown: () => import('$components/settings/QuarantinePanel.svelte'),
+  orgAuditLog: () => import('$components/settings/OrgAuditLogPanel.svelte'),
+  orgHolds: () => import('$components/settings/OrgLegalHoldsPanel.svelte'),
   takedownNotices: () => import('$components/settings/TakedownNoticesPanel.svelte'),
   myTakedowns: () => import('$components/settings/MyTakedownsPanel.svelte'),
   supportApprovals: () => import('$components/settings/SupportAccessApprovalsPanel.svelte'),
@@ -124,6 +126,8 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
   usage: 'usage',
   team: 'team',
   'org-takedown': 'orgTakedown',
+  'org-audit-logs': 'orgAuditLog',
+  'org-holds': 'orgHolds',
   // Data & Storage: the shell is the lead chunk; its first tab loads on arrival.
   'data-management': 'dataManagement',
   'data-integrity': 'dataManagement',

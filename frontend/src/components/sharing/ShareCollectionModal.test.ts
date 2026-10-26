@@ -124,3 +124,28 @@ describe('ShareCollectionModal — canManage is caller-supplied, never hardcoded
     expect(container.querySelector('.revoke-btn')).toBeNull();
   });
 });
+
+describe('ShareCollectionModal — restricted explainer', () => {
+  it('explains who sees a restricted collection, and says nothing for an ordinary one', async () => {
+    mockSharingApi.fetchCollectionShares.mockResolvedValue([]);
+
+    const restricted = render(ShareCollectionModal, {
+      props: {
+        collectionUuid: 'c1',
+        collectionName: 'Matter 7',
+        canManage: true,
+        restricted: true,
+      },
+    });
+    await waitFor(() =>
+      expect(restricted.getByText('sharing.restrictedExplainer')).toBeInTheDocument()
+    );
+    restricted.unmount();
+
+    const ordinary = render(ShareCollectionModal, {
+      props: { collectionUuid: 'c2', collectionName: 'Open', canManage: true },
+    });
+    await waitFor(() => expect(mockSharingApi.fetchCollectionShares).toHaveBeenCalledTimes(2));
+    expect(ordinary.queryByText('sharing.restrictedExplainer')).toBeNull();
+  });
+});

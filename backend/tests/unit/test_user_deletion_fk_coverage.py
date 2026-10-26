@@ -281,6 +281,22 @@ _ACTOR: dict[str, Disposition] = {
         "operator who recorded it; only the attribution goes, and handled_by_user_uuid keeps "
         "a pseudonymous snapshot of who it was.",
     ),
+    "content_hold.placed_by_user_id": Disposition(
+        SET_NULL,
+        "ContentHold",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v447 (#1276). A hold outlives the administrator who placed it (the organization's "
+        "legal claim does not end when they leave); only the attribution goes.",
+    ),
+    "content_hold.released_by_user_id": Disposition(
+        SET_NULL,
+        "ContentHold",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v447 (#1276). The release record stays when the releasing administrator's account is "
+        "deleted; only the attribution goes.",
+    ),
     "takedown_notice_file.file_id": Disposition(
         SET_NULL,
         "TakedownNoticeFile",

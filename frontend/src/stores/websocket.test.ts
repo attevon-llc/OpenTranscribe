@@ -480,6 +480,7 @@ describe('websocket → apiCache invalidation fan-out', () => {
   it.each([
     'collection_shared',
     'collection_share_revoked',
+    'collection_access_changed',
     'group_member_added',
     'group_member_removed',
   ])('%s invalidates the collections cache', async (type) => {

@@ -70,6 +70,7 @@ export const RETENTION_BY_TYPE: Record<NotificationType, RetentionClass> = {
   collection_shared: 'persistent',
   collection_share_revoked: 'persistent',
   collection_share_updated: 'persistent',
+  collection_access_changed: 'persistent',
   group_member_added: 'persistent',
   group_member_removed: 'persistent',
   file_takedown: 'persistent',

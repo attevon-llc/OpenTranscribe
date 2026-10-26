@@ -35,6 +35,33 @@ def _audit_index_name() -> str:
     return f"audit-logs-{datetime.now(UTC).strftime('%Y.%m')}"
 
 
+#: Fields added for content governance (#1277). A pre-existing index gets them through
+#: ``put_mapping``; a new month's index is created with every property below.
+_TYPED_FIELDS = ("resource_type", "resource_uuid", "tenant_scope")
+
+_AUDIT_PROPERTIES: dict[str, Any] = {
+    "timestamp": {"type": "date"},
+    "event_type": {"type": "keyword"},
+    "outcome": {"type": "keyword"},
+    "user_id": {"type": "integer"},
+    "target_user_id": {"type": "integer"},
+    "organization_id": {"type": "integer"},
+    "username": {"type": "keyword"},
+    "source_ip": {"type": "ip"},
+    "user_agent": {"type": "text"},
+    "request_id": {"type": "keyword"},
+    "error_code": {"type": "keyword"},
+    "resource_type": {"type": "keyword"},
+    "resource_uuid": {"type": "keyword"},
+    "tenant_scope": {"type": "keyword"},
+    "details": {"type": "object", "enabled": True},
+}
+
+#: ``tenant_scope`` values: whose tenant the RESOURCE belongs to, whatever the actor's role.
+TENANT_SCOPE_ORG = "org"
+TENANT_SCOPE_PERSONAL = "personal"
+
+
 class AuditEventType(StrEnum):
     """Audit event types for FedRAMP compliance."""
 
@@ -99,6 +126,16 @@ class AuditEventType(StrEnum):
     ADMIN_TAKEDOWN_NOTICE_NOTIFY = "admin.takedown_notice.notify"
     ADMIN_TAKEDOWN_NOTICE_EXPORT = "admin.takedown_notice.export"
 
+    # Organization content holds (issue #1276). ``details`` carries the scope, counts, the
+    # collection uuid and (on a refusal) the action and who holds the file: never the reason.
+    CONTENT_HOLD_PLACE = "content.hold.place"
+    CONTENT_HOLD_RELEASE = "content.hold.release"
+    CONTENT_HOLD_REFUSED = "content.hold.refused"
+
+    # An audit-log export, by a platform admin or an organization admin (issue #1277):
+    # ``details`` holds the format, the row count and whether it was truncated, never the rows.
+    AUDIT_EXPORT = "audit.export"
+
     # A forced OpenSearch orphan purge that overrode the sweep's ratio guard
     ADMIN_DATA_INTEGRITY_PURGE = "admin.data_integrity.purge"
 
@@ -134,6 +171,27 @@ class AuditEventType(StrEnum):
     # PROMPT_SHARE/UNSHARE above, which predate this and are prompt-specific.
     RESOURCE_SHARE = "resource.share"
     RESOURCE_UNSHARE = "resource.unshare"
+
+    # An organization collection was restricted to, or opened up from, its named people
+    # (issue #1275). ``details`` carries the new mode and counts, never the collection name.
+    COLLECTION_VISIBILITY_CHANGE = "collection.visibility.change"
+    # Files added to or removed from a collection. ``details`` carries counts and at most 100
+    # file uuids, never a name.
+    COLLECTION_MEMBERSHIP_CHANGE = "collection.membership.change"
+    # Content access (issue #1277). High volume, so the three below are recorded only when
+    # ``services/content_audit.content_audit_enabled`` says so; governance events
+    # (collection visibility and membership, legal holds) are always recorded. ``resource_type`` / ``resource_uuid`` / ``tenant_scope``
+    # are top-level typed fields (see ``AuditLogger.log``). NEVER in these events: transcript
+    # text, filenames, titles, collection names or hold reasons.
+    CONTENT_FILE_VIEW = "content.file.view"
+    #: ``details.kind`` = ``stream_url`` | ``download_prepare`` | ``download_stream``
+    CONTENT_MEDIA_ACCESS = "content.media.access"
+    #: ``details.format``, ``details.surface`` (``transcript`` | ``subtitles`` | ``summary`` |
+    #: ``bulk`` | ``chat``) and ``details.file_count``
+    CONTENT_EXPORT = "content.export"
+
+    # A transcript was revealed past the owner's redaction policy (issue #85).
+    TRANSCRIPT_VIEW_UNREDACTED = "transcript.view_unredacted"
 
     # Group membership (issue #443)
     GROUP_MEMBER_ADD = "group.member.add"
@@ -309,29 +367,35 @@ class AuditLogger:
             client.indices.create(
                 index=index_name,
                 body={
-                    "mappings": {
-                        "properties": {
-                            "timestamp": {"type": "date"},
-                            "event_type": {"type": "keyword"},
-                            "outcome": {"type": "keyword"},
-                            "user_id": {"type": "integer"},
-                            "target_user_id": {"type": "integer"},
-                            "organization_id": {"type": "integer"},
-                            "username": {"type": "keyword"},
-                            "source_ip": {"type": "ip"},
-                            "user_agent": {"type": "text"},
-                            "request_id": {"type": "keyword"},
-                            "error_code": {"type": "keyword"},
-                            "details": {"type": "object", "enabled": True},
-                        }
-                    },
+                    "mappings": {"properties": _AUDIT_PROPERTIES},
                     "settings": {
                         "number_of_shards": 1,
                         "number_of_replicas": 0,
                     },
                 },
             )
+        else:
+            self._add_typed_fields(client, index_name)
         self._known_indices.add(index_name)
+
+    def _add_typed_fields(self, client: Any, index_name: str) -> None:
+        """Add the #1277 keyword fields to an index created before they existed.
+
+        Once per index per process. If dynamic mapping already typed one of them (an event
+        carrying it was indexed before this ran), OpenSearch refuses the change: that is
+        logged and the index keeps working, because the next month's index is created with
+        the right mapping.
+        """
+        try:
+            client.indices.put_mapping(
+                index=index_name,
+                body={"properties": {k: _AUDIT_PROPERTIES[k] for k in _TYPED_FIELDS}},
+            )
+        except Exception as e:
+            self._logger.warning(
+                f"Could not add typed content-audit fields to {index_name}: {e}. "
+                "Filtering by them is unreliable in this index until next month's."
+            )
 
     def log(
         self,
@@ -346,6 +410,9 @@ class AuditLogger:
         organization_id: int | None = None,
         target_user_id: int | None = None,
         target_username: str | None = None,
+        resource_type: str | None = None,
+        resource_uuid: str | None = None,
+        tenant_scope: str | None = None,
     ) -> None:
         """
         Log an audit event.
@@ -398,6 +465,15 @@ class AuditLogger:
                 ``username`` exists alongside ``user_id`` — it survives the
                 account being deleted, which is exactly when an administrative
                 audit record matters most.
+            resource_type: What the event is about (``media_file``, ``collection``,
+                ``conversation``, ``content_hold``), as a top-level keyword so "everything
+                that happened to this file" is one filter (issue #1277). Omitted when unset.
+            resource_uuid: The resource's uuid, never its name or title.
+            tenant_scope: ``org`` or ``personal``: whose tenant the RESOURCE belongs to,
+                regardless of who acted. ``build_org_scope_clause`` refuses to attribute a
+                ``personal`` event to an organization through its actor's membership (issue
+                #1277, finding F5): a member's own-file view must not be readable by every
+                admin of every organization the member belongs to.
         """
         if not settings.AUDIT_LOG_ENABLED:
             return
@@ -425,6 +501,12 @@ class AuditLogger:
             event["target_user_id"] = target_user_id
         if target_username is not None:
             event["target_username"] = target_username
+        if resource_type is not None:
+            event["resource_type"] = resource_type
+        if resource_uuid is not None:
+            event["resource_uuid"] = resource_uuid
+        if tenant_scope is not None:
+            event["tenant_scope"] = tenant_scope
 
         # Log in configured format
         if settings.AUDIT_LOG_FORMAT.lower() == "cef":
@@ -682,12 +764,21 @@ def build_org_scope_clause(scope_org_id: int, scope_user_ids: list[int] | None) 
         un-stamped activity from another context is visible to every org that
         member belongs to (exactly the pre-v372 behavior). An event stamped
         with a DIFFERENT org is never visible here — the must_not/exists split
-        is exhaustive.
+        is exhaustive. Events that carry ``tenant_scope`` (every content and governance
+        event since #1277) are excluded from this branch: they name the resource's own
+        tenant, so a ``personal`` one is never an org's, whoever acted.
 
     Extracted so tests can pin the exact filter body without a cluster.
     """
     legacy_branch: dict[str, Any] = {
-        "bool": {"must_not": [{"exists": {"field": "organization_id"}}]}
+        "bool": {
+            "must_not": [
+                {"exists": {"field": "organization_id"}},
+                # A personal-scope resource event carries no organization_id by design; it
+                # must never be attributed to an org through its actor (issue #1277, F5).
+                {"exists": {"field": "tenant_scope"}},
+            ]
+        }
     }
     if scope_user_ids is not None:
         legacy_branch["bool"]["filter"] = [{"terms": {"user_id": scope_user_ids}}]
@@ -710,10 +801,13 @@ def query_audit_logs(
     user_id: int | None = None,
     target_user_id: int | None = None,
     outcome: str | None = None,
+    resource_type: str | None = None,
+    resource_uuid: str | None = None,
     scope_user_ids: list[int] | None = None,
     scope_org_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
+    index_pattern: str = "audit-logs-*",
 ) -> dict[str, Any]:
     """Query the OpenSearch audit-log indices with optional scoping.
 
@@ -731,6 +825,9 @@ def query_audit_logs(
             did" is ``user_id``. Applied the same way as ``user_id`` — an
             additional ``must`` clause — so it can only NARROW whatever
             ``scope_user_ids``/``scope_org_id`` already admit, never widen it.
+        resource_type / resource_uuid: equality filters on the typed resource fields (issue
+            #1277): "everything that happened to this file". Like ``target_user_id`` they only
+            NARROW the scope, never widen it.
         scope_user_ids: when provided (without ``scope_org_id``), restrict
             results to events whose ``user_id`` is in this set. An **empty**
             list returns no results (a removed/empty org sees nothing) rather
@@ -743,6 +840,8 @@ def query_audit_logs(
             legacy-window semantics. Events stamped with another org are never
             returned.
         limit / offset: pagination.
+        index_pattern: the indices to read. Only an integration test changes it, to read a
+            throwaway index instead of the deployment's own audit history.
 
     Returns:
         ``{"logs": [...], "total": int, "offset": int, "limit": int}`` or
@@ -783,6 +882,10 @@ def query_audit_logs(
             must_clauses.append({"term": {"target_user_id": target_user_id}})
         if outcome:
             must_clauses.append({"term": {"outcome": outcome}})
+        if resource_type:
+            must_clauses.append({"term": {"resource_type": resource_type}})
+        if resource_uuid:
+            must_clauses.append({"term": {"resource_uuid": resource_uuid}})
         if scope_org_id is not None:
             # Org-admin scope: org-stamped events OR legacy member-attributed.
             must_clauses.append(build_org_scope_clause(scope_org_id, scope_user_ids))
@@ -797,7 +900,7 @@ def query_audit_logs(
             "size": limit,
         }
 
-        response = client.search(index="audit-logs-*", body=query)
+        response = client.search(index=index_pattern, body=query)
         logs = [hit["_source"] for hit in response["hits"]["hits"]]
         total = response["hits"]["total"]["value"]
         return {"logs": logs, "total": total, "offset": offset, "limit": limit}

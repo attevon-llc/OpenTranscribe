@@ -31,6 +31,7 @@ export interface DerivedFieldProvenance {
 /**
  * Shared media file types used across gallery components.
  */
+import type { HoldSummary } from '$lib/types/hold';
 import type { Tag } from '$lib/types/tag';
 
 /**
@@ -181,6 +182,8 @@ export interface MediaFileDetail extends MediaFile {
   quarantine_reason?: string | null;
   quarantined_at?: string | null;
   legal_hold?: boolean;
+  /** Who holds the file against deletion and reprocessing (issue #1276). */
+  hold?: HoldSummary;
 
   /**
    * Full tag objects, the same shape `/api/tags` returns (#326). `GET /files`

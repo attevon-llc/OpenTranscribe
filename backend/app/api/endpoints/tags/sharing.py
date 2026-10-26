@@ -18,6 +18,8 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _share_target
 from app.api.endpoints.tags._common import _writable_tag_ids
 from app.api.endpoints.tags._common import router
+from app.auth.audit import TENANT_SCOPE_ORG
+from app.auth.audit import TENANT_SCOPE_PERSONAL
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -128,9 +130,10 @@ def create_tag_share(
         user_agent=req_ctx["user_agent"],
         organization_id=request_org_id(request),
         target_user_id=target_user_id,
+        resource_type="tag",
+        resource_uuid=str(tag.uuid),
+        tenant_scope=TENANT_SCOPE_ORG if tag.organization_id is not None else TENANT_SCOPE_PERSONAL,
         details={
-            "resource_type": "tag",
-            "resource_uuid": str(tag.uuid),
             "resource_name": tag.name,
             "target_group_id": target_group_id,
         },
@@ -187,9 +190,10 @@ def revoke_tag_share(
         user_agent=req_ctx["user_agent"],
         organization_id=request_org_id(request),
         target_user_id=share.target_user_id,
+        resource_type="tag",
+        resource_uuid=str(tag.uuid),
+        tenant_scope=TENANT_SCOPE_ORG if tag.organization_id is not None else TENANT_SCOPE_PERSONAL,
         details={
-            "resource_type": "tag",
-            "resource_uuid": str(tag.uuid),
             "resource_name": tag.name,
             "target_group_id": share.target_group_id,
         },

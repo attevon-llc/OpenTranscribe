@@ -22,6 +22,29 @@ export interface AuditLogEntry {
   source_ip: string;
   user_agent: string;
   details: Record<string, any>;
+  target_user_id?: number | null;
+  organization_id?: number | null;
+  /** Whose tenant the resource belongs to: an organization or one person's workspace. */
+  tenant_scope?: 'org' | 'personal' | null;
+  resource_type?: string | null;
+  resource_uuid?: string | null;
+  /** Resolved by the server at read time, inside the organization only (org audit view). */
+  actor_display?: string | null;
+  target_display?: string | null;
+  resource_display?: string | null;
+}
+
+/** `GET/PUT /admin/audit/content-access` (issue #1277). */
+export interface ContentAccessAuditStatus {
+  /** The super_admin setting. */
+  enabled: boolean;
+  /** False when this deployment's edition withholds content auditing. */
+  capability_available: boolean;
+  /** `enabled` AND `capability_available`: events are being written. */
+  active: boolean;
+  dedup_seconds: number;
+  event_bytes_estimate: number;
+  bytes_per_active_user_per_day_estimate: number;
 }
 
 export interface AccountStatusReport {
@@ -407,6 +430,17 @@ export class AdminApi {
       params: { export_format: format, start_date: startDate, end_date: endDate },
       responseType: 'blob',
     });
+    return response.data;
+  }
+
+  // Content-access auditing switch (super_admin)
+  static async getContentAccessAudit(): Promise<ContentAccessAuditStatus> {
+    const response = await axiosInstance.get('/admin/audit/content-access');
+    return response.data;
+  }
+
+  static async setContentAccessAudit(enabled: boolean): Promise<ContentAccessAuditStatus> {
+    const response = await axiosInstance.put('/admin/audit/content-access', { enabled });
     return response.data;
   }
 

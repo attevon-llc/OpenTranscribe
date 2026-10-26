@@ -260,14 +260,38 @@ payload). They cannot open a quarantined file; the queue is metadata only.
 
 Differences from the platform path, each deliberate:
 
-- **No legal hold.** The organization route never places one (a hold also blocks the owner's
-  account deletion, which is a decision that has not been made for organizations).
+- **No legal hold.** The takedown route never places one: an organization that needs to keep
+  files from deletion uses an organization hold instead (see
+  [Hold, quarantine and organization hold](#hold-quarantine-and-organization-hold-issue-1276)).
 - **Owner notice** names "an administrator of your organization" and directs a counter-notice to
   the organization's administrators, never to `ABUSE_CONTACT_EMAIL`; the acting administrator
   is not disclosed.
 - **Rate limit** `ORG_TAKEDOWN_RATE_LIMIT` per user (one budget shared by both POSTs): every
   takedown bumps the deployment-wide retrieval-cache version, so one tenant's churn costs every
   tenant their cache until a per-tenant version exists.
+
+### Hold, quarantine and organization hold (issue #1276)
+
+Three different things keep a file from disappearing. Do not mix them up:
+
+| | Quarantine (takedown) | Legal hold (operator) | Organization hold |
+|---|---|---|---|
+| Set by | An operator, or an organization administrator for its own files | The operator, with the takedown | An organization administrator, on files or a whole collection |
+| Stored in | `media_file.is_quarantined` | `media_file.legal_hold` | `content_hold` / `content_hold_file` |
+| The owner can still see and play the file | No | Yes (when not quarantined) | Yes |
+| Blocks delete, cancel-upload, account deletion, retention, GDPR erasure | Retention only | Yes | Yes |
+| Blocks reprocess and retry | No | Yes | Yes |
+| Transcript edits | Not reachable (the file is hidden) | Allowed | Allowed (a hold protects the transcript from being regenerated, not from the owner's edits) |
+| Released by | Whoever holds the takedown | The operator | An administrator of that organization only; staff cannot release it through the product |
+
+`services/hold_guard.py` answers "held by anyone" for the last two, and a scan test fails on any
+other reader of the platform flag. A refusal (`409 FILE_UNDER_LEGAL_HOLD`) says whether the
+platform, the organization or both hold the file; an organization administrator additionally gets
+the hold ids to release. The hold's reason is administrator-only text and appears in no refusal,
+audit event or socket message. A collection hold also covers files added to the collection later,
+and a held file cannot be removed from the held collection. Releasing the operator's hold does not
+lift the storage object lock while an organization hold still covers the file, and erasing an
+organization keeps its row (and defers the rest) while one of its holds is active.
 
 ## Presigned URL revocation (issue #907, FIXED)
 

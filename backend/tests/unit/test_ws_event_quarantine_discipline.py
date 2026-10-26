@@ -98,6 +98,11 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "collection-share event; identifies a MediaCollection, never a MediaFile",
     ),
+    "api/endpoints/media_collections.py::set_collection_visibility": (
+        1,
+        "collection_access_changed (#1275): the collection uuid only, to members who just lost "
+        "sight of it; names no MediaFile and, deliberately, no collection name",
+    ),
     "api/endpoints/speaker_attribute_migration.py::stop_attribute_migration": (
         1,
         "admin migration control-plane event, no MediaFile identity",

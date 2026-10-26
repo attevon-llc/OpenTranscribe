@@ -11,6 +11,7 @@
   import CurrentSharesList from './CurrentSharesList.svelte';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
   import Spinner from '../ui/Spinner.svelte';
+  import MenuIcon from '../ui/MenuIcon.svelte';
   import type { Share, ShareTargetSearchResult, PermissionLevel } from '$lib/types/groups';
 
   export let collectionUuid: string;
@@ -24,6 +25,12 @@
    * controls that will 403 when used.
    */
   export let canManage: boolean = false;
+  /**
+   * True for a restricted organization collection (issue #1275): only the people named here,
+   * its creator and the organization's admins can see it, so a share is how someone gains sight
+   * of it. Shown as an explainer; it changes no behaviour.
+   */
+  export let restricted: boolean = false;
 
   const dispatch = createEventDispatcher();
 
@@ -135,6 +142,12 @@
             {collectionName}
           </p>
           <p class="share-intro">{$t('sharing.shareIntro')}</p>
+          {#if restricted}
+            <p class="restricted-note">
+              <MenuIcon name="lock" size={14} />
+              <span>{$t('sharing.restrictedExplainer')}</span>
+            </p>
+          {/if}
         </div>
 
         <!-- Permission levels reference card -->
@@ -277,6 +290,25 @@
   .collection-name svg {
     flex-shrink: 0;
     color: var(--primary-on-surface);
+  }
+
+  .restricted-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--surface-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+
+  .restricted-note :global(svg) {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
   }
 
   .share-intro {

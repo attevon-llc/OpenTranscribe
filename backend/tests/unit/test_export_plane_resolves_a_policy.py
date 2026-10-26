@@ -67,6 +67,13 @@ EXEMPT: dict[str, str] = {
         "compliance register, not a transcript; no transcript-derived content exists on the "
         "route, so there is nothing for a redaction policy to mask."
     ),
+    "GET /api/org-admin/audit-logs/export": (
+        "Exports the AUDIT LOG (#1277): event types, ids, counts and formats. An audit event "
+        "never carries transcript text, a filename, a title or a reason (services/content_audit "
+        "pins it with test_content_events_never_carry_filename_title_or_text); the only labels "
+        "added are member names and file or collection titles resolved from Postgres inside the "
+        "caller's own organization, which is not transcript-derived content."
+    ),
     "POST /api/admin/local-models/download": (
         "Downloads a Whisper MODEL into the shared Hugging Face cache (#1246); 'download' is "
         "the model weights, not a transcript. The response is a progress state with a catalog "

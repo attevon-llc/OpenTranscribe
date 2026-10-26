@@ -26,5 +26,11 @@ file. They render owned-collection management, shared-collection browsing, and t
 
 ## Gotchas
 
+- **Visibility (#1275).** `CollectionFormModal` takes `showVisibility` + `bind:visibility` (an organization
+  collection the caller may restrict: always on create inside an organization, and on edit only when the server
+  says `can_change_visibility`). The panel saves it through `CollectionsApi.setVisibility` (`PATCH
+/collections/{uuid}/visibility`), never through `PUT`. `CollectionsList` marks `visibility === 'restricted'`
+  with the lock badge; `ShareCollectionModal` takes `restricted` for its explainer; the
+  `collection_access_changed` WebSocket event (uuid only) drops the row.
 - Don't fork `CollectionFormModal` into separate create/edit components — it is intentionally one
   parameterized modal. Add behavior via props, not by duplicating the file.

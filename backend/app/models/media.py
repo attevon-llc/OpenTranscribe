@@ -962,6 +962,11 @@ class Collection(Base):
     source: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )  # "manual" | "auto_ai" | "bulk_group"
+    # ``organization`` (every member sees it) or ``restricted`` (creator, org admins and its
+    # shares only, v446, issue #1275). Read it through ``services/collection_visibility``.
+    visibility: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="organization", server_default="organization"
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -976,6 +981,12 @@ class Collection(Base):
             "user_id IS NOT NULL OR organization_id IS NOT NULL",
             name="ck_collection_owner_or_org",
         ),
+        CheckConstraint(
+            "visibility IN ('organization', 'restricted') "
+            "AND (visibility = 'organization' OR organization_id IS NOT NULL)",
+            name="ck_collection_visibility",
+        ),
+        Index("ix_collection_org_visibility", "organization_id", "visibility"),
         Index(
             "uq_collection_user_name",
             "user_id",

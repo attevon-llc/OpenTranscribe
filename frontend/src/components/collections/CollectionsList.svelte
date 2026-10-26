@@ -9,6 +9,8 @@
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
   import ShareBadge from '$components/sharing/ShareBadge.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { Collection } from '$lib/types/collection';
 
   // Props
@@ -47,6 +49,13 @@
       {/if}
       <div class="meta">
         <span class="media-count">{collection.media_count} {collection.media_count !== 1 ? $t('collectionsPanel.files') : $t('collectionsPanel.file')}</span>
+        {#if collection.visibility === 'restricted'}
+          <span class="badge restricted" title={$t('collectionsPanel.restrictedBadgeTitle')}>
+            <MenuIcon name="lock" size={12} />
+            {$t('collectionsPanel.restrictedBadge')}
+          </span>
+        {/if}
+        <HoldBadge hold={collection.hold} />
         {#if collection.is_public}
           <span class="badge public">{$t('collectionsPanel.public')}</span>
         {/if}
@@ -179,6 +188,15 @@
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
+  }
+
+  .badge.restricted {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
   }
 
   .badge.public {

@@ -902,6 +902,14 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
         if not media_file:
             return False
 
+        # Issue #1276: a held file's transcript is evidence. The entry points answer 409 first;
+        # this is the backstop for any caller that did not, so none can replace a held transcript.
+        from app.services.hold_guard import hold_state
+
+        if hold_state(db, file_id).held:
+            logger.error(f"Refusing to reset file {file_id} for retry: it is under a legal hold.")
+            return False
+
         # Issue #872: the deletes below are unconditional and COMMIT, so a file
         # whose media cannot be found loses its only copy of the transcript with
         # nothing left to regenerate it from. The refusal lives here rather than

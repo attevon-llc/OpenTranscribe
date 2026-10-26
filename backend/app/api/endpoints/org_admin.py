@@ -11,6 +11,8 @@ Surfaces:
   - ``GET  /org-admin/audit-logs``               — read audit events for the
     caller's OWN org only (scoped to the org's member user-ids). The global,
     all-tenant view stays super-admin-only at ``GET /admin/audit-logs``.
+    ``GET /org-admin/audit-logs/export`` (``org_admin_audit.py``) downloads the same
+    view behind its own ``org.audit_logs`` capability.
   - ``POST /org-admin/gdpr/erase-user/{uuid}``   — GDPR Art. 17 erasure of a
     member of the caller's org.
   - ``POST /org-admin/gdpr/erase-organization``  — GDPR erasure of the caller's
@@ -23,6 +25,8 @@ self-host/community edition — these are cloud-only surfaces.
 
 import logging
 from datetime import datetime
+from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -37,6 +41,8 @@ from app.auth.audit import query_audit_logs
 from app.db.base import get_db
 from app.models.organization import OrganizationMembership
 from app.models.user import User
+from app.services.org_audit_view import member_id_for_uuid
+from app.services.org_audit_view import with_display_fields
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +59,83 @@ def _org_member_user_ids(db: Session, org_id: int) -> list[int]:
     return [int(r[0]) for r in rows]
 
 
+def org_id_of(ctx: RequestContext) -> int:
+    """The caller's organization id; ``require_org_admin`` guarantees it, this makes it a type."""
+    if ctx.org_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization required")
+    return int(ctx.org_id)
+
+
+_NOT_A_MEMBER = "Requested user is not a member of your organization"
+_TARGET_NOT_A_MEMBER = "Requested target user is not a member of your organization"
+
+
+def _member_filter(
+    db: Session,
+    ctx: RequestContext,
+    member_ids: list[int],
+    *,
+    by_id: int | None,
+    by_uuid: UUID | None,
+    detail: str,
+) -> int | None:
+    """Resolve a user filter given as an id or a uuid to a member's id, or refuse with 403."""
+    if by_uuid is not None:
+        resolved = member_id_for_uuid(db, org_id_of(ctx), by_uuid)
+        if resolved is None or (by_id is not None and by_id != resolved):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+        return resolved
+    if by_id is not None and by_id not in member_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
+    return by_id
+
+
+def org_audit_query(
+    db: Session,
+    ctx: RequestContext,
+    *,
+    start_date: datetime | None,
+    end_date: datetime | None,
+    event_type: str | None,
+    user_id: int | None,
+    user_uuid: UUID | None,
+    target_user_id: int | None,
+    target_user_uuid: UUID | None,
+    outcome: str | None,
+    resource_type: str | None,
+    resource_uuid: UUID | None,
+) -> dict[str, Any]:
+    """The keyword arguments of ``query_audit_logs`` for the caller's organization.
+
+    The ONE place the tenant scope and the member guards are applied, so the list and the
+    export cannot disagree about what an organization admin may read. A user filter naming
+    someone outside the organization is refused (403) before any query runs.
+    """
+    org_id = org_id_of(ctx)
+    member_ids = _org_member_user_ids(db, org_id)
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "event_type": event_type,
+        "user_id": _member_filter(
+            db, ctx, member_ids, by_id=user_id, by_uuid=user_uuid, detail=_NOT_A_MEMBER
+        ),
+        "target_user_id": _member_filter(
+            db,
+            ctx,
+            member_ids,
+            by_id=target_user_id,
+            by_uuid=target_user_uuid,
+            detail=_TARGET_NOT_A_MEMBER,
+        ),
+        "outcome": outcome,
+        "resource_type": resource_type,
+        "resource_uuid": str(resource_uuid) if resource_uuid is not None else None,
+        "scope_user_ids": member_ids,
+        "scope_org_id": org_id,
+    }
+
+
 @router.get("/audit-logs")
 def get_org_audit_logs(
     start_date: datetime | None = Query(None, description="Start date for log query"),
@@ -61,11 +144,23 @@ def get_org_audit_logs(
     user_id: int | None = Query(
         None, description="Filter by user ID — the actor (must be an org member)"
     ),
+    user_uuid: UUID | None = Query(
+        None, description="Filter by the actor's uuid (must be an org member)"
+    ),
     target_user_id: int | None = Query(
         None,
         description=("Filter by the affected/erased subject's user ID (must be an org member)"),
     ),
+    target_user_uuid: UUID | None = Query(
+        None, description="Filter by the subject's uuid (must be an org member)"
+    ),
     outcome: str | None = Query(None, description="Filter by outcome"),
+    resource_type: str | None = Query(
+        None, max_length=64, description="Filter by resource type (media_file, collection, ...)"
+    ),
+    resource_uuid: UUID | None = Query(
+        None, description="Filter by the resource's uuid: everything that happened to one file"
+    ),
     limit: int = Query(default=100, le=1000, description="Maximum results"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
@@ -88,33 +183,37 @@ def get_org_audit_logs(
     back, even though the org-scope clause on the query itself already narrows
     the result set to nothing for a non-member — the guard exists so that
     probe fails loudly (403) rather than silently (empty list indistinguishable
-    from "no such events").
+    from "no such events"). ``user_uuid`` / ``target_user_uuid`` are the same
+    filters by uuid, which is what the SPA holds.
+
+    Each event gains ``actor_display``, ``target_display`` and ``resource_display``, resolved at
+    read time and only inside this organization (see ``services/org_audit_view``); an id that
+    cannot be resolved there is ``null``, never another tenant's label.
     """
-    member_ids = _org_member_user_ids(db, ctx.org_id)  # type: ignore[arg-type]
-
-    if user_id is not None and user_id not in member_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Requested user is not a member of your organization",
-        )
-    if target_user_id is not None and target_user_id not in member_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Requested target user is not a member of your organization",
-        )
-
-    return query_audit_logs(
-        start_date=start_date,
-        end_date=end_date,
-        event_type=event_type,
-        user_id=user_id,
-        target_user_id=target_user_id,
-        outcome=outcome,
-        scope_user_ids=member_ids,
-        scope_org_id=int(ctx.org_id),  # type: ignore[arg-type]
+    result = query_audit_logs(
+        **org_audit_query(
+            db,
+            ctx,
+            start_date=start_date,
+            end_date=end_date,
+            event_type=event_type,
+            user_id=user_id,
+            user_uuid=user_uuid,
+            target_user_id=target_user_id,
+            target_user_uuid=target_user_uuid,
+            outcome=outcome,
+            resource_type=resource_type,
+            resource_uuid=resource_uuid,
+        ),
         limit=limit,
         offset=offset,
     )
+    if result.get("logs"):
+        result = {
+            **result,
+            "logs": with_display_fields(db, org_id_of(ctx), int(ctx.user.id), result["logs"]),
+        }
+    return result
 
 
 @router.post("/gdpr/erase-user/{user_uuid}")

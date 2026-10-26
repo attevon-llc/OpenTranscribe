@@ -36,6 +36,18 @@ VALID_AUTH_TYPES = [
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v12 (0.6.0): organization content governance (#1275-#1277). v11 is the privacy policy layer and
+# v10 the viewer-aware capabilities endpoint, both below.
+# File-read semantics changed: a member of an organization collection they may see now
+# reads the organization's files in it on EVERY surface (file page, gallery, search, chat
+# retrieval); before, only the collection's own file list honoured it. The rule is
+# ``services.collection_visibility`` (one predicate) and the search clause is
+# ``services.search.access_filter.access_filter_clause``. A deployment that registers hooks
+# reading collection or file visibility must call those rather than re-derive it. Index
+# documents are unchanged (``collection_ids`` already existed) and no reindex is needed.
+# New capability keys that a resolver must return (omitted keys fail closed, v6) are added
+# alongside the audit work: ``audit.content_access``, ``org.audit_logs``, ``org.legal_hold``.
+#
 # v11: privacy policy layer (issues #1280, #1279). Additive. ``app.services.privacy.consent.
 # register_voiceprint_consent_hook(hook)``: a ``(Session, VoiceprintConsentRequest) -> bool``
 # hook must return the literal True for a voiceprint to be created (``purpose="create"``) or
@@ -148,7 +160,7 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 11
+CLOUD_SEAM_VERSION = 12
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

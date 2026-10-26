@@ -315,6 +315,11 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` (also written when an organization administrator acts on their own organization's files; the event records the actor's role and which authority held the file), `admin.takedown_notice.create`, `admin.takedown_notice.update`, `admin.takedown_notice.notify`, `admin.takedown_notice.export` (notice records: ids, the notice type and counts only, never the basis or a reason) |
 | **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
+| **Legal holds** | `content.hold.place`, `content.hold.release` (scope and file count; never the reason or matter reference), `content.hold.refused` (the action attempted and who holds it) |
+| **Audit** | `audit.export` (an audit log was exported: platform or organization scope, format, row count, whether it was truncated) |
+| **Collections** | `collection.visibility.change` (a collection was restricted or opened up: the new mode and how many members lost sight of it, never its name), `collection.membership.change` (files were added to or removed from a collection: the counts, up to 100 file ids, and `details.source`: `manual`, `auto_label` or `bulk_group`; the file or collection name is never recorded), `resource.share` and `resource.unshare` (a collection or tag was shared: the typed `resource_type`, `resource_uuid` and `tenant_scope` fields identify it) |
+| **Content access** | `content.file.view`, `content.media.access` (`details.kind`: `stream_url`, `download_prepare`, `download_stream`), `content.export` (format, surface and file count; `details.surface` is `transcript`, `subtitles`, `summary`, `chat` or `bulk`, and a bulk export writes one event per file). Opening a recording is `surface: detail`, and its thumbnail, captions and transcript pages are part of that one view. Recorded only while [content access auditing](#content-access-auditing) is on |
+| **Transcripts** | `transcript.view_unredacted` (a transcript was revealed past the owner's redaction policy) |
 | **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
 | **User credentials** | `user.credential.set`, `user.credential.delete` (a user saved or removed their own pyannote.ai key; the key itself is never recorded) |
 
@@ -329,6 +334,31 @@ A few of these are worth knowing about specifically:
   driven by a directory group mapping rather than by a person.
 - **Login-banner refusals are deliberately not audited per request** — they would fire on every
   request of every pre-acknowledgment session. The acknowledgment itself is the artefact.
+
+### Content access auditing
+
+The `content.*` events record who opened a recording, asked for its media or exported a
+transcript. They are written in large numbers, so they are **off by default**: a **super admin**
+turns them on with **Content access auditing** at the top of the Audit Logs section, with no
+environment variable and no restart (it takes effect within about 30 seconds). Collection
+visibility and membership changes (and legal holds) are always recorded, whatever this switch says.
+
+- A repeat view of the same recording, or a repeat request for its stream URL, by the same person
+  within 15 minutes is recorded once. Downloads and exports are never collapsed: each is a copy
+  leaving the system.
+- No event ever contains transcript text, a filename or title, a collection name or a hold's
+  reason. Events carry ids, kinds, counts and formats; the file or collection is identified by
+  `resource_type` and `resource_uuid`, and `tenant_scope` says whether it belongs to an
+  organization or to one person's personal workspace.
+- An event about a file in an organization carries that organization's id, so its organization
+  admins see it. An event about a file in someone's personal workspace is never shown to the
+  administrators of the organizations that person belongs to.
+- Under a support-access grant the event records the grant's id.
+- **Storage:** roughly 0.8 KB per event. With the de-duplication above an active user writes about
+  34 KB a day, so about 1 GB a month for 1,000 active users (one index shard, no replicas, one
+  index per month, kept for the audit retention you configure). The switch shows this estimate.
+- A deployment edition can withhold the feature; the switch then says so, and nothing is
+  recorded even when it is on.
 
 ### Filtering
 
@@ -354,6 +384,55 @@ Click **Apply** to reload with the selected filters.
 ### Exporting
 
 Export filtered logs in **CSV** or **JSON** format using the export buttons. The downloaded file is named `audit-logs-YYYY-MM-DD.{format}`.
+
+The export holds up to **10,000** of the newest matching events, with the same columns in both views (time, event, outcome, user, target user, organization, tenant scope, resource type and id, address, user agent, error code, details). A larger result is cut at that cap: narrow the dates or the filters to get the rest. CSV cells that start like a spreadsheet formula are neutralised. Every export is itself an audit event (`audit.export`: the format and the row count, never the rows).
+
+### Organization audit log
+
+An **organization administrator** has their own screen, **Settings > Audit log**, shown when the deployment edition enables it (the `org.audit_logs` capability; it does not appear in the community edition, which has no organizations). It reads only that organization's events, and never the events of anyone's personal workspace, even a member's.
+
+- **Filters:** dates, event, outcome, a **member** (searched from your organization's members) and a **file or collection ID**. Paste a file's ID to see everything that happened to it: who opened it, requested or downloaded its media, exported it, added it to a collection or shared it.
+- **Names:** the log stores ids only. The screen resolves a person's name and a file's or collection's title when you open it, and only inside your organization: a person who left, or a file that was deleted, shows as an id.
+- **Content access events** (`content.*`) appear only while a super admin has turned on [content access auditing](#content-access-auditing); the event list offers them only on deployments that can record them.
+- **Export** (**CSV** or **JSON**, the same 10,000-row cap) adds the resolved names as extra columns. It is behind its own capability, so a deployment can offer the screen without the download; without it the buttons are hidden and the API answers 404. A platform administrator without an organization role cannot use either.
+
+API: `GET /api/org-admin/audit-logs` (filters `user_uuid`, `target_user_uuid`, `resource_type`, `resource_uuid`; a uuid outside your organization is a 403) and `GET /api/org-admin/audit-logs/export?format=csv|json`.
+
+### Organization legal holds
+
+An **organization administrator** can place a **legal hold** on files, or on a whole collection, from
+**Settings > Legal holds** (shown when the deployment edition enables the `org.legal_hold`
+capability; the community edition has no organizations). While a hold is in force, nobody can
+delete the held files (their owner included), retention will not purge them, an account or erasure
+request cannot remove them, and they cannot be reprocessed or retried, because regenerating a
+transcript replaces the evidence. Editing a transcript is still allowed, and the held files stay
+readable, searchable and playable.
+
+- **Place a hold:** choose a collection or paste file IDs (one per line, up to 500), give a reason
+  (10 to 2,000 characters) and optionally a matter reference. Only files and collections of your own
+  organization can be held: anything else answers "not found", the same as a missing one.
+- **A collection hold covers files added later,** and a file under it cannot be removed from the
+  collection, nor can the collection be deleted, until the hold is released.
+- **Release a hold** with a reason. The record stays (**Show released holds**). A file that another
+  hold, or the service operator's own hold, still covers stays held. Any account deletion or
+  erasure request that was waiting on a file is retried when its last hold is released.
+- **The reason is for your organization's administrators only.** It is never copied into the audit
+  log, a notification or a file response. Everyone who can see a held file or collection sees a
+  **Legal hold** badge and, when they try to delete or reprocess it, a message saying whether the
+  service operator, your organization or both hold it; only an organization administrator is given
+  the hold ids.
+- **Platform staff cannot place or release an organization's hold** through the product, even a super
+  admin: the screen and its API are for that organization's administrators, with no platform bypass.
+- **Audit:** placing and releasing a hold are always recorded (`content.hold.place`,
+  `content.hold.release`), and so is a refused delete, cancel-upload, reprocess, retry, collection
+  delete or removal from a held collection (`content.hold.refused`: the action and who holds it).
+  See [Audit Log Viewer](#audit-log-viewer).
+- **Erasing an organization** keeps the organization (and defers the rest) while any of its holds is
+  in force.
+
+API: `GET/POST /api/org-admin/holds`, `GET /api/org-admin/holds/{uuid}`,
+`POST /api/org-admin/holds/{uuid}/release`. The difference between a quarantine, the operator's hold
+and an organization hold is set out in [Abuse and takedown](https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/abuse-and-takedown.md).
 
 ## Search Settings
 

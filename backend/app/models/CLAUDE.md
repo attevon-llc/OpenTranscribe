@@ -105,10 +105,19 @@ authority. See `backend/app/db/CLAUDE.md`.
   deletes personal tags and de-attributes org tags (`admin._delete_user_owned_records`,
   `gdpr_erasure_service._delete_owner_scoped_rows`); `erase_organization` deletes the org's
   tags, because `tag.organization_id` is a plain FK.
+- **`ContentHold` / `ContentHoldFile`** (`v447`, issue #1276, `models/content_hold.py`) are an
+  ORGANIZATION's holds: scope `file` or `collection`, active while `released_at IS NULL`, released
+  never deleted. `organization_id` CASCADEs, `collection_id` and both actor keys SET NULL (the
+  hold outlives its collection and its admins as history). `reason` / `matter_ref` are
+  administrator text: never in an audit event, a socket message or a file response. The
+  platform's own hold is still `media_file.legal_hold`, and the question "is this file held by
+  anyone" is `services/hold_guard` and nowhere else (`tests/unit/test_hold_guard_single_source.py`
+  fails on a new reader of the flag). A collection hold lists its files in `content_hold_file`,
+  and a file added later is covered by the `after_insert` listener on `CollectionMember` at the bottom of `models/content_hold.py` (every path that adds a member inserts one, so none can forget).
 - **`Collection` belongs to a TENANT** (`v422_add_collection_tenancy`, issue #1051). **personal**
   = `organization_id IS NULL`, `user_id` = owner; **organization** = `organization_id` set,
   shared by every member of the org (members are editors, the creator and org admins are
-  owners — `permission_service.org_collection_permission`), `user_id` = creator, NULL once
+  owners — `collection_visibility.collection_permission_ranks`), `user_id` = creator, NULL once
   that account is gone (`ck_collection_owner_or_org` keeps a personal row owned). Names are
   unique per tenant (`uq_collection_user_name` personal, `uq_collection_org_name`). Create in
   the request's tenant (`ctx.org_id`), or on background paths the **file's** tenant; scope any

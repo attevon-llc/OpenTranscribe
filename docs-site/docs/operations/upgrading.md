@@ -249,8 +249,10 @@ The migration chain progresses through these versions:
 | `v443` | `takedown_notice` and `takedown_notice_file`: a durable record of each legal notice and the files it covers (#1254) |
 | `v444` | `takedown_notification`: a log of who was told about a takedown (#1254) |
 | `v445` | `organization_policy`: per-organization voiceprint and gender switches and redaction floor (#1280) |
+| `v446` | `collection.visibility`: an organization collection can be restricted to its named people (#1275) |
+| `v447` | `content_hold` and `content_hold_file`: organization legal holds on files and collections (#1276) |
 
-What `v397` to `v445` mean for an existing install, including the few that change data, is
+What `v397` to `v447` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail

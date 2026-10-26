@@ -5,7 +5,7 @@
 -r requirements.txt
 
 # Code Quality & Formatting
-black==26.5.1
+black==26.10.1
 ruff==0.16.7
 mypy==2.3.1
 mypy-extensions==1.1.0
@@ -46,11 +46,11 @@ types-PyYAML==6.0.12.20260906
 # Packages backend code imports directly that nothing else here pins exactly (they would
 # otherwise only arrive as transitive dependencies). They ship py.typed, so the mypy hook
 # installs the same versions; the parity test above compares those pins with this file.
-aiohttp==3.14.3
-certifi==2026.7.22
+aiohttp==3.14.4
+certifi==2026.10.19
 limits==5.8.0
 packaging==26.3
-pillow==12.3.0
+pillow==13.0.0
 playwright==1.63.0
 urllib3==2.8.0
 

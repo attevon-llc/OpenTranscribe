@@ -98,7 +98,7 @@ torchaudio==2.11.0
 ctranslate2==4.8.2
 faster-whisper==1.2.1
 # See requirements.txt for why transformers is capped <5.0.0.
-transformers==4.57.6
+transformers==5.9.0
 huggingface-hub==0.36.2
 onnx==1.22.0
 onnxruntime==1.30.0
@@ -114,7 +114,7 @@ yt-dlp[default]==2026.8.19
 
 # Semantic search and NLP
 sentence-transformers==5.7.0
-nltk==3.10.3  # see requirements.txt — pathsec hardening is required, not avoided
+nltk==3.10.4  # see requirements.txt — pathsec hardening is required, not avoided
 
 # Cloud ASR provider SDKs (lazily imported)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full

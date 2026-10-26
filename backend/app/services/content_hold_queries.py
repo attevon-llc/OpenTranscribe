@@ -97,7 +97,9 @@ def collection_hold_summaries(
         .where(ContentHold.collection_id.in_(ids), ContentHold.released_at.is_(None))
         .order_by(ContentHold.id)
     ):
-        uuids.setdefault(int(collection_id), []).append(str(hold_uuid))
+        if collection_id is None:
+            continue
+        uuids.setdefault(collection_id, []).append(str(hold_uuid))
     return {
         collection_id: HoldSummary(
             held=True,

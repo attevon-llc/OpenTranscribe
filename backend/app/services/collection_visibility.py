@@ -111,16 +111,16 @@ def collection_permission_ranks(db: Session, user_id: int) -> dict[int, str]:
     The single statement behind ``PermissionService.get_collection_permission`` and
     ``get_accessible_collection_ids``. Callers apply their own tenant predicate.
     """
-    rank = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
+    rank: ColumnElement[int] = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
     rows = db.execute(select(Collection.id, rank).where(rank > 0)).all()
-    return {int(cid): PERMISSION_NAMES[int(r)] for cid, r in rows}
+    return {cid: PERMISSION_NAMES[r] for cid, r in rows}
 
 
 def collection_permission(db: Session, collection_id: int, user_id: int) -> str | None:
     """The caller's permission on one collection (``viewer`` | ``editor`` | ``owner``), or None."""
-    rank = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
+    rank: ColumnElement[int] = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
     value = db.execute(select(rank).where(Collection.id == collection_id)).scalar()
-    return PERMISSION_NAMES[int(value)] if value else None
+    return PERMISSION_NAMES[value] if value else None
 
 
 def collection_is_hidden_from(db: Session, collection: Collection, user_id: int) -> bool:

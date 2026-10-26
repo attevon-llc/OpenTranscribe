@@ -69,7 +69,11 @@ class _FakeResponse:
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             req = httpx.Request("POST", f"{pyannote_provider_module._BASE_URL}/v1/diarize")
-            raise httpx.HTTPStatusError(f"{self.status_code} error", request=req, response=self)
+            raise httpx.HTTPStatusError(
+                f"{self.status_code} error",
+                request=req,
+                response=httpx.Response(self.status_code, text=self.text, request=req),
+            )
 
     def json(self) -> dict:
         return self._json
@@ -319,12 +323,14 @@ def test_err_detail_falls_back_when_response_body_read_fails():
     provider = _provider()
     req = httpx.Request("POST", f"{pyannote_provider_module._BASE_URL}/v1/diarize")
 
-    class _BrokenTextResponse:
+    class _BrokenTextResponse(httpx.Response):
         @property
-        def text(self):
+        def text(self) -> str:
             raise RuntimeError("body already consumed")
 
-    exc = httpx.HTTPStatusError("Client error", request=req, response=_BrokenTextResponse())
+    exc = httpx.HTTPStatusError(
+        "Client error", request=req, response=_BrokenTextResponse(400, request=req)
+    )
 
     detail = provider._err_detail(exc)
 

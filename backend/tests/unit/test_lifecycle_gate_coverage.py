@@ -23,6 +23,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from fastapi.routing import APIRoute
+from fastapi.routing import APIWebSocketRoute
 
 #: Routes allowed to depend on the credential layer directly, with the reason.
 #: Keyed by "METHOD path" so widening a route's methods does not inherit the waiver.
@@ -78,10 +80,9 @@ def _authenticated_routes() -> list[tuple[str, set[str]]]:
 
     out: list[tuple[str, set[str]]] = []
     for route in app.routes:
-        dependant = getattr(route, "dependant", None)
-        if dependant is None:
+        if not isinstance(route, APIRoute | APIWebSocketRoute):
             continue
-        names = _dependency_callables(dependant)
+        names = _dependency_callables(route.dependant)
         if "get_current_user" not in names:
             continue
         for method in sorted(getattr(route, "methods", None) or {"GET"}):

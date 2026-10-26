@@ -46,7 +46,7 @@ def test_explicit_values_override_the_defaults():
 
 def test_wrong_type_for_audio_only_is_rejected():
     with pytest.raises(ValidationError):
-        DownloadSettings(audio_only="not-a-bool")
+        DownloadSettings.model_validate({"audio_only": "not-a-bool"})
 
 
 def test_round_trips_through_model_dump():
@@ -93,7 +93,7 @@ def test_unknown_field_is_rejected_not_silently_dropped():
     ``videoQuality`` was silently discarded, ``update_data`` came back empty, and
     the caller got a 200 with no change applied. A typo must be a validation error."""
     with pytest.raises(ValidationError) as excinfo:
-        DownloadSettingsUpdate(videoQuality="1080p")
+        DownloadSettingsUpdate.model_validate({"videoQuality": "1080p"})
 
     errors = excinfo.value.errors()
     assert any(e["type"] == "extra_forbidden" for e in errors)

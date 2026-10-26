@@ -281,7 +281,9 @@ def test_rediarize_resolves_a_blank_range_to_the_saved_one(saved_range, db_sessi
 
 
 def test_a_new_watch_source_has_no_range_of_its_own():
-    source = WatchSourceCreate(name="w", source_type="local", local_path="sub")
+    source = WatchSourceCreate.model_validate(
+        {"name": "w", "source_type": "local", "local_path": "sub"}
+    )
     assert source.min_speakers is None
     assert source.max_speakers is None
 

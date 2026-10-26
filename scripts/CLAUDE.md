@@ -406,6 +406,15 @@ this file is for.
   `frontend-build` runs it in full at **pre-push**. On a PR that hook is the only `vite build`
   in CI at all, so `.github/workflows/pre-commit.yml` invokes both stages; see
   `backend/tests/unit/test_precommit_stage_ci_parity.py`.
+- **mypy hook negative control** — `mypy-hook-negative-control.sh [--ref REF]` (issue #1271). Builds a
+  throwaway repo from `git archive REF` under an `ot-redcheck.` temp dir, drops
+  `mypy_negative_control_fixture.py.txt` into it as `backend/app/zz_mypy_negative_control.py`, runs the
+  REAL mypy hook on that one file, and requires every `# EXPECT: <code>` line to come back as
+  `error ... [<code>]`. Exit 0 = `caught 3/3`; 1 = a control was NOT caught (the hook cannot see pydantic's
+  or requests' own types); 2 = misuse. It never touches the checkout it runs from, so it is safe beside
+  other writers. Red proof: `--ref <commit before the hook was aligned>` reports 0/3 and exits 1. CI runs it
+  (`.github/workflows/pre-commit.yml`). The fixture has a `.txt` suffix so no hook or test collector sees it.
+  The static half is `backend/tests/unit/test_precommit_mypy_env_parity.py`.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.
 - **Models** — `download-models.sh <cache-dir>` is a host wrapper that runs `download-models.py` inside
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).

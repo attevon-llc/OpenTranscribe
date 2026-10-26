@@ -100,6 +100,7 @@ def test_a_summary_citation_survives_a_reload_labelled_as_a_summary():
         "snippet": "The team is on track for the migration deadline.",
     }
     reloaded = ChatMessageOut.model_validate(_message_row([raw]))
+    assert reloaded.citations is not None
 
     citation = reloaded.citations[0]
     assert citation.kind == "summary"
@@ -137,6 +138,7 @@ def test_every_kind_round_trips_through_persistence_and_reload(kind, extra):
         raw["kind"] = kind
 
     reloaded = ChatMessageOut.model_validate(_message_row([raw]))
+    assert reloaded.citations is not None
     citation = reloaded.citations[0]
 
     assert citation.kind == (kind or "chunk"), "an absent kind must read as chunk (pre-#403 data)"
@@ -173,6 +175,7 @@ def test_content_chars_survives_a_reload():
         "content_chars": 812,
     }
     reloaded = ChatMessageOut.model_validate(_message_row([raw]))
+    assert reloaded.citations is not None
 
     citation = reloaded.citations[0]
     assert citation.content_chars == 812
@@ -194,6 +197,7 @@ def test_content_chars_is_none_for_a_citation_persisted_before_the_field_existed
         "snippet": "some text",
     }
     reloaded = ChatMessageOut.model_validate(_message_row([raw]))
+    assert reloaded.citations is not None
     assert reloaded.citations[0].content_chars is None
 
 
@@ -238,5 +242,6 @@ def test_multiple_citations_of_different_kinds_round_trip_independently_in_one_m
         },
     ]
     reloaded = ChatMessageOut.model_validate(_message_row(raw))
+    assert reloaded.citations is not None
     kinds = [c.kind for c in reloaded.citations]
     assert kinds == ["chunk", "digest", "summary"]

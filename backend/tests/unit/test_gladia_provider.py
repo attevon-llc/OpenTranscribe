@@ -70,6 +70,7 @@ Following the characterization-test convention of ``tests/unit/test_chunking_ser
 
 from __future__ import annotations
 
+import io
 import logging
 from typing import cast
 from unittest.mock import MagicMock
@@ -226,8 +227,11 @@ def test_err_detail_truncates_body_before_sanitizing():
     # The secret sits well inside the first 500 chars of a much longer raw body, followed
     # by 700 filler characters that must NOT survive the 500-char cap.
     raw_body = f"upstream said: leaked_key={secret} details=" + ("x" * 700)
-    exc = requests.exceptions.HTTPError("500 Server Error")
-    exc.response = _FakeResponse(text=raw_body)
+    response = requests.Response()
+    response.status_code = 500
+    response.encoding = "utf-8"
+    response.raw = io.BytesIO(raw_body.encode("utf-8"))
+    exc = requests.exceptions.HTTPError("500 Server Error", response=response)
 
     detail = provider._err_detail(exc)
 

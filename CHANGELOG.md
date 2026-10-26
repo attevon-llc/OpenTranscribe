@@ -1347,6 +1347,24 @@ off by default.
 - **Docs point at real Settings entries (#1209).** Every "Settings -> X" path in the docs site now
   names a sidebar entry that exists, and a unit test keeps it that way.
 
+- **The mypy pre-commit hook now sees the same types as `backend/venv` (#1271).** The hook runs in
+  an isolated environment holding only its `additional_dependencies`, and a package that ships
+  `py.typed` but was missing there (pydantic, FastAPI, Starlette, httpx, requests, numpy, pytest,
+  redis, minio, opensearch-py and about twenty more) was `Any` to it. Over the same 2,269 files the
+  hook reported 0 findings and `backend/venv/bin/mypy` reported 55 in 23 files, so the hook was
+  green on code the venv rejected. The 55 are fixed with real types (no `type: ignore`, `cast` or
+  `Any`): wire-shaped test input goes through `model_validate`, fakes became real `httpx`,
+  `requests`, `urllib3` and OpenSearch objects, and SSE tests decode `iter_lines()` as UTF-8
+  instead of `decode_unicode=True`. The hook is then aligned: mypy `v2.3.1` (it was `v2.1.0`),
+  every dependency an exact pin equal to `backend/requirements*.txt`, and `types-redis` dropped
+  because its 4.6 stubs shadowed redis 8's own inline types. `redis` 8's real types then flagged
+  an unchecked `zincrby` result, a non-generic `Redis[Any]` annotation and a bytes-only decode in
+  the engine metrics reader (which now accepts `str` hashes too instead of silently dropping the
+  host). `backend/tests/unit/test_precommit_mypy_env_parity.py` derives the contract (every typed
+  import under `backend/` must be a hook dependency or on a short reasoned `EXEMPT` list), and
+  `scripts/mypy-hook-negative-control.sh`, run by CI, feeds the real hook deliberately mistyped
+  code and fails unless every line is rejected (0 of 3 caught before, 3 of 3 after).
+
 ### Security
 
 - **A revoked access token no longer resolves on optional-auth routes (#1274).** Logout-all, a

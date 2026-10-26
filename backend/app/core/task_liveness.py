@@ -317,7 +317,8 @@ def record_infra_requeue(file_uuid: str) -> int | None:
     from app.core.redis import get_redis
 
     try:
-        return int(get_redis().zincrby(INFRA_REQUEUES_KEY, 1, file_uuid))
+        count = get_redis().zincrby(INFRA_REQUEUES_KEY, 1, file_uuid)
+        return int(count) if count is not None else None
     except Exception as e:
         logger.warning("Could not count an infrastructure requeue of %s: %s", file_uuid, e)
         return None

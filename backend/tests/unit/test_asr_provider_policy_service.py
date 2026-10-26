@@ -12,6 +12,7 @@ from app.core.constants import ASR_USERS_OWN_KEYS_KEY
 from app.services import asr_provider_policy as policy
 from app.services import system_settings_service
 from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from tests.helpers import detail_dict
 
 pytestmark = pytest.mark.xdist_group("asr_provider_policy_system_settings")
 
@@ -89,10 +90,10 @@ def test_refuse_config_change_has_fixed_sentences_and_skips_local(db_session):
     with pytest.raises(HTTPException) as disallowed:
         policy.refuse_config_change(db_session, _User("user"), "deepgram", carries_credential=False)
     assert disallowed.value.status_code == 409
-    assert disallowed.value.detail["code"] == "asr_provider_not_allowed"
+    assert detail_dict(disallowed.value)["code"] == "asr_provider_not_allowed"
     with pytest.raises(HTTPException) as own_keys:
         policy.refuse_config_change(db_session, _User("user"), "gladia", carries_credential=True)
-    assert own_keys.value.detail == {
+    assert detail_dict(own_keys.value) == {
         "code": "own_asr_keys_disabled",
         "message": policy.OWN_KEYS_DISABLED_MESSAGE,
     }

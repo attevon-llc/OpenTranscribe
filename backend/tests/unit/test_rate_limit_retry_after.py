@@ -63,6 +63,14 @@ def _make_exc(limit_string: str) -> RateLimitExceeded:
     return RateLimitExceeded(limit)
 
 
+def _limit_item(exc: RateLimitExceeded) -> limits.RateLimitItem:
+    """The parsed ``limits`` item behind ``exc``. ``RateLimitExceeded.limit`` is
+    typed Optional because slowapi allows a bare exception; ours is always built
+    with one, so its absence is a harness bug and fails loudly here."""
+    assert exc.limit is not None
+    return exc.limit.limit
+
+
 class TestExtractRetrySecondsIsAWindowLengthNotAResetTime:
     """Pin the OLD function's documented behaviour so nobody "fixes" it in place
     and silently changes the fallback contract — it is explicitly window length."""
@@ -89,7 +97,7 @@ class TestRetryAfterFromWindowStatsUsesTheRealResetTime:
         comes from the storage's real expiry — not a per-unit constant."""
         request = _make_request()
         exc = _make_exc("10 per 1 minute")
-        limit_item = exc.limit.limit
+        limit_item = _limit_item(exc)
         identifiers = ["some-key", "some-scope"]
         request.state.view_rate_limit = (limit_item, identifiers)
 
@@ -112,7 +120,7 @@ class TestRetryAfterFromWindowStatsUsesTheRealResetTime:
     def test_falls_back_to_none_on_a_storage_error(self):
         request = _make_request()
         exc = _make_exc("10 per 1 minute")
-        request.state.view_rate_limit = (exc.limit.limit, ["k", "s"])
+        request.state.view_rate_limit = (_limit_item(exc), ["k", "s"])
 
         with patch.object(
             rate_limit_module.limiter.limiter,
@@ -134,7 +142,7 @@ class TestRateLimitExceededHandlerPrefersTheRealResetTime:
     def test_header_reflects_the_real_reset_time_not_the_window_length(self):
         request = _make_request()
         exc = _make_exc("10 per 1 minute")
-        limit_item = exc.limit.limit
+        limit_item = _limit_item(exc)
         request.state.view_rate_limit = (limit_item, ["some-key", "some-scope"])
 
         fake_reset_at = time.time() + 3
@@ -177,7 +185,7 @@ def test_window_stats_path_is_independent_of_the_configured_unit(
     would report 60 or 3600 respectively, neither of which is the real answer."""
     request = _make_request()
     exc = _make_exc(limit_string)
-    limit_item = exc.limit.limit
+    limit_item = _limit_item(exc)
     request.state.view_rate_limit = (limit_item, ["k", "s"])
 
     fake_reset_at = time.time() + expected_reset_seconds

@@ -26,6 +26,7 @@ from fixtures.hf_cache import make_complete_repo
 from app.models import UserSetting
 from app.models.user_asr_settings import UserASRSettings
 from app.services.pipeline_plan import ISSUE_MESSAGES
+from tests.helpers import detail_dict
 
 _ASR = "/api/asr-settings"
 _TRANSCRIPTION = "/api/user-settings/transcription"
@@ -367,7 +368,7 @@ def test_lite_refuses_a_per_file_whisper_model(pipeline_env, model):
     with pytest.raises(HTTPException) as refused:
         require_servable_whisper_model(model)
     assert refused.value.status_code == status.HTTP_409_CONFLICT
-    assert refused.value.detail == {"code": LOCAL_ASR, "message": ISSUE_MESSAGES[LOCAL_ASR]}
+    assert detail_dict(refused.value) == {"code": LOCAL_ASR, "message": ISSUE_MESSAGES[LOCAL_ASR]}
     assert require_servable_whisper_model(None) is None  # no model: the cloud provider
 
 

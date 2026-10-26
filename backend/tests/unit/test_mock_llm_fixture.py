@@ -112,7 +112,10 @@ def test_reasoning_streams_before_the_answer(mock_llm_url):
     content_chunks: list[str] = []
     saw_content_before_reasoning_ended = False
     reasoning_done = False
-    for raw in response.iter_lines(decode_unicode=True):
+    for raw_bytes in response.iter_lines():
+        # SSE is UTF-8 by spec. `decode_unicode=True` would fall back to ISO-8859-1
+        # when the response declares no charset, and is typed as bytes anyway.
+        raw = raw_bytes.decode("utf-8")
         if not raw or not raw.startswith("data:"):
             continue
         payload = raw[5:].strip()
@@ -155,7 +158,10 @@ def test_streaming_ends_with_usage_then_done(mock_llm_url):
     assert "event-stream" in response.headers.get("content-type", "")
 
     deltas, usage_frames, done = 0, 0, False
-    for raw in response.iter_lines(decode_unicode=True):
+    for raw_bytes in response.iter_lines():
+        # SSE is UTF-8 by spec. `decode_unicode=True` would fall back to ISO-8859-1
+        # when the response declares no charset, and is typed as bytes anyway.
+        raw = raw_bytes.decode("utf-8")
         if not raw or not raw.startswith("data:"):
             continue
         payload = raw[5:].strip()

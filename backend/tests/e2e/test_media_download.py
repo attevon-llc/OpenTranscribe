@@ -206,12 +206,10 @@ def _await_sse_ready(stream_url: str, token: str, timeout: float = 90.0) -> str 
     ) as r:
         assert r.status_code == 200
         event = None
-        for raw in r.iter_lines(decode_unicode=True):
+        for raw in r.iter_lines():
             if time.time() > deadline:
                 break
-            if raw is None:
-                continue
-            line = raw.strip()
+            line = raw.decode("utf-8").strip()
             if line.startswith("event:"):
                 event = line.split(":", 1)[1].strip()
             elif line.startswith("data:"):

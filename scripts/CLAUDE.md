@@ -722,10 +722,11 @@ so nothing here re-implements a competing global timeout.
     `--fresh` stack is by definition the second watcher, so it's the one that polls instead.
   - `backend` gets an offset-aware `CORS_ORIGINS` (a JSON array — pydantic-settings JSON-decodes
     a `list[str]` env var BEFORE its `mode="before"` validator runs, so a comma-separated value
-    raises `SettingsError` at startup) whenever `--port-offset` is non-zero. Without it, the
-    WebSocket origin check (`_origin_is_allowed`, `backend/app/api/websockets.py`, #903's
-    anti-hijacking fix — kept exact-match, never weakened) rejects every handshake from this
-    stack's offset Vite origin with 403, and `/api/ws` silently never connects.
+    raises `SettingsError` at startup) whenever `--port-offset` is non-zero. It was the #968 fix
+    for the WebSocket origin check (`_origin_is_allowed`, `backend/app/api/websockets.py`) at a
+    time when the Vite proxy rewrote `Host`; the `/api/ws` proxy now forwards the browser's
+    `Host` (`changeOrigin: false`), so the same-origin rule admits the offset origin and any
+    LAN address of it on its own. The list stays as belt and braces.
 - `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
   `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
 - `.fresh/<name>.aux` — the aux overlay files the deployment was started with, one per line.

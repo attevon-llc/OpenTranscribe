@@ -162,6 +162,55 @@ def test_a_port_stripped_host_no_longer_matches_the_browsers_origin(client):
     assert excinfo.value.code == 4403, excinfo.value.reason
 
 
+_LAN_ORIGIN = "http://10.10.10.20:5173"
+
+
+def test_a_lan_address_origin_connects_when_the_proxy_forwards_its_host(client):
+    """An app opened at a LAN or server IP needs no CORS_ORIGINS entry.
+
+    This is the traffic nginx (``Host $http_host``) and the Vite dev proxy
+    (``changeOrigin: false``) produce for a browser at ``http://10.10.10.20:5173``.
+    """
+    from app.core.config import settings
+
+    assert _LAN_ORIGIN not in settings.CORS_ORIGINS, (
+        "this test proves the same-origin branch; it is meaningless if the LAN origin is allowlisted"
+    )
+
+    frame = _connect_and_read_first_frame(
+        client, headers={"Host": "10.10.10.20:5173", "Origin": _LAN_ORIGIN}
+    )
+
+    assert (frame["code"], frame["reason"]) == _PAST_THE_GATE, frame
+
+
+def test_a_foreign_origin_is_refused_on_a_lan_address(client):
+    """Control for the test above: the LAN Host admits only its own origin."""
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect(
+            "/api/ws", headers={"Host": "10.10.10.20:5173", "Origin": "http://evil.example"}
+        ):
+            pytest.fail("a foreign origin was accepted on a LAN Host")
+
+    assert excinfo.value.code == 4403, excinfo.value.reason
+
+
+def test_a_lan_origin_behind_a_host_rewriting_proxy_is_refused(client):
+    """Characterisation of the dev-proxy defect, asserting the REFUSAL.
+
+    With ``changeOrigin: true`` the Vite proxy sent ``Host: backend:8080``, so a
+    browser at the LAN address looked cross-site. The gate is right to refuse that;
+    the fix belongs in the proxy (``unit/test_nginx_websocket_origin_headers.py``).
+    """
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect(
+            "/api/ws", headers={"Host": "backend:8080", "Origin": _LAN_ORIGIN}
+        ):
+            pytest.fail("an origin that does not match the forwarded Host was accepted")
+
+    assert excinfo.value.code == 4403, excinfo.value.reason
+
+
 def test_a_handshake_with_no_origin_header_still_connects(client):
     """Control: non-browser clients are unaffected.
 

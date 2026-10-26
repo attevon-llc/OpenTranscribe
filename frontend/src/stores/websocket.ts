@@ -949,6 +949,8 @@ function createWebSocketStore() {
         reconnectTimeout = null;
       }
 
+      // The backoff belongs to the session that just ended; the next connect is a first one.
+      state.reconnectAttempts = 0;
       state.status = 'disconnected';
       return state;
     });
@@ -1426,21 +1428,28 @@ export const unreadCount = derived(websocketStore, ($websocketStore: WebSocketSt
 /**
  * Simplified, UI-facing connection status.
  *
- * Collapses the store's internal {@link ConnectionStatus} into the three states the UI
+ * Collapses the store's internal {@link ConnectionStatus} into the states the UI
  * actually cares about for surfacing connection loss:
  *  - `connected`     — socket open, live updates flowing.
- *  - `reconnecting`  — connecting, or recovering after a non-clean close (backoff retries).
+ *  - `connecting`    — the first attempt of a connect (sign-in, page load, tab shown) is
+ *                      in flight and nothing has failed yet. Not a loss: show nothing.
+ *  - `reconnecting`  — recovering after a non-clean close (backoff retries).
  *  - `disconnected`  — closed/errored with no reconnect in progress.
  *
  * Purely observational — it does not drive the reconnection logic, it only reflects it.
  */
-export type UiConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+export type UiConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
 
 export const connectionStatus = derived<typeof websocketStore, UiConnectionStatus>(
   websocketStore,
   ($ws) => {
     if ($ws.status === 'connected') return 'connected';
-    if ($ws.status === 'connecting' || $ws.reconnectAttempts > 0) return 'reconnecting';
+    if ($ws.reconnectAttempts > 0) return 'reconnecting';
+    // A browser always follows `error` with `close`, which schedules the retry; until it
+    // arrives the socket is still ours, so don't flash "Connection lost" in between.
+    if ($ws.status === 'connecting' || ($ws.status === 'error' && $ws.socket)) {
+      return 'connecting';
+    }
     return 'disconnected';
   }
 );

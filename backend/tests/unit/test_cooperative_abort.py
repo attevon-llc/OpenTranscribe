@@ -29,6 +29,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 from celery.exceptions import Reject
 
@@ -116,7 +117,7 @@ class TestDecodeLoopReachesTheCheckpoint:
 
         ws.mark_shutting_down()
         with pytest.raises(ws.TranscriptionAbortedError):
-            transcriber.transcribe(audio=[0.0] * 16000)
+            transcriber.transcribe(audio=np.zeros(16000, dtype=np.float32))
 
         assert len(consumed) <= 1, (
             f"abort latency is meant to be bounded to ONE decode batch; the loop consumed "

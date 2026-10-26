@@ -299,6 +299,10 @@ def retry_file_processing(
                 detail=f"File cannot be retried in current status: {db_file.status}",
             )
 
+        from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
+
+        refuse_reprocess_if_held(db, int(file_id), actor=current_user, action="retry")
+
         # Resetting the retry count bypasses the admin-tunable ceiling entirely,
         # so only an admin may request it (A3: was accepted from any file owner).
         if reset_retry_count and not is_admin:
@@ -548,6 +552,22 @@ def _handle_delete_action(
             bypass=bypass,
         )
     except HTTPException as e:
+        from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
+        from app.services.hold_guard import LEGAL_HOLD_REFUSAL
+
+        detail = e.detail
+        if (
+            e.status_code == status.HTTP_409_CONFLICT
+            and isinstance(detail, dict)
+            and detail.get("error") == LEGAL_HOLD_ERROR_CODE
+        ):
+            # A hold is a deliberate refusal: reported per file so the rest of the batch runs.
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message=LEGAL_HOLD_REFUSAL,
+                error=LEGAL_HOLD_ERROR_CODE,
+            )
         if e.status_code != status.HTTP_403_FORBIDDEN:
             raise
         # A fixed message, never the exception text (issue #914's no-echo rule).
@@ -561,6 +581,19 @@ def _handle_delete_action(
         file_uuid=file_uuid,
         success=True,
         message="File deleted successfully",
+    )
+
+
+def _held_result(db: Session, file_uuid: str, file_id: int) -> BulkActionResult | None:
+    """The per-file refusal of a bulk reprocess or retry on a held file; ``None`` when free."""
+    from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
+    from app.services.hold_guard import REPROCESS_REFUSAL
+    from app.services.hold_guard import hold_state
+
+    if not hold_state(db, int(file_id)).held:
+        return None
+    return BulkActionResult(
+        file_uuid=file_uuid, success=False, message=REPROCESS_REFUSAL, error=LEGAL_HOLD_ERROR_CODE
     )
 
 
@@ -597,6 +630,10 @@ def _handle_retry_action(
             message=f"File cannot be retried in current status: {db_file.status}",
             error="INVALID_STATUS",
         )
+
+    held = _held_result(db, file_uuid, file_id)
+    if held is not None:
+        return held
 
     if reset_retry_count and not is_admin:
         return BulkActionResult(
@@ -702,6 +739,10 @@ def _handle_reprocess_action(
             message=f"Cannot reprocess file in {db_file.status} status",
             error="INVALID_STATUS",
         )
+
+    held = _held_result(db, file_uuid, file_id)
+    if held is not None:
+        return held
 
     if not is_admin:
         ceiling_message = system_settings_service.retry_ceiling_message(

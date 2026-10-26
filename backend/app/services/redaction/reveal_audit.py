@@ -35,6 +35,8 @@ def audit_unredacted_reveal(
     if not reveal:
         return
     try:
+        from app.auth.audit import TENANT_SCOPE_ORG
+        from app.auth.audit import TENANT_SCOPE_PERSONAL
         from app.auth.audit import AuditEventType
         from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
@@ -47,6 +49,11 @@ def audit_unredacted_reveal(
             # Org attribution (issue #262a): the reveal concerns this file's
             # tenant, so its org admins see it in the org audit read.
             organization_id=int(db_file.organization_id) if db_file.organization_id else None,
+            # ``tenant_scope`` keeps a reveal on a member's PERSONAL file out of the org
+            # audit read, which would otherwise attribute it through the actor (#1277, F5).
+            resource_type="media_file",
+            resource_uuid=str(db_file.uuid),
+            tenant_scope=TENANT_SCOPE_ORG if db_file.organization_id else TENANT_SCOPE_PERSONAL,
             details={
                 "file_id": db_file.id,
                 "file_uuid": str(db_file.uuid),

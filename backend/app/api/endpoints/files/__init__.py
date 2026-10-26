@@ -36,6 +36,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
+from app.auth.audit import AuditEventType
 from app.auth.rate_limit import get_directory_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
@@ -55,6 +56,10 @@ from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.schemas.user import UserSearchResult
+from app.services.content_audit import KIND_DOWNLOAD_PREPARE
+from app.services.content_audit import KIND_DOWNLOAD_STREAM
+from app.services.content_audit import KIND_STREAM_URL
+from app.services.content_audit import record_file_event
 from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
@@ -515,6 +520,7 @@ def list_file_owners(
 @router.get("/{file_uuid}", response_model=MediaFileDetail)
 def get_media_file(
     file_uuid: UUID,
+    request: Request,
     segment_limit: int | None = Query(
         500,
         description="Maximum number of transcript segments to return. Use 0 for all segments.",
@@ -543,7 +549,7 @@ def get_media_file(
     """
     # segment_limit=0 means get all segments
     effective_limit = None if segment_limit == 0 else segment_limit
-    return get_media_file_detail(
+    detail = get_media_file_detail(
         db,
         str(file_uuid),
         ctx.user,
@@ -552,7 +558,20 @@ def get_media_file(
         redact=redact,
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
+        reveal_hold_uuids=ctx.is_org_admin,
     )
+    # After the read succeeded, so a refused or missing file is never recorded as viewed.
+    # Thumbnails, captions, the waveform and segment pages are part of this view.
+    record_file_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_FILE_VIEW,
+        actor=ctx.user,
+        file=file_uuid,
+        details={"surface": "detail"},
+        bypass=ctx.bypass,
+    )
+    return detail
 
 
 @router.get("/{file_uuid}/info", response_model=MediaFilePublicInfo)
@@ -622,6 +641,7 @@ def update_media_file_endpoint(
 @router.get("/{file_uuid}/stream-url")
 def get_media_file_stream_url(
     file_uuid: str,
+    request: Request,
     media_type: str = Query("video", description="Type of media: video, thumbnail, or audio"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -688,6 +708,18 @@ def get_media_file_stream_url(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{media_type.title()} not found for this file",
+        )
+
+    if media_type != "thumbnail":
+        # Issuing a URL for the media itself is the access; thumbnails are part of the view.
+        record_file_event(
+            db,
+            request,
+            event=AuditEventType.CONTENT_MEDIA_ACCESS,
+            actor=current_user,
+            file=db_file,
+            details={"kind": KIND_STREAM_URL, "media_type": media_type},
+            bypass=ctx.bypass,
         )
 
     # A presigned URL is a bearer token that survives revocation of a support-access grant,
@@ -924,6 +956,7 @@ def _ensure_prepare_enqueued(
 @router.post("/{file_uuid}/prepare-download", dependencies=[Depends(refuse_under_support_grant)])
 def prepare_download(
     file_uuid: str,
+    request: Request,
     mode: str = Query(
         ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
     ),
@@ -949,6 +982,18 @@ def prepare_download(
 
     variant = _download_redaction_variant(
         db, db_file, current_user.id, mode, organization_id=ctx.org_id
+    )
+
+    # Each request for a download is a distinct copy leaving the system: never collapsed.
+    record_file_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_MEDIA_ACCESS,
+        actor=current_user,
+        file=db_file,
+        details={"kind": KIND_DOWNLOAD_PREPARE, "mode": mode},
+        dedup=False,
+        bypass=ctx.bypass,
     )
 
     ready = _resolve_ready_download(db_file, mode, variant)
@@ -983,6 +1028,7 @@ def _download_event_frame(data: dict, mode: str, variant: str = "") -> tuple[str
 @router.get("/{file_uuid}/download-stream", dependencies=[Depends(refuse_under_support_grant)])
 def download_stream(
     file_uuid: str,
+    request: Request,
     mode: str = Query(
         ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
     ),
@@ -1016,6 +1062,16 @@ def download_stream(
     # Resolved once, on the request thread, while the request's session is open: the
     # generator below runs on the event loop and its DB work is threadpooled.
     variant = _download_redaction_variant(db, db_file, user_id, mode, organization_id=ctx.org_id)
+    record_file_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_MEDIA_ACCESS,
+        actor=current_user,
+        file=db_file,
+        details={"kind": KIND_DOWNLOAD_STREAM, "mode": mode},
+        dedup=False,
+        bypass=ctx.bypass,
+    )
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"

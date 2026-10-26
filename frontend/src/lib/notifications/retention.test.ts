@@ -84,6 +84,7 @@ describe('type classification', () => {
       'collection_shared',
       'collection_share_revoked',
       'collection_share_updated',
+      'collection_access_changed',
       'group_member_added',
       'group_member_removed',
       'file_takedown',

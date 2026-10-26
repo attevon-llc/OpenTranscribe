@@ -51,6 +51,51 @@ describe('getErrorMessage', () => {
       })
     ).toBe('Your account has expired.');
   });
+  describe('a legal hold refusal (issue #1276)', () => {
+    const refusal = (held_by: string[]) => ({
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            error: 'FILE_UNDER_LEGAL_HOLD',
+            message: 'refused: the file is under an active legal hold',
+            held_by,
+          },
+        },
+      },
+    });
+
+    it('says who holds it, in the active locale, not the server English', () => {
+      expect(getErrorMessage(refusal(['organization']))).toContain(
+        'administrator of your organization'
+      );
+      expect(getErrorMessage(refusal(['platform']))).toContain('service operator');
+      expect(getErrorMessage(refusal(['platform', 'organization']))).toContain(
+        'your organization and by the service operator'
+      );
+    });
+
+    it('does not depend on the order the server lists the authorities in', () => {
+      expect(getErrorMessage(refusal(['platform', 'organization']))).toBe(
+        getErrorMessage(refusal(['organization', 'platform']))
+      );
+    });
+
+    it('falls back to the server sentence when held_by is not one it knows', () => {
+      expect(getErrorMessage(refusal(['somebody-new']))).toBe(
+        'refused: the file is under an active legal hold'
+      );
+    });
+
+    it('leaves another 409 object detail alone', () => {
+      expect(
+        getErrorMessage({
+          response: { data: { detail: { error: 'FILE_NOT_SAFE_TO_DELETE', message: 'busy' } } },
+        })
+      ).toBe('busy');
+    });
+  });
+
   it('falls back to response.data.message', () => {
     expect(getErrorMessage({ response: { data: { message: 'Bad request' } } })).toBe('Bad request');
   });

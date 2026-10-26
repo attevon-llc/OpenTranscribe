@@ -17,6 +17,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -24,12 +25,14 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.auth.audit import AuditEventType
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
+from app.services.content_audit import record_file_event
 from app.services.platform_bypass import PlatformBypass
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.export_policy import resolve_export_reveal
@@ -127,6 +130,7 @@ def _resolve_export_redaction(
 )
 def export_transcript(
     file_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -239,6 +243,18 @@ def export_transcript(
     base_filename = source_name.rsplit(".", 1)[0] if "." in source_name else source_name
     filename = f"{base_filename}.{fmt}"
     content_type = _CONTENT_TYPES[fmt]
+
+    # Recorded once the content exists; every export is a distinct copy, never collapsed.
+    record_file_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_EXPORT,
+        actor=current_user,
+        file=media_file,
+        details={"surface": "transcript", "format": fmt, "file_count": 1},
+        dedup=False,
+        bypass=ctx.bypass,
+    )
 
     return Response(
         content=content,

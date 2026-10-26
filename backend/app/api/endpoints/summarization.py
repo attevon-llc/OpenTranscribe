@@ -31,6 +31,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Path
 from fastapi import Query
+from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -39,12 +40,14 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.prompts import require_usable_prompt_uuid
+from app.auth.audit import AuditEventType
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummaryTaskRequest
+from app.services.content_audit import record_file_event
 from app.services.llm_service import is_llm_available
 from app.services.platform_bypass import PlatformBypass
 from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
@@ -274,6 +277,7 @@ def get_file_summary(
     dependencies=[Depends(refuse_under_support_grant)],
 )
 def export_summary(
+    request: Request,
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -316,9 +320,10 @@ def export_summary(
       finishes there is nothing to apply. A summary is masked by LIVE detection over
       LLM-authored prose (``mask_summary``) every time it is read; there is no cached artifact
       whose absence a 409 would need to protect.
-    - **No audit-event call.** ``audit_unredacted_reveal`` early-returns whenever the reveal
-      set is empty, and this route never computes one (see the first bullet) — calling it here
-      would be dead code recording an event that never happens.
+    - **No ``audit_unredacted_reveal`` call.** It early-returns whenever the reveal set is
+      empty, and this route never computes one (see the first bullet) — calling it here would
+      be dead code recording an event that never happens. (The export itself IS recorded, as
+      ``content.export``, when content auditing is on.)
     """
     fmt = export_format.lower()
     if fmt not in VALID_SUMMARY_EXPORT_FORMATS:
@@ -378,6 +383,16 @@ def export_summary(
     base_filename = source_name.rsplit(".", 1)[0] if "." in source_name else source_name
     filename = f"{base_filename}-summary.{fmt}"
 
+    record_file_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_EXPORT,
+        actor=current_user,
+        file=media_file,
+        details={"surface": "summary", "format": fmt, "file_count": 1},
+        dedup=False,
+        bypass=ctx.bypass,
+    )
     return Response(
         content=content,
         media_type="text/markdown; charset=utf-8",

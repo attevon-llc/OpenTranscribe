@@ -10,8 +10,10 @@ from __future__ import annotations
 import contextlib
 import socket
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from starlette.requests import Request
 
 #: A globally-routable literal, used as the answer for stubbed documentation hostnames.
@@ -164,3 +166,16 @@ def reset_rate_limiter() -> None:
     # Start the next test on the primary storage again rather than inheriting "dead".
     if hasattr(limiter, "_storage_dead"):
         limiter._storage_dead = False
+
+
+def detail_dict(exc: HTTPException) -> dict[str, Any]:
+    """The structured ``detail`` payload of an ``HTTPException`` raised with a dict.
+
+    Starlette types ``HTTPException.detail`` as ``str``, but the app raises these with
+    ``{"code": ..., "message": ...}`` dicts (FastAPI serialises them as JSON). Narrowing
+    here keeps the test's own assertion honest: a handler that regressed to a plain string
+    fails this ``isinstance`` check instead of an obscure ``TypeError`` on the index.
+    """
+    detail: object = exc.detail
+    assert isinstance(detail, dict), f"expected a dict detail, got {type(detail).__name__}"
+    return detail

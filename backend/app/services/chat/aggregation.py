@@ -324,9 +324,10 @@ def base_filters(
     match nothing. Inverting those leaks the whole library, so the empty list is
     passed through as a ``terms`` on no values rather than skipped.
     """
+    from app.services.search.access_filter import access_filter_clause
     from app.services.search.tenant_scope import org_filter_clauses
 
-    filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
+    filters: list[dict[str, Any]] = [access_filter_clause(user_id, organization_id)]
     filters.extend(org_filter_clauses(organization_id))
     filters.append(chunk_plane_clause())
     if file_uuids is not None:

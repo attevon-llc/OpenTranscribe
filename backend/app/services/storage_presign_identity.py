@@ -50,6 +50,7 @@ import hashlib
 import hmac
 import logging
 from typing import TYPE_CHECKING
+from typing import Protocol
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from minio import Minio
@@ -390,7 +391,13 @@ def bucket_policy_denies_quarantined_reads(policy_json: str | None, bucket: str)
     return False
 
 
-def report_native_s3_revocation_posture(client: Minio) -> bool:
+class BucketPolicyReader(Protocol):
+    """The one storage-client call the revocation-posture check makes (``Minio`` satisfies it)."""
+
+    def get_bucket_policy(self, bucket_name: str) -> str: ...
+
+
+def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
     """Log, once at startup, whether quarantine can revoke presigned URLs on native S3.
 
     The MinIO presign identity doesn't exist on S3, so revocation depends on the operator

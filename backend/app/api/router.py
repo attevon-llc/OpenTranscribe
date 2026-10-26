@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from . import websockets
 from .endpoints import admin
 from .endpoints import admin_approvals
+from .endpoints import admin_audit_content_access
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
 from .endpoints import admin_scim_tokens
@@ -35,6 +36,8 @@ from .endpoints import local_models
 from .endpoints import media_collections
 from .endpoints import media_mirror_settings
 from .endpoints import org_admin
+from .endpoints import org_admin_audit
+from .endpoints import org_admin_holds
 from .endpoints import org_admin_takedown
 from .endpoints import pipeline_settings
 from .endpoints import prompts
@@ -195,6 +198,28 @@ include_router_with_consistency(
     capability="org.takedown",
     platform_admin_bypass=False,
 )
+# The organization admin's audit download (issue #1277), behind its own capability so a deployment
+# can offer the read without the export. No platform-admin bypass: a superuser gets the same 404.
+# Under a support-access grant it answers 403: audit history is not diagnosis.
+include_router_with_consistency(
+    org_admin_audit.router,
+    prefix="/org-admin/audit-logs",
+    tags=["org-admin"],
+    capability="org.audit_logs",
+    platform_admin_bypass=False,
+    refuse_under_grant=True,
+)
+# Organization legal holds (issue #1276): own capability, no platform-admin bypass (platform staff
+# are not organization administrators and cannot place or release an organization's hold), and
+# refused under a support grant.
+include_router_with_consistency(
+    org_admin_holds.router,
+    prefix="/org-admin/holds",
+    tags=["org-admin"],
+    capability="org.legal_hold",
+    platform_admin_bypass=False,
+    refuse_under_grant=True,
+)
 include_router_with_consistency(
     support_access.org_router,
     prefix="/org-admin/support-access",
@@ -290,6 +315,12 @@ include_router_with_consistency(
     prefix="/admin/asr-providers",
     tags=["admin"],
     capability="asr.user_providers",
+)
+include_router_with_consistency(
+    admin_audit_content_access.router,
+    prefix="/admin/audit/content-access",
+    tags=["admin"],
+    capability="audit.logs",
 )
 include_router_with_consistency(
     admin_hf_token.router,

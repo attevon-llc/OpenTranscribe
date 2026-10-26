@@ -166,6 +166,8 @@ export const MENU_ICONS = {
   // Bare marks for a glyph drawn inside a filled status disc (toasts, issue rows).
   exclamation: [line(12, 5, 12, 14), line(12, 19, 12.01, 19)],
   'info-mark': [line(12, 10, 12, 19), line(12, 5, 12.01, 5)],
+  // A shield: "this is protected" (a legal hold), distinct from the lock of a restricted collection.
+  shield: [d('M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z')],
   lock: [rect(3, 11, 18, 11, 2), d('M7 11V7a5 5 0 0 1 10 0v4')],
   clipboard: [
     d('M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'),

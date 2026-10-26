@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.audit import AuditEventType
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.constants import TAG_SOURCE_AUTO_AI
@@ -27,6 +28,9 @@ from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
 from app.services.auto_llm_settings import TOPIC_USER_KEY
 from app.services.auto_llm_settings import resolve_auto_llm_flags
+from app.services.collection_visibility import usable_collections
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import record_content_event
 from app.services.permission_service import PermissionService
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
@@ -37,6 +41,10 @@ from app.services.tag_service import suggest_similar_tag
 from app.services.tag_service import tenant_first
 
 logger = logging.getLogger(__name__)
+
+
+class UnusableCollectionMatchError(ValueError):
+    """A suggested collection name matches a collection the file owner cannot use."""
 
 
 class AutoLabelService:
@@ -92,20 +100,34 @@ class AutoLabelService:
     def _get_user_collections_cached(
         self, user_id: int, organization_id: int | None = None
     ) -> list[Collection]:
-        """Return the tenant's collections, using instance-level cache.
+        """Return the collections ``user_id`` may add files to in the tenant, cached per instance.
 
-        ``organization_id`` set: every collection of that org (shared by its
-        members). ``None``: ``user_id``'s personal collections.
+        ``organization_id`` set: the org's collections the user can edit (a restricted one
+        they cannot see is absent). ``None``: ``user_id``'s personal collections.
         """
         key = (user_id, organization_id)
         if key not in self._collection_cache:
-            self._collection_cache[key] = (
-                self.db.query(Collection)
-                .filter(PermissionService.collection_tenant_pred(user_id, organization_id))
-                .order_by(Collection.id)
-                .all()
-            )
+            self._collection_cache[key] = usable_collections(self.db, user_id, organization_id)
         return self._collection_cache[key]
+
+    def _matches_unusable_collection(
+        self, name: str, user_id: int, organization_id: int | None
+    ) -> bool:
+        """True when ``name`` is similar to a tenant collection ``user_id`` cannot use.
+
+        An LLM suggestion that matches a collection the file owner cannot see must neither
+        add the file to it nor create a near-twin: the suggestion is skipped, so the
+        automatic path never reveals or touches a restricted collection.
+        """
+        usable_ids = {c.id for c in self._get_user_collections_cached(user_id, organization_id)}
+        rows = (
+            self.db.query(Collection.id, Collection.name)
+            .filter(PermissionService.collection_tenant_pred(user_id, organization_id))
+            .all()
+        )
+        return any(
+            cid not in usable_ids and self.are_names_similar(name, cname) for cid, cname in rows
+        )
 
     def _invalidate_collection_cache(
         self, user_id: int, organization_id: int | None = None
@@ -204,6 +226,8 @@ class AutoLabelService:
         # search refresh, so calling it per applied tag re-did that work T times
         # for what is one file of change.
         retagged_file_ids: list[int] = []
+        # Collections this call put the file into: the post-commit announcement below needs them.
+        joined_collections: list[Collection] = []
 
         # Auto-apply tags
         if apply_tags:
@@ -256,7 +280,8 @@ class AutoLabelService:
                         int(media_file.user_id),
                         organization_id=media_file.organization_id,
                     )
-                    self._add_file_to_collection(media_file, collection, confidence)
+                    if self._add_file_to_collection(media_file, collection, confidence):
+                        joined_collections.append(collection)
                     result["auto_applied_collections"].append(name)
                 except Exception as e:
                     logger.warning(f"Failed to auto-apply collection '{name}': {e}")
@@ -273,6 +298,8 @@ class AutoLabelService:
             self.db.rollback()
             raise
 
+        self._announce_collection_joins(media_file, joined_collections)
+
         if retagged_file_ids:
             # Auto-labeling is a back-door tag-mutation path that doesn't carry
             # current_user, but the shared hook resolves the owner itself.
@@ -284,6 +311,40 @@ class AutoLabelService:
         )
 
         return result
+
+    def _announce_collection_joins(
+        self,
+        media_file: MediaFile,
+        joined_collections: list[Collection],
+        source: str = "auto_label",
+    ) -> None:
+        """After the commit: refresh the search index and audit each collection joined.
+
+        An organization file that joined a collection needs its chunks' ``collection_ids``
+        rewritten (the org-collection read route, ``search/access_filter``). The audit event
+        is unattended, so the actor is the file's owner and ``source`` says so.
+        """
+        if not joined_collections:
+            return
+        if media_file.organization_id is not None:
+            from app.tasks.search_indexing_task import update_file_access_index
+
+            update_file_access_index.delay([int(media_file.id)])
+        for collection in joined_collections:
+            record_content_event(
+                self.db,
+                None,
+                event=AuditEventType.COLLECTION_MEMBERSHIP_CHANGE,
+                actor=media_file.user,
+                resource=AuditedResource.collection(collection),
+                details={
+                    "added": 1,
+                    "removed": 0,
+                    "file_uuids": [str(media_file.uuid)],
+                    "source": source,
+                },
+                dedup=False,
+            )
 
     def _get_or_create_tag_with_dedup(
         self,
@@ -347,6 +408,8 @@ class AutoLabelService:
         existing = self.find_existing_similar_collection(user_id, name, organization_id)
         if existing:
             return existing, False
+        if self._matches_unusable_collection(name, user_id, organization_id):
+            raise UnusableCollectionMatchError(name)
 
         try:
             nested = self.db.begin_nested()
@@ -360,13 +423,13 @@ class AutoLabelService:
         except IntegrityError:
             nested.rollback()
             self._invalidate_collection_cache(user_id, organization_id)
-            existing_collection: Collection | None = (
-                self.db.query(Collection)
-                .filter(
-                    PermissionService.collection_tenant_pred(user_id, organization_id),
-                    Collection.name == name,
-                )
-                .first()
+            existing_collection = next(
+                (
+                    c
+                    for c in self._get_user_collections_cached(user_id, organization_id)
+                    if c.name == name
+                ),
+                None,
             )
             if existing_collection:
                 return existing_collection, False
@@ -407,8 +470,8 @@ class AutoLabelService:
 
     def _add_file_to_collection(
         self, media_file: MediaFile, collection: Collection, confidence: float
-    ) -> None:
-        """Add a file to a collection if not already a member."""
+    ) -> bool:
+        """Add a file to a collection if not already a member; True when a row was written."""
         existing = (
             self.db.query(CollectionMember)
             .filter(
@@ -418,7 +481,7 @@ class AutoLabelService:
             .first()
         )
         if existing:
-            return
+            return False
 
         try:
             nested = self.db.begin_nested()
@@ -430,12 +493,14 @@ class AutoLabelService:
             )
             self.db.add(member)
             self.db.flush()
+            return True
         except IntegrityError:
             nested.rollback()
             logger.debug(
                 f"Duplicate collection_member for file={media_file.id} "
                 f"collection={collection.id}, skipping"
             )
+            return False
 
     # =========================================================================
     # Batch Grouping
@@ -488,6 +553,7 @@ class AutoLabelService:
         # Create collections for shared topics (2+ files)
         collections_created = 0
         files_grouped = set()
+        joined_by_file: dict[int, tuple[MediaFile, list[Collection]]] = {}
 
         for (organization_id, tag_name), files in tag_files.items():
             if len(files) < 2:
@@ -501,15 +567,19 @@ class AutoLabelService:
             # trust that signal rather than inferring it from a side effect
             # (issue #589: a collision that hands back an EXISTING collection
             # also invalidates the cache, so that inference miscounted it).
-            collection, created = self._get_or_create_collection_with_dedup(
-                collection_name,
-                user_id,
-                source=TAG_SOURCE_BULK_GROUP,
-                organization_id=organization_id,
-            )
+            try:
+                collection, created = self._get_or_create_collection_with_dedup(
+                    collection_name,
+                    user_id,
+                    source=TAG_SOURCE_BULK_GROUP,
+                    organization_id=organization_id,
+                )
+            except UnusableCollectionMatchError:
+                continue
 
             for mf in files:
-                self._add_file_to_collection(mf, collection, confidence=0.0)
+                if self._add_file_to_collection(mf, collection, confidence=0.0):
+                    joined_by_file.setdefault(int(mf.id), (mf, []))[1].append(collection)
                 files_grouped.add(mf.id)
 
             if created:
@@ -521,6 +591,11 @@ class AutoLabelService:
         except Exception:
             self.db.rollback()
             raise
+
+        for grouped_file, grouped_collections in joined_by_file.values():
+            self._announce_collection_joins(
+                grouped_file, grouped_collections, source=TAG_SOURCE_BULK_GROUP
+            )
 
         return {
             "collections_created": collections_created,

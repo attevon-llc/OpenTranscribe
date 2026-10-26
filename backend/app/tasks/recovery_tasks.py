@@ -272,6 +272,7 @@ def media_duration_backfill(self, user_id: int | None = None, dry_run: bool = Tr
     from sqlalchemy import func
 
     from app.models.media import TranscriptSegment
+    from app.services.hold_guard import not_held_pred
     from app.services.takedown_service import exclude_quarantined
 
     summary = {
@@ -300,7 +301,7 @@ def media_duration_backfill(self, user_id: int | None = None, dry_run: bool = Tr
             .filter(
                 MediaFile.duration_source.is_(None),
                 MediaFile.status == FileStatus.COMPLETED,
-                MediaFile.legal_hold.is_(False),
+                not_held_pred(),
                 func.abs(MediaFile.duration - segment_max.c.max_end)
                 < _OVERWRITE_SIGNATURE_TOLERANCE_SECONDS,
             )

@@ -34,6 +34,37 @@ logger = logging.getLogger(__name__)
 RESULT_TTL_S = 900
 
 
+def _record_export(file_id: int, user_id: int | None, fmt: str) -> None:
+    """Write the ``content.export`` event for a finished document (#1277).
+
+    Recorded once the bytes exist, like the synchronous export, and never collapsed: each document
+    is a distinct copy leaving the system. The worker has no request, so no client address is
+    attached; the event is dropped while content auditing is off, and it never raises.
+    """
+    from app.auth.audit import AuditEventType
+    from app.models.media import MediaFile
+    from app.models.user import User
+    from app.services.content_audit import record_file_event
+
+    try:
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            user = db.query(User).filter(User.id == user_id).first() if user_id else None
+            if media_file is None or user is None:
+                return
+            record_file_event(
+                db,
+                None,
+                event=AuditEventType.CONTENT_EXPORT,
+                actor=user,
+                file=media_file,
+                details={"surface": "transcript", "format": fmt, "file_count": 1},
+                dedup=False,
+            )
+    except Exception as e:  # pragma: no cover - an audit failure must not fail the export
+        logger.warning("Could not record the document export event: %s", type(e).__name__)
+
+
 def _fail(job_id: str, reason: str) -> dict:
     """Publish a fixed-sentence error and cache it, so a client that connects late still sees it."""
     from app.core.redis import get_redis
@@ -119,6 +150,7 @@ def prepare_transcript_document_task(
             RESULT_TTL_S,
             json.dumps({"url": url, "filename": filename, "exported": 1, "skipped": 0}),
         )
+        _record_export(file_id, user_id, parsed.format)
         publish_bulk_event(
             job_id,
             status="completed",

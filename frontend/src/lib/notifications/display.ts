@@ -54,6 +54,7 @@ export const ICON_BY_TYPE: Partial<Record<NotificationType, IconName>> = {
   collection_shared: 'folder',
   collection_share_revoked: 'folder',
   collection_share_updated: 'folder',
+  collection_access_changed: 'shield',
   file_takedown: 'shield',
   file_takedown_released: 'shield',
   download_progress: 'download',

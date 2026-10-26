@@ -185,6 +185,18 @@ class DurationSource(enum.StrEnum):
     NONE = "none"
 
 
+class CollectionVisibility(enum.StrEnum):
+    """Who in an organization may see an organization collection (issue #1275).
+
+    ``ORGANIZATION`` is the v422 model: every member. ``RESTRICTED`` limits it to the
+    collection's creator, the organization admins and whoever it is explicitly shared with.
+    A personal collection is always ``ORGANIZATION`` (``ck_collection_visibility``).
+    """
+
+    ORGANIZATION = "organization"
+    RESTRICTED = "restricted"
+
+
 class TakedownOrigin(enum.StrEnum):
     """Which authority currently holds a taken-down or legally held file (issue #1253).
 

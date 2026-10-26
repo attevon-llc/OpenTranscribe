@@ -136,8 +136,11 @@ def test_offset_zero_adds_no_cors_origins_override(tmp_path: Path):
 
 
 def test_lan_origins_from_the_environment_are_appended_in_order(tmp_path: Path):
-    """A stack browsed over the LAN needs its LAN origin allow-listed: the Vite dev proxy
-    rewrites Host to the backend, so the WebSocket check's same-origin rule cannot admit it."""
+    """FRESH_EXTRA_CORS_ORIGINS entries reach the backend's allowlist after the defaults.
+
+    A LAN address of the stack's own Vite server no longer needs one (the dev proxy forwards
+    the browser's Host, see test_nginx_websocket_origin_headers.py); the knob still serves
+    any genuinely cross-origin caller."""
     doc = _generate(
         tmp_path,
         offset="200",

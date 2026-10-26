@@ -67,6 +67,7 @@ export const NOTIFICATION_TYPES = [
   'collection_shared',
   'collection_share_revoked',
   'collection_share_updated',
+  'collection_access_changed',
   'group_member_added',
   'group_member_removed',
   'post_processing_status',
@@ -612,6 +613,23 @@ function createWebSocketStore() {
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
+            } else if (data.type === 'collection_access_changed') {
+              // A collection this user could see was restricted (issue #1275): the payload is
+              // the collection uuid only. Drop every cache that could still list it.
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('collection-access-changed', { detail: data.data })
+                );
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
             } else if (data.type === 'group_member_added') {
               // User added to a group — invalidate caches and notify
               if (typeof window !== 'undefined') {
@@ -949,6 +967,8 @@ function createWebSocketStore() {
         reconnectTimeout = null;
       }
 
+      // The backoff belongs to the session that just ended; the next connect is a first one.
+      state.reconnectAttempts = 0;
       state.status = 'disconnected';
       return state;
     });
@@ -1107,6 +1127,8 @@ function createWebSocketStore() {
         return translate('notifications.collectionShareRevoked');
       case 'collection_share_updated':
         return translate('notifications.collectionShareUpdated');
+      case 'collection_access_changed':
+        return translate('notifications.collectionAccessChanged');
       case 'group_member_added':
         return translate('notifications.groupMemberAdded');
       case 'group_member_removed':
@@ -1426,21 +1448,28 @@ export const unreadCount = derived(websocketStore, ($websocketStore: WebSocketSt
 /**
  * Simplified, UI-facing connection status.
  *
- * Collapses the store's internal {@link ConnectionStatus} into the three states the UI
+ * Collapses the store's internal {@link ConnectionStatus} into the states the UI
  * actually cares about for surfacing connection loss:
  *  - `connected`     — socket open, live updates flowing.
- *  - `reconnecting`  — connecting, or recovering after a non-clean close (backoff retries).
+ *  - `connecting`    — the first attempt of a connect (sign-in, page load, tab shown) is
+ *                      in flight and nothing has failed yet. Not a loss: show nothing.
+ *  - `reconnecting`  — recovering after a non-clean close (backoff retries).
  *  - `disconnected`  — closed/errored with no reconnect in progress.
  *
  * Purely observational — it does not drive the reconnection logic, it only reflects it.
  */
-export type UiConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+export type UiConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
 
 export const connectionStatus = derived<typeof websocketStore, UiConnectionStatus>(
   websocketStore,
   ($ws) => {
     if ($ws.status === 'connected') return 'connected';
-    if ($ws.status === 'connecting' || $ws.reconnectAttempts > 0) return 'reconnecting';
+    if ($ws.reconnectAttempts > 0) return 'reconnecting';
+    // A browser always follows `error` with `close`, which schedules the retry; until it
+    // arrives the socket is still ours, so don't flash "Connection lost" in between.
+    if ($ws.status === 'connecting' || ($ws.status === 'error' && $ws.socket)) {
+      return 'connecting';
+    }
     return 'disconnected';
   }
 );

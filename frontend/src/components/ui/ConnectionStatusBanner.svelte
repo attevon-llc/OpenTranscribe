@@ -10,7 +10,9 @@
   import { t } from '$stores/locale';
 
   $: status = $connectionStatus;
-  $: visible = status !== 'connected';
+  // A first connect in flight is not a lost connection; saying "Reconnecting" there
+  // flashed on every sign-in and page load.
+  $: visible = status === 'reconnecting' || status === 'disconnected';
   $: message =
     status === 'reconnecting'
       ? $t('connection.reconnecting')

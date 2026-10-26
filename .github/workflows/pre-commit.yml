@@ -103,6 +103,14 @@ jobs:
       - name: Run pre-commit (pre-push stage)
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
 
+      # Negative control for the mypy hook (issue #1271). The hook runs in an isolated virtualenv;
+      # a typed package missing from its additional_dependencies makes mypy treat it as Any and
+      # pass code that backend/venv mypy rejects. This runs the real hook on deliberately
+      # mistyped code in a throwaway repo and fails the build unless every line is rejected.
+      # backend/tests/unit/test_precommit_mypy_env_parity.py checks the config statically.
+      - name: Prove the mypy hook still rejects mistyped code
+        run: scripts/mypy-hook-negative-control.sh
+
       - name: Generate pre-commit summary
         if: always()
         run: |

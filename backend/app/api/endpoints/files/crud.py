@@ -28,6 +28,7 @@ from app.schemas.media import Speaker as SpeakerResponseSchema
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
+from app.services.content_hold_queries import file_hold_summary
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
@@ -856,6 +857,7 @@ def get_media_file_detail(
     *,
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
+    reveal_hold_uuids: bool = False,
 ) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
@@ -867,6 +869,8 @@ def get_media_file_detail(
         segment_limit: Maximum number of transcript segments to return (None = all)
         segment_offset: Offset for transcript segment pagination (default 0)
         bypass: The request's platform bypass (``ctx.bypass``).
+        reveal_hold_uuids: Include the organization hold uuids in ``hold`` (the caller
+            administers the file's organization). Who holds the file is shown to everyone.
 
     Returns:
         MediaFileDetail object with all computed and formatted data
@@ -990,6 +994,7 @@ def get_media_file_detail(
         # Set caller's permission on the response
         response.my_permission = my_permission
         response.processing_steps = build_processing_steps(db_file)
+        response.hold = file_hold_summary(db, int(file_id), reveal_uuids=reveal_hold_uuids)
 
         return response
 
@@ -1167,19 +1172,31 @@ def delete_media_file(
 
     # Delegate the actual destroy to the single canonical implementation so the
     # interactive, bulk, retention, and orphan-cleanup paths all behave identically.
-    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
+    from app.services.content_audit import AuditedResource
+    from app.services.content_hold_service import record_hold_refusal
     from app.services.file_cleanup_service import purge_media_file
+    from app.services.hold_guard import refusal_detail
 
     result = purge_media_file(db, db_file)
     if result.get("refused_legal_hold"):
+        record_hold_refusal(
+            db,
+            None,
+            current_user,
+            AuditedResource.file(db_file),
+            action="delete",
+            held_by=result["hold_state"].held_by,
+        )
         # A legal hold is a deliberate, actionable refusal, not a server fault:
         # the admin has to release the hold first. Reporting it as a 500 told the
-        # caller the delete had broken rather than that it had been declined.
+        # caller the delete had broken rather than that it had been declined. The body says
+        # WHO holds the file; only an organization admin is given the hold uuids to release.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "error": LEGAL_HOLD_ERROR_CODE,
-                "message": result.get("error"),
+                **refusal_detail(
+                    result["hold_state"], reveal_uuids=is_org_admin, message=result.get("error")
+                ),
                 "file_id": str(db_file.uuid),
             },
         )

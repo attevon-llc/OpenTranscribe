@@ -3,6 +3,7 @@
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import HoldBadge from '$components/ui/HoldBadge.svelte';
   import { t } from '$stores/locale';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
 
@@ -155,6 +156,7 @@
     {:else}
       <div class="title-display-container">
         <h1>{getDisplayName(file)}</h1>
+        <HoldBadge hold={file?.hold} />
         {#if sharedPermission}
           <span class="shared-chip">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

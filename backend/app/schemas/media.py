@@ -14,6 +14,7 @@ from pydantic import model_validator
 from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
 from app.core.local_whisper_catalog import LOCAL_WHISPER_MODEL_IDS
 from app.schemas.base import UUIDBaseSchema
+from app.schemas.content_hold import HoldSummary
 from app.schemas.processing_provenance import ProcessingStepOut
 from app.schemas.user import UserBrief
 
@@ -709,6 +710,9 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
 
 
 class MediaFileDetail(MediaFile):
+    #: Who holds the file against deletion and reprocessing (issue #1276); never a reason.
+    hold: HoldSummary = Field(default_factory=HoldSummary)
+
     #: Detail-only takedown fields — kept off the list schema (§B.3): a `Text` reason
     #: is not free on a ~70-column row loaded for every gallery page, and nothing in
     #: the gallery renders it. `is_quarantined` itself is inherited from `MediaFile`.
@@ -1223,8 +1227,25 @@ class CollectionBase(BaseModel):
     is_public: bool = False
 
 
+CollectionVisibilityMode = Literal["organization", "restricted"]
+
+
 class CollectionCreate(CollectionBase):
     default_prompt_id: UUID | None = None
+    visibility: CollectionVisibilityMode = Field(
+        default="organization",
+        description=(
+            "'organization' (every member of the organization sees it) or 'restricted' "
+            "(only its creator, the organization admins and the people it is shared with). "
+            "A personal collection can only be 'organization': anything else is a 422."
+        ),
+    )
+
+
+class CollectionVisibilityUpdate(BaseModel):
+    """Body of ``PATCH /collections/{uuid}/visibility``."""
+
+    visibility: CollectionVisibilityMode
 
 
 class CollectionUpdate(BaseModel):
@@ -1245,6 +1266,12 @@ class Collection(CollectionBase, UUIDBaseSchema):
     default_prompt_id: UUID | None = None
     default_prompt_name: str | None = None
     source: str | None = None
+    visibility: CollectionVisibilityMode = "organization"
+    # Server-computed: the caller may switch ``visibility`` (an organization collection they
+    # created, or any of their organization's as an admin). Never re-derive it client-side.
+    can_change_visibility: bool = False
+    #: An organization hold on the collection itself (issue #1276); never a reason.
+    hold: HoldSummary = Field(default_factory=HoldSummary)
     created_at: datetime
     updated_at: datetime
 

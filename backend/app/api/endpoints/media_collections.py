@@ -37,9 +37,12 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.auth.audit import TENANT_SCOPE_ORG
+from app.auth.audit import TENANT_SCOPE_PERSONAL
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
@@ -55,6 +58,7 @@ from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.sharing import CollectionShare
 from app.models.user import User
+from app.schemas.content_hold import HoldSummary
 from app.schemas.media import Collection as CollectionSchema
 from app.schemas.media import CollectionCreate
 from app.schemas.media import CollectionMemberAdd
@@ -62,6 +66,7 @@ from app.schemas.media import CollectionMemberRemove
 from app.schemas.media import CollectionOnSelection
 from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
+from app.schemas.media import CollectionVisibilityUpdate
 from app.schemas.media import CollectionWithCount
 from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.sharing import Share
@@ -69,7 +74,19 @@ from app.schemas.sharing import ShareCreate
 from app.schemas.sharing import SharedCollectionInfo
 from app.schemas.sharing import ShareUpdate
 from app.schemas.user import UserBrief
+from app.services.collection_visibility import members_without_access
+from app.services.collection_visibility import visible_collection_ids
+from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import record_content_event
+from app.services.content_hold_queries import collection_has_active_hold
+from app.services.content_hold_queries import collection_hold_summaries
+from app.services.content_hold_queries import held_by_collection_hold
+from app.services.content_hold_service import record_hold_refusal
 from app.services.formatting_service import FormattingService
+from app.services.hold_guard import HELD_BY_ORGANIZATION
+from app.services.hold_guard import HoldState
+from app.services.hold_guard import refusal_detail
 from app.services.permission_service import PermissionService
 from app.services.takedown_service import exclude_quarantined
 from app.tasks.search_indexing_task import update_file_access_index
@@ -213,6 +230,56 @@ def _get_prompt_info(collection: Collection) -> tuple:
     if prompt:
         return (prompt.uuid, prompt.name)
     return (None, None)
+
+
+def _tenant_scope(collection: Collection) -> str:
+    """``tenant_scope`` of a collection event: whose tenant the collection belongs to."""
+    return TENANT_SCOPE_ORG if collection.organization_id is not None else TENANT_SCOPE_PERSONAL
+
+
+def _collection_held(db: Session, collection: Collection, ctx: RequestContext) -> HoldSummary:
+    """The hold badge facts for one collection (hold uuids only for its organization's admin)."""
+    return collection_hold_summaries(db, [collection.id], reveal_uuids=ctx.is_org_admin).get(
+        int(collection.id), HoldSummary()
+    )
+
+
+def _hold_refusal(
+    message: str, *, db: Session, collection: Collection, ctx: RequestContext, action: str
+):
+    """409 ``FILE_UNDER_LEGAL_HOLD`` for a collection change a hold forbids (and audit it).
+
+    ``held_by`` is for everybody; the hold uuids only for the holding organization's admin.
+    """
+    record_hold_refusal(
+        db,
+        None,
+        ctx.user,
+        AuditedResource.collection(collection),
+        action=action,
+        held_by=[HELD_BY_ORGANIZATION],
+    )
+    actual = collection_hold_summaries(db, [collection.id], reveal_uuids=True).get(
+        int(collection.id), HoldSummary()
+    )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=refusal_detail(
+            HoldState(platform=False, org_hold_uuids=tuple(actual.hold_uuids)),
+            reveal_uuids=ctx.is_org_admin,
+            message=message,
+        ),
+    )
+
+
+def _can_change_visibility(collection: Collection, permission: str | None) -> bool:
+    """Whether the caller may switch ``collection``'s visibility (server-computed for the UI).
+
+    Only an organization collection has a visibility to change, and only its owners may:
+    the creator or an administrator of its organization (``permission == "owner"`` is
+    exactly that for an organization collection; a share never grants it).
+    """
+    return collection.organization_id is not None and permission == "owner"
 
 
 def _build_share_response(db: Session, share: CollectionShare) -> Share:
@@ -408,9 +475,9 @@ def list_collections_on_files(
     one holding a few.
 
     Scoped to the caller's own collections in the request's tenant — in an
-    organization, the org's collections (v422); in the personal workspace, their
-    personal ones. Membership of anyone else's collection is not theirs to read
-    off a selection.
+    organization, the org's collections they may see (v422); in the personal
+    workspace, their personal ones. Membership of anyone else's collection, or of a
+    restricted one they cannot see, is not theirs to read off a selection.
 
     Registered before ``/{collection_uuid}`` so the literal path is not
     swallowed.
@@ -429,6 +496,7 @@ def list_collections_on_files(
         .filter(
             CollectionMember.media_file_id.in_(file_ids),
             PermissionService.collection_tenant_pred(current_user.id, ctx.org_id),
+            Collection.id.in_(visible_collection_ids(db, current_user.id, ctx.org_id)),
         )
         .group_by(Collection.id)
         .order_by(func.count(func.distinct(CollectionMember.media_file_id)).desc(), Collection.name)
@@ -484,12 +552,15 @@ def list_collections(
         collection_ids = [
             row[0]
             for row in db.query(Collection.id)
-            .filter(PermissionService.collection_tenant_pred(user_id, ctx.org_id), org_pred)
+            .filter(
+                PermissionService.collection_tenant_pred(user_id, ctx.org_id),
+                org_pred,
+                Collection.id.in_(list(accessible_perms)),
+            )
             .order_by(Collection.id)
             .offset(skip)
             .limit(limit)
             .all()
-            if row[0] in accessible_perms
         ]
         counts_dict = _visible_media_counts(
             db, collection_ids, include_quarantined=include_quarantined
@@ -565,6 +636,10 @@ def list_collections(
         .all()
     )
 
+    held_by_collection = collection_hold_summaries(
+        db, collection_ids, reveal_uuids=ctx.is_org_admin
+    )
+
     # Bulk-fetch share counts for all collections
     share_counts_query = (
         db.query(
@@ -587,6 +662,8 @@ def list_collections(
         # Set sharing metadata
         my_perm = perm_dict.get(collection.id, "owner")
         collection_with_count.my_permission = my_perm
+        collection_with_count.can_change_visibility = _can_change_visibility(collection, my_perm)
+        collection_with_count.hold = held_by_collection.get(collection.id, HoldSummary())
         collection_with_count.is_shared = collection.user_id != current_user.id
         collection_with_count.share_count = share_counts_dict.get(collection.id, 0)
         if collection.id in shared_by_dict:
@@ -654,6 +731,12 @@ def create_collection(
     otherwise; the response carries the uuid back, never the internal id. A new
     collection starts with no members and no shares.
     """
+    if collection.visibility != "organization" and ctx.org_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Only an organization collection can be restricted",
+        )
+
     # Check if a collection with the same name exists in this tenant
     existing = (
         db.query(Collection.id)
@@ -696,6 +779,7 @@ def create_collection(
     prompt_uuid, prompt_name = _get_prompt_info(db_collection)
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(db_collection, "owner")
     return result
 
 
@@ -754,6 +838,10 @@ def get_collection(
     prompt_uuid, prompt_name = _get_prompt_info(collection)
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(
+        collection, PermissionService.get_collection_permission(db, collection.id, current_user.id)
+    )
+    result.hold = _collection_held(db, collection, ctx)
 
     return result
 
@@ -823,6 +911,96 @@ def update_collection(
     prompt_uuid_val, prompt_name = _get_prompt_info(collection)
     result.default_prompt_id = prompt_uuid_val
     result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(collection, permission)
+    result.hold = _collection_held(db, collection, ctx)
+    return result
+
+
+@router.patch(
+    "/{collection_uuid}/visibility",
+    response_model=CollectionSchema,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
+def set_collection_visibility(
+    collection_uuid: str,
+    body: CollectionVisibilityUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Restrict an organization collection to its named people, or open it to the organization.
+
+    ``restricted``: only the creator, the organization's admins and the people it is shared
+    with (``/shares``) see it or the files in it through it. ``organization``: every member.
+    Authority is the collection's owners (its creator or an organization admin); a person who
+    cannot see a restricted collection gets 404, exactly as for a missing one, and a platform
+    support grant never reaches it. A personal collection has no organization to hide it
+    from: 422. This is the ONLY path that changes visibility (``PUT`` does not accept it).
+
+    Effects: the audit event ``collection.visibility.change`` (always recorded, the
+    collection's name is never in it), a ``collection_access_changed`` WebSocket event
+    carrying only the collection uuid to the members who just lost sight of it so their UI
+    drops it, and a retrieval-cache bump so a cached chat answer cannot keep serving
+    excerpts to somebody who no longer may read them. No reindex is needed: search reads the
+    caller's visibility from Postgres per request.
+    """
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
+    if collection.organization_id is None:
+        raise HTTPException(
+            status_code=422, detail="Only an organization collection has a visibility"
+        )
+    permission = PermissionService.get_collection_permission(db, collection.id, current_user.id)
+    if permission != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the collection's creator or an organization admin can change who sees it",
+        )
+
+    previous = collection.visibility
+    if body.visibility != previous:
+        collection.visibility = body.visibility
+        db.commit()
+        db.refresh(collection)
+
+        from app.services.chat.retrieval_cache import bump_corpus_version
+
+        lost_sight = members_without_access(db, collection)
+        for member_id in lost_sight:
+            send_ws_event(
+                member_id,
+                NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED,
+                {"collection_uuid": str(collection.uuid)},
+            )
+        bump_corpus_version()
+
+        req_ctx = get_request_context(request)
+        audit_logger.log(
+            event_type=AuditEventType.COLLECTION_VISIBILITY_CHANGE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=req_ctx["source_ip"],
+            user_agent=req_ctx["user_agent"],
+            organization_id=collection.organization_id,
+            resource_type="collection",
+            resource_uuid=str(collection.uuid),
+            tenant_scope=_tenant_scope(collection),
+            details={
+                "from": previous,
+                "to": body.visibility,
+                "members_who_lost_access": len(lost_sight),
+            },
+        )
+
+    result = CollectionSchema.model_validate(collection)
+    prompt_uuid, prompt_name = _get_prompt_info(collection)
+    result.default_prompt_id = prompt_uuid
+    result.default_prompt_name = prompt_name
+    result.can_change_visibility = _can_change_visibility(collection, permission)
+    result.hold = _collection_held(db, collection, ctx)
     return result
 
 
@@ -851,26 +1029,87 @@ def delete_collection(
             collection, current_user, forbidden_detail="Only the collection owner can delete it"
         )
 
-    # Reindex files BEFORE deletion (cascade will remove shares + members)
+    # A collection under a hold is evidence in its own right (issue #1276): it cannot be deleted
+    # until the hold is released, even when it is empty.
+    if collection_has_active_hold(db, int(collection.id)):
+        raise _hold_refusal(
+            "refused: this collection is under an active legal hold and cannot be deleted. "
+            "Release the hold before deleting.",
+            db=db,
+            collection=collection,
+            ctx=ctx,
+            action="delete_collection",
+        )
+
+    # Capture the members before the cascade removes them; reindex after the commit so the
+    # rewrite reads the collection as gone.
     file_ids = [
         cm.media_file_id
         for cm in db.query(CollectionMember.media_file_id)
         .filter(CollectionMember.collection_id == collection.id)
         .all()
     ]
-    if file_ids:
-        update_file_access_index.delay(file_ids)
 
     db.delete(collection)
     db.commit()
+    if file_ids:
+        update_file_access_index.delay(file_ids)
 
     return {"message": "Collection deleted successfully"}
+
+
+def _membership_affects_index(db: Session, collection: Collection) -> bool:
+    """True when adding/removing files changes who can read them in search.
+
+    An organization collection is a read route for its members (``search/access_filter``
+    matches the chunk's ``collection_ids``), a shared one grants its sharees. A private
+    personal collection changes neither.
+    """
+    if collection.organization_id is not None:
+        return True
+    return (
+        db.query(CollectionShare.id).filter(CollectionShare.collection_id == collection.id).first()
+        is not None
+    )
+
+
+def _record_membership_change(
+    db: Session,
+    request: Request,
+    actor: User,
+    collection: Collection,
+    *,
+    added: list[str],
+    removed: list[str],
+) -> None:
+    """Audit files added to / removed from a collection (always recorded, issue #1277).
+
+    ``added`` / ``removed`` are file uuids. The event carries the exact counts and at most
+    ``MAX_MEMBERSHIP_UUIDS`` uuids; never a name. Written after the change commits.
+    """
+    if not added and not removed:
+        return
+    record_content_event(
+        db,
+        request,
+        event=AuditEventType.COLLECTION_MEMBERSHIP_CHANGE,
+        actor=actor,
+        resource=AuditedResource.collection(collection),
+        details={
+            "added": len(added),
+            "removed": len(removed),
+            "file_uuids": (added + removed)[:MAX_MEMBERSHIP_UUIDS],
+            "source": "manual",
+        },
+        dedup=False,
+    )
 
 
 @router.post("/{collection_uuid}/media", response_model=dict)
 def add_media_to_collection(
     collection_uuid: str,
     media_data: CollectionMemberAdd,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -933,13 +1172,26 @@ def add_media_to_collection(
 
     db.commit()
 
-    # If collection has shares, reindex newly added files
-    if added_file_ids:
-        share_count = (
-            db.query(CollectionShare).filter(CollectionShare.collection_id == collection_id).count()
-        )
-        if share_count > 0:
-            update_file_access_index.delay(added_file_ids)
+    # Joining a held collection holds the file (the CollectionMember insert covers it); mirror
+    # that into the storage object lock, best effort and after the commit.
+    covered = held_by_collection_hold(db, collection_id, added_file_ids)
+    if covered:
+        from app.services.minio_service import set_object_legal_hold
+
+        for f in media_files:
+            if f.id in covered and f.storage_path:
+                set_object_legal_hold(str(f.storage_path), True)
+
+    if added_file_ids and _membership_affects_index(db, collection):
+        update_file_access_index.delay(added_file_ids)
+    _record_membership_change(
+        db,
+        request,
+        current_user,
+        collection,
+        added=[str(f.uuid) for f in media_files if f.id in set(added_file_ids)],
+        removed=[],
+    )
 
     return {
         "message": f"Added {added_count} media files to collection",
@@ -952,6 +1204,7 @@ def add_media_to_collection(
 def remove_media_from_collection(
     collection_uuid: str,
     media_data: CollectionMemberRemove,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -969,10 +1222,35 @@ def remove_media_from_collection(
     # Every member of an org collection may remove any of its (org) files — the
     # collection is the org's (v422).
     may_remove_any = permission == "owner" or collection.organization_id is not None
-    id_query = db.query(MediaFile.id).filter(MediaFile.uuid.in_(media_file_uuids))
+    id_query = db.query(MediaFile.id, MediaFile.uuid).filter(MediaFile.uuid.in_(media_file_uuids))
     if not may_remove_any:
         id_query = id_query.filter(MediaFile.user_id == current_user.id)
-    media_file_ids = [r[0] for r in id_query.all()]
+    resolved = id_query.all()
+    media_file_ids = [r[0] for r in resolved]
+
+    # The members actually present, for the audit event (a uuid that was never in the
+    # collection was not "removed").
+    present_ids = {
+        row[0]
+        for row in db.query(CollectionMember.media_file_id).filter(
+            CollectionMember.collection_id == collection_id,
+            CollectionMember.media_file_id.in_(media_file_ids),
+        )
+    }
+
+    # A file a hold on THIS collection covers cannot leave it (issue #1276): moving it out would
+    # be the way to slip evidence from under a hold. The whole request is refused so nothing is
+    # half removed; release the hold first.
+    protected = held_by_collection_hold(db, collection_id, present_ids)
+    if protected:
+        raise _hold_refusal(
+            f"refused: {len(protected)} of these files are under this collection's legal hold "
+            "and cannot be removed from it. Release the hold first.",
+            db=db,
+            collection=collection,
+            ctx=ctx,
+            action="remove_from_collection",
+        )
 
     # Remove members
     removed_count = (
@@ -986,13 +1264,16 @@ def remove_media_from_collection(
 
     db.commit()
 
-    # If collection has shares, reindex removed files
-    if media_file_ids:
-        share_count = (
-            db.query(CollectionShare).filter(CollectionShare.collection_id == collection_id).count()
-        )
-        if share_count > 0:
-            update_file_access_index.delay(media_file_ids)
+    if media_file_ids and _membership_affects_index(db, collection):
+        update_file_access_index.delay(media_file_ids)
+    _record_membership_change(
+        db,
+        request,
+        current_user,
+        collection,
+        added=[],
+        removed=[str(uuid) for fid, uuid in resolved if fid in present_ids],
+    )
 
     return {
         "message": f"Removed {removed_count} media files from collection",
@@ -1384,12 +1665,12 @@ def create_collection_share(
         username=str(current_user.email),
         source_ip=req_ctx["source_ip"],
         user_agent=req_ctx["user_agent"],
-        organization_id=ctx.org_id,
+        organization_id=collection.organization_id,
         target_user_id=target_user_id,
+        resource_type="collection",
+        resource_uuid=str(collection.uuid),
+        tenant_scope=_tenant_scope(collection),
         details={
-            "resource_type": "collection",
-            "resource_uuid": str(collection.uuid),
-            "resource_name": collection.name,
             "target_group_id": target_group_id,
             "permission": share_in.permission,
         },
@@ -1467,12 +1748,12 @@ def update_collection_share(
         username=str(current_user.email),
         source_ip=req_ctx["source_ip"],
         user_agent=req_ctx["user_agent"],
-        organization_id=ctx.org_id,
+        organization_id=collection.organization_id,
         target_user_id=share.target_user_id,
+        resource_type="collection",
+        resource_uuid=str(collection.uuid),
+        tenant_scope=_tenant_scope(collection),
         details={
-            "resource_type": "collection",
-            "resource_uuid": str(collection.uuid),
-            "resource_name": collection.name,
             "target_group_id": share.target_group_id,
             "action": "permission_update",
             "previous_permission": previous_permission,
@@ -1545,12 +1826,12 @@ def delete_collection_share(
         username=str(current_user.email),
         source_ip=req_ctx["source_ip"],
         user_agent=req_ctx["user_agent"],
-        organization_id=ctx.org_id,
+        organization_id=collection.organization_id,
         target_user_id=revoked_target_user_id,
+        resource_type="collection",
+        resource_uuid=str(collection.uuid),
+        tenant_scope=_tenant_scope(collection),
         details={
-            "resource_type": "collection",
-            "resource_uuid": str(collection.uuid),
-            "resource_name": collection.name,
             "target_group_id": revoked_target_group_id,
             "permission": revoked_permission,
         },

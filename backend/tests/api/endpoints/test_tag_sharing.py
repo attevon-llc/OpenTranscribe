@@ -181,8 +181,8 @@ def test_create_share_emits_resource_share_audit_event(
     assert event["event_type"] == sharing_module.AuditEventType.RESOURCE_SHARE
     assert event["user_id"] == normal_user.id
     assert event["target_user_id"] == other_user.id
-    assert event["details"]["resource_type"] == "tag"
-    assert event["details"]["resource_uuid"] == str(tag.uuid)
+    assert event["resource_type"] == "tag"
+    assert event["resource_uuid"] == str(tag.uuid)
 
 
 def test_create_share_with_owner_400_does_not_emit_audit_event(
@@ -223,8 +223,8 @@ def test_revoke_share_emits_resource_unshare_audit_event(
     assert event["event_type"] == sharing_module.AuditEventType.RESOURCE_UNSHARE
     assert event["user_id"] == normal_user.id
     assert event["target_user_id"] == other_user.id
-    assert event["details"]["resource_type"] == "tag"
-    assert event["details"]["resource_uuid"] == str(tag.uuid)
+    assert event["resource_type"] == "tag"
+    assert event["resource_uuid"] == str(tag.uuid)
 
 
 def test_revoke_share_not_found_does_not_emit_audit_event(

@@ -80,6 +80,38 @@ OpenTranscribe enforces code quality through a multi-tool pre-commit pipeline. E
 
 The frontend checks (svelte-check and vite build) only trigger when `.svelte`, `.ts`, `.js`, `.css`, or `.html` files under `frontend/src/` are staged. This avoids unnecessary build times when only backend files change. If the Claude CLI is available during a commit, the hook automatically attempts to fix failures before falling back to error output.
 
+### Keeping the mypy hook honest
+
+The mypy hook runs in its own isolated virtual environment, which contains only the packages
+listed under `additional_dependencies` in `.pre-commit-config.yaml`. A package that ships type
+information (`py.typed`) but is missing from that list is treated as `Any`, so the hook can pass
+code that `backend/venv/bin/mypy` rejects. This happened: the hook reported 0 findings while the
+venv reported 55 over the same 2,269 files, and nothing noticed until the two were compared.
+
+The hook is therefore tied to the backend requirements rather than maintained separately:
+
+- Its `rev` equals the `mypy==` pin in `backend/requirements-dev.txt`.
+- Every dependency is an exact `name==version` pin equal to the pin in `backend/requirements*.txt`.
+  **To bump a package, change it in the requirements file and in the hook in the same commit.**
+- Every third-party module imported under `backend/` that ships `py.typed` is a hook dependency,
+  except a short, reasoned `EXEMPT` table of heavy machine-learning packages (`torch`,
+  `transformers`, `sentence_transformers`, ...). Those are type-checked by `backend/venv` only.
+- The `types-*` stub packages in the hook are exactly the ones in `requirements-dev.txt`. A stub
+  must never be added for a package that ships its own types: under PEP 561 the stub wins, which is
+  how `types-redis` once hid redis 8's real signatures.
+
+`backend/tests/unit/test_precommit_mypy_env_parity.py` derives all of this from the repository and
+fails with the specific package to fix. Running mypy locally the way the hook does:
+
+```bash
+git ls-files 'backend/*.py' 'backend/*.pyi' | xargs backend/venv/bin/mypy \
+  --config-file pyproject.toml --ignore-missing-imports --check-untyped-defs
+```
+
+CI also runs `scripts/mypy-hook-negative-control.sh`, which feeds the real hook three deliberately
+mistyped lines in a throwaway repository and fails unless all three are rejected. Run it yourself
+after changing the hook's dependencies; add `--ref <commit>` to judge an older configuration.
+
 Run the full pipeline manually:
 
 ```bash

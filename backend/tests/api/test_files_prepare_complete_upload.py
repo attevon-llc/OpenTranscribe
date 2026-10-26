@@ -435,6 +435,7 @@ def test_a_stat_object_outage_does_not_delete_the_file_row(
     ``/complete`` deleted the user's already-uploaded ``media_file`` row and
     told them the upload failed, while the bytes sat safely in the bucket."""
     from minio.error import S3Error
+    from urllib3 import HTTPResponse
 
     file_uuid = str(uuid.uuid4())
     media_file = MediaFile(
@@ -451,7 +452,7 @@ def test_a_stat_object_outage_does_not_delete_the_file_row(
     db_session.commit()
 
     outage = S3Error(
-        response=None,
+        response=HTTPResponse(status=500),
         code="InternalError",
         message="simulated storage outage",
         resource=f"/{file_uuid}",

@@ -30,6 +30,7 @@ import uuid
 from functools import cache
 
 import pytest
+from starlette.routing import Route
 
 pytestmark = pytest.mark.unit
 
@@ -65,6 +66,13 @@ EXEMPT: dict[str, str] = {
         "administrator-typed basis and reason text, status and snapshot uuids. 'export' is the "
         "compliance register, not a transcript; no transcript-derived content exists on the "
         "route, so there is nothing for a redaction policy to mask."
+    ),
+    "GET /api/org-admin/audit-logs/export": (
+        "Exports the AUDIT LOG (#1277): event types, ids, counts and formats. An audit event "
+        "never carries transcript text, a filename, a title or a reason (services/content_audit "
+        "pins it with test_content_events_never_carry_filename_title_or_text); the only labels "
+        "added are member names and file or collection titles resolved from Postgres inside the "
+        "caller's own organization, which is not transcript-derived content."
     ),
     "POST /api/admin/local-models/download": (
         "Downloads a Whisper MODEL into the shared Hugging Face cache (#1246); 'download' is "
@@ -259,12 +267,14 @@ def _plane() -> list[tuple[str, str, object]]:
     """``(key, path, endpoint)`` for every route whose path names the export plane."""
     from app.main import app
 
-    found = []
+    found: list[tuple[str, str, object]] = []
     for route in app.routes:
-        path = getattr(route, "path", "")
+        if not isinstance(route, Route):
+            continue
+        path = route.path
         if not any(keyword in path for keyword in _PLANE_KEYWORDS):
             continue
-        for method in sorted(getattr(route, "methods", None) or []):
+        for method in sorted(route.methods or []):
             if method in ("HEAD", "OPTIONS"):
                 continue
             found.append((f"{method} {path}", path, route.endpoint))

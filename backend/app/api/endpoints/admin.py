@@ -109,7 +109,6 @@ from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 from app.services.platform_bypass import audit_metadata_access
-from app.utils.content_disposition import attachment_header
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
@@ -489,8 +488,11 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {len(tag_ids)} tags for user {user_id}")
 
 
-def _assert_no_files_under_legal_hold(db: Session, user_id: int) -> None:
+def _assert_no_held_files(db: Session, user_id: int) -> None:
     """Refuse to delete an account that still owns legally-held evidence (issue #689).
+
+    "Held" is the platform's hold OR an organization's (``hold_guard.held_pred``, issue #1276):
+    an organization hold on a file is just as much a reason the account cannot be erased.
 
     ``_delete_user_media_files`` ends in a **bulk** ``query(MediaFile).delete()``. A bulk
     delete emits one statement, loads no instances, and consults no ``legal_hold`` — so
@@ -527,13 +529,16 @@ def _assert_no_files_under_legal_hold(db: Session, user_id: int) -> None:
         HTTPException: 409 ``FILE_UNDER_LEGAL_HOLD``, naming how many files are held,
             when the account owns at least one.
     """
-    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
+    from app.services.hold_guard import HoldRefusedError
+    from app.services.hold_guard import held_pred
+    from app.services.hold_guard import hold_states
+    from app.services.hold_guard import refusal_detail
 
-    held_count = (
-        db.query(func.count(MediaFile.id))
-        .filter(MediaFile.user_id == user_id, MediaFile.legal_hold.is_(True))
-        .scalar()
-    ) or 0
+    held_ids = [
+        int(row[0])
+        for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id, held_pred())
+    ]
+    held_count = len(held_ids)
     if not held_count:
         return
 
@@ -543,11 +548,13 @@ def _assert_no_files_under_legal_hold(db: Session, user_id: int) -> None:
         "and cannot be deleted. Release the hold before deleting."
     )
     logger.error(f"user deletion: REFUSED to delete user {user_id} — {message}")
+    # Who holds them (platform, organization) is told; the organization hold uuids are not:
+    # the caller here is a platform admin or the account owner, never the holding organization.
+    refusal = HoldRefusedError(hold_states(db, held_ids))
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail={
-            "error": LEGAL_HOLD_ERROR_CODE,
-            "message": message,
+            **refusal_detail(refusal.merged(), reveal_uuids=False, message=message),
             "files_under_legal_hold": held_count,
         },
     )
@@ -557,7 +564,7 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
 
     **A user owning any file under an active legal hold is REFUSED before anything is
-    deleted** (:func:`_assert_no_files_under_legal_hold`, issue #689). The check runs
+    deleted** (:func:`_assert_no_held_files`, issue #689). The check runs
     here as well as in each endpoint because a guard in one caller protects one caller;
     the endpoints call it *first* so that the two earlier passes
     (``_delete_user_owned_records``, ``_delete_user_speakers``) have not already
@@ -606,7 +613,7 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     Raises:
         HTTPException: 409 when the user owns a file under an active legal hold.
     """
-    _assert_no_files_under_legal_hold(db, user_id)
+    _assert_no_held_files(db, user_id)
 
     media_ids = [
         row[0] for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id).all()
@@ -1022,7 +1029,7 @@ def delete_admin_user(
         # Legally-held evidence outranks the deletion, and the refusal has to land
         # BEFORE the first of the three cascade passes: a partial destroy followed by a
         # 409 is worse than either outcome on its own (issue #689).
-        _assert_no_files_under_legal_hold(db, int(user_id))
+        _assert_no_held_files(db, int(user_id))
 
         # Phase 0 — read the storage/OpenSearch plan while the rows still exist and the
         # transaction is open. Postgres reads only; no object storage touched yet.
@@ -2536,17 +2543,26 @@ def get_audit_logs(
 
 @router.get("/audit-logs/export")
 def export_audit_logs(
+    request: Request,
     export_format: str = Query("csv", description="Export format (csv or json)"),
     start_date: datetime | None = Query(None, description="Start date for export"),
     end_date: datetime | None = Query(None, description="End date for export"),
     current_user: User = Depends(get_current_super_admin_user),
 ):
-    """Export audit logs for compliance reporting. Super admin only."""
-    import csv
-    import io
-    import json
+    """Export audit logs for compliance reporting. Super admin only (all tenants).
 
-    from fastapi.responses import StreamingResponse
+    Reads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two
+    pieces the organization admin's export uses, so the columns and the CSV neutralisation
+    are one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;
+    ``X-Export-Truncated`` says when that cut something off. The export is itself audited.
+    """
+    from app.auth.audit import AuditEventType
+    from app.auth.audit import AuditOutcome
+    from app.auth.audit import audit_logger
+    from app.auth.audit import query_audit_logs
+    from app.auth.audit_export import audit_export_response
+    from app.core.constants import AUDIT_EXPORT_MAX_ROWS
+    from app.middleware.audit import get_request_context
 
     if export_format not in ("csv", "json"):
         raise HTTPException(status_code=400, detail="Format must be csv or json")
@@ -2558,77 +2574,36 @@ def export_audit_logs(
             detail="Audit log export requires AUDIT_LOG_TO_OPENSEARCH=true",
         )
 
-    try:
-        from opensearchpy import OpenSearch
-
-        from app.core.opensearch_auth import opensearch_connection_kwargs
-
-        client = OpenSearch(**opensearch_connection_kwargs())
-
-        # Build query
-        must_clauses = []
-        if start_date:
-            must_clauses.append({"range": {"timestamp": {"gte": start_date.isoformat()}}})
-        if end_date:
-            must_clauses.append({"range": {"timestamp": {"lte": end_date.isoformat()}}})
-
-        query = {
-            "query": {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}},
-            "sort": [{"timestamp": {"order": "desc"}}],
-            "size": 10000,  # Maximum export size
-        }
-
-        index_pattern = "audit-logs-*"
-        response = client.search(index=index_pattern, body=query)
-        logs = [hit["_source"] for hit in response["hits"]["hits"]]
-
-        if export_format == "json":
-            content = json.dumps(logs, indent=2, default=str)
-            media_type = "application/json"
-        else:
-            # CSV format
-            output = io.StringIO()
-            if logs:
-                fieldnames = [
-                    "timestamp",
-                    "event_type",
-                    "outcome",
-                    "user_id",
-                    "username",
-                    "source_ip",
-                    "user_agent",
-                    "error_code",
-                    "details",
-                ]
-                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
-                writer.writeheader()
-                for log in logs:
-                    # Convert details dict to string for CSV
-                    if "details" in log and isinstance(log["details"], dict):
-                        log["details"] = json.dumps(log["details"])
-                    writer.writerow(log)
-            content = output.getvalue()
-            media_type = "text/csv"
-
-        filename = f"audit-logs-{datetime.now(UTC).strftime('%Y%m%d')}.{export_format}"
-
-        return StreamingResponse(
-            iter([content]),
-            media_type=media_type,
-            headers={"Content-Disposition": attachment_header(filename)},
-        )
-
-    except HTTPException:
-        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
-        # anything it catches into a 500, which would report a deliberate 401/403/404/422
-        # raised inside this block as an internal server error (issue #431).
-        raise
-    except Exception as e:
-        logger.error("Error exporting audit logs: %s", e, exc_info=True)
+    result = query_audit_logs(
+        start_date=start_date, end_date=end_date, limit=AUDIT_EXPORT_MAX_ROWS, offset=0
+    )
+    if "error" in result:
+        logger.error("Error exporting audit logs: %s", result["error"])
         raise HTTPException(
             status_code=500,
             detail="An internal error occurred. Please try again.",
-        ) from e
+        )
+
+    logs = result["logs"]
+    truncated = int(result["total"]) > len(logs)
+    ctx_info = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.AUDIT_EXPORT,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=ctx_info["source_ip"],
+        user_agent=ctx_info["user_agent"],
+        details={
+            "scope": "platform",
+            "format": export_format,
+            "rows": len(logs),
+            "truncated": truncated,
+        },
+    )
+    return audit_export_response(
+        logs, export_format, filename_prefix="audit-logs", truncated=truncated
+    )
 
 
 # ============== GDPR / Right-to-Erasure (super-admin / platform) ==============
@@ -3189,7 +3164,7 @@ def release_media_file(
     that is *released but still held* -- ``is_quarantined=False, legal_hold=True``.
     Before this, that state's only documented remedy (this very endpoint) refused
     it with 409 "File is not quarantined", which made the account-deletion guard's
-    (``_assert_no_files_under_legal_hold``) own documented remedy unreachable. The
+    (``_assert_no_held_files``) own documented remedy unreachable. The
     409 stays for the *release-from-quarantine* leg -- releasing a file that was
     never quarantined and carries no hold is still refused -- but a
     released-but-held file may now have its hold lifted here.

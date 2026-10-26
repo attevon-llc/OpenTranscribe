@@ -39,12 +39,52 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
   cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
-- **Collection visibility** — `collection_visibility.py` is the one place a surface asks
-  which collections a caller may see named on a file or filter by: `visible_collection_ids`
-  (the predicate #1275's restricted collections will replace), `collections_on_files`
-  (batched, constant queries per page; the file page's `get_file_collections` and the search
-  card's `collections` both use it) and `resolve_collection_filter` (a hidden collection
-  filters to nothing, never 403/404). Don't add a raw `Collection` join beside it.
+- **Collection visibility** — `collection_visibility.py` is the one place that answers "which
+  collections may this caller see, and which files does that make readable" (#1051, #1275).
+  `collection_permission_ranks` / `collection_permission` are the ONE statement behind
+  `PermissionService.get_collection_permission` and `get_accessible_collection_ids` (an org
+  collection by membership, a personal one by ownership, either by a share). On top of it:
+  `visible_collection_ids` / `visible_collections_by_uuid` (what a surface may name),
+  `usable_collections` (what a file may be put into: editor on a collection of the tenant, one
+  statement, used by uploads, URL/YouTube/watch imports and auto-label), `collections_on_files`
+  (batched, constant queries per page; the file page and the search card), `resolve_collection_filter`
+  (a hidden collection filters to nothing, never 403/404), and `org_collection_file_ids_stmt`:
+  **membership of an organization collection you may see is a file-READ route** (decision D-3), which
+  `get_file_permission` (answers `viewer`) and `get_accessible_file_ids_subquery` (gallery, tags,
+  chat scope) both include. The index side of the same route is
+  `search/access_filter.access_filter_clause` (see `search/CLAUDE.md`). Don't add a raw
+  `Collection` join beside any of this: `tests/unit/test_collection_visibility_discipline.py`
+  fails on one that has no written reason. Never answer a hidden collection with a different
+  status than a missing one (404, or an empty page).
+- **Content audit** — `content_audit.py` is the ONE write path for content-access and governance
+  audit events (#1277): `record_content_event(db, request, event=, actor=, resource=AuditedResource.file(row),
+  details=, dedup=)`. It stamps `organization_id`/`tenant_scope` from the RESOURCE (never the actor's role), sets
+  `target_user_id` to the owner when that is not the actor, drops the three opt-in events
+  (`content.file.view`, `content.media.access`, `content.export`) unless the `audit.content_access`
+  capability AND the super_admin setting `audit.content_access.enabled` are both on, collapses a repeat
+  view / stream URL per `(event, actor, resource, surface)` for 900 s with Redis `SET NX EX` (Redis down
+  writes the event), never collapses downloads or exports, never raises, and never carries a name, title,
+  text or reason in `details`. Don't call `audit_logger.log` directly for a content event.
+  Routes call `record_file_event` (a row or a uuid; the uuid is resolved only after the opt-in gate, so
+  the file page pays no query when auditing is off) after the read or the content exists, never before a
+  refusal. `AuditedResource.conversation` covers chat exports. Membership changes
+  (`collection.membership.change`) are governance events: always written, after the commit.
+  `tests/api/test_content_audit_events.py` pins one event per emit site.
+- **Holds** — `hold_guard.py` is the ONE answer to "is this file held by anyone"
+  (platform `media_file.legal_hold` OR an active organization `content_hold`): `hold_state` /
+  `hold_states` per file, `held_pred` / `not_held_pred` inside a query, `is_held(file)` for a loaded
+  row, `refusal_detail` for the 409 body (everyone learns `held_by`; only an org admin gets the hold
+  uuids; the reason never appears). Never read `MediaFile.legal_hold` to decide whether to destroy
+  or restart a clock (`test_hold_guard_single_source.py` fails on it). `content_hold_service.py`
+  places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`);
+  it never commits, and what must follow the commit (storage object
+  lock, the erasure-sweep nudge, the audit event) is a `HoldChange` that `finish_hold_change`
+  performs. `content_hold_queries.py` holds the read-side questions.
+- **Org audit view** — `org_audit_view.py` resolves `actor_display` / `target_display` /
+  `resource_display` for the organization admin's audit screen at READ time (three queries per page), and
+  only inside the org: a non-member (left, operator, failed login) or another tenant's / personal /
+  deleted resource gets `None`, never a label. Names are never stored in an event. `member_id_for_uuid`
+  answers `None` for both an unknown uuid and a non-member's, so a 403 on it is not an existence oracle.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.

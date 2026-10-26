@@ -44,4 +44,64 @@ describe('OrgAdminApi (issue #1253)', () => {
       reason: 'withdrawn',
     });
   });
+
+  it('lists the organization audit log with the member by uuid and the paging params', async () => {
+    get.mockResolvedValue({ data: { logs: [{ id: 1 }], total: 7 } } as never);
+
+    const result = await OrgAdminApi.listAuditLogs({
+      user_uuid: 'u-1',
+      resource_uuid: 'r-1',
+      limit: 50,
+      offset: 100,
+    });
+
+    expect(get).toHaveBeenCalledWith('/org-admin/audit-logs', {
+      params: { user_uuid: 'u-1', resource_uuid: 'r-1', limit: 50, offset: 100 },
+    });
+    expect(result).toEqual({ logs: [{ id: 1 }], total: 7 });
+  });
+
+  it('exports as a blob with the format and the same filters', async () => {
+    const blob = new Blob(['x']);
+    get.mockResolvedValue({ data: blob } as never);
+
+    const result = await OrgAdminApi.exportAuditLogs('csv', { event_type: 'content.export' });
+
+    expect(get).toHaveBeenCalledWith('/org-admin/audit-logs/export', {
+      params: { event_type: 'content.export', format: 'csv' },
+      responseType: 'blob',
+    });
+    expect(result).toBe(blob);
+  });
+
+  it('lists holds with the active-only filter and unwraps the page', async () => {
+    get.mockResolvedValue({ data: { holds: [{ uuid: 'h-1' }], total: 3 } } as never);
+
+    const result = await OrgAdminApi.listHolds({ active_only: false, limit: 200 });
+
+    expect(get).toHaveBeenCalledWith('/org-admin/holds', {
+      params: { active_only: false, limit: 200 },
+    });
+    expect(result).toEqual({ holds: [{ uuid: 'h-1' }], total: 3 });
+  });
+
+  it('places a hold with the body as given and releases with only a reason', async () => {
+    post.mockResolvedValue({ data: { uuid: 'h-1' } } as never);
+
+    await OrgAdminApi.placeHold({
+      scope: 'collection',
+      collection_uuid: 'c-1',
+      reason: 'Matter 14 hold',
+    });
+    await OrgAdminApi.releaseHold('h-1', 'Matter closed');
+
+    expect(post).toHaveBeenNthCalledWith(1, '/org-admin/holds', {
+      scope: 'collection',
+      collection_uuid: 'c-1',
+      reason: 'Matter 14 hold',
+    });
+    expect(post).toHaveBeenNthCalledWith(2, '/org-admin/holds/h-1/release', {
+      reason: 'Matter closed',
+    });
+  });
 });

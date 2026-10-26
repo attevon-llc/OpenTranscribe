@@ -3095,6 +3095,11 @@
       "Collection": {
         "description": "Collection with UUID as public identifier.\n\n``user_id`` is the creator's UUID; NULL for an organization collection whose\ncreator's account is gone (the collection stays with the organization).",
         "properties": {
+          "can_change_visibility": {
+            "default": false,
+            "title": "Can Change Visibility",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3133,6 +3138,9 @@
               }
             ],
             "title": "Description"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
           },
           "is_public": {
             "default": false,
@@ -3174,6 +3182,15 @@
           "uuid": {
             "format": "uuid",
             "title": "Uuid",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -3218,6 +3235,16 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "description": "'organization' (every member of the organization sees it) or 'restricted' (only its creator, the organization admins and the people it is shared with). A personal collection can only be 'organization': anything else is a 422.",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -3293,6 +3320,11 @@
       },
       "CollectionResponse": {
         "properties": {
+          "can_change_visibility": {
+            "default": false,
+            "title": "Can Change Visibility",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3331,6 +3363,9 @@
               }
             ],
             "title": "Description"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
           },
           "is_public": {
             "default": false,
@@ -3387,6 +3422,15 @@
           "uuid": {
             "format": "uuid",
             "title": "Uuid",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -3450,8 +3494,31 @@
         "title": "CollectionUpdate",
         "type": "object"
       },
+      "CollectionVisibilityUpdate": {
+        "description": "Body of ``PATCH /collections/{uuid}/visibility``.",
+        "properties": {
+          "visibility": {
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "CollectionVisibilityUpdate",
+        "type": "object"
+      },
       "CollectionWithCount": {
         "properties": {
+          "can_change_visibility": {
+            "default": false,
+            "title": "Can Change Visibility",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3490,6 +3557,9 @@
               }
             ],
             "title": "Description"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
           },
           "is_public": {
             "default": false,
@@ -3561,6 +3631,15 @@
           "uuid": {
             "format": "uuid",
             "title": "Uuid",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "organization",
+            "enum": [
+              "organization",
+              "restricted"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -4047,6 +4126,62 @@
           "model_name"
         ],
         "title": "ConnectionTestRequest",
+        "type": "object"
+      },
+      "ContentAccessAuditStatus": {
+        "description": "The switch, whether it is in effect, and what leaving it on costs.",
+        "properties": {
+          "active": {
+            "description": "enabled AND capability_available: events are being written.",
+            "title": "Active",
+            "type": "boolean"
+          },
+          "bytes_per_active_user_per_day_estimate": {
+            "title": "Bytes Per Active User Per Day Estimate",
+            "type": "integer"
+          },
+          "capability_available": {
+            "description": "False when this deployment's edition withholds content auditing.",
+            "title": "Capability Available",
+            "type": "boolean"
+          },
+          "dedup_seconds": {
+            "description": "A repeat view or stream-URL event inside this window is not written again.",
+            "title": "Dedup Seconds",
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "The super_admin setting.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event_bytes_estimate": {
+            "title": "Event Bytes Estimate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "capability_available",
+          "active",
+          "dedup_seconds",
+          "event_bytes_estimate",
+          "bytes_per_active_user_per_day_estimate"
+        ],
+        "title": "ContentAccessAuditStatus",
+        "type": "object"
+      },
+      "ContentAccessAuditUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ContentAccessAuditUpdate",
         "type": "object"
       },
       "ContentTypePromptsResponse": {
@@ -7142,6 +7277,42 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeldFile": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "title": "HeldFile",
+        "type": "object"
+      },
       "HfTokenStatus": {
         "description": "What the client may know. Never any part of the token.",
         "properties": {
@@ -7224,6 +7395,265 @@
           "token"
         ],
         "title": "HfTokenUpdate",
+        "type": "object"
+      },
+      "HoldCreate": {
+        "description": "Place a hold on named files, or on a whole collection.",
+        "properties": {
+          "collection_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Uuid"
+          },
+          "file_uuids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "File Uuids",
+            "type": "array"
+          },
+          "matter_ref": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An optional matter or case reference.",
+            "title": "Matter Ref"
+          },
+          "reason": {
+            "description": "Why the hold exists. Visible to this organization's administrators only.",
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "file",
+              "collection"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "reason"
+        ],
+        "title": "HoldCreate",
+        "type": "object"
+      },
+      "HoldList": {
+        "properties": {
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/HoldOut"
+            },
+            "title": "Holds",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "holds",
+          "total"
+        ],
+        "title": "HoldList",
+        "type": "object"
+      },
+      "HoldOut": {
+        "description": "An administrator's view of one hold.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "collection_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Name"
+          },
+          "collection_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Uuid"
+          },
+          "file_count": {
+            "default": 0,
+            "title": "File Count",
+            "type": "integer"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HeldFile"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "matter_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Ref"
+          },
+          "placed_at": {
+            "format": "date-time",
+            "title": "Placed At",
+            "type": "string"
+          },
+          "placed_by_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placed By Display"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "release_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Reason"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "released_by_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released By Display"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "scope",
+          "reason",
+          "placed_at",
+          "active"
+        ],
+        "title": "HoldOut",
+        "type": "object"
+      },
+      "HoldRelease": {
+        "properties": {
+          "reason": {
+            "description": "Why the hold is being released. Kept on the hold record.",
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "HoldRelease",
+        "type": "object"
+      },
+      "HoldSummary": {
+        "description": "Whether a file or collection is held, for the badge and the refusal messages.",
+        "properties": {
+          "held": {
+            "default": false,
+            "title": "Held",
+            "type": "boolean"
+          },
+          "held_by": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Held By",
+            "type": "array"
+          },
+          "hold_uuids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Hold Uuids",
+            "type": "array"
+          }
+        },
+        "title": "HoldSummary",
         "type": "object"
       },
       "InterruptionStats": {
@@ -9626,6 +10056,9 @@
             "default": false,
             "title": "Has Summary",
             "type": "boolean"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
           },
           "imohash": {
             "anyOf": [
@@ -22985,7 +23418,7 @@
     },
     "/api/admin/audit-logs/export": {
       "get": {
-        "description": "Export audit logs for compliance reporting. Super admin only.",
+        "description": "Export audit logs for compliance reporting. Super admin only (all tenants).\n\nReads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two\npieces the organization admin's export uses, so the columns and the CSV neutralisation\nare one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;\n``X-Export-Truncated`` says when that cut something off. The export is itself audited.",
         "operationId": "export_audit_logs_api_admin_audit_logs_export_get",
         "parameters": [
           {
@@ -23065,6 +23498,78 @@
           }
         ],
         "summary": "Export Audit Logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/audit/content-access": {
+      "get": {
+        "description": "Whether view, media-access and export events are being recorded (super_admin only).",
+        "operationId": "get_content_access_audit_api_admin_audit_content_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentAccessAuditStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Content Access Audit",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Turn content-access auditing on or off. Takes effect within the settings cache TTL.",
+        "operationId": "set_content_access_audit_api_admin_audit_content_access_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentAccessAuditUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentAccessAuditStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Content Access Audit",
         "tags": [
           "admin"
         ]
@@ -24653,7 +25158,7 @@
     },
     "/api/admin/files/{file_uuid}/release": {
       "post": {
-        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_files_under_legal_hold``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
+        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_held_files``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
         "operationId": "release_media_file_api_admin_files__file_uuid__release_post",
         "parameters": [
           {
@@ -31210,7 +31715,7 @@
     },
     "/api/collections/for-files": {
       "get": {
-        "description": "Which collections a set of selected files already belongs to.\n\nThe mirror of ``GET /tags/for-files``, so the gallery's two organizing\nmodals answer the same question the same way — `file_count` against\n`selection_size` distinguishes a collection holding every selected file from\none holding a few.\n\nScoped to the caller's own collections in the request's tenant — in an\norganization, the org's collections (v422); in the personal workspace, their\npersonal ones. Membership of anyone else's collection is not theirs to read\noff a selection.\n\nRegistered before ``/{collection_uuid}`` so the literal path is not\nswallowed.",
+        "description": "Which collections a set of selected files already belongs to.\n\nThe mirror of ``GET /tags/for-files``, so the gallery's two organizing\nmodals answer the same question the same way — `file_count` against\n`selection_size` distinguishes a collection holding every selected file from\none holding a few.\n\nScoped to the caller's own collections in the request's tenant — in an\norganization, the org's collections they may see (v422); in the personal\nworkspace, their personal ones. Membership of anyone else's collection, or of a\nrestricted one they cannot see, is not theirs to read off a selection.\n\nRegistered before ``/{collection_uuid}`` so the literal path is not\nswallowed.",
         "operationId": "list_collections_on_files_api_collections_for_files_get",
         "parameters": [
           {
@@ -32141,6 +32646,64 @@
           }
         ],
         "summary": "Update Collection Share",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/api/collections/{collection_uuid}/visibility": {
+      "patch": {
+        "description": "Restrict an organization collection to its named people, or open it to the organization.\n\n``restricted``: only the creator, the organization's admins and the people it is shared\nwith (``/shares``) see it or the files in it through it. ``organization``: every member.\nAuthority is the collection's owners (its creator or an organization admin); a person who\ncannot see a restricted collection gets 404, exactly as for a missing one, and a platform\nsupport grant never reaches it. A personal collection has no organization to hide it\nfrom: 422. This is the ONLY path that changes visibility (``PUT`` does not accept it).\n\nEffects: the audit event ``collection.visibility.change`` (always recorded, the\ncollection's name is never in it), a ``collection_access_changed`` WebSocket event\ncarrying only the collection uuid to the members who just lost sight of it so their UI\ndrops it, and a retrieval-cache bump so a cached chat answer cannot keep serving\nexcerpts to somebody who no longer may read them. No reindex is needed: search reads the\ncaller's visibility from Postgres per request.",
+        "operationId": "set_collection_visibility_api_collections__collection_uuid__visibility_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_uuid",
+            "required": true,
+            "schema": {
+              "title": "Collection Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionVisibilityUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Collection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Collection Visibility",
         "tags": [
           "collections"
         ]
@@ -36345,7 +36908,7 @@
     },
     "/api/files/{file_uuid}/summary/export": {
       "get": {
-        "description": "Export the requesting user's masked summary as a downloadable/copyable document.\n\nThis is issue #885's real fix. #885 was filed as a redaction bypass and the premise was\nwrong — this route calls the SAME ``_redacted_summary`` helper as ``GET .../summary``\nbelow, so there is exactly one masking implementation for both. The actual defects were\nclient-side: ``SummaryModal.svelte``'s clipboard-copy serializer dropped the action-items\nand speaker-analysis sections, and it was the last client-side re-serialization of server\ndata left in the SPA. See ``summary_export_service``'s module docstring for the full\nargument.\n\n⚠️ **Three things this route deliberately does NOT do — do not \"fix\" their absence:**\n\n- **No ``redact``/reveal query parameter.** There is no cached-artifact analog of the\n  transcript's owner \"show original\" toggle here, so there is nothing for an\n  ``export_locked`` floor to lock — adding a reveal parameter would CREATE the exact\n  redaction-bypass vulnerability #885 mistakenly believed already existed.\n- **No ``_redaction_pending``/409 gate.** That gate exists because the transcript path\n  masks from CACHED spans that a redaction scan produces asynchronously — before the scan\n  finishes there is nothing to apply. A summary is masked by LIVE detection over\n  LLM-authored prose (``mask_summary``) every time it is read; there is no cached artifact\n  whose absence a 409 would need to protect.\n- **No audit-event call.** ``audit_unredacted_reveal`` early-returns whenever the reveal\n  set is empty, and this route never computes one (see the first bullet) — calling it here\n  would be dead code recording an event that never happens.",
+        "description": "Export the requesting user's masked summary as a downloadable/copyable document.\n\nThis is issue #885's real fix. #885 was filed as a redaction bypass and the premise was\nwrong — this route calls the SAME ``_redacted_summary`` helper as ``GET .../summary``\nbelow, so there is exactly one masking implementation for both. The actual defects were\nclient-side: ``SummaryModal.svelte``'s clipboard-copy serializer dropped the action-items\nand speaker-analysis sections, and it was the last client-side re-serialization of server\ndata left in the SPA. See ``summary_export_service``'s module docstring for the full\nargument.\n\n⚠️ **Three things this route deliberately does NOT do — do not \"fix\" their absence:**\n\n- **No ``redact``/reveal query parameter.** There is no cached-artifact analog of the\n  transcript's owner \"show original\" toggle here, so there is nothing for an\n  ``export_locked`` floor to lock — adding a reveal parameter would CREATE the exact\n  redaction-bypass vulnerability #885 mistakenly believed already existed.\n- **No ``_redaction_pending``/409 gate.** That gate exists because the transcript path\n  masks from CACHED spans that a redaction scan produces asynchronously — before the scan\n  finishes there is nothing to apply. A summary is masked by LIVE detection over\n  LLM-authored prose (``mask_summary``) every time it is read; there is no cached artifact\n  whose absence a 409 would need to protect.\n- **No ``audit_unredacted_reveal`` call.** It early-returns whenever the reveal set is\n  empty, and this route never computes one (see the first bullet) — calling it here would\n  be dead code recording an event that never happens. (The export itself IS recorded, as\n  ``content.export``, when content auditing is on.)",
         "operationId": "export_summary_api_files__file_uuid__summary_export_get",
         "parameters": [
           {
@@ -38611,7 +39174,7 @@
     },
     "/api/org-admin/audit-logs": {
       "get": {
-        "description": "Read audit events for the caller's OWN organization (org-admin only).\n\nVisibility (issue #262a): events STAMPED with this org's id — including\nevents with ``user_id`` NULL, e.g. failed logins, which become visible to\nthe org once stamped — plus **legacy** un-stamped events attributed via the\norg's member user-ids (the pre-v372 rule, kept so history written before\norg stamping stays readable; see ``build_org_scope_clause`` for the\nlegacy-window caveat about shared members). Events stamped with another\norg are never visible. The ``user_id`` filter, if given, is constrained to\na member of the org (403 otherwise) so it can't be used to probe outside\nthe tenant. ``target_user_id`` (the subject — e.g. the erased user in a GDPR\nerasure, issue #443/#828) gets the identical membership guard: without it,\nan org-admin could enumerate erasure/action history for a user outside\ntheir own org merely by supplying an ID and reading whether any rows came\nback, even though the org-scope clause on the query itself already narrows\nthe result set to nothing for a non-member — the guard exists so that\nprobe fails loudly (403) rather than silently (empty list indistinguishable\nfrom \"no such events\").",
+        "description": "Read audit events for the caller's OWN organization (org-admin only).\n\nVisibility (issue #262a): events STAMPED with this org's id — including\nevents with ``user_id`` NULL, e.g. failed logins, which become visible to\nthe org once stamped — plus **legacy** un-stamped events attributed via the\norg's member user-ids (the pre-v372 rule, kept so history written before\norg stamping stays readable; see ``build_org_scope_clause`` for the\nlegacy-window caveat about shared members). Events stamped with another\norg are never visible. The ``user_id`` filter, if given, is constrained to\na member of the org (403 otherwise) so it can't be used to probe outside\nthe tenant. ``target_user_id`` (the subject — e.g. the erased user in a GDPR\nerasure, issue #443/#828) gets the identical membership guard: without it,\nan org-admin could enumerate erasure/action history for a user outside\ntheir own org merely by supplying an ID and reading whether any rows came\nback, even though the org-scope clause on the query itself already narrows\nthe result set to nothing for a non-member — the guard exists so that\nprobe fails loudly (403) rather than silently (empty list indistinguishable\nfrom \"no such events\"). ``user_uuid`` / ``target_user_uuid`` are the same\nfilters by uuid, which is what the SPA holds.\n\nEach event gains ``actor_display``, ``target_display`` and ``resource_display``, resolved at\nread time and only inside this organization (see ``services/org_audit_view``); an id that\ncannot be resolved there is ``null``, never another tenant's label.",
         "operationId": "get_org_audit_logs_api_org_admin_audit_logs_get",
         "parameters": [
           {
@@ -38689,6 +39252,25 @@
             }
           },
           {
+            "description": "Filter by the actor's uuid (must be an org member)",
+            "in": "query",
+            "name": "user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the actor's uuid (must be an org member)",
+              "title": "User Uuid"
+            }
+          },
+          {
             "description": "Filter by the affected/erased subject's user ID (must be an org member)",
             "in": "query",
             "name": "target_user_id",
@@ -38707,6 +39289,25 @@
             }
           },
           {
+            "description": "Filter by the subject's uuid (must be an org member)",
+            "in": "query",
+            "name": "target_user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the subject's uuid (must be an org member)",
+              "title": "Target User Uuid"
+            }
+          },
+          {
             "description": "Filter by outcome",
             "in": "query",
             "name": "outcome",
@@ -38722,6 +39323,44 @@
               ],
               "description": "Filter by outcome",
               "title": "Outcome"
+            }
+          },
+          {
+            "description": "Filter by resource type (media_file, collection, ...)",
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource type (media_file, collection, ...)",
+              "title": "Resource Type"
+            }
+          },
+          {
+            "description": "Filter by the resource's uuid: everything that happened to one file",
+            "in": "query",
+            "name": "resource_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by the resource's uuid: everything that happened to one file",
+              "title": "Resource Uuid"
             }
           },
           {
@@ -38777,6 +39416,243 @@
           }
         ],
         "summary": "Get Org Audit Logs",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/audit-logs/export": {
+      "get": {
+        "description": "Download the caller's organization's audit events, newest first, up to 10,000 rows.\n\nA larger result is cut at the cap and says so in ``X-Export-Truncated``; narrow the dates or\nthe filters to get the rest. CSV cells are spreadsheet-formula neutralised. Names are\nresolved at read time inside this organization only (``actor_display`` and friends).",
+        "operationId": "export_org_audit_logs_api_org_admin_audit_logs_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Start date for the export",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start date for the export",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "End date for the export",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "End date for the export",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Filter by event type",
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type",
+              "title": "Event Type"
+            }
+          },
+          {
+            "description": "Filter by actor user ID (an org member)",
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by actor user ID (an org member)",
+              "title": "User Id"
+            }
+          },
+          {
+            "description": "Filter by actor uuid (an org member)",
+            "in": "query",
+            "name": "user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by actor uuid (an org member)",
+              "title": "User Uuid"
+            }
+          },
+          {
+            "description": "Filter by subject user ID (a member)",
+            "in": "query",
+            "name": "target_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by subject user ID (a member)",
+              "title": "Target User Id"
+            }
+          },
+          {
+            "description": "Filter by subject uuid (a member)",
+            "in": "query",
+            "name": "target_user_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by subject uuid (a member)",
+              "title": "Target User Uuid"
+            }
+          },
+          {
+            "description": "Filter by outcome",
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by outcome",
+              "title": "Outcome"
+            }
+          },
+          {
+            "description": "Filter by resource type",
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource type",
+              "title": "Resource Type"
+            }
+          },
+          {
+            "description": "Filter by resource uuid",
+            "in": "query",
+            "name": "resource_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource uuid",
+              "title": "Resource Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Export Org Audit Logs",
         "tags": [
           "org-admin"
         ]
@@ -39069,6 +39945,233 @@
           }
         ],
         "summary": "Erase Org Member",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds": {
+      "get": {
+        "description": "This organization's holds, newest first.",
+        "operationId": "list_org_holds_api_org_admin_holds_get",
+        "parameters": [
+          {
+            "description": "Only holds that are still in force",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Only holds that are still in force",
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Org Holds",
+        "tags": [
+          "org-admin"
+        ]
+      },
+      "post": {
+        "description": "Place a hold on named files, or on a whole collection (its files now and later).",
+        "operationId": "place_org_hold_api_org_admin_holds_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Place Org Hold",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds/{hold_uuid}": {
+      "get": {
+        "description": "One hold of this organization, with the files it covers (up to 500).",
+        "operationId": "get_org_hold_api_org_admin_holds__hold_uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hold_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hold Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Org Hold",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds/{hold_uuid}/release": {
+      "post": {
+        "description": "Release a hold. Files another hold or the platform still covers stay held.",
+        "operationId": "release_org_hold_api_org_admin_holds__hold_uuid__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hold_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hold Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldRelease"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Release Org Hold",
         "tags": [
           "org-admin"
         ]

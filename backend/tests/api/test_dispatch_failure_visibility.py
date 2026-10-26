@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import uuid as uuid_pkg
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -289,7 +290,7 @@ def test_tasks_retry_returns_503_for_a_deliberate_asr_refusal(
 def test_none_of_the_three_routes_schedule_a_background_task_any_more():
     from fastapi import BackgroundTasks
 
-    handlers = [
+    handlers: list[Callable[..., object]] = [
         tasks_endpoints.recover_all_stuck_tasks,
         tasks_endpoints.recover_task,
         tasks_endpoints.retry_file_processing,

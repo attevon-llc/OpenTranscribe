@@ -723,9 +723,14 @@
 
       // Files the caller may see but not delete (not the owner, not an org admin).
       const forbidden = failed.filter((r: any) => r.error === 'FORBIDDEN');
-      const otherFailed = failed.length - forbidden.length;
+      // Files a legal hold keeps (issue #1276): a deliberate refusal, not a failure to retry.
+      const held = failed.filter((r: any) => r.error === 'FILE_UNDER_LEGAL_HOLD');
+      const otherFailed = failed.length - forbidden.length - held.length;
       if (forbidden.length > 0) {
         toastStore.error($t('gallery.deleteForbidden', { count: forbidden.length }));
+      }
+      if (held.length > 0) {
+        toastStore.error($t('gallery.deleteHeld', { count: held.length }));
       }
       if (otherFailed > 0) {
         toastStore.error($t('gallery.deleteFailed', { count: otherFailed }));

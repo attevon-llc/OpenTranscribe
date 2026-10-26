@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Nineteen migrations, `v397` to `v445`, run automatically at backend start.** They add columns
+- **Twenty-one migrations, `v397` to `v447`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -125,6 +125,53 @@ off by default.
 
 ### Added
 
+- **Restricted organization collections (#1275).** An organization collection is shared by every
+  member, which is wrong for a legal matter or an HR review. The creator or an organization admin
+  can now restrict one (**Edit collection**, or when creating it): only its creator, the
+  organization's admins and the people it is shared with can see the collection, open the files in
+  it through it, search it, or scope a chat to it. Everyone else gets "not found", exactly as for
+  a collection that does not exist: it is absent from every list, from a file's own collection
+  list, from upload and auto-label targets (an AI-suggested collection that matches a hidden name
+  is skipped, never created or joined), and from a support-access grant. Switching takes effect at
+  once, with no reindex; members who lose sight of a collection are told so (the notice carries no
+  name) and their list drops it. `PATCH /api/collections/{uuid}/visibility`; `visibility` and
+  `can_change_visibility` on every collection response. Names stay unique per organization, so a
+  hidden collection's name still blocks reuse (the one thing a member can infer). Migration
+  `v446`.
+- **Content-access auditing (#1277).** A super admin can now record who opens a recording,
+  requests its media (a stream URL or a download) or exports a transcript, subtitles, a summary
+  or a chat: **Settings > Audit Logs > Content access auditing**. It is off by default because it
+  writes many events (about 34 KB a day per active user, shown on the switch); a repeat view
+  within 15 minutes is recorded once, downloads and exports never are. Events carry the file or
+  collection by id (`resource_type`, `resource_uuid`), never a name, title or text, and name the
+  resource's tenant (`tenant_scope`), so an organization admin sees events about their
+  organization's files and never a member's personal ones. New capability keys
+  `audit.content_access`, `org.audit_logs` and `org.legal_hold`.
+  Adding or removing files in a collection (by hand, by the AI auto-labeller or by bulk grouping)
+  is always recorded as `collection.membership.change`, and collection and tag shares now carry
+  the typed resource fields and no longer put the collection's name in the event.
+- **Organization legal holds (#1276).** An organization administrator can hold files, or a whole
+  collection (its files now and every file added later), from **Settings > Legal holds**
+  (capability `org.legal_hold`, off in the community edition). A held file cannot be deleted, purged
+  by retention, erased with an account or reprocessed; a held collection cannot be deleted and a held
+  file cannot be taken out of it. Releasing a hold keeps its record, frees only the files nothing else
+  holds, and retries any account or erasure request that was waiting on them. The reason is visible to
+  the organization's administrators only and is never copied into an audit event; placing, releasing
+  and every refusal are audited (`content.hold.place`, `content.hold.release`,
+  `content.hold.refused`). Files and collections show a **Legal hold** badge saying who holds them.
+  New: `GET/POST /api/org-admin/holds`, `GET /api/org-admin/holds/{uuid}`,
+  `POST /api/org-admin/holds/{uuid}/release`, and a `hold` field on `GET /api/files/{uuid}` and on
+  collections. The bulk delete reports a held file as `FILE_UNDER_LEGAL_HOLD` per file.
+- **Organization audit log (#1277).** An organization administrator now has **Settings > Audit
+  log** (capability `org.audit_logs`, off in the community edition): the organization's own events
+  filtered by member, event, outcome, dates and a file or collection id ("everything that happened
+  to this file"), with names and titles resolved at read time inside the organization only, plus a
+  CSV or JSON export of up to 10,000 rows. New: `GET /api/org-admin/audit-logs/export`, and
+  `user_uuid`, `target_user_uuid`, `resource_type` and `resource_uuid` filters on
+  `GET /api/org-admin/audit-logs`. The platform export `GET /api/admin/audit-logs/export` now
+  shares the organization export's reader and writer, so the two cannot drift: it gains the
+  tenant and resource columns, always writes a header row, and reports a cut-off in
+  `X-Export-Truncated`. Every export is itself an `audit.export` event.
 - **Word and PDF transcript export (#1278).** The transcript **Export** menu now offers
   **Word Document (.docx)** and **PDF Document (.pdf)** beside the existing formats. A new
   **Document Export Options** dialog sets timestamps, speaker names, comments, line numbers
@@ -578,6 +625,17 @@ off by default.
 
 ### Changed
 
+- **A held file can no longer be reprocessed or retried, and a refusal says who holds it
+  (#1276).** The 409 `FILE_UNDER_LEGAL_HOLD` that a delete of a held file already answered now also
+  carries `held_by` (`platform`, `organization` or both), and a reprocess or retry of a held file
+  answers it too, because regenerating the transcript replaces the evidence a hold keeps. Editing
+  the transcript is still allowed. "Held" now means held by the operator OR by an organization
+  hold: delete, cancel-upload, account deletion, the retention sweep, GDPR erasure (which defers
+  the file, and keeps an organization's row while it has an active hold), the duration backfill
+  and the completion clock all ask one place, `hold_guard`, and a scan test fails on any new
+  reader of `media_file.legal_hold`. Releasing the operator's hold no longer lifts the storage
+  object lock while an organization hold still covers the file. New tables `content_hold` and
+  `content_hold_file` (`v447`); the screens and API to place a hold follow in the same release.
 - **The capabilities endpoint knows who is asking (#1274).** `GET /api/system/capabilities` now
   resolves the caller optionally. A platform surface a deployment hides from tenants (for example
   the quarantine and takedown-notice queues) is still shown to platform staff, an active
@@ -1375,8 +1433,41 @@ off by default.
 - **Docs point at real Settings entries (#1209).** Every "Settings -> X" path in the docs site now
   names a sidebar entry that exists, and a unit test keeps it that way.
 
+- **The mypy pre-commit hook now sees the same types as `backend/venv` (#1271).** The hook runs in
+  an isolated environment holding only its `additional_dependencies`, and a package that ships
+  `py.typed` but was missing there (pydantic, FastAPI, Starlette, httpx, requests, numpy, pytest,
+  redis, minio, opensearch-py and about twenty more) was `Any` to it. Over the same 2,269 files the
+  hook reported 0 findings and `backend/venv/bin/mypy` reported 55 in 23 files, so the hook was
+  green on code the venv rejected. The 55 are fixed with real types (no `type: ignore`, `cast` or
+  `Any`): wire-shaped test input goes through `model_validate`, fakes became real `httpx`,
+  `requests`, `urllib3` and OpenSearch objects, and SSE tests decode `iter_lines()` as UTF-8
+  instead of `decode_unicode=True`. The hook is then aligned: mypy `v2.3.1` (it was `v2.1.0`),
+  every dependency an exact pin equal to `backend/requirements*.txt`, and `types-redis` dropped
+  because its 4.6 stubs shadowed redis 8's own inline types. `redis` 8's real types then flagged
+  an unchecked `zincrby` result, a non-generic `Redis[Any]` annotation and a bytes-only decode in
+  the engine metrics reader (which now accepts `str` hashes too instead of silently dropping the
+  host). `backend/tests/unit/test_precommit_mypy_env_parity.py` derives the contract (every typed
+  import under `backend/` must be a hook dependency or on a short reasoned `EXEMPT` list), and
+  `scripts/mypy-hook-negative-control.sh`, run by CI, feeds the real hook deliberately mistyped
+  code and fails unless every line is rejected (0 of 3 caught before, 3 of 3 after).
+
 ### Security
 
+- **An organization admin could read a member's personal-file events (#1277).** The org audit
+  read attributed any event without an organization stamp to every organization its actor
+  belonged to, so `transcript.view_unredacted` on a member's personal file was readable by the
+  admins of each organization the member joined. Events now say whose tenant their resource
+  belongs to, and the org read refuses an event that names its own tenant.
+- **Organization collections now open the organization's files everywhere, not only in the
+  collection list (#1275).** A member of an organization collection used to see a colleague's
+  file listed there and then get an error opening it; the gallery left it out; search and chat
+  returned none of its text (a chat scoped to the collection resolved the files and answered
+  from nothing). One rule now decides all of them: a member of an organization collection they
+  may see reads the organization's files in it, read-only, on the file page, in the gallery,
+  tags, search and chat. Search needs no reindex: the index filter gains a second arm on the
+  chunk's `collection_ids`, computed per request, and adding or removing a file from an
+  organization collection now refreshes those ids (it used to do so only for shared
+  collections). `CLOUD_SEAM_VERSION` 12.
 - **A revoked access token no longer resolves on optional-auth routes (#1274).** Logout-all, a
   password reset and an admin session termination stamp a per-user revocation epoch that is the
   only thing that ends a still-valid access token. `get_optional_current_user` did not pass the

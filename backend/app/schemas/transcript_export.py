@@ -19,11 +19,11 @@ class DocumentExportLabels(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    speaker_default_label: str = Field("Speaker", max_length=200)
-    user_comment_label: str = Field("USER COMMENT", max_length=200)
-    page_label: str = Field("Page {page} of {pages}", max_length=200)
-    exported_label: str = Field("Exported {date}", max_length=200)
-    redacted_label: str = Field("Redacted", max_length=200)
+    speaker_default_label: str = Field(default="Speaker", max_length=200)
+    user_comment_label: str = Field(default="USER COMMENT", max_length=200)
+    page_label: str = Field(default="Page {page} of {pages}", max_length=200)
+    exported_label: str = Field(default="Exported {date}", max_length=200)
+    redacted_label: str = Field(default="Redacted", max_length=200)
 
 
 class TranscriptDocumentExportRequest(BaseModel):

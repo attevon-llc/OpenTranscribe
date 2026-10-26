@@ -65,14 +65,17 @@ class CompleteUploadRequest(BaseModel):
     """
 
     file_id: str = Field(..., description="UUID of the MediaFile from /prepare")
-    task_id: str | None = Field(None, description="Application task_id from /prepare response")
-    file_hash: str | None = Field(
-        None, description="Client-computed content fingerprint (imohash); see PrepareUploadRequest"
+    task_id: str | None = Field(
+        default=None, description="Application task_id from /prepare response"
     )
-    file_size: int | None = Field(None, description="Client-observed size in bytes")
-    upload_id: str | None = Field(None, description="Multipart upload_id from /prepare")
+    file_hash: str | None = Field(
+        default=None,
+        description="Client-computed content fingerprint (imohash); see PrepareUploadRequest",
+    )
+    file_size: int | None = Field(default=None, description="Client-observed size in bytes")
+    upload_id: str | None = Field(default=None, description="Multipart upload_id from /prepare")
     parts: list[UploadedPart] | None = Field(
-        None, description="Uploaded parts; omitted means read them back from storage"
+        default=None, description="Uploaded parts; omitted means read them back from storage"
     )
     # Optional client-side timing markers (epoch-ms)
     client_hash_start_ms: int | None = None
@@ -86,7 +89,7 @@ class CompleteUploadRequest(BaseModel):
     skip_summary: bool | None = False
     whisper_model: str | None = None
     disable_diarization: bool | None = Field(
-        None,
+        default=None,
         description=(
             "Skip speaker diarization for this file. Overrides what /files/prepare recorded."
         ),

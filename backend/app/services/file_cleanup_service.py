@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.services.hold_guard import LEGAL_HOLD_REFUSAL
+from app.services.hold_guard import hold_state
 from app.utils.task_utils import check_for_stuck_files
 from app.utils.task_utils import recover_stuck_file
 
@@ -25,21 +27,6 @@ if TYPE_CHECKING:
     from app.services.speaker_cleanup import SpeakerImpact
 
 logger = logging.getLogger(__name__)
-
-#: Refusal reported by :func:`purge_media_file` for a file under an active legal
-#: hold. A module constant rather than an inline literal because callers that
-#: translate the refusal into a user-facing response should not have to re-spell it.
-LEGAL_HOLD_REFUSAL = (
-    "refused: the file is under an active legal hold and cannot be deleted. "
-    "Release the hold before deleting."
-)
-
-#: Machine-readable code every API surface answers with when a delete is declined
-#: because of an active legal hold — the single-file interactive delete
-#: (``api/endpoints/files/crud.delete_media_file``) and the whole-account delete
-#: (``api/endpoints/admin._assert_no_files_under_legal_hold``, issue #689) alike. One
-#: constant so a client handles one refusal rather than two spellings of it.
-LEGAL_HOLD_ERROR_CODE = "FILE_UNDER_LEGAL_HOLD"
 
 
 class FileCleanupService:
@@ -1142,13 +1129,16 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     SpeakerProfile records are intentionally preserved; their embeddings no longer
     average in the deleted file's voices.
 
-    **A file under an active legal hold is REFUSED before step 1.** The hold is
+    **A file under an active legal hold is REFUSED before step 1.** A hold is either the
+    platform's (``media_file.legal_hold``) or an organization's (an active ``content_hold``);
+    ``hold_guard.hold_state`` answers for both. The hold is
     the source of truth that keeps DMCA/litigation evidence alive (the S3 object
     lock only mirrors it, best-effort), and this destroy is irreversible, so the
     check lives here rather than only in each caller's query: a guard in one
     query protects one caller, and this function has four. It fails closed — the
     refusal is logged at ERROR and reported as ``deleted: False`` with
-    ``refused_legal_hold: True``, never as a quiet no-op that a caller reading
+    ``refused_legal_hold: True`` (and ``hold_state``, the :class:`~app.services.hold_guard.HoldState`
+    an endpoint turns into the 409 body), never as a quiet no-op that a caller reading
     only ``deleted`` could mistake for a completed destroy. Clear the hold
     (``takedown_service.release_file``) to make a held file deletable; there is
     deliberately no override argument, because an argument that skips the guard
@@ -1184,10 +1174,11 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     file_uuid = str(file.uuid)
     residual: list[dict[str, Any]] = []
 
-    if bool(file.legal_hold):
+    hold = hold_state(db, int(file.id))
+    if hold.held:
         logger.error(
             f"purge_media_file: REFUSED to delete file {file_uuid} — it is under an "
-            "active legal hold. Release the hold before deleting."
+            f"active legal hold ({', '.join(hold.held_by)}). Release the hold before deleting."
         )
         return {
             "deleted": False,
@@ -1195,6 +1186,7 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
             "error": LEGAL_HOLD_REFUSAL,
             "residual_errors": residual,
             "refused_legal_hold": True,
+            "hold_state": hold,
         }
 
     try:

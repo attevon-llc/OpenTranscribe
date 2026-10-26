@@ -350,6 +350,10 @@ pytest_plugins = [
     # `support_world`: two organizations, an org admin, a platform admin and a super_admin with
     # real tokens, for the support-access grant suites (#1122). Opt-in; nothing autouse.
     "fixtures.support_world",
+    # `gov`: one organization (admin, two members, an outsider) plus builders for files,
+    # collections, shares and holds, and `acting_as` to run requests as one of them, for the
+    # content-governance suites (#1275-#1277). Opt-in; nothing autouse.
+    "fixtures.governance_world",
     # `speaker_os_seams`: recording stand-ins for every OpenSearch seam the shared speaker
     # cleanup (#1214) touches. Opt-in; nothing autouse.
     "fixtures.speaker_cleanup_seams",

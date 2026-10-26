@@ -11,7 +11,6 @@ import logging
 import socket
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any
 
 from redis import Redis
 
@@ -42,7 +41,7 @@ class MetricsCollector:
 
     def __init__(self, hostname: str = _HOSTNAME) -> None:
         self._key = f"{_REDIS_PREFIX}:{hostname}"
-        self._redis: Redis[Any] | None = None
+        self._redis: Redis | None = None
         self._stage_times: list[tuple[str, float]] = []
 
     def _get_redis(self):

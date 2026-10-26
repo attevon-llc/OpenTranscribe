@@ -381,6 +381,24 @@ SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprec
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 
+# Org-collection read route for search (#1275, governance plan D-3): a chunk is readable by a
+# caller when its ``collection_ids`` names an organization collection they may see. The ids
+# are sent in a ``terms`` clause, so above this many the arm is dropped (falling back to the
+# per-file ``accessible_user_ids`` term alone) and a WARNING is logged.
+MAX_VISIBLE_COLLECTION_TERMS = 10_000
+
+# Content-access audit (#1277, governance plan D-10): a view-class event for the same
+# (event, actor, resource, surface) is written at most once per this window.
+CONTENT_AUDIT_DEDUP_SECONDS = 900
+#: ``SystemSettings`` key (super_admin toggle, default OFF) that, together with the
+#: ``audit.content_access`` capability, switches on the view / media-access / export events.
+AUDIT_CONTENT_ACCESS_SETTING_KEY = "audit.content_access.enabled"
+AUDIT_CONTENT_ACCESS_DEFAULT = False
+#: Rough cost of content auditing, shown in the admin help text (governance plan 3.4): an
+#: event is ~0.8 KB; with de-dup an active user writes ~34 KB a day.
+AUDIT_EVENT_BYTES_ESTIMATE = 800
+AUDIT_ACTIVE_USER_BYTES_PER_DAY_ESTIMATE = 34_000
+
 # How long a mutation (segment edit, speaker reassignment/merge, rediarize) waits
 # before a real re-index actually runs (issue #666). A Redis SETNX debounce keyed
 # per file coalesces bursts of edits — a user correcting twenty segments in a row
@@ -601,6 +619,10 @@ POST_PROCESSING_STATUS_TTL_S = 2 * 24 * 3600
 NOTIFICATION_TYPE_COLLECTION_SHARED = "collection_shared"
 NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED = "collection_share_revoked"
 NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED = "collection_share_updated"
+# Sent to the members who lose sight of a collection when it is restricted (#1275). The
+# payload is the collection uuid only: they already knew it, and a name would disclose a
+# restricted collection's existence to a person who no longer may know it.
+NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED = "collection_access_changed"
 NOTIFICATION_TYPE_GROUP_MEMBER_ADDED = "group_member_added"
 NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED = "group_member_removed"
 
@@ -1786,6 +1808,14 @@ TAKEDOWN_NOTICE_RATE_LIMIT = "120/hour"
 TAKEDOWN_EXPORT_RATE_LIMIT = "10/hour"
 #: Rows one export may return. A partial export says so (``X-Export-Truncated``).
 TAKEDOWN_EXPORT_MAX_ROWS = 20000
+#: Rows one audit-log export may return, for the super-admin and the organization-admin export alike
+#: (issue #1277). It is also OpenSearch's default ``max_result_window``, so a larger page would fail.
+AUDIT_EXPORT_MAX_ROWS = 10000
+#: An organization admin's audit export: it reads the whole tenant's history in one request.
+ORG_AUDIT_EXPORT_RATE_LIMIT = "10/hour"
+#: Placing and releasing organization holds (issue #1276): one budget per user across both POSTs.
+#: A hold is rare and deliberate; the limit is a brake on a runaway script, not a workflow.
+ORG_HOLD_RATE_LIMIT = "30/hour"
 #: The owner's own takedown history, read by the SPA on the settings page.
 TAKEDOWN_OWNER_READ_RATE_LIMIT = "120/hour"
 #: Header that carries a grant uuid. Never ambient: a request without it has no grant.

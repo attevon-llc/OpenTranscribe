@@ -92,10 +92,12 @@ export default defineConfig(({ mode }) => {
         '/api/ws': {
           target: wsTarget,
           ws: true,
-          // The backend's WebSocket origin check allows an origin equal to the request's own
-          // origin; with an overridden target the browser's origin is another dev port.
-          ...(env.VITE_API_PROXY_TARGET ? { headers: { Origin: apiTarget } } : {}),
-          changeOrigin: true,
+          // Forward the browser's own Host, as nginx does (`Host $http_host`). The backend
+          // admits a handshake whose Origin equals the request's own origin, rebuilt from
+          // Host; rewriting Host to the target made every origin outside CORS_ORIGINS (a LAN
+          // IP, another port) look cross-site and refused it. Never set Origin here: that
+          // would let any page through the origin check.
+          changeOrigin: false,
           rewrite: (path) => path,
         },
         // MinIO proxy for presigned URLs (secure media streaming)

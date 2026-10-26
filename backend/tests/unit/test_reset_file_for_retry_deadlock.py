@@ -68,6 +68,10 @@ class _FakeDB:
             return _FakeQuery(self.media_file)
         return _FakeQuery(None)
 
+    def execute(self, _statement):
+        """The hold guard's lookups (#1276): this stand-in is held by nobody."""
+        return iter(())
+
     def commit(self):
         self.commit_calls += 1
         if self.commit_side_effect is not None:

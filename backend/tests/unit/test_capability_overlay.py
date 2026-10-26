@@ -73,6 +73,8 @@ def test_no_bypass_keys_are_known_capabilities():
         frozenset(
             {
                 "org.takedown",
+                "org.audit_logs",
+                "org.legal_hold",
                 "speaker_attributes.migration",
                 "url_ingest",
                 "audio_extraction",

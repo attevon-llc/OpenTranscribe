@@ -49,6 +49,7 @@ The synchronous export route (`GET /api/files/{file_uuid}/export`) serves `txt`,
 - A file that was quarantined after the request was accepted is refused like a deleted one.
 - Document export is refused during a support-access session, like every other export.
 - Unredacted reveals are audited (surface `transcript_document_export`).
+- A finished document is one `content.export` audit event (surface `transcript`, format `docx` or `pdf`), recorded by the worker once the file exists and only while content access auditing is on ([content access auditing](../user-guide/admin-panel.md#content-access-auditing)). It carries ids and the format, never a title or text, and has no client address because the worker has no request.
 
 ### Capability
 

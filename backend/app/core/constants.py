@@ -1830,6 +1830,22 @@ ASR_CLOUD_PROVIDERS_FOR_USERS_KEY = "asr.cloud_providers_for_users"
 #: provider configuration (and key) of their own. Absent means true.
 ASR_USERS_OWN_KEYS_KEY = "asr.users_may_add_own_keys"
 
+# --- DOCX / PDF transcript export (issue #1278) ------------------------------------------
+# Safety bounds, not tuning: a document export that exceeds one of them is refused, so none of
+# them is an environment variable or a SystemSettings row.
+#: Numbered lines on each PDF page. Fixed so a page:line pair is a stable citation: the page
+#: size changes the line height, never the grid.
+DOCUMENT_LINES_PER_PAGE = 25
+#: Hard cap on laid-out lines (about 2,400 pages, eight times a measured four-hour recording).
+DOCUMENT_EXPORT_MAX_LINES = 60_000
+#: Celery soft time limit of one document render, in seconds. Never retried.
+DOCUMENT_EXPORT_SOFT_TIME_LIMIT_S = 300
+#: Where the images carry the pinned Noto fonts the PDF renderer embeds (see the ``fonts``
+#: stage of ``Dockerfile.prod``/``Dockerfile.lite``/``Dockerfile.blackwell``).
+DOCUMENT_FONT_DIR = "/usr/share/fonts/opentranscribe"
+#: Expiry of the Redis guard that collapses a repeated identical export request onto one job.
+DOCUMENT_EXPORT_GUARD_TTL_S = 300
+
 # --- Privacy policy layer (issues #1280, #1279) ------------------------------------------
 # Instance layer of the restrict-only privacy policy (``app.services.privacy.policy``).
 # Platform (extension resolver), instance, organization and user are ANDed; any layer off

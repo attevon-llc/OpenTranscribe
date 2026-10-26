@@ -87,5 +87,36 @@ installed metadata: `pip show <package>`):
   copy is upstream diar-native's own validated build, carried alongside the binary so the
   tested pairing travels with it; see `docs/diarization-openblas-der/README.md`.
 
+Document export (DOCX / PDF transcripts): components, fonts and their licences
+--------------------------------------------------------------------------------
+
+Every component below allows commercial use and redistribution. Licences were read from each
+package's installed metadata (`pip show -v <package>`) and, for the fonts, from the licence
+statement in each font file's own name table (name ID 13) plus the Debian copyright files.
+
+- python-docx 1.2.0 — https://github.com/python-openxml/python-docx — MIT license.
+  Copyright (c) 2013 Steve Canny. Writes the DOCX.
+- fpdf2 2.8.9 — https://github.com/py-pdf/fpdf2 — **LGPL-3.0-only**. Writes the PDF.
+  It is used as a normal, unmodified, separately installed Python package (never vendored or
+  patched), so a recipient can replace it with another version of the library, which is what
+  the LGPL asks of a combined work. The licence text is shipped with the installed package
+  (`fpdf2-<version>.dist-info/licenses/LICENSE`). Its dependencies are Pillow (MIT-CMU),
+  fontTools (MIT) and defusedxml (PSF-2.0).
+- uharfbuzz 0.57.0 — https://github.com/harfbuzz/uharfbuzz — Apache-2.0. Python bindings for the
+  HarfBuzz text-shaping engine, which the wheel bundles. HarfBuzz is licensed under the "Old
+  MIT" licence (https://github.com/harfbuzz/harfbuzz/blob/main/COPYING). Shapes Arabic, Indic
+  and Thai lines.
+- pypdf 6.21.2 — BSD-3-Clause. Test-only: reads the text back out of generated PDFs.
+- Noto fonts (SIL Open Font License 1.1) — Noto Sans, Noto Naskh Arabic, Noto Sans Hebrew,
+  Devanagari, Bengali, Gurmukhi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai,
+  Lao, Myanmar, Georgian, Ethiopic, Khmer and Armenian are copyright Google Inc. / Google LLC;
+  Noto Sans CJK is copyright Adobe (Source Han Sans). They are copied UNMODIFIED from the Debian
+  packages `fonts-noto-core` and `fonts-noto-cjk` into every backend image under
+  `/usr/share/fonts/opentranscribe/`, pinned by SHA-256 (`backend/third_party/fonts/SHA256SUMS`),
+  with the licence text (`OFL.txt`) and Debian's per-package copyright files beside them. The PDF
+  embeds only the glyph subset a document uses, which the OFL permits. The OFL forbids selling the
+  fonts by themselves; they are bundled with software, as it allows. A DOCX names these fonts but
+  never embeds them.
+
 Crediting the permissive components here keeps this NOTICE an accurate map of what
 OpenTranscribe runs.

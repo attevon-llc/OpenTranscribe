@@ -188,6 +188,31 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps -r req
 RUN pip uninstall -y --root-user-action=ignore triton || true
 
 # -----------------------------------------------------------------------------
+# Fonts for DOCX / PDF transcript export (issue #1278)
+# -----------------------------------------------------------------------------
+# The PDF renderer embeds a pinned Noto set; this throwaway stage fetches it from Debian and
+# the final image copies only the files listed in third_party/fonts/SHA256SUMS. Every font is
+# SIL OFL 1.1 (see third_party/fonts/OFL.txt, copied beside them with Debian's per-package
+# copyright files), unmodified. The checksum file pins the CONTENT: if Debian rebuilds a
+# package the build fails here, loudly, instead of the PDFs silently changing glyphs.
+# Lite means "no GPU", not "small", so lite carries the CJK collection too.
+FROM python:3.13-slim-trixie AS fonts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-noto-core \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+COPY third_party/fonts/SHA256SUMS third_party/fonts/OFL.txt /tmp/fonts-meta/
+WORKDIR /usr/share/fonts
+RUN set -eux; \
+    sha256sum -c /tmp/fonts-meta/SHA256SUMS; \
+    mkdir -p /fonts; \
+    while read -r _ path; do cp "$path" /fonts/; done < /tmp/fonts-meta/SHA256SUMS; \
+    cp /tmp/fonts-meta/OFL.txt /fonts/OFL.txt; \
+    cp /usr/share/doc/fonts-noto-core/copyright /fonts/copyright-fonts-noto-core; \
+    cp /usr/share/doc/fonts-noto-cjk/copyright /fonts/copyright-fonts-noto-cjk
+
+# -----------------------------------------------------------------------------
 # Stage 2: Runtime Stage - Minimal production image with non-root user
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie
@@ -296,6 +321,11 @@ WORKDIR /app
 
 # Copy Python packages from builder stage
 COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Fonts the PDF renderer embeds (DOCUMENT_FONT_DIR in app/core/constants.py), with their licence.
+# An image built FROM this one inherits them; one built from its own Dockerfile must copy the
+# `fonts` stage too, or PDF jobs end with `fonts_unavailable` (loud, never a fontless PDF).
+COPY --from=fonts /fonts/ /usr/share/fonts/opentranscribe/
 
 # Copy Deno binary — required by yt-dlp (since 2025.11) to generate YouTube
 # proof-of-origin (PO) tokens.  Without a JS runtime every YouTube request is

@@ -108,6 +108,12 @@ repos:
           - urllib3==2.8.0
           - uvicorn==0.53.0
           - watchdog==6.0.0
+          # python-docx, fpdf2, fonttools and pypdf ship py.typed (services/transcript_document/,
+          # #1278): without them every docx / pdf call degrades to Any in the hook's isolated env.
+          - python-docx==1.2.0
+          - fpdf2==2.8.9
+          - fonttools==4.65.0
+          - pypdf==6.21.2
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

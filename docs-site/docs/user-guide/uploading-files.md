@@ -194,7 +194,9 @@ explanation.
 
 ## Export Options
 
-OpenTranscribe supports multiple export formats accessible from the **Export** dropdown on any completed transcript page. You can also bulk-export across multiple files.
+OpenTranscribe supports multiple export formats accessible from the **Export** dropdown on any completed transcript page: Plain Text (.txt), JSON Format (.json), CSV Format (.csv), SubRip Subtitles (.srt), WebVTT Subtitles (.vtt), Markdown (.md), Word Document (.docx) and PDF Document (.pdf). You can also bulk-export subtitles across multiple files.
+
+Every format applies your content redaction settings and any administrator export floor, so a masked word is masked in the file too. See [Content Redaction](../features/content-redaction.md).
 
 ### TXT -- Plain Text
 
@@ -237,6 +239,50 @@ Industry-standard subtitle format compatible with virtually all video players (V
 ### VTT -- WebVTT Subtitles
 
 Web Video Text Tracks format for HTML5 video players and web applications. Same formatting as SRT but uses the WebVTT standard (dots instead of commas in timestamps, `WEBVTT` header).
+
+### Markdown -- Notes and Knowledge Bases
+
+Exports the transcript as a `.md` file for note-taking tools such as Obsidian or Logseq. The file starts with YAML front matter (title, language, participants, the export date and whether the text is redacted), followed by one block per speaker turn with the speaker name and a `[HH:MM:SS]` timestamp. Text that would otherwise be read as Markdown structure, such as a line starting with `#` or `---`, is escaped so it stays plain text. Markdown downloads immediately, like TXT.
+
+### Word and PDF -- Documents You Can Cite
+
+**Word Document (.docx)** and **PDF Document (.pdf)** produce a printable transcript with numbered lines, for legal, research and compliance work where you need to point at "page 3, line 12".
+
+Choosing either opens **Document Export Options**:
+
+- **Include timestamps** and **Include speaker names**, the same switches as TXT. Speaker names are unavailable for a file with no speaker data.
+- **Include user comments**, shown only when the file has comments. Comments are printed inline where they were made.
+- **Line numbers**: **Restart on each page** (the default, so a citation reads page and line), **Continue through the document**, or **No line numbers**.
+- **Page size**: **A4** or **US Letter**.
+
+Your choices are remembered in this browser. The file is built on the server by a background job, so the Export button reads **Preparing document...** and the download starts when it is ready. A long transcript takes longer, and a four-hour recording can take around a minute for the scripts that need the most layout work.
+
+Both documents carry a header with the file title and export date, a **Redacted** marker when any text is masked, and **Page N of M** in the footer.
+
+**Which to choose:**
+
+| | PDF | Word |
+|---|---|---|
+| Page and line numbers | Fixed: every page has exactly 25 numbered lines, on A4 and Letter alike, so a citation means the same thing for everyone | Native Word line numbering, laid out by Word, so numbers can differ from the PDF |
+| Editing | Not editable | Editable |
+| Fonts | The needed Noto fonts are embedded (only the characters used) | Named, not embedded: the viewer's machine needs Noto fonts or Word substitutes another |
+| Speaker header | A speaker's header line never ends a page on its own | Follows Word's pagination |
+
+Cite from the PDF when the citation must be stable; use Word when you need to edit the text.
+
+**Languages.** Arabic and Hebrew are laid out right to left, and the direction is chosen per turn from its text, not from the interface language, so an Arabic turn in an English session reads correctly. Arabic, Indic scripts and Thai are shaped properly. Chinese, Japanese, Korean and Thai lines can break between any two characters because OpenTranscribe has no dictionary for them, so a line may end mid-word and the usual rule that a line must not start with a closing mark is not applied. The Chinese, Japanese or Korean typeface follows the file's language, and Traditional Chinese is used for Traditional markers such as `zh-TW`.
+
+**When it cannot be built.** A toast explains the reason:
+
+| Message | Meaning |
+|---|---|
+| Content redaction has not finished for this file | Your policy masks text and the scan is still running. Try again when detection completes. |
+| This transcript is too long to export as a document | The transcript lays out to more than 60,000 lines. Export TXT or split the recording. |
+| The document export is temporarily unavailable | The redaction policy could not be read, so the export was withheld rather than risk leaking text. Try again shortly. |
+| The fonts needed to build this document are not installed on this server | A PDF needs the Noto fonts shipped in the backend image. Ask your administrator. |
+| The document could not be built | Any other failure. Try again; the server log has the cause. |
+
+Administrators: see [Document export](../features/document-export.md) for the capability switch, fonts and licences.
 
 ### Bulk Export
 

@@ -132,3 +132,36 @@ def plain_text_policy(cfg: EffectiveRedactionConfig) -> EffectiveRedactionConfig
     if cfg.style == "blur":
         return dataclasses.replace(cfg, style="label")
     return cfg
+
+
+def resolve_export_reveal(
+    cfg: EffectiveRedactionConfig,
+    *,
+    reveal_requested: bool,
+    is_owner: bool,
+    admin_reveal_allowed: bool,
+) -> set[str]:
+    """The categories an export may reveal: none under ``export_locked``, else the usual rule.
+
+    The ONE place the admin ``export_locked`` floor ("mandate censored exports") is decided for
+    a file the reader keeps. It used to be a copy-pasted ``if cfg.export_locked: return cfg,
+    set()`` in the subtitle endpoint and again in the transcript endpoint, so a third export
+    surface had to remember to write a third copy (issue #673's whole shape). Every surface now
+    calls this, and the DOCX/PDF worker calls it with the dispatching request's facts.
+
+    Args:
+        cfg: The reader's effective policy, admin floor folded in.
+        reveal_requested: The reader asked for the original (``?redact=false`` or
+            ``reveal_original``). A REQUEST, never a grant.
+        is_owner: The reader owns the file.
+        admin_reveal_allowed: The request's platform bypass lets a non-owner admin reveal. A
+            worker has no request, so it passes False.
+
+    Returns:
+        The categories that stay visible. Admin-forced categories are never among them.
+    """
+    if getattr(cfg, "export_locked", False):
+        return set()  # forced: an export is never revealed, whatever was asked
+    return cfg.reveal_categories(
+        requested=reveal_requested, is_owner=is_owner or admin_reveal_allowed
+    )

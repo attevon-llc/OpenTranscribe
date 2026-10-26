@@ -39,6 +39,17 @@ joserfc==1.7.5
 # no system libxmlsec1 package needed in the image).
 python3-saml==1.16.0
 python-multipart==0.0.32
+# DOCX transcript export (issue #1278, services/transcript_document/docx_renderer.py).
+# MIT. Its only other runtime dependencies (lxml, typing_extensions) are already in the image.
+python-docx==1.2.0
+# PDF transcript export (issue #1278, services/transcript_document/pdf_renderer.py).
+# fpdf2 is LGPL-3.0-only: it stays an unmodified, separately installed package (never vendored
+# or patched) and its licence ships in the image. uharfbuzz (Apache-2.0, bundles HarfBuzz) does
+# the shaping for Arabic and Indic text. fonttools (MIT) is imported directly for the CJK
+# collection index; fpdf2 requires it too.
+fpdf2==2.8.9
+uharfbuzz==0.57.0
+fonttools==4.65.0
 passlib[bcrypt]==1.7.4
 # bcrypt>=5.0.0 removed the __about__ shim passlib 1.7.4 (unmaintained since 2020)
 # reads to detect the backend version, hard-breaking bcrypt_sha256/bcrypt verification
@@ -145,7 +156,7 @@ huggingface-hub==0.36.2
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
-filelock==3.32.6
+filelock==4.2.4
 # Transitive (huggingface_hub, lightning, pytorch-lightning, torch) — same #492
 # failure mode as filelock above.
 fsspec==2026.9.0

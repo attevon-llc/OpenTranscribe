@@ -9,6 +9,11 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 - `TxtExportOptionsModal.svelte` — the TXT-export options dialog (include timestamps / speakers /
   comments + redaction note). Markup + scoped CSS only.
+- `DocumentExportOptionsModal.svelte` — the Word/PDF options dialog (timestamps, speakers, comments
+  when the file has any, line numbering, page size, redaction note). **Lazy**: the page loads it with
+  a dynamic `import()` so it adds nothing to the root layout or the static closure
+  (`check-bundle-budget` has headroom to keep that true; never raise the budget for it). Scroll lock
+  is BaseModal's, unlike the TXT modal. Prefs come from `$lib/export/documentExportPrefs`.
 - `FileActionButtons.svelte` — the video-header action row (view transcript · AI summary
   view/generating/generate · reprocess). Emits `viewTranscript`, `showSummary`,
   `generateSummary`, `openReprocess`.
@@ -43,7 +48,10 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 - Parent: `routes/files/[id]/+page.svelte`. Export content is generated server-side
   (`GET /files/{uuid}/export`, issue #673); `$lib/export/txtExportPrefs` only persists the
-  TXT options dialog's toggles.
+  TXT options dialog's toggles. Markdown goes through the same sync flow; Word and PDF go through
+  `$lib/export/requestDocumentExport` (async job, no local fallback) after the options modal, with
+  `documentBusy` passed to the actions bar while one runs, and the stream closed in `onDestroy`.
+  Every export or copy failure toasts a translated reason (`$lib/export/exportErrors`).
 - The transcript itself is rendered by `TranscriptDisplay` + `components/transcript/*`.
 - **Issue #748 layout**: the left (`.video-column`) column order is player, waveform,
   `TranscriptActionsBar` (Export · Edit speakers · Download — moved OUT of `TranscriptDisplay`,

@@ -92,6 +92,7 @@ from .streaming import get_thumbnail_streaming_response
 from .streaming import validate_file_exists
 from .subtitles import router as subtitles_router
 from .summary_status import router as summary_status_router
+from .transcript_document_export import router as transcript_document_export_router
 from .transcript_export import router as transcript_export_router
 from .upload import process_file_upload
 from .url_processing import router as url_processing_router
@@ -156,6 +157,7 @@ router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 router.include_router(transcript_export_router, prefix="", tags=["files"])
+router.include_router(transcript_document_export_router, prefix="", tags=["files"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 # URL import is a deployment decision (legal exposure, egress), so no account
 # bypasses it when the capability is off.

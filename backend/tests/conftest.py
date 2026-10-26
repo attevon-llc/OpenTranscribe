@@ -372,6 +372,10 @@ pytest_plugins = [
     # `local_model_redis`: one throwaway redis:7-alpine per xdist worker on a free loopback
     # port, for the model-download lock/state/supervisor/endpoint suites (#1246). Opt-in.
     "fixtures.throwaway_redis",
+    # `document_export`: runs the DOCX/PDF transcript export end to end in process (route, then
+    # the Celery task body) with storage and Redis recorded, so a test reads the bytes a user
+    # would download (#1278). Opt-in; nothing autouse.
+    "fixtures.document_export",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

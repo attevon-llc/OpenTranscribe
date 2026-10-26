@@ -34,13 +34,15 @@ from app.schemas.media import SubtitleValidationResult
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
 from app.services.content_audit import record_file_event
+from app.services.download_events import DOCUMENT_EXPORT_ERRORS
 from app.services.platform_bypass import PlatformBypass
+from app.services.redaction.export_policy import resolve_export_reveal
+from app.services.redaction.reveal_audit import audit_unredacted_reveal
 from app.services.subtitle_service import SubtitleService
 from app.utils.content_disposition import attachment_header
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
-from .crud import audit_unredacted_reveal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -84,10 +86,12 @@ def _resolve_subtitle_redaction(
             detail="Redaction policy is temporarily unavailable; export withheld.",
         ) from e
 
-    if getattr(cfg, "export_locked", False):
-        return cfg, set()  # forced — never reveal on export
-    can_reveal = (media_file.user_id == current_user.id) or bypass.admin_reveal_allowed
-    reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+    reveal = resolve_export_reveal(
+        cfg,
+        reveal_requested=(redact is False),
+        is_owner=(media_file.user_id == current_user.id),
+        admin_reveal_allowed=bypass.admin_reveal_allowed,
+    )
     # Audit the reveal, exactly as the transcript read does (issue #85). This path
     # wrote NO audit event: an owner could download the unredacted original to disk —
     # the more consequential of the two, because the file leaves the application —
@@ -398,6 +402,44 @@ def prepare_bulk_export(
     return {"status": "processing", "job_id": job_id}
 
 
+def sse(event: str, payload: dict) -> str:
+    """One Server-Sent-Events frame. Named ``sse`` so the SSE contract guard scans its calls."""
+    import json as _json
+
+    return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
+
+
+def _export_error_frame(data: dict) -> str:
+    """The ``error`` frame for a worker-reported failure.
+
+    ``code`` stays one fixed literal slug (``test_chat_sse_contract.py`` pins it structurally);
+    the worker's ``reason`` is passed through only when it is a known key, and its sentence is
+    then ours, never the worker's free text.
+    """
+    reason = data.get("reason")
+    if reason in DOCUMENT_EXPORT_ERRORS:
+        return sse(
+            "error",
+            {"code": "export_failed", "reason": reason, "message": DOCUMENT_EXPORT_ERRORS[reason]},
+        )
+    return sse("error", {"code": "export_failed", "message": data.get("message", "Export failed.")})
+
+
+def _cached_outcome_frame(cached: bytes | str) -> str:
+    """The frame for a cached outcome: ``ready`` for a result, ``error`` for a failure.
+
+    A document export can fail before the browser has opened the stream (a pending redaction
+    scan is refused in milliseconds), so a failure is cached exactly like a result and a late
+    subscriber is told, instead of waiting on an event that was already sent.
+    """
+    import json as _json
+
+    outcome = _json.loads(cached)
+    if outcome.get("status") == "error":
+        return _export_error_frame(outcome)
+    return sse("ready", outcome)
+
+
 @router.get("/bulk-export-stream", dependencies=[Depends(refuse_under_support_grant)])
 def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
@@ -426,9 +468,6 @@ def bulk_export_stream(
     from app.core.config import settings
     from app.services.download_events import bulk_export_channel
 
-    def sse(event: str, payload: dict) -> str:
-        return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
-
     async def event_stream():
         # The whole generator is iterated ON the event loop, so every Redis call in it
         # must be async. The result-cache read used to go through the synchronous
@@ -439,9 +478,9 @@ def bulk_export_stream(
         )
 
         async def ready_frame() -> str | None:
-            """SSE ``ready`` frame if the worker already cached a result, else None."""
+            """SSE frame if the worker already cached an outcome (result or error), else None."""
             cached = await client.get(f"bulk_export_result:{job}")
-            return sse("ready", _json.loads(cached)) if cached else None
+            return _cached_outcome_frame(cached) if cached else None
 
         try:
             # 1. Already finished? deliver immediately (covers reconnects after completion).
@@ -498,15 +537,10 @@ def bulk_export_stream(
                         return
                     if status == "error":
                         # `data`'s "message" is worker-published free text (issue #611's
-                        # class of concern); "code" stays a fixed literal slug so the SSE
-                        # contract guard (test_chat_sse_contract.py) can pin it structurally.
-                        yield sse(
-                            "error",
-                            {
-                                "code": "export_failed",
-                                "message": data.get("message", "Export failed."),
-                            },
-                        )
+                        # class of concern) unless it carries a known `reason`; "code" stays a
+                        # fixed literal slug so the SSE contract guard
+                        # (test_chat_sse_contract.py) can pin it structurally.
+                        yield _export_error_frame(data)
                         return
                     yield sse("progress", data)
             finally:

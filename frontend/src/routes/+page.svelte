@@ -23,6 +23,8 @@
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
+  import { triggerAnchorDownload } from '$lib/export/anchorDownload';
+  import { openExportJobStream, type ExportJobStream } from '$lib/export/exportJobStream';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
@@ -917,18 +919,8 @@
     }
   }
 
-  // EventSource for the in-flight bulk subtitle export (async + presigned ZIP)
-  let bulkExportStream: EventSource | null = null;
-
-  function triggerAnchorDownload(href: string, filename: string) {
-    const a = document.createElement('a');
-    a.href = href;
-    if (filename) a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }
+  // The in-flight bulk subtitle export (async + presigned ZIP), read through the one job-stream consumer
+  let bulkExportStream: ExportJobStream | null = null;
 
   // Bulk export selected files as a single ZIP — built on the download worker and
   // delivered as a presigned URL over SSE (no archive bytes proxied through the API).
@@ -955,32 +947,24 @@
       });
 
       bulkExportStream?.close();
-      const es = new EventSource(`/api/files/bulk-export-stream?job=${data.job_id}`);
-      bulkExportStream = es;
+      const stream = openExportJobStream(data.job_id);
+      bulkExportStream = stream;
 
-      es.addEventListener('ready', (e: MessageEvent) => {
-        const d = JSON.parse(e.data);
+      try {
+        const d = await stream.result;
         triggerAnchorDownload(d.url, d.filename ?? `transcripts_${format}.zip`);
         toastStore.success($t('gallery.bulk.exportComplete', {
-          count: d.exported ?? total,
+          count: d.exported || total,
           format: ext.toUpperCase(),
         }));
         if (d.skipped > 0) {
           toastStore.warning($t('gallery.bulk.exportSkipped', { count: d.skipped }));
         }
-        es.close();
-        bulkExportStream = null;
-      });
-
-      // The browser fires 'error' for BOTH a server `event: error` (has e.data) and
-      // transient connection drops (no e.data). Only fail on a real payload or a closed stream.
-      es.addEventListener('error', (e: MessageEvent) => {
-        if (e.data || es.readyState === EventSource.CLOSED) {
-          toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
-          es.close();
-          bulkExportStream = null;
-        }
-      });
+      } catch {
+        toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
+      } finally {
+        if (bulkExportStream === stream) bulkExportStream = null;
+      }
     } catch (err) {
       console.error('Bulk export failed to start:', err);
       toastStore.error($t('gallery.bulk.exportFailed', { count: total }));

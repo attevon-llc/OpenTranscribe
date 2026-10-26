@@ -913,3 +913,15 @@ the unit level against `GladiaProvider` directly, in
 shared pytest module) can restart the container between phases —
 `scripts/release-tests/test-lite-mode.sh`'s negative-path phase does exactly
 that. Fixing the live-pipeline pytest gap remains follow-on work.
+
+## Document export fixtures (issue #1278)
+
+`fixtures/document_export.py` (a `pytest_plugins` entry) is the harness for the DOCX/PDF export:
+`DocumentExportHarness` posts the request, then runs `prepare_transcript_document_task` in process
+with the test's own session and recorders for storage, presigning and Redis, so a test reads the
+BYTES a user would download (`docx_text`, `pdf_text`, `document_text`), never an internal flag.
+`fixtures/redaction_export_world.py` is the shared profane, redactable file and policy toggles
+used by both the sync and the document gate suites. `fixtures/fonts/` holds pinned Noto test
+fonts (OFL); layout tests use `unit/_monospace_measurer.py` so they never depend on host fonts.
+Red-checks of the layout, policy and write-back tests were done by mutation on a `git archive`
+tree; the PDF tests need `pypdf` (`requirements-test.txt`).

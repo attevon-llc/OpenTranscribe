@@ -74,8 +74,9 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   (`formatted_duration`, `display_status`, `resolved_speaker_name`, …). The SPA renders them.
 - Read surfaces mask transcript text at read time via `services/redaction/spans.py`; owner
   reveal is `?redact=false`, audited as `transcript.view_unredacted` by **one** implementation,
-  `files/crud.py::audit_unredacted_reveal`, called from the transcript read and from
-  `files/subtitles.py` (`surface` distinguishes them). The export half was missing entirely
+  `services/redaction/reveal_audit.py::audit_unredacted_reveal`, called from the transcript read,
+  `files/subtitles.py`, `files/transcript_export.py` and the document-export worker (`surface`
+  distinguishes them; the `export_locked` decision is `export_policy.resolve_export_reveal`). The export half was missing entirely
   until #85 — the more consequential of the two, since that reveal leaves the application as a
   file on disk — and this file claimed both were audited until it was checked. Two copies of a
   compliance trail is how one of them silently stops matching the other.

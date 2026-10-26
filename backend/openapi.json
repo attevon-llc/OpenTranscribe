@@ -5355,6 +5355,64 @@
         "title": "DirectorySyncStatus",
         "type": "object"
       },
+      "DocumentExportAccepted": {
+        "description": "The job was queued (or an identical one is already running).",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "processing",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "job_id"
+        ],
+        "title": "DocumentExportAccepted",
+        "type": "object"
+      },
+      "DocumentExportLabels": {
+        "additionalProperties": false,
+        "description": "Already-translated strings the document prints (the backend stays translation-free).\n\n``page_label`` and ``exported_label`` are templates: the server substitutes ``{page}`` /\n``{pages}`` / ``{date}`` with ``str.replace``, never ``str.format``, so any other brace is\nprinted as typed.",
+        "properties": {
+          "exported_label": {
+            "default": "Exported {date}",
+            "maxLength": 200,
+            "title": "Exported Label",
+            "type": "string"
+          },
+          "page_label": {
+            "default": "Page {page} of {pages}",
+            "maxLength": 200,
+            "title": "Page Label",
+            "type": "string"
+          },
+          "redacted_label": {
+            "default": "Redacted",
+            "maxLength": 200,
+            "title": "Redacted Label",
+            "type": "string"
+          },
+          "speaker_default_label": {
+            "default": "Speaker",
+            "maxLength": 200,
+            "title": "Speaker Default Label",
+            "type": "string"
+          },
+          "user_comment_label": {
+            "default": "USER COMMENT",
+            "maxLength": 200,
+            "title": "User Comment Label",
+            "type": "string"
+          }
+        },
+        "title": "DocumentExportLabels",
+        "type": "object"
+      },
       "DownloadSettings": {
         "description": "Response schema for user download settings.",
         "example": {
@@ -18854,6 +18912,67 @@
           "created_at"
         ],
         "title": "TopicSuggestionResponse",
+        "type": "object"
+      },
+      "TranscriptDocumentExportRequest": {
+        "additionalProperties": false,
+        "description": "What to put in the document and how to number it.",
+        "properties": {
+          "format": {
+            "enum": [
+              "docx",
+              "pdf"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "include_comments": {
+            "default": false,
+            "title": "Include Comments",
+            "type": "boolean"
+          },
+          "include_speakers": {
+            "default": true,
+            "title": "Include Speakers",
+            "type": "boolean"
+          },
+          "include_timestamps": {
+            "default": true,
+            "title": "Include Timestamps",
+            "type": "boolean"
+          },
+          "labels": {
+            "$ref": "#/components/schemas/DocumentExportLabels"
+          },
+          "line_numbering": {
+            "default": "per_page",
+            "enum": [
+              "per_page",
+              "continuous",
+              "none"
+            ],
+            "title": "Line Numbering",
+            "type": "string"
+          },
+          "page_size": {
+            "default": "a4",
+            "enum": [
+              "a4",
+              "letter"
+            ],
+            "title": "Page Size",
+            "type": "string"
+          },
+          "reveal_original": {
+            "default": false,
+            "title": "Reveal Original",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "format"
+        ],
+        "title": "TranscriptDocumentExportRequest",
         "type": "object"
       },
       "TranscriptSegment": {
@@ -35572,6 +35691,65 @@
           }
         ],
         "summary": "Export Transcript",
+        "tags": [
+          "files",
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_uuid}/export/document": {
+      "post": {
+        "description": "Queue a DOCX/PDF export of one transcript and return the job id.\n\nRedaction is applied on the worker with **this** user's effective policy, resolved at run\ntime. ``reveal_original`` is a request: the owner gets the original only when the admin\nfloor permits, and a non-owner admin never gets it from this route.",
+        "operationId": "request_document_export_api_files__file_uuid__export_document_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptDocumentExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentExportAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Request Document Export",
         "tags": [
           "files",
           "files"

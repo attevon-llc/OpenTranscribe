@@ -190,7 +190,8 @@ class AuditEventType(StrEnum):
     #: ``bulk`` | ``chat``) and ``details.file_count``
     CONTENT_EXPORT = "content.export"
 
-    # A transcript was revealed past the owner's redaction policy (issue #85).
+    # A transcript was revealed past the owner's redaction policy (issue #85), on any read or
+    # export surface (services/redaction/reveal_audit.py); ``details`` names the categories.
     TRANSCRIPT_VIEW_UNREDACTED = "transcript.view_unredacted"
 
     # Group membership (issue #443)

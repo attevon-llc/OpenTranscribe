@@ -119,11 +119,13 @@ def publish_bulk_event(
     filename: str | None = None,
     exported: int = 0,
     skipped: int = 0,
+    reason: str | None = None,
 ) -> None:
-    """Publish a bulk subtitle-export event (``processing`` | ``completed`` | ``error``).
+    """Publish a bulk-export event (``processing`` | ``completed`` | ``error``).
 
-    ``completed`` events carry the presigned ZIP ``url`` + ``filename`` and the
-    ``exported``/``skipped`` counts the browser surfaces to the user.
+    ``completed`` events carry the presigned ``url`` + ``filename`` and the
+    ``exported``/``skipped`` counts the browser surfaces to the user. An ``error`` from the
+    document exporter also carries a ``reason`` (a key of ``DOCUMENT_EXPORT_ERRORS``).
     """
     payload: dict[str, object] = {
         "status": status,
@@ -136,4 +138,35 @@ def publish_bulk_event(
         payload["url"] = url
     if filename:
         payload["filename"] = filename
+    if reason:
+        payload["reason"] = reason
     _publish(bulk_export_channel(job_id), payload)
+
+
+#: Why a document export ended in ``error``, with the fixed sentence the stream falls back to.
+#: The SPA maps the REASON to translated copy; the sentence is for a client that does not.
+#: Never put exception text or transcript content here (issue #611, #1022).
+DOCUMENT_EXPORT_ERRORS: dict[str, str] = {
+    "redaction_pending": (
+        "Content redaction has not finished for this file, so the document could not be masked."
+    ),
+    "too_long": "This transcript is too long to export as a document.",
+    "unavailable": "The document export is temporarily unavailable.",
+    "fonts_unavailable": "The fonts needed to build this document are not installed.",
+    "failed": "Failed to build the document.",
+}
+
+
+def document_export_guard_key(user_id: int, file_id: int, options_sha: str) -> str:
+    """Redis NX key that collapses a repeated identical document request onto one job."""
+    return f"transcript_doc_guard:{user_id}:{file_id}:{options_sha}"
+
+
+def release_document_export_guard(key: str | None) -> None:
+    """Clear the dedupe guard when the job ends. Best effort: its expiry is the backstop."""
+    if not key:
+        return
+    try:
+        get_redis().delete(key)
+    except Exception as e:  # pragma: no cover - guard release is advisory
+        logger.warning("Could not release the document export guard: %s", type(e).__name__)

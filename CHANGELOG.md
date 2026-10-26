@@ -116,6 +116,9 @@ off by default.
   proves a voice match (the speaker is linked to a profile of that name, or a stored voice match
   links it to a speaker of that name at the same similarity): the upgrade records those as voice
   matches, so they keep their name.
+- **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
+  `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
+  Backend images are about 26 MB larger (Noto fonts). No migration.
 - **`update` and `update-full` recommend a backup before upgrading.** They print the backup
   command and the newest backup in `./backups` before the stack is taken down, since the
   upgrade migrates the database and migrations are one-way.
@@ -169,6 +172,24 @@ off by default.
   shares the organization export's reader and writer, so the two cannot drift: it gains the
   tenant and resource columns, always writes a header row, and reports a cut-off in
   `X-Export-Truncated`. Every export is itself an `audit.export` event.
+- **Word and PDF transcript export (#1278).** The transcript **Export** menu now offers
+  **Word Document (.docx)** and **PDF Document (.pdf)** beside the existing formats. A new
+  **Document Export Options** dialog sets timestamps, speaker names, comments, line numbers
+  (restart each page, continue, or none) and page size (A4 or US Letter); choices are remembered per
+  browser. A PDF page is a fixed grid of 25 numbered lines, so "page 3, line 12" means the same
+  thing everywhere; Word uses its own line numbering. Arabic and Hebrew lay out right to left per
+  turn, Arabic, Indic scripts and Thai are shaped, and Chinese, Japanese, Korean and Thai wrap by
+  character. The document is built on the server by a background job
+  (`POST /api/files/{uuid}/export/document`, then the existing export stream), so the redaction
+  policy and the administrator export floor are applied when the job runs and cannot be bypassed
+  from the browser; a refusal says why (scan unfinished, policy unavailable, too long, fonts
+  missing). Gated by the `exports.documents` capability (default on, enforced on the server).
+  New dependencies: python-docx (MIT), fpdf2 (LGPL-3.0, unmodified), uharfbuzz (Apache-2.0); the
+  backend images now carry about 26 MB of pinned Noto fonts (SIL OFL 1.1), recorded in `NOTICE`.
+  See [Document export](docs-site/docs/features/document-export.md).
+- **Markdown transcript export (#564).** A **Markdown (.md)** entry exports the transcript with
+  YAML front matter (title, language, participants, export date, redaction state) and
+  speaker-labelled turns, escaped so transcript text cannot become Markdown structure.
 - **Takedown notice records (#1254).** Quarantining a file now writes a durable record in the same
   transaction: the legal notice it acts on (type, date received, an opaque reference, the internal
   basis, who handled it) and, per file, its outcome (open, counter-notice, upheld, released), or an
@@ -937,6 +958,13 @@ off by default.
 
 ### Fixed
 
+- **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
+  server refused (redaction scan unfinished, policy unavailable) used to log to the console and
+  leave a button that did nothing; each now shows a translated message. The gallery's bulk export
+  and the new document export share one stream consumer.
+- **Non-ASCII file names export correctly (#1283).** Transcript downloads send an RFC 6266
+  `filename*` name and the browser saves under it, instead of dropping or mangling non-Latin
+  characters. An unknown export format is now refused instead of being served as CSV.
 #### Speakers and speaker data safety
 
 - **Unassigning a speaker is a correction nothing silently undoes (#1233).** Unassigning a

@@ -156,7 +156,7 @@ huggingface-hub==0.36.2
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
-filelock==3.32.6
+filelock==4.2.4
 # Transitive (huggingface_hub, lightning, pytorch-lightning, torch) — same #492
 # failure mode as filelock above.
 fsspec==2026.9.0

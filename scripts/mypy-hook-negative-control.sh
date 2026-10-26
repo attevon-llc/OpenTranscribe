@@ -97,7 +97,8 @@ while IFS=: read -r lineno code; do
   total=$((total + 1))
   code="${code#* EXPECT: }"
   code="${code%% *}"
-  if printf '%s\n' "$OUT" | grep -Eq "zz_mypy_negative_control\.py:${lineno}: error: .*\[${code}\]"; then
+  # A here-string, not `printf | grep -q`: under pipefail grep -q's early exit can SIGPIPE the producer.
+  if grep -Eq "zz_mypy_negative_control\.py:${lineno}: error: .*\[${code}\]" <<< "$OUT"; then
     echo "  caught       line ${lineno} [${code}]"
     caught=$((caught + 1))
   else

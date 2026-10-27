@@ -143,6 +143,14 @@ authority. See `backend/app/db/CLAUDE.md`.
   `MEMBERSHIP_SOURCES_PROTECTED` (`manual`, `scim`) is never removed and never converted by a
   directory pass; the SCIM router likewise only removes `scim` rows. Whoever wrote the row
   owns it.
+- **`Task`: one ACTIVE row per `(media_file_id, task_type)`** (`v448`, issue #1185, partial unique index
+  `TASK_ACTIVE_INDEX`; file-less rows are exempt). Four writers meet it and each takes the conflict
+  deliberately, never with a bare `except IntegrityError`: `task_utils.create_task_record` supersedes the
+  file's older active row of the step (`superseded by <new id>`) in the insert's transaction and retries a
+  lost race, `update_task_status` and the false-positive reset go through
+  `task_row_supersede.reopen_if_slot_free` (a finished row is not reopened beside a newer active one), and
+  `task_row_supersede.resolve_superseded_task_rows` is the health-check sweep. Match the violation with
+  `is_active_row_conflict`, which tells it from the primary key and foreign keys.
 - `MediaFile.status` is annotated non-Optional but declared `nullable=True` — intentional
   (legacy DDL); the annotation and the kwarg are allowed to disagree, the kwarg drives DDL.
 - `MediaFile.processing_provenance` (JSONB, `v437`, #1229) is **`deferred=True`**: the gallery

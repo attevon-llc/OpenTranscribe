@@ -207,6 +207,27 @@ def update_search_indexing_metrics(db: Session | None = None) -> None:
         logger.debug("Search indexing metric sampling skipped: %s", exc)
 
 
+def update_task_row_metrics(db: Session | None = None) -> None:
+    """Refresh ``task_rows_superseded_active`` from the database (#1185)."""
+    try:
+        from app.core.metrics import task_rows_superseded_active
+        from app.services.task_row_supersede import count_superseded_active_rows
+
+        if db is not None:
+            count = count_superseded_active_rows(db)
+        else:
+            from app.db.base import SessionLocal
+
+            own = SessionLocal()
+            try:
+                count = count_superseded_active_rows(own)
+            finally:
+                own.close()
+        task_rows_superseded_active.set(count)
+    except Exception as exc:  # scrape must never fail on DB issues
+        logger.debug("Task row metric sampling skipped: %s", exc)
+
+
 def refresh_job_metrics() -> None:
     """Run the job-state projections if the last run is older than the TTL.
 
@@ -223,3 +244,4 @@ def refresh_job_metrics() -> None:
     update_backup_metrics()
     update_media_mirror_metrics()
     update_search_indexing_metrics()
+    update_task_row_metrics()

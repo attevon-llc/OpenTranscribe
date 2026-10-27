@@ -274,9 +274,9 @@ def test_orphaned_tasks_are_all_failed_and_counted(service, db_session, normal_u
     restart: those files would look busy to the whole pipeline, so nothing would
     retry them and nothing would report them as failed.
     """
-    media_file = _file(db_session, normal_user)
-    first = _task(db_session, normal_user, media_file, status="in_progress")
-    second = _task(db_session, normal_user, media_file, status="pending")
+    # Two files: a file holds at most one active row per step (v448, issue #1185).
+    first = _task(db_session, normal_user, _file(db_session, normal_user), status="in_progress")
+    second = _task(db_session, normal_user, _file(db_session, normal_user), status="pending")
 
     recovered = service.recover_orphaned_tasks(db_session, [first, second])
     db_session.refresh(first)

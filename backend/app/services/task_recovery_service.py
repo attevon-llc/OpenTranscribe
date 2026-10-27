@@ -25,6 +25,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services import system_settings_service
+from app.services.task_row_supersede import reopen_if_slot_free
 from app.utils.error_classification import get_retry_delay
 from app.utils.error_classification import should_retry
 from app.utils.error_classification import stored_category
@@ -1160,10 +1161,23 @@ class TaskRecoveryService:
                     )
                     continue
 
-                task.status = "pending"  # type: ignore[assignment]
-                task.error_message = f"recovery_attempt_{current_attempts + 1}_reset"  # type: ignore[assignment]
-                task.completed_at = None  # type: ignore[assignment]
-                task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+                # A newer run of this step may hold the file's one active slot (v448, issue
+                # #1185); then this old row is simply not reopened.
+                if not reopen_if_slot_free(
+                    db,
+                    task,
+                    {
+                        "status": "pending",
+                        "error_message": f"recovery_attempt_{current_attempts + 1}_reset",
+                        "completed_at": None,
+                        "updated_at": datetime.now(UTC),
+                    },
+                ):
+                    logger.info(
+                        f"Not resetting task {task.id} ({task.task_type}): a newer run of the "
+                        f"same step is already active for file {task.media_file_id}"
+                    )
+                    continue
                 stats["tasks_reset"] += 1
 
             except Exception as e:

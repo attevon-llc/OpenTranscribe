@@ -688,6 +688,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_content_hold_collection_scope')"
     )
 
+    # v448: at most one active task row per (file, step) (issue #1185). Keyed on the partial
+    # UNIQUE index, created last: a database without it still holds the duplicate rows the
+    # revision resolves, so it must re-run.
+    has_task_active_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE tablename = 'task' AND indexname = 'uq_task_active_per_file_type')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -757,8 +765,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v447: same as v446 plus the organization content holds. The newest revision on this
-    # chain, so this is the top of the ladder.
+    # v448: same as v447 plus the one-active-row-per-file-step guard. The newest revision on
+    # this chain, so this is the top of the ladder.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+        and has_collection_visibility
+        and has_content_hold
+        and has_task_active_unique
+    ):
+        return "v448_task_one_active_row_per_file_step"
+    # v447: same as v446 plus the organization content holds.
     if (
         matches_v442
         and has_takedown_notice

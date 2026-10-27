@@ -113,6 +113,8 @@ media_mirror_last_run_objects: Gauge
 search_indexing_failures_total: Counter
 search_indexing_retries_total: Counter
 search_indexing_files_awaiting_reindex: Gauge
+task_rows_superseded_total: Counter
+task_rows_superseded_active: Gauge
 
 
 def _register() -> None:
@@ -143,6 +145,8 @@ def _register() -> None:
     global media_mirror_last_run_objects
     global search_indexing_failures_total
     global search_indexing_retries_total
+    global task_rows_superseded_total
+    global task_rows_superseded_active
     global search_indexing_files_awaiting_reindex
 
     if _COLLECTORS_REGISTERED:
@@ -307,6 +311,23 @@ def _register() -> None:
         "search_indexing_files_awaiting_reindex",
         "Completed files with a transcript that are not yet searchable: indexing failed, "
         "is waiting on a retry, or never ran. Alert if it stays above zero.",
+    )
+
+    # Superseded task rows (issue #1185). The counter is incremented by the recovery sweep and
+    # by task creation, both in Celery workers (served on the worker's WORKER_METRICS_PORT when
+    # enabled); the gauge is derived from the database at scrape time from the SAME predicate the
+    # sweep uses (app.services.task_row_supersede), so it is correct on the API process.
+    task_rows_superseded_total = Counter(
+        "task_rows_superseded_total",
+        "Task rows marked failed with the reason 'superseded by <task id>' because a newer "
+        "run of the same step for the same file replaced them, by task type.",
+        ["task_type"],
+    )
+    task_rows_superseded_active = Gauge(
+        "task_rows_superseded_active",
+        "Active (pending/in_progress) task rows that a newer completed row of the same step "
+        "for the same file has superseded: what the recovery sweep resolves on its next run. "
+        "Should be zero; alert if it stays above zero for longer than a sweep interval.",
     )
 
     _COLLECTORS_REGISTERED = True

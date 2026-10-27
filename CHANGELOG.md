@@ -958,6 +958,20 @@ off by default.
 
 ### Fixed
 
+- **A superseded task row no longer stays "in progress" forever (#1185).** A late write from an
+  older run could leave a row `pending` or `in_progress` after a newer run of the same step had
+  completed for the same file, so monitoring alerted for good while recovery did nothing (the
+  file was completed and nothing was running). The periodic health check now marks such rows
+  `failed` with the reason `superseded by <task id>`, logs each one, and counts them in
+  `task_rows_superseded_total{task_type}`. A new gauge, `task_rows_superseded_active`, counts the
+  rows the next sweep will resolve using the same query, so an alert always matches something
+  recovery can act on. The database now also refuses a second active row for one file and step
+  (partial unique index `uq_task_active_per_file_type`, migration `v448`): starting a step again
+  supersedes the file's older active row of that step, and a retry never reopens an old row
+  beside a newer active one. The migration resolves rows that already violate this first (the
+  rule above, then the newest active row of a group wins and its older siblings are failed as
+  superseded) and never deletes a row.
+
 - **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
   server refused (redaction scan unfinished, policy unavailable) used to log to the console and
   leave a button that did nothing; each now shows a translated message. The gallery's bulk export

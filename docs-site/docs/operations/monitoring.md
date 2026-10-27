@@ -200,6 +200,21 @@ as depth) within about a minute, so:
 | Stuck delivery | `celery_queue_oldest_unacked_age_seconds` above your longest expected stage | a held message is older than any legitimate run |
 | Poison input | `transcription_files_infra_requeued > 0` | a file has lost its worker `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD` times |
 
+### Superseded task rows
+
+A task row can stay `pending` or `in_progress` after a newer run of the same step has completed
+for the same file (a late write from the older run reopened it). The periodic health check
+(`system.health_check`, every 10 minutes) marks such rows `failed` with the reason
+`superseded by <task id>` before it does anything else.
+
+| Metric | Meaning |
+|---|---|
+| `task_rows_superseded_active` | rows the next sweep will resolve, from the same query the sweep uses; alert if it stays above zero for longer than 15 minutes (the sweep is not running) |
+| `task_rows_superseded_total{task_type}` | rows resolved, by task type; a counter incremented in the Celery worker, so it is served on the worker metrics port (`WORKER_METRICS_PORT`), not by the API |
+
+The database also allows only one active (`pending` or `in_progress`) task row per file and task
+type. Starting a step again supersedes the file's older active row of that step.
+
 Recovery behaviour and its settings: [Environment variables → Task Recovery](../configuration/environment-variables.md#task-recovery).
 - **Signups / uploads rate** product counters (API-process events).
 

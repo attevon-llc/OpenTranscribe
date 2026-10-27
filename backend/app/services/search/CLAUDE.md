@@ -44,6 +44,17 @@ The transcript-chunk search plane: chunk → index → query. The **speaker/voic
 separate and lives in the `../opensearch_service/` package (alias `speakers` → `speakers_v3`
 512d / `speakers_v4` 256d; see `core/constants.py:get_speaker_index*`).
 
+**Every write to that speaker plane passes the privacy write backstop (#1280).** `speaker_write.add_speaker_embedding_v4` /
+`bulk_add_speaker_embeddings_v4` / `add_speaker_embedding`, `profiles.store_profile_embedding_v4` / `store_profile_embedding` and
+the cluster-centroid writes in `clusters.py` call `services/privacy/policy.assert_voiceprint_write_allowed(user_id, organization_id)`
+first and return their existing "not written" value when it is False (the scope comes from the document's own owner and
+organization, never request state; the cluster update reads it from the stored document). The answer is cached 10 s per
+process (`PRIVACY_WRITE_BACKSTOP_TTL_SECONDS`), a resolver or storage error denies and is not cached. A NEW function that writes a
+speaker, profile or cluster embedding document must call it too; do not rely on the caller having checked, because the callers
+are Celery tasks that may have been planned before a switch flipped. Deleting these documents is the purge
+(`services/privacy/purge.py`, via `gdpr_erasure_service._erase_speaker_voiceprints`), never a side effect of switching a layer off.
+The chunk plane in this package carries no voiceprint and is not gated.
+
 ## Key files
 
 - `chunking_service.py` — `chunk_transcript_by_speaker_turns`: groups consecutive same-speaker

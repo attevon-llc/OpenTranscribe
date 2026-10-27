@@ -169,6 +169,43 @@ the panel: **24 hours after reading** (default), **7 days after reading**, or **
 auto-clear** (the 100 cap still applies to routine items). Notifications and this choice are
 stored in your browser, so each browser keeps its own.
 
+### Privacy controls
+
+Voiceprint matching and inferred gender now each have a restrict-only switch at four levels
+(platform, deployment, organization, user). See [Privacy controls](../features/privacy-controls.md).
+The upgrade changes no result by itself: the only new table (`v445`, listed above) is empty, both
+deployment switches default **on**, no consent hook is registered and no platform ceiling exists.
+No voiceprint, profile or gender value is touched.
+
+Four behaviors do change, because they now honor the policy and the user's own gender setting:
+
+- The speaker-name (LLM) step no longer sends its voice-versus-first-name gender comparison to a
+  **remote** provider, even with gender inference on. A local model still receives it.
+- The admin speaker-attribute (gender) migration and the combined speaker analysis skip files whose
+  owner has gender prediction turned off, where before they wrote gender regardless. A forced reset
+  leaves those files' values alone.
+- The embedding consistency repair no longer re-creates missing voiceprints for a scope whose
+  voiceprint switch is off.
+- The v4 embedding migration skips files whose scope has voiceprints off and reports
+  `skipped_by_policy` at finalize. The index that goes live holds no voiceprints for them.
+
+**Check this afterwards:**
+
+1. As a super admin, open **Settings > Privacy & Redaction > Policy** and confirm the card
+   "Speaker recognition and inferred attributes" shows both switches on, or the choice you intend.
+   Turning one off hides data but deletes nothing.
+2. If you run organizations, an organization administrator can review **Privacy policy** in the
+   organization settings. A new organization inherits the deployment's choice.
+3. Tell users that gender is inferred automatically from voice and that each person can turn it off
+   under **Settings > Speaker Identification > Voice Attributes**. This is the notice the interface
+   now shows next to every gender.
+4. Before you run the v4 embedding migration, check that no scope you want to keep has
+   voiceprints off.
+
+Deleting stored voiceprints or inferred gender is a separate action, available only after the
+switch is off, and it cannot be undone. Backups and search snapshots keep their copies until they
+rotate.
+
 ### Tenancy mode
 
 `TENANCY_MODE` (default `auto`) decides whether administrators can open any user's content.

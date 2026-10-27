@@ -116,6 +116,12 @@ off by default.
   proves a voice match (the speaker is linked to a profile of that name, or a stored voice match
   links it to a speaker of that name at the same similarity): the upgrade records those as voice
   matches, so they keep their name.
+- **Privacy controls are behavior-neutral until you use them (#1280).** Migration `v445` adds an
+  empty `organization_policy` table, both deployment switches default on, and no stored voiceprint
+  or gender changes. Four things do change: the gender migration and combined speaker analysis
+  now respect each owner's gender setting, the consistency repair and v4 migration skip scopes
+  with voiceprints off, and a remote LLM no longer receives the speaker-name gender comparison.
+  Review **Settings > Privacy & Redaction > Policy** after upgrading.
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.
@@ -200,15 +206,47 @@ off by default.
   and a compliance export (CSV or JSON, spreadsheet-formula safe, audited), a "My takedown notices"
   section so an owner whose file vanished can always see why and how to dispute it, and an optional
   email to owners (one per owner per notice, with a delivery log). Migrations `v443` and `v444`.
-- **A privacy policy layer for voiceprints and inferred gender (#1280).** One restrict-only policy
+- **Privacy controls for voiceprints and inferred gender (#1280).** One restrict-only policy
   answers two questions for a person and organization: may voiceprints exist and be matched, and
   may gender be inferred. The deployment, the organization and the user each hold a switch, an
-  extension may add a platform ceiling, and any layer that is off turns the feature off. Every
-  read that fails counts as off. A consent hook (`register_voiceprint_consent_hook`) lets a
+  extension may add a platform ceiling, and any layer that is off turns the feature off; a read
+  that fails counts as off. A switch hides data and never deletes it, and it is enforced three
+  times: the pipeline plan schedules no speaker-recognition step (the pipeline view says so),
+  every stage that makes or uses a voiceprint checks again when it runs, and every OpenSearch
+  write of a speaker, profile or cluster document is refused for a forbidden scope. Reads follow:
+  voiceprint-based suggestions, clusters and shared-profile matching disappear, inferred gender
+  serializes as null, and the cluster actions that would create voiceprints answer 409
+  `voiceprints_disabled`. Admin batch jobs skip forbidden scopes and report `skipped_by_policy`.
+  New screens: a deployment card (Settings, Privacy & Redaction, Policy), an organization
+  **Privacy policy** panel for organization administrators, and a "Recognize speakers across my
+  recordings" switch beside Voice Attributes. Wherever gender is shown or configured, the interface
+  now says it is inferred automatically from voice and can be turned off (gender inference stays on
+  by default); the copy is in all 12 languages. New routes: `GET /api/privacy/effective`,
+  `GET|PUT /api/privacy/me`, `GET|PUT /api/admin/privacy-policy` and
+  `GET|PATCH /api/org-admin/policy`. A consent hook (`register_voiceprint_consent_hook`) lets a
   consent implementation veto creating or sharing a voiceprint. Both switches default on and an
-  upgrade changes nothing: the new `organization_policy` table (migration `v445`) is empty until
-  an organization saves a choice. This release adds the layer; pipeline enforcement, the admin
-  and organization screens and purge follow in the same release.
+  upgrade changes no stored data: the new `organization_policy` table (migration `v445`) is empty
+  until an organization saves a choice. See [Privacy
+  controls](https://docs.opentranscribe.app/docs/features/privacy-controls).
+- **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
+  administrator, a super admin or the person themselves can permanently delete what it hid:
+  `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,
+  or everything on a single-tenant deployment; refused with 403 in a multi-tenant one) and
+  `POST /api/privacy/me/purge`. The request must carry `"confirm": "PURGE"` and the interface makes
+  the person type it. A purge is refused (409 `policy_still_enabled`) while its switch is still
+  on, runs in the background as `privacy.purge_voiceprints`, repeats itself about a minute later
+  to catch a write that raced the switch, and is audited with counts only
+  (`privacy.voiceprints.purge`, `privacy.gender.purge`). Profiles, names, avatars and
+  assignments a person verified are kept. Backups and search snapshots keep their copies until they
+  rotate. Progress: `GET /api/privacy/purge/{task_id}`.
+- **An organization's redaction floor is stored in core (#1279).** An organization's forced
+  categories, PII entities, custom words, toxicity threshold and export and LLM-egress masking are
+  kept in `organization_policy` and combined with the floor a registered resolver returns,
+  strictest wins, so a deployment that already supplies floors from its own tables keeps working.
+  It can be read and changed with `GET|PATCH /api/org-admin/policy` (the `redaction_floor` field,
+  available while the `redaction.policy` capability is on); each change is audited as
+  `org.policy.change` with field names only. The Settings screen for the floor is not in this
+  release.
 - **Missing authentication email is now obvious (#1240).** When no email configuration is
   designated and no `SMTP_*` settings exist, password resets, invitations and verification links
   cannot be delivered. The Auth Email tab now names the cause (never designated, deleted, or
@@ -625,6 +663,19 @@ off by default.
 
 ### Changed
 
+- **The admin gender migration, the embedding consistency repair and the v4 embedding migration
+  now honor the privacy policy (#1280).** The speaker-attribute (gender) migration and the
+  combined speaker analysis used to write gender for every file; they now skip files whose owner
+  has gender prediction turned off or whose deployment or organization forbids it, and a forced
+  reset leaves those files alone. The consistency repair no longer re-creates missing voiceprints
+  for a scope with voiceprints off. The v4 migration skips such files and reports `skipped_by_policy`
+  at finalize, so the index that goes live holds no voiceprints for those scopes (their old
+  documents stay in the preserved backup index). With the default switches on, none of this
+  changes anything.
+- **The speaker-name step no longer sends a gender comparison to a remote LLM (#1280).** The
+  voice-versus-first-name gender cross-reference is added to the speaker-identification prompt
+  only for a local provider (loopback, private network or a compose hostname), matching how masked
+  text is handled. Remote providers get the prompt without it, even with gender inference on.
 - **A held file can no longer be reprocessed or retried, and a refusal says who holds it
   (#1276).** The 409 `FILE_UNDER_LEGAL_HOLD` that a delete of a held file already answered now also
   carries `held_by` (`platform`, `organization` or both), and a reprocess or retry of a held file

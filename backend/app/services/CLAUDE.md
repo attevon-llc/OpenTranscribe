@@ -39,6 +39,18 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
   cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
+- **Privacy policy** — `privacy/` (#1280) is the ONE answer to "may voiceprints exist / may gender be inferred" for a
+  (user, organization): `policy.py` ANDs platform (`set_privacy_ceiling_resolver`), instance (`SystemSettings` `privacy.*`),
+  organization (`organization_policy` row; none = inherit) and user (`UserSetting`), and every error path DENIES. Call
+  `voiceprint_decision` / `gender_decision` (or the `*_for_file` forms, fresh read) in a producer or consumer, `gates.py` in a
+  Celery stage (`voiceprints_allowed(file_id)`, `gender_allowed`, `job_privacy_overrides`), `redact_view.py` when SHAPING a
+  response, and `assert_voiceprint_write_allowed` only inside OpenSearch speaker writes (10 s cache). `consent.py` is the seam a
+  consent implementation registers a hook on (all hooks must return `True`; a raise denies). Switching a layer off HIDES, only
+  `purge.py` (via `gdpr_erasure_service._erase_speaker_voiceprints`) deletes, and only once the switch is off.
+  `policy_admin.py` is the write side the routes share. Never re-read `speaker_attribute.*` or a user toggle to decide gender:
+  `speaker_attribute_settings.resolve_speaker_attribute_flags(..., organization_id=)` already ANDs the policy ceiling; pass the
+  FILE's organization from its row. The speaker-ID LLM never gets the gender cross-reference from a non-local provider
+  (`speaker_identification_task._with_gender_context`). User docs: `docs-site/docs/features/privacy-controls.md`.
 - **Collection visibility** — `collection_visibility.py` is the one place that answers "which
   collections may this caller see, and which files does that make readable" (#1051, #1275).
   `collection_permission_ranks` / `collection_permission` are the ONE statement behind

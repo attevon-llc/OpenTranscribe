@@ -45,6 +45,14 @@ indexing → WebSocket notification.
   `_run_diarize(tc=)`): the ModelManager shares ONE diarizer, and the config it was built with, across
   every job on a worker, so a per-job value left on `diarizer.config` is some earlier job's. A new
   stage that touches a voiceprint calls the gate first; a gate that cannot read the file denies.
+- `privacy_purge_task.py` — `privacy.purge_voiceprints` (**cpu** queue, `include=` and `task_routes` both registered, #1280).
+  Deletes the voiceprints and/or unconfirmed inferred gender a privacy switch only hides, for a `PurgeScope` the route built
+  from the request context. Two passes under ONE task id: pass 1 now, pass 2 `SECOND_PASS_DELAY_SECONDS` (60 s, longer than
+  the 10 s write-backstop cache) later, both idempotent; the `Task` row (`task_type="privacy_purge"`) stays `in_progress` until
+  pass 2 ends and ends `failed` if a store could not be fully purged. It re-checks `purge.targets_still_enabled` when it
+  starts and aborts (`reason: policy_enabled`) if the layer was switched back on. Counts live in a Redis record read by
+  `GET /privacy/purge/{task_id}`; audit events carry counts only. Opens a short session per relational step and none during
+  the OpenSearch delete.
 - `rediarize_task.py` — the post stage AND the user's manual "re-detect speakers" (which
   plans with the file owner's current choice and never meters). Read phase → detector with
   no session open → `finalize_segments` re-split → write phase → voiceprint stage once

@@ -296,6 +296,12 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   `tests/unit/test_audit_actor_target.py` enforces it by AST over every administrative emitter;
   putting the subject only in `details` is what failed before, because `details` is a dynamic
   mapping no single query can search.
+- **Privacy audit events (#1280):** `ORG_POLICY_CHANGE` (`org.policy.change`, organization admin PATCH; `details` is
+  `{"fields": [names]}`, NEVER a value, because a forced custom word can be sensitive), and `PRIVACY_VOICEPRINT_PURGE` /
+  `PRIVACY_GENDER_PURGE` (`privacy.voiceprints.purge` / `privacy.gender.purge`), one per target per phase
+  (`requested`, `pass_N_completed`, `pass_N_aborted`, `pass_N_failed`, `not_queued`) with counts only. All are stamped with the
+  organization (`organization_id=`); a purge of another person's data sets `target_user_id`. Instance switch changes reuse
+  `ADMIN_SETTINGS_CHANGE`. Emit purge events through `services/privacy/purge.audit_purge`, not `audit_logger.log` directly.
 - DB models: `UserMFA`, `PasswordHistory`, `RefreshToken` (`app/models/`).
 
 ## How it connects

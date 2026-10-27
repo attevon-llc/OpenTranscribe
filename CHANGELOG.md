@@ -958,6 +958,12 @@ off by default.
 
 ### Fixed
 
+- **Chat and Watch Sources settings tabs work with a keyboard and a screen reader (#1210).** Each
+  tab now controls a real `tabpanel` named by it (the panels were missing, so `aria-controls`
+  pointed at nothing), the chat tab ids are namespaced (`chat-general`, `chat-advanced`), and the
+  Advanced chat panel keeps its unsaved edits when you switch tabs. Watch Sources accepts an
+  `initialTab`, and `watch-sources-email` / `watch-sources-global` open those tabs for a
+  super_admin (settings search finds Email Notifications directly).
 - **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
   server refused (redaction scan unfinished, policy unavailable) used to log to the console and
   leave a button that did nothing; each now shows a translated message. The gallery's bulk export

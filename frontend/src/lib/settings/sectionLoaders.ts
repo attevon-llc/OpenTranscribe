@@ -103,6 +103,8 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
   download: 'download',
   'media-sources': 'mediaSources',
   'watch-sources': 'watchSources',
+  'watch-sources-email': 'watchSources',
+  'watch-sources-global': 'watchSources',
   'ai-prompts': 'prompts',
   'llm-provider': 'llm',
   'auto-labeling': 'autoLabel',

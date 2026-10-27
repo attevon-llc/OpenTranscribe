@@ -11,24 +11,36 @@
 -->
 <script lang="ts">
   import { t } from '$stores/locale';
-  import Tabs from '$components/ui/Tabs.svelte';
+  import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
   import ChatSettings from '$components/settings/ChatSettings.svelte';
   import ChatAdminSettings from '$components/settings/ChatAdminSettings.svelte';
 
+  type ChatTabId = 'chat-general' | 'chat-advanced';
+
   /** Deep-link support: the settings search can target the advanced tab. */
-  export let initialTab: 'general' | 'advanced' = 'general';
+  export let initialTab: ChatTabId = 'chat-general';
   export let isAdmin = false;
 
   // string, not the id union: <Tabs bind:activeId> is string-typed.
   let activeTab: string = initialTab;
+  let seenInitial = initialTab;
+  $: if (initialTab !== seenInitial) {
+    seenInitial = initialTab;
+    activeTab = initialTab;
+  }
 
   // A non-admin can never sit on a tab that does not exist for them.
-  $: if (!isAdmin && activeTab === 'advanced') activeTab = 'general';
+  $: if (!isAdmin && activeTab === 'chat-advanced') activeTab = 'chat-general';
+
+  // Panels mount on first visit and stay mounted, hidden when inactive: the admin form holds
+  // unsaved edits that an unmount on a tab switch would discard.
+  const visited: Record<string, boolean> = {};
+  $: if (activeTab) visited[activeTab] = true;
 
   $: tabs = [
-    { id: 'general' as const, label: $t('chat.settings.tabs.general') },
-    ...(isAdmin ? [{ id: 'advanced' as const, label: $t('chat.settings.tabs.advanced') }] : []),
-  ];
+    { id: 'chat-general', label: $t('chat.settings.tabs.general') },
+    ...(isAdmin ? [{ id: 'chat-advanced', label: $t('chat.settings.tabs.advanced') }] : []),
+  ] satisfies TabItem[];
 </script>
 
 <div class="chat-settings-panel" data-testid="chat-settings-panel">
@@ -36,14 +48,30 @@
     <Tabs sticky {tabs} bind:activeId={activeTab} ariaLabel={$t('chat.settings.title')} />
   {/if}
 
-  <div class="tab-content">
-    {#if activeTab === 'general'}
+  <div
+    id="tabpanel-chat-general"
+    role={tabs.length > 1 ? 'tabpanel' : undefined}
+    aria-labelledby={tabs.length > 1 ? 'tab-chat-general' : undefined}
+    hidden={activeTab !== 'chat-general'}
+  >
+    {#if visited['chat-general']}
       <ChatSettings />
-    {:else if activeTab === 'advanced' && isAdmin}
-      <p class="tab-intro">{$t('chat.settings.tabs.advancedIntro')}</p>
-      <ChatAdminSettings />
     {/if}
   </div>
+
+  {#if isAdmin}
+    <div
+      id="tabpanel-chat-advanced"
+      role="tabpanel"
+      aria-labelledby="tab-chat-advanced"
+      hidden={activeTab !== 'chat-advanced'}
+    >
+      {#if visited['chat-advanced']}
+        <p class="tab-intro">{$t('chat.settings.tabs.advancedIntro')}</p>
+        <ChatAdminSettings />
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>

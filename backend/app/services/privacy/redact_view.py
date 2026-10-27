@@ -37,6 +37,7 @@ from fastapi import status
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.services.privacy import policy
+from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import Decision
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import VOICEPRINT
@@ -83,7 +84,7 @@ class PrivacyView:
     def __init__(self, db: Session) -> None:
         self._db = db
         self._file_scope: dict[int, Scope | None] = {}
-        self._voiceprints: dict[Scope, Decision] = {}
+        self._voiceprints: dict[Scope | tuple[Scope, int], Decision] = {}
         self._gender: dict[Scope, Decision] = {}
 
     def preload_files(self, file_ids: Iterable[int]) -> None:
@@ -94,10 +95,16 @@ class PrivacyView:
         if not wanted:
             return
         try:
-            rows = (
-                self._db.query(MediaFile.id, MediaFile.user_id, MediaFile.organization_id)
-                .filter(MediaFile.id.in_(wanted))
-                .all()
+            # A SAVEPOINT: this read runs inside the caller's transaction, and a failed
+            # statement aborts the whole transaction on PostgreSQL. Rolled back to the
+            # savepoint, the files read as off and the caller can still issue queries.
+            rows = policy._isolated(
+                self._db,
+                lambda: (
+                    self._db.query(MediaFile.id, MediaFile.user_id, MediaFile.organization_id)
+                    .filter(MediaFile.id.in_(wanted))
+                    .all()
+                ),
             )
         except Exception:
             logger.exception("privacy view: could not read file scopes; denying")
@@ -116,16 +123,24 @@ class PrivacyView:
     def voiceprints_for_scope(
         self, user_id: int, organization_id: int | None, media_file_id: int | None = None
     ) -> Decision:
-        """May voiceprints exist for this scope? Layers plus the ``create`` consent hooks."""
+        """May voiceprints exist for this scope? Layers plus the ``create`` consent hooks.
+
+        The layers decide per (owner, organization), so one answer serves every file of a
+        scope. A consent hook is handed the file and may refuse one file of a scope, so while
+        any hook is registered the answer is remembered per file instead.
+        """
         scope = (int(user_id), organization_id)
-        if scope not in self._voiceprints:
-            self._voiceprints[scope] = policy.voiceprint_decision(
+        key: Scope | tuple[Scope, int] = scope
+        if media_file_id is not None and has_voiceprint_consent_hooks():
+            key = (scope, int(media_file_id))
+        if key not in self._voiceprints:
+            self._voiceprints[key] = policy.voiceprint_decision(
                 self._db,
                 user_id=scope[0],
                 organization_id=scope[1],
                 media_file_id=media_file_id,
             )
-        return self._voiceprints[scope]
+        return self._voiceprints[key]
 
     def gender_for_scope(self, user_id: int, organization_id: int | None) -> Decision:
         """May gender be inferred for this scope?"""

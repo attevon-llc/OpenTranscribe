@@ -10,9 +10,10 @@ This directory contains core database configuration, session management, and the
 
 ```
 db/
-├── base.py           # Core SQLAlchemy setup and configuration
+├── base.py           # Engine, SessionLocal, Base, get_db(), build_libpq_options()
 ├── migrations.py     # Startup Alembic runner + schema version detection
-├── session_utils.py  # Session management utilities
+├── session_utils.py  # session_scope(), get_refreshed_object()
+├── CLAUDE.md         # Agent/contributor rules (schema-change checklist, gotchas)
 └── README.md         # This documentation
 ```
 
@@ -23,19 +24,29 @@ Provides the fundamental SQLAlchemy configuration and database connection setup.
 
 ### Key Components
 ```python
-# Database engine with connection pooling
-engine = create_engine(settings.DATABASE_URL)
+# Database engine with connection pooling (simplified; see base.py for the full call)
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args=connect_args,          # sslmode + idle_in_transaction_session_timeout
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    pool_size=settings.DB_POOL_SIZE,    # default 20
+    max_overflow=settings.DB_MAX_OVERFLOW,  # default 40
+)
 
 # Session factory for database transactions
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for all ORM models
-Base = declarative_base()
+# Base class for all ORM models (SQLAlchemy 2.0 typed declarative; deliberately no naming_convention)
+class Base(DeclarativeBase):
+    pass
 
 # FastAPI dependency for database sessions
 def get_db():
-    """Dependency injection for database sessions in API endpoints."""
+    """Yield a session and close it after the request."""
 ```
+
+The pool sizes and `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (server-side timeout for sessions left idle inside a transaction, default 5 minutes) are settings in `.env.example`. Celery workers fork their own engines, so the pool size mainly matters for the API process.
 
 ### Usage in API Endpoints
 ```python
@@ -65,7 +76,7 @@ def session_scope():
 ```python
 # Background tasks with automatic transaction management
 with session_scope() as db:
-    file_obj = db.query(MediaFile).get(file_id)
+    file_obj = get_refreshed_object(db, MediaFile, file_id)
     file_obj.status = FileStatus.PROCESSING
     # Automatic commit on success, rollback on exception
 ```
@@ -110,13 +121,9 @@ def background_task():
 
 #### Service Layer (Injected Session)
 ```python
-class FileService:
-    def __init__(self, db: Session):
-        self.db = db
-
-    def process_file(self, file_id: int):
-        # Uses injected session from endpoint
-        # Participates in request transaction
+def process_file(db: Session, file_id: int):
+    # Uses the session injected from the endpoint
+    # Participates in the request transaction
 ```
 
 # Database Management Approach
@@ -132,70 +139,36 @@ OpenTranscribe uses Alembic migrations as the sole authority for database schema
 - SQLAlchemy models in `app/models/` reflect the schema
 - Pydantic schemas in `app/schemas/` handle API validation
 
-### Enhanced Database Schema Features
-
-The current database includes several new tables and enhancements for advanced functionality:
-
-#### User Settings Tables
-- **`user_settings`**: User-specific configuration storage with key-value pairs
-  - Recording preferences (duration, quality, auto-stop settings)
-  - LLM provider configurations with encrypted API key storage
-  - Custom user interface preferences
-
-#### AI Integration Tables
-- **`user_llm_configurations`**: Per-user LLM provider settings
-  - Support for multiple providers (OpenAI, Claude, vLLM, Ollama, etc.)
-  - Encrypted API key storage with user-specific encryption
-  - Connection testing and validation history
-
-- **`summary_prompts`**: Custom AI prompts for different content types
-  - User-created prompt templates for meetings, interviews, podcasts
-  - Content type categorization and organization
-  - Prompt versioning and management
-
-- **`file_summaries`**: AI-generated summaries with metadata
-  - BLUF format structured summaries
-  - Processing status and error tracking
-  - OpenSearch integration for searchable summaries
-
-#### Enhanced Media Processing
-- **Enhanced `media_files` table**: Additional fields for improved processing
-  - YouTube URL processing metadata
-  - Enhanced error tracking and recovery information
-  - Improved file status management with granular progress tracking
-
-- **Notification System Tables**: Enhanced WebSocket notification persistence
-  - User-specific notification preferences
-  - Progress tracking for long-running AI operations
-  - Real-time status updates for uploads and processing
+### Where the tables live
+Table definitions are grouped by domain in `app/models/`; `app/models/README.md` has the inventory. Core media tables (`media_file`, `transcript_segment`, `speaker`, `speaker_profile`, `tag`, `collection`, `task`, ...) are in `models/media.py`. Per-user configuration lives in `user_setting` (key/value), `user_llm_settings` (encrypted provider keys), `summary_prompt`, and the `user_asr_settings` / `user_diarization_settings` tables; deployment-wide configuration is in `system_settings`. AI summaries are stored as JSON in `media_file.summary_data`.
 
 ### Development Workflow
 1. **Schema Changes**: Create a new Alembic migration in `backend/alembic/versions/`
 2. **Model Updates**: Modify SQLAlchemy models in `app/models/`
 3. **Schema Updates**: Update Pydantic schemas in `app/schemas/`
-4. **Migration Detection**: Update `app/db/migrations.py` for the new version
-5. **Reset Database**: Run `./opentr.sh reset dev` to test full migration chain
+4. **Migration Detection**: Add a detection guard for the new revision in `_detect_schema_version()` in `app/db/migrations.py`
+5. **Reset Database**: Run `./opentr.sh reset dev` to test the full migration chain (this deletes all data), and also restart over an existing database to test the upgrade path
 
 ## Production Approach
 
 ### Alembic Setup
-- Alembic is configured in `alembic.ini`
-- Migration files in `backend/alembic/versions/` — v010 (baseline) through v355
-- `migrations.py` runs automatically on backend startup: detects current version, stamps untracked databases, runs `alembic upgrade head`
-- Migration chain covers ~35 versions; see `alembic/versions/` for the full list
+- Alembic is configured in `backend/alembic.ini` (`script_location = alembic`, relative to `backend/`)
+- Migration files live in `backend/alembic/versions/`, named `v<NNN>_<description>.py`, from `v010_baseline` to the current head. Derive the head with `python3 scripts/release-tests/lib/alembic-head.py backend` from the repo root.
+- `run_migrations()` in `migrations.py` is called from the FastAPI lifespan on every backend startup (skipped only when `RUN_MIGRATIONS_ON_STARTUP=false`): it takes a PostgreSQL advisory lock, detects the current version of an untracked database, stamps it, and runs `alembic upgrade head`. A migration failure aborts startup.
+- Only the backend runs migrations; Celery workers do not.
 
 ### Production Deployment
 1. **Create Migration**: Add a new migration in `backend/alembic/versions/`
 2. **Review Migration**: Ensure migration is safe and correct
-3. **Deploy**: Backend runs `alembic upgrade head` automatically on startup
-4. **Verify**: Confirm schema changes applied correctly
+3. **Deploy**: The backend migrates automatically on startup
+4. **Verify**: Confirm schema changes applied correctly (`alembic current` inside the backend container)
 
 ## Directory Structure
 
 ```
 backend/
 ├── alembic/                    # Alembic migration framework
-│   ├── versions/              # Migration files (v010–v355)
+│   ├── versions/              # Migration files (v<NNN>_<description>.py, v010 baseline onward)
 │   ├── env.py                 # Alembic environment config
 │   └── script.py.mako         # Migration template
 ├── alembic.ini                # Alembic configuration
@@ -204,7 +177,7 @@ backend/
     │   ├── base.py           # Engine, SessionLocal, Base
     │   ├── migrations.py     # Startup runner + version detection
     │   └── session_utils.py  # session_scope(), get_refreshed_object()
-    ├── models/               # SQLAlchemy ORM models (~20 files)
+    ├── models/               # SQLAlchemy ORM models (one module per domain)
     └── schemas/              # Pydantic validation schemas
 ```
 
@@ -215,11 +188,12 @@ backend/
 # Reset development database
 ./opentr.sh reset dev
 
-# Inspect current database
+# Debug dump of the tag tables (run inside the container: ./opentr.sh shell backend)
 python scripts/db_inspect.py
 ```
 
 ### Migration Commands
+Run inside the backend container (`./opentr.sh shell backend`) from the `backend/` directory (`/app`).
 ```bash
 # Apply all pending migrations (also runs automatically on startup)
 alembic upgrade head
@@ -262,26 +236,17 @@ alembic downgrade -1
 - **Detached Objects**: Use `get_refreshed_object()` in Celery tasks
 
 ### Debug Tools
-- `scripts/db_inspect.py` - Inspect current database state
+- `scripts/db_inspect.py` - Dump the tag tables
 - `scripts/query_tags.py` - Debug tag-related tables
 - Database logs via `./opentr.sh logs postgres`
 
 ## Performance Considerations
 
 ### Connection Pooling
-```python
-# Engine configuration for optimal performance
-engine = create_engine(
-    settings.DATABASE_URL,
-    pool_size=20,        # Connection pool size
-    max_overflow=30,     # Additional connections when pool is full
-    pool_pre_ping=True,  # Validate connections before use
-    pool_recycle=3600    # Recycle connections every hour
-)
-```
+The shared engine in `base.py` uses `pool_pre_ping=True`, `pool_recycle=3600`, and `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` (defaults 20 / 40). Size them against Postgres `max_connections` when adding worker processes.
 
 ### Session Best Practices
-- Keep sessions short-lived
+- Keep sessions short-lived: do not hold a transaction open across HTTP calls, model inference or file I/O (`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` terminates idle-in-transaction sessions as a backstop)
 - Avoid long-running transactions
 - Use bulk operations for large datasets
 - Implement proper error handling and rollback
@@ -294,10 +259,10 @@ engine = create_engine(
 
 ## References
 
-- [SQLAlchemy Session Documentation](https://docs.sqlalchemy.org/en/14/orm/session_basics.html)
+- [SQLAlchemy Session Documentation](https://docs.sqlalchemy.org/en/20/orm/session_basics.html)
 - [FastAPI Database Tutorial](https://fastapi.tiangolo.com/tutorial/sql-databases/)
 - [Alembic Documentation](https://alembic.sqlalchemy.org/)
-- [SQLAlchemy Connection Pooling](https://docs.sqlalchemy.org/en/14/core/pooling.html)
+- [SQLAlchemy Connection Pooling](https://docs.sqlalchemy.org/en/20/core/pooling.html)
 
 ---
 

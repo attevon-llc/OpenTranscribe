@@ -8,6 +8,13 @@ S3 lifecycle notes
 Audio and result files are uploaded to a temporary S3 bucket and cleaned up
 after the job completes.  On failure the cleanup is still attempted so stale
 objects are not left behind in S3.
+
+The bucket is ``AWS_TRANSCRIBE_BUCKET`` and has NO default (issue #1235): S3 bucket
+names are global, so a predictable default such as ``opentranscribe-tmp-<region>``
+could send a deployment's audio to a bucket owned by someone else. Every S3 call
+also carries ``ExpectedBucketOwner`` (the caller's account, or
+``AWS_TRANSCRIBE_BUCKET_OWNER`` for a bucket in another account of the same
+organization), so S3 refuses with 403 if the bucket is not the expected account's.
 """
 
 from __future__ import annotations
@@ -64,6 +71,18 @@ _AWS_LANGUAGE_MAP = {
 }
 
 
+BUCKET_ENV = "AWS_TRANSCRIBE_BUCKET"
+BUCKET_OWNER_ENV = "AWS_TRANSCRIBE_BUCKET_OWNER"
+
+#: Shown by ``transcribe()`` and the admin connection test when the bucket is not set.
+BUCKET_REQUIRED_MESSAGE = (
+    "AWS Transcribe needs an S3 bucket for its temporary audio and results, and "
+    f"{BUCKET_ENV} is not set. Create a private bucket in your own AWS account in the "
+    f"same region as AWS_REGION and set {BUCKET_ENV} to its name. There is no default: "
+    "bucket names are global, so a guessable one could send audio to another account."
+)
+
+
 def _aws_language_code(language: str) -> str | None:
     """ISO-639 / BCP-47 → AWS LanguageCode, or None to use IdentifyLanguage.
 
@@ -104,6 +123,32 @@ class AWSTranscribeProvider(ASRProvider):
     def supports_translation(self) -> bool:
         return False
 
+    @staticmethod
+    def _configured_bucket() -> str:
+        """The deployer's bucket, or a clear RuntimeError (issue #1235: no default)."""
+        bucket = os.getenv(BUCKET_ENV, "").strip()
+        if not bucket:
+            raise RuntimeError(BUCKET_REQUIRED_MESSAGE)
+        return bucket
+
+    def _bucket_owner(self) -> str:
+        """Account id every S3 call must find the bucket owned by (``ExpectedBucketOwner``).
+
+        ``AWS_TRANSCRIBE_BUCKET_OWNER`` wins when set (a bucket in another account of the
+        deployer's organization); otherwise it is the caller's own account, from STS, which
+        needs no IAM permission.
+        """
+        override = os.getenv(BUCKET_OWNER_ENV, "").strip()
+        if override:
+            return override
+        account = self._boto_client("sts").get_caller_identity().get("Account")
+        if not account:
+            raise RuntimeError(
+                "Could not determine the AWS account id for the S3 bucket-owner check. "
+                f"Set {BUCKET_OWNER_ENV} to the 12-digit account id that owns the bucket."
+            )
+        return str(account)
+
     def _boto_client(self, service: str):
         import boto3
 
@@ -120,6 +165,8 @@ class AWSTranscribeProvider(ASRProvider):
             import boto3  # noqa: F401
         except ImportError:
             return False, "boto3 not installed. Run: pip install boto3", 0.0
+        if not os.getenv(BUCKET_ENV, "").strip():
+            return False, BUCKET_REQUIRED_MESSAGE, 0.0
         try:
             self._boto_client("transcribe").list_transcription_jobs(MaxResults=1)
             ms = (time.time() - start) * 1000
@@ -148,6 +195,9 @@ class AWSTranscribeProvider(ASRProvider):
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+        # Fail before any network I/O, and before the job is billed or any object exists.
+        bucket = self._configured_bucket()
+
         filename = os.path.basename(audio_path)
         t_start = time.time()
         logger.info(
@@ -160,13 +210,13 @@ class AWSTranscribeProvider(ASRProvider):
 
         s3 = self._boto_client("s3")
         tc = self._boto_client("transcribe")
-        bucket = os.getenv("AWS_TRANSCRIBE_BUCKET", f"opentranscribe-tmp-{self._region}")
+        owner = self._bucket_owner()
 
         if progress_callback:
             progress_callback(0.1, "Uploading to S3 for AWS Transcribe…")
 
         try:
-            s3.head_bucket(Bucket=bucket)
+            s3.head_bucket(Bucket=bucket, ExpectedBucketOwner=owner)
         except Exception as head_exc:
             from botocore.exceptions import ClientError
 
@@ -196,7 +246,7 @@ class AWSTranscribeProvider(ASRProvider):
         result_key = f"jobs/{job_name}-result.json"
 
         try:
-            s3.upload_file(audio_path, bucket, s3_key)
+            s3.upload_file(audio_path, bucket, s3_key, ExtraArgs={"ExpectedBucketOwner": owner})
 
             job_kw: dict = {
                 "TranscriptionJobName": job_name,
@@ -271,7 +321,8 @@ class AWSTranscribeProvider(ASRProvider):
             if status != "COMPLETED":
                 raise RuntimeError("AWS Transcribe job timed out after 7200 seconds")
 
-            data = json.loads(s3.get_object(Bucket=bucket, Key=result_key)["Body"].read())
+            result_obj = s3.get_object(Bucket=bucket, Key=result_key, ExpectedBucketOwner=owner)
+            data = json.loads(result_obj["Body"].read())
 
         except ClientError as exc:
             # Everything in the try block above (S3 upload, job start, polling, result
@@ -295,7 +346,7 @@ class AWSTranscribeProvider(ASRProvider):
             # Always clean up S3 objects, even on failure.
             for key in [s3_key, result_key]:
                 try:
-                    s3.delete_object(Bucket=bucket, Key=key)
+                    s3.delete_object(Bucket=bucket, Key=key, ExpectedBucketOwner=owner)
                 except Exception as del_exc:
                     logger.warning(
                         "Failed to clean up S3 object s3://%s/%s: %s", bucket, key, del_exc

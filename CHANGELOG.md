@@ -64,6 +64,14 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
+- **Amazon Transcribe now requires `AWS_TRANSCRIBE_BUCKET` (behaviour change, #1235).** If you use
+  the AWS provider and never set it, the old fallback bucket `opentranscribe-tmp-<region>` was
+  being used; it is gone. Create a private S3 bucket in your own AWS account (same region as
+  `AWS_REGION`), set `AWS_TRANSCRIBE_BUCKET` to its name and restart, or AWS jobs and the Test
+  connection button will fail with a message naming the setting. The credentials must be able to
+  read, write and delete objects in that bucket. If the bucket belongs to a different account than
+  the credentials, also set `AWS_TRANSCRIBE_BUCKET_OWNER` to that account id. Objects left in the
+  old `opentranscribe-tmp-<region>` bucket, if you own it, can be deleted.
 - **Twenty-one migrations, `v397` to `v447`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
@@ -958,6 +966,11 @@ off by default.
 
 ### Fixed
 
+- **Amazon Transcribe no longer falls back to a guessable bucket name (#1235).** Without
+  `AWS_TRANSCRIBE_BUCKET` the provider used `opentranscribe-tmp-<region>`; S3 bucket names are
+  global, so audio could be uploaded to a bucket owned by someone else. The setting is now
+  required (the connection test and every AWS job fail at once with a message naming it), and
+  every S3 call carries `ExpectedBucketOwner`. **See Upgrade Notes.**
 - **A registered external provider whose `auth_type` the database does not admit now fails with a
   message that names the fix (#866).** `external_sync` wrote the provider's string straight into the
   CHECK-constrained `user.auth_type`, so a provider outside the core set failed its first login with

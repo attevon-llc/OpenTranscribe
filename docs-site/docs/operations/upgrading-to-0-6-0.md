@@ -159,6 +159,17 @@ with local Whisper, used to get this server's speaker detection silently. They n
 pyannote.ai, which bills their key for it. **Settings > Processing pipeline** shows, before
 the next upload, which step runs where and which providers receive audio.
 
+### Amazon Transcribe needs `AWS_TRANSCRIBE_BUCKET`
+
+If you use Amazon Transcribe and never set `AWS_TRANSCRIBE_BUCKET`, jobs were using a built-in
+bucket name, `opentranscribe-tmp-<region>`. S3 bucket names are global, so that guessable name
+could send audio to a bucket owned by someone else. The fallback is removed. Create a private
+bucket in your own AWS account, in the same region as `AWS_REGION`, set `AWS_TRANSCRIBE_BUCKET`
+to its name and restart. Until you do, AWS jobs and the Test connection button fail at once with a
+message naming the setting. Every S3 call now also carries `ExpectedBucketOwner` (your account id,
+or `AWS_TRANSCRIBE_BUCKET_OWNER` if the bucket is in another account). See
+[environment variables](../configuration/environment-variables.md).
+
 ### Notifications clear themselves
 
 The notifications panel now keeps itself tidy. Read, successful, informational notifications

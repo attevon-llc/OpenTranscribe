@@ -367,7 +367,7 @@ AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxxxxxxxx
 AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 AWS_ASR_MODEL=standard           # or medical
-AWS_TRANSCRIBE_BUCKET=my-transcribe-bucket  # S3 bucket for intermediate files
+AWS_TRANSCRIBE_BUCKET=my-transcribe-bucket  # REQUIRED, no default: a private bucket you own
 ```
 
 **Supported regions:**

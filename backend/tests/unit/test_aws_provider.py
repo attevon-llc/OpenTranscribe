@@ -76,10 +76,26 @@ def _stub_clients(
     return s3, tc
 
 
-def _wire_provider(provider: AWSTranscribeProvider, monkeypatch, s3, tc) -> None:
-    monkeypatch.setattr(
-        provider, "_boto_client", lambda service: {"s3": s3, "transcribe": tc}[service]
-    )
+TEST_BUCKET = "my-transcribe-scratch"
+TEST_ACCOUNT = "123456789012"
+
+
+def _sts(account: str | None = TEST_ACCOUNT) -> MagicMock:
+    sts = MagicMock(name="sts")
+    sts.get_caller_identity.return_value = {"Account": account} if account else {}
+    return sts
+
+
+@pytest.fixture(autouse=True)
+def _bucket_configured(monkeypatch):
+    """The bucket is required with no default (#1235); tests that need it unset delete it."""
+    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET", TEST_BUCKET)
+    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET_OWNER", raising=False)
+
+
+def _wire_provider(provider: AWSTranscribeProvider, monkeypatch, s3, tc, sts=None) -> None:
+    clients = {"s3": s3, "transcribe": tc, "sts": sts or _sts()}
+    monkeypatch.setattr(provider, "_boto_client", lambda service: clients[service])
     # The polling loop sleeps 15s per iteration against a real AWS job; skip it.
     monkeypatch.setattr(aws_provider_module.time, "sleep", lambda _seconds: None)
 
@@ -349,3 +365,119 @@ def test_access_denied_exception_on_job_start_stays_a_plain_client_error(monkeyp
         provider.transcribe(audio_file, config)
 
     assert not isinstance(excinfo.value, ASRRateLimitedError)
+
+
+# ── 8. The bucket is required (no predictable default) and every S3 call is owner-pinned ──
+
+
+def test_transcribe_without_a_bucket_fails_fast_before_any_aws_call(monkeypatch, audio_file):
+    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET", raising=False)
+    provider = _provider()
+    boto = MagicMock(name="boto_client")
+    monkeypatch.setattr(provider, "_boto_client", boto)
+
+    with pytest.raises(RuntimeError, match="AWS_TRANSCRIBE_BUCKET is not set"):
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    boto.assert_not_called()
+
+
+def test_a_blank_bucket_is_treated_as_unset(monkeypatch, audio_file):
+    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET", "   ")
+    provider = _provider()
+    monkeypatch.setattr(provider, "_boto_client", MagicMock(name="boto_client"))
+
+    with pytest.raises(RuntimeError, match="AWS_TRANSCRIBE_BUCKET is not set"):
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+
+def test_the_old_predictable_default_bucket_is_never_used(monkeypatch, audio_file):
+    """Region-derived names (``opentranscribe-tmp-<region>``) are guessable by anyone."""
+    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET", raising=False)
+    provider = _provider(region="eu-west-1")
+    s3 = MagicMock(name="s3")
+    monkeypatch.setattr(provider, "_boto_client", lambda service: s3)
+
+    with pytest.raises(RuntimeError):
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    assert s3.mock_calls == []
+
+
+def test_validate_connection_names_the_missing_bucket_without_calling_aws(monkeypatch):
+    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET", raising=False)
+    provider = _provider()
+    boto = MagicMock(name="boto_client")
+    monkeypatch.setattr(provider, "_boto_client", boto)
+
+    ok, message, _ms = provider.validate_connection()
+
+    assert ok is False
+    assert "AWS_TRANSCRIBE_BUCKET" in message
+    boto.assert_not_called()
+
+
+def test_every_s3_call_carries_expected_bucket_owner(monkeypatch, audio_file):
+    provider = _provider()
+    job_response = {"TranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}}
+    s3, tc = _stub_clients(job_response=job_response, result_data={"results": {"items": []}})
+    sts = _sts()
+    _wire_provider(provider, monkeypatch, s3, tc, sts=sts)
+
+    provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    s3.head_bucket.assert_called_once_with(Bucket=TEST_BUCKET, ExpectedBucketOwner=TEST_ACCOUNT)
+    (upload_args, upload_kwargs) = s3.upload_file.call_args
+    assert upload_args[1] == TEST_BUCKET
+    assert upload_kwargs["ExtraArgs"] == {"ExpectedBucketOwner": TEST_ACCOUNT}
+    assert s3.get_object.call_args.kwargs["ExpectedBucketOwner"] == TEST_ACCOUNT
+    assert s3.delete_object.call_count == 2
+    for call in s3.delete_object.call_args_list:
+        assert call.kwargs["ExpectedBucketOwner"] == TEST_ACCOUNT
+        assert call.kwargs["Bucket"] == TEST_BUCKET
+    sts.get_caller_identity.assert_called_once_with()
+
+
+def test_cleanup_deletes_stay_owner_pinned_when_the_job_fails(monkeypatch, audio_file):
+    provider = _provider()
+    job_response = {
+        "TranscriptionJob": {"TranscriptionJobStatus": "FAILED", "FailureReason": "nope"}
+    }
+    s3, tc = _stub_clients(job_response=job_response)
+    _wire_provider(provider, monkeypatch, s3, tc)
+
+    with pytest.raises(RuntimeError, match="job failed"):
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    assert s3.delete_object.call_count == 2
+    assert all(
+        c.kwargs["ExpectedBucketOwner"] == TEST_ACCOUNT for c in s3.delete_object.call_args_list
+    )
+
+
+def test_the_owner_override_replaces_the_sts_lookup(monkeypatch, audio_file):
+    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET_OWNER", "999988887777")
+    provider = _provider()
+    job_response = {"TranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}}
+    s3, tc = _stub_clients(job_response=job_response, result_data={"results": {"items": []}})
+    sts = _sts()
+    _wire_provider(provider, monkeypatch, s3, tc, sts=sts)
+
+    result = provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    assert result.provider_name == "aws"
+    assert s3.head_bucket.call_args.kwargs["ExpectedBucketOwner"] == "999988887777"
+    sts.get_caller_identity.assert_not_called()
+
+
+def test_an_unresolvable_account_id_stops_the_job_before_anything_is_uploaded(
+    monkeypatch, audio_file
+):
+    provider = _provider()
+    s3, tc = _stub_clients(job_response={})
+    _wire_provider(provider, monkeypatch, s3, tc, sts=_sts(account=None))
+
+    with pytest.raises(RuntimeError, match="AWS_TRANSCRIBE_BUCKET_OWNER"):
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    s3.upload_file.assert_not_called()

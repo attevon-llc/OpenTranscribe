@@ -110,17 +110,19 @@ If using the one-liner installer:
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
-The installer will prompt you:
+The installer asks whether you have a token to enter now (answer `n` to skip and add it later), then prompts for it with the input hidden:
 
 ```
-Enter your HuggingFace token (or press Enter to skip): hf_your_token_here
+Please enter your HuggingFace token:
+(Token will be hidden for security)
 ```
 
 Paste your token and press Enter. The installer will:
-- Validate the token
-- Check model access permissions
-- Download and cache models (~500MB)
-- Configure the `.env` file automatically
+- Check that it starts with `hf_` (it does not contact HuggingFace to test it, and does not check that you accepted the model agreement)
+- Write it to `.env` as `HUGGINGFACE_TOKEN`
+- Offer to download the models now (the speaker models are about 500MB; the total depends on the Whisper model you chose)
+
+To test a saved token against HuggingFace, use **Test** under Settings > Speaker Identification > Speaker Engine (below).
 
 ### Manual Install Method
 
@@ -158,6 +160,10 @@ Hugging Face whether it is accepted.
   replace it, paste a new one.
 - A running worker picks up a new token the next time it loads a model, within about a
   minute. No restart is needed.
+
+:::note[Local Whisper models do not need this token]
+The local transcription model library (**Settings > Transcription > Local models**) downloads public models, so no token is required for it; a token saved here is used if present. See [Local Transcription Models](../features/local-transcription-models.md).
+:::
 
 ## Verification
 

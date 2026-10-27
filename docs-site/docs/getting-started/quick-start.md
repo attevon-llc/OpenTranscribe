@@ -22,7 +22,7 @@ The installer will:
 ✅ Generate secure configuration
 ✅ Set up management scripts
 
-By default it installs the **full** image (local transcription and speaker detection, on the GPU when one is found). Add `--cpu` (`curl ... | bash -s -- --cpu`) to run the full image on CPU only, or `--lite` for the cloud-only image. On an arm64 host such as Apple Silicon it defaults to the lite image, the only one published for arm64. See [Deployment Variants](../installation/deployment-variants.md) to choose.
+By default it installs the **full** image (local transcription and speaker detection, on the GPU when one is found). Add `--cpu` (`curl ... | bash -s -- --cpu`) to run the full image on CPU only, or `--lite` for the cloud-only image. On an arm64 host such as Apple Silicon it defaults to the lite image, the only one published for arm64. Add `--version vX.Y.Z` to install a specific release instead of the latest one. See [Deployment Variants](../installation/deployment-variants.md) to choose.
 
 ## Prerequisites
 
@@ -54,9 +54,12 @@ The installer will ask for:
 
 2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
    - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
-   - `large-v3` - Best accuracy, required for translation to English
-   - `medium` - Good balance (8GB+ NVIDIA GPU)
+   - `large-v3` - Best accuracy; use it rather than the turbo model if you need translation to English
+   - `medium` - Good balance (the installer's pick for NVIDIA GPUs with 4-8GB VRAM)
+   - `small` - The installer's pick on Apple Silicon and GPUs under 4GB VRAM
    - `base` - Fast (recommended on CPU-only systems)
+
+   The installer also offers `tiny` and `large-v2`.
 
 :::note[CPU-only installs and speaker detection]
 On a host with no GPU (or with `--cpu`), speaker detection is not switched off for you: each user's setting in **Settings → Speaker Identification** decides, and on a CPU-only install speaker detection on this server runs on the CPU. To skip it, choose Off there or skip speaker detection for a file. See [Environment Variables](../configuration/environment-variables.md#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
@@ -74,47 +77,56 @@ cd opentranscribe
 Open your browser and navigate to:
 
 - **Web Interface**: http://localhost:5173
-- **API Documentation**: http://localhost:5174/docs
+- **API Documentation**: http://localhost:5174/api/docs (disabled on production deployments unless `ENABLE_API_DOCS=true` is set in `.env`)
 - **Task Monitor** (Flower): http://localhost:5175/flower
 
 ## First Transcription
 
-### 1. Create an Account
+### 1. Sign In as the Bootstrap Administrator
 
-When you first access OpenTranscribe, you'll see the registration page:
+On first start the backend creates one `super_admin` account, `admin@example.com` (or the
+address in `INITIAL_ADMIN_EMAIL`). What its password is depends on the deployment:
 
-1. Enter your email and password
-2. Click "Sign Up"
-3. You're automatically logged in
+- **Installer or production install** (the default): unless you set `INITIAL_ADMIN_PASSWORD` in
+  `.env` before the first start, a random password is generated and written **once** to the
+  backend log. Read it with `./opentranscribe.sh logs backend` and look for
+  `Created bootstrap admin ... with a GENERATED password`. A generated password must be changed
+  at first sign-in. The installer's closing banner still prints `admin@example.com` / `password`;
+  that credential only exists on a development stack.
+- **Development stack** (`./opentr.sh start dev`): `admin@example.com` / `password`.
+
+Other people can create their own accounts from the registration page (email, password, then
+"Create Account") unless self-registration is turned off (`ALLOW_OPEN_REGISTRATION=false`, or
+Settings → Authentication). Administrators can also require approval of new accounts.
 
 ### Guided First-Run Setup Wizard
 
-The very first account created on a fresh install becomes the bootstrap `super_admin`, and that
-account sees a one-time guided setup wizard on first login instead of the empty gallery. Rather
+The bootstrap `super_admin` sees a one-time guided setup wizard on first login instead of the
+empty gallery. Rather
 than leaving you to discover dozens of auth-related environment variables and several admin
 tabs on your own, it surfaces the three things a first-time operator actually needs:
 
 - **Change your password** from whatever was used during account creation
-- **SSO / LDAP setup**, if you're connecting an identity provider
+- **Deployment type**, which points you at SSO (OIDC) or LDAP setup if you're connecting an identity provider
 - **Security defaults** — MFA-required, login banner, and approval-on-signup
 
 The wizard presents OpenTranscribe's real settings screens rather than a separate duplicate
 flow, so anything you configure here is the same configuration you'd reach from **Settings →
-Authentication** later. It's shown once; closing or completing it won't bring it back.
+Authentication** later. It's shown once; skipping or finishing it won't bring it back automatically, but you can run it again from Settings → Authentication.
 
 ### 2. Upload a Media File
 
-1. Click the **"Upload Files"** button in the navbar
+1. Click the **"Add Media"** button in the gallery
 2. Drag and drop a file or click to browse
 3. Supported formats: MP3, WAV, MP4, MOV, etc.
-4. Files up to 4GB are supported
+4. Files up to 15 GB are supported by default (`MAX_UPLOAD_BYTES`)
 
 ### 3. Monitor Processing
 
 Watch the progress in real-time:
 
 - **Upload progress** shows in the floating upload manager
-- **Processing stages** display 13 detailed steps
+- **Processing stages** show the current step (see [Your First Transcription](./first-transcription.md#step-3-monitor-processing))
 - **Notifications** appear when transcription completes
 
 ### 4. View Your Transcript
@@ -134,7 +146,7 @@ Now that you have OpenTranscribe running, explore these features:
 
 Set up LLM integration for AI-powered summarization:
 
-- Go to **User Settings** → **LLM Configuration**
+- Go to **Settings** → **AI & Chat** → **LLM Provider Configuration**
 - Choose a provider (OpenAI, Claude, vLLM, Ollama)
 - Enter your API key
 - Test the connection
@@ -239,7 +251,7 @@ docker ps
 nvidia-smi
 
 # Test GPU in Docker
-docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 ```
 
 ### Permission Errors
@@ -251,7 +263,7 @@ docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi
 
 ### Slow Transcription
 
-- Ensure GPU acceleration is enabled (`USE_GPU=true` in `.env`)
+- Ensure GPU acceleration is enabled: `./opentranscribe.sh compose-files` should list `docker-compose.gpu.yml`, and `FORCE_CPU_MODE` in `.env` should not be `true`
 - Reduce model size if running out of memory
 - Check GPU memory usage with `nvidia-smi`
 

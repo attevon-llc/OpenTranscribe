@@ -47,7 +47,7 @@ For regular use and production deployments:
   - RTX 4070/4080/4090 (12-24GB) - Best consumer GPUs
   - Tesla T4 (16GB) - Good for servers/cloud
   - A4000/A5000/A6000 (16-48GB) - Professional workstations
-- **CUDA**: CUDA 11.8+ with compatible drivers
+- **CUDA**: an NVIDIA driver recent enough for CUDA 12.x (the image bundles CUDA 12.8 runtime libraries; no host CUDA toolkit is needed). See [GPU Setup](./gpu-setup.md)
 - **Storage**: 50GB+ free space
   - 15GB for Docker images
   - 3GB for AI models (cached locally)
@@ -56,7 +56,7 @@ For regular use and production deployments:
 
 **Performance**:
 - Transcription speed: ~40x realtime with large-v3-turbo (full pipeline)
-- Example: 1-hour video processes in ~50 seconds
+- Example: 1-hour video processes in roughly 1.5 minutes
 - Suitable for: Production use, high-volume transcription
 
 :::tip[GPU Memory Requirements]
@@ -67,7 +67,7 @@ For regular use and production deployments:
 :::
 
 :::info[Hybrid Mode for Low-VRAM GPUs — and why macOS is not one]
-If your GPU has less than ~5 GB of usable VRAM, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU (small model, int8) while speaker detection stays on GPU (~1.3 GB VRAM measured for the in-process PyAnnote engine), and still produces speaker-separated transcripts.
+If the configured Whisper model cannot fit on your GPU even at the minimum batch size (its peak would exceed 80% of total VRAM), OpenTranscribe automatically activates **hybrid mode** (override with `WHISPER_HYBRID_MODE=true|false|auto`): transcription runs on CPU (`small` model by default, int8) while speaker detection stays on GPU (~1.3 GB VRAM measured for the in-process PyAnnote engine), and still produces speaker-separated transcripts.
 
 On **macOS (Apple Silicon)**, Docker Desktop has no Metal/GPU passthrough, so
 every container is CPU-only there regardless of host chip, and there is no MPS
@@ -106,7 +106,7 @@ See [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md) for configuration
 **Performance**:
 - With GPU scaling: Process 4+ videos simultaneously
 - Transcription speed: ~40x realtime per worker (full pipeline)
-- Total throughput: ~160x realtime (4 workers)
+- Total throughput: about 51x realtime with 4 workers (measured, versus about 39x with one; scaling is sub-linear)
 
 ## Cloud & Server Deployments
 
@@ -190,10 +190,13 @@ The following ports must be available:
 | Frontend | 5173 | Web interface |
 | Backend API | 5174 | API endpoints |
 | Flower | 5175 | Task monitoring |
-| MinIO | 5176-5179 | Object storage |
-| OpenSearch | 5180 | Search engine |
-| PostgreSQL | 5432 | Database (internal) |
-| Redis | 6379 | Task queue (internal) |
+| PostgreSQL | 5176 | Database (loopback only) |
+| Redis | 5177 | Task queue (loopback only) |
+| MinIO | 5178 (API), 5179 (console) | Object storage (loopback only) |
+| OpenSearch | 5180 (API), 5181 (admin) | Search engine (loopback only) |
+| Docs | 5183 | Embedded documentation site |
+
+Each is set by a `*_PORT` variable in `.env` (for example `FRONTEND_PORT`, `POSTGRES_PORT`).
 
 ## Operating System Support
 
@@ -237,22 +240,20 @@ nproc
 
 Real-world performance examples:
 
+Only the high-end card below was benchmarked (see `docs/BENCHMARK_RESULTS.md`: 37-40x realtime single-file, full pipeline, `large-v3-turbo`). The other figures are estimates and will vary with model, file length and settings.
+
 ### Entry-Level GPU (RTX 3060 12GB)
 
-- 1-hour audio: ~50 seconds
-- 3-hour meeting: ~2.5 minutes
 - Concurrent jobs: 1-2 recommended
 
 ### Mid-Range GPU (RTX 3080 12GB)
 
-- 1-hour audio: ~50 seconds
-- 3-hour meeting: ~2.5 minutes
 - Concurrent jobs: 2-3 with GPU scaling
 
 ### High-End GPU (RTX A6000 48GB)
 
-- 1-hour audio: ~50 seconds
-- 3-hour meeting: ~2.5 minutes
+- 1-hour audio: roughly 1.5 minutes
+- 3-hour meeting: roughly 4.5 minutes
 - Concurrent jobs: 4-6 with GPU scaling
 - Can handle local LLM + transcription simultaneously
 
@@ -263,11 +264,11 @@ Real-world performance examples:
 Simplest upgrade for dramatic performance improvement:
 
 1. Add NVIDIA GPU (8GB+ VRAM)
-2. Install NVIDIA drivers and CUDA toolkit
+2. Install the NVIDIA driver and the NVIDIA Container Toolkit (see [GPU Setup](./gpu-setup.md))
 3. Update `.env` with `GPU_DEVICE_ID`
 4. Restart OpenTranscribe
 
-**Performance gain**: 50-70x faster transcription
+**Performance gain**: roughly 40x or more faster transcription
 
 ### Single GPU → Multi-GPU
 
@@ -278,7 +279,7 @@ For scaling throughput:
 3. Update `.env` with GPU scaling settings
 4. Restart with `--gpu-scale` flag
 
-**Performance gain**: 4x throughput (with 4 parallel workers)
+**Performance gain**: higher total throughput (about 1.3x with 4 parallel workers in the measured run; see [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md#performance))
 
 ### Local Storage → NAS
 

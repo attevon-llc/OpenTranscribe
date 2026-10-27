@@ -657,6 +657,56 @@ def test_the_personal_workspace_purge_leaves_the_same_persons_organization_data(
     assert result["counts"]["suggestions_cleared"] == 1
 
 
+# One store at a time: what each of the four stores holds for a seeded scope, as "kept?" Each
+# reader returns True while the scope's rows / documents are still there.
+_STORES = {
+    "inferred_gender": lambda db, s, os_: (
+        db.get(Speaker, s.guess).predicted_gender is not None
+        and db.get(Speaker, s.other).predicted_gender is not None
+    ),
+    "voice_suggestions": lambda db, s, os_: db.get(Speaker, s.guess).suggestion_source is not None,
+    "speaker_matches": lambda db, s, os_: (
+        db.query(SpeakerMatch).filter(SpeakerMatch.speaker1_id.in_([s.guess, s.other])).count() == 1
+    ),
+    "opensearch_voiceprints": lambda db, s, os_: s.doc_ids <= os_.ids(),
+}
+
+
+@pytest.mark.parametrize("store", sorted(_STORES))
+@pytest.mark.parametrize("purged_scope", ["organization", "personal"])
+def test_each_purge_touches_only_its_own_tenants_rows_in_each_store(
+    client, gov, opensearch, broker, in_process_task, reindexed, store, purged_scope
+):
+    """Two tenants hold the SAME person's data side by side; a purge of one leaves the other.
+
+    The organization purge and the person's personal-workspace purge are the two that could
+    reach across: both are run against the identical pair, and each store is read separately so
+    a failure names the store that was crossed.
+    """
+    in_org = seed(gov, opensearch, gov.alice, gov.org, "alice-org")
+    other_org_member = seed(gov, opensearch, gov.bob, gov.org, "bob-org")
+    personal = seed(gov, opensearch, gov.alice, None, "alice-personal")
+    elsewhere = seed(gov, opensearch, gov.outsider, gov.other_org, "outsider-org")
+    if purged_scope == "organization":
+        turn_off(gov.db, gov.org)
+        response = purge_via_api(client, gov, gov.admin, ORG_PURGE)
+        gone, kept = [in_org, other_org_member], [personal, elsewhere]
+    else:
+        _switch_off_for(gov.db, gov.alice)
+        response = purge_via_api(client, gov, gov.alice, ME_PURGE, org=None)
+        gone, kept = [personal], [in_org, other_org_member, elsewhere]
+    assert response.status_code == status.HTTP_202_ACCEPTED, response.text
+    gov.db.expire_all()
+    for seeded in gone + kept:
+        assert _STORES[store](gov.db, seeded, opensearch), f"{seeded.tag}: seeded wrongly"
+
+    in_process_task(broker[0])
+
+    gov.db.expire_all()
+    assert not any(_STORES[store](gov.db, seeded, opensearch) for seeded in gone)
+    assert all(_STORES[store](gov.db, seeded, opensearch) for seeded in kept)
+
+
 def test_an_organization_purge_counts_the_organizations_speakers_not_zero(
     client, gov, opensearch, broker, in_process_task, reindexed
 ):

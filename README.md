@@ -316,7 +316,7 @@ Then follow the on-screen instructions. The setup script will:
 - Download the production Docker Compose file
 - Configure environment variables with optimal settings for your hardware
 - **Prompt for your HuggingFace token** (required for speaker diarization)
-- **Automatically download and cache AI models (~2.9GB)** if token is provided
+- **Automatically download and cache AI models** (several GB; the size depends on your Whisper and neural-search model choices) if a token is provided
 - Set up the management script (`opentranscribe.sh`)
 
 **💻 CPU-only install:** If you don't have an NVIDIA GPU, or you're on WSL2 with the NVIDIA Container Toolkit installed but GPU passthrough disabled, pass `--cpu` to skip GPU detection and avoid the `nvidia-container-cli` adapter error at container start:
@@ -364,8 +364,10 @@ cd opentranscribe
 ```
 
 The Docker images are available on Docker Hub as separate repositories:
-- `davidamacey/opentranscribe-backend`: Backend service (also used for celery-worker and flower)
+- `davidamacey/opentranscribe-backend`: CUDA backend image (also used for the API, every Celery worker, beat, flower and the diar-native sidecar)
+- `davidamacey/opentranscribe-backend-lite`: CPU-only backend image used by `--lite` installs (cloud ASR)
 - `davidamacey/opentranscribe-frontend`: Frontend service
+- `davidamacey/opentranscribe-docs`: Bundled documentation site
 
 Access the web interface at http://localhost:5173
 
@@ -402,8 +404,8 @@ Access the web interface at http://localhost:5173
 
 4. **Access the Application**
    - 🌐 **Web Interface**: http://localhost:5173
-   - 📚 **API Documentation**: http://localhost:5174/docs
-   - 🌺 **Task Monitor**: http://localhost:5175/flower
+   - 📚 **API Documentation**: http://localhost:5174/api/docs (disabled on hardened deployments unless `ENABLE_API_DOCS=true`)
+   - 🌺 **Task Monitor**: http://localhost:5175/flower (basic auth: `FLOWER_USER` / `FLOWER_PASSWORD`)
    - 🔍 **Search Engine**: http://localhost:5180 (OpenSearch, loopback-only)
    - 📁 **File Storage**: http://localhost:5179 (MinIO console, loopback-only)
    - 📖 **Documentation**: http://localhost:5183/docs/
@@ -433,7 +435,7 @@ Two independent scaling modes are available — choose based on your hardware an
 # The --gpu-scale flag is what enables scaling — GPU_SCALE_ENABLED in .env does
 # NOT turn it on (it only affects which GPU the system-stats display queries).
 GPU_SCALE_DEVICE_ID=2       # Which GPU to use (default: 2)
-GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
+GPU_SCALE_WORKERS=4         # Number of parallel workers (unset = derived from DIAR_NATIVE_MAX_INFLIGHT, which falls back to 2)
 
 # Start with GPU scaling
 ./opentr.sh start dev --gpu-scale
@@ -441,7 +443,7 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 
 # Example: GPU 2 (A6000) runs 4 parallel workers; GPU 0/1 handle other tasks
 ```
-**Best for:** High file throughput — processes 4 videos simultaneously on one GPU.
+**Best for:** High file throughput — processes `GPU_SCALE_WORKERS` videos simultaneously on one GPU. Keep it at or below the diar-native sidecar's `DIAR_NATIVE_MAX_INFLIGHT`, or the extra jobs just queue on the sidecar.
 
 **Option B — GPU Split** (transcription and diarization on separate GPUs):
 ```bash
@@ -555,6 +557,8 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ./opentr.sh shell [service]      # Open shell in container
 
 # Available services: backend, frontend, postgres, redis, minio, opensearch, celery-worker
+# `shell` only opens a shell; run commands inside it, e.g.:
+#   ./opentr.sh shell postgres    then    psql -U postgres -l
 ```
 
 ### **Monitoring and Debugging**
@@ -575,19 +579,19 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 
 1. **User Registration**
    - Navigate to http://localhost:5173
-   - Create an account or use default admin credentials
+   - Create an account, or sign in as the bootstrap admin: on a production install `INITIAL_ADMIN_EMAIL` (default `admin@example.com`) with `INITIAL_ADMIN_PASSWORD`, or a generated password logged once at first startup; a dev stack seeds `admin@example.com` / `password`
    - Set up your profile and preferences
 
 2. **Upload or Record Content**
-   - **File Upload**: Click \"Upload Files\" or drag-and-drop media files (up to 4GB)
-   - **Direct Recording**: Use the microphone button in the navbar for browser-based recording
-   - **URL Processing**: Paste video URLs from 1800+ platforms (YouTube, Dailymotion, Twitter/X, TikTok, etc.)
+   - **File Upload**: Click **Add Media** (Upload File tab) or drag-and-drop media files (up to 15 GB by default, `MAX_UPLOAD_BYTES`)
+   - **Direct Recording**: Use the **Record Audio** tab in **Add Media** for browser-based recording
+   - **URL Processing**: Paste video URLs on the **Media URL** tab (yt-dlp, 1800+ supported sites: YouTube, Dailymotion, Twitter/X, TikTok, etc.)
    - **Playlist Support**: Import entire YouTube playlists with one URL
    - Supported formats: MP3, WAV, MP4, MOV, and more
    - Files are automatically queued for concurrent processing
 
 3. **Monitor Processing**
-   - Watch detailed real-time progress with 13 processing stages
+   - Watch detailed real-time progress, grouped as Main processing, Finishing and AI enrichment
    - Use the floating upload manager for multi-file progress tracking
    - View task status in Flower monitor or notifications panel
    - Receive live WebSocket notifications for all status changes
@@ -693,22 +697,28 @@ OpenTranscribe/
 │   │   ├── 📁 models/         # Database models
 │   │   ├── 📁 services/       # Business logic
 │   │   ├── 📁 tasks/          # Background AI processing
+│   │   ├── 📁 transcription/  # Transcription and diarization engine
+│   │   ├── 📁 auth/           # Authentication methods, MFA
+│   │   ├── 📁 core/           # Configuration, constants, Celery wiring
 │   │   ├── 📁 utils/          # Common utilities
-│   │   └── 📁 db/             # Database configuration
+│   │   └── 📁 db/             # Database configuration and migration runner
 │   ├── 📁 scripts/            # Admin and maintenance scripts
 │   ├── 📁 tests/              # Comprehensive test suite
 │   └── 📄 README.md           # Backend documentation
 ├── 📁 frontend/               # Svelte frontend application
 │   ├── 📁 src/                # Source code
 │   │   ├── 📁 components/     # Reusable UI components
+│   │   ├── 📁 lib/            # API clients, i18n locales, services
 │   │   ├── 📁 routes/         # Page components
 │   │   ├── 📁 stores/         # State management
 │   │   └── 📁 styles/         # CSS and themes
 │   └── 📄 README.md           # Frontend documentation
 ├── 📁 database/               # Database initialization
-├── 📁 models_ai/              # AI model storage (runtime)
+├── 📁 docs/                   # Guides and design notes
+├── 📁 docs-site/              # Docusaurus documentation site
+├── 📁 models/                 # AI model cache (runtime, created by the installer; MODEL_CACHE_DIR)
 ├── 📁 scripts/                # Utility scripts
-├── 📄 docker-compose.yml      # Container orchestration
+├── 📄 docker-compose.yml      # Container orchestration (plus docker-compose.*.yml overlays)
 ├── 📄 opentr.sh               # Main utility script
 └── 📄 README.md               # This file
 ```
@@ -719,17 +729,20 @@ OpenTranscribe/
 
 #### **Core Application**
 ```bash
-# Database
-DATABASE_URL=postgresql://postgres:password@postgres:5432/opentranscribe
+# Database (the connection string is assembled from these;
+# DATABASE_URL is only an optional full-string override, e.g. for a managed Postgres)
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your-database-password
+POSTGRES_DB=opentranscribe
 
-# Security
-SECRET_KEY=your-super-secret-key-here
+# Security (the installer and ./opentr.sh replace the CHANGE_ME placeholders in .env.example)
 JWT_SECRET_KEY=your-jwt-secret-key
+ENCRYPTION_KEY=your-encryption-key   # decrypts every DB-stored secret — never change after first use
 
 # Object Storage
 MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
-MINIO_BUCKET_NAME=transcribe-app
+MINIO_ROOT_PASSWORD=your-minio-password
+MEDIA_BUCKET_NAME=opentranscribe
 ```
 
 #### **Authentication**
@@ -743,7 +756,7 @@ precedence over `.env`, with no restart required.
 # LDAP/Active Directory
 LDAP_ENABLED=false
 LDAP_SERVER=ldap://your-ldap-server:389
-LDAP_BASE_DN=dc=example,dc=com
+LDAP_SEARCH_BASE=dc=example,dc=com
 LDAP_BIND_DN=cn=admin,dc=example,dc=com
 LDAP_BIND_PASSWORD=your-bind-password
 
@@ -770,7 +783,7 @@ PROXY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8 # required whenever proxy auth is ena
 
 # MFA (optional, works with any auth type)
 MFA_ENABLED=false
-MFA_ISSUER=OpenTranscribe
+MFA_ISSUER_NAME=OpenTranscribe
 ```
 
 See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [OIDC](docs/OIDC_SETUP.md) | [PKI](docs/PKI_SETUP.md) | [SAML](docs-site/docs/authentication/saml.md) | [Trusted-header proxy](docs-site/docs/authentication/proxy.md)
@@ -782,8 +795,8 @@ HUGGINGFACE_TOKEN=your_huggingface_token_here
 
 # Model configuration
 WHISPER_MODEL=large-v3-turbo        # large-v3-turbo (default), large-v3, large-v2, medium, small, base
-COMPUTE_TYPE=float16                # float16, int8
-BATCH_SIZE=16                       # Reduce if GPU memory limited
+COMPUTE_TYPE=auto                   # auto (default), float16, int8
+BATCH_SIZE=auto                     # auto (default) or an integer; reduce if GPU memory limited
 
 # Speaker detection
 MIN_SPEAKERS=1                      # Minimum speakers to detect
@@ -834,7 +847,7 @@ OpenTranscribe offers flexible AI deployment options. Choose the approach that b
 **📋 Complete Provider Configuration:**
 ```bash
 # Cloud Providers (configure in .env)
-LLM_PROVIDER=openai                  # openai, anthropic, custom (openrouter)
+LLM_PROVIDER=openai                  # openai, anthropic, openrouter, bedrock, custom (any OpenAI-compatible endpoint)
 OPENAI_API_KEY=your_openai_key       # OpenAI GPT models
 ANTHROPIC_API_KEY=your_claude_key    # Anthropic Claude models
 OPENROUTER_API_KEY=your_or_key       # OpenRouter (multi-provider)
@@ -865,11 +878,12 @@ OpenTranscribe automatically downloads and caches AI models for optimal performa
 **Directory Structure:**
 ```
 ./models/
-├── huggingface/          # PyAnnote + WhisperX models
-│   ├── hub/             # WhisperX transcription models (~1.5GB)
-│   └── transformers/    # PyAnnote transformer models
-└── torch/               # PyTorch cache
-    └── pyannote/        # PyAnnote diarization models (~500MB)
+├── huggingface/          # Whisper transcription models and other HuggingFace downloads
+├── torch/                # PyTorch cache (PyAnnote diarization models)
+├── nltk_data/
+├── sentence-transformers/
+├── opensearch-ml/        # neural-search embedding models (also mounted read-only into OpenSearch)
+└── diar-native/          # native diarization engine artifacts
 ```
 
 **Custom Cache Location:**
@@ -883,10 +897,11 @@ MODEL_CACHE_DIR=/mnt/storage/models  # Network storage
 MODEL_CACHE_DIR=./cache              # Project subdirectory
 ```
 
-**Storage Requirements:**
-- **WhisperX Models**: ~1.5GB (depends on model size)
-- **PyAnnote Models**: ~500MB (diarization + embedding)
-- **Total**: ~2.5GB for complete setup```
+**Storage Requirements** (approximate; the installer's model prompts show the exact choices):
+- **Whisper models**: roughly 1.5GB for the default `large-v3-turbo`; varies with the model you pick
+- **Diarization models**: roughly 500MB
+- **Neural-search embedding models**: 80MB for the default, up to about 2.6GB if you download all six
+- **Total**: several GB for a complete setup
 
 ### **🔑 HuggingFace Token Setup**
 
@@ -922,17 +937,18 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 echo "HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" >> .env
 ```
 
-**Note:** Without a valid HuggingFace token, speaker diarization will be disabled and speakers will not be automatically detected or identified across different media files.
+A super admin can also save the token in the UI, under **Settings → Speaker Identification → Speaker Engine** (a token saved there takes precedence over `.env`).
+
+**Note:** Without a valid HuggingFace token, local speaker diarization cannot download its models, so speakers will not be detected on this server (a cloud provider can still detect them) or matched across media files.
 
 #### **Performance Tuning**
 ```bash
-# GPU settings
-USE_GPU=true                        # Enable GPU acceleration
-CUDA_VISIBLE_DEVICES=0              # GPU device selection
+# GPU settings (GPU use is auto-detected; FORCE_CPU_MODE=true forces CPU-only)
+GPU_DEVICE_ID=0                     # Physical GPU index (nvidia-smi numbering). Don't also set CUDA_VISIBLE_DEVICES
+GPU_CONCURRENT_REQUESTS=1           # Transcriptions one GPU worker runs at once
 
 # Resource limits
-MAX_UPLOAD_SIZE=4GB                 # Maximum file size (supports GoPro videos)
-CELERY_WORKER_CONCURRENCY=2         # Concurrent tasks
+MAX_UPLOAD_BYTES=16106127360        # Maximum upload size in bytes (default 15 GB; 0 disables the limit)
 ```
 
 ### **Production Deployment**
@@ -942,8 +958,8 @@ For production use, ensure you:
 1. **Security Configuration**
    ```bash
    # Generate strong secrets
-   openssl rand -hex 32  # For SECRET_KEY
    openssl rand -hex 32  # For JWT_SECRET_KEY
+   openssl rand -hex 32  # For ENCRYPTION_KEY (never change it after first use)
 
    # Set strong database passwords
    # Configure proper firewall rules
@@ -952,8 +968,9 @@ For production use, ensure you:
 
 2. **Performance Optimization**
    ```bash
-   # Use production environment
-   NODE_ENV=production
+   # Use the production stack (its compose overlay sets NODE_ENV=production; the backend
+   # is fail-closed hardened unless ENVIRONMENT names a relaxed environment)
+   ./opentr.sh start prod
 
    # Configure resource limits
    # Set up monitoring and logging
@@ -1117,10 +1134,10 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 nvidia-smi
 
 # Verify Docker GPU support
-docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 
 # Set CPU-only mode if needed
-echo "USE_GPU=false" >> .env
+echo "FORCE_CPU_MODE=true" >> .env
 ```
 
 #### **Permission Errors (Model Cache / yt-dlp)**
@@ -1131,7 +1148,7 @@ echo "USE_GPU=false" >> .env
 - YouTube downloads fail with permission errors
 - Models fail to download or save
 
-**Cause:** Docker creates model cache directories with root ownership, but containers run as non-root user (UID 1000) for security.
+**Cause:** Docker creates model cache directories with root ownership, but containers run as the non-root `appuser` (UID 1000, GID 999) for security.
 
 **Solution:**
 ```bash
@@ -1140,10 +1157,10 @@ cd opentranscribe  # Or your installation directory
 ./scripts/fix-model-permissions.sh
 
 # Option 2: Manual fix using Docker
-docker run --rm -v ./models:/models busybox chown -R 1000:1000 /models
+docker run --rm -v ./models:/models busybox chown -R 1000:999 /models
 
 # Option 3: Manual fix using sudo (if available)
-sudo chown -R 1000:1000 ./models
+sudo chown -R 1000:999 ./models
 sudo chmod -R 755 ./models
 ```
 
@@ -1158,11 +1175,11 @@ sudo chmod -R 755 ./models
 - Different Linux users have different UIDs (e.g., 1001, 1002)
 - Running setup as root creates root-owned directories
 - Docker version differences affect directory creation behavior
-- The containers run as UID 1000 for security (non-root user)
+- The containers run as UID 1000 / GID 999 (the non-root `appuser`) for security
 
 **Verification:**
 ```bash
-# Check directory ownership (should show UID 1000 or your user)
+# Check directory ownership (should show UID 1000, GID 999, or your user)
 ls -la models/
 
 # Test write permissions
@@ -1181,7 +1198,7 @@ docker stats
 ```
 
 #### **Slow Transcription**
-- Use GPU acceleration (`USE_GPU=true`)
+- Use GPU acceleration (auto-detected; make sure `FORCE_CPU_MODE` is not `true`)
 - Reduce model size (`WHISPER_MODEL=medium`)
 - Increase batch size if you have GPU memory
 - Split large files into smaller segments
@@ -1194,8 +1211,9 @@ docker stats
 # Check database logs
 ./opentr.sh logs postgres
 
-# Verify database is running
-./opentr.sh shell postgres psql -U postgres -l
+# Verify database is running (opens a shell in the postgres container, then list databases)
+./opentr.sh shell postgres
+psql -U postgres -l
 ```
 
 #### **Container Issues**
@@ -1247,8 +1265,8 @@ For systems where the GPU cannot fit the full transcription model, OpenTranscrib
 
 | Scenario | Transcription | Diarization | Trigger |
 |---|---|---|---|
-| GPU ≥ 8 GB + large-v3-turbo | GPU | GPU | Normal mode |
-| GPU 4–6 GB + large-v3-turbo | CPU (small model) | GPU | Auto hybrid |
+| GPU with enough VRAM for large-v3-turbo (8 GB+ recommended) | GPU | GPU | Normal mode |
+| GPU under ~5 GB VRAM + large-v3-turbo (its minimum peak, ~3.9 GB, exceeds 80% of VRAM) | CPU (small model) | GPU | Auto hybrid |
 | macOS (any Apple Silicon) | CPU (small model) | CPU (`--lite` image) | Always CPU-only — no MPS in Docker |
 | `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU | Manual override (Linux/WSL2 + NVIDIA GPU only) |
 
@@ -1271,7 +1289,7 @@ WHISPER_HYBRID_MODE=auto
 ```bash
 # GPU optimization (≥ 8 GB VRAM)
 COMPUTE_TYPE=float16              # Use half precision
-BATCH_SIZE=auto                   # Auto-tuned per model (turbo→16, medium→24, small→24)
+BATCH_SIZE=auto                   # Default: auto-tuned per model and available VRAM
 WHISPER_MODEL=large-v3-turbo      # Default: fast and accurate; use large-v3 for translation or max accuracy
 
 # Hybrid mode (low-VRAM GPU or macOS — CPU transcription + GPU diarization)
@@ -1356,7 +1374,7 @@ The AGPL-3.0 license ensures that:
   - [LDAP/Active Directory Setup](docs/LDAP_AUTH.md) - Enterprise directory integration
   - [OpenID Connect Setup](docs/OIDC_SETUP.md) - OAuth 2.0 / OIDC SSO configuration
   - [PKI/X.509 Setup](docs/PKI_SETUP.md) - Certificate-based authentication (CAC/PIV)
-- 🛠️ **API Reference**: http://localhost:5174/docs (when running)
+- 🛠️ **API Reference**: http://localhost:5174/api/docs (when running; see Quick Start for hardened deployments)
 - 🌺 **Task Monitor**: http://localhost:5175/flower (when running)
 - 🤝 **Contributing**: [Contribution guidelines](docs/CONTRIBUTING.md)
 - 🐛 **Issues**: [GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues)

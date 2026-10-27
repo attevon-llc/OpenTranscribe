@@ -13,6 +13,8 @@ Rules for core code:
   constant) so all of it tree-shakes out of community bundles.
 - `index.ts` defines the seam contract. Signature changes here must be
   mirrored by the overlay — change the stub first, then the overlay.
+  `seamContract.test.ts` pins the export list and which core files import
+  this module statically.
 - No vendor names in this tree or in core call sites: CI's seam-guard greps
   `frontend/src` (and `backend/app`) and fails the build on a match.
 - `locales/` may be added by the overlay (per-locale flat JSON string packs);

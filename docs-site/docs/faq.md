@@ -252,7 +252,7 @@ Depends on hardware and content length:
 | 1 hour         | ~5 minutes     | ~60 minutes  |
 | 3 hours        | ~15 minutes    | ~3 hours     |
 
-**Processing speed:** ~70x realtime with GPU and `large-v2` model.
+**Processing speed:** the measured throughput on an RTX A6000 is roughly 35-39x realtime for the full pipeline, including speaker diarization (see `docs/BENCHMARK_RESULTS.md` in the repository). The table above is a rough estimate for a mid-range GPU; real times depend on the model, the diarization settings, the content and your hardware.
 
 ### Can I process multiple files at once?
 

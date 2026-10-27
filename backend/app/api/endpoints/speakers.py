@@ -1163,21 +1163,18 @@ def debug_cross_media_by_name(
     """
     Debug endpoint to test cross-media logic for a specific speaker name.
 
-    The route is admin-gated, but in multi-tenant mode the queries stay inside the
-    caller's active tenant: it returns speaker names and file titles.
+    The route is admin-gated, but it returns speaker names and file titles, so it stays
+    inside the request's active tenant, and reads other users' rows there only where the
+    request's bypass sees all of the scope (single-tenant mode, or an organization
+    support-access grant). Otherwise it is the caller's own.
     """
     try:
-        in_scope = (
-            None
-            if ctx.bypass.sees_all_in_scope
-            else Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id))
-        )
+        in_scope = Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id))
         # Find all matching speakers
         query = db.query(Speaker).filter(Speaker.display_name == speaker_name)
-        if not current_user.is_admin:
+        if not ctx.bypass.sees_all_in_scope:
             query = query.filter(Speaker.user_id == current_user.id)
-        if in_scope is not None:
-            query = query.filter(in_scope)
+        query = query.filter(in_scope)
         matching_speakers = query.all()
 
         results: dict[str, Any] = {
@@ -1206,10 +1203,9 @@ def debug_cross_media_by_name(
                         Speaker.profile_id == speaker.profile_id,
                     )
                 )
-                if not current_user.is_admin:
+                if not ctx.bypass.sees_all_in_scope:
                     profile_q = profile_q.filter(Speaker.user_id == current_user.id)
-                if in_scope is not None:
-                    profile_q = profile_q.filter(in_scope)
+                profile_q = profile_q.filter(in_scope)
                 profile_speakers = profile_q.all()
 
                 cross_media_result["method_used"] = "profile_based"
@@ -1236,10 +1232,9 @@ def debug_cross_media_by_name(
                         Speaker.id != speaker.id,  # Exclude self
                     )
                 )
-                if not current_user.is_admin:
+                if not ctx.bypass.sees_all_in_scope:
                     similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-                if in_scope is not None:
-                    similar_q = similar_q.filter(in_scope)
+                similar_q = similar_q.filter(in_scope)
                 similar_speakers = similar_q.all()
 
                 cross_media_result["method_used"] = "display_name_based"

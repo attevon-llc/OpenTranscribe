@@ -470,8 +470,12 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   shared `PrivacyView`). Every printer of a label goes through it (exports, captions, the chunk and reindex writers,
   `get_speaker_name`, the chat roster, `SpeakerStatusService`), so a new one must too. In a response, redact first and
   decorate second: `add_computed_status` derives `status_text` and `resolved_display_name` from the suggestion that
-  `redact_speaker_rows` withholds. `services/privacy/label_reindex.py` queues the existing debounced re-index (and facts)
-  for the files such a name decides when a voiceprint switch changes value (called by the three `policy_admin` writers).
+  `redact_speaker_rows` withholds. A voiceprint switch change rebuilds the affected labels through a durable, audited resync
+  (`services/privacy/label_resync.py` + `tasks/privacy_label_resync_task.py`, registered in the Celery `include=` list): the request
+  records a pending scope (`privacy.label_resync.pending`), the task re-indexes the selected files through the existing debounced
+  dispatch and writes `privacy.labels.resync` audit events (requested, finished: counts of files selected/queued/already
+  pending/failed, never a name or a file), and drift detection in the search-maintenance task finishes a rebuild that could not run.
+  Responses hide immediately; the index follows in the background.
 - **Every writer of `Speaker.display_name` / `profile_id` records who wrote it (`speaker.identity_source`, #1280).** Values:
   `voiceprint` (a voiceprint wrote name AND link), `voiceprint_link` (only the link, onto a name that was there), `human`, NULL
   (unknown, read as human). Set it ONLY through `utils/speaker_identity_source.py` (`record_machine_identity`,

@@ -152,6 +152,35 @@ voiceprints off does not rewrite it; regenerate the summary while voiceprints ar
 without the name. Names on recordings that existed before 0.6.0 follow the upgrade rule in
 [Upgrading to 0.6.0](../operations/upgrading-to-0-6-0.md#which-existing-speaker-names-count-as-voiceprint-made).
 
+### What off hides, and what it keeps
+
+When voiceprints are off for a recording, a speaker name that a voiceprint match wrote is replaced by
+the generic speaker label (for example `SPEAKER_00`) everywhere the name would be shown or searched:
+
+- the transcript, exports and captions,
+- the speaker list and the gallery speaker chips, and filtering by speaker,
+- chat's "who said" lookup,
+- the speaker labels and summary text in the search index,
+- the speaker-detection prompts,
+- profile appearance counts.
+
+A profile link that a voiceprint added is hidden and not counted. A name a person typed, accepted or
+confirmed is **never** hidden, with or without a machine-added link. Nothing is deleted by hiding:
+turning the switch back on shows everything again.
+
+Hiding is immediate in responses. The search index is rebuilt in the background (usually within
+minutes, longer for a very large library); if the rebuild cannot run, the periodic search
+maintenance finishes it. The rebuild is recorded as the `privacy.labels.resync` audit event (see
+[Audit events](#audit-events)).
+
+#### Summaries already written
+
+Summaries and topics that a language model generated earlier are stored as written and may still
+name a person whom a voiceprint identified. Their copy in the search index and in chat is masked
+while voiceprints are off, but the stored text is not rewritten. To remove the name from the stored
+text, regenerate the summary after turning voiceprints off. Only the full name recorded on the
+speaker is masked, not a first name on its own.
+
 ### Where inferred gender is withheld
 
 While gender is off for a recording's owner and organization, a response never carries the
@@ -470,7 +499,7 @@ voiceprints" and "Deleted inferred gender data".
 | `admin.settings.change` | An instance switch changed (setting name, old and new value) |
 | `org.policy.change` | An organization policy `PATCH` (field names only; stamped with the organization) |
 | `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. The completed passes carry the scope, the exact counts per store and the residual check (see [Read a purge back from the audit log](#purging-stored-data)). Counts and ids only; stamped with the organization when there is one |
-| `privacy.labels.resync` | A voiceprint switch changed value and the files whose speaker labels it decides were queued for a search re-index, so the index follows the switch |
+| `privacy.labels.resync` | A voiceprint switch changed and the speaker labels in the search index are being rebuilt. Written when the rebuild is requested and again when it finishes. `details` hold the switch, its previous and new value, the scope, and the counts of files selected, queued, already pending and failed. An unfinished rebuild is marked incomplete and retried by the periodic search maintenance. Never names a person or a file |
 
 ## Data inventory
 

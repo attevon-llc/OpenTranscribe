@@ -177,8 +177,9 @@ Voiceprint matching and inferred gender now each have a restrict-only switch at 
 The upgrade rewrites and deletes nothing: the only new table (`v445`, listed above) is empty, both
 deployment switches default **on**, no consent hook is registered and no platform ceiling exists.
 No voiceprint, profile or gender value is touched. It is **not** neutral for everyone, though. The
-person-level gender switch is the setting that already existed (**Settings > Speaker
-Identification > Voice Attributes**, stored as `speaker_attribute_gender_detection_enabled`), so a
+person-level gender switch is the setting that already existed
+(**Settings > Speaker Identification > Voice Attributes**, stored as
+`speaker_attribute_gender_detection_enabled`), so a
 person who had **already turned inferred gender off** now has every stored inferred gender hidden
 everywhere: in their own views and also for collaborators who see their recordings through sharing
 or an organization, because the setting of the recording's owner applies. A gender someone
@@ -275,9 +276,19 @@ The log line reads `v449: recognised N existing speaker identities as voiceprint
 expected more, check `unknown`: that is the number of verified rows whose suggestion came from a
 voice match but that the upgrade could not prove were not confirmed by a person.
 
-**What does not change.** Summaries, topics and other text a language model already wrote may
-contain a name that a voiceprint supplied. That text is model output, not a label, so it is not
-rewritten. Regenerating a summary while voiceprints are off produces one without the name.
+**What does not change.** Summaries and topics a language model generated earlier are stored as
+written and may still name a person a voiceprint supplied. Their copy in the search index and in
+chat is masked while voiceprints are off, but the stored text is not rewritten: regenerate the
+summary after turning voiceprints off to remove the name from it. Only the full name recorded on the
+speaker is masked, not a first name on its own.
+
+**After upgrading, a voiceprint switch change rebuilds the speaker labels in the background.**
+When a person, an organization or the deployment turns voiceprints off or on, the search index
+labels of the affected recordings are rebuilt by a background task, and an
+`privacy.labels.resync` audit event is written when the rebuild is requested and again when it
+finishes. Responses hide immediately; the index follows (usually within minutes, longer for a very
+large library), and if the rebuild cannot run the periodic search maintenance finishes it. If you
+override the Celery `include=` list, register `app.tasks.privacy_label_resync_task` in it.
 
 Deleting stored voiceprints or inferred gender is a separate action, available only after the
 switch is off, and it cannot be undone. Backups and search snapshots keep their copies until they

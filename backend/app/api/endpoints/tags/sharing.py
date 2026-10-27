@@ -88,7 +88,7 @@ def list_tag_shares(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -119,7 +119,7 @@ def create_tag_share(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -189,7 +189,7 @@ def revoke_tag_share(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]

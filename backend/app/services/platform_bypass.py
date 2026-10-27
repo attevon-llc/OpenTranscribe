@@ -126,6 +126,20 @@ class PlatformBypass:
         return max(60, min(default_seconds, SUPPORT_ACCESS_PRESIGN_MAX_SECONDS, remaining))
 
     @property
+    def deployment_scope_writable(self) -> bool:
+        """May this caller write rows no single tenant owns, or sweep every tenant's rows.
+
+        The shared tag vocabulary (system tags) and deployment-wide sweeps. Single mode: every
+        admin, as today. Multi mode: only a ``super_admin``; a plain platform admin holds no
+        implicit reach into tenants, and a grant is per tenant so it never confers this.
+        """
+        if not self.user_is_admin:
+            return False
+        if self.mode is TenancyMode.SINGLE:
+            return True
+        return bool(self.user is not None and self.user.is_super_admin)
+
+    @property
     def admin_reveal_allowed(self) -> bool:
         """Unredacted reveal is owner-only in multi-tenant mode; admins keep it in single."""
         return self.mode is TenancyMode.SINGLE and self.user_is_admin

@@ -15,38 +15,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fixtures.tenant_rows import make_tag
+from fixtures.tenant_rows import make_watch_source
 
-from app.models.media import Tag
 from app.models.watch_source import WatchSource
-from app.services.tag_service import normalize_tag_name
-
-
-def _source(db, *, user_id: int, org_id: int | None, names: list[str]) -> WatchSource:
-    source = WatchSource(
-        name=f"ws-{uuid.uuid4().hex[:8]}",
-        source_type="local",
-        local_path="inbox",
-        user_id=user_id,
-        organization_id=org_id,
-        tag_names=names,
-    )
-    db.add(source)
-    db.commit()
-    db.refresh(source)
-    return source
-
-
-def _tag(db, *, name: str, user_id: int | None, org_id: int | None) -> Tag:
-    tag = Tag(
-        name=name,
-        normalized_name=normalize_tag_name(name),
-        user_id=user_id,
-        organization_id=org_id,
-    )
-    db.add(tag)
-    db.commit()
-    db.refresh(tag)
-    return tag
 
 
 def _names(db, source: WatchSource) -> list[str]:
@@ -61,11 +33,13 @@ def lists(support_world):
     """The owner's tag ``word`` and one source naming it per tenant."""
     w = support_world
     word = f"word{uuid.uuid4().hex[:6]}"
-    tag = _tag(w.db, name=word, user_id=w.owner.id, org_id=None)
-    own = _source(w.db, user_id=w.owner.id, org_id=None, names=[word, "keep"])
-    in_org = _source(w.db, user_id=w.owner.id, org_id=w.org.id, names=[word, "keep"])
-    in_other_org = _source(w.db, user_id=w.owner.id, org_id=w.other_org.id, names=[word, "keep"])
-    colleague = _source(w.db, user_id=w.admin.id, org_id=None, names=[word, "keep"])
+    tag = make_tag(w.db, name=word, user_id=w.owner.id, org_id=None)
+    own = make_watch_source(w.db, user_id=w.owner.id, org_id=None, names=[word, "keep"])
+    in_org = make_watch_source(w.db, user_id=w.owner.id, org_id=w.org.id, names=[word, "keep"])
+    in_other_org = make_watch_source(
+        w.db, user_id=w.owner.id, org_id=w.other_org.id, names=[word, "keep"]
+    )
+    colleague = make_watch_source(w.db, user_id=w.admin.id, org_id=None, names=[word, "keep"])
     return w, word, tag, own, [in_org, in_other_org, colleague]
 
 
@@ -97,7 +71,7 @@ def test_deleting_a_tag_strips_only_its_own_tenants_lists(lists):
 
 def test_merging_a_tag_rewrites_only_its_own_tenants_lists(lists):
     w, word, tag, own, others = lists
-    survivor = _tag(w.db, name=f"{word}-survivor", user_id=w.owner.id, org_id=None)
+    survivor = make_tag(w.db, name=f"{word}-survivor", user_id=w.owner.id, org_id=None)
     response = w.client.post(
         f"/api/tags/{survivor.uuid}/merge",
         headers=w.owner_headers,
@@ -111,10 +85,10 @@ def test_merging_a_tag_rewrites_only_its_own_tenants_lists(lists):
 def test_an_organization_tag_edit_stays_inside_the_organization(support_world):
     w = support_world
     word = f"orgword{uuid.uuid4().hex[:6]}"
-    tag = _tag(w.db, name=word, user_id=w.org_admin.id, org_id=w.org.id)
-    in_org = _source(w.db, user_id=w.owner.id, org_id=w.org.id, names=[word])
-    in_other_org = _source(w.db, user_id=w.owner.id, org_id=w.other_org.id, names=[word])
-    personal = _source(w.db, user_id=w.owner.id, org_id=None, names=[word])
+    tag = make_tag(w.db, name=word, user_id=w.org_admin.id, org_id=w.org.id)
+    in_org = make_watch_source(w.db, user_id=w.owner.id, org_id=w.org.id, names=[word])
+    in_other_org = make_watch_source(w.db, user_id=w.owner.id, org_id=w.other_org.id, names=[word])
+    personal = make_watch_source(w.db, user_id=w.owner.id, org_id=None, names=[word])
     response = w.client.delete(
         "/api/tags", headers=w.org_admin_headers, params={"tag_uuids": [str(tag.uuid)]}
     )

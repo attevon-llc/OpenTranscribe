@@ -24,6 +24,7 @@ from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
+from app.services.platform_access import TenancyMode
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
 from app.services.tag_operations import preview_tag_impact
@@ -50,7 +51,7 @@ def get_tag_impact(
             db,
             tag_uuids,
             user_id=current_user.id,
-            is_admin=current_user.is_admin,
+            can_write_system=ctx.bypass.deployment_scope_writable,
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
         ),
@@ -69,6 +70,9 @@ def promote_tags_endpoint(
 ):
     """Publish owned tags into the shared vocabulary (admin only).
 
+    In a multi-tenant deployment this needs a ``super_admin``: the result is visible to every
+    tenant. Only same-named tags of the promoted tag's own tenant are folded into it.
+
     The consolidation lever for a multi-user deployment: ownership keeps one
     account from renaming another's tag, but it also lets four private
     "Interview" rows accumulate with nothing to point at. Promoting one makes it
@@ -79,7 +83,7 @@ def promote_tags_endpoint(
     routes for the usual FastAPI reason — ``/promote`` would otherwise be
     swallowed by ``/{tag_uuid}``.
     """
-    if not current_user.is_admin:
+    if not ctx.bypass.deployment_scope_writable:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can promote tags to the shared vocabulary",
@@ -91,12 +95,15 @@ def promote_tags_endpoint(
             db,
             payload.tag_uuids,
             user_id=current_user.id,
-            is_admin=current_user.is_admin,
+            can_write_system=ctx.bypass.deployment_scope_writable,
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
         ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
+        # Single-tenant: one vocabulary, so every same-named row is folded. Multi-tenant: only
+        # the promoted tag's own tenant is, another tenant's rows are not this caller's to merge.
+        fold_across_tenants=ctx.bypass.mode is TenancyMode.SINGLE,
     )
 
 
@@ -119,7 +126,7 @@ def rename_tag_endpoint(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -147,7 +154,7 @@ def merge_tags_endpoint(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -159,7 +166,7 @@ def merge_tags_endpoint(
             db,
             payload.source_uuids,
             user_id=current_user.id,
-            is_admin=current_user.is_admin,
+            can_write_system=ctx.bypass.deployment_scope_writable,
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
         ),
@@ -183,7 +190,7 @@ def delete_tags_endpoint(
             db,
             tag_uuids,
             user_id=current_user.id,
-            is_admin=current_user.is_admin,
+            can_write_system=ctx.bypass.deployment_scope_writable,
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
         ),

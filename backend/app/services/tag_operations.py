@@ -748,6 +748,7 @@ def promote_tags_to_shared(
     *,
     user_id: int,
     organization_id: int | None = None,
+    fold_across_tenants: bool = True,
 ) -> TagMutationOutcome:
     """Publish tenant tags into the shared vocabulary (``user_id`` and org → NULL).
 
@@ -774,6 +775,10 @@ def promote_tags_to_shared(
         tag_ids: Tags to publish.
         user_id: The acting admin, for cache invalidation.
         organization_id: Tenant scope for the impact preview.
+        fold_across_tenants: Fold every same-named tag in the deployment into the
+            promoted row (single-tenant behaviour). When False only same-named tags
+            of the promoted tag's own tenant are folded, and another tenant's rows
+            are left exactly as they were.
 
     Returns:
         The outcome, whose ``impact`` covers the promoted tags and everything
@@ -822,17 +827,16 @@ def promote_tags_to_shared(
             )
             continue
 
+        origin = tenant_key(tag)
         tag.user_id = None
         tag.organization_id = None
         affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
 
         # Fold every other account's same-named row into the new shared one, so
         # promotion collapses the duplicates rather than sitting beside them.
+        candidates = db.query(Tag).filter(Tag.normalized_name == normalized, Tag.id != tag.id)
         duplicates = [
-            row.id
-            for row in db.query(Tag)
-            .filter(Tag.normalized_name == normalized, Tag.id != tag.id)
-            .all()
+            row.id for row in candidates.all() if fold_across_tenants or tenant_key(row) == origin
         ]
         if duplicates:
             merge_tags(db, tag.id, duplicates, user_id=user_id, organization_id=organization_id)

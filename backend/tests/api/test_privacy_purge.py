@@ -1180,9 +1180,9 @@ def test_a_purge_takes_machine_members_out_of_a_promoted_cluster(
 def test_a_cross_scope_match_is_deleted_and_counted_and_the_other_speaker_is_untouched(
     client, gov, opensearch, broker, in_process_task, reindexed
 ):
-    inside_a = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
-    inside_b = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
-    outside = make_speaker_row(
+    # Created first so its id is LOWER than the in-scope speakers' (it becomes ``speaker1``),
+    # and last so it is HIGHER: both sides of the pair table are exercised.
+    outside_low = make_speaker_row(
         gov,
         gov.outsider,
         gov.other_org,
@@ -1191,17 +1191,21 @@ def test_a_cross_scope_match_is_deleted_and_counted_and_the_other_speaker_is_unt
         verified=True,
         identity_source="voiceprint",
     )
-    other_outside = make_speaker_row(gov, gov.outsider, gov.other_org, "SPEAKER_00")
+    inside_a = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
+    inside_b = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
+    outside_high = make_speaker_row(gov, gov.outsider, gov.other_org, "SPEAKER_00")
 
     def match(first, second):
         low, high = sorted((first.id, second.id))
         gov.db.add(SpeakerMatch(speaker1_id=low, speaker2_id=high, confidence=0.9))
 
     match(inside_a, inside_b)  # both sides in scope
-    match(inside_a, outside)  # joins the scope to the same person elsewhere (id order: either)
-    match(outside, inside_b)  # the other id order
-    match(outside, other_outside)  # entirely another tenant's
+    match(outside_low, inside_a)  # the in-scope speaker is speaker2
+    match(inside_b, outside_high)  # the in-scope speaker is speaker1
+    match(outside_low, outside_high)  # entirely another tenant's
     gov.db.commit()
+    kept = (outside_low.id, outside_high.id)
+    survivor_id = outside_low.id
     turn_off(gov.db, gov.org, gender=False)
 
     _task_id, result = run_org_purge(client, gov, broker, in_process_task)
@@ -1212,17 +1216,62 @@ def test_a_cross_scope_match_is_deleted_and_counted_and_the_other_speaker_is_unt
     assert postgres["cross_scope_matches"] == 2
     remaining = [
         (m.speaker1_id, m.speaker2_id)
-        for m in gov.db.query(SpeakerMatch).filter(
-            SpeakerMatch.speaker1_id.in_([outside.id, other_outside.id, inside_a.id, inside_b.id])
-        )
+        for m in gov.db.query(SpeakerMatch).filter(SpeakerMatch.speaker1_id.in_(kept))
     ]
-    assert remaining == [tuple(sorted((outside.id, other_outside.id)))]
-    survivor = gov.db.get(Speaker, outside.id)
+    assert remaining == [tuple(sorted(kept))]
+    survivor = gov.db.get(Speaker, survivor_id)
     assert (survivor.display_name, survivor.identity_source, survivor.verified) == (
         "Ann",
         "voiceprint",
         True,
     ), "the other scope's speaker row is never modified"
+
+
+def test_a_voiceprint_suggestion_goes_with_the_identity_it_made_and_an_llm_one_stays(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    voice = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Ann",
+        verified=True,
+        identity_source="voiceprint",
+        suggested_name="Ann",
+        suggestion_source="profile_match",
+        confidence=0.9,
+    )
+    llm = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Ann",
+        verified=True,
+        identity_source="voiceprint",
+        suggested_name="Anne",
+        suggestion_source="llm_analysis",
+        confidence=0.8,
+    )
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    cleared = gov.db.get(Speaker, voice.id)
+    assert (cleared.suggested_name, cleared.suggestion_source, cleared.confidence) == (
+        None,
+        None,
+        None,
+    )
+    kept = gov.db.get(Speaker, llm.id)
+    assert (kept.suggested_name, kept.suggestion_source, kept.confidence) == (
+        "Anne",
+        "llm_analysis",
+        0.8,
+    )
+    assert result["counts"]["postgres"]["suggestions_cleared"] == 1
 
 
 def test_a_clean_purge_reports_an_all_zero_residual(

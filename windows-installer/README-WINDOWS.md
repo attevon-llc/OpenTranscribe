@@ -12,7 +12,7 @@ Before installation, ensure you have:
 2. **Docker Desktop for Windows** - Installed and running
 3. **WSL 2** - Enabled (required by Docker Desktop)
 4. **NVIDIA GPU** (Optional but recommended)
-   - NVIDIA drivers installed (version 450.80.02 or higher)
+   - NVIDIA drivers installed (version 527.41 or higher; the Windows counterpart of Linux 525.60.13 for CUDA 12)
    - CUDA support enabled in Docker Desktop settings
 5. **Minimum System Requirements:**
    - 16GB RAM (32GB recommended)

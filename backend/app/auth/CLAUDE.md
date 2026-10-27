@@ -4,7 +4,9 @@
 
 Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
 (`local`, `ldap`, `oidc`, `pki`, `proxy`, `saml` — `constants.py:VALID_AUTH_TYPES`, enforced by a
-DB CHECK, `v377`, value set swapped by `v380`, widened by `v383`). Configure in the Admin UI
+DB CHECK, `v377`, value set swapped by `v380`, widened by `v383`). The value set the CHECK admits has ONE home, `constants.py:DB_ADMITTED_AUTH_TYPES` (a superset of
+`VALID_AUTH_TYPES`); the model CHECK bodies are rendered from it and
+`tests/unit/test_auth_type_allowlist_single_source.py` pins the newest migration to it. Configure in the Admin UI
 (Settings → Authentication): **DB `auth_config` wins over `.env`, which wins over the coded
 default** (`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/`
 package + `auth_config.py`, not here.
@@ -426,6 +428,20 @@ someone else's product.
   sound only while exactly one provider is configured; multi-provider means keying on
   `(iss, sub)`. The old column name asserted a global identifier, which is why it was
   renamed rather than left alone.
+- **Registry-based providers and the `auth_type` CHECK (#866).** `external_sync` writes
+  `identity.provider` into the CHECK-constrained `user.auth_type`, so a provider registered under
+  a string outside `DB_ADMITTED_AUTH_TYPES` needs the REGISTERING EDITION to widen
+  `ck_user_auth_type_valid` and `ck_user_invitation_auth_type_valid` in its own **additive**
+  migration. Core cannot do it for them. `register_verifier` logs a WARNING for such a type, and
+  `auth_type_admission.assert_auth_type_admitted` (called first in `sync_external_user_to_db`)
+  checks the live constraint and raises `ExternalProviderNotAdmittedError` naming the fix instead
+  of a bare CheckViolation at commit (only positive answers are cached, so applying the migration
+  needs no restart). **No core migration may rewrite unlisted values to `'local'`** (the
+  v377/v380 `UPDATE ... WHERE auth_type NOT IN (...)` repair): replayed after an edition widened
+  the CHECK, it silently turns delegated-auth accounts into password logins with no password. The
+  test file above fails on any post-v380 migration containing that pattern. A catch-all
+  `'external'` value (real provider kept in a metadata column) would remove the need for edition
+  migrations entirely; it is a schema decision not taken here.
 - **`user.auth_type` had TWO CHECK constraints** — `ck_user_auth_type_valid` (v377) and
   a legacy `users_auth_type_check` (v200, re-asserted by v367/v371, still in
   `database/init_db.sql`). Swapping only the first would not have failed the migration;

@@ -958,6 +958,14 @@ off by default.
 
 ### Fixed
 
+- **A registered external provider whose `auth_type` the database does not admit now fails with a
+  message that names the fix (#866).** `external_sync` wrote the provider's string straight into the
+  CHECK-constrained `user.auth_type`, so a provider outside the core set failed its first login with
+  a bare CheckViolation. The admitted set now has a single home (`DB_ADMITTED_AUTH_TYPES`) that the
+  model CHECKs are rendered from, a test pins the newest migration to it, registering an unlisted
+  provider logs a warning, and the first JIT login checks the live constraint. A test also forbids
+  any new migration from rewriting unlisted `auth_type` values to `local`. Editions that register a
+  provider must widen both CHECKs in their own additive migration, as before.
 - **A large "summarize everything" turn now pulls fewer sections per recording (#991).**
   `sections_budget` divided a character budget by a file count and compared the result with a
   section count, so it returned its ceiling of three sections per file until a scope passed 4,000

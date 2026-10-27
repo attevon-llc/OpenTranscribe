@@ -21,7 +21,7 @@ AUTH_TYPE_SAML = "saml"
 # app.auth.provider_registry — they are not enumerated here.
 #
 # This list is what the application actually supports; the DB CHECK constraint
-# (v380) must always be a superset of it, which
+# (DB_ADMITTED_AUTH_TYPES below) must always be a superset of it, which
 # tests/unit/test_v380_migration_consistency.py pins.
 VALID_AUTH_TYPES = [
     AUTH_TYPE_LOCAL,
@@ -31,6 +31,42 @@ VALID_AUTH_TYPES = [
     AUTH_TYPE_PROXY,
     AUTH_TYPE_SAML,
 ]
+
+# The value set the database CHECKs (``ck_user_auth_type_valid`` on ``user`` and
+# ``ck_user_invitation_auth_type_valid`` on ``user_invitation``) admit. THE single home
+# of that set: the model-declared CHECK bodies are rendered from it
+# (``auth_type_check_sql``), and ``tests/unit/test_auth_type_allowlist_single_source.py``
+# pins the latest migration that sets the constraint (v383) to it, so the model, the
+# migrations and this constant cannot drift apart silently (issue #866).
+#
+# It is deliberately a SEPARATE tuple from VALID_AUTH_TYPES, which it must contain: a
+# value may be admitted by the database before any code supports it (a widening
+# migration ships ahead of its provider). Add a value here only in the same commit as
+# the migration that widens the DDL, and keep that migration ADDITIVE (see below).
+#
+# Registry-based providers (app.auth.provider_registry) are NOT listed: an edition that
+# registers a verifier for its own ``auth_type`` string must widen both CHECKs with its
+# own migration, and ``external_sync`` refuses (with a message naming the fix) a provider
+# the live constraint does not admit instead of surfacing a bare CheckViolation. Core
+# migrations that touch these CHECKs must never rewrite unlisted values to 'local'
+# (``UPDATE ... WHERE auth_type NOT IN (...)``, the v377/v380 repair): that would demote
+# an edition's delegated-auth accounts to password logins with no password. The pattern
+# is closed to new migrations by the same test file.
+DB_ADMITTED_AUTH_TYPES: tuple[str, ...] = (
+    AUTH_TYPE_LOCAL,
+    AUTH_TYPE_LDAP,
+    AUTH_TYPE_OIDC,
+    AUTH_TYPE_PKI,
+    AUTH_TYPE_PROXY,
+    AUTH_TYPE_SAML,
+)
+
+
+def auth_type_check_sql() -> str:
+    """The body of the ``auth_type`` CHECK constraints, rendered from the single source."""
+    values = ", ".join(f"'{value}'" for value in DB_ADMITTED_AUTH_TYPES)
+    return f"auth_type IN ({values})"
+
 
 # Version of the cloud-extension seam surface (verifier registry, pipeline
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature

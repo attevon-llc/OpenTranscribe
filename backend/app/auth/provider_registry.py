@@ -24,6 +24,8 @@ from typing import Protocol
 
 from fastapi import Request
 
+from app.auth.auth_type_admission import core_admits
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,6 +82,16 @@ def register_verifier(auth_type: str, verifier: TokenVerifier) -> None:
         logger.warning(f"Replacing already-registered token verifier for '{auth_type}'")
     _verifiers[auth_type] = verifier
     logger.info(f"Registered external token verifier: {auth_type}")
+    if not core_admits(auth_type):
+        # Not an error: the registering edition may well have widened the CHECK with
+        # its own migration, which core cannot see here. external_sync verifies the
+        # live constraint on first use and refuses with a clear message if it is not.
+        logger.warning(
+            f"External provider '{auth_type}' is not in the core auth_type allowlist; "
+            "its edition must widen ck_user_auth_type_valid and "
+            "ck_user_invitation_auth_type_valid with its own additive migration or "
+            "the first JIT-provisioned login will be refused (issue #866)."
+        )
 
 
 def unregister_verifier(auth_type: str) -> None:

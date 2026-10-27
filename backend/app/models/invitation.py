@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
+from app.auth.constants import auth_type_check_sql
 from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
@@ -42,17 +43,17 @@ class UserInvitation(Base):
     __tablename__ = "user_invitation"
 
     # Both CHECKs mirror the ones on ``user`` (v377/v383) and are enforced by the
-    # database today. As on ``user.auth_type``, the auth-type body is a **literal**
-    # and must not be rebuilt from ``app.auth.constants.VALID_AUTH_TYPES``: the DB
-    # CHECK is required to be a superset of that list, and deriving it here would
-    # encode equality instead. See ``app/models/user.py`` for the full argument.
+    # database today. The auth-type body is rendered from
+    # ``app.auth.constants.DB_ADMITTED_AUTH_TYPES`` (the single source, issue #866) and
+    # must not be rebuilt from ``VALID_AUTH_TYPES``: the DB CHECK is required to be a
+    # superset of that list. See ``app/models/user.py`` for the full argument.
     __table_args__ = (
         CheckConstraint(
             "role IN ('user', 'admin', 'super_admin')",
             name="ck_user_invitation_role_valid",
         ),
         CheckConstraint(
-            "auth_type IN ('local', 'ldap', 'oidc', 'pki', 'proxy', 'saml')",
+            auth_type_check_sql(),
             name="ck_user_invitation_auth_type_valid",
         ),
     )

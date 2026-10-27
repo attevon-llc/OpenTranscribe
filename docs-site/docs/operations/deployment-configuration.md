@@ -40,6 +40,8 @@ This table is about launch commands and overlays. For what each image can do (lo
 | **In-app backups** | `./opentr.sh start dev --with-backup` | Mounts `BACKUP_HOST_PATH` for scheduled backups. See [Backup & Restore](./backup-restore.md). On a production install, set `BACKUP_OVERLAY_ENABLED=true` in `.env` instead (`./opentranscribe.sh` has no `--with-*` flags) — commented out by default since it also recreates the OpenSearch container. |
 | **LDAP test IdP** | `./opentr.sh start dev --with-ldap-test` | lldap at `localhost:3890`, UI `:17170`. |
 | **Keycloak test IdP** | `./opentr.sh start dev --with-keycloak-test` | Keycloak at `localhost:8180`. |
+| **Authentik test IdP** | `./opentr.sh start dev --with-authentik-test` | Authentik at `localhost:9022`. |
+| **Mock LLM / mock cloud ASR** | `./opentr.sh start dev --with-mock-llm` / `--with-mock-asr` | OpenAI-compatible mock at `localhost:5199`; Gladia stand-in at `localhost:5198`. Chat, summaries and cloud ASR work with no GPU, API key or vendor account. |
 | **SMB test share** | `./opentr.sh start dev --with-smb-test` | Samba share for watch-source testing. |
 | **PKI / mTLS** | `./opentr.sh start prod --build --with-pki` | mTLS at `https://localhost:5182`. **Production mode only** (Vite can't do mTLS). |
 | **Offline / air-gapped** | See `scripts/install-offline-package.sh` | Pre-downloaded models, `HF_HUB_OFFLINE=1`, no network calls. |

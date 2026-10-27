@@ -48,6 +48,11 @@ fresh mode, even when `.env` defines storage paths.**
 # otfresh-test1-lldap on 127.0.0.1:3990, and this stack's backend reaches it —
 # not the main stack's.
 ./opentr.sh start dev --fresh test1 --port-offset 100 --with-ldap-test
+
+# Run the image built at `up --build` time instead of bind-mounting ./backend
+# (no uvicorn --reload), so every measurement attributes to a commit rather than
+# to whatever was on disk when a container last reloaded.
+./opentr.sh start dev --fresh test1 --no-bindmount
 ```
 
 ### Managing fresh deployments
@@ -57,6 +62,7 @@ fresh mode, even when `.env` defines storage paths.**
 ./opentr.sh status --fresh test1   # show this deployment's containers
 ./opentr.sh fresh-list             # list all fresh deployments + their volumes
 ./opentr.sh fresh-destroy test1    # remove containers AND volumes (y/N confirm)
+./opentr.sh fresh-destroy test1 --yes   # skip the prompt (required without a tty)
 ```
 
 `fresh-destroy` is the **only** destructive fresh operation. It always shows
@@ -73,8 +79,9 @@ overlay. So fresh mode generates a tiny overlay at `.fresh/<name>.yml` that
 explicitly re-pins every service to `otfresh-<name>-*`. It is gitignored and
 regenerated on every start.
 
-The aux test overlays that hard-code a container name (`lldap`, `smb-test`,
-`prometheus`, `grafana`) are added to that same generated overlay — but only
+The aux overlays that hard-code a container name (`lldap`, `smb-test`,
+`prometheus`, `grafana`, `mock-llm`, `mock-asr`, `diar-native`, `llm-test-vllm`,
+`llm-test-ollama`) are added to that same generated overlay — but only
 when the matching `--with-*` flag is passed, since an overlay entry for a
 service no compose file defines makes `up` fail.
 
@@ -120,7 +127,14 @@ flag is passed:
 | `--with-monitoring` | `GRAFANA_PORT` | 5185 | Grafana |
 | `--with-monitoring` | `PROMETHEUS_PORT` | 5186 | Prometheus |
 | `--with-keycloak-test` | `KEYCLOAK_PORT` | 8180 | Keycloak |
-| `--with-keycloak-test` | `STEP_CA_PORT` | 9000 | Step CA |
+| `--with-keycloak-test` | `STEP_CA_PORT` | 9000 | Step CA (profile-gated; renumbered but not started by the flag) |
+| `--with-authentik-test` | `AUTHENTIK_PORT` | 9022 | Authentik |
+| `--with-mock-llm` | `MOCK_LLM_PORT` | 5199 | Mock LLM provider |
+| `--with-mock-asr` | `MOCK_ASR_PORT` | 5198 | Mock cloud ASR provider |
+| `--with-llm-test` | `LLM_TEST_PORT` | 5195 | vLLM |
+| `--with-llm-test` | `LLM_TEST_OLLAMA_PORT` | 5196 | Ollama alternative |
+| `--with-pki` | `PKI_HTTPS_PORT` | 5182 | PKI nginx mTLS listener |
+| `--with-pki` | `PKI_HTTP_PORT` | 5187 | PKI nginx plain-HTTP listener |
 
 :::note[`LDAP_TEST_PORT`, not `LDAP_PORT`]
 `LDAP_PORT` is the **application's** LDAP client port (`.env` ships
@@ -157,9 +171,12 @@ the isolation `--fresh` gives you is on containers, ports, and named volumes,
 not on a host path you explicitly asked to bind. `opentr.sh` warns when you
 combine them; point the variables at a scratch directory first if that matters.
 
-The `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` /
-`--with-keycloak-test` overlays *are* isolated (issue #347): container names,
-host ports, and named volumes all move with the deployment.
+The other `--with-*` overlays (`--with-ldap-test`, `--with-smb-test`,
+`--with-monitoring`, `--with-keycloak-test`, `--with-authentik-test`,
+`--with-mock-llm`, `--with-mock-asr`, `--with-llm-test`, `--with-pki`) *are*
+isolated (issue #347): container names, host ports, and named volumes all move
+with the deployment. `LLM_TEST_GPU_DEVICE_ID` is deliberately not offset: a port
+offset never renumbers a physical GPU.
 :::
 
 ## NAS overlay directives (non-fresh)

@@ -12,7 +12,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   the prefix (trailing-slash parity for nginx) and optionally attaches a capability gate.
   `main.py` mounts `api_router` under `settings.API_PREFIX` (`/api`).
 - `endpoints/auth/` — **also the dependency-injection module.** `get_current_user`,
-  `get_current_active_user` (~31 call sites), `get_current_admin_user`,
+  `get_current_active_user` (the most-used dependency; count with `rg -c 'Depends\(get_current_active_user\)' backend/app/api`), `get_current_admin_user`,
   `get_current_active_superuser`, `get_optional_current_user` are defined in
   `endpoints/auth/dependencies.py` and re-exported from the package — there is no `deps.py`,
   and `from app.api.endpoints.auth import get_current_active_user` still works. The rest of
@@ -88,8 +88,8 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 
 **This is a self-hosted app; the non-UI API is a feature.** Homelab users, cron scripts, CI and
 AI agents drive it directly, so "no SPA call site" is not evidence an endpoint is dead.
-`tests/unit/test_route_has_a_caller.py` xfails **80 of 413** routes for having no frontend
-caller (measured 2026-10-11; re-derive with that test rather than trusting the number); the
+`tests/unit/test_route_has_a_caller.py` xfails **78 of 441** route paths for having no frontend
+caller (measured 2026-10-27; re-derive with that test rather than trusting the number); the
 sections below say what they are *for*, so the xfail list reads as intent. Backend-first
 routes whose UI is planned (support access #1122, the pipeline view #1224) carry their own
 reason there.
@@ -154,7 +154,7 @@ organisation) that carry the credentials. The decision itself lives in the pipel
 `services/asr_provider_policy.py`.
 
 `/admin/local-models` (#1246; `GET ""`, `POST /download`, `POST /download/cancel`) is the local Whisper
-model library: super_admin only (`engine.settings`, in `SUPER_ADMIN_PREFIXES`), 409
+model library: super_admin only (`engine.settings`, in `SUPER_ADMIN_PREFIXES` of `tests/unit/test_route_privilege_tiers.py`), 409
 `local_asr_unavailable` on lite, catalog ids only (the repo and every path derive from the catalog).
 One download at a time deployment-wide (Redis lock taken here before dispatch; an unreachable Redis is a
 503, fail closed). Errors are `{"code", "message"}` with the fixed sentences in
@@ -215,7 +215,7 @@ Shaped for a script or agent rather than a screen.
 | `GET /files/supported-formats` | Static `{"subtitle_formats": [...]}`. **No auth dependency at all** — the only ungated route in that router |
 | `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied. The player's track is the sibling `GET /files/{uuid}/captions` (inline WebVTT, transcript-READ gating, `files/captions.py`); both cut cues with `services/captions`. **409 while the file's redaction scan is incomplete** — see Gotchas |
 | `GET /usage/me` · `GET /usage/me/daily` | Per-user LLM token/cost reporting. **Core, not a cloud seam** — `usage.py`'s docstring is explicit that a self-hoster paying an OpenAI bill is the intended reader. Reporting only; quotas and billing are the part that was carved out. The only usage UI in this repo is the `isCloudEdition`-gated managed-edition stub, so the self-host panel these promise does not exist yet |
-| `GET /prompts/by-content-type/{type}` | System + user prompts for one of 5 content types |
+| `GET /prompts/by-content-type/{type}` | System + user prompts for one of 6 content types |
 | `GET /search/filters` | Available filter facets from OpenSearch aggs; degrades to empty lists when the index is absent |
 | `GET /asr-settings/local-models` | Scans the HF cache for usable faster-whisper repos |
 | `GET /custom-vocabulary/export` · `DELETE /custom-vocabulary/all` | JSON export (attachment) and bulk delete. The **listing** is `GET /custom-vocabulary`, not `/all` |
@@ -256,7 +256,7 @@ admin-only dependency.
 
 Real UI features whose call site the scan missed or which have no panel yet:
 `/files/{uuid}/thumbnail` (server-provided URL, above) · `/files/{uuid}/{apply,auto-label}` ·
-`/speaker-profiles/profiles/{uuid}/occurrences`, `.../assign-profile`, `.../suggestions` ·
+`/speaker-profiles/profiles/{uuid}/occurrences`, `/speaker-profiles/speakers/{uuid}/{assign-profile,suggestions}` ·
 `/speakers/{uuid}/verify` · `/files/{uuid}/waveform/peaks` (redundant with `/waveform`).
 
 ## How it connects

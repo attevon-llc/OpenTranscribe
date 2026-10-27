@@ -65,6 +65,7 @@ def _make_speaker(
         suggested_name=None,
         suggestion_source=None,
         verified=False,
+        identity_source=None,
         confidence=None,
         created_at=datetime.now(UTC),
         profile=profile,

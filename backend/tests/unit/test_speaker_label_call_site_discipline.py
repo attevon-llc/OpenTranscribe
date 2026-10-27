@@ -72,9 +72,6 @@ _ALLOWED: dict[str, str] = {
         "reads the segment's serialized speaker, which the endpoint redacted "
         "(redact_response_speakers) before validating it"
     ),
-    "services/formatting_service.py::format_speaker_name": (
-        "called with rows the endpoint redacted first (redact_response_speakers)"
-    ),
     "api/endpoints/files/crud.py::_resolve_segment_speaker_name": (
         "called with rows the endpoint redacted first (redact_response_speakers)"
     ),

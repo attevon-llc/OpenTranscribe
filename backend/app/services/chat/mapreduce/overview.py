@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from app.services.chat.citations import DIGEST_SNIPPET_CHARS
+
 #: Recordings listed individually before the block starts eliding. The corpus
 #: header above them is always complete, so an elided list still reports the true
 #: total — a partial list read as complete is the silent-wrong-answer shape this
@@ -46,12 +48,20 @@ _OVERVIEW_CLOSE = "</overview>\n\n"
 def sections_budget(files: int, budget_chars: int = DEFAULT_MAP_BUDGET_CHARS) -> int:
     """How many leading digest sections per file the scope map should pull.
 
-    ``max(1, min(3, budget_chars // files))``: never less than one section —
-    every file in a bounded scope must contribute something to the map — and
-    never more than three, so a small scope's per-file allowance cannot balloon
-    unbounded. Shrinks as the scope grows, so a 25-file "summarize everything"
-    turn does not fetch three sections apiece only to see most of them dropped
-    by the excerpt-budget trim that runs later in the pipeline.
+    ``max(1, min(3, budget_chars // (files * DIGEST_SNIPPET_CHARS)))``: the
+    character budget is divided by what the scope would cost at ONE section per
+    file (``files`` x the per-section character size), so the quotient is a
+    count of sections per file and the units match the ``3`` it is clamped to.
+    Never less than one section — every file in a bounded scope must contribute
+    something to the map — and never more than three, so a small scope's
+    per-file allowance cannot balloon unbounded. Shrinks as the scope grows, so
+    a 25-file "summarize everything" turn does not fetch three sections apiece
+    only to see most of them dropped by the excerpt-budget trim that runs later
+    in the pipeline. (Issue #991: the quotient used to be ``budget_chars //
+    files`` — characters per file, compared against a section count — which
+    only fell below 3 past 4,000 files.)
+
+    With the defaults: 1-5 files get 3 sections, 6-8 get 2, 9 or more get 1.
 
     Args:
         files: Number of files in the resolved scope. Zero or negative is
@@ -62,7 +72,7 @@ def sections_budget(files: int, budget_chars: int = DEFAULT_MAP_BUDGET_CHARS) ->
     Returns:
         An integer in ``[1, 3]``.
     """
-    return max(1, min(3, budget_chars // max(1, files)))
+    return max(1, min(3, budget_chars // (max(1, files) * DIGEST_SNIPPET_CHARS)))
 
 
 def _clock(seconds: float) -> str:

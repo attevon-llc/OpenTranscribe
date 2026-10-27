@@ -958,6 +958,11 @@ off by default.
 
 ### Fixed
 
+- **A large "summarize everything" turn now pulls fewer sections per recording (#991).**
+  `sections_budget` divided a character budget by a file count and compared the result with a
+  section count, so it returned its ceiling of three sections per file until a scope passed 4,000
+  recordings. It now divides by the cost of one section per file: 1-5 recordings get three
+  sections each, 6-8 get two, and 9 or more get one. Chat turns over small scopes are unchanged.
 - **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
   server refused (redaction scan unfinished, policy unavailable) used to log to the console and
   leave a button that did nothing; each now shows a translated message. The gallery's bulk export

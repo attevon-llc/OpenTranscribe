@@ -129,13 +129,17 @@ confirmed, so every speaker records **who wrote its name and profile link** (`id
 | Recorded as | Meaning | While voiceprints are off | A purge |
 |---|---|---|---|
 | `voiceprint` | A voiceprint wrote the name and the profile link | The name, its "verified" mark and the link are hidden; the speaker shows its diarizer label | Reverted to unnamed, unlinked and unverified |
-| `voiceprint_link` | A voiceprint added only the link, to a name that was already there | The link is hidden; the name stays | The link is removed; the name and its verified mark stay |
+| `voiceprint_link` | A voiceprint added only the link, to a name that was already there | The link, and the voice suggestion and match confidence that came with it, are hidden; the name stays | The link is removed together with that suggestion and confidence; the name and its verified mark stay |
 | `human` | A person typed, accepted, assigned or confirmed it, or promoted a cluster to a profile | Nothing is hidden | Nothing is touched |
 | none | Written before 0.6.0, or never named | Nothing is hidden (treated as a person's) | Nothing is touched |
 
 What a person does overrides what a machine did. Typing a name, accepting a suggestion, assigning
 or creating a profile, verifying, batch-verifying and promoting a cluster make the identity
-`human`. Clearing a name keeps a machine link as a link (`voiceprint_link`). Unassigning, rejecting
+`human`. Skipping a voice suggestion in the Inbox only marks it reviewed: the suggestion stays a
+voiceprint's, so it is hidden while voiceprints are off and a purge clears it (the speaker returns
+to the Inbox), unlike accepting it. Renaming a profile renames only the speakers whose link to it
+is visible, so a link a voiceprint made does not receive the new name while it is hidden.
+Clearing a name keeps a machine link as a link (`voiceprint_link`). Unassigning, rejecting
 or deleting a profile removes the link and leaves whatever name remains as unknown. Merging two
 speakers keeps the survivor's own name, link and origin: a merge does not confirm a machine's
 name.
@@ -143,8 +147,11 @@ name.
 Hidden means hidden in what is shown, not deleted: the speaker list and the speaker name
 directory (the gallery and chat speaker pickers; a hidden name is listed under the diarizer label
 only when unlabeled speakers are requested), a profile's occurrences (a recording whose only link
-is a machine's is not an occurrence while voiceprints are off), exports, captions, the search
-index and every other place a name is printed. Turning voiceprints back on shows them again.
+is a machine's is not an occurrence while voiceprints are off), the "other recordings" list of a
+speaker and its administrator debug twins (each recording is judged by its own recording's switch,
+and the match confidence is withheld), the speaker preview, the speaker-merge notification,
+topic-suggestion prompts, exports, captions, the search index and every other place a name is
+printed. Turning voiceprints back on shows them again.
 
 **Not covered.** Summaries, topic suggestions and other text a language model wrote earlier can
 contain a name that a voiceprint supplied. That text is model output, not a label, so switching
@@ -207,7 +214,7 @@ A purge deletes what a switch only hides. It is **irreversible**.
 
 | Target | Deleted | Kept |
 |---|---|---|
-| `voiceprints` | Names and links a voiceprint made revert to unnamed and unlinked (see [Names and links a voiceprint made](#names-and-links-a-voiceprint-made)), and those speakers leave promoted clusters (a promoted cluster left empty is deleted). Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included), selected by the speakers, profiles and clusters of the purged scope. Speaker match rows with either side in the scope. Unpromoted clusters whose members are all in the scope. Unverified voiceprint-based name suggestions (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names a person typed or confirmed, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted). Another tenant's rows and documents |
+| `voiceprints` | Names and links a voiceprint made revert to unnamed and unlinked (see [Names and links a voiceprint made](#names-and-links-a-voiceprint-made)), and those speakers leave promoted clusters (a promoted cluster left empty is deleted, except that a person's own purge keeps an emptied cluster another member owns and deletes only its centroid document). Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included), selected by the speakers, profiles and clusters of the purged scope; an organization purge also deletes the documents carrying that organization's own stamp. Speaker match rows with either side in the scope. Unpromoted clusters whose members are all in the scope. Unverified voiceprint-based name suggestions (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names a person typed or confirmed, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted). Another tenant's rows and documents |
 | `inferred_gender` | On speakers whose gender no person confirmed: the predicted gender, the three `attribute_confidence` keys `gender`, `alignment` and `alignment_hint`, and the time the attributes were predicted | Genders a person confirmed, and the gender stored on a speaker profile |
 
 **A gender purge does not clear a profile's gender.** `speaker_profile.predicted_gender` is set only
@@ -228,8 +235,10 @@ their own switch. The check fails closed, and the background task checks it agai
 
 **Two passes.** The task deletes once, then repeats the same deletion about 60 seconds later. The
 second pass catches a write that raced the switch (the write backstop caches for up to 10 seconds).
-The task stays `in_progress` until the second pass ends. If a store could not be fully purged, the
-task ends `failed`: run the purge again.
+The task stays `in_progress` until the second pass ends. A cluster centroid document that the
+first pass could not delete is handed to the second pass (its cluster is already gone from the
+database, so only the first pass knows its id), which deletes and measures it again. If a store
+could not be fully purged, the task ends `failed`: run the purge again.
 
 **Backups and snapshots.** A purge deletes from the live database and search indexes only. Database
 backups and OpenSearch snapshots keep their copies until they rotate out, so a restore can bring
@@ -246,10 +255,14 @@ purged voiceprints back. After restoring a backup, run the purge again.
 
 **What a purge selects, and what it never touches.** Speakers belong to their recording's
 organization (or personal workspace), profiles to the organization they are stamped with, and a
-cluster to its members. A purge deletes voiceprint documents by the ids of those rows, never by
-the organization stamped on the document, because a document written before the tenant backfill
-has no stamp: stamp-based deletion would miss it in an organization purge and could reach it from a
-member's personal purge. Two edge cases follow from the same rule:
+cluster to its members. A purge deletes voiceprint documents by the ids of those rows, because a
+document written before the tenant backfill has no stamp: stamp-based deletion alone would miss it
+in an organization purge and could reach it from a member's personal purge. An **organization**
+purge additionally deletes (and measures) every document that carries the organization's own
+stamp, which reaches documents the database has no row for (orphans, and documents keyed by the
+old numeric speaker id). A personal, member or whole-instance-personal purge never deletes by stamp,
+so a document with no stamp is out of its reach. A document stamped with the organization is the
+organization's even if its speaker row says otherwise. Two edge cases follow from the same rule:
 
 - A speaker match that joins a speaker in the purged scope to the same person's speaker in another
   scope is deleted (it is voice-derived data of the purged scope) and counted separately as

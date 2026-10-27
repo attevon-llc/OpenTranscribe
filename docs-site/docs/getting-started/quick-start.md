@@ -91,8 +91,7 @@ address in `INITIAL_ADMIN_EMAIL`). What its password is depends on the deploymen
   `.env` before the first start, a random password is generated and written **once** to the
   backend log. Read it with `./opentranscribe.sh logs backend` and look for
   `Created bootstrap admin ... with a GENERATED password`. A generated password must be changed
-  at first sign-in. The installer's closing banner still prints `admin@example.com` / `password`;
-  that credential only exists on a development stack.
+  at first sign-in.
 - **Development stack** (`./opentr.sh start dev`): `admin@example.com` / `password`.
 
 Other people can create their own accounts from the registration page (email, password, then

@@ -633,7 +633,7 @@ to the heap. Young-gen pressure is not exhaustion.
 | GPU temperature | `nvidia-smi` | >85 C | Improve cooling, reduce workload |
 | `gpu` queue depth + reserved | Flower dashboard, or `celery_queue_depth{queue="gpu"} + celery_queue_reserved{queue="gpu"}` | >20 pending+reserved | Add GPU workers or upgrade GPU |
 | PostgreSQL connections | `pg_stat_activity` | >80% of max_connections | Increase `PG_MAX_CONNECTIONS` |
-| OpenSearch heap | `_nodes/stats/jvm` | >85% of heap | Increase `OPENSEARCH_JAVA_OPTS` |
+| OpenSearch heap | `_nodes/stats/jvm` | Old generation large relative to heap (a high instantaneous percentage alone is usually uncollected garbage) | See [`circuit_breaking_exception`](#circuit_breaking_exception-is-usually-not-heap-exhaustion) before raising `OPENSEARCH_JAVA_OPTS` |
 | Redis memory | `redis-cli info memory` | >80% of maxmemory | Increase limit or tune eviction |
 | Container restarts | `docker inspect` | >3 in 1 hour | Check OOM kills, review logs |
 | Celery task failures | Flower tasks tab | >5% failure rate | Review failed task args and exceptions |

@@ -262,7 +262,7 @@ database backup. **Default OFF** — enable it in the admin UI under
 
 What it copies:
 
-- **Included**: uploaded originals (`user_*/file_*/…`), thumbnails, and speaker
+- **Included**: uploaded originals (`user_*/file_*/…`), URL-imported originals (`media/<user>/…`), thumbnails, and speaker
   avatars — everything irreplaceable in the media bucket.
 - **Excluded**: regenerable data — preprocessed temp audio (`temp/…`) and,
   defensively, the `derived/` / `bulk/` cache prefixes. (Subtitle-embedded videos
@@ -308,7 +308,7 @@ How it works:
   and a **Run Now** button.
 
 **Restoring from the mirror.** The mirror preserves the bucket's key layout
-(`user_<id>/file_<id>/…`), so restoring is a straight copy back:
+(`user_<id>/file_<id>/…`, `media/<user>/…`), so restoring is a straight copy back:
 
 ```bash
 # Folder mirror → restore into a (new) MinIO with mc

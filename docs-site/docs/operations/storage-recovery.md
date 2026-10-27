@@ -20,13 +20,23 @@ re-uploading a single file.
 
 ## How it works
 
-The re-ingestion tool scans the MinIO media prefix (`media/<user_id>/...`) and,
-for every object that has **no** corresponding `MediaFile` row, creates one
+The re-ingestion tool scans the MinIO `media/<user_id>/` prefix and,
+for every media object there that has **no** corresponding `MediaFile` row, creates one
 whose `storage_path` points at the **existing object key**. Nothing is copied
 or moved — the new row simply re-attaches to the bytes already in the bucket.
 Each recovered file then flows through the normal processing pipeline
 (transcription, diarization, indexing), so the transcripts and search data are
 rebuilt from the source media.
+
+
+:::warning[Only the `media/` prefix is scanned]
+URL and yt-dlp imports store their originals as `media/<user_id>/<uuid>.<ext>`, which this tool
+recovers. Files uploaded through the browser and files imported by watch sources are stored
+under `user_<id>/file_<id>/<filename>` instead, and the tool does **not** look there. After a
+database loss, those originals are still in the bucket (and in the [Media Mirror](./backup-restore.md#media-mirror-in-app-incremental),
+if enabled) but have to be restored from a database backup rather than re-registered by this
+command. Run `--dry-run` first and compare its count with what the bucket holds.
+:::
 
 It is **idempotent**: objects already referenced by a row are skipped, so the
 command is safe to run more than once (for example, to pick up files added

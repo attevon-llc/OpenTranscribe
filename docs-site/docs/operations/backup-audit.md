@@ -71,26 +71,26 @@ The uploaded audio/video originals in MinIO are **irreplaceable** — unlike Ope
 cannot be rebuilt from anything else. They are **co-critical with PostgreSQL**: losing
 either leaves you with half a system.
 
-The in-app scheduler does **not** back up media (it is a `pg_dump` + optional OpenSearch
-snapshot only). Today the media is protected solely by host-level RAID/NAS. **RAID is not a
+The database backup does **not** include media (it is a `pg_dump` + optional OpenSearch
+snapshot only). Before the Media Mirror (#242, below) the media was protected solely by host-level RAID/NAS. **RAID is not a
 backup** — it survives a disk failure but not an accidental/malicious delete, a bad
 migration, ransomware, bit-rot, or loss of the whole machine.
 
-**Options (assessed, not yet built):**
+**Options assessed (before #242):**
 
 - **`mc mirror` to a second location** — incremental copy of the media bucket to another
   machine, an external drive, or a remote S3 endpoint. Simplest path to an **off-host**
   copy; for write-once media the steady-state delta is tiny. This is the most direct fix
   and pairs naturally with the existing celery-beat schedule.
 - **S3 bucket versioning** — turns deletes/overwrites into recoverable previous versions.
-  Near-zero steady-state cost for write-once video. (David is still evaluating this; it is
+  Near-zero steady-state cost for write-once video. (It is
   complementary to — not a substitute for — an off-host copy, since versioning still lives
   in one bucket on one machine.)
 - **S3 replication** — bucket-to-bucket replication to a second provider/region for a true
   offsite second copy.
 
-**Recommendation:** add an automated **off-host media mirror** (mirror and/or replication),
-and turn on **versioning** for deletion protection. Until that ships, mirror manually with
+**Recommendation (as of the audit):** add an automated **off-host media mirror** (mirror and/or replication),
+and turn on **versioning** for deletion protection. The Media Mirror below now provides the first; for one-off copies, mirror manually with
 `mc mirror` per [Backup & Restore → MinIO](./backup-restore.md#minio--storage-backup).
 **Severity: High.**
 
@@ -207,7 +207,7 @@ None.**
 ## 6. Backup-failure visibility
 
 The scheduled backup records its outcome in `backup.last_result` (status, error, duration),
-which the admin Backups page reads on demand. **But a failing scheduled backup is not
+which the admin Backups page reads on demand. **Before #244, a failing scheduled backup was not
 surfaced anywhere proactively** — no Prometheus metric, no notification, no UI banner. A
 silently failing backup is **worse than no backup**, because it creates false confidence.
 

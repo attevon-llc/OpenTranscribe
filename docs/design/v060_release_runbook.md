@@ -77,6 +77,15 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
   an NLP/embedding path and the reranker; build the prod backend image and run Trivy to confirm the
   five CVEs are gone. If blocked, `./scripts/release.sh scan 0.6.0 --force-scan "<CVE ids and why>"`
   is pre-approved by the owner.
+- Built-image dependency checks (build the real prod CUDA image first; none of this was possible in
+  CPU venvs): `import torchcodec` and `torchaudio` load without a missing-library error (the repo pins
+  torchcodec 0.11.1 from the cu128 index; the images that ran on staging had PyPI 0.17.0, a CUDA-13
+  build the app never imports; keep whichever loads cleanly), one real GPU transcription with
+  diarization, the NLP/embedding path, the reranker, the toxicity model and GLiNER really loading
+  under transformers 5.10.4 / huggingface-hub 1.17.0 (the models-marked tests now FAIL, not skip, when
+  weights are cached but cannot load), a real model download with progress and resume, and Trivy on the
+  built image to confirm the five CVEs are gone. Run `scripts/check-requirements-resolve.py` once on
+  the release-prep branch.
 - Privacy behavior on real services: sidecar gender false, no docs written to `speakers_v4` when off,
   purge end to end, org panel gating.
 - #1282 browser pass with screenshots: upload tray, notification card, search page, chat, About

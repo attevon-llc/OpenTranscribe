@@ -127,10 +127,31 @@ def comment_rows_from(
     return rows
 
 
-def speaker_namer(speakers: list[Speaker], default_label: str) -> SpeakerNamer:
+def voiceprint_names_for(speakers: list[Speaker]) -> bool:
+    """Whether the file these speakers belong to may print a name a voiceprint made (#1280).
+
+    One policy question for the whole file, taken through the first speaker's session. No
+    speakers means no names. Fails closed: when the file's scope cannot be read the answer is
+    False. The speakers of an export all belong to one file.
+    """
+    from app.services.privacy.redact_view import voiceprints_off_for_row
+
+    return not speakers or not voiceprints_off_for_row(speakers[0])
+
+
+def speaker_namer(
+    speakers: list[Speaker], default_label: str, *, voiceprint_names: bool
+) -> SpeakerNamer:
     """A :data:`SpeakerNamer` over ``speakers``: a segment with no (or an unknown) speaker gets
-    ``default_label``, every other one its canonical label."""
-    names: dict[int, str] = {int(sp.id): canonical_speaker_label_for_row(sp) for sp in speakers}
+    ``default_label``, every other one its canonical label under the file's decision.
+
+    ``voiceprint_names`` is required: False leaves out a name a voiceprint made while the
+    file's voiceprints are off. Resolve it once with :func:`voiceprint_names_for`.
+    """
+    names: dict[int, str] = {
+        int(sp.id): canonical_speaker_label_for_row(sp, voiceprint_names=voiceprint_names)
+        for sp in speakers
+    }
 
     def speaker_name(seg: dict[str, Any]) -> str:
         if seg["speaker_id"] is None:

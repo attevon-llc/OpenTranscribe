@@ -210,12 +210,12 @@ def test_the_search_index_labels_a_chunk_with_the_matched_name_only_while_voicep
 def test_the_live_indexer_labels_a_chunk_like_the_reindex(db_session, world):
     from app.tasks.search_indexing_task import resolve_chunk_speaker_name
 
-    assert resolve_chunk_speaker_name(world["matched"]) == MATCHED
+    assert resolve_chunk_speaker_name(world["matched"], voiceprint_names=True) == MATCHED
 
     _off(db_session)
 
-    assert resolve_chunk_speaker_name(world["matched"]) == "SPEAKER_00"
-    assert resolve_chunk_speaker_name(world["typed"]) == TYPED
+    assert resolve_chunk_speaker_name(world["matched"], voiceprint_names=False) == "SPEAKER_00"
+    assert resolve_chunk_speaker_name(world["typed"], voiceprint_names=False) == TYPED
 
 
 def test_chat_cannot_resolve_a_speaker_through_a_hidden_voice_match(db_session, normal_user, world):

@@ -54,12 +54,19 @@ def mask_segment_text(segment, redaction_cfg=None) -> str:
         return C.REDACTION_LLM_FAILSAFE_TEXT
 
 
-def get_speaker_name(segment) -> str:
+def get_speaker_name(segment, *, voiceprint_names: bool | None = None) -> str:
     """Get the best available speaker name from a transcript segment.
 
     Delegates to :func:`app.utils.speaker_labels.canonical_speaker_label` — the single
     home for this resolution, shared with ``ingest_artifacts`` (facts/digest) and
     ``SpeakerStatusService`` so all three planes agree on one label for the same speaker.
+
+    Args:
+        segment: Anything with a ``speaker`` (a ``Speaker`` row or a duck-typed stand-in).
+        voiceprint_names: The segment's FILE decision (#1280): False leaves out a name a
+            voiceprint made. A caller that walks a whole file passes the decision it
+            resolved once (``privacy.gates.voiceprints_allowed``). ``None`` asks the policy
+            for this one row: correct, but one policy resolution per call.
     """
     if not segment.speaker:
         return canonical_speaker_label(None)
@@ -67,13 +74,16 @@ def get_speaker_name(segment) -> str:
     # `canonical_speaker_label_for_row` tolerates the duck-typed stand-ins callers pass
     # (a missing `suggested_name` degrades to "no suggestion") and withholds a voiceprint
     # name while the file's voiceprints are off (#1280).
-    return canonical_speaker_label_for_row(segment.speaker)
+    return canonical_speaker_label_for_row(segment.speaker, voiceprint_names=voiceprint_names)
 
 
 def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:
     """Build formatted transcript text from segments with speaker labels and timestamps.
 
     When ``redaction_cfg`` is enabled, segment text is masked (for ``redact_before_llm``).
+
+    Speakers are named by their raw diarizer label (``Speaker.name``, which nothing rewrites),
+    never by a display name, so there is no voiceprint decision to make here (#1280).
     """
     lines = []
     for segment in transcript_segments:
@@ -98,6 +108,9 @@ def build_speaker_segments(
             the owner's policy does not require pre-LLM masking. This payload goes
             off-box exactly like ``build_full_transcript``'s, so it needs the same
             masking.
+
+    Like :func:`build_full_transcript`, labels are the raw diarizer label: nothing here
+    depends on the voiceprint switch.
     """
     return [
         {
@@ -110,7 +123,9 @@ def build_speaker_segments(
     ]
 
 
-def compute_speaker_stats(transcript_segments) -> dict[str, Any]:
+def compute_speaker_stats(
+    transcript_segments, *, voiceprint_names: bool | None = None
+) -> dict[str, Any]:
     """Per-speaker talk time, segment count, word count and share of the conversation.
 
     Split out of :func:`build_transcript_and_stats` for #383 Phase 2: these numbers were
@@ -125,6 +140,8 @@ def compute_speaker_stats(transcript_segments) -> dict[str, Any]:
     Args:
         transcript_segments: ``TranscriptSegment`` rows, in any order — these are order-
             independent aggregates.
+        voiceprint_names: The file's voiceprint decision, as for :func:`get_speaker_name`.
+            Statistics are keyed by the label, so a hidden name must not key them either.
 
     Returns:
         ``{speaker_name: {"total_time", "segment_count", "word_count", "percentage"}}``.
@@ -132,7 +149,7 @@ def compute_speaker_stats(transcript_segments) -> dict[str, Any]:
     speaker_stats: dict[str, Any] = {}
 
     for segment in transcript_segments:
-        speaker_name = get_speaker_name(segment)
+        speaker_name = get_speaker_name(segment, voiceprint_names=voiceprint_names)
         if speaker_name not in speaker_stats:
             speaker_stats[speaker_name] = {
                 "total_time": 0,
@@ -153,11 +170,14 @@ def compute_speaker_stats(transcript_segments) -> dict[str, Any]:
 def build_transcript_and_stats(
     transcript_segments,
     redaction_cfg=None,
+    *,
+    voiceprint_names: bool | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Build full transcript text and speaker statistics from segments.
 
     When ``redaction_cfg`` is enabled, segment text is masked (for ``redact_before_llm``);
-    word counts use the original text so stats stay accurate.
+    word counts use the original text so stats stay accurate. ``voiceprint_names`` is the
+    file's voiceprint decision (see :func:`get_speaker_name`).
 
     Returns:
         Tuple of (transcript_text, speaker_stats_dict).
@@ -166,7 +186,7 @@ def build_transcript_and_stats(
     current_speaker: str | None = None
 
     for segment in transcript_segments:
-        speaker_name = get_speaker_name(segment)
+        speaker_name = get_speaker_name(segment, voiceprint_names=voiceprint_names)
 
         if speaker_name != current_speaker:
             full_transcript += f"\n\n{speaker_name}: "
@@ -177,4 +197,6 @@ def build_transcript_and_stats(
         timestamp = f"[{int(segment.start_time // 60):02d}:{int(segment.start_time % 60):02d}]"
         full_transcript += f"{timestamp} {mask_segment_text(segment, redaction_cfg)}"
 
-    return full_transcript, compute_speaker_stats(transcript_segments)
+    return full_transcript, compute_speaker_stats(
+        transcript_segments, voiceprint_names=voiceprint_names
+    )

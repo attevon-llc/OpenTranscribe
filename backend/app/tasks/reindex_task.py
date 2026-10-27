@@ -33,7 +33,7 @@ INDEX_STRUCTURE_LOCK_TIMEOUT_SECONDS = 60
 INDEX_STRUCTURE_LOCK_WAIT_SECONDS = 30
 
 
-def _resolve_reindex_speaker_name(row: Any, db: Any = None) -> str:
+def _resolve_reindex_speaker_name(row: Any, *, voiceprint_names: bool) -> str:
     """Canonical label for one batch-fetched speaker row.
 
     ``row`` is one of the ``(id, name, display_name, profile_id,
@@ -47,18 +47,19 @@ def _resolve_reindex_speaker_name(row: Any, db: Any = None) -> str:
 
     A voiceprint-derived name is left out while the file's voiceprints are off (#1280), so a
     reindex run after a switch is turned off drops the stale label from the index.
+    ``voiceprint_names`` is required: the caller resolves the file's decision once.
 
     Args:
         row: A row exposing ``.name``, ``.display_name``, ``.suggested_name``,
             ``.confidence``, ``.suggestion_source``, ``.verified`` and ``.media_file_id``.
-        db: The session (or a shared ``PrivacyView``) the policy is read through.
+        voiceprint_names: The file's voiceprint decision, resolved once by the caller.
 
     Returns:
         The canonical display label.
     """
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
-    return canonical_speaker_label_for_row(row, db)
+    return canonical_speaker_label_for_row(row, voiceprint_names=voiceprint_names)
 
 
 def _ensure_neural_pipeline_ready() -> bool:
@@ -122,7 +123,8 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
     from app.services.permission_service import PermissionService
-    from app.services.privacy.redact_view import PrivacyView
+    from app.services.privacy.gates import voiceprints_allowed
+    from app.utils.speaker_identity_source import visible_profile_id
     from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
     from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 
@@ -166,9 +168,16 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
             .filter(Speaker.id.in_(speaker_ids))
             .all()
         )
-        privacy = PrivacyView(db)
-        speakers_map = {r.id: _resolve_reindex_speaker_name(r, privacy) for r in spk_rows}
-        profile_map = {r.id: r.profile_id for r in spk_rows}
+        # One decision for the file (unreadable = hidden), not one per speaker.
+        voiceprint_names = voiceprints_allowed(file_id, db)
+        speakers_map = {
+            r.id: _resolve_reindex_speaker_name(r, voiceprint_names=voiceprint_names)
+            for r in spk_rows
+        }
+        profile_map = {
+            r.id: visible_profile_id(r.profile_id, r.identity_source, voiceprint_names)
+            for r in spk_rows
+        }
 
     # Convert ORM objects to dicts
     segment_dicts = []

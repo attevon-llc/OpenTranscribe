@@ -178,8 +178,8 @@ def test_every_writer_and_reader_plane_agrees_on_an_llm_speaker():
     from app.utils.transcript_builders import get_speaker_name
 
     speaker = _llm(0.95)
-    assert resolve_chunk_speaker_name(speaker) == _PLACEHOLDER
-    assert _resolve_reindex_speaker_name(speaker) == _PLACEHOLDER
+    assert resolve_chunk_speaker_name(speaker, voiceprint_names=True) == _PLACEHOLDER
+    assert _resolve_reindex_speaker_name(speaker, voiceprint_names=True) == _PLACEHOLDER
     assert get_speaker_name(SimpleNamespace(speaker=speaker)) == _PLACEHOLDER
     assert SpeakerStatusService._resolve_display_name(speaker) == _PLACEHOLDER
     assert _resolve_segment_speaker_name(speaker) == _PLACEHOLDER
@@ -197,8 +197,8 @@ def test_every_plane_names_a_voiceprint_matched_speaker():
     from app.utils.transcript_builders import get_speaker_name
 
     speaker = _row(suggested_name="Priya Patel", confidence=0.8, suggestion_source="voice_match")
-    assert resolve_chunk_speaker_name(speaker) == "Priya Patel"
-    assert _resolve_reindex_speaker_name(speaker) == "Priya Patel"
+    assert resolve_chunk_speaker_name(speaker, voiceprint_names=True) == "Priya Patel"
+    assert _resolve_reindex_speaker_name(speaker, voiceprint_names=True) == "Priya Patel"
     assert get_speaker_name(SimpleNamespace(speaker=speaker)) == "Priya Patel"
     assert SpeakerStatusService._resolve_display_name(speaker) == "Priya Patel"
     assert _resolve_segment_speaker_name(speaker) == "Priya Patel"

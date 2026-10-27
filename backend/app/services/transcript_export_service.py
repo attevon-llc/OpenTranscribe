@@ -42,6 +42,7 @@ from app.services.transcript_export_turns import comment_rows_from
 from app.services.transcript_export_turns import group_turns
 from app.services.transcript_export_turns import masked_segments
 from app.services.transcript_export_turns import speaker_namer
+from app.services.transcript_export_turns import voiceprint_names_for
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -68,8 +69,13 @@ def build_export_content(
     csv_header_default: str = "Start Time,End Time,Speaker,Text",
     csv_header_with_comments: str = "Start Time,End Time,Speaker,Text,Comment Type",
     markdown_meta: MarkdownMeta | None = None,
+    voiceprint_names: bool | None = None,
 ) -> str:
     """Serialize transcript segments (+ optional comments) into the requested format.
+
+    ``voiceprint_names`` is the file's voiceprint decision (#1280): False prints the diarizer
+    label instead of a name a voiceprint made. ``None`` resolves it once from ``speakers``
+    (fail closed), so a caller that does not have it still gets the policy.
 
     ``export_format`` is one of ``VALID_FORMATS``. Segments must already be sorted by
     ``start_time`` — callers query in that order (matches every other export surface).
@@ -79,10 +85,13 @@ def build_export_content(
     if export_format not in VALID_FORMATS:
         raise ValueError(f"Unsupported export format: {export_format}")
 
+    if voiceprint_names is None:
+        voiceprint_names = voiceprint_names_for(speakers)
     speaker_map: dict[int, str] = {
-        int(sp.id): canonical_speaker_label_for_row(sp) for sp in speakers
+        int(sp.id): canonical_speaker_label_for_row(sp, voiceprint_names=voiceprint_names)
+        for sp in speakers
     }
-    speaker_name = speaker_namer(speakers, speaker_default_label)
+    speaker_name = speaker_namer(speakers, speaker_default_label, voiceprint_names=voiceprint_names)
     comment_rows = comment_rows_from(comments, include_comments)
 
     if export_format in ("srt", "vtt"):

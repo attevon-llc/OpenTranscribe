@@ -28,6 +28,7 @@ from sqlalchemy.orm import joinedload
 from app.models.file_facts import FileFacts
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.privacy.gates import voiceprints_allowed
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.transcript_builders import compute_speaker_stats
 from app.utils.transcript_builders import get_speaker_name
@@ -57,10 +58,16 @@ def load_ordered_segments(db: Session, file_id: int) -> list[dict[str, Any]]:
     non-reproducible in exactly the way that invalidated the first Stage 1 baseline
     (#433).
 
+    The speaker label of each segment honours the file's voiceprint switch (#1280): decided once
+    for the file (unreadable = hidden), so facts, digest and fingerprint never carry a name a
+    voiceprint made while voiceprints are off, and flipping the switch changes the fingerprint
+    (the artifacts regenerate on the next reindex).
+
     Returns:
         Plain dicts, so the pure functions in this package never touch the ORM and are
         testable without a database.
     """
+    voiceprint_names = voiceprints_allowed(file_id, db)
     segments = (
         db.query(TranscriptSegment)
         .options(joinedload(TranscriptSegment.speaker))
@@ -81,7 +88,7 @@ def load_ordered_segments(db: Session, file_id: int) -> list[dict[str, Any]]:
             # The resolved display name, not the raw diarization label: the roster the
             # user sees is the roster the facts report, and a rename therefore changes
             # the fingerprint and triggers regeneration.
-            "speaker": get_speaker_name(segment),
+            "speaker": get_speaker_name(segment, voiceprint_names=voiceprint_names),
         }
         for segment in segments
     ]
@@ -175,7 +182,11 @@ class _ResolvedSpeaker:
 
 
 def _speaker_stats_from_dicts(segments: list[dict[str, Any]]) -> dict[str, Any]:
-    stats: dict[str, Any] = compute_speaker_stats([_StatSegment(s) for s in segments])
+    # The segment dicts carry labels that were already resolved under the file's decision, so
+    # this is a policy-free pass over them (the adapter rows have no file to ask about).
+    stats: dict[str, Any] = compute_speaker_stats(
+        [_StatSegment(s) for s in segments], voiceprint_names=True
+    )
     return stats
 
 

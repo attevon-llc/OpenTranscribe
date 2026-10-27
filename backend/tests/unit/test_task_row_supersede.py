@@ -488,3 +488,77 @@ def test_a_failing_sweep_does_not_stop_the_rest_of_recovery(db_session):
     order = _run_health_check(db_session, broken)
 
     assert order == ["sweep", "stuck-tasks"]
+
+
+# =============================================================================
+# a refused or pointless reopen (review findings on #1185)
+# =============================================================================
+def _false_positive(db, user, media_file, day, other=None):
+    row = _task(db, user, media_file, "summarization", "failed", day)
+    row.error_message = RECOVERED_AFTER_STUCK
+    db.commit()
+    return row
+
+
+def test_a_reopen_the_index_refuses_does_not_undo_the_resets_staged_before_it(
+    db_session, normal_user
+):
+    """The batch is one transaction: the loser's rollback must take only its own UPDATE."""
+    eligible = _false_positive(db_session, normal_user, _file(db_session, normal_user), 0)
+    raced_file = _file(db_session, normal_user)
+    raced = _false_positive(db_session, normal_user, raced_file, 0)
+    _task(db_session, normal_user, raced_file, "summarization", "in_progress", 1)
+
+    # The slot check sees nothing, as it does when the other run is not yet visible to it; only
+    # the unique index is left to refuse the second reopen (as in the racing-reopens test).
+    real_select = task_row_supersede.select
+
+    def slot_check_that_sees_nothing(*args, **kwargs):
+        return real_select(Task.id).where(Task.id == "no-such-task")
+
+    with patch.object(task_row_supersede, "select", slot_check_that_sees_nothing):
+        stats = TaskRecoveryService().recover_false_positive_failed_tasks(
+            db_session, [eligible, raced]
+        )
+
+    assert stats == {"tasks_reset": 1}
+    assert _status(db_session, eligible.id)[0] == "pending", "the earlier reset was rolled back"
+    assert _status(db_session, raced.id)[0] == "failed"
+
+
+def test_the_false_positive_reset_skips_a_row_a_newer_completed_run_superseded(
+    db_session, normal_user
+):
+    """Reopening it only hands the supersede sweep a row to fail again on its next run."""
+    media_file = _file(db_session, normal_user)
+    old = _false_positive(db_session, normal_user, media_file, 0)
+    done = _task(db_session, normal_user, media_file, "summarization", "completed", 1)
+
+    stats = TaskRecoveryService().recover_false_positive_failed_tasks(db_session, [old])
+
+    assert stats == {"tasks_reset": 0}
+    assert _status(db_session, old.id)[0] == "failed"
+    assert old.id not in {r[0] for r in superseded_active_rows(db_session)}
+    assert _status(db_session, done.id)[0] == "completed"
+
+
+def test_an_older_completed_run_does_not_stop_the_false_positive_reset(db_session, normal_user):
+    """Control for the skip above: only a NEWER completed sibling supersedes a row."""
+    media_file = _file(db_session, normal_user)
+    _task(db_session, normal_user, media_file, "summarization", "completed", -1)
+    row = _false_positive(db_session, normal_user, media_file, 0)
+
+    stats = TaskRecoveryService().recover_false_positive_failed_tasks(db_session, [row])
+
+    assert stats == {"tasks_reset": 1}
+    assert _status(db_session, row.id)[0] == "pending"
+
+
+def test_a_late_write_cannot_reopen_a_row_a_newer_completed_run_superseded(db_session, normal_user):
+    media_file = _file(db_session, normal_user)
+    old = _task(db_session, normal_user, media_file, "summarization", "failed", 0)
+    _task(db_session, normal_user, media_file, "summarization", "completed", 1)
+
+    assert update_task_status(db_session, old.id, "in_progress", progress=0.3) is None
+
+    assert _status(db_session, old.id)[0] == "failed"

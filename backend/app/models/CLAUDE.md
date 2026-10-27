@@ -148,7 +148,7 @@ authority. See `backend/app/db/CLAUDE.md`.
   deliberately, never with a bare `except IntegrityError`: `task_utils.create_task_record` supersedes the
   file's older active row of the step (`superseded by <new id>`) in the insert's transaction and retries a
   lost race, `update_task_status` and the false-positive reset go through
-  `task_row_supersede.reopen_if_slot_free` (a finished row is not reopened beside a newer active one), and
+  `task_row_supersede.reopen_if_slot_free` (a finished row is not reopened beside a newer active one, nor under a newer completed one the sweep would fail again; the UPDATE runs in a SAVEPOINT so a lost race rolls back only itself), and
   `task_row_supersede.resolve_superseded_task_rows` is the health-check sweep. Match the violation with
   `is_active_row_conflict`, which tells it from the primary key and foreign keys.
 - `MediaFile.status` is annotated non-Optional but declared `nullable=True` — intentional

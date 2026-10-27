@@ -1162,7 +1162,8 @@ class TaskRecoveryService:
                     continue
 
                 # A newer run of this step may hold the file's one active slot (v448, issue
-                # #1185); then this old row is simply not reopened.
+                # #1185) or may have completed already; then this old row is simply not
+                # reopened (the supersede sweep would only fail it again).
                 if not reopen_if_slot_free(
                     db,
                     task,
@@ -1175,7 +1176,7 @@ class TaskRecoveryService:
                 ):
                     logger.info(
                         f"Not resetting task {task.id} ({task.task_type}): a newer run of the "
-                        f"same step is already active for file {task.media_file_id}"
+                        f"same step is active or has completed for file {task.media_file_id}"
                     )
                     continue
                 stats["tasks_reset"] += 1

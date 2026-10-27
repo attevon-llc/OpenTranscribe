@@ -300,7 +300,7 @@ Request-validation failures (422) return `detail` as a list of scrubbed field er
 ## Database Management
 
 ### Approach (All Environments)
-Alembic is the sole authority for database schema in all environments. `run_migrations()` in `app/db/migrations.py` runs from the FastAPI lifespan on every backend startup: an empty database gets the full chain, an existing untracked database is fingerprinted, stamped and upgraded, and a tracked one gets any pending revisions (guarded by a PostgreSQL advisory lock). Details: `app/db/README.md`.
+Alembic is the sole authority for database schema in all environments. `run_migrations()` in `app/db/migrations.py` runs from the FastAPI lifespan on every backend startup (unless `RUN_MIGRATIONS_ON_STARTUP=false`, for orchestrated deploys where a separate job owns migrations; readiness then verifies the schema is at head): an empty database gets the full chain, an existing untracked database is fingerprinted, stamped and upgraded, and a tracked one gets any pending revisions (guarded by a PostgreSQL advisory lock). Details: `app/db/README.md`.
 
 - **Migrations**: `backend/alembic/versions/` - hand-written, idempotent revisions named `v<NNN>_<description>.py`, starting at `v010_baseline`. Derive the current head with `python3 scripts/release-tests/lib/alembic-head.py backend` (run from the repo root) rather than reading a number from prose.
 - **Models**: SQLAlchemy models in `app/models/`

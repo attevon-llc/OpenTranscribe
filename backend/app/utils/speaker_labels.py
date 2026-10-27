@@ -170,13 +170,13 @@ def canonical_speaker_label(
     Returns:
         A non-empty label. :data:`UNKNOWN_SPEAKER_LABEL` when nothing resolves.
     """
-    from app.utils.speaker_identity_source import VOICEPRINT
+    from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
     from app.utils.speaker_identity_source import hides_name
 
     if display_name and not hides_name(identity_source, voiceprint_names):
         return str(display_name)
     suggestion_withheld = not voiceprint_names and (
-        verified is not True or identity_source == VOICEPRINT
+        verified is not True or identity_source in MACHINE_IDENTITY_SOURCES
     )
     if (
         not suggestion_withheld

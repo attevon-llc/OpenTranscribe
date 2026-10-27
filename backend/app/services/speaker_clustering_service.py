@@ -51,6 +51,7 @@ from app.services.speaker_cleanup import speaker_blocked_from_profile
 from app.services.speaker_cleanup import unlink_from_profile
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
+from app.utils.speaker_identity_source import after_skip
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
@@ -2156,6 +2157,8 @@ class SpeakerClusteringService:
                     # task_detection_service reads (issue #620 item 4).
                     if not speaker.suggestion_source:
                         speaker.suggestion_source = "user_skipped"  # type: ignore[assignment]
+                    # Reviewed is not confirmed: a voiceprint suggestion stays the voiceprint's.
+                    after_skip(speaker)
                     updated += 1
 
                 else:

@@ -94,10 +94,10 @@ def _world(gov, index, speaker_os_seams) -> SimpleNamespace:
     index.add(str(personal.uuid), gov.alice.id, None)
     index.add(str(personal_misstamped.uuid), gov.alice.id, gov.org.id)
     index.add(str(b1.uuid), gov.outsider.id, gov.other_org.id)
-    index.add(f"profile_{profile_a.uuid}", gov.alice.id, None)
-    index.add(f"profile_{profile_personal.uuid}", gov.alice.id, None)
-    index.add(f"cluster_{all_a.uuid}", gov.alice.id, None)
-    index.add(f"cluster_{cross.uuid}", gov.alice.id, None)
+    index.add(f"profile_{profile_a.uuid}", gov.alice.id, None, document_type="profile")
+    index.add(f"profile_{profile_personal.uuid}", gov.alice.id, None, document_type="profile")
+    index.add(f"cluster_{all_a.uuid}", gov.alice.id, None, document_type="cluster")
+    index.add(f"cluster_{cross.uuid}", gov.alice.id, None, document_type="cluster")
     speaker_os_seams["voiceprints"].update({str(a1.uuid): VOICE_A, str(b1.uuid): VOICE_B})
     return SimpleNamespace(
         a1=a1,
@@ -147,11 +147,132 @@ def test_an_organization_purge_removes_its_unstamped_documents_and_only_its_own(
     gone = _ids(world, "a1", "a2", "profile_a", "all_a")
     assert not (gone & survivors), f"not removed: {sorted(gone & survivors)}"
     assert _ids(world, "personal", "profile_personal", "cross", "b1") <= survivors
-    assert str(world.personal_misstamped.uuid) in survivors, (
-        "a personal document that carries the organization's stamp by mistake is not the "
-        "organization's: it is selected by its speaker's file, not by the stamp"
+    assert str(world.personal_misstamped.uuid) not in survivors, (
+        "a document carrying the organization's own stamp is the organization's, whatever its "
+        "speaker row says: an organization purge also selects by the positive stamp"
     )
     assert result.errors == []
+
+
+def _orphans(index, gov) -> SimpleNamespace:
+    """Documents with no Postgres row: stamped for org A, org B, unstamped, and legacy-keyed."""
+    import uuid
+
+    ids = SimpleNamespace(
+        speaker=str(uuid.uuid4()),
+        legacy="424242",  # keyed by the pre-uuid integer speaker id
+        profile=f"profile_{uuid.uuid4()}",
+        cluster=f"cluster_{uuid.uuid4()}",
+        other_org=str(uuid.uuid4()),
+        unstamped=str(uuid.uuid4()),
+    )
+    index.add(ids.speaker, gov.alice.id, gov.org.id)
+    index.add(ids.legacy, gov.alice.id, gov.org.id)
+    index.add(ids.profile, gov.alice.id, gov.org.id, document_type="profile")
+    index.add(ids.cluster, gov.alice.id, gov.org.id, document_type="cluster")
+    index.add(ids.other_org, gov.outsider.id, gov.other_org.id)
+    index.add(ids.unstamped, gov.alice.id, None)
+    return ids
+
+
+def test_an_organization_purge_removes_stamped_documents_that_have_no_row_or_a_legacy_key(
+    gov, index, speaker_os_seams
+):
+    orphans = _orphans(index, gov)
+
+    result = _run(gov, purge.PurgeScope("organization", organization_id=gov.org.id))
+
+    assert index.ids() == {orphans.other_org, orphans.unstamped}, (
+        "every document the organization stamped goes; another organization's and one nobody "
+        "stamped (whose owner cannot be told) stay"
+    )
+    assert result.counts()["opensearch"] == {
+        "speaker_docs_deleted": 2,  # the uuid-keyed orphan and the integer-keyed legacy one
+        "profile_docs_deleted": 1,
+        "cluster_docs_deleted": 1,
+    }
+    assert result.residual().ok
+
+
+def test_a_personal_or_member_purge_never_deletes_a_document_for_its_stamp(
+    gov, index, speaker_os_seams
+):
+    orphans = _orphans(index, gov)
+    before = index.ids()
+
+    for scope in (
+        purge.PurgeScope("user", user_id=gov.alice.id, organization_id=None),
+        purge.PurgeScope("user", user_id=gov.alice.id, organization_id=gov.org.id),
+        purge.PurgeScope("instance_personal"),
+    ):
+        _run(gov, scope)
+
+    assert index.ids() == before, (
+        "a purge that is not the organization's selects by Postgres ids only: a document with no "
+        f"row, stamped or not, is not reachable by it (unstamped: {orphans.unstamped})"
+    )
+
+
+def test_the_residual_of_an_organization_purge_sees_a_stamped_document_nothing_names(
+    gov, index, speaker_os_seams
+):
+    from app.services.privacy.purge_residual import measure_voiceprint_residual
+    from app.services.privacy.purge_voiceprints import VoiceprintTargets
+
+    _orphans(index, gov)
+    keep_open = lambda: cast("Session", _KeepOpen(gov.db))  # noqa: E731
+
+    def measured(scope):
+        return measure_voiceprint_residual(
+            scope, VoiceprintTargets(), session_factory=keep_open, errors=[]
+        ).counts
+
+    org = measured(purge.PurgeScope("organization", organization_id=gov.org.id))
+    personal = measured(purge.PurgeScope("user", user_id=gov.alice.id, organization_id=None))
+
+    assert (org["speaker_docs"], org["profile_docs"], org["cluster_docs"]) == (2, 1, 1)
+    assert (personal["speaker_docs"], personal["profile_docs"], personal["cluster_docs"]) == (
+        0,
+        0,
+        0,
+    )
+
+
+def test_a_stamped_document_that_will_not_delete_leaves_the_organization_residual_above_zero(
+    gov, index, speaker_os_seams
+):
+    orphans = _orphans(index, gov)
+    real = index.delete_by_query
+
+    def refuse_the_stamp_sweep(index_name, body, refresh=True, conflicts="proceed"):
+        if "ids" not in body["query"]:
+            raise ConnectionError("transient index failure")
+        return real(index_name, body, refresh, conflicts)
+
+    index.delete_by_query = refuse_the_stamp_sweep
+
+    result = _run(gov, purge.PurgeScope("organization", organization_id=gov.org.id))
+
+    assert orphans.speaker in index.ids()
+    assert not result.residual().ok
+    assert result.residual().counts["speaker_docs"] == 2
+
+
+def test_a_document_named_by_id_and_by_stamp_is_counted_once_in_the_residual(
+    gov, index, speaker_os_seams
+):
+    world = _world(gov, index, speaker_os_seams)
+
+    def refuse(index_name, body, refresh=True, conflicts="proceed"):
+        raise ConnectionError("transient index failure")
+
+    index.delete_by_query = refuse
+
+    result = _run(gov, purge.PurgeScope("organization", organization_id=gov.org.id))
+
+    # a1 by id only (its document is unstamped), a2 by both, the stamped personal one by stamp.
+    assert result.residual().counts["speaker_docs"] == 3
+    assert str(world.a2.uuid) in index.ids()
 
 
 def test_a_members_personal_purge_does_not_reach_an_unstamped_organization_document(
@@ -205,10 +326,120 @@ def test_the_counts_are_what_the_store_reported_deleted_not_the_ids_asked_for(
     result = _run(gov, purge.PurgeScope("organization", organization_id=gov.org.id))
 
     assert result.counts()["opensearch"] == {
-        "speaker_docs_deleted": 1,  # a1 only; a2's was never indexed
+        # a1 by its id and the personal speaker whose document carries the organization's stamp;
+        # a2's was never indexed
+        "speaker_docs_deleted": 2,
         "profile_docs_deleted": 1,
         "cluster_docs_deleted": 1,
     }
+
+
+def test_a_purge_never_asks_postgres_for_not_in_a_subquery(gov, index, speaker_os_seams):
+    """``NOT IN (SELECT ...)`` is a hashed SubPlan that goes quadratic past work_mem."""
+    import re
+
+    from sqlalchemy import event
+
+    _world(gov, index, speaker_os_seams)
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    engine = gov.db.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        _run(gov, purge.PurgeScope("organization", organization_id=gov.org.id))
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    cluster_selects = [s for s in statements if "speaker_cluster" in s and "SELECT" in s]
+    assert cluster_selects, "control: the cluster selection statements were captured"
+    offenders = [s for s in statements if re.search(r"NOT\s+IN\s*\(\s*SELECT", s, re.IGNORECASE)]
+    assert offenders == []
+
+
+def test_the_not_in_scope_test_plans_as_an_anti_join(gov, index, speaker_os_seams):
+    from sqlalchemy import select
+    from sqlalchemy import text
+
+    from app.services.privacy.purge_voiceprints import not_in_scope
+
+    _world(gov, index, speaker_os_seams)
+    scope = purge.PurgeScope("organization", organization_id=gov.org.id)
+    query = select(SpeakerClusterMember.cluster_id).where(
+        not_in_scope(scope, SpeakerClusterMember.speaker_id)
+    )
+    compiled = query.compile(
+        dialect=gov.db.get_bind().dialect, compile_kwargs={"literal_binds": True}
+    )
+
+    plan = "\n".join(r[0] for r in gov.db.execute(text(f"EXPLAIN {compiled}")))
+
+    assert "Anti Join" in plan, plan
+    assert "SubPlan" not in plan, plan
+
+
+def test_not_in_scope_selects_exactly_the_members_outside_the_scope(gov, index, speaker_os_seams):
+    from sqlalchemy import select
+
+    from app.services.privacy.purge_voiceprints import not_in_scope
+
+    world = _world(gov, index, speaker_os_seams)
+    scope = purge.PurgeScope("organization", organization_id=gov.org.id)
+
+    outside = {
+        int(r[0])
+        for r in gov.db.execute(
+            select(SpeakerClusterMember.speaker_id).where(
+                SpeakerClusterMember.cluster_id == world.cross.id,
+                not_in_scope(scope, SpeakerClusterMember.speaker_id),
+            )
+        )
+    }
+
+    assert outside == {world.b1.id}, "org B's speaker is outside org A; org A's own a1 is inside"
+
+
+def _promoted_cluster_of_one_machine_named_member(gov, owner, member_owner):
+    """A promoted cluster ``owner`` has, whose only member is ``member_owner``'s voiceprint-named speaker."""
+    from app.models.media import SpeakerCluster as Cluster
+
+    speaker = make_speaker(
+        gov.db,
+        member_owner,
+        gov.file(member_owner, org=gov.org),
+        display_name="Zed",
+        verified=True,
+        identity_source="voiceprint",
+    )
+    profile = make_profile(gov.db, owner, "Zed")
+    profile.organization_id = gov.org.id
+    cluster = make_cluster(gov.db, owner, speaker, promoted_to=profile.id, label="zed")
+    cluster = gov.db.get(Cluster, cluster.id)
+    cluster.organization_id = gov.org.id
+    gov.db.commit()
+    return speaker, cluster
+
+
+@pytest.mark.parametrize(
+    ("who_owns_the_cluster", "row_survives"), [("bob", True), ("alice", False)]
+)
+def test_a_members_purge_deletes_an_emptied_promoted_cluster_only_if_it_is_theirs(
+    gov, index, speaker_os_seams, who_owns_the_cluster, row_survives
+):
+    owner = getattr(gov, who_owns_the_cluster)
+    _, cluster = _promoted_cluster_of_one_machine_named_member(gov, owner, gov.alice)
+    cluster_id, cluster_uuid = cluster.id, str(cluster.uuid)
+    index.add(f"cluster_{cluster_uuid}", owner.id, gov.org.id, document_type="cluster")
+
+    result = _run(gov, purge.PurgeScope("user", user_id=gov.alice.id, organization_id=gov.org.id))
+
+    gov.db.expire_all()
+    assert (gov.db.get(SpeakerCluster, cluster_id) is not None) is row_survives
+    assert f"cluster_{cluster_uuid}" not in index.ids(), "the centroid averaged the purged voice"
+    assert result.counts()["postgres"]["promoted_clusters_deleted"] == (0 if row_survives else 1)
+    assert result.residual().ok
 
 
 def test_a_second_pass_over_a_purged_scope_deletes_nothing_and_stays_clean(

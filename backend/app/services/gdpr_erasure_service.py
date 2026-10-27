@@ -276,6 +276,7 @@ def _speaker_index_names(client: Any) -> list[str]:
 def delete_speaker_docs_by_ids(
     doc_ids: Iterable[str],
     *,
+    also: dict[str, Any] | None = None,
     errors: list[dict[str, Any]] | None = None,
     label: str = "",
 ) -> int:
@@ -286,6 +287,14 @@ def delete_speaker_docs_by_ids(
     stamp: a document written before the tenant backfill carries no stamp, and a stamp-based
     delete misses it in an organization purge and can reach it from a member's personal one.
     Failures go to ``errors`` and this never raises.
+
+    Args:
+        doc_ids: The ``_id`` values to delete.
+        also: A query clause for documents to delete IN ADDITION to the ids (an organization
+            purge passes the organization's positive stamp, which reaches documents Postgres
+            has no row for). Run after the ids, so a document matching both counts once.
+        errors: The caller's error list.
+        label: For the log line.
 
     Returns:
         What OpenSearch reports as deleted (0 if it is unavailable), never the number of ids
@@ -298,20 +307,28 @@ def delete_speaker_docs_by_ids(
         deleted += delete_speaker_docs_by_query(
             {"query": {"ids": {"values": batch}}}, errors=errors, label=label
         )
+    if also is not None:
+        deleted += delete_speaker_docs_by_query({"query": also}, errors=errors, label=label)
     return deleted
 
 
 def count_speaker_docs_by_ids(
-    doc_ids: Iterable[str], *, errors: list[dict[str, Any]] | None = None
+    doc_ids: Iterable[str],
+    *,
+    also: dict[str, Any] | None = None,
+    errors: list[dict[str, Any]] | None = None,
 ) -> int | None:
     """How many of these ids still exist as speaker-index documents, after a refresh.
 
     The residual check of a purge. The indices are listed in ONE request so an alias and the
     index behind it count a document once. ``None`` means it could not be measured (recorded in
     ``errors``): an unmeasurable store must never read as an empty one.
+
+    ``also`` is the clause :func:`delete_speaker_docs_by_ids` was given: documents matching it
+    are counted too, once (an id that also matches it is not counted twice).
     """
     ids = list(dict.fromkeys(str(i) for i in doc_ids))
-    if not ids:
+    if not ids and also is None:
         return 0
     try:
         from app.services.opensearch_service import opensearch_client
@@ -324,10 +341,17 @@ def count_speaker_docs_by_ids(
         target = ",".join(indices)
         opensearch_client.indices.refresh(index=target)
         found = 0
+        if also is not None:
+            found += int(
+                opensearch_client.count(index=target, body={"query": also}).get("count", 0)
+            )
         for start in range(0, len(ids), _DOC_ID_BATCH):
             batch = ids[start : start + _DOC_ID_BATCH]
-            resp = opensearch_client.count(index=target, body={"query": {"ids": {"values": batch}}})
-            found += int(resp.get("count", 0))
+            by_id: dict[str, Any] = {"ids": {"values": batch}}
+            query = {"bool": {"filter": [by_id], "must_not": [also]}} if also else by_id
+            found += int(
+                opensearch_client.count(index=target, body={"query": query}).get("count", 0)
+            )
         return found
     except Exception as exc:  # noqa: BLE001 - reported, and the caller treats it as unmeasured
         logger.warning(f"Voiceprint residual count failed: {exc}")

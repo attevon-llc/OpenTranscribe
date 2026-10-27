@@ -145,6 +145,14 @@ def _capabilities():
 # --------------------------------------------------------------------------- #
 
 
+def document_type_of(doc_id: str) -> str | None:
+    """The ``document_type`` the application stamps on a document with this ``_id``."""
+    for prefix in ("profile", "cluster"):
+        if doc_id.startswith(f"{prefix}_"):
+            return prefix
+    return None
+
+
 def seed(gov, os_, owner, org, tag: str) -> SimpleNamespace:
     """Speakers, a cluster, a promoted cluster, a profile, a match and documents for one scope."""
     db = gov.db
@@ -236,7 +244,7 @@ def seed(gov, os_, owner, org, tag: str) -> SimpleNamespace:
         f"cluster_{named.uuid}",
     }
     for doc_id in sorted(doc_ids):
-        os_.add(doc_id, owner.id, org_id)
+        os_.add(doc_id, owner.id, org_id, document_type=document_type_of(doc_id))
     assert guess.organization_id is None, "speakers are not stamped with a tenant in production"
     return SimpleNamespace(
         tag=tag,
@@ -1412,3 +1420,117 @@ def test_the_audit_record_carries_actor_scope_targets_counts_and_residual(
     )
     assert gender["details"]["counts"]["postgres"] == {"gender_speakers_cleared": 2}
     assert gender["details"]["residual"] == {"speakers_with_inferred_gender": 0}
+
+
+# --------------------------------------------------------------------------- #
+# A cluster centroid document pass 1 could not delete is finished by pass 2
+#
+# A pass deletes the cluster ROWS from Postgres and then their ``cluster_<uuid>`` documents. When
+# the document delete fails, pass 2 recomputes its targets from Postgres, finds no such cluster
+# and would neither delete nor measure the document: a clean residual with a voiceprint centroid
+# still indexed. Pass 1 therefore hands pass 2 the ids it could not confirm gone.
+# --------------------------------------------------------------------------- #
+
+VOICEPRINTS_ONLY = {"targets": ["voiceprints"], "confirm": "PURGE"}
+
+
+@pytest.fixture
+def status_record(monkeypatch):
+    """The purge's Redis status record, as a dict."""
+    store: dict[str, str] = {}
+    monkeypatch.setattr(
+        "app.core.redis.get_redis",
+        lambda: SimpleNamespace(
+            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+        ),
+    )
+
+
+def _fail_deletes_of(opensearch, document_id: str, *, while_active) -> None:
+    real = opensearch.delete_by_query
+
+    def flaky(index, body, refresh=True, conflicts="proceed"):
+        wanted = body.get("query", {}).get("ids", {}).get("values", [])
+        if while_active() and document_id in wanted:
+            raise ConnectionError("transient index failure")
+        return real(index, body, refresh, conflicts)
+
+    opensearch.delete_by_query = flaky
+
+
+def _loose_cluster_document(gov, world) -> str:
+    return f"cluster_{gov.db.get(SpeakerCluster, world.loose).uuid}"
+
+
+def _request_purge(client, gov, opensearch, document: str, scope: str):
+    """Ask for the purge as ``scope``; an organization purge's document is unstamped (legacy).
+
+    An organization purge also sweeps its own stamp, which would delete a stamped document
+    whether or not the id-based delete worked; the unstamped legacy document is the one only the
+    ids reach, as every document of a user's purge is.
+    """
+    if scope == "organization":
+        for doc in opensearch.docs:
+            if doc["id"] == document:
+                doc.pop("organization_id")
+        return purge_via_api(client, gov, gov.admin, ORG_PURGE, VOICEPRINTS_ONLY)
+    return purge_via_api(client, gov, gov.alice, ME_PURGE, VOICEPRINTS_ONLY)
+
+
+@pytest.mark.usefixtures("status_record")
+@pytest.mark.parametrize("scope", ["user", "organization"])
+def test_a_centroid_document_pass_one_could_not_delete_is_deleted_and_measured_by_pass_two(
+    client, gov, opensearch, broker, in_process_task, reindexed, events, scope
+):
+    world = seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org, gender=False)
+    document = _loose_cluster_document(gov, world)
+    in_pass_one = {"yes": True}
+    _fail_deletes_of(opensearch, document, while_active=lambda: in_pass_one["yes"])
+    _request_purge(client, gov, opensearch, document, scope)
+
+    first = in_process_task(broker[0])
+    in_pass_one["yes"] = False
+    final = in_process_task(broker[1])
+
+    assert first["second_pass"] == "scheduled"
+    assert document.removeprefix("cluster_") in broker[1]["kwargs"]["carried_cluster_uuids"]
+    assert document not in opensearch.ids(), "pass two retried the document pass one left"
+    assert final["status"] == "completed"
+    finished = [e for e in events if e["details"].get("phase") == "pass_2_completed"]
+    assert finished[0]["outcome"].value == "success"
+    assert finished[0]["details"]["residual_ok"] is True
+
+
+@pytest.mark.usefixtures("status_record")
+@pytest.mark.parametrize("scope", ["user", "organization"])
+def test_a_centroid_document_that_never_deletes_fails_the_purge_it_is_never_complete(
+    client, gov, opensearch, broker, in_process_task, reindexed, events, scope
+):
+    world = seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org, gender=False)
+    document = _loose_cluster_document(gov, world)
+    _fail_deletes_of(opensearch, document, while_active=lambda: True)
+    _request_purge(client, gov, opensearch, document, scope)
+
+    in_process_task(broker[0])
+    final = in_process_task(broker[1])
+
+    assert document in opensearch.ids()
+    assert final["status"] == "failed" and final["reason"] == "residual"
+    assert final["residual"]["cluster_docs"] >= 1, "pass two still measures the carried id"
+    finished = [e for e in events if e["details"].get("phase") == "pass_2_completed"]
+    assert finished[0]["outcome"].value == "failure"
+
+
+@pytest.mark.usefixtures("status_record")
+def test_a_clean_first_pass_carries_nothing_to_the_second(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org, gender=False)
+    purge_via_api(client, gov, gov.alice, ME_PURGE, VOICEPRINTS_ONLY)
+
+    in_process_task(broker[0])
+
+    assert broker[1]["kwargs"]["carried_cluster_uuids"] == []

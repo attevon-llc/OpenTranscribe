@@ -26,10 +26,6 @@ _WRAPPERS = frozenset({"_record_identity_source_on_edit"})
 
 #: ``<path under app>::<function>`` -> why it need not record a source.
 _ALLOWED: dict[str, str] = {
-    "services/speaker_profile_rename.py::apply_profile_name_to_speakers": (
-        "renaming a PROFILE rewrites the name of the speakers linked to it; it neither confirms a "
-        "machine link nor makes a person's name the machine's, so each speaker keeps its source"
-    ),
     "services/ingest_artifacts/service.py::__init__": (
         "not a Speaker: a plain roster entry object holding a label for the facts digest"
     ),

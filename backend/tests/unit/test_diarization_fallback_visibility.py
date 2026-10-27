@@ -123,7 +123,7 @@ def test_run_diarize_records_the_engine_that_actually_served():
 
 def _loaded_native(monkeypatch: pytest.MonkeyPatch) -> NativeSpeakerDiarizer:
     class _Fallback:
-        def diarize(self, audio):
+        def diarize(self, audio, *, return_centroids=None):
             return ("fallback-df", {}, {})
 
     diarizer = NativeSpeakerDiarizer(_Config(), base_url="http://fake-sidecar")
@@ -158,7 +158,9 @@ def test_a_later_native_success_clears_the_reason(monkeypatch: pytest.MonkeyPatc
     assert diarizer.last_fallback_reason == "error"
 
     reply = {"exclusive_segments": [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}]}
-    monkeypatch.setattr(diarizer, "_post_own_copy", lambda audio, timeout: (reply, None))
+    monkeypatch.setattr(
+        diarizer, "_post_own_copy", lambda audio, timeout, request_gender=True: (reply, None)
+    )
     diarizer.diarize(np.zeros(16_000, dtype=np.float32))
 
     assert diarizer.last_provider == "native"

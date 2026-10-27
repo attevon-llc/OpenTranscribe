@@ -131,6 +131,11 @@ class AuditEventType(StrEnum):
     CONTENT_HOLD_PLACE = "content.hold.place"
     CONTENT_HOLD_RELEASE = "content.hold.release"
     CONTENT_HOLD_REFUSED = "content.hold.refused"
+    # A transcript edit on a file that is under a legal hold. Editing stays allowed by decision
+    # (a hold blocks destruction, not correction), so the edit is recorded instead of refused
+    # (issue #1307). ``details`` carries ids, the kind of edit and who holds the file: never the
+    # text, the speaker's name or the hold's reason.
+    CONTENT_TRANSCRIPT_EDIT = "content.transcript.edit"
 
     # Privacy controls (issues #1280, #1279). ``org.policy.change``: an organization
     # administrator changed the organization's policy; ``details.fields`` lists the NAMES of the

@@ -70,9 +70,10 @@ async def get_summary_status(
     )
 
     # Whether the user can generate a summary (manual trigger)
-    is_admin = getattr(current_user, "role", None) == "admin"
     can_generate = (
-        llm_available and media_file.status == "completed" and (is_admin or system_enabled)
+        llm_available
+        and media_file.status == "completed"
+        and (ctx.bypass.user_is_admin or system_enabled)
     )
 
     return {

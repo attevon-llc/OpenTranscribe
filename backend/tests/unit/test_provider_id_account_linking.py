@@ -22,6 +22,7 @@ too, unconditionally.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from typing import cast
 from unittest.mock import patch
@@ -84,6 +85,11 @@ class _FakeProviderIdSession:
 
     def commit(self):
         pass
+
+    def get_bind(self):
+        # ``external_sync`` asks the bind's dialect whether it can read the auth_type
+        # CHECK (#866); a non-Postgres bind means "unreadable", which admits the provider.
+        return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
 
 
 @pytest.mark.unit

@@ -163,11 +163,12 @@ def _run_diarize(
     loading the in-process PyAnnote fallback on THIS thread — see its docstring for why that
     matters (issue #665). Non-native diarizers ignore the flag; there is nothing for it to gate.
     """
+    from app.transcription.diarization_runs import record_diarization_run
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
     return_centroids = None if tc is None else bool(tc.enable_native_embeddings)
     if isinstance(diarizer, NativeSpeakerDiarizer):
-        return diarizer.diarize(
+        result = diarizer.diarize(
             audio,
             wav_path=wav_path,
             allow_local_fallback=allow_local_fallback,
@@ -175,7 +176,11 @@ def _run_diarize(
             return_centroids=return_centroids,
             request_gender=None if tc is None else bool(tc.request_gender),
         )
-    return diarizer.diarize(audio, return_centroids=return_centroids)
+    else:
+        result = diarizer.diarize(audio, return_centroids=return_centroids)
+    # After the call, so the engine that ACTUALLY served is on the instance (issue #1184).
+    record_diarization_run(diarizer)
+    return result
 
 
 def _collect_diarization(
@@ -671,8 +676,11 @@ class _GpuStage:
         if native_embeddings and config is not None and config.boundary_acoustic_recheck_enabled:
             from app.transcription.boundary_resolver import recheck_segment_words
 
-            recheck_diarizer = manager.get_diarizer(tc)
             try:
+                # Inside the guard: in strict mode (engine.diarizer_require_sidecar) a sidecar
+                # that dropped after diarization finished makes this raise, and a re-check that
+                # cannot run must cost the job nothing but the re-check.
+                recheck_diarizer = manager.get_diarizer(tc)
                 recheck_segment_words(
                     result.get("segments", []),
                     native_embeddings,

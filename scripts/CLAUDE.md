@@ -18,6 +18,11 @@ this file is for.
   before committing, or CI fails. The venv is 3.12, CI is 3.13 — verified byte-identical output
   at current pins. `info.version` is normalized to a fixed sentinel so a release version bump
   alone never causes drift.
+- **Platform access matrix** (issue #1281) — `generate-platform-access-matrix.py --write|--check`
+  (backend venv; imports `app`) writes `docs/security/platform-access-matrix.tsv` from the route
+  table and an AST scan via `backend/tests/fixtures/platform_access_matrix.py`. The same comparison
+  runs as `tests/unit/test_platform_access_matrix.py`; read the diff of a regenerated file, a new
+  row is a new way for platform staff to reach a tenant.
 - **Docs generated from code** (issue #1230) — `generate-pipeline-docs.py --write|--check`
   (backend venv; imports `app`) writes the Deployment variants page's three partials under
   `docs-site/docs/installation/_generated/` from `docker-build-push.sh list-platforms`,
@@ -410,6 +415,7 @@ this file is for.
   `frontend-build` runs it in full at **pre-push**. On a PR that hook is the only `vite build`
   in CI at all, so `.github/workflows/pre-commit.yml` invokes both stages; see
   `backend/tests/unit/test_precommit_stage_ci_parity.py`.
+- **Requirements resolve check** — `check-requirements-resolve.py [--only FILE]` (a variant named in `--only` also pulls in requirements.txt, the drift reference): `pip install --dry-run` of requirements.txt, -nodeps (`--no-deps`), -dev, -lite and -ci, failing on ResolutionImpossible and on any package lite/CI/dev resolve at a different version than prod (CI job `Requirements resolve`; run with the images' Python 3.13; ~5 min, needs network; offline logic in `test_check_requirements_resolve.py`).
 - **mypy hook negative control** — `mypy-hook-negative-control.sh [--ref REF]` (issue #1271). Builds a
   throwaway repo from `git archive REF` under an `ot-redcheck.` temp dir, drops
   `mypy_negative_control_fixture.py.txt` into it as `backend/app/zz_mypy_negative_control.py`, runs the

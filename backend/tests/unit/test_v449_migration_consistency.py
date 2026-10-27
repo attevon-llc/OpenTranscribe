@@ -20,10 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.media import Speaker
 
 REVISION = "v449_add_speaker_identity_source"
-#: v448_task_one_active_row_per_file_step is also a child of v447 on another integration
-#: branch. When both meet, v449 is re-parented onto v448: change PARENT here and
-#: ``down_revision`` in the revision file (one line each).
-PARENT = "v447_add_content_hold"
+PARENT = "v448_task_one_active_row_per_file_step"
 _PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 _CHECK = "ck_speaker_identity_source"
 
@@ -51,10 +48,8 @@ def test_v449_revision_chain():
     assert scripts.get_revision(REVISION).down_revision == PARENT
     heads = sorted(set(scripts.get_heads()))
     assert len(heads) == 1, (
-        f"the alembic graph has {len(heads)} heads {heads}. If one of them is "
-        "v448_task_one_active_row_per_file_step, re-parent v449 onto it: set "
-        'down_revision = "v448_task_one_active_row_per_file_step" in '
-        f"alembic/versions/{REVISION}.py and PARENT in this file."
+        f"the alembic graph has {len(heads)} heads {heads}; v449 must be the only head "
+        f"(down_revision {PARENT!r} in alembic/versions/{REVISION}.py)."
     )
 
 

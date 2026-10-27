@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-The migrations from `v397` to `v449` run automatically when the backend starts. On a
+Twenty-three migrations run automatically when the backend starts, from `v397` to `v449`. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.
@@ -72,6 +72,7 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v445` | Adds the `organization_policy` table: an organization's switches for voiceprint matching and inferred gender, and its redaction floor | No (empty until an organization saves a choice; both switches default on) |
 | `v446` | Adds `collection.visibility` (`organization` or `restricted`) so an organization collection can be limited to its creator, the organization admins and the people it is shared with | No: every existing collection stays visible to the whole organization until someone restricts it |
 | `v447` | Adds the `content_hold` and `content_hold_file` tables, which record the legal holds an organization administrator places on files and collections | No (empty until an administrator places a hold) |
+| `v448` | Fails any task row that a newer completed run of the same step on the same file has superseded, then adds a unique index so a file has at most one active task row per step | Yes: those stale rows are marked failed with the reason `superseded by <task id>`; no row is deleted. The upgrade locks the `task` table against writes while it runs, so on a deployment with a very large task history run it in a quiet period or maintenance window; if another transaction holds a conflicting lock it stops after 30 seconds with a message saying so, and starting the backend again retries it |
 | `v449` | Adds `speaker.identity_source`, which records whether a speaker's name and profile link came from a person or from a voiceprint match | One data fix: it marks as voiceprint-made the existing identities the database has positive evidence a voiceprint wrote (see [Which existing speaker names count as voiceprint-made](#which-existing-speaker-names-count-as-voiceprint-made)) and records how many it marked. Nothing else is rewritten; no name or link changes |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
@@ -159,6 +160,17 @@ a user who chose the pyannote.ai cloud service and saved a pyannote.ai key, but 
 with local Whisper, used to get this server's speaker detection silently. They now get
 pyannote.ai, which bills their key for it. **Settings > Processing pipeline** shows, before
 the next upload, which step runs where and which providers receive audio.
+
+### Amazon Transcribe needs `AWS_TRANSCRIBE_BUCKET`
+
+If you use Amazon Transcribe and never set `AWS_TRANSCRIBE_BUCKET`, jobs were using a built-in
+bucket name, `opentranscribe-tmp-<region>`. S3 bucket names are global, so that guessable name
+could send audio to a bucket owned by someone else. The fallback is removed. Create a private
+bucket in your own AWS account, in the same region as `AWS_REGION`, set `AWS_TRANSCRIBE_BUCKET`
+to its name and restart. Until you do, AWS jobs and the Test connection button fail at once with a
+message naming the setting. Every S3 call now also carries `ExpectedBucketOwner` (your account id,
+or `AWS_TRANSCRIBE_BUCKET_OWNER` if the bucket is in another account). See
+[environment variables](../configuration/environment-variables.md).
 
 ### Notifications clear themselves
 

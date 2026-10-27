@@ -72,14 +72,8 @@ only the markers are lost (a purge already run is irreversible either way).
 
 Community edition: same behaviour; nothing here is edition-specific.
 
-Integration note: this revision sits on ``v447_add_content_hold`` because the branch it was
-written on does not hold ``v448_task_one_active_row_per_file_step`` (also a child of v447).
-When both reach one branch, set ``down_revision = "v448_task_one_active_row_per_file_step"``
-here and in ``tests/unit/test_v449_migration_consistency.py`` (``PARENT``);
-``test_v449_revision_chain`` fails with that instruction until it is done.
-
 Revision ID: v449_add_speaker_identity_source
-Revises: v447_add_content_hold
+Revises: v448_task_one_active_row_per_file_step
 Create Date: 2026-10-27
 """
 
@@ -92,7 +86,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "v449_add_speaker_identity_source"
-down_revision = "v447_add_content_hold"
+down_revision = "v448_task_one_active_row_per_file_step"
 branch_labels = None
 depends_on = None
 

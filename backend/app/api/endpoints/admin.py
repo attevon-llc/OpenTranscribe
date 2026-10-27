@@ -844,6 +844,8 @@ async def get_admin_stats(
                 "configured_description": diarizer_status["configured_description"],
                 "effective_backend": diarizer_status["effective"],
                 "using_fallback": diarizer_status["using_fallback"],
+                "require_sidecar": diarizer_status["require_sidecar"],
+                "refusing": diarizer_status["refusing"],
                 "sidecar": sidecar_info,
             },
         }

@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Any
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
@@ -295,6 +296,7 @@ def test_segment_speaker_reassignment_reaches_the_chunk_plane(throwaway_indices,
             db,
             user,
             RequestContext(user=user, org_id=None, org_role=None),
+            request=MagicMock(name="request"),
         )
         _run_real_reindex(dispatch_mock)
 
@@ -335,7 +337,9 @@ def test_speaker_merge_reaches_the_chunk_plane(throwaway_indices, real_db):
         from app.api.deps_context import RequestContext
 
         ctx = RequestContext(user=user, org_id=None, org_role=None)
-        merge_speakers(str(speaker_a.uuid), str(speaker_b.uuid), db, user, ctx)
+        merge_speakers(
+            MagicMock(name="request"), str(speaker_a.uuid), str(speaker_b.uuid), db, user, ctx
+        )
         # The merge dispatches a re-index once per affected file (one file here).
         assert dispatch_mock.call_count >= 1
         for call in dispatch_mock.call_args_list:

@@ -688,6 +688,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_content_hold_collection_scope')"
     )
 
+    # v448: at most one active task row per (file, step) (issue #1185). Keyed on the partial
+    # UNIQUE index, created last: a database without it still holds the duplicate rows the
+    # revision resolves, so it must re-run.
+    has_task_active_unique = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE tablename = 'task' AND indexname = 'uq_task_active_per_file_type')"
+    )
+
     # v449: who wrote a speaker's name/link (issue #1280). Keyed on its CHECK, created after
     # the column; the backfill runs in the same transaction.
     has_identity_source = _check_exists(
@@ -763,9 +771,8 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v449: same as v447 plus speaker.identity_source. The newest revision on this chain, so
-    # this is the top of the ladder. (Its parent is v447 on this branch; when v448 is merged
-    # in, v449 is re-parented onto it and this arm also requires v448's marker.)
+    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
+    # this is the top of the ladder.
     if (
         matches_v442
         and has_takedown_notice
@@ -773,9 +780,21 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_organization_policy
         and has_collection_visibility
         and has_content_hold
+        and has_task_active_unique
         and has_identity_source
     ):
         return "v449_add_speaker_identity_source"
+    # v448: same as v447 plus the one-active-row-per-file-step guard.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+        and has_collection_visibility
+        and has_content_hold
+        and has_task_active_unique
+    ):
+        return "v448_task_one_active_row_per_file_step"
     # v447: same as v446 plus the organization content holds.
     if (
         matches_v442

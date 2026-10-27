@@ -299,7 +299,10 @@ def test_watch_source_assign_to_user_of_other_tenant_refused(
     monkeypatch,
     tmp_path,
 ):
-    """An admin could assign a source to ANY user with no membership check."""
+    """An admin could assign a source to ANY user with no membership check.
+
+    The refusal is the same 404 an unknown account gets, so it confirms nothing about the target.
+    """
     monkeypatch.setattr(settings, "WATCH_FOLDER_PATH", str(tmp_path))
     org = _org(db_session)
     db_session.add(OrganizationMembership(organization_id=org.id, user_id=admin_user.id))
@@ -317,7 +320,7 @@ def test_watch_source_assign_to_user_of_other_tenant_refused(
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------

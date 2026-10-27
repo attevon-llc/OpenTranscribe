@@ -61,7 +61,7 @@ def _writable_tag_ids(
     tag_uuids: list[UUID],
     *,
     user_id: int,
-    is_admin: bool,
+    can_write_system: bool,
     organization_id: int | None,
     is_org_admin: bool = False,
 ) -> list[int]:
@@ -76,9 +76,10 @@ def _writable_tag_ids(
       organization is not reachable from this one (issue #1050);
     * any tag of the request's organization, for an **org admin** — the org's
       vocabulary is theirs to curate;
-    * a system tag, for a deployment admin only (they are the shared vocabulary
-      every account's picker shows, which is why ``cleanup_unused_tags`` is
-      admin-gated and skips them).
+    * a system tag, when ``can_write_system`` (``ctx.bypass.deployment_scope_writable``:
+      any admin in a single-tenant deployment, a super_admin in a multi-tenant one). They
+      are the shared vocabulary every account's picker shows, which is why
+      ``cleanup_unused_tags`` is admin-gated and skips them.
 
     A tag that exists but is not writable 404s rather than 403s — the same answer
     an unknown UUID gets, so probing this endpoint cannot enumerate other
@@ -88,7 +89,7 @@ def _writable_tag_ids(
     for tag_uuid in tag_uuids:
         tag = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found")
         if is_system_tag(tag):
-            allowed = is_admin
+            allowed = can_write_system
         elif not tag_in_tenant(tag, user_id, organization_id):
             allowed = False
         else:

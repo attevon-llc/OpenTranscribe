@@ -183,6 +183,10 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).
+- **Superseded task rows** — `task_row_supersede.py` (#1185) is the one definition of "this active task
+  row was superseded by a newer completed run of the same step for the same file": the health-check sweep,
+  the `task_rows_superseded_active` gauge, `create_task_record`'s supersede-on-start and the `v448`
+  migration all apply it. See `app/tasks/CLAUDE.md`.
 - **Abuse takedown / quarantine** — `takedown_service.py` is the one place quarantine lives
   (a facade since #1253: `takedown_predicates` = the read side, `takedown_authority` = who may
   act, `takedown_notices` = owner notices + audit). `exclude_quarantined`/`is_hidden_for` gate

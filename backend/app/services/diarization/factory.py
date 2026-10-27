@@ -71,7 +71,8 @@ def get_diarizer_asr_config(
     Own, or shared within a tenant both belong to (re-checked on every read, like the active
     ASR config). Using another provider for speakers needs the per-user cloud-provider
     capability (``asr.user_providers``); without it the config is treated as unavailable.
-    ``None`` for no pointer, a malformed or dangling one, or a capability that is off.
+    ``None`` for no pointer, a malformed or dangling one, a capability that is off, or a
+    configuration its owner marked inactive (``is_active``).
     """
     if not config_uuid:
         return None
@@ -95,6 +96,9 @@ def get_diarizer_asr_config(
         )
         .first()
     )
+    if cfg is not None and not cfg.is_active:
+        # Switched off by its owner: unavailable as a speaker detector, like a dangling pointer.
+        return None
     return cfg
 
 

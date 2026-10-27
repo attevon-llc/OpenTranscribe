@@ -85,6 +85,12 @@ way as soon as its catalog entry says `supports_diarization` and its parser fill
 - The pipeline plan's transcription step routes non-local providers to the **`cloud-asr`**
   queue (service `celery-cloud-asr-worker`, concurrency 16) so network-bound jobs never block the
   GPU; `tasks/transcription/dispatch.py:_plan_for_dispatch` resolves it once per run.
+- **`UserASRSettings.is_active` is read (#1207).** `_active_config_row` treats an inactive row exactly like a
+  dangling pointer (env / local fallback, a warning that says why), so `create_for_user`, `resolve_active_config`
+  and the pipeline plan agree; `get_diarizer_asr_config` returns `None` for it too. `POST /set-active` refuses it
+  (409 `asr_config_inactive`), a first config created inactive is not auto-activated, the promotion on deleting
+  the active config skips inactive rows, and `/status` and the list do not present an inactive pointer as active.
+  The pointer itself is kept, so switching the row back on resumes it.
 - `resolve_config(cfg)` is the same env / local fallback for ANY row (or `None`): it lets
   `services/asr_switch_plan` plan a switch before making it. Every ASR-side switch
   (`set-active`, `clear-active`, first-config auto-activation, the promotion on delete)
@@ -129,7 +135,7 @@ changing `provider` **clears** it.
   from a row is how #300 happened — the job path dropped `access_key_id`, so AWS jobs silently ran under
   whatever boto3 resolved from `AWS_ACCESS_KEY_ID`/IAM while "Test connection" passed. Decryption
   failure raises `ValueError`; `create_for_user` catches it and degrades to env/local.
-- Per-vendor: **aws** needs two creds and round-trips through an S3 bucket it may auto-create, wants
+- Per-vendor: **aws** needs two creds and round-trips through the S3 bucket named by `AWS_TRANSCRIBE_BUCKET` (REQUIRED, no default since #1235: bucket names are global, so a guessable default could ship audio to another account; `transcribe()` and `validate_connection()` fail before any network call when it is unset; every S3 call carries `ExpectedBucketOwner`, STS account or `AWS_TRANSCRIBE_BUCKET_OWNER`; it is env, not DB, because it is deployment infrastructure and `user_asr_settings` has no column for it), wants
   BCP-47 (`en-US`) codes, and its custom vocabulary must pre-exist in AWS. **azure** needs a region, and
   diarization requires `ConversationTranscriber` — `SpeechRecognizer` silently returns no speakers.
   **google** takes a service-account JSON only (applied by mutating `GOOGLE_APPLICATION_CREDENTIALS`)

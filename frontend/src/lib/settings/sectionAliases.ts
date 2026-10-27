@@ -12,12 +12,14 @@ import type { DataTabId } from './dataManagementTabs';
 import type { StatusTabId } from './fileStatusTabs';
 import type { SpeakerIdTabId } from './speakerIdentificationTabs';
 import type { TranscriptionTabId } from './transcriptionTabs';
+import type { WatchSourcesTabId } from './watchSourcesTabs';
 
 export type AliasTarget =
   | { row: 'transcription'; tab: TranscriptionTabId }
   | { row: 'speaker-identification'; tab: SpeakerIdTabId }
   | { row: 'data-management'; tab: DataTabId }
-  | { row: 'file-status'; tab: StatusTabId };
+  | { row: 'file-status'; tab: StatusTabId }
+  | { row: 'watch-sources'; tab: WatchSourcesTabId };
 
 export const SECTION_ALIASES: Record<
   | 'asr-provider'
@@ -29,7 +31,9 @@ export const SECTION_ALIASES: Record<
   | 'data-integrity'
   | 'search-indexing'
   | 'embedding-migration'
-  | 'admin-task-health',
+  | 'admin-task-health'
+  | 'watch-sources-email'
+  | 'watch-sources-global',
   AliasTarget
 > = {
   'asr-provider': { row: 'transcription', tab: 'tx-provider' },
@@ -42,6 +46,8 @@ export const SECTION_ALIASES: Record<
   'search-indexing': { row: 'data-management', tab: 'data-search' },
   'embedding-migration': { row: 'data-management', tab: 'data-embeddings' },
   'admin-task-health': { row: 'file-status', tab: 'status-recovery' },
+  'watch-sources-email': { row: 'watch-sources', tab: 'email' },
+  'watch-sources-global': { row: 'watch-sources', tab: 'global' },
 };
 
 /** The ids that open a tab of a row, so the row can show their unsaved-changes dot. */
@@ -90,4 +96,10 @@ export function dataTabFor(section: SettingsSection): DataTabId | null {
 export function statusTabFor(section: SettingsSection): StatusTabId | null {
   const target = tabAlias(section);
   return target?.row === 'file-status' ? target.tab : null;
+}
+
+/** The Watch Sources tab an alias id opens, or null when the row's default applies. */
+export function watchSourcesTabFor(section: SettingsSection): WatchSourcesTabId | null {
+  const target = tabAlias(section);
+  return target?.row === 'watch-sources' ? target.tab : null;
 }

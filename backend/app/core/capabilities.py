@@ -24,7 +24,9 @@ same depth. Read this before assuming a key protects anything:
    in ``app/api/router.py``; disabling one makes every route under that
    router 404, so the UI gate is genuinely cosmetic:
    ``watch_sources``, ``organizations``, ``auth.config_ui``,
-   ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``,
+   ``llm.user_settings``, ``asr.user_providers``, ``asr.model_selection`` (the super_admin
+   ``/asr-settings/local-model/*`` routes, deliberately separate from ``asr.user_providers`` so a
+   deployment without bring-your-own ASR keys can still pin its local model), ``engine.settings``,
    ``chat.rag``, ``org.takedown`` (``/org-admin/files``; no platform-admin bypass),
    ``exports.documents`` (``POST /files/{uuid}/export/document`` 404s; the render task never
    asks, because it has no request, so a resolver must not make it depend on one),
@@ -70,7 +72,7 @@ same depth. Read this before assuming a key protects anything:
    Setting ``upload: False`` or ``search: False`` changes nothing at all:
    ``upload``, ``search``, ``comments``,
    ``collections.shared``, ``speakers.shared``, ``prompts.shared``,
-   ``asr.model_selection``, ``llm.byok``.
+   ``llm.byok``.
 
 **Viewer overlay** (issue #1274). ``GET /system/capabilities`` resolves the caller optionally
 and returns ``get_capabilities_for_viewer``: for platform staff (an active ``is_superuser``),

@@ -55,6 +55,9 @@ export type SettingsSection =
   | 'backup'
   | 'media-sources'
   | 'watch-sources'
+  // Tabs of 'watch-sources' that super_admin can deep-link to; no sidebar row of their own.
+  | 'watch-sources-email'
+  | 'watch-sources-global'
   | 'support-access'
   | 'support-access-requests'
   // Super Admin sections

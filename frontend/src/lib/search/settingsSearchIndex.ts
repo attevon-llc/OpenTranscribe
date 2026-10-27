@@ -84,7 +84,8 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   transcription: ['settings.transcription'],
   'audio-extraction': ['settings.audioExtraction'],
   'media-sources': ['settings.mediaSources'],
-  'watch-sources': ['settings.watchSources', 'settings.emailNotifications'],
+  'watch-sources': ['settings.watchSources'],
+  'watch-sources-email': ['settings.emailNotifications'],
   recording: ['settings.recording'],
   download: ['settings.download'],
 };

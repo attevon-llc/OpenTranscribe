@@ -251,8 +251,10 @@ The migration chain progresses through these versions:
 | `v445` | `organization_policy`: per-organization voiceprint and gender switches and redaction floor (#1280) |
 | `v446` | `collection.visibility`: an organization collection can be restricted to its named people (#1275) |
 | `v447` | `content_hold` and `content_hold_file`: organization legal holds on files and collections (#1276) |
+| `v448` | At most one active `task` row per file and step: superseded stale rows are marked failed, then a unique index is added (#1185). Locks `task` against writes while it runs |
+| `v449` | `speaker.identity_source`: records whether a speaker's name and profile link came from a person or a voiceprint match; marks existing identities a voiceprint demonstrably wrote (#1280) |
 
-What `v397` to `v447` mean for an existing install, including the few that change data, is
+What `v397` to `v449` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail

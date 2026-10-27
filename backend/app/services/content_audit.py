@@ -11,7 +11,8 @@ holds) calls :func:`record_content_event`, so the rules below exist once:
 * **High-volume events are opt-in.** ``content.file.view``, ``content.media.access`` and
   ``content.export`` are recorded only when the ``audit.content_access`` capability AND the
   super_admin ``audit.content_access.enabled`` setting (default off) are both true.
-  Governance events (membership, visibility, holds) are always recorded: they are low volume
+  Governance events (membership, visibility, holds, and a transcript edit on a held file) are
+  always recorded: they are low volume
   and the features require them.
 * **View-class events are de-duplicated** (``content.file.view`` and a ``stream_url`` media
   access): once per ``(event, actor, resource, surface)`` per ``CONTENT_AUDIT_DEDUP_SECONDS``,

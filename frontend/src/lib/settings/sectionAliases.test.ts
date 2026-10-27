@@ -7,6 +7,7 @@ import {
   speakerIdTabFor,
   statusTabFor,
   transcriptionTabFor,
+  watchSourcesTabFor,
 } from './sectionAliases';
 
 describe('SECTION_ALIASES', () => {
@@ -96,5 +97,23 @@ describe('transcriptionTabFor / speakerIdTabFor', () => {
       expect(fn('redaction-policy')).toBeNull();
       expect(fn('profile')).toBeNull();
     }
+  });
+});
+
+describe('Watch Sources aliases', () => {
+  it.each([
+    ['watch-sources-email', 'email'],
+    ['watch-sources-global', 'global'],
+  ] as const)('%s opens the %s tab of the watch-sources row', (id, tab) => {
+    expect(SECTION_ALIASES[id]).toEqual({ row: 'watch-sources', tab });
+    expect(sidebarRowFor(id)).toBe('watch-sources');
+    expect(watchSourcesTabFor(id)).toBe(tab);
+    expect(dataTabFor(id)).toBeNull();
+    expect(transcriptionTabFor(id)).toBeNull();
+  });
+
+  it('is null for the row id itself, so the Sources tab default applies', () => {
+    expect(watchSourcesTabFor('watch-sources')).toBeNull();
+    expect(sidebarRowFor('watch-sources')).toBe('watch-sources');
   });
 });

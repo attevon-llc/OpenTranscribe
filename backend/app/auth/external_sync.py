@@ -14,6 +14,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.auth.auth_type_admission import assert_auth_type_admitted
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.roles import ELEVATED_ROLES
@@ -70,6 +71,8 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     on an ordinary first login.
 
     Raises:
+        ExternalProviderNotAdmittedError: when the provider's ``auth_type`` is not in
+            the database CHECK (the registering edition has not widened it, #866).
         ExternalIdentityLinkRefusedError: when an email-matched or provider-id-matched
             link is refused (unverified email, a corroboration mismatch, or a
             super_admin target). Callers treat this as 401. Deliberately NOT the
@@ -80,6 +83,10 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     from sqlalchemy.exc import IntegrityError
 
     id_col, org_col = EXTERNAL_ID_COLUMN, EXTERNAL_ORG_ID_COLUMN
+
+    # Before any write: auth_type is CHECK-constrained, and a provider the database
+    # does not admit would otherwise surface as a bare CheckViolation at commit.
+    assert_auth_type_admitted(db, identity.provider)
 
     email = identity.email or f"{identity.external_id}@{identity.provider}.local"
 

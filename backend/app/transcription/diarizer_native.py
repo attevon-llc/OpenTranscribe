@@ -445,6 +445,15 @@ _ENGINE_DESCRIPTIONS: dict[str, str] = {
     "pyannote": "PyAnnote fork (in-process) — explicit pin or automatic native-sidecar failover",
 }
 
+#: ``effective`` when strict mode (``engine.diarizer_require_sidecar``) is on and the sidecar
+#: cannot serve: no engine runs (issue #1184). Not a backend, so not in the table above, which
+#: is keyed by ``engine.backends.VALID_DIARIZER_BACKENDS`` exactly.
+_UNAVAILABLE = "unavailable"
+_UNAVAILABLE_DESCRIPTION = (
+    "none — diar-native cannot serve and the PyAnnote fallback is refused "
+    "(engine.diarizer_require_sidecar); diarization tasks fail until it recovers"
+)
+
 
 def describe_diarizer_status() -> dict[str, Any]:
     """Configured vs EFFECTIVE diarization engine — the one resolver both stats panels use.
@@ -480,15 +489,22 @@ def describe_diarizer_status() -> dict[str, Any]:
 
     Returns:
         Dict with ``configured``, ``configured_description``, ``effective``,
-        ``effective_description``, and ``using_fallback`` (True exactly when the two
-        engines differ — the signal issue #672 exists to surface).
+        ``effective_description``, ``using_fallback`` (True exactly when the work is running
+        on PyAnnote although native was configured — the signal issue #672 exists to
+        surface), ``require_sidecar`` (strict mode is on) and ``refusing`` (strict mode is on
+        and the sidecar cannot serve, so ``effective`` is ``"unavailable"`` and diarization
+        tasks fail, issue #1184).
     """
     from app.transcription.config import TranscriptionConfig
 
     configured = TranscriptionConfig._resolve_diarizer_backend()
     effective = configured
+    required = diarizer_require_sidecar()
+    refusing = False
     if configured == "native" and not sidecar_ready():
-        effective = "pyannote"
+        # Strict mode refuses the fallback, so nothing serves: say that, not "pyannote".
+        refusing = required
+        effective = _UNAVAILABLE if required else "pyannote"
 
     return {
         "configured": configured,
@@ -496,10 +512,15 @@ def describe_diarizer_status() -> dict[str, Any]:
             configured, f"{configured} diarization engine"
         ),
         "effective": effective,
-        "effective_description": _ENGINE_DESCRIPTIONS.get(
-            effective, f"{effective} diarization engine"
+        "effective_description": (
+            _UNAVAILABLE_DESCRIPTION
+            if refusing
+            else _ENGINE_DESCRIPTIONS.get(effective, f"{effective} diarization engine")
         ),
-        "using_fallback": effective != configured,
+        "using_fallback": effective == "pyannote" and configured != "pyannote",
+        # Issue #1184: whether strict mode is on, and whether it is currently refusing work.
+        "require_sidecar": required,
+        "refusing": refusing,
     }
 
 
@@ -685,6 +706,9 @@ class NativeSpeakerDiarizer:
         # every read of the attribute checked, rather than widening the fallback assignment.
         self.last_provider: str = "native"
         self.last_model: str | None = NATIVE_MODEL_NAME
+        #: Why the most recent diarize() ran on PyAnnote instead (issue #1184); None whenever
+        #: the sidecar served it. Reset at every native return so it never goes stale.
+        self.last_fallback_reason: str | None = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -912,6 +936,9 @@ class NativeSpeakerDiarizer:
             with self._fallback_lock:
                 self._fallback_users -= 1
         self.last_provider = "pyannote"
+        self.last_fallback_reason = (
+            exc.reason if isinstance(exc, DiarSidecarUnavailableError) else "error"
+        )
         self.last_model = getattr(self._fallback, "_model_name", None)
         return fallback_result
 
@@ -1083,6 +1110,7 @@ class NativeSpeakerDiarizer:
         )
         self.last_provider = "native"
         self.last_model = NATIVE_MODEL_NAME
+        self.last_fallback_reason = None
         return diarize_df, overlap_info, native_embeddings
 
     def embed_window(self, audio: np.ndarray, start: float, end: float) -> np.ndarray | None:

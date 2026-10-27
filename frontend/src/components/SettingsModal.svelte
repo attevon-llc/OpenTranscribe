@@ -58,6 +58,7 @@
     sidebarRowFor,
     speakerIdTabFor,
     transcriptionTabFor,
+    watchSourcesTabFor,
   } from '$lib/settings/sectionAliases';
   import { dataManagementTabs, dataManagementVisible } from '$lib/settings/dataManagementTabs';
   import { fileStatusTabs } from '$lib/settings/fileStatusTabs';
@@ -284,6 +285,7 @@
   $: transcriptionAccess = {
     prefsCap: capOn(capState, 'transcription.prefs'),
     asrCap: capOn(capState, 'asr.user_providers'),
+    modelSelectionCap: capOn(capState, 'asr.model_selection'),
     vocabCap: capOn(capState, 'vocab.user'),
   };
 
@@ -510,6 +512,11 @@
     // Same for the four ids that became tabs: no sidebar row, still searchable, and the
     // hit lands on the tab, but only for users whose tab is present and unlocked.
     ...aliasSearchEntries(transcriptionAccess, speakerIdAccess, dataAccess, statusAccess),
+    // The email-notifications tab is super_admin only and lives on the watch-sources row, so it
+    // is searchable only where that row is shown and the user can open the tab.
+    ...(isSuperAdmin && sidebarSections.some((section) => section.items.some((item) => item.id === 'watch-sources' && !item.locked))
+      ? [{ id: 'watch-sources-email', label: $t('settings.emailNotifications.heading') } as VisibleSection]
+      : []),
   ];
 
   function aliasSearchEntries(
@@ -1294,12 +1301,12 @@
     {/if}
 
     <!-- Watch Sources Settings Section -->
-    {#if activeSection === 'watch-sources'}
+    {#if sidebarRowFor(activeSection) === 'watch-sources'}
       <div class="content-section">
         <h3 class="section-title">{$t('settings.watchSources.title')}</h3>
         <p class="section-description">{$t('settings.watchSources.description')}</p>
         <LazySection load={sectionLoaders.watchSources} let:Component>
-          <Component />
+          <Component initialTab={watchSourcesTabFor(activeSection) ?? 'sources'} />
         </LazySection>
       </div>
     {/if}
@@ -1365,7 +1372,7 @@
         <LazySection load={sectionLoaders.chat} let:Component>
           <Component
             {isAdmin}
-            initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
+            initialTab={activeSection === 'chat-admin' && isAdmin ? 'chat-advanced' : 'chat-general'}
           />
         </LazySection>
       </div>

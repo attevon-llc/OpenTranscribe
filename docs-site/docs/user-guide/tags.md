@@ -76,9 +76,21 @@ apply it — so they use your word instead of coining a duplicate — while rena
 merging and deleting stay with you. Revoking a share leaves every file tagged; only
 reaching the tag by name in the picker goes away.
 
+On a deployment that hosts several organizations, a personal tag can be shared only with people
+who belong to no organization (and groups made only of them), and an organization's tag only
+with members of that organization.
+
 **Share with everyone** (admin only) publishes a tag into the shared vocabulary and
 folds other people's identically-named tags into it, so the deployment converges on
 one `Interview` instead of accumulating one per person. Their files keep the tag.
+
+On a deployment that hosts several organizations, changing the shared vocabulary needs a
+super admin, and only identically-named tags of the promoted tag's own workspace are folded
+into it; other organizations' tags are left as they are.
+
+A watch source stores tag names, and a name means the tag of the source's own workspace when that
+workspace has one, and the shared tag otherwise. Renaming, merging or deleting a shared tag
+therefore updates only the watch sources of workspaces that have no tag of that name of their own.
 
 Every install also seeds a small shared vocabulary — `Important`, `Meeting`,
 `Interview`, `Personal` — and typing one of those names attaches the shared tag rather

@@ -5,6 +5,7 @@ from typing import Any
 from typing import NamedTuple
 
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
@@ -1240,6 +1241,7 @@ def update_single_transcript_segment(
     *,
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
+    request: Request | None = None,
 ) -> TranscriptSegmentSchema:
     """
     Update a single transcript segment for a media file.
@@ -1252,6 +1254,8 @@ def update_single_transcript_segment(
         current_user: Current user
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
         bypass: The request's platform bypass (``ctx.bypass``).
+        request: The HTTP request, for the audit event written when the file is under a legal
+            hold (issue #1307). None is allowed.
 
     Returns:
         Updated TranscriptSegmentSchema object with all formatted fields
@@ -1309,6 +1313,21 @@ def update_single_transcript_segment(
 
     db.commit()
     db.refresh(segment)
+
+    # Editing a held file is allowed, but it is audited (issue #1307). After the commit, so a
+    # rolled-back edit leaves no event; writes nothing for a file nobody holds.
+    from app.services.content_hold_service import record_edit_on_held_file
+
+    record_edit_on_held_file(
+        db,
+        request,
+        current_user,
+        db_file,
+        kind="segment_edit",
+        segment_uuid=str(segment.uuid),
+        fields=[f for f in mutable_segment_fields if f in update_fields],
+        bypass=bypass,
+    )
 
     # The text is what search/RAG chunk documents are built from — a stale
     # index otherwise serves the pre-edit wording indefinitely (issue #666).

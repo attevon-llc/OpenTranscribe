@@ -95,4 +95,6 @@ notified in real time, the event is audited, and the grant appears in the tenant
   grant on a multi-tenant install. Instance-wide maintenance routes (stuck-file sweeps, backfills)
   are unchanged. `TENANCY_MODE=single` restores the old behavior if the operator is the only tenant.
 
-See also: `docs/security/tenant-boundaries.md` for the full boundary table.
+See also: `docs/security/tenant-boundaries.md` for the full boundary table, and
+`docs/security/platform-access-matrix.md` for every route and code site through which a platform
+role can reach a tenant, with the test that proves each guard.

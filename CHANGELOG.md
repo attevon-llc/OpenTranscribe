@@ -1453,6 +1453,17 @@ off by default.
 
 ### Security
 
+- **Platform staff access is now a committed, tested matrix (#1281).** Every route and code site
+  through which `admin` or `super_admin` can act on a tenant's data is listed in
+  `docs/security/platform-access-matrix.tsv`, derived from the route table and an AST scan, and
+  `scripts/generate-platform-access-matrix.py --check` plus a unit test fail when a new path
+  appears without a row. Per chokepoint kind the tests prove that no grant, a pending, expired or
+  revoked one, a grant for another tenant and a personal grant on an organization resource are
+  all refused, and that a platform admin holding no grant sees none of three tenants' content
+  on any parameterless GET. Two platform routes were brought into line with the rest of that
+  surface: the speaker cross-media diagnostic stays inside the active tenant and the caller's own
+  rows unless the request holds a grant, and the degraded-embeddings listing records a
+  platform metadata-access event like the other platform listings.
 - **An organization admin could read a member's personal-file events (#1277).** The org audit
   read attributed any event without an organization stamp to every organization its actor
   belonged to, so `transcript.view_unredacted` on a member's personal file was readable by the

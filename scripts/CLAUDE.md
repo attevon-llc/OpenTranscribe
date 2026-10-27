@@ -18,6 +18,11 @@ this file is for.
   before committing, or CI fails. The venv is 3.12, CI is 3.13 — verified byte-identical output
   at current pins. `info.version` is normalized to a fixed sentinel so a release version bump
   alone never causes drift.
+- **Platform access matrix** (issue #1281) — `generate-platform-access-matrix.py --write|--check`
+  (backend venv; imports `app`) writes `docs/security/platform-access-matrix.tsv` from the route
+  table and an AST scan via `backend/tests/fixtures/platform_access_matrix.py`. The same comparison
+  runs as `tests/unit/test_platform_access_matrix.py`; read the diff of a regenerated file, a new
+  row is a new way for platform staff to reach a tenant.
 - **Docs generated from code** (issue #1230) — `generate-pipeline-docs.py --write|--check`
   (backend venv; imports `app`) writes the Deployment variants page's three partials under
   `docs-site/docs/installation/_generated/` from `docker-build-push.sh list-platforms`,

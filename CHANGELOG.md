@@ -121,7 +121,9 @@ off by default.
   or gender changes. Four things do change: the gender migration and combined speaker analysis
   now respect each owner's gender setting, the consistency repair and v4 migration skip scopes
   with voiceprints off, and a remote LLM no longer receives the speaker-name gender comparison.
-  Review **Settings > Privacy & Redaction > Policy** after upgrading.
+  Review **Settings > Privacy & Redaction > Policy** after upgrading. Installs that use
+  organizations: the tenant backfill above also stamps voiceprint cluster documents that an
+  earlier release rewrote without their organization.
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.
@@ -228,6 +230,25 @@ off by default.
   upgrade changes no stored data: the new `organization_policy` table (migration `v445`) is empty
   until an organization saves a choice. See [Privacy
   controls](https://docs.opentranscribe.app/docs/features/privacy-controls).
+- **Privacy policy details across the API and admin tools (#1280).** While gender is off for a
+  recording's scope, every response that embeds a speaker returns the inferred gender and its
+  voice-versus-name alignment (the stored `attribute_confidence` keys `gender`, `alignment` and
+  `alignment_hint`) as null: the file detail, `GET /api/files/{uuid}/segments` and the responses of
+  a segment text edit and a segment speaker reassignment. `GET|PUT /api/user-settings/speaker-attributes`
+  answers for the active organization: `gender_detection_enabled` is the effective value and the new
+  `gender_locked_by` is `platform`, `instance`, `organization` or null (a person's own switch is
+  never reported as a lock). Plan previews, which name no recording (the pipeline view and the ASR
+  switch previews), are judged in the organization the request works in; a real recording is judged
+  in its own organization. `GET /api/embeddings/migration/status` carries `policy_skipped`
+  (`files_total`, `files_skipped`, `scopes_total`, `scopes_skipped`, `locked_by`);
+  `POST /api/embeddings/migration/start` answers 409 `voiceprints_disabled` only when every
+  recording is in a scope with voiceprints off, and otherwise names what it will skip. The
+  consistency check reports `skipped_by_policy` and no longer counts a missing voiceprint in such a
+  scope as missing. The organization audit log labels `org.policy.change`,
+  `privacy.voiceprints.purge` and `privacy.gender.purge`. A gender purge leaves a speaker profile's
+  gender alone, because only a person confirming it sets that value. The organization redaction
+  floor is stored and served by `/api/org-admin/policy`; its screen follows in v0.7.0 (#1279). A
+  community install has no organization layer, so that route answers 404 there.
 - **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
   administrator, a super admin or the person themselves can permanently delete what it hid:
   `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,
@@ -1009,6 +1030,11 @@ off by default.
 
 ### Fixed
 
+- **A rewritten voiceprint cluster keeps its organization (#1280).** Updating a cluster's
+  centroid rewrote the whole search document without its `organization_id`, so the cluster no
+  longer matched its organization's tenant filter. The stored value is now carried over. Installs
+  that use organizations can re-stamp documents rewritten earlier with the tenant backfill listed
+  under Upgrade Notes.
 - **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
   server refused (redaction scan unfinished, policy unavailable) used to log to the console and
   leave a button that did nothing; each now shows a translated message. The gallery's bulk export

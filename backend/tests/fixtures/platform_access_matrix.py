@@ -133,6 +133,13 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "deployment configuration and credentials; no tenant content",
     ),
     (
+        r"^\w+ /api/admin/privacy-policy",
+        "settings",
+        "the deployment's voiceprint and gender switches and their purge (issue #1280); returns "
+        "switch state or a task id, never tenant content (the purge deletes derived voiceprint "
+        "data, it reads none back)",
+    ),
+    (
         r"^GET /api/legal/acknowledgments",
         "settings",
         "the operator's legal acknowledgment record; deployment-level",

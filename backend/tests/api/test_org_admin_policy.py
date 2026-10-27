@@ -29,6 +29,7 @@ from app.models.media import TranscriptSegment
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.organization_policy import OrganizationPolicy
+from app.models.prompt import UserSetting
 
 POLICY = "/api/org-admin/policy"
 SECRET_WORD = "Project-Nightingale"
@@ -90,12 +91,25 @@ def test_a_resolver_that_omits_the_key_hides_the_panel(client, gov):
         assert client.get(POLICY).status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_a_superuser_is_not_a_way_around_the_capability(client, gov, db_session):
-    _capabilities(**{"org.defaults": False})
+def test_a_superuser_is_not_a_way_around_the_capability(client, gov, db_session, monkeypatch):
+    """No platform bypass: with the key off platform staff get the same 404 as anyone.
+
+    The bypass reads the caller through ``get_optional_current_user`` on its own session, which
+    cannot see this test's uncommitted rows, so the lookup is stubbed to return the staff user.
+    The control proves the stub is reached: a route that DOES allow the bypass lets the same
+    caller through.
+    """
+    _capabilities(**{"org.defaults": False, "watch_sources": False})
     gov.admin.role, gov.admin.is_superuser = "super_admin", True
     db_session.commit()
+    monkeypatch.setattr(
+        "app.api.endpoints.auth.get_optional_current_user", lambda request, db: gov.admin
+    )
     with gov.acting_as(gov.admin):
         assert client.get(POLICY).status_code == status.HTTP_404_NOT_FOUND
+        assert client.get("/api/watch-sources").status_code == status.HTTP_200_OK, (
+            "control: a bypass-enabled route admits platform staff through a disabled capability"
+        )
 
 
 def test_the_community_default_hides_the_surface_from_everyone(client, gov):
@@ -344,6 +358,8 @@ def test_a_refused_patch_writes_no_policy_event(client, gov, events):
 FORCED_WORD = "acquisition"
 CLEAN_TEXT = "the quarterly numbers look fine"
 SENSITIVE_TEXT = f"we should discuss the {FORCED_WORD} before the board meets"
+PII_WORD = "Smithers"
+PII_TEXT = f"please call {PII_WORD} tomorrow"
 
 
 def _org_file_with_a_cached_word_span(db, owner, org) -> MediaFile:
@@ -384,6 +400,25 @@ def _org_file_with_a_cached_word_span(db, owner, org) -> MediaFile:
                     "entity_type": "CUSTOM",
                     "detector": "wordlist",
                     "confidence": 1.0,
+                }
+            ],
+        )
+    )
+    pii_start = PII_TEXT.find(PII_WORD)
+    db.add(
+        TranscriptSegment(
+            media_file_id=media_file.id,
+            start_time=3.0,
+            end_time=4.5,
+            text=PII_TEXT,
+            redactions=[
+                {
+                    "char_start": pii_start,
+                    "char_end": pii_start + len(PII_WORD),
+                    "category": "pii",
+                    "entity_type": "NAME",
+                    "detector": "presidio",
+                    "confidence": 0.99,
                 }
             ],
         )
@@ -441,6 +476,7 @@ def test_a_floor_saved_through_the_api_masks_a_members_export(
 def test_a_stored_floor_and_a_registered_resolver_both_mask(
     client, user_token_headers, normal_user, db_session, org_context
 ):
+    """Each half masks something the other cannot: drop either and a word ships raw."""
     org = Organization(
         external_org_id=f"org_both_{uuid_pkg.uuid4().hex[:8]}", name="both", is_active=True
     )
@@ -449,13 +485,21 @@ def test_a_stored_floor_and_a_registered_resolver_both_mask(
     db_session.add(
         OrganizationMembership(organization_id=org.id, user_id=normal_user.id, role="org:member")
     )
+    # The user masks nothing of their own, not even custom words (the default category).
+    db_session.add(
+        UserSetting(
+            user_id=normal_user.id, setting_key="redaction_categories", setting_value='["toxicity"]'
+        )
+    )
     db_session.commit()
     media_file = _org_file_with_a_cached_word_span(db_session, normal_user, org)
-    db_session.add(OrganizationPolicy(organization_id=org.id, floor_forced_pii_entities=["EMAIL"]))
+    db_session.add(
+        OrganizationPolicy(organization_id=org.id, floor_forced_custom_words=[FORCED_WORD])
+    )
     db_session.commit()
     set_redaction_floor_resolver(
         lambda db, org_id: (
-            RedactionFloor(forced_categories=frozenset({"custom"})) if org_id == org.id else None
+            RedactionFloor(forced_categories=frozenset({"pii"})) if org_id == org.id else None
         )
     )
     org_context(org_id=org.id, org_role="org:member", only_for=normal_user.id)
@@ -466,4 +510,11 @@ def test_a_stored_floor_and_a_registered_resolver_both_mask(
         params={"subtitle_format": "srt"},
     )
     assert response.status_code == status.HTTP_200_OK
-    assert FORCED_WORD not in response.text, "the resolver's category was lost to the stored row"
+    assert FORCED_WORD not in response.text, "the stored organization floor was lost"
+    assert PII_WORD not in response.text, "the registered resolver's floor was lost"
+    assert CLEAN_TEXT in response.text
+
+
+def test_platform_staff_are_not_an_organizations_administrators(client, super_admin_token_headers):
+    """Over a real token: with the key on, a super_admin with no organization role is refused."""
+    assert client.get(POLICY, headers=super_admin_token_headers).status_code == 403

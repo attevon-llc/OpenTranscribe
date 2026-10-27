@@ -133,6 +133,22 @@ updates:
       # deliberately with a reranker/embedding retest, not in a batch.
       - dependency-name: "sentence-transformers"
         update-types: ["version-update:semver-major"]
+      # sqlalchemy 2.1 changes the default driver of a bare `postgresql://` URL from psycopg2
+      # to psycopg 3, so `import app.db.base` fails with ModuleNotFoundError: psycopg (verified
+      # on 2.1.6 against requirements-ci.txt: every test errors at collection). Take it with a
+      # deliberate driver decision (`postgresql+psycopg2://` or a psycopg dependency), not in a batch.
+      - dependency-name: "sqlalchemy"
+        versions: [">=2.1.0"]
+      # nltk 3.10.4 fixes GHSA-8mgp-746c-j5xp but its data loader also refuses a nltk_data tree
+      # that is group-writable or not owned by the running user. On such a tree punkt is
+      # reported missing and sentence splitting silently degrades (2 backend tests fail on a
+      # umask-002 host). Take it together with a startup step that tightens the nltk_data
+      # permissions, next to ensure_nltk_data_unlinked in scripts/common.sh.
+      - dependency-name: "nltk"
+        versions: [">=3.10.4"]
+      # multidict 7 is a major; 6.9.1 is the release that fixes GHSA-54p9-h82j-f925.
+      - dependency-name: "multidict"
+        update-types: ["version-update:semver-major"]
       # websockets 11 -> 16 is a five-major jump touching uvicorn/provider SDK
       # paths; take it deliberately with its own validation, not in a batch.
       - dependency-name: "websockets"

@@ -8,7 +8,7 @@ fastapi==0.136.3
 # (0.48 vs 1.6). That is not academic: starlette's threadpool behaviour is exactly
 # what issue #485 turns on, so the gate and production were running different
 # concurrency code.
-starlette==1.6.0
+starlette==1.9.0
 # anyio, pinned for the SAME reason as starlette above and found the same way — by the
 # dependency-parity gate, not by review. It is transitive via httpx, httpx2, openai,
 # starlette and watchfiles, none of which pin it, so a container rebuild resolved 4.15.1
@@ -20,18 +20,18 @@ starlette==1.6.0
 # the host suite stayed green. Pinned FORWARD to the image's version, never backward to
 # the venv's, per backend/CLAUDE.md's versions-move-forward rule.
 anyio==4.15.1
-uvicorn[standard]==0.53.0
-websockets==17.1
+uvicorn[standard]==0.54.0
+websockets==17.3
 sqlalchemy==2.0.53
-alembic==1.20.0
-pydantic==2.13.5
-pydantic-settings==2.15.0
+alembic==1.20.1
+pydantic==2.14.1
+pydantic-settings==2.16.1
 # joserfc replaces python-jose everywhere (#33, #34) — the OIDC ID-token
 # verifier (claims.py) and the app-wide JWT spine (core/security.py,
 # auth/token_service.py, and every endpoint that decodes a token) all use it.
 # Not the authlib package itself — oidc/flow.py stays hand-rolled httpx; see
 # its module docstring for why the Authlib client wasn't worth adopting there.
-joserfc==1.7.5
+joserfc==1.7.7
 # SAML 2.0 SP support (#35). Never hand-rolled: XML signature wrapping has
 # produced critical auth bypasses in Shibboleth and many commercial SPs — this
 # delegates all assertion parsing and signature verification to python3-saml.
@@ -49,7 +49,7 @@ python-docx==1.2.0
 # collection index; fpdf2 requires it too.
 fpdf2==2.8.9
 uharfbuzz==0.57.0
-fonttools==4.65.0
+fonttools==4.67.0
 passlib[bcrypt]==1.7.4
 # bcrypt>=5.0.0 removed the __about__ shim passlib 1.7.4 (unmaintained since 2020)
 # reads to detect the backend version, hard-breaking bcrypt_sha256/bcrypt verification
@@ -62,15 +62,15 @@ email-validator==2.3.0
 prometheus-client==0.26.0   # 0.25.0 current; NEVER 0.23.0 (yanked)
 python-json-logger==4.2.0         # v4.x current, same PyPI name (nhairs maintains);
                                 # import from pythonjsonlogger.json (legacy .jsonlogger is a shim)
-cachetools==7.1.8                # 7.1.4 current; TTLCache still NOT thread-safe (we lock)
+cachetools==7.2.4                # 7.1.4 current; TTLCache still NOT thread-safe (we lock)
 
 # Asynchronous Tasks
 celery==5.6.3
 # Transitive (celery -> kombu) — pinned after the dependency-parity gate caught the venv
 # and the image resolving different patch releases (issue #492's exact failure mode).
-amqp==5.4.0
+amqp==5.4.1
 redis==8.1.0
-flower==2.1.0
+flower==2.2.0
 # psycopg2 (source build), NOT psycopg2-binary (issue #951): the binary wheel vendors
 # its own bundled libpq + transitive deps via auditwheel, and the arm64 wheel's bundle
 # carries a stale libpcre2 (AlmaLinux 8, 10.32-3.el8_6) with multiple unpatched CRITICAL
@@ -87,7 +87,7 @@ imohash==1.1.0  # Fast constant-time file fingerprint (murmur3 over sampled firs
 
 opensearch-py==3.2.0
 httpx==0.28.1
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 # LDAP/Active Directory Authentication
 ldap3==2.9.1
 
@@ -95,7 +95,7 @@ ldap3==2.9.1
 slowapi==0.1.10
 
 # PKI/X.509 Certificate Authentication
-cryptography==50.0.1
+cryptography==50.0.2
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp==2.10.0
@@ -169,12 +169,12 @@ filelock==4.2.4
 # failure mode as filelock above.
 fsspec==2026.9.0
 # Transitive (aiohttp, yarl) — same #492 failure mode as filelock above.
-multidict==6.9.0
+multidict==6.9.1
 # pandas is back as a transitive dep of the pyannote fork (pyannote-core,
 # pyannote-database, pyannote-metrics) and whisperx — pinned for the same #492
 # reason as the others above, not a reintroduction of the diarizer's own pandas use
 # (still removed, see app/transcription/diarize_result.py).
-pandas==3.0.6
+pandas==3.1.0
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
 # which is opt-in and not on the production path (Phase 6.1). Saves ~540 MB.
 
@@ -240,7 +240,7 @@ onnxconverter-common==1.16.0
 # Currently e3924b4fc == gpu-optimizations @ 2026-09-27 (CPU-only empty_cache fix, #1007).
 pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@e3924b4fc8167dd26a3b62b8a3e2e04fb87ca3c8
 # Required by pyannote/embedding model checkpoint (pickle dependency)
-omegaconf==2.3.1
+omegaconf==2.4.0
 
 # NOTE: whisperx==3.8.1 is installed separately from requirements-nodeps.txt
 # with --no-deps to keep our version pins in requirements.txt authoritative
@@ -254,7 +254,7 @@ psutil==7.2.2
 pyexiftool==0.5.6
 # [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
 # websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
-yt-dlp[default]==2026.8.19
+yt-dlp[default]==2026.10.21
 
 # Semantic search and NLP
 sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
@@ -294,7 +294,7 @@ requests==2.34.2
 # verified live on a real transcript), which desyncs the parser's
 # in-string tracking for everything after it, not just the tail. Zero
 # transitive dependencies.
-json-repair==0.63.4
+json-repair==0.64.2
 
 # Diarization-boundary benchmark (issue #193): cpWER metric. Lazily imported by
 # app.utils.diarization_metrics.cpwer + backend/scripts/benchmark_boundary.py — only
@@ -346,7 +346,7 @@ en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_
 # huggingface_hub, sentencepiece, tqdm) are all already pinned elsewhere in this file.
 # detoxify = toxicity classification (segment-level). transformers (above) backs
 # the Tiny-Toxic-Detector / multilingual-toxic-xlm-roberta models.
-detoxify==0.5.2
+detoxify==0.5.4
 
 # =============================================================================
 # Watch Sources (auto-import from local folder / S3 / SMB) — issue #26
@@ -390,10 +390,10 @@ botocore==1.43.94          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (im
 # step and went with it. With nothing pinning them they resolved freely on the
 # next rebuild and immediately drifted venv vs image. Pinned at the versions the
 # rebuilt IMAGE resolved -- forward only, never back to docling's older set.
-cloudpathlib==0.25.0       # via weasel — drifted 0.24.0 (venv) vs 0.25.0 (image), 2026-08-23
+cloudpathlib==0.26.0       # via weasel — drifted 0.24.0 (venv) vs 0.25.0 (image), 2026-08-23
 cython==3.3.0              # via meeteval — drifted 3.2.9 (venv) vs 3.3.0 (image), 2026-08-23
 lxml==6.1.3                # via python3-saml, xmlsec — drifted 6.1.1 (venv) vs 6.1.2 (image), 2026-08-23
-typer==0.27.2              # via spacy, weasel — drifted 0.26.8 (venv) vs 0.27.1 (image), 2026-08-23
+typer==0.27.3              # via spacy, weasel — drifted 0.26.8 (venv) vs 0.27.1 (image), 2026-08-23
 httpcore2==2.13.0          # via httpx2
 httpx2==2.13.0             # via openai
 google-api-core==2.37.0    # via google-cloud-speech — drifted 2.34.0 (venv) vs 2.35.0 (image), 2026-08-25
@@ -401,21 +401,21 @@ google-auth==2.58.0        # via google-api-core, google-cloud-speech — drifte
 spacy==3.8.16              # via presidio_analyzer — drifted 3.8.15 (venv) vs 3.8.16 (image), 2026-08-25
 googleapis-common-protos==1.75.3  # via google-api-core — drifted 1.75.1 (venv) vs 1.75.2 (image), 2026-08-26
 proto-plus==1.28.4         # via google-cloud-speech — drifted 1.28.3 (venv) vs 1.28.4 (image), 2026-08-26
-mmh3==5.3.0                # via imohash — drifted 5.2.1 (venv) vs 5.3.0 (image), 2026-08-26
-pyspnego==0.12.2           # via smbprotocol — drifted 0.12.1 (venv) vs 0.12.2 (image), 2026-08-26
-idna==3.19                 # via requests, httpx, anyio, yarl, tldextract
+mmh3==5.3.1                # via imohash — drifted 5.2.1 (venv) vs 5.3.0 (image), 2026-08-26
+pyspnego==0.12.4           # via smbprotocol — drifted 0.12.1 (venv) vs 0.12.2 (image), 2026-08-26
+idna==3.20                 # via requests, httpx, anyio, yarl, tldextract
 argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.1.0 (image), 2026-08-21
 protobuf==7.36.1           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21
-narwhals==2.26.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
+narwhals==2.27.1           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
 scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21
 click==8.5.0                # via uvicorn/celery — drifted 8.4.2 (venv) vs 8.5.0 (image), 2026-08-27
 grpcio==1.84.0             # via google-cloud-speech, opensearch-protobufs, opentelemetry-exporter-otlp-proto-grpc — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
 grpcio-status==1.84.0      # via google-api-core[grpc] — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
 kiwisolver==1.5.1          # via matplotlib — drifted 1.5.0 (venv) vs 1.5.1 (image), 2026-08-31
-phonenumbers==9.0.39       # via presidio-analyzer — drifted 9.0.37 (venv) vs 9.0.38 (image), 2026-08-31
-regex==2026.9.10           # via nltk, presidio-analyzer, transformers — drifted 2026.7.19 (venv) vs 2026.8.31 (image), 2026-08-31
-wcwidth==0.8.3             # via prompt-toolkit — drifted 0.8.2 (venv) vs 0.8.3 (image), 2026-08-31
-wrapt==2.4.1               # via Deprecated, smart-open — drifted 2.3.0 (venv) vs 2.4.0 (image), 2026-08-31
+phonenumbers==9.0.41       # via presidio-analyzer — drifted 9.0.37 (venv) vs 9.0.38 (image), 2026-08-31
+regex==2026.9.29           # via nltk, presidio-analyzer, transformers — drifted 2026.7.19 (venv) vs 2026.8.31 (image), 2026-08-31
+wcwidth==0.9.3             # via prompt-toolkit — drifted 0.8.2 (venv) vs 0.8.3 (image), 2026-08-31
+wrapt==2.5.1               # via Deprecated, smart-open — drifted 2.3.0 (venv) vs 2.4.0 (image), 2026-08-31
 # joblib 1.6.0 added cloudpickle as a hard dependency; 1.5.3 had none. So this pair
 # drifted in BOTH ways at once — a version mismatch on joblib, and a package the image
 # had that the venv had never heard of. cloudpickle is pinned in its own right rather

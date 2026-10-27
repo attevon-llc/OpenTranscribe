@@ -38,8 +38,10 @@ from .endpoints import media_mirror_settings
 from .endpoints import org_admin
 from .endpoints import org_admin_audit
 from .endpoints import org_admin_holds
+from .endpoints import org_admin_policy
 from .endpoints import org_admin_takedown
 from .endpoints import pipeline_settings
+from .endpoints import privacy
 from .endpoints import prompts
 from .endpoints import redaction_settings
 from .endpoints import search
@@ -220,6 +222,17 @@ include_router_with_consistency(
     platform_admin_bypass=False,
     refuse_under_grant=True,
 )
+# An organization's privacy policy and redaction floor (issues #1280, #1279): own capability
+# (``org.defaults``), no platform-admin bypass, refused under a support grant. The organization is
+# always the caller's own (``ctx.org_id``); there is no organization parameter.
+include_router_with_consistency(
+    org_admin_policy.router,
+    prefix="/org-admin/policy",
+    tags=["org-admin"],
+    capability="org.defaults",
+    platform_admin_bypass=False,
+    refuse_under_grant=True,
+)
 include_router_with_consistency(
     support_access.org_router,
     prefix="/org-admin/support-access",
@@ -321,6 +334,14 @@ include_router_with_consistency(
     prefix="/admin/audit/content-access",
     tags=["admin"],
     capability="audit.logs",
+)
+# Voiceprint and inferred-gender controls (issue #1280). The user surface reads the policy that
+# applies to a file (allowed under a support grant, which diagnoses speaker screens) and refuses
+# a grant on the routes that change or delete anything, per route. The instance layer is
+# super_admin and, being under /admin, refuses a grant by prefix.
+include_router_with_consistency(privacy.user_router, prefix="/privacy", tags=["privacy"])
+include_router_with_consistency(
+    privacy.admin_router, prefix="/admin/privacy-policy", tags=["admin"]
 )
 include_router_with_consistency(
     admin_hf_token.router,

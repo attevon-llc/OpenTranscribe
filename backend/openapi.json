@@ -230,6 +230,43 @@
         "title": "AdminPasswordResetRequest",
         "type": "object"
       },
+      "AdminPurgeRequest": {
+        "description": "``POST /admin/privacy-policy/purge``.\n\n``personal`` deletes the personal-workspace data of every user; ``all`` deletes\neverything, tenants included, and is refused (403) in a multi-tenant deployment.",
+        "properties": {
+          "confirm": {
+            "const": "PURGE",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "personal",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "enum": [
+                "voiceprints",
+                "inferred_gender"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets",
+          "confirm",
+          "scope"
+        ],
+        "title": "AdminPurgeRequest",
+        "type": "object"
+      },
       "Analytics": {
         "description": "Analytics with UUID as public identifier",
         "properties": {
@@ -5563,6 +5600,36 @@
         "title": "DownloadSystemDefaults",
         "type": "object"
       },
+      "EffectivePrivacy": {
+        "description": "``GET /privacy/effective``: the policy as it applies to one file or to the caller.",
+        "properties": {
+          "gender_inference": {
+            "$ref": "#/components/schemas/PrivacyDecision"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tenant the answer is for; None for personal scope.",
+            "title": "Organization Uuid"
+          },
+          "voiceprint_matching": {
+            "$ref": "#/components/schemas/PrivacyDecision"
+          }
+        },
+        "required": [
+          "voiceprint_matching",
+          "gender_inference"
+        ],
+        "title": "EffectivePrivacy",
+        "type": "object"
+      },
       "EmailConfigCreate": {
         "description": "Create an email notification config (secrets plaintext on write).",
         "properties": {
@@ -7654,6 +7721,54 @@
           }
         },
         "title": "HoldSummary",
+        "type": "object"
+      },
+      "InstancePrivacyPolicy": {
+        "description": "The instance layer: ``SystemSettings`` ``privacy.*``. Both default on.",
+        "properties": {
+          "gender_inference_enabled": {
+            "title": "Gender Inference Enabled",
+            "type": "boolean"
+          },
+          "voiceprint_matching_enabled": {
+            "title": "Voiceprint Matching Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "voiceprint_matching_enabled",
+          "gender_inference_enabled"
+        ],
+        "title": "InstancePrivacyPolicy",
+        "type": "object"
+      },
+      "InstancePrivacyPolicyUpdate": {
+        "description": "``PUT /admin/privacy-policy``: partial. At least one field must be given.",
+        "properties": {
+          "gender_inference_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Inference Enabled"
+          },
+          "voiceprint_matching_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voiceprint Matching Enabled"
+          }
+        },
+        "title": "InstancePrivacyPolicyUpdate",
         "type": "object"
       },
       "InterruptionStats": {
@@ -11766,6 +11881,117 @@
         "title": "OpenSearchSnapshotStatus",
         "type": "object"
       },
+      "OrgEffectivePrivacy": {
+        "description": "The organization-scope answer: platform, instance and organization layers, no user.",
+        "properties": {
+          "gender_inference": {
+            "$ref": "#/components/schemas/PrivacyDecision"
+          },
+          "voiceprint_matching": {
+            "$ref": "#/components/schemas/PrivacyDecision"
+          }
+        },
+        "required": [
+          "voiceprint_matching",
+          "gender_inference"
+        ],
+        "title": "OrgEffectivePrivacy",
+        "type": "object"
+      },
+      "OrgPolicy": {
+        "description": "``GET|PATCH /org-admin/policy``: the caller's own organization, never another.",
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/OrgEffectivePrivacy",
+            "description": "What applies to the organization once the layers above it are counted. locked_by names the platform or instance layer when that is what is off."
+          },
+          "gender_inference_enabled": {
+            "description": "The organization's own switch.",
+            "title": "Gender Inference Enabled",
+            "type": "boolean"
+          },
+          "instance": {
+            "$ref": "#/components/schemas/InstancePrivacyPolicy",
+            "description": "The deployment's switches. A switch the operator turned off cannot be turned on here."
+          },
+          "redaction_floor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedactionFloorOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when the redaction.policy capability is off for this request."
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until an administrator has saved a policy.",
+            "title": "Updated At"
+          },
+          "voiceprint_matching_enabled": {
+            "description": "The organization's own switch.",
+            "title": "Voiceprint Matching Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "voiceprint_matching_enabled",
+          "gender_inference_enabled",
+          "instance",
+          "effective"
+        ],
+        "title": "OrgPolicy",
+        "type": "object"
+      },
+      "OrgPolicyUpdate": {
+        "description": "``PATCH /org-admin/policy``: partial. At least one field must be given.\n\n``redaction_floor`` answers 404 while the ``redaction.policy`` capability is off.",
+        "properties": {
+          "gender_inference_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender Inference Enabled"
+          },
+          "redaction_floor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedactionFloorIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voiceprint_matching_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voiceprint Matching Enabled"
+          }
+        },
+        "title": "OrgPolicyUpdate",
+        "type": "object"
+      },
       "OrgQuarantineRequest": {
         "description": "Take one of the caller's organization's files down.\n\nThere is deliberately no ``legal_hold`` field: whether an organization takedown\nalso places a legal hold is an open authorization decision (a hold blocks the\nowner's account deletion), so the organization route never places one.",
         "properties": {
@@ -13024,6 +13250,39 @@
         "title": "PrepareUploadRequest",
         "type": "object"
       },
+      "PrivacyDecision": {
+        "description": "Whether one feature is allowed for a scope, and the highest layer that forbade it.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "locked_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "platform",
+                  "instance",
+                  "organization",
+                  "user",
+                  "consent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None exactly when enabled is true.",
+            "title": "Locked By"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "PrivacyDecision",
+        "type": "object"
+      },
       "ProcessingStepOut": {
         "description": "One step of how a file was processed, ready to render.",
         "properties": {
@@ -13604,6 +13863,89 @@
           }
         },
         "title": "ProviderPolicyUpdate",
+        "type": "object"
+      },
+      "PurgeAccepted": {
+        "description": "202 body of every purge endpoint. Poll ``GET /privacy/purge/{task_id}``.",
+        "properties": {
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "PurgeAccepted",
+        "type": "object"
+      },
+      "PurgeRequest": {
+        "description": "Delete what a switch only hides. Irreversible.\n\n``confirm`` must be the literal ``PURGE``: the UI makes the person type it, and the API\nrefuses anything else (422), so a stray request cannot destroy data.",
+        "properties": {
+          "confirm": {
+            "const": "PURGE",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "enum": [
+                "voiceprints",
+                "inferred_gender"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets",
+          "confirm"
+        ],
+        "title": "PurgeRequest",
+        "type": "object"
+      },
+      "PurgeStatus": {
+        "description": "``GET /privacy/purge/{task_id}``: readable only by the person who started the purge.",
+        "properties": {
+          "counts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was deleted, once the purge has finished. Counts only, never a name. A purge runs twice (the second pass about a minute later, to catch a write that raced the switch), so status stays in_progress until the second pass ends.",
+            "title": "Counts"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "PurgeStatus",
         "type": "object"
       },
       "PyannoteConnectionTestRequest": {
@@ -14202,6 +14544,141 @@
           "status"
         ],
         "title": "RecoveryCompanionResult",
+        "type": "object"
+      },
+      "RedactionFloorIn": {
+        "description": "A partial change to the organization's floor: only the fields sent are changed.\n\n``force_toxicity_threshold`` is the one nullable field; an explicit ``null`` clears it.\nEvery other field rejects ``null``. Values are validated against the same vocabularies the\ninstance floor uses, and ``forced_custom_words`` is capped (200 words of up to 100\ncharacters). A word is never copied into an audit event.",
+        "properties": {
+          "force_export_redacted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Force Export Redacted"
+          },
+          "force_redact_before_llm": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Force Redact Before Llm"
+          },
+          "force_toxicity_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Force Toxicity Threshold"
+          },
+          "forced_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forced Categories"
+          },
+          "forced_custom_words": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forced Custom Words"
+          },
+          "forced_pii_entities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forced Pii Entities"
+          }
+        },
+        "title": "RedactionFloorIn",
+        "type": "object"
+      },
+      "RedactionFloorOut": {
+        "description": "An organization's redaction floor. It can only ADD to the instance floor.",
+        "properties": {
+          "force_export_redacted": {
+            "default": false,
+            "title": "Force Export Redacted",
+            "type": "boolean"
+          },
+          "force_redact_before_llm": {
+            "default": false,
+            "title": "Force Redact Before Llm",
+            "type": "boolean"
+          },
+          "force_toxicity_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Force Toxicity Threshold"
+          },
+          "forced_categories": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forced Categories",
+            "type": "array"
+          },
+          "forced_custom_words": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forced Custom Words",
+            "type": "array"
+          },
+          "forced_pii_entities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forced Pii Entities",
+            "type": "array"
+          }
+        },
+        "title": "RedactionFloorOut",
         "type": "object"
       },
       "RedactionPolicy": {
@@ -21280,6 +21757,52 @@
         "title": "UserMediaSourcesList",
         "type": "object"
       },
+      "UserPrivacyPolicy": {
+        "description": "``GET|PUT /privacy/me``: the caller's own voiceprint switch.",
+        "properties": {
+          "locked_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "platform",
+                  "instance",
+                  "organization"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The layer above the caller that has voiceprint matching off for the active scope, if any. While set the switch cannot be changed (PUT answers 409 policy_locked).",
+            "title": "Locked By"
+          },
+          "voiceprint_matching_enabled": {
+            "description": "The caller's own choice (default true), independent of the layers above.",
+            "title": "Voiceprint Matching Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "voiceprint_matching_enabled"
+        ],
+        "title": "UserPrivacyPolicy",
+        "type": "object"
+      },
+      "UserPrivacyPolicyUpdate": {
+        "description": "``PUT /privacy/me``.",
+        "properties": {
+          "voiceprint_matching_enabled": {
+            "title": "Voiceprint Matching Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "voiceprint_matching_enabled"
+        ],
+        "title": "UserPrivacyPolicyUpdate",
+        "type": "object"
+      },
       "UserRef": {
         "description": "A user as shown in a grant. The whole object is ``null`` once the account is gone.",
         "properties": {
@@ -26139,6 +26662,131 @@
           }
         ],
         "summary": "Start Media Duration Backfill",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/privacy-policy": {
+      "get": {
+        "description": "The instance layer of the privacy policy (super_admin).",
+        "operationId": "get_instance_privacy_policy_api_admin_privacy_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstancePrivacyPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Instance Privacy Policy",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Partial update of the instance layer (super_admin). Audited as admin.settings.change.",
+        "operationId": "put_instance_privacy_policy_api_admin_privacy_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstancePrivacyPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstancePrivacyPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put Instance Privacy Policy",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/privacy-policy/purge": {
+      "post": {
+        "description": "Irreversibly delete voiceprints and/or inferred gender instance-wide (super_admin).",
+        "operationId": "purge_instance_data_api_admin_privacy_policy_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "purge_scope_not_allowed: scope 'all' in a multi-tenant deployment."
+          },
+          "409": {
+            "description": "policy_still_enabled: a target is still switched on."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Purge Instance Data",
         "tags": [
           "admin"
         ]
@@ -40177,6 +40825,131 @@
         ]
       }
     },
+    "/api/org-admin/policy": {
+      "get": {
+        "description": "The caller's organization policy. ``redaction_floor`` is null while ``redaction.policy`` is off.",
+        "operationId": "get_org_policy_api_org_admin_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Org Policy",
+        "tags": [
+          "org-admin"
+        ]
+      },
+      "patch": {
+        "description": "Partially update the caller's organization policy. Audited as org.policy.change (field names only).",
+        "operationId": "patch_org_policy_api_org_admin_policy_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "redaction_floor sent while redaction.policy is off."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Patch Org Policy",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/policy/purge": {
+      "post": {
+        "description": "Irreversibly delete the organization's voiceprints and/or inferred gender, all members' included.",
+        "operationId": "purge_org_data_api_org_admin_policy_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "policy_still_enabled: a target is still switched on."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Purge Org Data",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
     "/api/org-admin/support-access": {
       "get": {
         "operationId": "list_org_grants_api_org_admin_support_access_get",
@@ -40457,6 +41230,237 @@
         "summary": "List Org Grant Uses",
         "tags": [
           "support-access"
+        ]
+      }
+    },
+    "/api/privacy/effective": {
+      "get": {
+        "description": "The policy as it applies to one file, or to the caller in the active organization.",
+        "operationId": "get_effective_privacy_api_privacy_effective_get",
+        "parameters": [
+          {
+            "description": "A file the caller can see: the answer is for that file's owner and organization. Another user's file, or a missing one, is a 404 exactly like the file page.",
+            "in": "query",
+            "name": "file_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A file the caller can see: the answer is for that file's owner and organization. Another user's file, or a missing one, is a 404 exactly like the file page.",
+              "title": "File Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectivePrivacy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Effective Privacy",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/api/privacy/me": {
+      "get": {
+        "description": "The caller's own voiceprint switch and whether a layer above it has locked it.",
+        "operationId": "get_my_privacy_api_privacy_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPrivacyPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get My Privacy",
+        "tags": [
+          "privacy"
+        ]
+      },
+      "put": {
+        "description": "Set the caller's own voiceprint switch. 409 ``policy_locked`` while a higher layer is off.",
+        "operationId": "put_my_privacy_api_privacy_me_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPrivacyPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPrivacyPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "policy_locked: a layer above the user has it off."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put My Privacy",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/api/privacy/me/purge": {
+      "post": {
+        "description": "Irreversibly delete the caller's own voiceprints and/or inferred gender in the active scope.",
+        "operationId": "purge_my_data_api_privacy_me_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "policy_still_enabled: a target is still switched on."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Purge My Data",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/api/privacy/purge/{task_id}": {
+      "get": {
+        "description": "Status of a purge the caller started. Anyone else's, or an unknown id, is a 404.",
+        "operationId": "get_purge_status_api_privacy_purge__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Purge Status",
+        "tags": [
+          "privacy"
         ]
       }
     },

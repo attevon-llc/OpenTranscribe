@@ -354,3 +354,24 @@ def test_a_failing_audit_lookup_leaves_the_session_usable_and_keeps_staged_work(
     assert db_session.execute(text("SELECT 1")).scalar() == 1
     staged = db_session.execute(select(User.full_name).where(User.id == normal_user.id)).scalar()
     assert staged == "staged before the audit"
+
+
+def test_a_failed_audit_is_reported_at_error_level_and_never_raises(monkeypatch, caplog):
+    """The edit has committed, so the audit cannot refuse it; the loss must not be silent."""
+    file = _file()
+
+    def _broken(db, ids):
+        raise RuntimeError("audit store unavailable")
+
+    monkeypatch.setattr(content_hold_service, "hold_states", _broken)
+
+    with caplog.at_level("WARNING", logger=content_hold_service.logger.name):
+        written = record_edit_on_held_file(
+            MagicMock(), None, _actor(), file, kind="segment_edit", segment_uuid="seg-1"
+        )
+
+    assert written is False
+    [record] = [r for r in caplog.records if r.name == content_hold_service.logger.name]
+    assert record.levelname == "ERROR"
+    assert str(file.uuid) in record.getMessage()
+    assert SECRET_TITLE not in record.getMessage()

@@ -261,8 +261,11 @@ def record_edit_on_held_file(
     A hold blocks destruction, not correction, so the edit goes ahead; what the hold changes
     is that the edit is now on the record. Call it AFTER the edit committed, so the event never
     describes a change that rolled back. A file nobody holds writes nothing (the ordinary edit
-    is not a governance event), and the event is always recorded, not opt-in: held files are few
-    and this is the trail the hold exists to keep.
+    is not a governance event), and the event is not opt-in: held files are few and this is the
+    trail the hold exists to keep. It is best-effort by construction, though: the edit has
+    already committed when this runs, so a failed audit write cannot undo or refuse it. A
+    failure is logged at ERROR with the file's uuid (never its content), so a missing event is
+    visible to an operator instead of silent.
 
     Its own reads run in a SAVEPOINT: a database error here must not leave the caller's
     transaction aborted for the writes that follow the call.
@@ -304,8 +307,12 @@ def record_edit_on_held_file(
                 dedup=False,
                 bypass=bypass,
             )
-    except Exception:  # noqa: BLE001 - an audit failure must not fail the edit
-        logger.warning("held-file edit audit failed (edit unaffected)", exc_info=True)
+    except Exception:  # noqa: BLE001 - the edit is already committed; it cannot be un-made here
+        logger.error(
+            "held-file edit audit could NOT be recorded for file %s (the edit was committed)",
+            file.uuid,
+            exc_info=True,
+        )
         return False
 
 

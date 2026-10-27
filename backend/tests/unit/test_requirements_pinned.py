@@ -297,3 +297,72 @@ def test_ci_and_prod_do_not_pin_different_upstream_versions() -> None:
         "requirements-ci.txt pins a different upstream version from requirements.txt, "
         f"so CI validates a different program from the one that ships: {conflicts}"
     )
+
+
+#: Packages whose version CI and the lite image must take from requirements.txt verbatim.
+#: Each is either a direct dependency of the app or a transitive one that has already
+#: moved under us (starlette 1.9.0 in the image against 1.10.0 in a fresh lite/CI resolve).
+#: Every one is present and exactly pinned in all three files, so a bump in one file that
+#: skips the others fails here without needing the network. The resolved-set version of
+#: this check (every shared package, not just these) is scripts/check-requirements-resolve.py.
+MUST_MATCH_ACROSS_FILES = (
+    "starlette",
+    "anyio",
+    "regex",
+    "fsspec",
+    "filelock",
+    "protobuf",
+    "pydantic",
+    "fastapi",
+    "typer",
+    "huggingface-hub",
+    "transformers",
+    "tokenizers",
+)
+
+
+@pytest.mark.parametrize("package", MUST_MATCH_ACROSS_FILES)
+def test_shared_packages_cannot_drift_across_prod_lite_and_ci(package: str) -> None:
+    """The lite image and CI must run the version the prod image ships.
+
+    ``requirements-lite.txt`` and ``requirements-ci.txt`` did not pin starlette, anyio,
+    regex, fsspec, filelock or protobuf, so a fresh resolve gave lite and CI starlette
+    1.10.0 while ``requirements.txt`` (the prod image) held 1.9.0 -- CI validated a
+    different program from the one that ships. The existing CI-vs-prod test only compares
+    packages BOTH files pin, so an absent pin was invisible to it.
+    """
+    versions = {}
+    for name in ("requirements.txt", "requirements-lite.txt", "requirements-ci.txt"):
+        spec = _requirement_names(name).get(_normalise(package))
+        assert spec and "==" in spec, f"{name} does not exactly pin {package}: {spec!r}"
+        versions[name] = spec.split("==", 1)[1].split(";")[0].strip().split("+", 1)[0]
+    assert len(set(versions.values())) == 1, (
+        f"{package} differs between requirements files: {versions}. Change it in "
+        "requirements.txt first, then copy the same version to the other two."
+    )
+
+
+#: huggingface-hub release -> exclusive upper bound it declares on typer (its METADATA's
+#: ``Requires-Dist: typer<X``). Add a row when hub is bumped; the row is the evidence.
+HUB_TYPER_CAP = {"1.17.0": (0, 26)}
+
+
+def test_typer_stays_within_what_huggingface_hub_allows() -> None:
+    """A typer pin outside huggingface-hub's range makes requirements.txt uninstallable.
+
+    Dependabot raised typer to 0.27.x while huggingface-hub 1.17.0 declares
+    ``typer<0.26.0,>=0.20.0``; nothing resolved the file in CI, so
+    ``pip install -r requirements.txt`` failed with ResolutionImpossible undetected.
+    """
+    names = _requirement_names("requirements.txt")
+    hub = names["huggingface-hub"].split("==", 1)[1].split(";")[0].strip()
+    typer = names["typer"].split("==", 1)[1].split(";")[0].strip()
+    assert hub in HUB_TYPER_CAP, (
+        f"huggingface-hub=={hub} has no row in HUB_TYPER_CAP; read its typer bound from the "
+        "wheel METADATA (Requires-Dist) and add it"
+    )
+    major, minor = (int(part) for part in typer.split(".")[:2])
+    assert (major, minor) < HUB_TYPER_CAP[hub], (
+        f"typer=={typer} conflicts with huggingface-hub=={hub} (typer must stay below "
+        f"{'.'.join(map(str, HUB_TYPER_CAP[hub]))})"
+    )

@@ -185,3 +185,30 @@ openai==3.14.0
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)
 json-repair==0.64.2
+
+# Transitive packages pinned to EXACTLY what requirements.txt pins. This file did not pin them,
+# so `pip install -r requirements-lite.txt` resolved the newest release of each (starlette 1.10.0 against the
+# image's 1.9.0; protobuf, grpcio, multidict 7.x ...) and the lite image tested a different program from the
+# one the prod image ships. Versions-move-forward: change them in requirements.txt FIRST and copy
+# here. tests/unit/test_requirements_pinned.py and scripts/check-requirements-resolve.py both
+# fail on drift. typer is capped below 0.26 by huggingface-hub 1.17 (see requirements.txt).
+starlette==1.9.0
+anyio==4.15.1
+regex==2026.9.29
+fsspec==2026.9.0
+filelock==4.2.4
+protobuf==7.36.1
+typer==0.25.1
+botocore==1.43.94
+google-api-core==2.37.0
+google-auth==2.58.0
+googleapis-common-protos==1.75.3
+grpcio==1.84.0
+grpcio-status==1.84.0
+httpcore2==2.13.0
+httpx2==2.13.0
+multidict==6.9.1
+proto-plus==1.28.4
+wcwidth==0.9.3
+# Tracks torch (see requirements.txt); +cpu for the same reason torch is pinned +cpu above.
+torchcodec==0.11.1+cpu

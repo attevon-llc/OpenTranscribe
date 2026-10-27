@@ -496,7 +496,11 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   scans Postgres/OpenSearch/MinIO/Redis GENERICALLY (`deletion_residue.py`: the FK closure
   from `pg_constraint`, every non-system index, every bucket). Before each delete it asserts
   every scan FIRES and every table depending on `media_file` was populated — a new table the
-  seed does not fill fails the test by name. Two transports: `inprocess` (this checkout's app)
+  seed does not fill fails the test by name (`content_hold_file`, `takedown_notice_file` and both
+  `speaker_correction_carryover` targets are seeded, issue #1306; the hold is a RELEASED one in
+  a throwaway organization, because an active hold refuses the delete). A child with a
+  composite key never enters the closure, so the scan counts its survivors by foreign key
+  instead; before that it was blind to `content_hold_file`. Two transports: `inprocess` (this checkout's app)
   and `live` (`DELETION_RESIDUE_BACKEND_URL`, else `E2E_BACKEND_URL`, else :5174 — it must
   share the Postgres named by `POSTGRES_PORT`, and refuses a mixed stack). The GDPR legs leave
   id-only `erasure_ledger` rows behind by design (the ledger outlives what it records).

@@ -105,6 +105,7 @@ Custom AI prompts can be shared between users:
 - Shared prompts appear for the other users under **Shared by Others**, and in the prompt selection dropdown alongside their own prompts
 - Sharing is managed from Settings → AI Summarization Prompts
 - Useful for standardizing summarization output across a team without each member creating identical prompts
+- The owner turns sharing on or off for their own prompt. In an organization, an organization admin can do it for a member's prompt; being a platform administrator is not enough. A personal workspace belongs to its owner alone, and a prompt in another organization or workspace is not reachable and answers "not found". A deployment without organizations keeps administrator access to every user's prompts.
 
 ### Speaker Identification
 

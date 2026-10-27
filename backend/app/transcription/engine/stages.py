@@ -666,8 +666,11 @@ class _GpuStage:
         if native_embeddings and config is not None and config.boundary_acoustic_recheck_enabled:
             from app.transcription.boundary_resolver import recheck_segment_words
 
-            recheck_diarizer = manager.get_diarizer(tc)
             try:
+                # Inside the guard: in strict mode (engine.diarizer_require_sidecar) a sidecar
+                # that dropped after diarization finished makes this raise, and a re-check that
+                # cannot run must cost the job nothing but the re-check.
+                recheck_diarizer = manager.get_diarizer(tc)
                 recheck_segment_words(
                     result.get("segments", []),
                     native_embeddings,

@@ -7,9 +7,21 @@ database read, an HTTP call) then stalls every other request served by the proce
 including health checks — for as long as it blocks, multiplied by the number of concurrent
 prepares, because the loop serialises them.
 
-This drives 100 concurrent prepares through the real ASGI app with a resolver that blocks
-for 200 ms, while a heartbeat coroutine measures the longest gap between its own wake-ups.
-Inline, the loop would be held for up to 100 x 200 ms; in the threadpool it never is.
+Two tests, because they answer different questions and need different load:
+
+* ``test_slow_resolver_does_not_stall_the_event_loop`` asks whether the loop stays free. The
+  resolver must never run on the loop thread (checked by thread identity, which does not depend
+  on how fast the machine is) and the resolver calls must overlap in worker threads. A heartbeat
+  coroutine then bounds the longest gap between its own wake-ups. Inline, 20 prepares hold the
+  loop for 20 x 200 ms in one run (measured 1.8-3.4 s longest gap on 2 CPUs); in the threadpool
+  the longest gap measured 0.04-0.14 s, including with coverage tracing and two busy-loop
+  processes on the same two CPUs.
+* ``test_a_burst_over_the_pool_capacity_completes_without_a_pool_deadlock`` asks whether a
+  burst of 100 requests finishes. It carries no timing assertion. It used to share the
+  heartbeat's 1 s bound, and 100 simultaneously runnable worker threads on a 2-CPU runner
+  starve the loop thread for 1.0-1.7 s with the resolver doing nothing wrong (#1305): that is
+  CPU and GIL scheduling, and it scales with the thread count, not with the resolver.
+
 Every request uses a real pooled session, so a connection-pool timeout would surface as a 500
 here. That half depends on the threadpool being sized against the DB pool
 (``app/core/threadpool.py``): a request holds its connection from authentication on, so with
@@ -18,17 +30,20 @@ the pool timeout — ``C`` holding a connection while waiting for a thread, ``T`
 thread while waiting for a connection. (Measured with the default 20 + 40 pool and
 Starlette's 40 threads: 100 concurrent prepares hit ``QueuePool limit ... timed out``.)
 
-The test runs on its own engine of ``C = 20`` connections rather than the app's 60, so it
-stays well inside the test database's connection limit while the rest of the suite runs in
-parallel, and sizes ``T`` through ``API_THREADPOOL_SIZE`` to keep 100 requests under
-``C + T``.
+The tests run on their own engine of ``C = 20`` connections rather than the app's 60, so they
+stay well inside the test database's connection limit while the rest of the suite runs in
+parallel, and size ``T`` through ``API_THREADPOOL_SIZE``: 100 for the burst (``C + T`` = 120 >
+100 requests), 40 for the loop test.
 """
 
 from __future__ import annotations
 
 import ast
 import asyncio
+import threading
 import time
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 
 import httpx
@@ -50,12 +65,16 @@ from app.models.user import User
 from tests.conftest import TestingSessionLocal
 from tests.user_owned_rows import make_user
 
-CONCURRENT_PREPARES = 100
+BURST_PREPARES = 100
+BURST_THREADS = 100  # C + T = 120 > BURST_PREPARES
+LOOP_PREPARES = 20
+LOOP_THREADS = 40
 RESOLVER_BLOCK_S = 0.2
+# Between the measured worst case with the resolver in the threadpool (0.14 s) and the
+# shortest longest-gap measured with it inline (1.8 s), see the module docstring.
 MAX_LOOP_STALL_S = 1.0
 HEARTBEAT_INTERVAL_S = 0.01
 POOL_SIZE, POOL_OVERFLOW = 5, 15  # C = 20
-THREADS = 100  # C + T = 120 > CONCURRENT_PREPARES
 
 
 @pytest.fixture
@@ -72,13 +91,36 @@ def prepare_user():
     s.close()
 
 
+@dataclass
+class ResolverCalls:
+    """What the blocking resolver observed: where it ran and how many ran at once."""
+
+    threads: list[int] = field(default_factory=list)
+    running: int = 0
+    peak_running: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def enter(self) -> None:
+        with self._lock:
+            self.threads.append(threading.get_ident())
+            self.running += 1
+            self.peak_running = max(self.peak_running, self.running)
+
+    def leave(self) -> None:
+        with self._lock:
+            self.running -= 1
+
+
 @pytest.fixture
 def slow_resolver():
-    calls: list[float] = []
+    calls = ResolverCalls()
 
     def _blocking_resolver(_org_id):
-        calls.append(time.monotonic())
-        time.sleep(RESOLVER_BLOCK_S)  # stands in for a blocking DB/HTTP read
+        calls.enter()
+        try:
+            time.sleep(RESOLVER_BLOCK_S)  # stands in for a blocking DB/HTTP read
+        finally:
+            calls.leave()
         return None
 
     tenant_limits.set_upload_limits_resolver(_blocking_resolver)
@@ -98,7 +140,7 @@ def real_pool_app(prepare_user, monkeypatch):
     session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     monkeypatch.setattr(settings, "DB_POOL_SIZE", POOL_SIZE)
     monkeypatch.setattr(settings, "DB_MAX_OVERFLOW", POOL_OVERFLOW)
-    monkeypatch.setattr(settings, "API_THREADPOOL_SIZE", THREADS)
+    monkeypatch.setattr(settings, "API_THREADPOOL_SIZE", BURST_THREADS)
 
     def _db():
         db = session_factory()
@@ -130,17 +172,10 @@ async def _heartbeat(stop: asyncio.Event, gaps: list[float]) -> None:
         last = now
 
 
-@pytest.mark.asyncio
-async def test_slow_resolver_does_not_stall_the_event_loop(real_pool_app, slow_resolver):
-    # What the lifespan does (ASGITransport does not run it).
-    assert configure_api_threadpool() == THREADS
-    transport = httpx.ASGITransport(app=real_pool_app)
-    stop = asyncio.Event()
-    gaps: list[float] = []
-
+async def _prepare_concurrently(app, count: int) -> list[httpx.Response]:
+    transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        beat = asyncio.create_task(_heartbeat(stop, gaps))
-        responses = await asyncio.gather(
+        return await asyncio.gather(
             *[
                 client.post(
                     "/api/files/prepare",
@@ -150,17 +185,51 @@ async def test_slow_resolver_does_not_stall_the_event_loop(real_pool_app, slow_r
                         "content_type": "audio/wav",
                     },
                 )
-                for i in range(CONCURRENT_PREPARES)
+                for i in range(count)
             ]
         )
-        stop.set()
-        await beat
 
+
+def _assert_all_prepared(responses: list[httpx.Response], count: int) -> None:
     statuses = [r.status_code for r in responses]
     failures = [r.text for r in responses if r.status_code != 200][:3]
-    assert statuses == [200] * CONCURRENT_PREPARES, failures
-    assert len(slow_resolver) == CONCURRENT_PREPARES  # the resolver really ran for every request
+    assert statuses == [200] * count, failures
+
+
+@pytest.mark.asyncio
+async def test_slow_resolver_does_not_stall_the_event_loop(
+    real_pool_app, slow_resolver, monkeypatch
+):
+    monkeypatch.setattr(settings, "API_THREADPOOL_SIZE", LOOP_THREADS)
+    # What the lifespan does (ASGITransport does not run it).
+    assert configure_api_threadpool() == LOOP_THREADS
+    loop_thread = threading.get_ident()
+    stop = asyncio.Event()
+    gaps: list[float] = []
+
+    beat = asyncio.create_task(_heartbeat(stop, gaps))
+    responses = await _prepare_concurrently(real_pool_app, LOOP_PREPARES)
+    stop.set()
+    await beat
+
+    _assert_all_prepared(responses, LOOP_PREPARES)
+    assert len(slow_resolver.threads) == LOOP_PREPARES  # the resolver really ran for every request
+    on_loop = [t for t in slow_resolver.threads if t == loop_thread]
+    assert on_loop == [], f"{len(on_loop)} resolver calls ran on the event loop thread"
+    assert slow_resolver.peak_running > 1, "the resolver calls were serialised, not run in threads"
     assert max(gaps) < MAX_LOOP_STALL_S, f"event loop stalled for {max(gaps):.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_a_burst_over_the_pool_capacity_completes_without_a_pool_deadlock(
+    real_pool_app, slow_resolver
+):
+    assert configure_api_threadpool() == BURST_THREADS
+
+    responses = await _prepare_concurrently(real_pool_app, BURST_PREPARES)
+
+    _assert_all_prepared(responses, BURST_PREPARES)
+    assert len(slow_resolver.threads) == BURST_PREPARES
 
 
 def _inline_calls_in_async_defs(module_path: Path, name: str) -> list[str]:

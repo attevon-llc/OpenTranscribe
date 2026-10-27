@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fixtures import platform_access_matrix as matrix
+from fixtures import platform_access_matrix_tables as tables
 
 BACKEND = Path(__file__).resolve().parents[2]
 REPO = BACKEND.parent
@@ -160,9 +162,54 @@ def test_grant_gated_platform_routes_take_the_request_bypass(derived):
 
     sources = matrix.handler_sources(app)
     gated = [r.key for r in derived if r.gate.endswith(":grant-gated")]
-    assert len(gated) >= 5
-    assert all("bypass" in sources[k] for k in gated), gated
+    assert set(gated) >= {
+        "GET /api/speakers/debug/cross-media-by-name",
+        "POST /api/tasks/system/fix-file/{file_uuid}",
+    }, gated
+    # in CODE: a docstring that says "bypasses the schedule" must not make a route grant-gated
+    assert all(matrix.uses_bypass(sources[k]) for k in gated), gated
     assert not any("is_admin" in sources[k] for k in gated), "a gated route reads the flag itself"
+
+
+def test_every_content_route_has_an_explicit_guard_that_its_code_bears_out(derived):
+    """``CONTENT_GUARDS`` is the claim; the handler's own code is the check on it."""
+    from app.main import app
+
+    sources = matrix.handler_sources(app)
+    content = {r.key for r in derived if r.kind == "route" and r.gate == "content"}
+    assert content, "no content routes found"
+    assert sorted(content - set(tables.CONTENT_GUARDS)) == [], "content routes without an entry"
+    assert sorted(set(tables.CONTENT_GUARDS) - content) == [], "entries for routes that are gone"
+    wrong = [
+        key
+        for key in content
+        if (tables.CONTENT_GUARDS[key] in {"bypass", "bypass-scope"})
+        != matrix.uses_bypass(sources[key])
+    ]
+    assert not wrong, f"CONTENT_GUARDS disagrees with the handler's code for: {sorted(wrong)}"
+
+
+def test_inline_role_routes_table_has_no_stale_entries(derived):
+    listed = {r.key for r in derived if r.gate.startswith("platform-op:inline:")}
+    assert listed == set(tables.INLINE_ROLE_ROUTES), sorted(listed ^ set(tables.INLINE_ROLE_ROUTES))
+
+
+def test_widener_tables_name_exactly_the_sites_the_scan_finds():
+    found = matrix.scan_tree()
+    scope = {key for form, key in found if form == "scope-widener"}
+    reveal = {key for form, key in found if form == "reveal-widener"}
+    assert scope, "the scan found no scope wideners"
+    assert reveal, "the scan found no reveal wideners"
+    assert scope == set(tables.SCOPE_WIDENER_SITES), sorted(scope ^ set(tables.SCOPE_WIDENER_SITES))
+    assert reveal == set(tables.REVEAL_WIDENER_SITES), sorted(
+        reveal ^ set(tables.REVEAL_WIDENER_SITES)
+    )
+    assert set(tables.TENANT_MARKERS) == set(tables.SCOPE_WIDENER_SITES)
+
+
+def test_every_scope_widener_still_applies_its_tenant_predicate():
+    """Dropping the tenant filter next to a widening must fail here, not only in the sweep."""
+    assert matrix.missing_tenant_markers() == []
 
 
 def test_every_test_cell_names_a_test_that_exists(derived):
@@ -183,6 +230,53 @@ def test_every_test_cell_names_a_test_that_exists(derived):
 # ---------------------------------------------------------------------------------------------
 
 
+def _synthetic_helper(user):
+    return user.is_admin
+
+
+def _add_role_routes(app):
+    """Routes that test the caller's role in the ways the scan must find, and ways it must not."""
+    from fastapi import Depends
+
+    from app.api.deps_context import get_current_context
+    from app.api.endpoints.auth import get_current_active_user
+
+    @app.post("/x/context-then-role")
+    def context_then_role(
+        ctx=Depends(get_current_context), current_user=Depends(get_current_active_user)
+    ):
+        if not current_user.is_admin:
+            return {}
+        return {}
+
+    @app.post("/x/renamed-user")
+    def renamed_user(ctx=Depends(get_current_context), who=Depends(get_current_active_user)):
+        return who.role
+
+    @app.post("/x/getattr-role")
+    def getattr_role(
+        ctx=Depends(get_current_context), current_user=Depends(get_current_active_user)
+    ):
+        return getattr(current_user, "role", None) == "admin"
+
+    @app.post("/x/context-user-role")
+    def context_user_role(ctx=Depends(get_current_context)):
+        return ctx.user.is_superuser
+
+    @app.post("/x/helper-role")
+    def helper_role(
+        ctx=Depends(get_current_context), current_user=Depends(get_current_active_user)
+    ):
+        return _synthetic_helper(current_user)
+
+    @app.post("/x/role-of-someone-else")
+    def role_of_someone_else(
+        ctx=Depends(get_current_context), current_user=Depends(get_current_active_user)
+    ):
+        other = SimpleNamespace(role="user")
+        return other.role, ctx.bypass.user_is_admin
+
+
 def _synthetic_app():
     from fastapi import Depends
     from fastapi import FastAPI
@@ -201,6 +295,19 @@ def _synthetic_app():
         return ctx.bypass.allows(
             org_id=1, owner_id=2, need="read", resource_type="t", resource_uuid="u"
         )
+
+    @app.get("/x/talks-about-it")
+    def talks_about_it(ctx=Depends(get_current_context)):
+        """Runs now (bypasses the schedule); the word is only prose."""
+        return {}
+
+    @app.post("/x/inline-role")
+    def inline_role(current_user=Depends(get_current_active_user)):
+        if not current_user.is_admin:
+            return {}
+        return {}
+
+    _add_role_routes(app)
 
     @app.get("/x/refused")
     def refused(ctx=Depends(refuse_under_support_grant)):
@@ -229,8 +336,32 @@ def _synthetic_app():
     return app
 
 
+_SYNTHETIC_GUARDS = {"GET /x/content": "bypass", "GET /x/talks-about-it": "caller"}
+
+
+def _synthetic_rows(content_guards=None, inline_routes=None):
+    from fastapi.routing import APIRoute
+
+    app = _synthetic_app()
+    rows = {}
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        names = matrix.dependency_names(route.dependant)
+        source = matrix.handler_source(route.endpoint)
+        helpers = {"_synthetic_helper": matrix.handler_source(_synthetic_helper)}
+        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
+            for row in matrix.classify_route(
+                method, route.path, names, source, content_guards, inline_routes, helpers
+            ):
+                # a route can earn two rows; the inline one is filed under its own name
+                inline = row.gate.startswith("platform-op:inline:")
+                rows[f"{row.key} (inline)" if inline else row.key] = row
+    return rows
+
+
 def test_the_derivation_classifies_each_shape_and_ignores_self_scoped_routes():
-    rows = {r.key: r for r in matrix.route_rows(_synthetic_app())}
+    rows = _synthetic_rows(_SYNTHETIC_GUARDS)
     assert rows["GET /x/content"].gate == "content"
     assert rows["GET /x/content"].header == "honoured"
     assert "bypass" in rows["GET /x/content"].guard
@@ -240,6 +371,88 @@ def test_the_derivation_classifies_each_shape_and_ignores_self_scoped_routes():
     assert rows["GET /x/base"].header == "ignored"
     assert "GET /x/self" not in rows, "a self-scoped route is not a platform-access path"
     assert rows["GET /api/admin/stats"].gate == "platform-op:admin:platform-ops"
+
+
+def test_a_content_route_is_unclassified_until_it_has_an_entry():
+    rows = _synthetic_rows({})
+    assert "UNCLASSIFIED" in rows["GET /x/content"].guard
+    assert "UNCLASSIFIED" in rows["GET /x/talks-about-it"].guard
+
+
+def test_a_docstring_or_comment_is_not_a_bypass():
+    code = "def f(ctx):\n    return ctx.bypass.sees_all_in_scope\n"
+    prose = 'def f(ctx):\n    """Runs now (bypasses the schedule)."""\n    return 1  # bypass\n'
+    assert matrix.uses_bypass(code) is True
+    assert matrix.uses_bypass(prose) is False
+
+
+def test_a_route_that_tests_the_callers_role_inline_is_found_and_must_be_listed():
+    unlisted = _synthetic_rows(_SYNTHETIC_GUARDS, {})["POST /x/inline-role (inline)"]
+    assert unlisted.gate == "platform-op:inline:UNCLASSIFIED"
+    listed = _synthetic_rows(_SYNTHETIC_GUARDS, {"POST /x/inline-role": ("state-repair", "why")})
+    assert listed["POST /x/inline-role (inline)"].gate == "platform-op:inline:state-repair"
+    assert "POST /x/inline-role" not in listed, "its only row is the inline one"
+    assert "GET /x/self" not in listed, "a self-scoped route with no role test is not listed"
+
+
+_INLINE_SHAPES = (
+    "POST /x/context-then-role",
+    "POST /x/renamed-user",
+    "POST /x/getattr-role",
+    "POST /x/context-user-role",
+    "POST /x/helper-role",
+)
+
+
+def test_a_content_route_that_also_tests_the_role_inline_is_not_just_caller_scoped():
+    """Taking the request context used to end the classification before the role scan ran."""
+    rows = _synthetic_rows(_SYNTHETIC_GUARDS, {})
+    for key in _INLINE_SHAPES:
+        assert rows[key].gate == "content", key
+        flagged = rows[f"{key} (inline)"]
+        assert flagged.gate == "platform-op:inline:UNCLASSIFIED", key
+    listed = _synthetic_rows(
+        _SYNTHETIC_GUARDS, {key: ("display-hint", "why") for key in _INLINE_SHAPES}
+    )
+    assert all(
+        listed[f"{key} (inline)"].gate == "platform-op:inline:display-hint"
+        for key in _INLINE_SHAPES
+    )
+
+
+def test_the_role_scan_ignores_other_objects_and_the_bypass_flag():
+    rows = _synthetic_rows(_SYNTHETIC_GUARDS, {})
+    assert "POST /x/role-of-someone-else (inline)" not in rows
+    assert "GET /x/content (inline)" not in rows
+    assert "GET /x/talks-about-it (inline)" not in rows
+
+
+def test_a_widener_outside_the_tables_is_unclassified():
+    assert "UNCLASSIFIED" in matrix.site_row("scope-widener", "api/new.py::list_things").guard
+    assert "UNCLASSIFIED" in matrix.site_row("reveal-widener", "api/new.py::show_things").guard
+    known = matrix.site_row("scope-widener", "api/endpoints/speakers.py::list_speakers")
+    assert "UNCLASSIFIED" not in known.guard
+
+
+def test_a_widener_without_its_tenant_predicate_is_reported(tmp_path):
+    (tmp_path / "api").mkdir()
+    (tmp_path / "api" / "x.py").write_text(
+        "def scoped(ctx, q):\n"
+        "    if ctx.bypass.sees_all_in_scope:\n"
+        "        return q.filter(org_scope_pred(1))\n"
+        "def leaky(ctx, q):\n"
+        "    if ctx.bypass.sees_all_in_scope:\n"
+        "        return q\n"
+    )
+    markers = {
+        "api/x.py::scoped": ("org_scope_pred",),
+        "api/x.py::leaky": ("org_scope_pred",),
+        "api/x.py::gone": ("org_scope_pred",),
+    }
+    assert matrix.missing_tenant_markers(tmp_path, markers) == [
+        "api/x.py::gone: no such function",
+        "api/x.py::leaky: no longer mentions org_scope_pred",
+    ]
 
 
 def test_an_unlisted_admin_route_is_reported_unclassified():

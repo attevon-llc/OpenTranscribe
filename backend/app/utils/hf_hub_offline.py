@@ -56,10 +56,10 @@ def force_offline_if_requested() -> Iterator[None]:
 
     For loaders with no ``local_files_only`` kwarg of their own (``pyannote.audio``'s
     ``Pipeline.from_pretrained`` is the motivating case), this is the only lever
-    available: it mutates ``huggingface_hub.constants.HF_HUB_OFFLINE`` directly and
-    drops the module's cached per-thread HTTP sessions so a NEW session — built the
-    next time one is requested — mounts the library's own ``OfflineAdapter``, which
-    raises instantly instead of attempting a request. Restores both on exit.
+    available: it mutates ``huggingface_hub.constants.HF_HUB_OFFLINE`` directly. The
+    library's shared HTTP client checks that flag in a request event hook on every
+    call, so a request raises ``OfflineModeIsEnabled`` instantly instead of reaching
+    the network, with no need to rebuild the client. Restores the flag on exit.
 
     A no-op when ``HF_HUB_OFFLINE`` is not set to ``"1"`` — callers should still wrap
     the load in :func:`load_with_timeout` for the (default) online case.
@@ -76,16 +76,13 @@ def force_offline_if_requested() -> Iterator[None]:
         return
 
     import huggingface_hub.constants as hf_constants
-    from huggingface_hub.utils import reset_sessions
 
     previous = hf_constants.HF_HUB_OFFLINE
     hf_constants.HF_HUB_OFFLINE = True
-    reset_sessions()
     try:
         yield
     finally:
         hf_constants.HF_HUB_OFFLINE = previous
-        reset_sessions()
 
 
 def load_with_timeout[T](loader: Callable[[], T], *, timeout: float, label: str) -> T:

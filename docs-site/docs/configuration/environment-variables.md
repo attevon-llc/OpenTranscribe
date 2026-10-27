@@ -1225,6 +1225,13 @@ carries `ExpectedBucketOwner` (your account id, looked up from STS, or
 with 403 if the bucket is not owned by the expected account. If the bucket does not
 exist, the first job creates it in your account.
 
+The account id comes from an STS `GetCallerIdentity` call, made once per set of credentials
+and remembered for an hour. A network with no route to STS (a VPC without an STS endpoint, for
+example) cannot make that call: set `AWS_TRANSCRIBE_BUCKET_OWNER` to the 12-digit account id and
+it is never made. If STS is unreachable and the setting is empty, AWS jobs fail at once with a
+message naming `AWS_TRANSCRIBE_BUCKET_OWNER`; a throttled STS call is retried like any other
+AWS throttle.
+
 The bucket is an environment setting, not an admin-UI one, because it is deployment
 infrastructure rather than a per-user choice. The credentials you enter in
 Settings are used for the S3 calls too, so they must belong to the account that owns the
@@ -1428,7 +1435,7 @@ stored encrypted rather than in a file.
 | `AZURE_ASR_MODEL` | `whisper`, `conversation` | `whisper` | Azure recognition model. |
 | `AWS_ASR_MODEL` | `standard`, `medical` | `standard` | Amazon Transcribe tier. |
 | `AWS_TRANSCRIBE_BUCKET` | S3 bucket name | *(empty)* | **Required for the AWS provider; no default.** Private bucket you own, in `AWS_REGION`, used for the temporary audio and result (deleted after each job). Created on first use if missing. |
-| `AWS_TRANSCRIBE_BUCKET_OWNER` | 12-digit AWS account id | *(empty)* | Account that must own the bucket (`ExpectedBucketOwner`). Empty means the caller's own account, looked up from STS. Set it only for a bucket in another account. |
+| `AWS_TRANSCRIBE_BUCKET_OWNER` | 12-digit AWS account id | *(empty)* | Account that must own the bucket (`ExpectedBucketOwner`). Empty means the caller's own account, looked up from STS. Set it for a bucket in another account, and wherever STS is not reachable (a VPC with no STS endpoint). |
 | `SPEECHMATICS_API_KEY` | string | *(empty)* | Speechmatics credential. |
 | `SPEECHMATICS_MODEL` | `standard`, `enhanced` | `standard` | Operating point. `enhanced` is slower and more accurate. |
 | `GLADIA_API_KEY` | string | *(empty)* | Gladia credential. |

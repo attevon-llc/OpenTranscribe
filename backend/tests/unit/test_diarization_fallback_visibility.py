@@ -340,3 +340,77 @@ def test_status_is_clean_when_strict_and_the_sidecar_serves(monkeypatch: pytest.
     status = _status(monkeypatch, strict=True, ready=True)
     assert (status["effective"], status["using_fallback"]) == ("native", False)
     assert (status["require_sidecar"], status["refusing"]) == (True, False)
+
+
+# ------------------------------------- the acoustic re-check stays non-fatal, even to strict mode
+
+
+def test_a_dropped_sidecar_cannot_fail_a_job_whose_acoustic_recheck_is_non_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Diarization finished; in strict mode the re-check's own get_diarizer() then raises."""
+    from types import SimpleNamespace
+
+    from app.transcription.engine import stages as stages_mod
+
+    manager = MagicMock(name="manager")
+    manager.get_diarizer.side_effect = DiarSidecarUnavailableError("gone", reason="unreachable")
+    diarize_df = SimpleNamespace(speaker_gender=None)
+    monkeypatch.setattr(
+        stages_mod,
+        "_collect_diarization",
+        lambda *a, **k: (diarize_df, {}, {"SPEAKER_00": [0.1, 0.2]}, "native", "community-1"),
+    )
+    monkeypatch.setattr(
+        "app.transcription.speaker_assigner.assign_speakers",
+        lambda df, transcript: {"segments": [], "language": "en"},
+    )
+    config = SimpleNamespace(boundary_acoustic_recheck_enabled=True)
+
+    result, df = stages_mod._GpuStage()._run_diarization(
+        np.zeros(16, dtype=np.float32),
+        {"segments": []},
+        MagicMock(name="profiler"),
+        MagicMock(name="hw"),
+        SimpleNamespace(enable_dedup=False),
+        manager,
+        None,
+        config=config,
+    )
+
+    assert manager.get_diarizer.called, "the re-check must have asked for its diarizer"
+    assert result["diarization_provider"] == "native"
+    assert df is diarize_df
+
+
+# ----------------------------- a cached fallback engine must not keep reporting a fallback
+
+
+def test_pinning_pyannote_clears_the_fallback_reason_a_cached_engine_carries(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.transcription.diarizer import SpeakerDiarizer
+
+    engine = SpeakerDiarizer(_cfg())
+    engine.last_fallback_reason = "unreachable"  # built while the sidecar was down
+    config = _cfg()
+    config.diarizer_backend = "pyannote"  # the operator has since pinned PyAnnote
+
+    assert ModelManager._diarizer_current(engine, config) is True
+    assert run_outcome(engine) == ("pyannote", "pinned")
+
+
+def test_a_cached_fallback_engine_keeps_its_reason_while_native_is_still_selected(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Control: with native selected and the sidecar still down, the reason is still true."""
+    from app.transcription.diarizer import SpeakerDiarizer
+
+    monkeypatch.setattr(diarizer_native, "sidecar_ready", lambda *a, **k: False)
+    monkeypatch.setattr(diarizer_native, "sidecar_healthy", lambda *a, **k: False)
+    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: False)
+    engine = SpeakerDiarizer(_cfg())
+    engine.last_fallback_reason = "unreachable"
+
+    assert ModelManager._diarizer_current(engine, _cfg()) is True
+    assert run_outcome(engine) == ("pyannote", "unreachable")

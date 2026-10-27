@@ -122,21 +122,18 @@ class TestForceOfflineIfRequested:
     ):
         """The behavioral proof: not a message change, an actual blocked call.
 
-        Uses huggingface_hub's OWN session machinery rather than mocking `requests`
+        Uses huggingface_hub's OWN shared client rather than mocking the HTTP library
         directly, so this proves the exact mechanism `force_offline_if_requested`
-        relies on (constants.HF_HUB_OFFLINE + reset_sessions -> a fresh session
-        mounts OfflineAdapter) rather than a stand-in for it.
+        relies on (constants.HF_HUB_OFFLINE, read by the client's request event hook on
+        every call) rather than a stand-in for it. The client is created BEFORE the
+        flag is forced, which is the production order: it was built online and must
+        still go offline.
         """
         from huggingface_hub.errors import OfflineModeIsEnabled
         from huggingface_hub.utils._http import get_session
-        from huggingface_hub.utils._http import reset_sessions
 
         monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-        reset_sessions()  # drop any session cached by an earlier (online) test
-        try:
-            with force_offline_if_requested():
-                session = get_session()
-                with pytest.raises(OfflineModeIsEnabled):
-                    session.get("https://huggingface.co/api/models/pyannote/does-not-matter")
-        finally:
-            reset_sessions()  # don't leak an offline session into a later test
+        session = get_session()
+        with force_offline_if_requested():
+            with pytest.raises(OfflineModeIsEnabled):
+                session.get("https://huggingface.co/api/models/pyannote/does-not-matter")

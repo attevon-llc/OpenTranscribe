@@ -15,9 +15,10 @@ Two kinds of row:
 * ``site``: a place in ``app/`` that decides platform access (``.allows(``), resolves a grant,
   builds a bypass, reads the grant header or widens a list to the whole scope.
 
-Hand-written knowledge lives in exactly three tables here (``PLATFORM_OP_RULES``,
-``ALLOWS_KINDS`` and ``SITE_FORMS``). An item the tables do not classify is reported as
-``UNCLASSIFIED``, which the test refuses, so a new path forces a decision.
+Hand-written knowledge lives in ``PLATFORM_OP_RULES``, ``ALLOWS_KINDS`` and ``SITE_FORMS`` here
+and in ``platform_access_matrix_tables.py`` (content-route guards, inline-role routes, scope and
+reveal wideners). An item the tables do not classify is reported as ``UNCLASSIFIED``, which the
+test refuses, so a new path forces a decision.
 
 This module deliberately imports the app lazily: the AST half needs no import at all.
 """
@@ -27,10 +28,18 @@ from __future__ import annotations
 import ast
 import inspect
 import re
+import textwrap
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from fixtures.platform_access_matrix_tables import CONTENT_GUARD_TEXT
+from fixtures.platform_access_matrix_tables import CONTENT_GUARDS
+from fixtures.platform_access_matrix_tables import INLINE_ROLE_ROUTES
+from fixtures.platform_access_matrix_tables import REVEAL_WIDENER_SITES
+from fixtures.platform_access_matrix_tables import SCOPE_WIDENER_SITES
+from fixtures.platform_access_matrix_tables import TENANT_MARKERS
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
@@ -99,6 +108,13 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "pipeline-state repair by id or in bulk; returns counts and status, never content",
     ),
     (
+        r"^GET /api/search/degraded-embeddings",
+        "tenant-scoped-diagnostic",
+        "names only the caller's own files in the active tenant (the whole tenant where the "
+        "bypass sees the scope, everything in a single-tenant deployment); other tenants "
+        "appear as a count",
+    ),
+    (
         r"^\w+ /api/(admin/(stats|timing|timing-summary|gpu-profiles|data-integrity|"
         r"embedding-consistency|imohash-recompute|media-duration-backfill|"
         r"profile-embeddings|engine-settings/metrics|settings/cache-config/clear|"
@@ -135,7 +151,6 @@ AUDITED_ROUTES = (
     "GET /api/admin/takedown-notices",
     "GET /api/admin/takedown-notices/export",
     "GET /api/admin/takedown-notices/{notice_uuid}",
-    "GET /api/search/degraded-embeddings",
 )
 
 CATEGORY_TESTS = {
@@ -167,6 +182,158 @@ def handler_source(endpoint: Any) -> str:
         return ""
 
 
+def _handler_tree(source: str) -> ast.AST | None:
+    try:
+        return ast.parse(textwrap.dedent(source))
+    except SyntaxError:
+        return None
+
+
+def uses_bypass(source: str) -> bool:
+    """Whether the handler's CODE reads a ``bypass`` (a docstring or comment cannot count)."""
+    tree = _handler_tree(source)
+    if tree is None:
+        return False
+    return any(
+        (isinstance(n, ast.Name) and n.id == "bypass")
+        or (isinstance(n, ast.Attribute) and n.attr == "bypass")
+        for n in ast.walk(tree)
+    )
+
+
+#: Attributes of the signed-in user that carry the platform role.
+ROLE_ATTRS = frozenset({"is_admin", "role", "is_super_admin", "is_superuser"})
+#: Names a handler gives the request context; ``<ctx>.user`` is the signed-in user.
+CONTEXT_NAMES = frozenset({"ctx", "context", "req_ctx"})
+USER_DEPENDENCIES = frozenset(
+    {
+        "get_current_user",
+        "get_current_active_user",
+        "get_current_admin_user",
+        "get_current_active_superuser",
+        "get_current_super_admin_user",
+        "get_optional_current_user",
+    }
+)
+
+
+def _function_node(tree: ast.AST) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            return node
+    return None
+
+
+def _caller_params(fn: ast.FunctionDef | ast.AsyncFunctionDef | None) -> set[str]:
+    """Parameter names a handler binds to the signed-in user, whatever it calls them."""
+    names = {"current_user"}
+    if fn is None:
+        return names
+    args = fn.args
+    positional = args.posonlyargs + args.args
+    defaults: list[ast.expr | None] = [None] * (len(positional) - len(args.defaults))
+    defaults += list(args.defaults)
+    for arg, default in [
+        *zip(positional, defaults, strict=True),
+        *zip(args.kwonlyargs, args.kw_defaults, strict=True),
+    ]:
+        if not (isinstance(default, ast.Call) and default.args):
+            continue
+        if getattr(default.func, "id", getattr(default.func, "attr", "")) != "Depends":
+            continue
+        target = default.args[0]
+        if getattr(target, "id", getattr(target, "attr", "")) in USER_DEPENDENCIES:
+            names.add(arg.arg)
+    return names
+
+
+def _reads_role_of(tree: ast.AST, is_subject: Any) -> bool:
+    """Whether ``tree`` reads a role attribute (directly or via ``getattr``) of a subject."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in ROLE_ATTRS and is_subject(node.value):
+            return True
+        if (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "getattr"
+            and len(node.args) >= 2
+            and is_subject(node.args[0])
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in ROLE_ATTRS
+        ):
+            return True
+    return False
+
+
+def _names_the_context_user(node: ast.AST, names: set[str]) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "user"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in names
+    )
+
+
+def reads_caller_role(source: str, helpers: dict[str, str] | None = None) -> bool:
+    """Whether a handler tests the signed-in user's role anywhere it can be seen.
+
+    Three shapes, all of them found by reading CODE (a docstring cannot count):
+
+    * a direct read: ``current_user.is_admin`` or ``.role`` (or ``.is_super_admin`` /
+      ``.is_superuser``), on the parameter bound to the user dependency under any name and on
+      ``ctx.user``;
+    * ``getattr(current_user, "role", ...)``, which the attribute scan alone missed;
+    * a role read inside a module-level helper the handler hands the user (or the context) to,
+      one call deep. ``helpers`` maps a function name to its source. A role flag passed in as a
+      plain boolean is a direct read at the call site, so it is already found.
+
+    A helper reached through two calls, a method, or another module is NOT followed; that limit
+    is the reason the sweep in ``test_support_access_matrix`` exists beside this scan.
+    """
+    tree = _handler_tree(source)
+    if tree is None:
+        return False
+    fn = _function_node(tree)
+    callers = _caller_params(fn)
+
+    def is_caller(node: ast.AST) -> bool:
+        return (isinstance(node, ast.Name) and node.id in callers) or _names_the_context_user(
+            node, set(CONTEXT_NAMES)
+        )
+
+    if _reads_role_of(tree, is_caller):
+        return True
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        name = getattr(call.func, "id", None)
+        helper_source = (helpers or {}).get(name or "")
+        if not helper_source:
+            continue
+        helper_tree = _handler_tree(helper_source)
+        helper_fn = _function_node(helper_tree) if helper_tree is not None else None
+        if helper_tree is None or helper_fn is None:
+            continue
+        params = [a.arg for a in helper_fn.args.posonlyargs + helper_fn.args.args]
+        handed: set[str] = set()
+        for index, arg in enumerate(call.args):
+            if (is_caller(arg) or _is_context(arg)) and index < len(params):
+                handed.add(params[index])
+        for keyword in call.keywords:
+            if keyword.arg and (is_caller(keyword.value) or _is_context(keyword.value)):
+                handed.add(keyword.arg)
+        if handed and _reads_role_of(
+            helper_tree,
+            lambda node, handed=handed: (
+                (isinstance(node, ast.Name) and node.id in handed)
+                or _names_the_context_user(node, handed)
+            ),
+        ):
+            return True
+    return False
+
+
+def _is_context(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) and node.id in CONTEXT_NAMES
+
+
 def _header_state(names: set[str]) -> str:
     if "refuse_under_support_grant" in names:
         return "refused"
@@ -177,8 +344,54 @@ def _header_state(names: set[str]) -> str:
     return "n/a"
 
 
-def classify_route(method: str, path: str, names: set[str], source: str) -> Row | None:
-    """The matrix row for one route, or ``None`` when it is not a platform-access path."""
+def classify_route(
+    method: str,
+    path: str,
+    names: set[str],
+    source: str,
+    content_guards: dict[str, str] | None = None,
+    inline_routes: dict[str, tuple[str, str]] | None = None,
+    helpers: dict[str, str] | None = None,
+) -> list[Row]:
+    """The matrix rows for one route: none when it is not a platform-access path.
+
+    A route has its dependency-derived row (content, org-admin, lifecycle, platform-op) AND, when
+    the handler tests the caller's role itself, a second ``platform-op:inline:*`` row. The role
+    test is looked for on EVERY route: a handler that takes the request context and then asks
+    ``current_user.is_admin`` is not "caller-scoped" just because the context was injected.
+    """
+    inline_routes = INLINE_ROLE_ROUTES if inline_routes is None else inline_routes
+    key = f"{method} {path}"
+    rows: list[Row] = []
+    row = _dependency_row(method, path, names, source, content_guards)
+    if row is not None:
+        rows.append(row)
+    if reads_caller_role(source, helpers):
+        category, why = inline_routes.get(
+            key, ("UNCLASSIFIED", "add the route to INLINE_ROLE_ROUTES with a written reason")
+        )
+        rows.append(
+            Row(
+                "route",
+                key,
+                f"platform-op:inline:{category}",
+                _header_state(names),
+                why,
+                SWEEP_TEST,
+            )
+        )
+    return rows
+
+
+def _dependency_row(
+    method: str,
+    path: str,
+    names: set[str],
+    source: str,
+    content_guards: dict[str, str] | None,
+) -> Row | None:
+    """The row the route's dependency tree earns, or ``None`` for a self-scoped/public route."""
+    content_guards = CONTENT_GUARDS if content_guards is None else content_guards
     key = f"{method} {path}"
     header = _header_state(names)
     admin = bool(names & ADMIN_DEPS)
@@ -203,10 +416,10 @@ def classify_route(method: str, path: str, names: set[str], source: str) -> Row 
                 "refuse_under_support_grant: 403 support_grant_action_not_permitted",
                 f"{ENFORCEMENT_TEST}::test_a_grant_is_refused_on_chat_search_upload_export_and_admin",
             )
-        if "bypass" in source:
-            guard = "bypass.allows on the loaded row, or sees_all_in_scope inside the tenant"
-        else:
-            guard = "caller-scoped through the request context (ctx forwarded or user filter)"
+        guard = CONTENT_GUARD_TEXT.get(
+            content_guards.get(key, ""),
+            "UNCLASSIFIED: add the route to CONTENT_GUARDS in platform_access_matrix_tables.py",
+        )
         return Row(
             "route",
             key,
@@ -234,7 +447,7 @@ def _platform_op(key: str, header: str, names: set[str], source: str) -> Row:
     if key in AUDITED_ROUTES:
         category = "metadata-audited"
         guard = "audit_metadata_access in the handler (one PLATFORM_ADMIN_METADATA_ACCESS event)"
-    elif "get_current_context" in names and "bypass" in source:
+    elif "get_current_context" in names and uses_bypass(source):
         category = "grant-gated"
         guard = "bypass.allows / sees_all_in_scope on the request context"
     else:
@@ -260,20 +473,34 @@ def handler_sources(app: Any) -> dict[str, str]:
     return sources
 
 
+def module_helpers(endpoint: Any, cache: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Source of every function defined in the handler's own module, for the one-call-deep scan."""
+    module = inspect.getmodule(endpoint)
+    if module is None:
+        return {}
+    if module.__name__ not in cache:
+        cache[module.__name__] = {
+            name: handler_source(func)
+            for name, func in inspect.getmembers(module, inspect.isfunction)
+            if func.__module__ == module.__name__
+        }
+    return cache[module.__name__]
+
+
 def route_rows(app: Any) -> list[Row]:
     rows: list[Row] = []
+    helper_cache: dict[str, dict[str, str]] = {}
     for route in app.routes:
         dependant = getattr(route, "dependant", None)
         if dependant is None:
             continue
         names = dependency_names(dependant)
         source = handler_source(route.endpoint)
+        helpers = module_helpers(route.endpoint, helper_cache)
         for method in sorted(getattr(route, "methods", None) or ()):
             if method in {"HEAD", "OPTIONS"}:
                 continue
-            row = classify_route(method, route.path, names, source)
-            if row is not None:
-                rows.append(row)
+            rows.extend(classify_route(method, route.path, names, source, None, None, helpers))
     return rows
 
 
@@ -297,6 +524,8 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/comments.py::_assert_comment_file_in_scope": "comment",
     "api/endpoints/comments.py::delete_comment": "comment",
     "api/endpoints/watch_sources.py::_get_source_or_404": "watch_source",
+    "api/endpoints/watch_sources.py::create_watch_source": "watch_source_owner",
+    "api/endpoints/prompts.py::share_prompt": "prompt",
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",
     "api/endpoints/files/crud.py::get_media_file_detail": "media_file",
     "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",
@@ -342,8 +571,8 @@ SITE_FORMS: dict[str, dict[str, str]] = {
             "builds the frozen view of a grant that has just passed every check"
         ),
     },
-    "scope-widener": {},
-    "reveal-widener": {},
+    "scope-widener": SCOPE_WIDENER_SITES,
+    "reveal-widener": REVEAL_WIDENER_SITES,
 }
 
 SITE_TEST = {
@@ -417,16 +646,48 @@ def site_row(form: str, key: str) -> Row:
             if kind
             else "UNCLASSIFIED: add the function to ALLOWS_KINDS"
         )
-    elif form in {"scope-widener", "reveal-widener"}:
-        guard = (
-            "widens a list to every user's rows inside the ACTIVE tenant: single mode, "
-            "or an organization grant (which assumes that tenant)"
-            if form == "scope-widener"
-            else "owner-only reveal in multi mode; admin reveal only in single mode"
-        )
     else:
-        guard = SITE_FORMS[form].get(key, "UNCLASSIFIED: add the site to SITE_FORMS")
+        guard = SITE_FORMS[form].get(
+            key, "UNCLASSIFIED: add the site to SITE_FORMS (wideners: the *_WIDENER_SITES tables)"
+        )
     return Row("site", key, form, "n/a", guard, SITE_TEST[form])
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name):
+            names.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            names.add(n.attr)
+        elif isinstance(n, ast.keyword) and n.arg:
+            names.add(n.arg)
+    return names
+
+
+def missing_tenant_markers(
+    app_root: Path = APP_ROOT, markers: dict[str, tuple[str, ...]] | None = None
+) -> list[str]:
+    """Scope-widener sites whose function no longer mentions the tenant predicate it relies on."""
+    markers = TENANT_MARKERS if markers is None else markers
+    missing: list[str] = []
+    for key, wanted in sorted(markers.items()):
+        rel, _, func = key.partition("::")
+        path = app_root / rel
+        if not path.is_file():
+            missing.append(f"{key}: no such file")
+            continue
+        tree = ast.parse(path.read_text())
+        bodies = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == func
+        ]
+        if not bodies:
+            missing.append(f"{key}: no such function")
+        elif wanted and not any(set(wanted) & _called_names(b) for b in bodies):
+            missing.append(f"{key}: no longer mentions {' or '.join(wanted)}")
+    return missing
 
 
 def site_rows(sites: Iterable[tuple[str, str]]) -> list[Row]:

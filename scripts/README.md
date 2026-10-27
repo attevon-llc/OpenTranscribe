@@ -32,6 +32,8 @@ below; [scripts/CLAUDE.md](CLAUDE.md)'s "Which script to reach for" has the long
 ./scripts/run-integration-tests.sh    # the pre-merge gate (needs the live dev stack)
 ./scripts/test-matrix.sh all          # exhaustive deployment-mode rehearsal (dev/prod/lite/PKI/
                                        # GPU-scale/fresh-install/upgrade); run before a release
+python3 scripts/check-requirements-resolve.py   # prove every backend requirements file resolves
+                                       # (pip --dry-run) and lite/CI match prod; ~5 min, needs network
 ```
 
 ## Scripts Overview

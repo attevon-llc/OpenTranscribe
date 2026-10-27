@@ -38,7 +38,7 @@ from app.schemas.search import SetEmbeddingModelSchema
 from app.services.collection_visibility import collections_on_files
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
-from app.services.platform_bypass import audit_metadata_access
+from app.services.platform_access import TenancyMode
 from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
 from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
@@ -1139,49 +1139,63 @@ def _check_reindex_task_active(user_id: int) -> bool:
 @router.get("/degraded-embeddings")
 def get_degraded_embeddings(
     limit: int = Query(500, le=5000),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Preview the files stranded text-only by a neural-search degraded window (#626).
 
     Read-only survey — pairs with ``POST /search/reembed-degraded``, which requires this
     preview to be confirmed rather than dispatching on click.
+
+    ``total_files`` is the size of what a re-embed would touch, which is deployment-wide, so
+    the deployment-wide figures (``total_files`` and ``outside_scope_files``) go to a caller
+    who holds the deployment-scope right (every admin in a single-tenant deployment, a
+    ``super_admin`` otherwise). Any other admin of a multi-tenant deployment gets the counts
+    of the files listed to them, and ``outside_scope_files`` is 0. In that deployment ``files``
+    names only the files of the caller's active tenant (the caller's own rows, unless the
+    request's bypass sees the whole scope). A single-tenant deployment lists everything.
     """
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
+    from app.services.permission_service import org_scope_pred
     from app.services.search.embedding_provenance import survey_degraded_files
 
     files, truncated = survey_degraded_files(limit=limit)
 
     if not files:
-        return {"total_files": 0, "truncated": False, "affected_users": 0, "files": []}
+        return {
+            "total_files": 0,
+            "truncated": False,
+            "affected_users": 0,
+            "outside_scope_files": 0,
+            "files": [],
+        }
 
+    single_tenant = ctx.bypass.mode is TenancyMode.SINGLE
     file_uuids = [f.file_uuid for f in files]
     with session_scope() as db:
-        rows = (
-            db.query(MediaFile.uuid, MediaFile.filename, MediaFile.organization_id)
-            .filter(MediaFile.uuid.in_(file_uuids))
-            .all()
-        )
-        titles = {str(row[0]): row[1] for row in rows}
-        audit_metadata_access(
-            db,
-            current_user,
-            route="/api/search/degraded-embeddings",
-            count=len(files),
-            organization_ids=(row[2] for row in rows),
-        )
+        query = db.query(MediaFile.uuid, MediaFile.filename).filter(MediaFile.uuid.in_(file_uuids))
+        if not single_tenant:
+            query = query.filter(org_scope_pred(MediaFile.organization_id, ctx.org_id))
+            if not ctx.bypass.sees_all_in_scope:
+                query = query.filter(MediaFile.user_id == current_user.id)
+        titles = {str(row[0]): row[1] for row in query.all()}
 
+    # Single-tenant: every surveyed file is listed, an unknown one under its uuid.
+    listed = [f for f in files if single_tenant or f.file_uuid in titles]
+    deployment_wide = ctx.bypass.deployment_scope_writable
     return {
-        "total_files": len(files),
+        "total_files": len(files) if deployment_wide else len(listed),
         "truncated": truncated,
-        "affected_users": len({f.user_id for f in files}),
+        "affected_users": len({f.user_id for f in listed}),
+        "outside_scope_files": len(files) - len(listed) if deployment_wide else 0,
         "files": [
             {
                 "file_uuid": f.file_uuid,
                 "title": titles.get(f.file_uuid) or f.file_uuid,
                 "user_id": f.user_id,
             }
-            for f in files
+            for f in listed
         ],
     }
 
@@ -1189,14 +1203,23 @@ def get_degraded_embeddings(
 @router.post("/reembed-degraded")
 def trigger_reembed_degraded(
     limit: int = Query(500, le=5000),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.
+
+    Deployment-wide: it re-embeds every tenant's files, so it needs the deployment-scope
+    right (every admin in a single-tenant deployment, a ``super_admin`` otherwise).
 
     Checks the task's own lock before dispatching, rather than dispatching into a lock it
     knows is already held — matches ``start_embedding_consistency_repair``'s shape in
     ``admin.py``.
     """
+    if not ctx.bypass.deployment_scope_writable:
+        raise HTTPException(
+            status_code=403,
+            detail="Re-embedding degraded files covers every tenant and needs a super admin",
+        )
     from app.tasks.search_reembed_task import REEMBED_LOCK_KEY
     from app.tasks.search_reembed_task import reembed_degraded_files_task
     from app.utils.task_lock import task_lock_manager

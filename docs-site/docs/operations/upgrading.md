@@ -249,7 +249,7 @@ The migration chain progresses through these versions:
 | `v445` | `organization_policy`: per-organization voiceprint and gender switches and redaction floor (#1280) |
 | `v446` | `collection.visibility`: an organization collection can be restricted to its named people (#1275) |
 | `v447` | `content_hold` and `content_hold_file`: organization legal holds on files and collections (#1276) |
-| `v448` | `uq_task_active_per_file_type`: at most one active task row per file and step; resolves existing duplicates first and briefly locks the `task` table (writers wait) while it builds (#1185) |
+| `v448` | `uq_task_active_per_file_type`: at most one active task row per file and step; marks superseded stale rows failed first and briefly locks the `task` table (writers wait) while it builds (#1185) |
 
 What `v397` to `v448` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).

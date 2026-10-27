@@ -62,6 +62,8 @@ class Seeded:
 def _seed_tenant(w, label: str, org_id: int | None, file) -> tuple[dict[str, Resource], str]:
     tag = f"zz{label}{uuid.uuid4().hex[:6]}"
     file.title = f"{tag}-title"
+    # the degraded-embeddings listing names files by ``filename``, not by title
+    file.filename = f"{tag}-name.wav"
     speaker = Speaker(
         user_id=w.owner.id,
         organization_id=org_id,
@@ -400,6 +402,20 @@ def test_the_sweep_covers_the_platform_surface():
         assert must in paths, must
 
 
+def _degraded_survey(w, *extra):
+    """The three tenants' files (and ``extra`` ones), as a degraded window would have left them."""
+    from app.services.search.embedding_provenance import DegradedFile
+
+    files = [
+        DegradedFile(user_id=w.owner.id, file_uuid=str(f.uuid))
+        for f in (w.file, w.other_org_file, w.personal_file)
+    ] + [DegradedFile(user_id=f.user_id, file_uuid=str(f.uuid)) for f in extra]
+    return patch(
+        "app.services.search.embedding_provenance.survey_degraded_files",
+        return_value=(files, False),
+    )
+
+
 def test_a_platform_admin_without_a_grant_sees_no_tenant_content(support_world, seeded):
     w = support_world
     # The sweep is only as strong as what it can find: seed a name every diagnostic route matches.
@@ -408,20 +424,21 @@ def test_a_platform_admin_without_a_grant_sees_no_tenant_content(support_world, 
     answered = 0
     unreachable: list[str] = []
     leaks: list[str] = []
-    for who, headers in (("admin", w.admin_headers), ("super_admin", w.super_headers)):
-        for path in paths:
-            params = dict(QUERY_FILL.get(path, {}))
-            if path == "/api/speakers/debug/cross-media-by-name":
-                params["speaker_name"] = probe_name
-            try:
-                response = w.client.get(path, headers=headers, params=params)
-            except Exception:  # a route needing Redis or a worker; counted below, never ignored
-                unreachable.append(path)
-                continue
-            answered += 1
-            for label, tag in seeded.canaries.items():
-                if tag in response.text:
-                    leaks.append(f"{who} GET {path} returned the {label} tenant's content")
+    with _degraded_survey(w):
+        for who, headers in (("admin", w.admin_headers), ("super_admin", w.super_headers)):
+            for path in paths:
+                params = dict(QUERY_FILL.get(path, {}))
+                if path == "/api/speakers/debug/cross-media-by-name":
+                    params["speaker_name"] = probe_name
+                try:
+                    response = w.client.get(path, headers=headers, params=params)
+                except Exception:  # a route needing Redis or a worker; counted, never ignored
+                    unreachable.append(path)
+                    continue
+                answered += 1
+                for label, tag in seeded.canaries.items():
+                    if tag in response.text:
+                        leaks.append(f"{who} GET {path} returned the {label} tenant's content")
     assert not leaks, "\n".join(leaks)
     # a sweep that answered nothing proves nothing
     assert answered > len(paths), f"only {answered} answers over {len(paths)} routes"
@@ -522,23 +539,13 @@ AUDITED_CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("/api/admin/settings/retention-config/preview", {"retention_days": 1}),
     ("/api/admin/takedown-notices", {}),
     ("/api/admin/takedown-notices/export", {}),
-    ("/api/search/degraded-embeddings", {}),
 )
 
 
 @pytest.mark.parametrize(("path", "params"), AUDITED_CALLS, ids=[p for p, _ in AUDITED_CALLS])
 def test_cross_tenant_filename_listings_are_audited(support_world, seeded, path, params):
-    from app.services.search.embedding_provenance import DegradedFile
-
     w = support_world
-    degraded = [DegradedFile(user_id=w.owner.id, file_uuid=str(w.other_org_file.uuid))]
-    with (
-        patch("app.auth.audit.audit_logger.log") as audit,
-        patch(
-            "app.services.search.embedding_provenance.survey_degraded_files",
-            return_value=(degraded, False),
-        ),
-    ):
+    with patch("app.auth.audit.audit_logger.log") as audit:
         response = w.client.get(path, headers=w.admin_headers, params=params)
     assert response.status_code == 200, response.text
     events = [
@@ -546,8 +553,68 @@ def test_cross_tenant_filename_listings_are_audited(support_world, seeded, path,
     ]
     assert len(events) == 1, f"{path} must leave exactly one metadata-access event"
     assert events[0].kwargs["details"]["route"] == path.split("?")[0]
-    if path == "/api/search/degraded-embeddings":
-        # the listing does name the other tenant's file, which is why it must be recorded
-        assert w.other_org_file.filename in response.text
-        assert events[0].kwargs["details"]["organization_ids"] == [w.other_org.id]
     assert w.other_org_file.filename not in str(events[0]), "the event must carry ids, not names"
+
+
+# ---------------------------------------------------------------------------
+# The degraded-embeddings listing stays inside the caller's active tenant
+# ---------------------------------------------------------------------------
+
+DEGRADED = "/api/search/degraded-embeddings"
+
+
+def test_degraded_listing_names_only_files_of_the_active_tenant(support_world, seeded):
+    from fixtures.support_world import make_file
+
+    w = support_world
+    own = make_file(w.db, w.admin, None)
+    with _degraded_survey(w, own):
+        response = w.client.get(DEGRADED, headers=w.admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [f["file_uuid"] for f in body["files"]] == [str(own.uuid)]
+    assert body["files"][0]["title"] == own.filename, "the caller's own file is named"
+    assert body["total_files"] == 1, "a plain admin is told only about the files listed to them"
+    assert body["outside_scope_files"] == 0
+    assert body["affected_users"] == 1
+    for tag in seeded.canaries.values():
+        assert tag not in response.text
+    assert str(w.owner.id) not in {str(f["user_id"]) for f in body["files"]}
+
+
+def test_degraded_listing_in_an_org_context_is_the_callers_rows_inside_that_org(
+    support_world, seeded
+):
+    w = support_world
+    w.roles[w.admin.id] = (w.org.id, "org:member")
+    with _degraded_survey(w):
+        response = w.client.get(DEGRADED, headers=w.admin_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["files"] == [], "the org's file belongs to its owner, not to the platform admin"
+    assert body["total_files"] == 0
+    for tag in seeded.canaries.values():
+        assert tag not in response.text
+
+
+def test_degraded_listing_stays_instance_wide_in_a_single_tenant_deployment(
+    support_world, seeded, monkeypatch
+):
+    from app.core.config import settings
+    from app.services.platform_access import reset_tenancy_mode_cache
+
+    w = support_world
+    monkeypatch.setattr(settings, "TENANCY_MODE", "single")
+    reset_tenancy_mode_cache()
+    try:
+        with _degraded_survey(w):
+            response = w.client.get(DEGRADED, headers=w.admin_headers)
+    finally:
+        reset_tenancy_mode_cache()
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert {f["file_uuid"] for f in body["files"]} == {
+        str(f.uuid) for f in (w.file, w.other_org_file, w.personal_file)
+    }
+    assert w.personal_file.filename in response.text
+    assert body["outside_scope_files"] == 0

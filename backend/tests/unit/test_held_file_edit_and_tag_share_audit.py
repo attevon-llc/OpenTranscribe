@@ -325,3 +325,53 @@ def test_the_tag_share_endpoints_cannot_bypass_the_helper():
     assert source.count("_audit_tag_share(") == 3  # the definition and the two endpoints
     assert source.count("audit_logger.log(") == 1
     assert "resource_name" not in source.replace("never put the tag's NAME", "")
+
+
+def test_a_failing_audit_lookup_leaves_the_session_usable_and_keeps_staged_work(
+    monkeypatch, audit_log, db_session, normal_user
+):
+    """The helper runs between an edit's commit and the writes that follow it.
+
+    A DB error inside it aborts the transaction; unless only the helper's own work is rolled
+    back, the next statement of the request fails and a committed edit answers 500.
+    """
+    from sqlalchemy import select
+    from sqlalchemy import text
+
+    from app.models.user import User
+
+    def broken(db, ids):
+        db.execute(text("SELECT * FROM a_table_that_does_not_exist"))
+
+    monkeypatch.setattr(content_hold_service, "hold_states", broken)
+    normal_user.full_name = "staged before the audit"
+
+    written = record_edit_on_held_file(
+        db_session, None, normal_user, _file(), kind="segment_edit", segment_uuid="s"
+    )
+
+    assert written is False
+    assert db_session.execute(text("SELECT 1")).scalar() == 1
+    staged = db_session.execute(select(User.full_name).where(User.id == normal_user.id)).scalar()
+    assert staged == "staged before the audit"
+
+
+def test_a_failed_audit_is_reported_at_error_level_and_never_raises(monkeypatch, caplog):
+    """The edit has committed, so the audit cannot refuse it; the loss must not be silent."""
+    file = _file()
+
+    def _broken(db, ids):
+        raise RuntimeError("audit store unavailable")
+
+    monkeypatch.setattr(content_hold_service, "hold_states", _broken)
+
+    with caplog.at_level("WARNING", logger=content_hold_service.logger.name):
+        written = record_edit_on_held_file(
+            MagicMock(), None, _actor(), file, kind="segment_edit", segment_uuid="seg-1"
+        )
+
+    assert written is False
+    [record] = [r for r in caplog.records if r.name == content_hold_service.logger.name]
+    assert record.levelname == "ERROR"
+    assert str(file.uuid) in record.getMessage()
+    assert SECRET_TITLE not in record.getMessage()

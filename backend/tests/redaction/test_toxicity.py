@@ -1,7 +1,9 @@
 """Toxicity detector tests.
 
-Marked ``models`` and auto-skipped when transformers / the toxicity model weights are
-unavailable. Pins score *ranges* (not exact values) so minor model updates don't break CI.
+Marked ``models``. Skipped when transformers or the toxicity weights are NOT on this machine;
+when the weights are cached and the load still fails, the test FAILS (a skip there would hide
+a transformers/torch incompatibility while production silently loses toxicity scoring).
+Pins score *ranges* (not exact values) so minor model updates don't break CI.
 """
 
 from __future__ import annotations
@@ -10,6 +12,8 @@ import json
 from pathlib import Path
 
 import pytest
+from fixtures.model_weights import hf_weights_cached
+from fixtures.model_weights import require_loaded
 
 pytestmark = pytest.mark.models
 
@@ -19,10 +23,14 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "redaction"
 @pytest.fixture(scope="module")
 def tox():
     pytest.importorskip("transformers")
+    from app.core import constants as C  # noqa: N812
     from app.services.redaction.detectors import toxicity
 
-    if not toxicity.preload():
-        pytest.skip("Toxicity model unavailable")
+    require_loaded(
+        toxicity.preload(),
+        available=hf_weights_cached(C.REDACTION_TOXICITY_MODEL_EN),
+        what=f"Toxicity model {C.REDACTION_TOXICITY_MODEL_EN}",
+    )
     return toxicity
 
 

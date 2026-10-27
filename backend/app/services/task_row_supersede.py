@@ -24,6 +24,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 
+from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy import update
@@ -137,14 +138,19 @@ def _fail_if_still_active(db: Session, task_id: str, superseded_by: str) -> bool
 
 
 def reopen_if_slot_free(db: Session, task: Task, values: dict[str, object]) -> bool:
-    """Reopen a finished row as active, unless another active row of its step holds the slot.
+    """Reopen a finished row as active, unless that would be wrong or pointless.
 
-    One conditional ``UPDATE`` (the row's own file and step, no other active row), so a retry
-    that finds a newer run already active is dropped instead of tripping the one-active-row
-    index (``v448``). The index is the backstop for two reopens racing: Postgres checks it at
-    the statement, so the loser's UPDATE raises; that is the same refusal. It costs the session
-    a ``rollback()`` (the transaction is aborted), so whatever the caller had staged but not
-    committed is lost in that rare case. Otherwise commits nothing. Returns False when refused.
+    One conditional ``UPDATE`` that refuses when
+
+    * another active row of the row's file and step holds the slot (a retry that finds a newer
+      run already active is dropped instead of tripping the one-active-row index, ``v448``), or
+    * a NEWER ``completed`` row of the same file and step exists: the row is superseded, so
+      :func:`resolve_superseded_task_rows` would fail it again on its next run.
+
+    The index is the backstop for two reopens racing: Postgres checks it at the statement, so
+    the loser's UPDATE raises; that is the same refusal. The statement runs in a SAVEPOINT, so
+    only the loser is rolled back and whatever the caller staged but has not committed (a
+    batch of earlier resets, say) is kept. Otherwise commits nothing. Returns False when refused.
     """
     other = aliased(Task)
     slot_taken = (
@@ -158,18 +164,34 @@ def reopen_if_slot_free(db: Session, task: Task, values: dict[str, object]) -> b
         .correlate(Task)
         .exists()
     )
+    newer = aliased(Task)
+    superseded = (
+        exists()
+        .where(
+            newer.media_file_id == Task.media_file_id,
+            newer.task_type == Task.task_type,
+            newer.status == _STATUS_COMPLETED,
+            newer.created_at > Task.created_at,
+        )
+        .correlate(Task)
+    )
+    nested = db.begin_nested()
     try:
         result = db.execute(
             update(Task)
-            .where(Task.id == task.id, ~slot_taken)
+            .where(Task.id == task.id, ~slot_taken, ~superseded)
             .values(**values)
             .execution_options(synchronize_session=False)
         )
     except IntegrityError as exc:
+        nested.rollback()
         if not is_active_row_conflict(exc):
             raise
-        db.rollback()
         return False
+    except BaseException:
+        nested.rollback()
+        raise
+    nested.commit()
     db.expire(task)
     return bool(getattr(result, "rowcount", 0))
 

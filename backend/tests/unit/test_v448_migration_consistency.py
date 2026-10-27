@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import time
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -14,6 +15,8 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+
+from tests.conftest import engine
 
 REVISION = "v448_task_one_active_row_per_file_step"
 _PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
@@ -262,3 +265,64 @@ def test_detection_stamps_lower_without_the_index(db_session):
         db_session.rollback()
     order = _chain_order()
     assert detected is not None and order.index(detected) < order.index(REVISION)
+
+
+# --- the table lock is bounded ------------------------------------------------------------------
+
+
+def test_the_lock_is_taken_under_a_lock_timeout_and_the_callers_value_is_restored():
+    sql = _module().UPGRADE_SQL
+    lock = sql.index("LOCK TABLE task IN SHARE ROW EXCLUSIVE MODE")
+    assert sql.index("set_config('lock_timeout', '30s', true)") < lock
+    assert sql.index("set_config('lock_timeout', previous, true)") > lock
+    assert _module().LOCK_TIMEOUT == "30s"
+
+
+@pytest.mark.ddl_exclusive
+def test_the_upgrade_does_not_change_the_sessions_lock_timeout(db_session):
+    conn = db_session.connection()
+    conn.execute(text("SET LOCAL lock_timeout = '7s'"))
+
+    conn.execute(text(_module().UPGRADE_SQL))
+
+    assert conn.execute(text("SHOW lock_timeout")).scalar() == "7s"
+
+
+@pytest.mark.ddl_exclusive
+def test_a_conflicting_lock_fails_the_upgrade_fast_with_a_message_naming_the_cause(db_session):
+    """Without a timeout the LOCK queues, and every writer to task queues behind it."""
+    from sqlalchemy.exc import DBAPIError
+
+    holder = engine.connect()
+    try:
+        holder_tx = holder.begin()
+        # Bounded on both sides: a regression that drops the upgrade's own lock_timeout must
+        # FAIL here after a few seconds. Unbounded, the LOCK would queue behind the holder
+        # forever, hanging the run and every writer to `task` on a shared database.
+        holder.execute(text("SET LOCAL lock_timeout = '5s'"))
+        holder.execute(text("LOCK TABLE task IN ROW EXCLUSIVE MODE"))
+        conn = db_session.connection()
+        conn.execute(text("SET LOCAL statement_timeout = '5s'"))
+        started = time.monotonic()
+
+        with pytest.raises(DBAPIError) as err:
+            with conn.begin_nested():
+                conn.execute(text(_module().build_upgrade_sql("300ms")))
+
+        assert time.monotonic() - started < 10
+        message = str(err.value.orig)
+        assert "v448 could not lock the task table within 300ms" in message
+        assert "safe to retry" in message
+        holder_tx.rollback()
+    finally:
+        holder.close()
+
+
+@pytest.mark.ddl_exclusive
+def test_the_same_upgrade_succeeds_when_nothing_holds_the_table(db_session):
+    """Control for the failure above: only the competing lock differs."""
+    conn = db_session.connection()
+    conn.execute(text(_module().build_upgrade_sql("300ms")))
+    assert conn.execute(
+        text("SELECT 1 FROM pg_indexes WHERE indexname = :n"), {"n": _INDEX}
+    ).scalar()

@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-Twenty-one migrations run automatically when the backend starts, from `v397` to `v447`. On a
+Twenty-two migrations run automatically when the backend starts, from `v397` to `v448`. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.
@@ -72,6 +72,7 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v445` | Adds the `organization_policy` table: an organization's switches for voiceprint matching and inferred gender, and its redaction floor | No (empty until an organization saves a choice; both switches default on) |
 | `v446` | Adds `collection.visibility` (`organization` or `restricted`) so an organization collection can be limited to its creator, the organization admins and the people it is shared with | No: every existing collection stays visible to the whole organization until someone restricts it |
 | `v447` | Adds the `content_hold` and `content_hold_file` tables, which record the legal holds an organization administrator places on files and collections | No (empty until an administrator places a hold) |
+| `v448` | Fails any task row that a newer completed run of the same step on the same file has superseded, then adds a unique index so a file has at most one active task row per step | Yes: those stale rows are marked failed with the reason `superseded by <task id>`; no row is deleted. The upgrade locks the `task` table against writes while it runs, so on a deployment with a very large task history run it in a quiet period or maintenance window; if another transaction holds a conflicting lock it stops after 30 seconds with a message saying so, and starting the backend again retries it |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.

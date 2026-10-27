@@ -219,41 +219,9 @@ ALLOWLIST: dict[str, str] = {
         "Q: include_quarantined for a preview inside the caller's own scope; argument is "
         "ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/tags/crud.py::cleanup_unused_tags": (
-        "P: deployment-wide unused-tag sweep, admin-gated, double opt-in for scope=all_users; "
-        "deletes unreferenced tags and returns counts"
-    ),
     "api/endpoints/tags/discovery.py::list_files_for_tag": (
         "Q: quarantine exclusion inside files already accessible to the caller; argument is "
         "ctx.bypass.user_is_admin"
-    ),
-    "api/endpoints/tags/operations.py::delete_tags_endpoint": (
-        "P: an admin may mutate SYSTEM tags (the shared vocabulary); touches no file and no "
-        "tenant content"
-    ),
-    "api/endpoints/tags/operations.py::get_tag_impact": (
-        "P: system-tag mutation rights for an admin, same as the mutation routes; counts only"
-    ),
-    "api/endpoints/tags/operations.py::merge_tags_endpoint": (
-        "P: an admin may mutate SYSTEM tags (the shared vocabulary); touches no file and no "
-        "tenant content"
-    ),
-    "api/endpoints/tags/operations.py::promote_tags_endpoint": (
-        "P: promotion into the shared vocabulary is an admin platform operation; touches no "
-        "file by uuid"
-    ),
-    "api/endpoints/tags/operations.py::rename_tag_endpoint": (
-        "P: an admin may mutate SYSTEM tags (the shared vocabulary); touches no file and no "
-        "tenant content"
-    ),
-    "api/endpoints/tags/sharing.py::create_tag_share": (
-        "P: system-tag mutation rights for an admin; a share grants vocabulary, not file access"
-    ),
-    "api/endpoints/tags/sharing.py::list_tag_shares": (
-        "P: system-tag mutation rights for an admin; lists vocabulary shares, not files"
-    ),
-    "api/endpoints/tags/sharing.py::revoke_tag_share": (
-        "P: system-tag mutation rights for an admin; a share grants vocabulary, not file access"
     ),
     "api/endpoints/tasks.py::retry_file_processing": (
         "P: admins skip the retry ceiling, evaluated after the chokepoint passed with "
@@ -262,10 +230,6 @@ ALLOWLIST: dict[str, str] = {
     "api/endpoints/transcript_segments.py::update_segment_speaker": (
         "Q: quarantine visibility of the speaker's file inside the caller's own scope; "
         "argument is ctx.bypass.user_is_admin"
-    ),
-    "api/endpoints/watch_sources.py::create_watch_source": (
-        "P: only an admin may assign a source to another user; in multi-tenant mode the "
-        "target must also be in the caller's tenant"
     ),
     "services/delete_permissions.py::get_deletable_file": (
         "Q: is_hidden_for(is_admin=False) hides a taken-down file from everyone who did not "

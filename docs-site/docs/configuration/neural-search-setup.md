@@ -211,6 +211,12 @@ added later on their own. To recover them:
 4. Confirm in the dialog, which shows the file and user counts affected
 5. Progress reports through the same reindex notification as **Re-index All Transcripts**
 
+:::note[Several organizations]
+The re-embed covers every tenant's files, so on a deployment that hosts several organizations it
+needs a super admin, and any other administrator's preview counts only the files listed to them.
+A single-tenant deployment lets every administrator run it.
+:::
+
 :::note[Large Backlogs]
 The preview can be truncated on very large backlogs. If the banner says so after a re-embed
 completes, run **Re-embed Degraded Files** again to catch the remaining files.

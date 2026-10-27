@@ -18,6 +18,7 @@ import threading
 import time
 from pathlib import Path
 
+import httpx
 import pytest
 from fixtures.mock_hf_hub import COMMIT
 from fixtures.mock_hf_hub import default_repo
@@ -191,17 +192,11 @@ def test_an_unreachable_hub_is_classified():
 
 def test_offline_mode_is_classified(hub, monkeypatch):
     from huggingface_hub import constants
-    from huggingface_hub.utils import reset_sessions
 
+    # monkeypatch restores the flag; the shared client reads it on every request.
     monkeypatch.setattr(constants, "HF_HUB_OFFLINE", True)
-    # The offline adapter is mounted when a session is created, and sessions are cached.
-    reset_sessions()
-    try:
-        with pytest.raises(LocalEntryNotFoundError) as caught:
-            downloader.download_blocking(TINY, None, None, endpoint=hub.url)
-    finally:
-        monkeypatch.setattr(constants, "HF_HUB_OFFLINE", False)
-        reset_sessions()
+    with pytest.raises(LocalEntryNotFoundError) as caught:
+        downloader.download_blocking(TINY, None, None, endpoint=hub.url)
 
     assert downloader.classify_error(caught.value) == "downloads_disabled_offline"
     assert hub.requests == []
@@ -214,6 +209,10 @@ def test_offline_mode_is_classified(hub, monkeypatch):
         (OSError(errno.EACCES, "denied"), "cache_not_writable"),
         (OSError(errno.EPERM, "not permitted"), "cache_not_writable"),
         (RuntimeError("anything else"), "download_failed"),
+        # huggingface_hub 1.x speaks httpx; a transport failure that never became a
+        # LocalEntryNotFoundError must still read as an unreachable hub.
+        (httpx.ConnectError("refused"), "hf_unreachable"),
+        (httpx.ReadTimeout("slow"), "hf_unreachable"),
     ],
 )
 def test_local_failures_are_classified(exc, code):

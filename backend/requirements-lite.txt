@@ -2,18 +2,18 @@
 # unconditionally by app/tasks/imohash_recompute.py — every Celery worker's default
 # task-module import (including celery-cloud-asr-worker) fails without it.
 imohash==1.1.0
-mmh3==5.3.0  # via imohash — see requirements.txt for the version-drift note (issue #492)
+mmh3==5.3.1  # via imohash — see requirements.txt for the version-drift note (issue #492)
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
 fastapi==0.136.3
-uvicorn[standard]==0.53.0
-websockets==17.1
+uvicorn[standard]==0.54.0
+websockets==17.3
 sqlalchemy==2.0.53
-alembic==1.20.0
-pydantic==2.13.5
-pydantic-settings==2.15.0
+alembic==1.20.1
+pydantic==2.14.1
+pydantic-settings==2.16.1
 # joserfc — see requirements.txt for why (#33, #34: replaces python-jose everywhere)
-joserfc==1.7.5
+joserfc==1.7.7
 # SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml.
 python3-saml==1.16.0
 python-multipart==0.0.32
@@ -27,21 +27,21 @@ python-docx==1.2.0
 # collection index; fpdf2 requires it too.
 fpdf2==2.8.9
 uharfbuzz==0.57.0
-fonttools==4.65.0
+fonttools==4.67.0
 lxml==6.1.3
 passlib[bcrypt]==1.7.4
 # See requirements.txt for why this can't go to bcrypt 5.0.0 (passlib incompatibility).
 bcrypt==4.3.0
 email-validator==2.3.0
 # OIDC JWKS caching (app/auth/oidc/discovery.py) — see requirements.txt for why this version.
-cachetools==7.1.8
+cachetools==7.2.4
 # Sentence tokenization for hybrid search (app/services/search/hybrid_search_service.py) —
 # see requirements.txt for the pathsec-hardening pin rationale (issue #491).
 nltk==3.10.3
 # Asynchronous Tasks
 celery==5.6.3
 redis==8.1.0
-flower==2.1.0
+flower==2.2.0
 # psycopg2 (source build), not psycopg2-binary -- see requirements.txt's comment
 # for the full reason (issue #951: the binary wheel's vendored arm64 pcre2 carries
 # unpatched CRITICAL CVEs). Needs libpq-dev at build time in Dockerfile.lite.
@@ -49,7 +49,7 @@ psycopg2==2.9.13
 minio==7.2.20
 opensearch-py==3.2.0
 httpx==0.28.1
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 
 # LDAP/Active Directory Authentication
 ldap3==2.9.1
@@ -58,7 +58,7 @@ ldap3==2.9.1
 slowapi==0.1.10
 
 # PKI/X.509 Certificate Authentication
-cryptography==50.0.1
+cryptography==50.0.2
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp==2.10.0
@@ -146,14 +146,23 @@ onnxconverter-common==1.16.0
 onnxruntime==1.30.0
 
 # Supporting libraries
-omegaconf==2.3.1
+omegaconf==2.4.0
 ffmpeg-python==0.2.0
 sentencepiece==0.2.2
 psutil==7.2.2
 pyexiftool==0.5.6
-yt-dlp==2026.8.19
+yt-dlp==2026.10.21
 
 # Semantic search and NLP
+# transformers / huggingface-hub / tokenizers are transitive here (sentence-transformers,
+# pyannote.audio) and used to float: a fresh `pip install -r requirements-lite.txt` resolved
+# huggingface-hub 2.3.0 + transformers 5.21.0, which neither the app's offline guard nor its
+# model downloader has been run against, while the shipped lite image still held 4.57.6.
+# Pinned to the versions requirements.txt validates, including why hub stops at 1.17
+# (issue #1002, #492).
+transformers==5.10.4
+huggingface-hub==1.17.0
+tokenizers==0.22.2
 sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
@@ -175,4 +184,4 @@ openai==3.14.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)
-json-repair==0.63.4
+json-repair==0.64.2

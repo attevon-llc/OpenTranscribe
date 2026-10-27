@@ -32,7 +32,7 @@
 # NIST trec_eval, wrapped. The maintained fork (Glasgow / Terrier team) —
 # publishes wheels; the original cvangysel/pytrec-eval is sdist-only and last
 # released in 2020.
-pytrec_eval_terrier>=0.5.10
+pytrec_eval_terrier>=0.5.11
 
 # Canonical measure strings ("nDCG@10", "R@10") with explicit provider naming,
 # so a label in a table is checkably the measure trec_eval computed. Base

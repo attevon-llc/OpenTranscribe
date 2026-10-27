@@ -219,10 +219,6 @@ ALLOWLIST: dict[str, str] = {
         "Q: include_quarantined for a preview inside the caller's own scope; argument is "
         "ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/speakers.py::debug_cross_media_by_name": (
-        "P: operator diagnostic, admin-gated by its dependency; its queries are tenant-scoped "
-        "unless the bypass sees all in scope (single mode)"
-    ),
     "api/endpoints/tags/crud.py::cleanup_unused_tags": (
         "P: deployment-wide unused-tag sweep, admin-gated, double opt-in for scope=all_users; "
         "deletes unreferenced tags and returns counts"

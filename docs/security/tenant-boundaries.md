@@ -125,6 +125,10 @@ Rules every platform-role access to tenant content follows (issue #1122). Tests:
 | Presigned media URLs and redaction under a grant | Presigned URLs live at most 300 s under a grant; redaction is resolved for the file's owner in the file's tenant, never the staff member's own preferences | Unredacted reveal is owner-only in multi-tenant mode | `PlatformBypass.presign_ttl`, `files/crud.py:_resolve_redaction_for_request` | SE `::test_presigned_urls_are_capped_under_a_grant`, `::test_redaction_is_resolved_for_the_file_owner_under_a_grant` |
 | Platform listings that name other tenants' files (quarantine list, retention preview) | Platform admins | n/a | `app/services/platform_bypass.py:audit_metadata_access` (audited in multi-tenant mode, not masked) | PA `::test_quarantine_list_is_audited_in_multi_mode` |
 
+The full path-by-path list of platform-role access (every route and code site, with its guard and
+proving test) is [`platform-access-matrix.md`](platform-access-matrix.md); a unit test fails when
+a new path is added without a row.
+
 ## Known limits
 
 - **Revocation is immediate for API requests** (the grant is re-read on every request), with

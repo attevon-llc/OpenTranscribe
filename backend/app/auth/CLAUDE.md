@@ -160,6 +160,15 @@ through a support-access grant (`services/platform_bypass.py`, `api/endpoints/su
 issue #1122). In single-tenant mode nothing changes. A grant never confers `org:admin`, and every
 `/org-admin/*` route resolves the base context, which ignores the grant header.
 
+- **Every platform-role path is a row in `docs/security/platform-access-matrix.tsv`** (#1281),
+  derived from the route table and an AST scan by `tests/fixtures/platform_access_matrix.py`.
+  Adding a route behind an admin dependency, a `.allows(` call, a `sees_all_in_scope` read or
+  anything that builds a bypass fails `tests/unit/test_platform_access_matrix.py` until you run
+  `scripts/generate-platform-access-matrix.py --write`, read the diff and, for a platform-op
+  route, classify it in `PLATFORM_OP_RULES` with a reason. A platform route that returns another
+  tenant's filenames must call `audit_metadata_access`; one that acts on a row takes
+  `ctx.bypass`. `tests/api/test_support_access_matrix.py` proves no/pending/expired/revoked/wrong
+  tenant per chokepoint kind and sweeps every parameterless GET for leaks.
 - **One definition each.** `get_current_super_admin_user` in `api/endpoints/admin.py` and
   `api/endpoints/auth_config.py` are re-export aliases; the real thing lives in
   `api/endpoints/auth/dependencies.py`. It used to be declared three times, each comparing

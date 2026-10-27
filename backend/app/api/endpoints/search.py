@@ -38,6 +38,7 @@ from app.schemas.search import SetEmbeddingModelSchema
 from app.services.collection_visibility import collections_on_files
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+from app.services.platform_bypass import audit_metadata_access
 from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
 from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
@@ -1157,11 +1158,18 @@ def get_degraded_embeddings(
     file_uuids = [f.file_uuid for f in files]
     with session_scope() as db:
         rows = (
-            db.query(MediaFile.uuid, MediaFile.filename)
+            db.query(MediaFile.uuid, MediaFile.filename, MediaFile.organization_id)
             .filter(MediaFile.uuid.in_(file_uuids))
             .all()
         )
         titles = {str(row[0]): row[1] for row in rows}
+        audit_metadata_access(
+            db,
+            current_user,
+            route="/api/search/degraded-embeddings",
+            count=len(files),
+            organization_ids=(row[2] for row in rows),
+        )
 
     return {
         "total_files": len(files),

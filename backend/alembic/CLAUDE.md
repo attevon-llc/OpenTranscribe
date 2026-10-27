@@ -7,9 +7,9 @@ used for schema**. The 5-step change procedure (revision → model → schema �
 test both paths) lives in `app/db/CLAUDE.md` — **do not duplicate it here**. This file is about
 authoring the revision file itself.
 
-## ⚠️ THREE LANES ARE OPEN — TAKE YOUR RESERVED NUMBER (2026-08-14)
+## ⚠️ PARALLEL LANES — TAKE YOUR RESERVED NUMBER (table re-derived 2026-10-27)
 
-Three branches are being worked in parallel, each in its own worktree. **Two branches that add
+Branches are worked in parallel, each in its own worktree. **Two branches that add
 the same revision number MERGE CLEANLY** — different filenames means no textual conflict, so
 nothing in the conflict list warns you. The fork exists only in the `down_revision` graph and
 surfaces later as a failed `alembic upgrade head`, which in dev aborts backend startup and reads
@@ -19,9 +19,11 @@ renumbering across four places per revision.
 
 | Lane | Branch | Holds | **Take** |
 |---|---|---|---|
-| RAG / chat | `feat/rag-corpus-scale-403` | v390–v392 | **v400+** |
-| Document ingestion | `feat/doc-ingestion` | v394–v396 (renumbered from v393–v395, see note 3) | **v397–v399** |
-| Test hardening | `chore/test-suite-perf-and-quality-overhaul` | v389 | **v410+** |
+| Document ingestion (the only lane still open) | `feat/doc-ingestion` | v394–v399 (v394–v396 renumbered from v393–v395, see note 3) | not applicable to master: this branch already uses `v397`–`v399`, and `master` ALSO has a `v397` (`v397_add_platform_super_admin_link_authorized`) — a number collision to resolve when the branch merges |
+
+The RAG / chat lane (`feat/rag-corpus-scale-403`, v390–v392) and the test-hardening lane
+(`chore/test-suite-perf-and-quality-overhaul`, v389) have both **merged**; those branches no longer
+exist. `master` has since moved well past them — use the derived head, not a lane table.
 
 `master` itself published `v393_add_overlap_timing_columns` — the document-ingestion lane's
 original `v393` collided with it exactly the way the paragraph above warns, and was renumbered.
@@ -34,13 +36,13 @@ the one in the next section, which rots.
 
 ## Key files
 
-- `versions/` — 78 revisions, `v010_baseline` … head `v392_add_redaction_coverage`
-  (on `feat/rag-corpus-scale-403`; `master` is still at v386).
+- `versions/` — `v010_baseline` … the current head (count: `ls backend/alembic/versions/*.py | wc -l`;
+  head: `python3 scripts/release-tests/lib/alembic-head.py backend`).
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
   SQL. `alembic.ini`'s `script_location = alembic` is **cwd-relative** (run from `backend/`).
-- `README.md` — prose, partly stale (claims the chain ends at v355).
+- `README.md` — prose; its range table stops at v373 (a rough map only) and it defers to the derived head.
 
 ## Conventions / patterns
 
@@ -49,9 +51,9 @@ the one in the next section, which rots.
   `down_revision` string literals yourself. `alembic revision --autogenerate` produces a hash id
   and non-idempotent `op.add_column` — never ship its output as-is. (The runner widens
   `alembic_version.version_num` to `VARCHAR(128)` on every start to fit these names.)
-- **All SQL must be idempotent.** 70 of 73 revisions are raw `op.execute` (the 5 files using
-  `op.create_table`/`add_column`/`create_index` are all ≤ `v040`); 60 use `IF NOT EXISTS`,
-  49 wrap DDL in
+- **All SQL must be idempotent.** Nearly every revision is raw `op.execute` (only the early
+  `v010`–`v040` files use `op.create_table`/`add_column`/`create_index`; `v386`/`v387` merely name
+  them in docstrings explaining why they don't); most use `IF NOT EXISTS`, and many wrap DDL in
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns …) THEN … END IF; END $$;`.
   Reason: the startup runner stamps *untracked* production DBs by schema fingerprint, so a
   revision routinely re-runs against a database that already has part of its changes. Read

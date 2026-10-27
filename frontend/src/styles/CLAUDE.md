@@ -2,7 +2,7 @@
 
 Loaded once by `routes/+layout.svelte`: `theme.css` (tokens, light on `:root`, dark on
 `[data-theme='dark']`), `form-elements.css`, `range-slider.css`, plus `animations.css`, `tables.css`,
-`search.css`. Tokens and their rules are in `frontend/CLAUDE.md` (Theming, Type and weight).
+`search.css`, `support-access.css`. Tokens and their rules are in `frontend/CLAUDE.md` (Theming, Type and weight).
 
 ## Form fields (`form-elements.css`) — one source of truth
 

@@ -98,8 +98,10 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
 - **`min_modified` is never passed by the scanner.** `_perform_scan` calls `list_files` without it
   and age-filters in Python so each too-old file gets a persisted `skipped_old` row. Don't "optimize"
   it into the client call — you'd lose the user-visible skip record.
-- **`smb_client.download_file`'s size verification is dead code**: the `raise RuntimeError(...)` sits
-  inside the `try` whose `except Exception` only logs at debug, so truncated downloads pass silently.
+- **`smb_client.download_file` verifies size against the remote `stat` (issue #293)**: the `try` covers
+  ONLY the `stat` call (a server where `stat()` fails logs a warning and skips verification, so a
+  truncated download cannot be detected for that file); a real mismatch raises `RuntimeError` from the
+  `else` branch and propagates.
 - **FS events are an accelerator, never the mechanism.** The every-minute `scan_all` poll is
   untouched and remains the safety net; the observer only makes `scan_single` fire *sooner*.
   Anything that fails in `fs_events/` logs, publishes a status, and degrades to polling —

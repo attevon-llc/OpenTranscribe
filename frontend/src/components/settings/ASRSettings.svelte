@@ -338,6 +338,34 @@
     }
   }
 
+  async function handleEnabledToggle(config: UserASRSettingsResponse, box: HTMLInputElement) {
+    const enable = config.is_active === false;
+    saving = true;
+    try {
+      await ASRSettingsApi.setEnabled(config.uuid, enable);
+      configurations = configurations.map((c) =>
+        c.uuid === config.uuid ? { ...c, is_active: enable } : c
+      );
+      if (!enable && config.uuid === activeConfigurationId) {
+        // An off configuration is treated as absent: the account is on the default now.
+        activeConfigurationId = null;
+        usingLocalDefault = true;
+      }
+      toastStore.success(
+        enable ? $t('settings.asrProvider.enableOn') : $t('settings.asrProvider.enableOff'),
+        3000
+      );
+      if (onSettingsChange) onSettingsChange();
+    } catch (err: unknown) {
+      // The row only changes on success, and Svelte would not redraw an unchanged value,
+      // so put the box back by hand; the toast says why.
+      toastStore.error(failure(err, 'settings.asrProvider.enableFailed'), 5000);
+      box.checked = !enable;
+    } finally {
+      saving = false;
+    }
+  }
+
   function getTestStatusIcon(config: UserASRSettingsResponse): MenuIconName | null {
     if (config.test_status === 'success') return 'check';
     if (config.test_status === 'failed') return 'x';
@@ -517,6 +545,15 @@
                 {#if config.is_shared}<span class="share-badge">{$t('settings.asrProvider.shared')}</span>{/if}
               </div>
               <div class="config-model">{config.model_name}</div>
+              <div class="share-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" class="toggle-input" data-testid="asr-enabled-toggle"
+                    checked={config.is_active !== false}
+                    on:change={(e) => handleEnabledToggle(config, e.currentTarget)} disabled={saving} />
+                  <span class="toggle-switch"></span>
+                  <span class="toggle-text">{$t('settings.asrProvider.enabledToggle')}</span>
+                </label>
+              </div>
               <div class="share-toggle-row">
                 <label class="toggle-label">
                   <input type="checkbox" class="toggle-input" checked={config.is_shared}

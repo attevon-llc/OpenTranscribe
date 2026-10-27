@@ -25,6 +25,13 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
   (`predicted_gender && !== 'unknown'`) makes its binary `{:else}` exhaustively safe already,
   so leaving it as the one hand-rolled instance was a deliberate choice, not an oversight.
 
+- `components/privacy/SpeakerPrivacyNotice.svelte` is mounted on the speakers page and in the per-file
+  `SpeakerEditorPanel` (#1280). It explains an empty suggestion/cluster view (voiceprint matching off, and
+  by which layer) and says gender is inferred automatically from voice, with a link to the switch, only
+  while inference is on. The SERVER hides the data (empty lists, null inferred gender); this only explains
+  it, and a failed read renders nothing. `GenderBadge`'s tooltip says "inferred automatically from voice"
+  for an unconfirmed gender.
+
 ## Conventions / patterns
 
 - Import via `$components`; types from `$lib/types/speakerCluster`; i18n via `$t`.

@@ -118,6 +118,7 @@ def _erase_speaker_voiceprints(
     *,
     user_id: int | None = None,
     organization_id: int | None = None,
+    personal_only: bool = False,
     errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
@@ -138,6 +139,10 @@ def _erase_speaker_voiceprints(
     Args:
         user_id: Scope the deletion to one user.
         organization_id: Scope the deletion to one organization.
+        personal_only: Also require that the doc carries no organization, i.e. only
+            personal-workspace docs (the privacy purge's "personal" scope). Without a
+            ``user_id`` this is every user's personal docs. Contradicts
+            ``organization_id``: giving both deletes nothing.
         errors: The caller's ``summary["errors"]`` list. Failures are appended
             here so the erasure is audited as PARTIAL rather than SUCCESS —
             biometric data surviving an Art. 17 request must not be recorded as
@@ -146,8 +151,48 @@ def _erase_speaker_voiceprints(
     Returns the number of voiceprint documents deleted (0 if OpenSearch is
     unavailable).
     """
-    if user_id is None and organization_id is None:
+    if user_id is None and organization_id is None and not personal_only:
         return 0
+    if personal_only and organization_id is not None:
+        return 0
+
+    terms: list[dict[str, Any]] = []
+    if user_id is not None:
+        terms.append({"term": {"user_id": user_id}})
+    if organization_id is not None:
+        terms.append({"term": {"organization_id": organization_id}})
+    body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
+    if personal_only:
+        body["query"]["bool"]["must_not"] = [{"exists": {"field": "organization_id"}}]
+
+    label = (
+        "org " + str(organization_id)
+        if organization_id
+        else ("user " + str(user_id) if user_id else "personal scope")
+    )
+    return delete_speaker_docs_by_query(
+        body, errors=errors, user_id=user_id, organization_id=organization_id, label=label
+    )
+
+
+def delete_speaker_docs_by_query(
+    body: dict[str, Any],
+    *,
+    errors: list[dict[str, Any]] | None = None,
+    user_id: int | None = None,
+    organization_id: int | None = None,
+    label: str = "",
+) -> int:
+    """Run ``delete_by_query(body)`` over every speaker index (v3, v4, alias, legacy backup).
+
+    The one place the index set is enumerated. ``_erase_speaker_voiceprints`` builds the scope
+    from a user and/or organization; the privacy purge (``services/privacy/purge.py``) also
+    needs "everything", which is why the query is a parameter. Failures go to ``errors`` (see
+    ``_erase_speaker_voiceprints``); this never raises.
+
+    Returns:
+        The number of documents deleted (0 if OpenSearch is unavailable).
+    """
 
     def _record(reason: str) -> None:
         if errors is not None:
@@ -172,13 +217,6 @@ def _erase_speaker_voiceprints(
             logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
             _record("OpenSearch client unavailable")
             return 0
-
-        terms = []
-        if user_id is not None:
-            terms.append({"term": {"user_id": user_id}})
-        if organization_id is not None:
-            terms.append({"term": {"organization_id": organization_id}})
-        body = {"query": {"bool": {"filter": terms}}}
 
         indices = {
             get_speaker_index(),
@@ -211,10 +249,7 @@ def _erase_speaker_voiceprints(
         _record(str(e))
 
     if deleted:
-        logger.info(
-            f"Erased {deleted} voiceprint doc(s) for "
-            f"{'org ' + str(organization_id) if organization_id else 'user ' + str(user_id)}"
-        )
+        logger.info(f"Erased {deleted} voiceprint doc(s) for {label or 'a scope'}")
     return deleted
 
 

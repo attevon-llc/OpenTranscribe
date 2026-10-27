@@ -39,15 +39,22 @@
   /** 0-1 confidence score, shown in the tooltip when present. */
   export let confidence: number | null | undefined = null;
   export let confirmed: boolean = false;
+
+  // An unconfirmed gender was inferred automatically from voice (issue #1280): say so where it
+  // is shown. A confirmed one was entered or approved by a person, so it reads as before.
+  $: word = gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female');
+  $: percent = confidence != null ? (confidence * 100).toFixed(0) : null;
+  $: badgeTitle = confirmed
+    ? `${word}${percent !== null ? ` (${percent}%)` : ''}`
+    : percent !== null
+      ? $t('privacy.gender.badgeTitleConfidence', { gender: word, percent })
+      : $t('privacy.gender.badgeTitle', { gender: word });
 </script>
 
 {#if $showAttributesOnCards && (gender === 'male' || gender === 'female')}
   <span
     class="gender-icon"
-    title="{gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{confidence !=
-    null
-      ? ` (${(confidence * 100).toFixed(0)}%)`
-      : ''}"
+    title={badgeTitle}
   >
     {#if gender === 'male'}
       <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>

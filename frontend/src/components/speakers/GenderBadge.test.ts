@@ -15,6 +15,18 @@ import GenderBadge from './GenderBadge.svelte';
 import { getSpeakerAttributeSettings } from '$lib/api/speakerAttributeSettings';
 import { resetSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
 
+// Real English copy with interpolation: the tooltip is one translated sentence with placeholders.
+vi.mock('$stores/locale', async () => {
+  const { readable } = await import('svelte/store');
+  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
+  const t = (key: string, vars?: Record<string, unknown>) =>
+    Object.entries(vars ?? {}).reduce(
+      (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
+      en[key] ?? key
+    );
+  return { t: readable(t), locale: readable('en') };
+});
+
 vi.mock('$lib/api/speakerAttributeSettings', () => ({
   getSpeakerAttributeSettings: vi.fn(),
 }));
@@ -35,13 +47,13 @@ describe('GenderBadge', () => {
   it('renders the male icon and word', () => {
     const { container } = render(GenderBadge, { props: { gender: 'male' } });
     expect(container.querySelector('.gender-icon')).not.toBeNull();
-    expect(container.textContent).toContain('speakers.member.male');
+    expect(container.textContent).toContain('Male');
   });
 
   it('renders the female icon and word', () => {
     const { container } = render(GenderBadge, { props: { gender: 'female' } });
     expect(container.querySelector('.gender-icon')).not.toBeNull();
-    expect(container.textContent).toContain('speakers.member.female');
+    expect(container.textContent).toContain('Female');
   });
 
   it('renders NOTHING for null — does not default to female', () => {
@@ -70,6 +82,19 @@ describe('GenderBadge', () => {
     const { container } = render(GenderBadge, { props: { gender: 'male', confidence: 0.87 } });
     const badge = container.querySelector('.gender-icon');
     expect(badge?.getAttribute('title')).toContain('87%');
+  });
+
+  it('says an unconfirmed gender was inferred automatically from voice, and a confirmed one not', () => {
+    const inferred = render(GenderBadge, { props: { gender: 'male', confidence: 0.87 } });
+    expect(inferred.container.querySelector('.gender-icon')?.getAttribute('title')).toBe(
+      'Male (87%), inferred automatically from voice'
+    );
+    const confirmed = render(GenderBadge, {
+      props: { gender: 'female', confidence: 0.87, confirmed: true },
+    });
+    expect(confirmed.container.querySelector('.gender-icon')?.getAttribute('title')).toBe(
+      'Female (87%)'
+    );
   });
 
   it('omits the confidence percentage from the tooltip when absent', () => {

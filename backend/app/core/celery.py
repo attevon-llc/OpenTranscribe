@@ -256,6 +256,7 @@ celery_app = Celery(
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
         "app.tasks.erasure_reconciliation",
+        "app.tasks.privacy_purge_task",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
@@ -490,6 +491,9 @@ celery_app.conf.update(
         "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
         "storage_orphan_sweep": {"queue": CeleryQueues.CPU},
+        # Irreversible deletion of voiceprints / inferred gender after a privacy switch is off
+        # (issue #1280). A person asked for it, so it is not scheduled maintenance.
+        "privacy.purge_voiceprints": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         # speaker_embedding_consistency_repair_batch is in GPU_PREFERRED_TASKS above.
         "process_speaker_update_background": {"queue": CeleryQueues.CPU},

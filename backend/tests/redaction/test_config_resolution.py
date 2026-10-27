@@ -139,7 +139,16 @@ class TestTenantRedactionFloor:
     ``core.tenant_limits.resolve_redaction_floor`` is unioned into the global
     ``redaction.force_*`` policy at resolve time. Community registers no resolver,
     so every assertion above still describes a self-host deployment exactly.
+
+    These cases isolate the resolver seam and the union with the global floor, using a
+    database stand-in, so the STORED organization floor is stubbed to "none saved"; its own read
+    and its union with a resolver are covered with a real database in
+    ``tests/api/test_org_admin_policy.py`` and ``tests/unit/test_org_floor_union.py``.
     """
+
+    @pytest.fixture(autouse=True)
+    def _no_stored_floor(self, monkeypatch):
+        monkeypatch.setattr("app.core.tenant_limits._stored_org_floor", lambda db, org_id: None)
 
     def _register(self, floor_for: dict[int | None, RedactionFloor]) -> list[int | None]:
         """Register a floor resolver keyed by org id; returns the list of org ids it saw."""

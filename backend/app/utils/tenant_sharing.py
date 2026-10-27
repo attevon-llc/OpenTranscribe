@@ -149,3 +149,22 @@ def group_members_outside_org(db: Any, group_id: int, org_id: int) -> int:
         .count()
     )
     return count
+
+
+def group_members_in_any_org(db: Any, group_id: int) -> int:
+    """How many members of group ``group_id`` belong to at least one organization.
+
+    A personal workspace is its own tenant (organization-less users only), so granting a
+    personal resource to a group is only in-tenant when this is zero.
+    """
+    from app.models.group import UserGroupMember
+
+    count: int = (
+        db.query(UserGroupMember.user_id)
+        .filter(
+            UserGroupMember.group_id == group_id,
+            exists().where(OrganizationMembership.user_id == UserGroupMember.user_id),
+        )
+        .count()
+    )
+    return count

@@ -23,6 +23,9 @@ from app.models.group import UserGroupMember
 from app.models.media import Tag
 from app.models.sharing import TagShare
 from app.models.user import User
+from app.services.platform_access import TenancyMode
+from app.services.platform_access import tenancy_mode
+from app.utils.tenant_sharing import group_members_in_any_org
 from app.utils.tenant_sharing import group_members_outside_org
 from app.utils.tenant_sharing import user_in_tenant
 
@@ -44,6 +47,61 @@ def list_shares(db: Session, tag_id: int) -> list[TagShare]:
         .order_by(TagShare.created_at.desc(), TagShare.id.desc())
         .all()
     )
+
+
+def _check_user_target(
+    db: Session, tag: Tag, target_user_id: int, *, personal_tenant: bool
+) -> None:
+    """Raise :class:`TagShareError` unless ``target_user_id`` may receive ``tag``."""
+    if db.query(User).filter(User.id == target_user_id).first() is None:
+        raise TagShareError("Unknown user")
+    # Sharing with yourself is a no-op that would otherwise sit in the list
+    # looking like a real grant.
+    if target_user_id == tag.user_id:
+        raise TagShareError("That tag already belongs to this user")
+    # An organization's tag stays inside that organization.
+    if tag.organization_id is not None and not user_in_tenant(
+        db, target_user_id, int(tag.organization_id)
+    ):
+        raise TagShareError(
+            "Cannot share an organization tag with a user who is not a member of that organization"
+        )
+    if personal_tenant and not user_in_tenant(db, target_user_id, None):
+        raise TagShareError(
+            "Cannot share a personal tag with a user who belongs to an organization"
+        )
+
+
+def _check_group_target(
+    db: Session, tag: Tag, target_group_id: int, *, shared_by_id: int, personal_tenant: bool
+) -> None:
+    """Raise :class:`TagShareError` unless ``target_group_id`` may receive ``tag``."""
+    if db.query(UserGroup).filter(UserGroup.id == target_group_id).first() is None:
+        raise TagShareError("Unknown group")
+    is_member = (
+        db.query(UserGroupMember.id)
+        .filter(
+            UserGroupMember.group_id == target_group_id,
+            UserGroupMember.user_id == shared_by_id,
+        )
+        .first()
+    )
+    if is_member is None:
+        raise TagShareError("You must be a member of the group to share with it")
+    if tag.organization_id is not None:
+        outside = group_members_outside_org(db, int(target_group_id), int(tag.organization_id))
+        if outside:
+            raise TagShareError(
+                "Cannot share an organization tag with this group: "
+                f"{outside} group member(s) are not members of that organization"
+            )
+    elif personal_tenant:
+        in_orgs = group_members_in_any_org(db, int(target_group_id))
+        if in_orgs:
+            raise TagShareError(
+                "Cannot share a personal tag with this group: "
+                f"{in_orgs} group member(s) belong to an organization"
+            )
 
 
 def share_tag(
@@ -75,46 +133,26 @@ def share_tag(
     Raises:
         TagShareError: Neither or both targets given, the target is unknown, the
             sharer is not in the target group, or the target reaches outside the
-            organization an org tag belongs to.
+            tag's tenant: the organization an org tag belongs to, or, for a personal
+            tag in a multi-tenant deployment, the organization-less users (a personal
+            workspace is its own tenant). A system tag is visible to everyone and has
+            no tenant to keep it in.
     """
     if bool(target_user_id) == bool(target_group_id):
         raise TagShareError("A share names exactly one user or one group")
 
+    personal_tenant = (
+        tag.organization_id is None
+        and tag.user_id is not None
+        and tenancy_mode(db) is TenancyMode.MULTI
+    )
+
     if target_user_id is not None:
-        if db.query(User).filter(User.id == target_user_id).first() is None:
-            raise TagShareError("Unknown user")
-        # Sharing with yourself is a no-op that would otherwise sit in the list
-        # looking like a real grant.
-        if target_user_id == tag.user_id:
-            raise TagShareError("That tag already belongs to this user")
-        # An organization's tag stays inside that organization.
-        if tag.organization_id is not None and not user_in_tenant(
-            db, target_user_id, int(tag.organization_id)
-        ):
-            raise TagShareError(
-                "Cannot share an organization tag with a user who is not a member "
-                "of that organization"
-            )
+        _check_user_target(db, tag, target_user_id, personal_tenant=personal_tenant)
     elif target_group_id is not None:
-        if db.query(UserGroup).filter(UserGroup.id == target_group_id).first() is None:
-            raise TagShareError("Unknown group")
-        is_member = (
-            db.query(UserGroupMember.id)
-            .filter(
-                UserGroupMember.group_id == target_group_id,
-                UserGroupMember.user_id == shared_by_id,
-            )
-            .first()
+        _check_group_target(
+            db, tag, target_group_id, shared_by_id=shared_by_id, personal_tenant=personal_tenant
         )
-        if is_member is None:
-            raise TagShareError("You must be a member of the group to share with it")
-        if tag.organization_id is not None:
-            outside = group_members_outside_org(db, int(target_group_id), int(tag.organization_id))
-            if outside:
-                raise TagShareError(
-                    "Cannot share an organization tag with this group: "
-                    f"{outside} group member(s) are not members of that organization"
-                )
 
     existing = (
         db.query(TagShare)

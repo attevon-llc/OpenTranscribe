@@ -249,6 +249,13 @@ describe('clearUserState completeness', () => {
     expect(registered.has('stores/capabilities')).toBe(true);
   });
 
+  it('registers the privacy-policy cache (issue #1280), which holds the previous tenant’s policy', () => {
+    expect(registered.has('stores/privacyPolicy')).toBe(true);
+    // And it really is a detected candidate, so the "registered or exempted" sweep covers it
+    // rather than the store silently falling outside the detectors.
+    expect(candidates.map((c) => c.id)).toContain('stores/privacyPolicy');
+  });
+
   it('every module holding module-level state is registered or exempted with a reason', () => {
     const unaccounted = candidates
       .filter((c) => !registered.has(c.id) && !(c.id in EXEMPT))

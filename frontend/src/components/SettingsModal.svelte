@@ -10,6 +10,7 @@
   import { user as userStore } from '$stores/auth';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
+  import { orgPrivacyVisible } from '$lib/settings/privacyPolicy';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
@@ -339,6 +340,16 @@
   const orgAdminCapOn = (state: typeof $capabilities, key: string) =>
     isCloudEdition && isCapabilityEnabled(state, key) && state.audience[key] === 'org_admin';
 
+  // The privacy panel (issue #1280) additionally needs the person to BE an organization
+  // administrator, and it lives in core: a deployment that replaces $lib/cloud still gets it.
+  const orgPrivacyOn = (state: typeof $capabilities, orgRole: string | undefined) =>
+    orgPrivacyVisible({
+      isCloudEdition,
+      capabilityEnabled: isCapabilityEnabled(state, 'org.defaults'),
+      audience: state.audience['org.defaults'],
+      orgRole,
+    });
+
   // Define sidebar sections (filtered by capability; empty sections drop out).
   //
   // Grouped by WHO changes it and HOW OFTEN, not by subject matter (issue #861):
@@ -406,7 +417,7 @@
     // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
     // so regular org members never see these. Community never reaches here
     // (isCloudEdition is false), so the section is empty and drops out.
-    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') || orgAdminCapOn(capState, 'org.takedown') || orgAdminCapOn(capState, 'org.audit_logs') || orgAdminCapOn(capState, 'org.legal_hold') ? [
+    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') || orgAdminCapOn(capState, 'org.takedown') || orgAdminCapOn(capState, 'org.audit_logs') || orgAdminCapOn(capState, 'org.legal_hold') || orgPrivacyOn(capState, $userStore?.org_role) ? [
       {
         title: $t('settings.sections.billingTeam'),
         items: [
@@ -417,7 +428,8 @@
           // `org.takedown` capability (unlike the platform queue's UI-only `admin.takedown`).
           ...(orgAdminCapOn(capState, 'org.takedown') ? [{ id: 'org-takedown' as SettingsSection, label: $t('settings.quarantine.orgNavLabel'), icon: 'shield-off' }] : []),
           ...(orgAdminCapOn(capState, 'org.audit_logs') ? [{ id: 'org-audit-logs' as SettingsSection, label: $t('orgAudit.navLabel'), icon: 'clipboard' }] : []),
-          ...(orgAdminCapOn(capState, 'org.legal_hold') ? [{ id: 'org-holds' as SettingsSection, label: $t('holds.navLabel'), icon: 'shield' }] : [])
+          ...(orgAdminCapOn(capState, 'org.legal_hold') ? [{ id: 'org-holds' as SettingsSection, label: $t('holds.navLabel'), icon: 'shield' }] : []),
+          ...(orgPrivacyOn(capState, $userStore?.org_role) ? [{ id: 'org-privacy' as SettingsSection, label: $t('privacy.org.navLabel'), icon: 'lock' }] : [])
         ]
       }
     ] : []),
@@ -1546,6 +1558,16 @@
       <div class="content-section">
         <h3 class="section-title">{$t('holds.title')}</h3>
         <LazySection load={sectionLoaders.orgHolds} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Cloud edition — organization privacy policy (org admins only, issue #1280) -->
+    {#if activeSection === 'org-privacy' && orgPrivacyOn(capState, $userStore?.org_role)}
+      <div class="content-section">
+        <h3 class="section-title">{$t('privacy.org.title')}</h3>
+        <LazySection load={sectionLoaders.orgPrivacy} let:Component>
           <Component />
         </LazySection>
       </div>

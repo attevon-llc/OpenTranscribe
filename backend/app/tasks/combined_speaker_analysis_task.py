@@ -47,6 +47,10 @@ def _combined_result_writer(
     Each writer is wrapped in try/except so a failure in one does not
     prevent the other from running. Both OpenSearch (embeddings) and
     PostgreSQL (gender) writes are attempted independently.
+
+    The gender half enforces the privacy policy itself (``_gender_result_writer`` writes and
+    stamps nothing for a file whose owner or organization forbids gender inference, issue
+    #1280), so a forbidden file still gets its embeddings written here, subject to their own gate.
     """
     count = 0
 

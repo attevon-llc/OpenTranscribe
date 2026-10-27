@@ -42,7 +42,7 @@ For best transcription quality:
 
 ### Via Web Interface
 
-1. **Click "Upload Files"** button in the top navigation bar
+1. **Click "Add Media"** in the gallery, then stay on the **Upload File** tab
 2. **Drag and drop** your file onto the upload zone, or **click to browse**
 3. **Select your file** from your computer
 4. Watch the upload progress in the **floating upload manager**
@@ -53,9 +53,9 @@ For best transcription quality:
 
 OpenTranscribe can download and process YouTube videos:
 
-1. **Click "Upload from URL"** in the navbar
+1. **Click "Add Media"** in the gallery and open the **Media URL** tab
 2. **Paste the YouTube URL** (supports playlists too!)
-3. Click "**Download and Process**"
+3. Click "**Process Video**"
 4. The video will be downloaded and queued for transcription
 
 ![URL import - paste YouTube or video URL](/img/screenshots/upload/upload-url.png)
@@ -64,7 +64,7 @@ OpenTranscribe can download and process YouTube videos:
 
 Record audio directly in your browser:
 
-1. **Click the microphone icon** in the navbar
+1. **Click "Add Media"** in the gallery and open the **Record Audio** tab
 2. **Select your microphone** device
 3. **Click "Start Recording"**
 4. **Monitor audio levels** to ensure good volume
@@ -97,7 +97,7 @@ flowchart LR
 1. **Queued** - File is waiting in the processing queue
 2. **Preparing audio** - Extracting the audio track (from video if needed) and converting it for transcription
 3. **Transcribing** - Turning speech into text, either with the built-in model on this server or with the cloud provider chosen in **Settings → Transcription**
-4. **Detecting speakers** - Working out who spoke when, as chosen in **Settings → Speaker Identification → Speaker Detection** (this server, your transcription provider, the pyannote.ai cloud service, or off). Depending on that choice this happens together with transcription or just after the transcript is saved
+4. **Detecting speakers** - Working out who spoke when, as chosen in **Settings → Speaker Identification → Speaker detection provider** (this server, your transcription provider, the pyannote.ai cloud service, or off). Depending on that choice this happens together with transcription or just after the transcript is saved
 5. **Voiceprints and matching** - Computing a voiceprint for each speaker on this server and matching it against speakers in your other recordings
 6. **Indexing** - Adding the transcript to the search index
 7. **Complete** - Ready to view!
@@ -197,8 +197,8 @@ If you've configured an LLM provider, you can generate AI summaries:
 
 ### Configure LLM (One-Time)
 
-1. Go to **User Settings** (gear icon)
-2. Click **"LLM Configuration"** tab
+1. Open **Settings** from the user menu
+2. Under **AI & Chat**, choose **LLM Provider Configuration**
 3. Select a **provider** (OpenAI, Claude, vLLM, Ollama)
 4. Enter your **API key** or endpoint
 5. **Test the connection**
@@ -321,7 +321,7 @@ Group related files:
 
 ### Speakers Not Detected
 
-- **Check your Speaker detection choice** - under **Settings → Speaker Identification → Speaker Detection**, make sure it is not **Off**, then look at the file's **Processing** section to see who detected speakers
+- **Check your Speaker detection choice** - under **Settings → Speaker Identification → Speaker detection provider**, make sure it is not **Off**, then look at the file's **Processing** section to see who detected speakers
 - **Check the transcription model** - some cloud models return text only or segment timing only; a speaker change inside a segment is then not detected
 - **Check HuggingFace token** - needed when speakers are detected on this server (the full image), because the speaker models are downloaded from HuggingFace
 - **Clear audio** - speakers need distinct voices

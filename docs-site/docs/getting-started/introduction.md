@@ -20,9 +20,9 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 ## Key Features
 
 ### Advanced Transcription
-- WhisperX 3.8.1 with faster-whisper BatchedInferencePipeline backend
+- WhisperX 3.8.6 with faster-whisper BatchedInferencePipeline backend
 - Native word-level timestamps via cross-attention DTW (all 100+ languages, no separate alignment model)
-- Multi-language support with optional translation to English (requires `large-v3` model)
+- Multi-language support with optional translation to English (not available with the default `large-v3-turbo`; use `large-v3`)
 - 40x+ realtime speed on GPU (`large-v3-turbo` default, 6x faster than `large-v2`)
 - Support for audio (MP3, WAV, FLAC, M4A) and video (MP4, MOV, AVI, MKV)
 - Cloud ASR providers: Deepgram, AssemblyAI, OpenAI, Google, AWS, Azure, Speechmatics, Gladia, pyannote.ai

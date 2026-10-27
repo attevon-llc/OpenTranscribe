@@ -54,9 +54,12 @@ The installer will ask for:
 
 2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
    - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
-   - `large-v3` - Best accuracy, required for translation to English
-   - `medium` - Good balance (8GB+ NVIDIA GPU)
+   - `large-v3` - Best accuracy; use it rather than the turbo model if you need translation to English
+   - `medium` - Good balance (the installer's pick for NVIDIA GPUs with 4-8GB VRAM)
+   - `small` - The installer's pick on Apple Silicon and GPUs under 4GB VRAM
    - `base` - Fast (recommended on CPU-only systems)
+
+   The installer also offers `tiny` and `large-v2`.
 
 :::note[CPU-only installs and speaker detection]
 On a host with no GPU (or with `--cpu`), speaker detection is not switched off for you: each user's setting in **Settings → Speaker Identification** decides, and on a CPU-only install speaker detection on this server runs on the CPU. To skip it, choose Off there or skip speaker detection for a file. See [Environment Variables](../configuration/environment-variables.md#whether-speakers-are-detected-a-user-setting-not-enable_diarization).
@@ -84,7 +87,7 @@ Open your browser and navigate to:
 When you first access OpenTranscribe, you'll see the registration page:
 
 1. Enter your email and password
-2. Click "Sign Up"
+2. Click "Create Account"
 3. You're automatically logged in
 
 ### Guided First-Run Setup Wizard
@@ -95,26 +98,26 @@ than leaving you to discover dozens of auth-related environment variables and se
 tabs on your own, it surfaces the three things a first-time operator actually needs:
 
 - **Change your password** from whatever was used during account creation
-- **SSO / LDAP setup**, if you're connecting an identity provider
+- **Deployment type**, which points you at SSO (OIDC) or LDAP setup if you're connecting an identity provider
 - **Security defaults** — MFA-required, login banner, and approval-on-signup
 
 The wizard presents OpenTranscribe's real settings screens rather than a separate duplicate
 flow, so anything you configure here is the same configuration you'd reach from **Settings →
-Authentication** later. It's shown once; closing or completing it won't bring it back.
+Authentication** later. It's shown once; skipping or finishing it won't bring it back automatically, but you can run it again from Settings → Authentication.
 
 ### 2. Upload a Media File
 
-1. Click the **"Upload Files"** button in the navbar
+1. Click the **"Add Media"** button in the gallery
 2. Drag and drop a file or click to browse
 3. Supported formats: MP3, WAV, MP4, MOV, etc.
-4. Files up to 4GB are supported
+4. Files up to 15 GB are supported by default (`MAX_UPLOAD_BYTES`)
 
 ### 3. Monitor Processing
 
 Watch the progress in real-time:
 
 - **Upload progress** shows in the floating upload manager
-- **Processing stages** display 13 detailed steps
+- **Processing stages** show the current step (see [Your First Transcription](./first-transcription.md#step-3-monitor-processing))
 - **Notifications** appear when transcription completes
 
 ### 4. View Your Transcript
@@ -134,7 +137,7 @@ Now that you have OpenTranscribe running, explore these features:
 
 Set up LLM integration for AI-powered summarization:
 
-- Go to **User Settings** → **LLM Configuration**
+- Go to **Settings** → **AI & Chat** → **LLM Provider Configuration**
 - Choose a provider (OpenAI, Claude, vLLM, Ollama)
 - Enter your API key
 - Test the connection

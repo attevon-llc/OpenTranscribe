@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "Ese proveedor factura una transcripción completa de cada grabación y recibe el audio, aunque solo se usan sus hablantes.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "Es su proveedor de transcripción, así que se usa su propia detección de hablantes y no se factura dos veces.",
   "settings.pipeline.issue.source_locked": "Su administrador gestiona la detección de hablantes de esta instalación.",
+  "settings.pipeline.issue.voiceprints_disabled": "El reconocimiento de hablantes entre grabaciones está desactivado para esta grabación, por lo que no se crean ni se comparan perfiles de voz. Los hablantes se siguen distinguiendo dentro de la grabación.",
   "settings.speakerIdentification.source.asrConfig": "Detección de hablantes de otro proveedor",
   "settings.speakerIdentification.source.asrConfigDesc": "Otro proveedor guardado indica quién habló. Transcribe cada grabación completa y recibe el audio; solo se usan sus etiquetas de hablante.",
   "settings.speakerIdentification.source.asrConfigSelect": "Proveedor para la detección de hablantes",

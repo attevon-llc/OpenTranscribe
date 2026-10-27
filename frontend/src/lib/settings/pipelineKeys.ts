@@ -24,6 +24,7 @@ export const PIPELINE_ISSUE_KEYS = {
   diarizer_double_billing: 'settings.pipeline.issue.diarizer_double_billing',
   diarizer_same_as_transcription: 'settings.pipeline.issue.diarizer_same_as_transcription',
   source_locked: 'settings.pipeline.issue.source_locked',
+  voiceprints_disabled: 'settings.pipeline.issue.voiceprints_disabled',
   asr_provider_not_allowed: 'settings.pipeline.issue.asr_provider_not_allowed',
   diarizer_provider_not_allowed: 'settings.pipeline.issue.diarizer_provider_not_allowed',
 } as const;

@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "Die provider rekent elke opname als volledige transcriptie aan en ontvangt de audio, ook al worden alleen de sprekers gebruikt.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "Dit is uw transcriptieprovider, dus de eigen sprekerdetectie wordt gebruikt en er wordt niets dubbel aangerekend.",
   "settings.pipeline.issue.source_locked": "Uw beheerder beheert de sprekerdetectie voor deze installatie.",
+  "settings.pipeline.issue.voiceprints_disabled": "Sprekerherkenning over opnamen heen staat uit voor deze opname, dus er worden geen stemprofielen aangemaakt of vergeleken. Sprekers worden binnen de opname nog steeds van elkaar onderscheiden.",
   "settings.speakerIdentification.source.asrConfig": "Sprekerdetectie van een andere provider",
   "settings.speakerIdentification.source.asrConfigDesc": "Een andere opgeslagen provider geeft aan wie er sprak. Die transcribeert elke opname volledig en ontvangt de audio; alleen de sprekerlabels worden gebruikt.",
   "settings.speakerIdentification.source.asrConfigSelect": "Provider voor sprekerdetectie",

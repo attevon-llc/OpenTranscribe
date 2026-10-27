@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "このプロバイダーは、話者情報しか使わなくても、すべての録音の文字起こし全体の料金を請求し、音声を受け取ります。",
   "settings.pipeline.issue.diarizer_same_as_transcription": "これはあなたの文字起こしプロバイダーのため、その話者検出が使われ、二重には請求されません。",
   "settings.pipeline.issue.source_locked": "このデプロイの話者検出は管理者が管理しています。",
+  "settings.pipeline.issue.voiceprints_disabled": "この録音では録音をまたぐ話者認識がオフになっているため、音声プロファイルの作成や照合は行われません。録音内での話者の区別は引き続き行われます。",
   "settings.speakerIdentification.source.asrConfig": "別のプロバイダーの話者検出",
   "settings.speakerIdentification.source.asrConfigDesc": "保存済みの別のプロバイダーが誰が話したかを示します。すべての録音を全文書き起こし、音声を受け取りますが、使われるのは話者ラベルだけです。",
   "settings.speakerIdentification.source.asrConfigSelect": "話者検出に使うプロバイダー",

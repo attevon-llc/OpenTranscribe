@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "يحتسب ذلك المزوّد تكلفة تفريغ نصي كامل لكل تسجيل ويستلم الصوت، رغم أنه لا يُستخدم منه سوى المتحدثين.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "هذا هو مزوّد التفريغ النصي لديك، لذا يُستخدم كشفه الخاص للمتحدثين ولا تُحتسب الرسوم مرتين.",
   "settings.pipeline.issue.source_locked": "يدير المسؤول كشف المتحدثين في هذا النشر.",
+  "settings.pipeline.issue.voiceprints_disabled": "تم إيقاف التعرف على المتحدثين عبر التسجيلات لهذا التسجيل، لذا لا يتم إنشاء ملفات صوتية أو مطابقتها. لا يزال يتم التمييز بين المتحدثين داخل التسجيل.",
   "settings.speakerIdentification.source.asrConfig": "كشف المتحدثين من مزوّد آخر",
   "settings.speakerIdentification.source.asrConfigDesc": "مزوّد آخر محفوظ يحدّد من تحدّث. يفرّغ كل تسجيل بالكامل ويستلم الصوت، ولا تُستخدم منه سوى تسميات المتحدثين.",
   "settings.speakerIdentification.source.asrConfigSelect": "مزوّد كشف المتحدثين",

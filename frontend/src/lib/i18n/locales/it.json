@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "Quel provider addebita una trascrizione completa di ogni registrazione e riceve l’audio, anche se vengono usati solo i suoi parlanti.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "È il tuo provider di trascrizione, quindi viene usato il suo rilevamento dei parlanti e nulla viene addebitato due volte.",
   "settings.pipeline.issue.source_locked": "Il tuo amministratore gestisce il rilevamento dei parlanti per questa installazione.",
+  "settings.pipeline.issue.voiceprints_disabled": "Il riconoscimento dei parlanti tra le registrazioni è disattivato per questa registrazione, quindi non vengono creati né confrontati profili vocali. I parlanti vengono comunque distinti all'interno della registrazione.",
   "settings.speakerIdentification.source.asrConfig": "Rilevamento dei parlanti di un altro provider",
   "settings.speakerIdentification.source.asrConfigDesc": "Un altro provider salvato indica chi ha parlato. Trascrive ogni registrazione per intero e riceve l’audio; vengono usate solo le sue etichette dei parlanti.",
   "settings.speakerIdentification.source.asrConfigSelect": "Provider per il rilevamento dei parlanti",

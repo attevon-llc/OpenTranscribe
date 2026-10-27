@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "该提供商会对每段录音按完整转录计费并接收音频，即使只使用其说话人信息。",
   "settings.pipeline.issue.diarizer_same_as_transcription": "这是您的转录提供商，因此使用它自己的说话人检测，不会重复计费。",
   "settings.pipeline.issue.source_locked": "此部署的说话人检测由管理员管理。",
+  "settings.pipeline.issue.voiceprints_disabled": "此录音已关闭跨录音的说话人识别，因此不会创建或匹配声纹档案。录音内部仍会区分不同的说话人。",
   "settings.speakerIdentification.source.asrConfig": "其他提供商的说话人检测",
   "settings.speakerIdentification.source.asrConfigDesc": "由另一个已保存的提供商标注谁在说话。它会完整转录每段录音并接收音频，只使用其说话人标签。",
   "settings.speakerIdentification.source.asrConfigSelect": "用于说话人检测的提供商",

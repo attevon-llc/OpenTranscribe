@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "해당 제공업체는 화자 정보만 사용하더라도 모든 녹음의 전체 전사 요금을 청구하고 오디오를 받습니다.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "내 전사 제공업체이므로 자체 화자 감지가 사용되며 이중으로 청구되지 않습니다.",
   "settings.pipeline.issue.source_locked": "이 배포 환경의 화자 감지는 관리자가 관리합니다.",
+  "settings.pipeline.issue.voiceprints_disabled": "이 녹음에서는 녹음 간 화자 인식이 꺼져 있어 음성 프로필이 생성되거나 대조되지 않습니다. 녹음 내에서는 화자가 계속 구분됩니다.",
   "settings.speakerIdentification.source.asrConfig": "다른 제공업체의 화자 감지",
   "settings.speakerIdentification.source.asrConfigDesc": "저장된 다른 제공업체가 누가 말했는지 표시합니다. 모든 녹음을 전체 전사하고 오디오를 받지만, 화자 레이블만 사용됩니다.",
   "settings.speakerIdentification.source.asrConfigSelect": "화자 감지에 사용할 제공업체",

@@ -239,6 +239,26 @@ def _config_py_internal_reads() -> frozenset[str]:
     return frozenset(name for name, count in counts.items() if count >= 2)
 
 
+def _module_string_constants(tree: ast.Module) -> dict[str, str]:
+    """Module-level ``NAME = "LITERAL"`` bindings, so ``os.environ.get(NAME)`` resolves.
+
+    ``services/asr/aws_provider.py`` names its env vars once (``BUCKET_ENV = "AWS_TRANSCRIBE_BUCKET"``)
+    and reads them through the constant; a scan that only accepted a literal first argument
+    reported both as unconsumed.
+    """
+    constants: dict[str, str] = {}
+    for stmt in tree.body:
+        if (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        ):
+            constants[stmt.targets[0].id] = stmt.value.value
+    return constants
+
+
 @lru_cache(maxsize=1)
 def _keys_genuinely_consumed() -> frozenset[str]:
     """Keys actually read by something, not merely DECLARED as a Settings field (K2).
@@ -267,6 +287,7 @@ def _keys_genuinely_consumed() -> frozenset[str]:
         except SyntaxError:  # pragma: no cover - defensive
             continue
         aliases = _settings_aliases(tree)
+        constants = _module_string_constants(tree)
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Attribute)
@@ -294,10 +315,14 @@ def _keys_genuinely_consumed() -> frozenset[str]:
                     names.add(attr_arg.value)
                 continue
             if called in _ENV_READ_WRAPPER_NAMES and node.args:
-                if isinstance(node.args[0], ast.Constant):
-                    value = node.args[0].value
-                    if isinstance(value, str) and re.fullmatch(r"[A-Z_][A-Z0-9_]*", value):
-                        names.add(value)
+                first = node.args[0]
+                value = None
+                if isinstance(first, ast.Constant):
+                    value = first.value
+                elif isinstance(first, ast.Name):
+                    value = constants.get(first.id)
+                if isinstance(value, str) and re.fullmatch(r"[A-Z_][A-Z0-9_]*", value):
+                    names.add(value)
 
     return frozenset(names)
 

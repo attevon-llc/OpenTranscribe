@@ -208,6 +208,7 @@ grpcio-status==1.84.0
 httpcore2==2.13.0
 httpx2==2.13.0
 multidict==6.9.1
+narwhals==2.27.1  # transitive (plotly/altair family); pinned so the variant resolves the same as requirements.txt
 proto-plus==1.28.4
 wcwidth==0.9.3
 # Tracks torch (see requirements.txt); +cpu for the same reason torch is pinned +cpu above.

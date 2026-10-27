@@ -28861,7 +28861,7 @@
     },
     "/api/asr-settings/all": {
       "delete": {
-        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete. On lite,\nwhere the default is local Whisper, deleting a user's configs is refused (409\n``local_asr_unavailable``, #1228).",
+        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete. On lite,\nwhere the default is local Whisper, deleting a user's configs is refused (409\n``local_asr_unavailable``, #1228). Each shared configuration is treated as a single\ndelete treats it: a member who runs on it is assessed first (the whole call is refused,\nand nothing is deleted, if any member would be stranded), and the members' active\npointers are cleared with it.",
         "operationId": "delete_all_asr_configs_api_asr_settings_all_delete",
         "responses": {
           "200": {
@@ -40871,7 +40871,7 @@
     },
     "/api/prompts/shared/{prompt_uuid}/toggle": {
       "post": {
-        "description": "Toggle sharing on a prompt. The owner, or an admin of the same tenant, can toggle.\n\nA prompt outside the caller's tenant answers 404, the same as a missing one, so its\nexistence is not disclosed. A platform role without a support-access grant is scoped to\nits own tenant like any other admin; a write grant assumes the granted tenant.",
+        "description": "Toggle sharing on a prompt. The owner, or an admin of the prompt's tenant, can toggle.\n\nA prompt outside the caller's tenant answers 404, the same as a missing one, so its\nexistence is not disclosed. A personal workspace is its own tenant: in a multi-tenant\ndeployment nobody but the owner reaches a personal prompt, and the platform role only\ndoes through a write support grant for that user. Inside an organization the authority\nis the org admin role or a write grant (which assumes the granted tenant), never the\nplatform role alone. A single-tenant deployment keeps instance-wide admin access.",
         "operationId": "share_prompt_api_prompts_shared__prompt_uuid__toggle_post",
         "parameters": [
           {
@@ -41597,7 +41597,7 @@
     },
     "/api/search/degraded-embeddings": {
       "get": {
-        "description": "Preview the files stranded text-only by a neural-search degraded window (#626).\n\nRead-only survey — pairs with ``POST /search/reembed-degraded``, which requires this\npreview to be confirmed rather than dispatching on click.\n\n``total_files`` is the size of what a re-embed would touch. In a multi-tenant\ndeployment ``files`` names only the files of the caller's active tenant (the caller's\nown rows, unless the request's bypass sees the whole scope); the rest are counted in\n``outside_scope_files`` and never named. A single-tenant deployment lists everything.",
+        "description": "Preview the files stranded text-only by a neural-search degraded window (#626).\n\nRead-only survey — pairs with ``POST /search/reembed-degraded``, which requires this\npreview to be confirmed rather than dispatching on click.\n\n``total_files`` is the size of what a re-embed would touch, which is deployment-wide, so\nthe deployment-wide figures (``total_files`` and ``outside_scope_files``) go to a caller\nwho holds the deployment-scope right (every admin in a single-tenant deployment, a\n``super_admin`` otherwise). Any other admin of a multi-tenant deployment gets the counts\nof the files listed to them, and ``outside_scope_files`` is 0. In that deployment ``files``\nnames only the files of the caller's active tenant (the caller's own rows, unless the\nrequest's bypass sees the whole scope). A single-tenant deployment lists everything.",
         "operationId": "get_degraded_embeddings_api_search_degraded_embeddings_get",
         "parameters": [
           {
@@ -42043,7 +42043,7 @@
     },
     "/api/search/reembed-degraded": {
       "post": {
-        "description": "Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.\n\nChecks the task's own lock before dispatching, rather than dispatching into a lock it\nknows is already held — matches ``start_embedding_consistency_repair``'s shape in\n``admin.py``.",
+        "description": "Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.\n\nDeployment-wide: it re-embeds every tenant's files, so it needs the deployment-scope\nright (every admin in a single-tenant deployment, a ``super_admin`` otherwise).\n\nChecks the task's own lock before dispatching, rather than dispatching into a lock it\nknows is already held — matches ``start_embedding_consistency_repair``'s shape in\n``admin.py``.",
         "operationId": "trigger_reembed_degraded_api_search_reembed_degraded_post",
         "parameters": [
           {

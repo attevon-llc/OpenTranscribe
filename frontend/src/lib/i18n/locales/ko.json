@@ -785,6 +785,8 @@
   "settings.embeddingMigration.statusLoadFailed": "상태를 불러오지 못했습니다",
   "settings.embeddingMigration.migrationStarted": "마이그레이션이 시작되었습니다",
   "settings.embeddingMigration.migrationStartFailed": "마이그레이션 시작에 실패했습니다",
+  "settings.embeddingMigration.policySkipNotice": "일부 녹음에서는 화자 인식이 꺼져 있습니다. 마이그레이션은 해당 녹음을 건너뛰며 음성 지문을 저장하지 않습니다. 건너뛴 녹음: {{files}}개, 범위 {{scopes}}개.",
+  "settings.embeddingMigration.voiceprintsDisabled": "모든 녹음에서 화자 인식이 꺼져 있어 마이그레이션할 항목이 없습니다.",
   "settings.embeddingMigration.migrationFinalized": "마이그레이션이 완료되었습니다",
   "settings.embeddingMigration.migrationFinalizeFailed": "마이그레이션 완료 처리에 실패했습니다",
   "settings.embeddingMigration.currentMode": "현재 모드",

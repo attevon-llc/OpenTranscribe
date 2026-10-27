@@ -785,6 +785,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Impossibile caricare lo stato",
   "settings.embeddingMigration.migrationStarted": "Migrazione avviata con successo",
   "settings.embeddingMigration.migrationStartFailed": "Impossibile avviare la migrazione",
+  "settings.embeddingMigration.policySkipNotice": "Il riconoscimento dei parlanti è disattivato per alcune registrazioni. La migrazione le salta e non archivia impronte vocali per esse. Registrazioni saltate: {{files}}, in {{scopes}} ambiti.",
+  "settings.embeddingMigration.voiceprintsDisabled": "Il riconoscimento dei parlanti è disattivato per tutte le registrazioni, quindi non c'è nulla da migrare.",
   "settings.embeddingMigration.migrationFinalized": "Migrazione finalizzata",
   "settings.embeddingMigration.migrationFinalizeFailed": "Impossibile finalizzare la migrazione",
   "settings.embeddingMigration.currentMode": "Modalità attuale",

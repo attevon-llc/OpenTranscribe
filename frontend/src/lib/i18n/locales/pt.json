@@ -756,6 +756,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Falha ao carregar status",
   "settings.embeddingMigration.migrationStarted": "Migração iniciada com sucesso",
   "settings.embeddingMigration.migrationStartFailed": "Falha ao iniciar migração",
+  "settings.embeddingMigration.policySkipNotice": "O reconhecimento de falantes está desativado para algumas gravações. A migração as ignora e não armazena impressões vocais para elas. Gravações ignoradas: {{files}}, em {{scopes}} escopos.",
+  "settings.embeddingMigration.voiceprintsDisabled": "O reconhecimento de falantes está desativado para todas as gravações, portanto não há nada para migrar.",
   "settings.embeddingMigration.migrationFinalized": "Migração finalizada",
   "settings.embeddingMigration.migrationFinalizeFailed": "Falha ao finalizar migração",
   "settings.embeddingMigration.currentMode": "Modo Atual",

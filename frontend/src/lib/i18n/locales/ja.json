@@ -756,6 +756,8 @@
   "settings.embeddingMigration.statusLoadFailed": "ステータスの読み込みに失敗しました",
   "settings.embeddingMigration.migrationStarted": "移行が正常に開始されました",
   "settings.embeddingMigration.migrationStartFailed": "移行の開始に失敗しました",
+  "settings.embeddingMigration.policySkipNotice": "一部の録音では話者認識がオフになっています。移行ではそれらをスキップし、声紋は保存しません。スキップされた録音: {{files}} 件（{{scopes}} スコープ）。",
+  "settings.embeddingMigration.voiceprintsDisabled": "すべての録音で話者認識がオフになっているため、移行するものはありません。",
   "settings.embeddingMigration.migrationFinalized": "移行が完了しました",
   "settings.embeddingMigration.migrationFinalizeFailed": "移行の完了に失敗しました",
   "settings.embeddingMigration.currentMode": "現在のモード",

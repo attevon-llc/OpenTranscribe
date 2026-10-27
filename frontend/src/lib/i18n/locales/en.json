@@ -785,6 +785,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Failed to load status",
   "settings.embeddingMigration.migrationStarted": "Migration started successfully",
   "settings.embeddingMigration.migrationStartFailed": "Failed to start migration",
+  "settings.embeddingMigration.policySkipNotice": "Speaker recognition is turned off for some recordings. The migration skips them and stores no voiceprints for them. Skipped recordings: {{files}}, in {{scopes}} scopes.",
+  "settings.embeddingMigration.voiceprintsDisabled": "Speaker recognition is turned off for every recording, so there is nothing to migrate.",
   "settings.embeddingMigration.migrationFinalized": "Migration finalized",
   "settings.embeddingMigration.migrationFinalizeFailed": "Failed to finalize migration",
   "settings.embeddingMigration.currentMode": "Current Mode",

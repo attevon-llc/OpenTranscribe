@@ -785,6 +785,8 @@
   "settings.embeddingMigration.statusLoadFailed": "فشل تحميل الحالة",
   "settings.embeddingMigration.migrationStarted": "بدأ الترحيل بنجاح",
   "settings.embeddingMigration.migrationStartFailed": "فشل بدء الترحيل",
+  "settings.embeddingMigration.policySkipNotice": "التعرّف على المتحدثين متوقف لبعض التسجيلات. يتخطاها الترحيل ولا يخزّن لها بصمات صوتية. التسجيلات التي تم تخطيها: {{files}}، في {{scopes}} نطاقات.",
+  "settings.embeddingMigration.voiceprintsDisabled": "التعرّف على المتحدثين متوقف لجميع التسجيلات، لذا لا يوجد ما يمكن ترحيله.",
   "settings.embeddingMigration.migrationFinalized": "تم إنهاء الترحيل",
   "settings.embeddingMigration.migrationFinalizeFailed": "فشل إنهاء الترحيل",
   "settings.embeddingMigration.currentMode": "الوضع الحالي",

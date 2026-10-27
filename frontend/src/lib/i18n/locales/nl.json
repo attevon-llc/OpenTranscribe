@@ -785,6 +785,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Kon status niet laden",
   "settings.embeddingMigration.migrationStarted": "Migratie succesvol gestart",
   "settings.embeddingMigration.migrationStartFailed": "Kon migratie niet starten",
+  "settings.embeddingMigration.policySkipNotice": "Sprekerherkenning staat uit voor sommige opnamen. De migratie slaat ze over en slaat er geen stemafdrukken voor op. Overgeslagen opnamen: {{files}}, in {{scopes}} bereiken.",
+  "settings.embeddingMigration.voiceprintsDisabled": "Sprekerherkenning staat uit voor alle opnamen, dus er valt niets te migreren.",
   "settings.embeddingMigration.migrationFinalized": "Migratie afgerond",
   "settings.embeddingMigration.migrationFinalizeFailed": "Kon migratie niet afronden",
   "settings.embeddingMigration.currentMode": "Huidige modus",

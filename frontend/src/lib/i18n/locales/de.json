@@ -1350,6 +1350,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Fehler beim Laden des Status",
   "settings.embeddingMigration.migrationStarted": "Migration erfolgreich gestartet",
   "settings.embeddingMigration.migrationStartFailed": "Fehler beim Starten der Migration",
+  "settings.embeddingMigration.policySkipNotice": "Für einige Aufnahmen ist die Sprechererkennung ausgeschaltet. Die Migration überspringt sie und speichert dafür keine Stimmabdrücke. Übersprungene Aufnahmen: {{files}}, in {{scopes}} Bereichen.",
+  "settings.embeddingMigration.voiceprintsDisabled": "Die Sprechererkennung ist für alle Aufnahmen ausgeschaltet, daher gibt es nichts zu migrieren.",
   "settings.embeddingMigration.migrationFinalized": "Migration abgeschlossen",
   "settings.embeddingMigration.migrationFinalizeFailed": "Fehler beim Abschließen der Migration",
   "settings.embeddingMigration.currentMode": "Aktueller Modus",

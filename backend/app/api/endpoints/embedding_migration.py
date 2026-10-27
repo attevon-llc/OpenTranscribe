@@ -16,6 +16,8 @@ from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.services.migration_progress_service import migration_progress
+from app.services.privacy.migration_scope import summarize_migration_scopes
+from app.services.privacy.redact_view import VOICEPRINTS_DISABLED_CODE
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -83,6 +85,8 @@ def get_migration_status(
     - Document counts in each index
     - Progress tracking (if migration is running)
     - Stalled migration detection (when Redis data expired)
+    - ``policy_skipped``: how many files and scopes a migration would skip because their
+      voiceprint switch is off, so the admin is warned before starting
 
     Degrades gracefully when OpenSearch is unavailable: still 200, with
     ``{"status": "error", "message": "OpenSearch not available"}`` in place of
@@ -117,6 +121,9 @@ def get_migration_status(
         status["completed_file_count"] = (
             db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).count()
         )
+
+        # Privacy policy (#1280, plan Q3): the scopes this run will skip, shown BEFORE it starts.
+        status["policy_skipped"] = summarize_migration_scopes(db).to_dict()
 
         # Detect stalled migration: v4 index has docs but mode is still v3
         # and Redis progress is empty/expired (no running migration)
@@ -211,6 +218,12 @@ def start_migration(
         - task_id: Celery task ID (if started)
         - message: Human-readable status message
         - progress: Current progress info (if migration already running)
+        - policy_skipped: counts of files and scopes the run will skip because their
+          voiceprint switch is off (only when there are any)
+
+    Raises:
+        HTTPException 409: ``{"code": "voiceprints_disabled", "locked_by": <layer>}`` when
+            every recording is in a scope whose voiceprints are switched off.
     """
     from app.tasks.embedding_migration_v4 import migrate_speaker_embeddings_v4_task
 
@@ -231,6 +244,19 @@ def start_migration(
             "message": "Already using v4 embeddings, no migration needed",
         }
 
+    # Privacy policy (#1280, plan D5/D8): a scope with voiceprints off is skipped, never written.
+    # When EVERY scope is off nothing could be migrated, and the reason is a 409 rather than
+    # an empty success; otherwise the run goes ahead and the response names what it will skip.
+    summary = summarize_migration_scopes(db, user_id)
+    if summary.all_skipped:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": VOICEPRINTS_DISABLED_CODE,
+                "locked_by": summary.locked_by[0] if summary.locked_by else "instance",
+            },
+        )
+
     try:
         # Dispatch the migration task — lock is ref-counted, multiple migrations can coexist
         task = migrate_speaker_embeddings_v4_task.delay(
@@ -241,12 +267,15 @@ def start_migration(
         action = "Force re-migration" if force else "Migration"
         logger.info(f"{action} task started: {task.id}")
 
-        return {
+        response: dict = {
             "status": "started",
             "task_id": task.id,
             "message": f"{action} task dispatched. Check /status or /progress for updates.",
             "force": force,
         }
+        if summary.any_skipped:
+            response["policy_skipped"] = summary.to_dict()
+        return response
 
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns

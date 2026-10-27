@@ -1350,6 +1350,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Error al cargar estado",
   "settings.embeddingMigration.migrationStarted": "Migración iniciada exitosamente",
   "settings.embeddingMigration.migrationStartFailed": "Error al iniciar migración",
+  "settings.embeddingMigration.policySkipNotice": "El reconocimiento de hablantes está desactivado para algunas grabaciones. La migración las omite y no almacena huellas de voz para ellas. Grabaciones omitidas: {{files}}, en {{scopes}} ámbitos.",
+  "settings.embeddingMigration.voiceprintsDisabled": "El reconocimiento de hablantes está desactivado para todas las grabaciones, así que no hay nada que migrar.",
   "settings.embeddingMigration.migrationFinalized": "Migración finalizada",
   "settings.embeddingMigration.migrationFinalizeFailed": "Error al finalizar migración",
   "settings.embeddingMigration.currentMode": "Modo Actual",

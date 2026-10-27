@@ -756,6 +756,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Не удалось загрузить статус",
   "settings.embeddingMigration.migrationStarted": "Миграция успешно запущена",
   "settings.embeddingMigration.migrationStartFailed": "Не удалось запустить миграцию",
+  "settings.embeddingMigration.policySkipNotice": "Для некоторых записей распознавание говорящих отключено. Миграция пропускает их и не сохраняет для них голосовые отпечатки. Пропущено записей: {{files}}, в областях: {{scopes}}.",
+  "settings.embeddingMigration.voiceprintsDisabled": "Распознавание говорящих отключено для всех записей, поэтому переносить нечего.",
   "settings.embeddingMigration.migrationFinalized": "Миграция завершена",
   "settings.embeddingMigration.migrationFinalizeFailed": "Не удалось завершить миграцию",
   "settings.embeddingMigration.currentMode": "Текущий режим",

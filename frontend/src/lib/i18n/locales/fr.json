@@ -1350,6 +1350,8 @@
   "settings.embeddingMigration.statusLoadFailed": "Échec du chargement de l'état",
   "settings.embeddingMigration.migrationStarted": "Migration démarrée avec succès",
   "settings.embeddingMigration.migrationStartFailed": "Échec du démarrage de la migration",
+  "settings.embeddingMigration.policySkipNotice": "La reconnaissance des locuteurs est désactivée pour certains enregistrements. La migration les ignore et ne stocke aucune empreinte vocale pour eux. Enregistrements ignorés : {{files}}, dans {{scopes}} périmètres.",
+  "settings.embeddingMigration.voiceprintsDisabled": "La reconnaissance des locuteurs est désactivée pour tous les enregistrements : il n'y a rien à migrer.",
   "settings.embeddingMigration.migrationFinalized": "Migration finalisée",
   "settings.embeddingMigration.migrationFinalizeFailed": "Échec de la finalisation de la migration",
   "settings.embeddingMigration.currentMode": "Mode Actuel",

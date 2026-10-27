@@ -157,7 +157,7 @@ changing `provider` **clears** it.
   `create_for_user` rather than silently degraded to local — for a private/loopback/RFC1918/link-local/
   metadata/docker-compose-hostname target unless explicitly allowed. The shipped default
   (`https://api.gladia.io`) and any value equal to it are exempt from the guard, so an unconfigured
-  deployment pays no DNS lookup at construction. All ten providers' catalog entries still say
-  `supports_custom_url: False` (`ASR_PROVIDER_CATALOG`), so the admin UI does not surface the field for
-  any provider today — a config can still be set directly via the API (as
-  `register_mock_gladia_asr_config`'s test fixture does), just not through Settings → AI ASR.
+  deployment pays no DNS lookup at construction. Only the `gladia` catalog entry says
+  `supports_custom_url: True` (`ASR_PROVIDER_CATALOG`); the other nine still say `False`, so the admin UI
+  surfaces the field for Gladia alone — a config for any other provider can still be set directly via the
+  API (as `register_mock_gladia_asr_config`'s test fixture does for Gladia), but it is silently dropped.

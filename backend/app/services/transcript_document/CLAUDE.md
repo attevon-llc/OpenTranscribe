@@ -41,7 +41,7 @@ Turns one transcript into a `.docx` or `.pdf` with numbered lines, so a place ca
 - **Direction is a property of the CONTENT**, per turn, not of the UI locale. Shaping runs per line
   and only for scripts that join or reorder (`needs_shaping`): shaping every line of a Latin
   four-hour transcript cost four times the render for no visible difference.
-- **CJK and Thai wrap between any two characters** (`CharWrap`); no kinsoku (the captions segmenter
+- **CJK and Thai wrap between any two characters** (`breaks_between_characters` -> fpdf2 `WrapMode.CHAR`); no kinsoku (the captions segmenter
   has it; a transcript page does not). The CJK face comes from the language region (SC/TC/JP/KR),
   collection index chosen per region.
 - **Fonts are a deployment fact.** `DOCUMENT_FONT_DIR` (`/usr/share/fonts/opentranscribe`) is filled by

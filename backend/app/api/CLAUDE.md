@@ -385,6 +385,16 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `GET /embeddings/migration/status` carries `policy_skipped`, and `POST /embeddings/migration/start` is 409 `voiceprints_disabled`
   only when EVERY recording is in a forbidden scope. A plan PREVIEW (no `media_file_id`) is judged in the request's active
   organization; a real file in its own row's organization.
+- **Privacy policy (#1280), lists and filters.** A page of files (`GET /files`, `GET /collections/{uuid}/media`)
+  builds ONE `PrivacyView` and hands it to `FormattingService.format_media_file(..., privacy=)`: the speaker
+  chips ask the voiceprint policy per file scope, not per speaker. A `speaker` filter matches the name the page
+  shows: `files/filtering.hidden_speaker_name_clause` (SQL twin of `hide_machine_identities`) makes a display
+  name a voiceprint made unmatchable while its file's voiceprints are off (the diarizer name always matches), and
+  the list loads the label columns up front (`LIST_SPEAKER_COLUMNS`). `GET /speaker-profiles/profiles` counts only
+  the links `machine_identity_clauses` does not hide. A response that embeds a speaker redacts before computing
+  status (`redact_speaker_rows` recomputes the status of every row it changed); `tests/api/test_segment_edit_response_privacy.py`
+  pins both segment-edit endpoints. A switch change is relabelled by `services/privacy/label_reindex.py` (see
+  `services/search/CLAUDE.md`); the three `policy_admin` writers take the acting user for its audit event.
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
 - **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),

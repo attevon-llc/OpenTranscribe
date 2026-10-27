@@ -166,3 +166,26 @@ def test_an_unreadable_policy_hides_the_voiceprint_label(
     assert by_speaker[world.alice.id]["speaker"] == "SPEAKER_00"
     assert by_speaker[world.alice.id]["profile_id"] is None
     assert by_speaker[world.bob.id]["speaker"] == BOB
+
+
+def test_an_unreadable_policy_hides_the_voiceprint_label_in_the_reindex_metadata(
+    db_session, normal_user, monkeypatch
+):
+    from app.tasks.reindex_task import _extract_file_metadata
+
+    world = build_world(
+        db_session, normal_user, organization=make_org(db_session, voiceprints=True)
+    )
+
+    def broken(db, file_id):
+        raise RuntimeError("policy store unreachable")
+
+    monkeypatch.setattr(policy, "voiceprints_allowed_for_file", broken)
+
+    meta = _extract_file_metadata(db_session, world.file)
+
+    assert meta is not None
+    by_speaker = _by_speaker(meta["segments"])
+    assert by_speaker[world.alice.id]["speaker"] == "SPEAKER_00"
+    assert "profile_id" not in by_speaker[world.alice.id]
+    assert by_speaker[world.bob.id]["speaker"] == BOB

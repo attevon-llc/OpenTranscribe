@@ -623,3 +623,81 @@ def test_the_backfill_retries_a_file_it_could_not_queue(db_session, normal_user,
     again: dict = {}
     backfill_world.backfill.backfill_llm_suggested_labels(db_session, again)
     assert backfill_world.seams["reindexed"] == [file_a.id]
+
+
+# ---------------------------------------------------- identity_source values (issue #1280)
+
+
+def _identity_source_literals(source: str) -> set[str]:
+    """String literals assigned to, passed as, or compared with ``identity_source``."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        values: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(t, ast.Attribute) and t.attr == "identity_source" for t in node.targets
+            ):
+                values.append(node.value)
+        elif isinstance(node, ast.Call):
+            values.extend(kw.value for kw in node.keywords if kw.arg == "identity_source")
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "in_":
+                owner = node.func.value
+                if isinstance(owner, ast.Attribute) and owner.attr == "identity_source":
+                    for arg in node.args:
+                        if isinstance(arg, ast.List | ast.Tuple | ast.Set):
+                            values.extend(arg.elts)
+        elif isinstance(node, ast.Compare):
+            sides = [node.left, *node.comparators]
+            if any(isinstance(s, ast.Attribute) and s.attr == "identity_source" for s in sides):
+                values.extend(sides)
+        for value in values:
+            found.update(_possible_literals(value))
+    return found
+
+
+def test_the_identity_source_literal_scan_fires_and_stays_quiet():
+    fires = (
+        "def f(s):\n"
+        "    s.identity_source = 'voiceprint'\n"
+        "    if s.identity_source == 'bogus':\n"
+        "        pass\n"
+        "    q.filter(Speaker.identity_source.in_(['human', 'other']))\n"
+        "    make(identity_source='third')\n"
+    )
+    quiet = "def f(s):\n    s.identity_source = HUMAN\n    s.other = 'voiceprint'\n"
+
+    assert _identity_source_literals(fires) == {"voiceprint", "bogus", "human", "other", "third"}
+    assert _identity_source_literals(quiet) == set()
+
+
+def test_every_identity_source_the_app_writes_or_reads_is_a_known_value():
+    from app.utils.speaker_identity_source import IDENTITY_SOURCES
+
+    seen: set[str] = set()
+    for path in _APP.rglob("*.py"):
+        seen |= _identity_source_literals(path.read_text(encoding="utf-8"))
+
+    assert seen <= IDENTITY_SOURCES, (
+        f"unknown identity_source values: {sorted(seen - IDENTITY_SOURCES)}"
+    )
+
+
+def test_every_identity_source_value_is_classified_for_hiding():
+    """A new value is a decision about what a switch hides, made here and not by accident."""
+    from app.utils.speaker_identity_source import IDENTITY_SOURCES
+    from app.utils.speaker_identity_source import hides_link
+    from app.utils.speaker_identity_source import hides_name
+
+    #: value -> (name hidden while off, link hidden while off)
+    classified = {
+        "voiceprint": (True, True),
+        "voiceprint_link": (False, True),
+        "human": (False, False),
+    }
+
+    assert set(classified) == set(IDENTITY_SOURCES), "classify the new identity_source value"
+    for value, (name_hidden, link_hidden) in classified.items():
+        assert hides_name(value, False) is name_hidden
+        assert hides_link(value, False) is link_hidden
+        assert not hides_name(value, True) and not hides_link(value, True)
+    assert not hides_name(None, False) and not hides_link(None, False)  # unknown = a person's

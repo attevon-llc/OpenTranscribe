@@ -206,3 +206,17 @@ def test_the_stored_summary_is_not_rewritten(db_session, normal_user, summary_pl
     db_session.refresh(world.file)
 
     assert world.file.summary_data["bluf"] == SUMMARY["bluf"]
+
+
+def test_an_unreadable_policy_masks_the_voiceprint_name(db_session, normal_user, monkeypatch):
+    """Fail closed: when the decision cannot be made, the indexed summary hides the name."""
+    world = build_world(
+        db_session, normal_user, organization=make_org(db_session, voiceprints=True)
+    )
+
+    def broken(db, file_id):
+        raise RuntimeError("policy store unreachable")
+
+    monkeypatch.setattr(policy, "voiceprints_allowed_for_file", broken)
+
+    assert hidden_speaker_names(db_session, world.file.id) == {ALICE: "SPEAKER_00"}

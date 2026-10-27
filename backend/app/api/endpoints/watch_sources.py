@@ -62,9 +62,7 @@ from app.schemas.watch_source import WatchSourceStats
 from app.schemas.watch_source import WatchSourceUpdate
 from app.services.auth_mail_config_service import IN_USE_MESSAGE
 from app.services.auth_mail_config_service import is_designated
-from app.services.platform_access import TenancyMode
 from app.utils.encryption import encrypt_api_key
-from app.utils.tenant_sharing import user_in_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -642,7 +640,9 @@ def create_watch_source(
     has ``WATCH_FOLDER_PATH`` mounted — the path is a server-side mount, not a
     client-supplied one — and ``assign_to_user_uuid`` is honoured **only for an
     admin**, letting them stand up a source whose imported files land in another
-    user's library. Secrets in the payload are encrypted by ``_apply_fields``.
+    user's library. In a multi-tenant deployment that is refused (404, like an
+    unknown account) unless the request's bypass allows a write in the target's
+    tenant, which a support grant never does on this route. Secrets in the payload are encrypted by ``_apply_fields``.
 
     ``organization_id`` is captured once here from the creating request's context
     (issue #262c) so later background scans stamp imports with that tenant instead
@@ -653,21 +653,28 @@ def create_watch_source(
         raise HTTPException(status_code=400, detail="Local watch folder is not configured")
 
     # Admins may assign the source (and its imported files) to another user.
+    source_uuid = uuid_pkg.uuid4()
     owner_id = current_user.id
-    if data.assign_to_user_uuid and current_user.is_admin:
+    if data.assign_to_user_uuid and ctx.bypass.user_is_admin:
         target = db.query(User).filter(User.uuid == data.assign_to_user_uuid).first()
-        if not target:
-            raise HTTPException(status_code=404, detail="assign_to_user not found")
-        if ctx.bypass.mode is not TenancyMode.SINGLE and not user_in_tenant(
-            db, int(target.id), ctx.org_id
-        ):
-            raise HTTPException(
-                status_code=400, detail="assign_to_user is not a member of this workspace"
+        # Another account's workspace is its own tenant (a personal one included), so the
+        # platform role reaches it only where the bypass allows a write there. The answer is
+        # the same 404 as an unknown account, so the target's existence is not confirmed.
+        if target is None or (
+            int(target.id) != int(current_user.id)
+            and not ctx.bypass.allows(
+                org_id=ctx.org_id,
+                owner_id=int(target.id),
+                need="write",
+                resource_type="watch_source",
+                resource_uuid=str(source_uuid),
             )
+        ):
+            raise HTTPException(status_code=404, detail="assign_to_user not found")
         owner_id = target.id
 
     source = WatchSource(
-        uuid=uuid_pkg.uuid4(),
+        uuid=source_uuid,
         source_type=data.source_type.value,
         user_id=owner_id,
         created_by=current_user.id,

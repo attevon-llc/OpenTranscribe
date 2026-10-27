@@ -231,10 +231,6 @@ ALLOWLIST: dict[str, str] = {
         "Q: quarantine visibility of the speaker's file inside the caller's own scope; "
         "argument is ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/watch_sources.py::create_watch_source": (
-        "P: only an admin may assign a source to another user; in multi-tenant mode the "
-        "target must also be in the caller's tenant"
-    ),
     "services/delete_permissions.py::get_deletable_file": (
         "Q: is_hidden_for(is_admin=False) hides a taken-down file from everyone who did not "
         "pass bypass.allows first"

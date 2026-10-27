@@ -32,7 +32,8 @@ which binary it describes.
 `blackwell` is deliberately **never** published here: it is not part of
 `docker-build-push.sh all`, so no release builds it and a scan of it would describe nothing.
 
-Per leg, five tools write eight files. **Five of the eight are published here**:
+Per leg, five tools write eight files, plus a ninth, `*-scan-verdict.json`. **Six of the nine are
+published here**:
 
 | Published | Tool |
 |---|---|
@@ -41,6 +42,7 @@ Per leg, five tools write eight files. **Five of the eight are published here**:
 | `*-sbom.txt` | Software Bill of Materials |
 | `*-hadolint.txt` | Dockerfile lint |
 | `*-dockle.json` | Dockle security best-practices audit (small, and has no text form) |
+| `*-scan-verdict.json` | The scan's exit code and the policy (`severity_threshold`, `fail_on_critical`) it ran under; `security-scan.sh` reads it to decide whether an unchanged image can reuse its existing report |
 
 So `backend-amd64-trivy.txt` is the human-readable Trivy result for the CUDA backend on x86-64.
 
@@ -56,7 +58,7 @@ it is to not commit machine blobs nobody needs committed.
 Need the JSON? Regenerate it:
 
 ```bash
-./scripts/security-scan.sh backend        # writes all eight files per leg, locally
+./scripts/security-scan.sh backend        # writes the report files for every leg of the component, locally
 ```
 
 > ⚠️ **Do not commit a report under a name no scanner writes.** The pre-#667 un-suffixed names
@@ -66,8 +68,8 @@ Need the JSON? Regenerate it:
 > `backend/tests/unit/test_security_reports_are_regenerable.py` now fails on any tracked report
 > whose filename the current scanner could not produce.
 
-Regenerate with `./scripts/security-scan.sh <component>` and publish with
-`scripts/push-security-reports.sh`.
+Regenerate with `./scripts/security-scan.sh <component>` (`./scripts/security-scan.sh list-components`
+prints the valid names) and publish with `scripts/push-security-reports.sh`.
 
 ## Understanding the Reports
 
@@ -102,6 +104,10 @@ See [SECURITY-ADVISORY.md](./SECURITY-ADVISORY.md) for detailed risk assessments
 - **Database**: Anchore vulnerability database
 - **Unique Feature**: EPSS (Exploit Prediction Scoring System) scores
 
+### Hadolint
+- **Purpose**: Dockerfile linter
+- **Scope**: The component's Dockerfile (`Dockerfile.prod`, `Dockerfile.lite`, `docs-site/Dockerfile`)
+
 ### Dockle
 - **Purpose**: Docker best practices and security linter
 - **Scope**: Dockerfile and container image configuration
@@ -110,28 +116,31 @@ See [SECURITY-ADVISORY.md](./SECURITY-ADVISORY.md) for detailed risk assessments
 ### Syft
 - **Purpose**: Software Bill of Materials (SBOM) generation
 - **Scope**: Complete inventory of all packages and dependencies
-- **Format**: SPDX, CycloneDX compatible
+- **Format**: CycloneDX JSON (gitignored) plus a human-readable table (`*-sbom.txt`)
 
 ## Current Security Status
 
-✅ **Backend Dockle Score**: 0 fatal, 0 warn, 1 info
-- No critical security misconfigurations
-- Follows Docker security best practices
-- Non-root container user (UID 1000)
+Read the current numbers from the reports, not from this file:
 
-⚠️ **Known Vulnerabilities**: See [SECURITY-ADVISORY.md](./SECURITY-ADVISORY.md)
-- CVE-2025-47917 (Critical - Low Risk): Mbed TLS vulnerability in unused functionality
-- Other low-risk vulnerabilities in transitive system dependencies
+```bash
+jq .summary security-reports/backend-amd64-dockle.json     # fatal / warn / info / pass counts
+head security-reports/backend-amd64-trivy.txt              # vulnerability table
+```
 
-## Update Frequency
+Known vulnerabilities and the risk assessment for each are in
+[SECURITY-ADVISORY.md](./SECURITY-ADVISORY.md). Check its `Applies to` line: it names the
+release it was last written for.
 
-Security scans are run:
-- On every Docker image build
-- After base image updates
-- After dependency updates
-- Monthly for routine checks
+## When Scans Run
 
-Reports are automatically updated in this directory.
+- `scripts/docker-build-push.sh` scans each component after building it, unless
+  `SKIP_SECURITY_SCAN=true`; `scripts/build-all.sh` does the same through it.
+- The release pipeline's `scan` stage (`scripts/release/50-scan.sh`) scans the locally built
+  images for the release tag and gates the release on the result.
+- The "Security Scanning" GitHub workflow runs only when dispatched by hand; it has no
+  schedule.
+- Nothing commits the reports automatically. `scripts/push-security-reports.sh` does, and
+  `docker-build-push.sh` calls it only when `PUSH_SECURITY_REPORTS=true`.
 
 ## Security Response
 
@@ -141,15 +150,20 @@ For our security vulnerability response policy, see [SECURITY-ADVISORY.md](./SEC
 
 If you discover a security vulnerability:
 - **DO NOT** open a public GitHub issue
-- Contact: security@opentranscribe.org (or create a private security advisory)
-- See [SECURITY-ADVISORY.md](./SECURITY-ADVISORY.md) for details
+- Use GitHub's private vulnerability reporting, as described in [SECURITY.md](../SECURITY.md)
+- See [SECURITY-ADVISORY.md](./SECURITY-ADVISORY.md) for known issues
 
 ## Generating Reports
 
-Run `./scripts/build-all.sh` or `./scripts/docker-build-push.sh` to generate updated reports.
+```bash
+./scripts/security-scan.sh all                      # every component, every architecture leg
+IMAGE_TAG=<tag> ./scripts/security-scan.sh lite     # one component at a given image tag (default: latest)
+SCAN_PLATFORM=linux/arm64 ./scripts/security-scan.sh frontend   # one architecture leg
+```
 
-For details, see [docs/BUILD_PIPELINE.md](../docs/BUILD_PIPELINE.md).
+Other knobs: `OUTPUT_DIR` (default `./security-reports`), `SEVERITY_THRESHOLD` (default
+`MEDIUM`), `FAIL_ON_CRITICAL` (default `true`). Exit codes: `0` clean, `1` scanned and found
+something, `2` could not scan (never a pass). Run `./scripts/security-scan.sh help` for the rest.
+Docker is required; the script tries to install any missing scanner (`install` does only that).
 
----
-
-**Last Updated**: 2025-10-27
+For the full build-and-scan pipeline, see [docs/BUILD_PIPELINE.md](../docs/BUILD_PIPELINE.md).

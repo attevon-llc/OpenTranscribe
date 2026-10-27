@@ -16,7 +16,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 
 **Diagnosis**:
 1. Open the Flower dashboard at `http://localhost:5175/flower`
-2. Check the **Active** tab for tasks that have been running longer than expected (typical transcription takes 1-5 minutes per 10 minutes of audio)
+2. Check the **Active** tab for tasks that have been running longer than expected (on a GPU, transcription runs far faster than real time; see [Performance Tuning](./performance-tuning.md#benchmark-reference) for measured figures)
 3. Check the backend logs for errors:
    ```bash
    ./opentr.sh logs celery-worker
@@ -41,9 +41,9 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 *Option A: Use the Admin Recovery Panel (recommended)*
 
 1. Log in as an admin user
-2. Navigate to **Admin Panel** > **System** > **Task Recovery**
+2. Open **Settings** > **File status** > **Recovery** (the **Task Health Monitor** panel)
 3. The system automatically detects stuck tasks (files in processing state for longer than the configured timeout)
-4. Click **Recover Stuck Tasks** to reset them to a retryable state
+4. Use **Recover Stuck Tasks** to reset them to a retryable state
 5. The built-in `TaskRecoveryService` will clean up partial transcript segments before retrying
 
 *Option B: Manual recovery via API*
@@ -51,7 +51,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
 1. Call the admin recovery endpoint:
    ```bash
    curl -X POST http://localhost:5174/api/tasks/recover-stuck-tasks \
-     -H "Authorization: Bearer <admin-token>"
+     -H "Authorization: Bearer <admin-access-token>"
    ```
 
 *Option C: Cancel and retry individual files*
@@ -194,11 +194,11 @@ Lower the number of parallel workers to reduce simultaneous GPU memory usage:
 # In .env:
 GPU_SCALE_WORKERS=2  # Reduce from 4 to 2
 ```
-Restart the worker after changing this value.
+Restart the worker after changing this value. (`GPU_SCALE_WORKERS` only applies with `--gpu-scale`; on a single default worker, lower `GPU_CONCURRENT_REQUESTS` instead.)
 
 *Step 2: Use a smaller Whisper model*
 
-Switch from `large-v3` (10GB VRAM) to `large-v3-turbo` (6GB VRAM):
+Switch from `large-v3` (about 10GB VRAM) to `large-v3-turbo` (about 6GB VRAM), either in the admin UI or in `.env` (the UI wins):
 ```bash
 # In .env:
 WHISPER_MODEL=large-v3-turbo
@@ -216,9 +216,11 @@ docker compose restart celery-worker
 watch -n 5 'docker compose exec celery-worker nvidia-smi'
 ```
 
-*Step 4: Limit Docker GPU memory (advanced)*
+*Step 4: Pin the worker to a dedicated GPU (advanced)*
 
-In `docker-compose.yml`, add memory limits to the worker:
+Docker cannot cap GPU memory, but you can keep the worker off a card shared with other workloads
+(`GPU_DEVICE_ID` in `.env`, or `--gpu-device N` on `./opentr.sh start`). The reservation in
+`docker-compose.yml` looks like:
 ```yaml
 deploy:
   resources:
@@ -240,6 +242,10 @@ deploy:
 
 **Symptoms**: Backend returns 500 errors. Logs show `connection refused`, `too many connections`, or `connection pool exhausted`. API requests hang or timeout.
 
+:::note[Database user]
+The commands in this runbook use the default `POSTGRES_USER=postgres` and database `opentranscribe`. Substitute your own `POSTGRES_USER` if you changed it.
+:::
+
 **Diagnosis**:
 1. Check if PostgreSQL is running:
    ```bash
@@ -247,11 +253,11 @@ deploy:
    ```
 2. Test database connectivity:
    ```bash
-   docker compose exec postgres pg_isready -U opentranscribe
+   docker compose exec postgres pg_isready -U postgres
    ```
 3. Check current connection count:
    ```bash
-   docker compose exec postgres psql -U opentranscribe -c \
+   docker compose exec postgres psql -U postgres -c \
      "SELECT count(*) FROM pg_stat_activity;"
    ```
 4. Check backend logs for connection errors:
@@ -266,7 +272,7 @@ deploy:
 ```bash
 docker compose restart postgres
 # Wait for it to become healthy
-docker compose exec postgres pg_isready -U opentranscribe
+docker compose exec postgres pg_isready -U postgres
 # Then restart the backend to re-establish connections
 docker compose restart backend
 ```
@@ -275,8 +281,8 @@ docker compose restart backend
 
 1. Increase the pool size in `.env`:
    ```bash
-   DB_POOL_SIZE=20       # Default is 20
-   DB_MAX_OVERFLOW=40    # Default is 40
+   DB_POOL_SIZE=20       # API default is 20 (workers use a smaller pool, WORKER_DB_POOL_SIZE=2)
+   DB_MAX_OVERFLOW=40    # API default is 40 (workers: WORKER_DB_MAX_OVERFLOW=3)
    ```
 2. Restart the backend:
    ```bash
@@ -287,7 +293,7 @@ docker compose restart backend
 
 1. Kill idle connections:
    ```bash
-   docker compose exec postgres psql -U opentranscribe -c \
+   docker compose exec postgres psql -U postgres -c \
      "SELECT pg_terminate_backend(pid)
       FROM pg_stat_activity
       WHERE state = 'idle'
@@ -331,15 +337,16 @@ docker compose restart backend
 
 *For missing or corrupt transcription index:*
 
-1. Trigger a full reindex from the Admin Panel:
-   - Navigate to **Admin Panel** > **System** > **Search**
-   - Click **Reindex All Documents**
+1. Trigger a full reindex from the settings UI:
+   - Open **Settings** > **Data & Storage** > **Search & Indexing**
+   - Check **Index Health**, and use **Repair Indices** for a red index
+   - Click **Re-index All Transcripts**
    - This rebuilds the search index from the database (source of truth)
 
 2. Or via API:
    ```bash
    curl -X POST http://localhost:5174/api/search/reindex \
-     -H "Authorization: Bearer <admin-token>"
+     -H "Authorization: Bearer <admin-access-token>"
    ```
 
 *For unassigned shards:*
@@ -357,20 +364,24 @@ curl -X PUT http://localhost:5180/_settings -H 'Content-Type: application/json' 
 
 *For corrupt speaker index:*
 
-The speaker index uses an alias-based architecture (`speakers` alias pointing to `speakers_v3` or `speakers_v4`). To rebuild:
+The speaker index uses an alias-based architecture (`speakers` alias pointing to `speakers_v3` or `speakers_v4`).
 
-1. Delete and recreate via the Admin Panel embedding migration tool
-2. Or manually:
-   ```bash
-   # Check which index the alias points to
-   curl -s http://localhost:5180/_cat/aliases/speakers?v
+:::danger[The speaker indices are the only copy of your voiceprints]
+Unlike the transcript indices, the `speakers_v*` indices cannot be rebuilt from PostgreSQL, which stores no embedding vectors. Deleting one destroys the speaker embeddings unless a `*.voiceprints.ndjson` backup artifact exists (see [Backup & Restore](./backup-restore.md)). Take `./opentranscribe.sh backup` first, then try **Settings** > **Data & Storage** > **Search & Indexing** > **Repair Indices**, which tries close/reopen and force merge before any rebuild. Only delete an index you have an artifact for.
+:::
 
-   # Delete the corrupt index
-   curl -X DELETE http://localhost:5180/speakers_v3
+If a rebuild is unavoidable:
 
-   # Restart the backend - it will recreate indices on startup
-   docker compose restart backend
-   ```
+```bash
+# Check which index the alias points to
+curl -s http://localhost:5180/_cat/aliases/speakers?v
+
+# Delete the corrupt index
+curl -X DELETE http://localhost:5180/speakers_v3
+
+# Restart the backend - it will recreate indices on startup
+./opentr.sh restart-backend
+```
 
 **Prevention**:
 - Run OpenSearch on reliable storage (avoid network-mounted volumes for production)
@@ -407,8 +418,9 @@ The speaker index uses an alias-based architecture (`speakers` alias pointing to
 # Remove unused containers, networks, and dangling images
 docker system prune -f
 
-# Remove unused volumes (WARNING: deletes orphaned data volumes)
-docker volume prune -f
+# Do NOT run `docker volume prune` here: it deletes every volume no running
+# container uses, which includes the data volumes of a stopped OpenTranscribe
+# stack (and of any other project on a shared Docker host).
 
 # Remove old images
 docker image prune -a -f --filter "until=168h"
@@ -430,8 +442,9 @@ docker compose exec backend rm -rf /tmp/yt-dlp-*
 # List backups sorted by size
 ls -lhS backups/
 
-# Remove backups older than 30 days
-find backups/ -name "*.sql" -mtime +30 -delete
+# Remove backups older than 30 days (a dump and its .voiceprints.ndjson share the prefix;
+# delete them together, never one without the other)
+find backups/ -name "opentranscribe_backup_*" -mtime +30 -delete
 ```
 
 *Step 4: Move model cache to larger disk*
@@ -574,7 +587,7 @@ alembic upgrade head
 1. Check what was applied:
    ```bash
    ./opentr.sh shell postgres
-   psql -U opentranscribe -c "\d+ <table_name>"
+   psql -U postgres -d opentranscribe -c "\d+ <table_name>"
    ```
 2. Manually complete the migration or stamp past it:
    ```bash
@@ -655,8 +668,8 @@ docker compose restart celery-worker
 
 Reduce shared buffers:
 ```bash
-# In docker-compose.yml postgres environment:
-PG_SHARED_BUFFERS=256MB  # Reduce from default
+# In .env, then restart postgres:
+PG_SHARED_BUFFERS=256MB  # This is already the default; lower it only on very small hosts
 ```
 
 *Set container memory limits:*
@@ -679,7 +692,7 @@ services:
 **Prevention**:
 - Set memory limits on all containers
 - Monitor memory usage trends over time
-- Size your server appropriately (16GB minimum recommended, 32GB for production)
+- Size your server appropriately (see the hardware table in [Production Deployment](./production-deployment.md#hardware-verification))
 
 ---
 
@@ -699,12 +712,12 @@ services:
    ```
 2. Update the password in PostgreSQL:
    ```bash
-   docker compose exec postgres psql -U opentranscribe -c \
-     "ALTER USER opentranscribe WITH PASSWORD 'new_secure_password';"
+   docker compose exec postgres psql -U postgres -c \
+     "ALTER USER postgres WITH PASSWORD 'new_secure_password';"
    ```
-3. Update `.env`:
+3. Update `.env` (`DATABASE_URL` is empty by default and assembled from `POSTGRES_*`; only edit it if you set it explicitly):
    ```bash
-   DATABASE_URL=postgresql://opentranscribe:new_secure_password@postgres:5432/opentranscribe
+   POSTGRES_PASSWORD=new_secure_password
    ```
 4. Restart services that connect to the database:
    ```bash
@@ -713,20 +726,16 @@ services:
 
 ### Rotate MinIO Keys
 
-1. Update MinIO credentials via the MinIO console at `http://localhost:5179`, or:
-   ```bash
-   docker compose exec minio mc admin user svcacct add myminio opentranscribe \
-     --access-key NEW_ACCESS_KEY --secret-key NEW_SECRET_KEY
-   ```
-2. Update `.env`:
+1. Update `.env` (MinIO reads the root credentials at start-up):
    ```bash
    MINIO_ROOT_USER=NEW_ACCESS_KEY
    MINIO_ROOT_PASSWORD=NEW_SECRET_KEY
    ```
-3. Restart services:
+2. Restart the stack so MinIO and every service that talks to it pick up the new values:
    ```bash
-   docker compose restart backend celery-worker
+   ./opentr.sh stop && ./opentr.sh start dev    # or: start prod
    ```
+   This does not touch `MINIO_KMS_SECRET_KEY`, the at-rest encryption key; changing that one would make existing encrypted objects unreadable.
 
 ### Rotate JWT Secret
 
@@ -743,14 +752,10 @@ services:
 ### Rotate LLM API Keys
 
 1. Generate a new key from your LLM provider's dashboard
-2. Update `.env`:
+2. Update it in the app: **Settings** > **LLM Provider Configuration** (provider keys are stored encrypted in the database)
+3. For a self-hosted vLLM server configured through `.env`, update `VLLM_API_KEY` there and restart the backend and `celery-nlp-worker`:
    ```bash
-   LLM_API_KEY=new_api_key_here
-   ```
-3. Or update via the Admin Panel: **Settings** > **LLM Configuration** > **API Key**
-4. Restart the backend:
-   ```bash
-   docker compose restart backend celery-worker
+   docker compose restart backend celery-nlp-worker
    ```
 
 ### Rotate Redis Password
@@ -758,12 +763,16 @@ services:
 1. Update `.env`:
    ```bash
    REDIS_PASSWORD=new_redis_password
-   CELERY_BROKER_URL=redis://:new_redis_password@redis:6379/0
    ```
+   (The broker and result-backend URLs are built from `REDIS_PASSWORD`; only edit `REDIS_URL` or `CELERY_BROKER_URL` if you set them explicitly.)
 2. Restart all services that use Redis:
    ```bash
    docker compose restart redis backend celery-worker
    ```
+
+### Do not rotate `ENCRYPTION_KEY`
+
+`ENCRYPTION_KEY` decrypts every secret stored in the database (provider API keys, MFA secrets, backup and watch-source credentials). Changing it makes them permanently undecryptable; there is no re-encryption step. Keep it, and keep a copy with your backups (see [Backup Completeness Audit](./backup-audit.md#secrets-gap)).
 
 **Prevention**:
 - Rotate credentials on a regular schedule (e.g., every 90 days)
@@ -858,7 +867,7 @@ bash scripts/download-models.sh models
    ```
 4. If using NGINX (production), check NGINX logs:
    ```bash
-   ./opentr.sh logs frontend | grep -i "websocket\|upgrade"
+   ./opentr.sh logs nginx | grep -i "websocket\|upgrade"
    ```
 
 **Resolution**:
@@ -891,7 +900,7 @@ bash scripts/download-models.sh models
 2. Check that `proxy_read_timeout` is set high enough (WebSocket connections are long-lived)
 3. Restart NGINX:
    ```bash
-   docker compose restart frontend
+   docker compose restart nginx
    ```
 
 *If WebSocket connects but no updates arrive:*

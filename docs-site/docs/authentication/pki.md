@@ -8,7 +8,7 @@ sidebar_position: 4
 Users authenticate with an X.509 client certificate instead of a password. Common in
 government and military deployments (CAC/PIV), and anywhere mutual TLS is already in place.
 
-Configure it at **Settings → Authentication → PKI** (super_admin); values are stored in
+Configure it at **Settings → Authentication → PKI/Certificate** (super_admin); values are stored in
 `auth_config` and take effect without a restart, with the `PKI_*` environment variables as a
 bootstrap seed and fallback.
 
@@ -239,7 +239,7 @@ See [Account linking](./overview#account-linking).
 
 | Symptom | Check |
 |---|---|
-| "PKI authentication is not enabled" | Settings → Authentication → PKI. Database configuration overrides `.env` |
+| "PKI authentication is not enabled" | Settings → Authentication → PKI/Certificate. Database configuration overrides `.env` |
 | Every certificate is refused with no parse attempt | `pki_trusted_proxies` is empty, so header-sourced auth is refused |
 | A DN header alone is refused from a trusted proxy | `pki_mode` is `mutual_tls`; forward the full certificate |
 | "Invalid or missing client certificate" | Certificate imported in the browser, proxy forwarding the headers, certificate not expired |

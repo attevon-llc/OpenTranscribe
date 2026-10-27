@@ -9,7 +9,7 @@ For deployments where an authenticating reverse proxy — oauth2-proxy, Authelia
 Access, an enterprise SSO gateway — already terminates authentication in front of
 OpenTranscribe and asserts the resulting identity in a request header.
 
-Configure it at **Settings → Authentication → Proxy** (super_admin); values are stored in
+Configure it at **Settings → Authentication → Trusted Header** (super_admin); values are stored in
 `auth_config` and take effect without a restart, with the `PROXY_*` environment variables as a
 bootstrap seed and — for `proxy_enabled` / `proxy_trusted_proxies` specifically — what the
 startup guard can see before a database session exists.
@@ -26,9 +26,11 @@ An **empty** allowlist **refuses every header-sourced assertion outright** — i
 no allowlist configured.
 
 Set it to the address the **backend** sees the reverse proxy arrive from (not the client's
-address), e.g. `127.0.0.1,10.0.0.0/8`. Single addresses and CIDR ranges are both accepted, and
-only the **immediate peer** is checked — never `X-Forwarded-For`, which the client can set
-itself.
+address), e.g. `127.0.0.1` or the proxy's own `/32`. Single addresses and CIDR ranges are both
+accepted, and only the **immediate peer** is checked — never `X-Forwarded-For`, which the client
+can set itself. Use the narrowest range that covers the proxy: this setting gates *identity
+assertion*, so a whole private range such as `10.0.0.0/8` lets any device on that network sign
+in as any address (the same hazard described for [PKI](./pki#trust-configuration--read-this-first)).
 :::
 
 ## Configuration reference

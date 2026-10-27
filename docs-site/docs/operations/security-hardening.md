@@ -26,7 +26,7 @@ graph TB
     end
 
     subgraph Application["Application Layer"]
-        AUTH[Authentication - Local/LDAP/OIDC/PKI]
+        AUTH[Authentication - Local/LDAP/OIDC/SAML/PKI/Trusted header]
         MFA[Multi-Factor Authentication]
         RBAC[Role-Based Access Control]
         RL[Rate Limiting]
@@ -61,11 +61,11 @@ install, including the MinIO encryption key. The items above only need manual at
 created `.env` by hand from `.env.example` — the backend refuses to start in production mode
 if placeholder keys are detected.
 :::
-- [ ] Set `DEBUG=false` in `.env`
+- [ ] Leave `ENVIRONMENT` unset (it defaults to `production`, which turns debug off and enforces the secret and Redis-password checks); only the dev override sets it to `development`
 - [ ] Configure TLS certificates for HTTPS
 - [ ] Leave `CORS_ORIGINS` unset unless a frontend is served from a different origin (hardened default: none)
 - [ ] Configure trusted proxies / host validation for your domain(s) (nginx `server_name`; see `configuration/nginx-setup.md`) — there is no `ALLOWED_HOSTS` env var
-- [ ] Remove or restrict API documentation endpoint (`/docs`) in production
+- [ ] Leave `ENABLE_API_DOCS` unset: in a hardened deployment the Swagger UI, ReDoc and OpenAPI schema (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are not published unless it is set to `true`. (The `/docs/` path on NGINX is the embedded documentation site, not the API docs.)
 
 ### Authentication
 
@@ -98,22 +98,22 @@ OpenTranscribe supports TOTP-based multi-factor authentication compatible with s
 | MFA required for admins only | Only admin-role users must enroll | Standard deployments |
 | MFA optional | Users can opt in | Development only |
 
-Configure in **Admin > Settings > Authentication > MFA Policy**.
+Configure in **Settings > Authentication > Local Auth > Multi-Factor Authentication (MFA)**: *Enable TOTP-based MFA*, *Require MFA for all users*, and *Require MFA for administrators*.
 
-Backup codes are generated during enrollment (8-character alphanumeric, XXXX-XXXX format). They are stored hashed with PBKDF2-SHA256 and are single-use.
+Backup codes are generated during enrollment (8 characters each; the number is the *Backup Codes* setting, default 10). They are stored hashed (bcrypt, or PBKDF2-SHA256 when `FIPS_MODE=true`) and are single-use.
 
 ### Password Policies
 
-Configure password requirements to match your organization's security standards:
+Password rules are set by a **level** (`basic`, `standard`, `hardened`, `custom`) chosen in **Settings > Authentication > Local Auth** or with `PASSWORD_POLICY_PROFILE`. The individual values below apply under `hardened` (read-only) and `custom` (editable); `basic` and `standard` fix their own rules. A fresh install from `.env.example` gets `standard`; an existing install without the variable keeps the code default `hardened`. See [Password policy levels](../configuration/password-policy.md) for the full table.
 
 ```bash
-# .env configuration
+# .env configuration (hardened / custom levels)
 PASSWORD_MIN_LENGTH=12              # Minimum password length
 PASSWORD_REQUIRE_UPPERCASE=true     # Require uppercase letter
 PASSWORD_REQUIRE_LOWERCASE=true     # Require lowercase letter
 PASSWORD_REQUIRE_DIGIT=true         # Require number
 PASSWORD_REQUIRE_SPECIAL=true       # Require special character
-PASSWORD_HISTORY_COUNT=12           # Prevent reuse of last N passwords
+PASSWORD_HISTORY_COUNT=24           # Prevent reuse of last N passwords (coded default 24)
 PASSWORD_MAX_AGE_DAYS=60            # Force password change (0 = disabled; 60 is the coded default)
 ```
 
@@ -134,8 +134,9 @@ Lockout events are recorded in the audit log. Administrators can manually unlock
 
 ### Session Management
 
-- **Access tokens**: Short-lived JWT tokens (configurable, default 15 minutes)
-- **Refresh tokens**: Rotated on each use, preventing token replay
+- **Access tokens**: Short-lived JWT tokens (default 60 minutes; shorten with *Token Expiry* in **Settings > Authentication > Sessions** for high-security environments)
+- **Idle and absolute timeouts**: sessions end after 15 minutes idle (`SESSION_IDLE_TIMEOUT_MINUTES`) or 8 hours total (`SESSION_ABSOLUTE_TIMEOUT_MINUTES`)
+- **Refresh tokens**: Rotated on each use, preventing token replay (default lifetime 7 days)
 - **Session invalidation**: All sessions terminated on password change
 - **Concurrent sessions**: Optionally limit active sessions per user
 
@@ -143,34 +144,24 @@ Lockout events are recorded in the audit log. Administrators can manually unlock
 
 ### Port Exposure
 
-In production, expose only the minimum required ports:
+In production, expose only the minimum required ports. The compose files publish some host ports by default, so this needs checking rather than assuming:
 
-| Port | Service | Exposure |
-|------|---------|----------|
-| 443 | NGINX (HTTPS) | Public |
-| 80 | NGINX (HTTP redirect) | Public (redirect to 443 only) |
-| 5432 | PostgreSQL | Internal only |
-| 6379 | Redis | Internal only |
-| 9000/9001 | MinIO | Internal only |
-| 9200 | OpenSearch | Internal only |
+| Port | Service | Default binding |
+|------|---------|-----------------|
+| 443 | NGINX (HTTPS) | All interfaces (public) |
+| 80 | NGINX (HTTP redirect) | All interfaces (redirect to 443 only) |
+| 5174 (`BACKEND_PORT`) | Backend API | **All interfaces**; set `BACKEND_BIND_HOST=127.0.0.1` behind NGINX |
+| 5173 (`FRONTEND_PORT`), 5183 (`DOCS_PORT`) | Frontend and docs containers | **All interfaces**; block at the host firewall |
+| 5176 / 5177 | PostgreSQL / Redis | `127.0.0.1` only |
+| 5178 / 5179 | MinIO API / console | `127.0.0.1` only |
+| 5180 / 5181 | OpenSearch API / admin | `127.0.0.1` only |
+| 5175 | Flower | `127.0.0.1` only |
 
-All internal services should be accessible only through Docker's internal network, not bound to the host.
+Unsetting a `*_PORT` variable does not remove its mapping (each is written `${VAR:-default}`). See [Production Deployment: Restricting Exposed Ports](./production-deployment.md#restricting-exposed-ports).
 
 ### Docker Network Isolation
 
-OpenTranscribe uses Docker networks to isolate services. In production, ensure:
-
-```yaml
-# docker-compose.prod.yml - services should NOT expose ports to host
-services:
-  postgres:
-    # Remove "ports:" mapping in production
-    # Access only through Docker network
-  redis:
-    # Remove "ports:" mapping in production
-  opensearch:
-    # Remove "ports:" mapping in production
-```
+OpenTranscribe uses a single Docker bridge network. The datastores are reached over that network (`postgres:5432`, `redis:6379`, `minio:9000`, `opensearch:9200`); their loopback-only host mappings exist for local tooling. To drop one entirely, remove it with your own compose override.
 
 ### LLM Firewall (Self-Hosted Models)
 
@@ -213,8 +204,9 @@ Both the `backend` and `celery-nlp-worker` containers need access to the LLM ser
 For production deployments with NGINX:
 
 ```bash
-# Start with TLS (production mode with NGINX)
-./opentr.sh start prod --with-pki
+# Set NGINX_SERVER_NAME and the certificate paths in .env, then start production;
+# the NGINX overlay is added automatically (see Production Deployment).
+./opentr.sh start prod --build
 ```
 
 Ensure TLS certificates are:
@@ -332,14 +324,7 @@ is logged at startup (`CORS allowed origins: ...`). See
 
 ### Content Security Policy
 
-When using NGINX in production, configure CSP headers:
-
-```nginx
-add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:;" always;
-add_header X-Frame-Options DENY always;
-add_header X-Content-Type-Options nosniff always;
-add_header Referrer-Policy strict-origin-when-cross-origin always;
-```
+The shipped NGINX configuration (`nginx/site.conf.template`) already sends a CSP and the other security headers (`X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS). The exact values are listed in [Production Deployment: CSP and Security Headers](./production-deployment.md#10-csp-and-security-headers). If you terminate TLS on a different proxy, replicate them.
 
 ### Input Validation
 
@@ -397,7 +382,7 @@ All authentication events are logged for security monitoring:
 - Session creation and termination
 - Administrative actions (user management, settings changes)
 
-Log format supports integration with SIEM systems (Splunk, ELK, etc.).
+Events are viewable and exportable (CSV or JSON) in **Settings > Audit Logs**; an organization admin can export their own organization's events. Log format supports integration with SIEM systems (Splunk, ELK, etc.).
 
 ### Log Retention
 
@@ -418,8 +403,8 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 |---------|---------------|
 | **AC-2** (Account Management) | User management, role assignment, account disable |
 | **AC-7** (Unsuccessful Login Attempts) | Account lockout after configurable threshold |
-| **AC-8** (System Use Notification) | Classification banners (UNCLASSIFIED, CUI, SECRET, TOP SECRET) |
-| **AC-12** (Session Termination) | Configurable session timeouts, auto-logout on inactivity |
+| **AC-8** (System Use Notification) | Login banner with a free-text classification label (UNCLASSIFIED by default) that every user must acknowledge |
+| **AC-12** (Session Termination) | Configurable idle (15 min) and absolute (8 h) session timeouts |
 | **AU-2/AU-3** (Audit Events) | Comprehensive audit logging with timestamps and source IPs |
 | **IA-2** (Identification and Authentication) | Multi-factor authentication, PKI/CAC support |
 | **IA-5** (Authenticator Management) | Configurable password policy (complexity, history, expiration) — see [Password Policy and Current NIST Guidance](#password-policy-and-current-nist-guidance) below for how the shipped defaults relate to current guidance |
@@ -427,24 +412,32 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 | **SC-13** (Cryptographic Protection) | AES-256-GCM at rest, HMAC-SHA-256 (HS256) JWT signing -- both FIPS-approved; see [Algorithm Requirements](#algorithm-requirements) |
 | **SC-28** (Protection of Information at Rest) | Encrypted sensitive data fields |
 
-Classification banners are configurable in **Admin > Settings > System > Classification Banner**.
+The login banner and its classification label are configured in **Settings > Authentication > Local Auth > Login Banner**.
 
 ### Password Policy and Current NIST Guidance
 
 OpenTranscribe's password policy is fully admin-configurable at runtime
-(**Admin → Settings → Authentication**, backed by `SystemSettings`, resolved DB > `.env` >
-coded default — no restart needed) rather than hardcoded:
+(**Settings > Authentication > Local Auth**, backed by `SystemSettings`, resolved DB > `.env` >
+coded default, no restart needed). It is organised as four **levels**: `basic`, `standard`
+(NIST SP 800-63B Revision 4: long passphrases, no composition rules, no forced rotation,
+breached-password screening), `hardened` (DoD STIG / FedRAMP style: composition rules, 60-day
+expiry, history of 24) and `custom`. The full rule table and the precedence rules are in
+[Password policy levels](../configuration/password-policy.md).
 
-| Setting | Shipped default | Purpose |
+**Which level you get depends on how the install was created.** A fresh install from
+`.env.example` gets `standard`. An existing install with no `PASSWORD_POLICY_PROFILE` line keeps
+the code default, `hardened`, so an upgrade does not change anyone's rules. The values the
+`hardened` level applies:
+
+| Setting | `hardened` value | Purpose |
 |---|---|---|
 | `password_min_length` | 12 | Minimum password length |
 | `password_require_uppercase` / `_lowercase` / `_digit` / `_special` | all `true` | Composition (character-class) requirements |
 | `password_max_age_days` | 60 | Forced expiration; **0 disables expiry entirely** |
 | `password_history_count` | 24 | Prevents reuse of recent passwords |
 
-**These defaults reflect NIST SP 800-63B Revision 3, not the current Revision 4.** NIST finalized
-[SP 800-63B Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) on 2025-07-31
-(effective 2025-08-01), and it explicitly reverses the older composition/expiry guidance:
+NIST finalized [SP 800-63B Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) on
+2025-07-31, and it reverses the older composition and expiry guidance:
 
 > "Verifiers and CSPs **SHALL NOT** require subscribers to change passwords periodically.
 > However, verifiers **SHALL** force a change if there is evidence that the authenticator has
@@ -453,26 +446,10 @@ coded default — no restart needed) rather than hardcoded:
 > "Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures of
 > different character types) for passwords."
 
-The rationale (well-documented in the security community, not unique to this guidance): forced
-periodic rotation and mandatory character-class mixing empirically push users toward weaker,
-more predictable passwords (`Summer2024!` → `Summer2025!`), and current guidance instead favors
-length and breach-based rotation (checking new passwords against known-breach corpora — not yet
-implemented here; see [OWASP's Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#implement-proper-password-strength-controls)
-for the current recommended approach) over composition rules.
-
-**What this means for your deployment:**
-
-- If your own organization's policy — independent of NIST — still requires periodic rotation
-  or composition rules (some non-federal compliance frameworks do), the current defaults already
-  satisfy that; no action needed.
-- If you want to align with current NIST SP 800-63B Rev. 4 guidance, set
-  `password_max_age_days = 0` and relax the composition-requirement toggles in
-  **Admin → Settings → Authentication**. This does not retroactively affect existing users'
-  stored passwords — the policy is enforced only when a password is set or changed.
-- OpenTranscribe does not change its *shipped defaults* to Rev. 4's posture as of this writing;
-  they remain what they were. This section exists so operators can make an informed choice
-  rather than relying on a compliance-mapping table that overstated the currency of the
-  guidance it was mapped against.
+The `standard` level follows that guidance. Choose `hardened` (set explicitly, so the choice is
+recorded) when your own compliance regime still mandates rotation and composition rules. Changing
+the level does not affect stored passwords; the policy is enforced when a password is set or
+changed.
 
 ### GDPR Compliance
 
@@ -488,7 +465,9 @@ erasure was requested, one row per request, with the SLA clock on it.
   meaningless once the row they point at is destroyed.
 - **Legal-hold re-erasure.** A file under a legal hold (Art. 17(3)(e)) is deferred rather than
   erased immediately; once the hold is lifted, the deferred entry is re-erased rather than
-  silently forgotten.
+  silently forgotten. A hold is either the operator's or an organization's (placed by an
+  organization administrator where the organization legal-hold capability is on); the
+  file-destroy path checks both and refuses a held file.
 - **Restore reconciliation.** Restoring a database backup taken before an erasure can resurrect
   the erased subject. A reconciliation task re-checks every completed ledger entry against the
   live schema after a restore and re-erases any subject it finds has come back.
@@ -515,7 +494,7 @@ Establish a rotation schedule for all credentials:
 | Credential | Rotation Frequency | How to Rotate |
 |-----------|-------------------|---------------|
 | `JWT_SECRET_KEY` | 90 days | Update in `.env`, restart backend (invalidates all sessions) |
-| `ENCRYPTION_KEY` | Annually | Update in `.env`, existing data auto-re-encrypted on access |
+| `ENCRYPTION_KEY` | Do not rotate by editing `.env` | It decrypts every secret stored in the database (API keys, MFA secrets, backup and watch-source credentials). Changing it makes them permanently undecryptable; there is no automatic re-encryption. Back it up with your database backups |
 | Database password | 90 days | Update in PostgreSQL and `.env`, restart all services |
 | MinIO credentials | 90 days | Update in MinIO and `.env`, restart all services |
 | LLM API keys | Per provider policy | Update in **Settings → LLM Provider Configuration** |
@@ -667,29 +646,17 @@ TOTP_ALGORITHM=SHA256  # or SHA512
 
 ### Verification
 
-Run the FIPS 140-3 test suite (gated behind `RUN_FIPS_TESTS`, part of the full
-pre-merge gate — see `./scripts/run-integration-tests.sh`):
+Run the FIPS 140-3 test suite (it runs by default with the backend suite and is part of the
+full pre-merge gate; see `./scripts/run-integration-tests.sh`):
 
 ```bash
-cd backend && RUN_FIPS_TESTS=true pytest tests/test_fips_140_3.py -v
+cd backend && pytest tests/test_fips_140_3.py -v
 ```
 
 This checks password hashing algorithm and iterations, JWT signing algorithm, encryption algorithm, and token hash algorithm.
 
 ## Vulnerability Reporting
 
-If you discover a security vulnerability in OpenTranscribe:
+If you discover a security vulnerability in OpenTranscribe, **do not** open a public GitHub issue. Use GitHub's private vulnerability reporting (the "Report a vulnerability" link in the repository's `SECURITY.md`) and include a description, steps to reproduce, the potential impact, and a suggested fix if you have one.
 
-1. **Do NOT** create a public GitHub issue
-2. Email security concerns to the project maintainers (see the repository's SECURITY.md for contact information)
-3. Include: description of the vulnerability, steps to reproduce, potential impact, and suggested fixes if any
-
-### Response Timeline
-
-| Severity | Initial Response | Target Fix |
-|----------|-----------------|-----------|
-| Critical | 24-48 hours | 7 days |
-| High | 72 hours | 14 days |
-| Medium/Low | 1 week | 30 days |
-
-The project follows responsible disclosure practices and will credit researchers (with permission) in security advisories.
+The maintainers aim to acknowledge a report within 5 working days and agree a disclosure timeline once the impact is understood. Security fixes ship in a patch release of the latest released minor version only; older minors are not patched, so upgrading is the supported path (see [Upgrading](./upgrading.md)). Reporters are credited in the advisory if they ask.

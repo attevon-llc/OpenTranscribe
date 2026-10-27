@@ -1,7 +1,7 @@
 ---
 sidebar_position: 7
 title: Releasing
-description: How an OpenTranscribe release is cut, gated, and published — the staged orchestrator, the criteria file, and the two rehearsal scenarios.
+description: How an OpenTranscribe release is cut, gated, and published — the staged orchestrator, the criteria file, and the three rehearsal scenarios.
 ---
 
 # Releasing
@@ -21,7 +21,7 @@ Every rule below is either **derived at run time** or **enforced by a check**.
 Nothing depends on remembering. The same failure shape recurred once more
 (issue #783): `FROM_VERSIONS` was documented as running the upgrade scenario
 once per source, and did nothing — assigned into a variable, read by no loop.
-It is now the derivation described under [The two rehearsal scenarios](#the-two-rehearsal-scenarios)
+It is now the derivation described under [The rehearsal scenarios](#the-rehearsal-scenarios)
 below, guarded by a test that fails on any documented knob nothing reads.
 :::
 
@@ -32,7 +32,7 @@ below, guarded by a test that fails on any documented knob nothing reads.
 ./scripts/release.sh reset 0.5.0         # clear the ledger before a real run
 ./scripts/release.sh explain publish     # what does this stage do, and is it reversible?
 ./scripts/release.sh preflight           # seconds — fails fast on the usual suspects
-./scripts/release.sh run 0.5.0           # the whole sequence
+./scripts/release.sh run 0.5.0 --yes     # the whole sequence (without --yes it stops at `tag`, exit 4)
 ```
 
 Useful flags on `run`:
@@ -44,7 +44,8 @@ Useful flags on `run`:
 | `--from build` | Resume mid-flight |
 | `--dry-run` | Print every command, execute nothing |
 | `--json` | Machine-readable criteria + an explicit `next[]` |
-| `--yes` | Required for any stage that leaves this machine |
+| `--yes` | Required for `tag`, `publish`, `promote` and `finish`; also approves `rehearse` stopping and restarting the live stack |
+| `--patch` | Verify the version delta is a patch and, if the diff allows, waive the rehearsal scenarios — see [Cutting a patch release](#cutting-a-patch-release) |
 
 State lives in `.release/<version>/steps/` (gitignored) and records status,
 operator, git SHA, and any override — so a release that dies at hour three
@@ -66,7 +67,7 @@ Exit codes are stable, so nothing has to parse prose to know what happened:
 | `1` | A **gate failed** | Fix the finding and re-run, or `--force-<stage> "reason"` |
 | `2` | **Misuse** — bad arguments | Fix the invocation; retrying verbatim won't help |
 | `3` | **Precondition unmet** — live stack up, builder unreachable, dirty tree | Resolve the precondition; this is *not* a gate failure |
-| `4` | **Operator aborted** | Nothing ran; re-run when ready |
+| `4` | **Operator aborted** — a declined prompt, or an external stage run without `--yes` | Nothing ran; re-run when ready |
 
 The `1` / `3` split is the one that matters: a `3` means the release was never
 evaluated, so treating it as "the release is bad" is wrong.
@@ -111,16 +112,16 @@ rather than silently ignored.
 
 | Stage | Does | Leaves this machine? |
 |---|---|---|
-| `preflight` | Version agreement, clean worktree, remote ARM64 builder reachable, scanners present, `HUGGINGFACE_TOKEN`, model fixtures, disk, deployment matrix | no |
-| `bump` | Writes all five version sources, promotes `[Unreleased]`, re-verifies before committing | no |
-| `verify` | Fast gate: consistency, deployment matrix, manifest, structural tests, docs build | no |
-| `test` | `run-integration-tests.sh` + the E2E suite | no |
+| `preflight` | Version agreement, clean worktree, remote ARM64 builder reachable, scanners present, `HUGGINGFACE_TOKEN`, model fixtures, disk, deployment matrix, CHANGELOG section (early notice), live-stack state (informational) | no |
+| `bump` | Writes all five version sources, promotes `[Unreleased]`, refreshes the committed roadmap snapshot, re-verifies, then commits `chore(release): bump version to X.Y.Z` | no |
+| `verify` | Fast gate: consistency, deployment matrix, manifest, structural tests, docs build, visual-baseline freshness | no |
+| `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset); **needs the dev stack up** | no |
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images | no |
-| `rehearse` | Fresh-install and upgrade scenarios | no |
+| `rehearse` | Fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
 | `tag` | Annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Multi-arch push of `:vX.Y.Z` only | **yes** |
-| `smoke` | Install from Docker Hub; verify both architectures | no |
+| `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
 | `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
 | `finish` | GitHub release + assets | **yes** |
 
@@ -141,8 +142,10 @@ rather than silently ignored.
   `master`.** `70-tag.sh` derives `release/<major>.<minor>` from the version
   (`v0.5.1` → `release/0.5`) after the tag exists, then asserts the tag is an
   ancestor of `origin/release/<major>.<minor>` — asking origin, not the local
-  ref, because that is what a hotfix operator will clone. A tag cut from
-  somewhere other than this branch fails right here.
+  ref, because that is what a hotfix operator will clone. On a
+  patch the branch already exists, so a tag cut from somewhere other than
+  this branch fails right here; on the first cut of a minor the branch is
+  created from the tag, so the ancestry check holds by construction.
 - **`promote` refuses to move `:latest` backwards.** It resolves the newest
   published release from git tags × Docker Hub before touching anything; if the
   version being promoted is OLDER than that, the copy is skipped and `:latest`
@@ -221,17 +224,24 @@ A gate can be overridden with `--force-<stage>`, which requires a reason and
 records it plus the operator in the ledger. Use it for a real decision — an
 accepted CVE with no reachable path — never to turn a red run green.
 
-## The two rehearsal scenarios
+## The rehearsal scenarios
 
-These rehearse the same `./opentranscribe.sh update` path a real operator runs; see
-[Upgrading](../operations/upgrading.md) for the operator-facing failure-recovery guidance this
-rehearsal is meant to keep accurate.
+Three scenarios run in order under `rehearse`: **A** fresh install, **B** upgrade from the
+previous published release(s), and **C** the lite (CPU-only, mocked cloud ASR and LLM) deployment
+(`test-lite-mode.sh`). A and B rehearse the same `./opentranscribe.sh` path a real operator
+runs; see [Upgrading](../operations/upgrading.md) for the operator-facing failure-recovery
+guidance this rehearsal is meant to keep accurate.
 
 ```bash
 ./opentr.sh stop            # required — see below
 ./scripts/release-tests/test-fresh-install.sh
 ./scripts/release-tests/test-upgrade.sh
+./scripts/release-tests/test-lite-mode.sh
 ```
+
+Scenarios A and C install by **downloading** the `release-manifest.txt` files from the branch
+under test (`TO_BRANCH`, defaulting to the current branch). `rehearse` therefore refuses (exit
+3) when that branch is not on `origin` — push the branch first.
 
 **Neither takes a version argument.** They discover what to test:
 
@@ -270,7 +280,11 @@ pattern (see the admonition above): a documented feature that did not exist.
 :::warning[The live stack must be stopped]
 The scenarios run under the installer's stock container names and ports
 5173-5180 **by design**, so they exercise exactly what a real user gets. They
-cannot run alongside a live deployment, and `lib/guardrails.sh` refuses to start
+cannot run alongside a live deployment. `./scripts/release.sh rehearse` will stop
+the stack (`./opentr.sh stop`, data preserved) and restart it afterwards, but only
+with approval: `--yes`, `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y`. With
+none of those and no tty it refuses with exit 3 and prints the command. The
+individual scenario scripts never stop anything: `lib/guardrails.sh` refuses to start
 if any `opentranscribe-*` container exists or any of those ports is bound. It
 also refuses any path under the live data directories and requires an
 `I UNDERSTAND` confirmation.
@@ -285,7 +299,7 @@ otherwise non-interactive invocation there is no tty to read from, and the promp
 fails with `No such device or address` rather than hanging. Pass `--yes` to skip
 it (both scripts also accept `--cleanup`, `--force`, and `test-upgrade.sh` also
 takes `--no-rollback`/`--only-rollback` — see each script's own `--help`).
-`scripts/release/65-rehearse.sh` already passes `--yes` on both scenarios when
+`scripts/release/65-rehearse.sh` already passes `--yes` on all three scenarios when
 driven through `./scripts/release.sh rehearse`.
 :::
 
@@ -377,8 +391,8 @@ execution it caught the marker check deleting a volume it should have refused.
 
 ## What CI does
 
-`.github/workflows/release-validate.yml` runs on tag pushes and on PRs touching
-release-relevant paths. It validates **metadata**, not images: version agreement,
+`.github/workflows/release-validate.yml` runs on tag pushes, on PRs touching
+release-relevant paths, on a schedule, and on manual dispatch. It validates **metadata**, not images: version agreement,
 the Alembic chain, the deployment matrix, that every `release-manifest.txt` path
 is fetchable at the tag, shellcheck, an empty-database migration, and the docs
 build.
@@ -420,6 +434,10 @@ architecture list:
 | `opentranscribe-backend-lite` | `cpu` | `vX.Y.Z-cpu-amd64`, `vX.Y.Z-cpu-arm64` | `vX.Y.Z` | digest-copy |
 | `opentranscribe-frontend` | — | (no capability legs) | `vX.Y.Z` | digest-copy |
 | `opentranscribe-docs` | — | (no capability legs) | `vX.Y.Z` | digest-copy |
+
+A fifth table row, `blackwell` (arm64, GPU-generation-gated), appears in `list-platforms` but is
+built only by an explicit `docker-build-push.sh blackwell`; `build` and `publish` skip it, so a
+release never publishes it and it never carries `:vX.Y.Z` or `:latest`.
 
 `vX.Y.Z-cuda-arm64` is **reserved in the grammar but not built**: there is no aarch64 CUDA
 torch wheel at the pinned version, `onnxruntime-gpu` publishes no aarch64 wheels at all, and
@@ -473,8 +491,8 @@ Cutting a release is not the place to discover a regression. Run the
 | `scripts/release.sh` | The orchestrator — arg parsing, ledger, dispatch |
 | `scripts/release/NN-<stage>.sh` | One file per stage; each runnable on its own |
 | `scripts/release/release-criteria.yaml` | Gate definitions, read by the script **and** CI |
-| `scripts/release-tests/` | The two rehearsal scenarios + `lib/guardrails.sh` |
-| `scripts/release-tests/selftest-cleanup.sh` | 15 cases over the harness's own destructive paths — **run after any `guardrails.sh` change** |
+| `scripts/release-tests/` | The three rehearsal scenarios + `lib/guardrails.sh` |
+| `scripts/release-tests/selftest-cleanup.sh` | Numbered cases over the harness's own destructive paths; prints a pass/fail tally — **run after any `guardrails.sh` change** |
 | `.claude/skills/release/SKILL.md` | The agent-facing interface |
 | `docs/RELEASE_PROCESS.md` | Historical pointer — superseded by this page |
 | `CLAUDE.md` → "Cutting a release" | The short version agents read first |

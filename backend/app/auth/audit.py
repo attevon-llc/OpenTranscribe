@@ -132,6 +132,15 @@ class AuditEventType(StrEnum):
     CONTENT_HOLD_RELEASE = "content.hold.release"
     CONTENT_HOLD_REFUSED = "content.hold.refused"
 
+    # Privacy controls (issues #1280, #1279). ``org.policy.change``: an organization
+    # administrator changed the organization's policy; ``details.fields`` lists the NAMES of the
+    # fields changed, never values (custom words can be sensitive). The two purge events delete
+    # biometric / inferred data and are written twice, ``details.phase`` ``requested`` then
+    # ``completed``, the latter with counts only.
+    ORG_POLICY_CHANGE = "org.policy.change"
+    PRIVACY_VOICEPRINT_PURGE = "privacy.voiceprints.purge"
+    PRIVACY_GENDER_PURGE = "privacy.gender.purge"
+
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.
     AUDIT_EXPORT = "audit.export"

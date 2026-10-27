@@ -32,8 +32,9 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
+from pydantic import model_validator
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 
 #: Every layer a decision can be locked by. ``consent`` only ever appears for voiceprint creation.
 PrivacyLayer = Literal["platform", "instance", "organization", "user", "consent"]
@@ -91,6 +92,12 @@ class InstancePrivacyPolicyUpdate(BaseModel):
         if value is not None and not isinstance(value, bool):
             raise ValueError("must be a boolean")
         return value
+
+    @model_validator(mode="after")
+    def _something_to_change(self) -> InstancePrivacyPolicyUpdate:
+        if not self.model_fields_set:
+            raise ValueError("send at least one field")
+        return self
 
 
 class UserPrivacyPolicy(BaseModel):
@@ -163,7 +170,7 @@ class RedactionFloorIn(BaseModel):
     def _entities(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return None
-        unknown = sorted(set(value) - set(C.REDACTION_PII_ENTITIES))
+        unknown = sorted(set(value) - set(constants.REDACTION_PII_ENTITIES))
         if unknown:
             raise ValueError(f"unknown PII entities {unknown}")
         return list(dict.fromkeys(value))
@@ -248,6 +255,15 @@ class OrgPolicyUpdate(BaseModel):
         if value is not None and not isinstance(value, bool):
             raise ValueError("must be a boolean")
         return value
+
+    @model_validator(mode="after")
+    def _something_to_change(self) -> OrgPolicyUpdate:
+        floor = self.redaction_floor
+        if not self.model_fields_set - {"redaction_floor"} and (
+            floor is None or not floor.model_fields_set
+        ):
+            raise ValueError("send at least one field")
+        return self
 
 
 class PurgeRequest(BaseModel):

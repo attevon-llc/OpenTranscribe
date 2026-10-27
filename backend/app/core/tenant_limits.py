@@ -32,7 +32,10 @@ governance floor is a single global set of ``redaction.force_*`` SystemSettings
 cloud tenant may need PII forced on for its own users while the rest of the
 deployment is left alone. The resolver returns a :class:`RedactionFloor` that is
 UNIONED with the global floor at mask time — it can only ever add, never relax
-what the operator already mandated; ``None`` means "no tenant floor".
+what the operator already mandated; ``None`` means "no tenant floor". Core also STORES
+an organization's floor (``organization_policy``, edited at ``/org-admin/policy``, issues
+#1280/#1279) and unions it with whatever a registered resolver returns, strictest wins, so a
+deployment that registers its own resolver never silently drops a floor an org admin saved.
 """
 
 from __future__ import annotations
@@ -324,14 +327,89 @@ def resolve_allowed_models(organization_id: int | None) -> set[str] | None:
         return None
 
 
+def _union_floors(
+    first: RedactionFloor | None, second: RedactionFloor | None
+) -> RedactionFloor | None:
+    """Strictest-wins union of two tenant floors; ``None`` = no addition."""
+    if first is None or second is None:
+        return first or second
+    thresholds = [
+        t
+        for t in (first.force_toxicity_threshold, second.force_toxicity_threshold)
+        if t is not None
+    ]
+    words: dict[str, str] = {}
+    for word in (*first.forced_custom_words, *second.forced_custom_words):
+        words.setdefault(word.casefold(), word)
+    return RedactionFloor(
+        forced_categories=first.forced_categories | second.forced_categories,
+        forced_pii_entities=first.forced_pii_entities | second.forced_pii_entities,
+        forced_custom_words=tuple(words.values()),
+        force_toxicity_threshold=min(thresholds) if thresholds else None,
+        force_export_redacted=first.force_export_redacted or second.force_export_redacted,
+        force_redact_before_llm=first.force_redact_before_llm or second.force_redact_before_llm,
+    )
+
+
+def _stored_org_floor(db: Session, organization_id: int) -> RedactionFloor | None:
+    """The floor saved for an organization in ``organization_policy``, or ``None`` if empty.
+
+    A missing row and an all-default row both mean "no addition". Forcing custom words implies
+    the ``custom`` category, otherwise a user who had redaction switched off would never have
+    the organization's words masked (a forced category is what keeps redaction enabled).
+    A database error propagates: an unreadable floor must not read as "no floor", which would
+    unmask text the organization mandated masked. (The registered resolver, by contrast, is
+    best-effort - see :func:`resolve_redaction_floor`.)
+    """
+    from app.models.organization_policy import OrganizationPolicy
+
+    row = (
+        db.query(
+            OrganizationPolicy.floor_forced_categories,
+            OrganizationPolicy.floor_forced_pii_entities,
+            OrganizationPolicy.floor_forced_custom_words,
+            OrganizationPolicy.floor_toxicity_threshold,
+            OrganizationPolicy.floor_export_redacted,
+            OrganizationPolicy.floor_redact_before_llm,
+        )
+        .filter(OrganizationPolicy.organization_id == organization_id)
+        .first()
+    )
+    if row is None:
+        return None
+
+    def strings(value: object) -> list[str]:
+        return [v for v in value if isinstance(v, str) and v] if isinstance(value, list) else []
+
+    categories = frozenset(strings(row[0]))
+    words = tuple(strings(row[2]))
+    if words:
+        categories |= {"custom"}
+    floor = RedactionFloor(
+        forced_categories=categories,
+        forced_pii_entities=frozenset(strings(row[1])),
+        forced_custom_words=words,
+        force_toxicity_threshold=float(row[3]) if row[3] is not None else None,
+        force_export_redacted=bool(row[4]),
+        force_redact_before_llm=bool(row[5]),
+    )
+    return None if floor == RedactionFloor() else floor
+
+
 def resolve_redaction_floor(db: Session, organization_id: int | None) -> RedactionFloor | None:
     """Per-org redaction floor to UNION with the global one, or ``None`` for no addition.
 
-    Best-effort like the other resolvers, and the fallback here is the least
+    The floor is the organization's STORED floor (``organization_policy``) unioned with the
+    registered resolver's, strictest wins. Personal scope (``organization_id`` None) never reads
+    an organization row.
+
+    The resolver is best-effort like the other resolvers, and the fallback here is the least
     alarming of the set: ``None`` does not mean "no redaction", it means "nothing
     on top of the deployment's own ``redaction.force_*`` floor", which is exactly
     what every self-host deployment already gets. A broken cloud resolver
-    therefore degrades to core's global policy rather than to no policy.
+    therefore degrades to core's global policy (and the stored floor) rather than to no
+    policy. The stored floor is read from the caller's own session and is NOT best-effort:
+    a database error propagates rather than reading as "no floor".
 
     It is still a degradation, not a guarantee: a deployment that must never mask
     less than a tenant's contracted floor should make that floor the GLOBAL one,
@@ -345,8 +423,10 @@ def resolve_redaction_floor(db: Session, organization_id: int | None) -> Redacti
     Returns:
         The tenant's floor, or None for "no per-tenant addition".
     """
+    stored = _stored_org_floor(db, organization_id) if organization_id is not None else None
     try:
-        return _redaction_floor_resolver(db, organization_id)
+        registered = _redaction_floor_resolver(db, organization_id)
     except Exception:
         logger.exception("redaction-floor resolver failed; falling back to the global floor")
-        return None
+        registered = None
+    return _union_floors(stored, registered)

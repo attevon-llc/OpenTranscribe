@@ -22,19 +22,27 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
+from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.org_admin import org_id_of
+from app.api.endpoints.privacy import queue_purge
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
+from app.core.capabilities import capability_enabled
 from app.db.base import get_db
 from app.schemas.privacy import OrgPolicy
 from app.schemas.privacy import OrgPolicyUpdate
 from app.schemas.privacy import PurgeAccepted
 from app.schemas.privacy import PurgeRequest
+from app.services.privacy import policy_admin
+from app.services.privacy.purge import PurgeScope
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-def _not_implemented() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not implemented")
+#: The capability that decides whether the redaction floor is part of this screen.
+FLOOR_CAPABILITY = "redaction.policy"
 
 
 @router.get("", response_model=OrgPolicy)
@@ -44,7 +52,9 @@ def get_org_policy(
     ctx: RequestContext = Depends(require_org_admin),
 ) -> OrgPolicy:
     """The caller's organization policy. ``redaction_floor`` is null while ``redaction.policy`` is off."""
-    raise _not_implemented()
+    return policy_admin.read_org_policy(
+        db, org_id_of(ctx), include_floor=capability_enabled(FLOOR_CAPABILITY, request)
+    )
 
 
 @router.patch(
@@ -59,7 +69,25 @@ def patch_org_policy(
     ctx: RequestContext = Depends(require_org_admin),
 ) -> OrgPolicy:
     """Partially update the caller's organization policy. Audited as org.policy.change (field names only)."""
-    raise _not_implemented()
+    org_id = org_id_of(ctx)
+    floor_enabled = capability_enabled(FLOOR_CAPABILITY, request)
+    if body.redaction_floor is not None and not floor_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    changed = policy_admin.apply_org_policy_update(db, org_id, int(ctx.user.id), body)
+
+    source_ip, user_agent = _get_client_info(request)
+    audit_logger.log(
+        event_type=AuditEventType.ORG_POLICY_CHANGE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=ctx.user.id,
+        username=str(ctx.user.email),
+        source_ip=source_ip,
+        user_agent=user_agent,
+        details={"fields": changed},
+        organization_id=org_id,
+    )
+    return policy_admin.read_org_policy(db, org_id, include_floor=floor_enabled)
 
 
 @router.post(
@@ -75,4 +103,5 @@ def purge_org_data(
     ctx: RequestContext = Depends(require_org_admin),
 ) -> PurgeAccepted:
     """Irreversibly delete the organization's voiceprints and/or inferred gender, all members' included."""
-    raise _not_implemented()
+    scope = PurgeScope("organization", organization_id=org_id_of(ctx))
+    return queue_purge(db, request, scope, list(body.targets), ctx.user)

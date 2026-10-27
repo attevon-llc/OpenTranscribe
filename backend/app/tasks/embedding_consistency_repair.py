@@ -129,6 +129,7 @@ def _v3_result_writer(
             media_file_id=prepared.media_file_id,
             segment_count=len(embs),
             target_index=get_speaker_index_v3(),
+            organization_id=prepared.organization_id,
         )
         if result is not None:
             written += 1
@@ -194,6 +195,7 @@ def _v4_result_writer(
             embedding=aggregated.tolist(),
             media_file_id=prepared.media_file_id,
             segment_count=len(embs),
+            organization_id=prepared.organization_id,
         )
         if result is not None:
             written += 1

@@ -108,6 +108,10 @@ class PreparedFile:
     media_file_id: int
     user_id: int
     extra: dict[str, Any] = field(default_factory=dict)  # Migration-specific data
+    #: Tenant of the file (``media_file.organization_id``; None = personal). Every voiceprint
+    #: document a writer builds from this file must carry it, or an organization's voiceprint
+    #: reads as personal: the write backstop judges the wrong scope and a purge misses it.
+    organization_id: int | None = None
 
 
 def prepare_file(
@@ -190,6 +194,9 @@ def prepare_file(
         storage_path = media_file.storage_path
         media_file_id = int(media_file.id)
         user_id = int(media_file.user_id)
+        organization_id = (
+            int(media_file.organization_id) if media_file.organization_id is not None else None
+        )
 
     # Guard: speakers exist but none have transcript segments
     if not speaker_segments:
@@ -235,6 +242,7 @@ def prepare_file(
         media_file_id=media_file_id,
         user_id=user_id,
         extra=extra,
+        organization_id=organization_id,
     )
 
 

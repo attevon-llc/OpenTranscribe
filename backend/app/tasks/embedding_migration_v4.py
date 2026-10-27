@@ -491,6 +491,12 @@ def _embedding_result_writer(
                 "created_at": now,
                 "updated_at": now,
                 "embedding": aggregated.tolist(),
+                # Org files only: a personal document carries no field (the personal gate).
+                **(
+                    {"organization_id": prepared.organization_id}
+                    if prepared.organization_id is not None
+                    else {}
+                ),
             }
         )
 

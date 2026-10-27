@@ -61,6 +61,7 @@ def _prepared(user, media_file, speaker) -> Any:
         user_id=user.id,
         media_file_id=media_file.id,
         file_uuid=str(media_file.uuid),
+        organization_id=media_file.organization_id,
     )
 
 

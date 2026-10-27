@@ -2593,6 +2593,9 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
                 media_file_id=target["media_file_id"],
                 display_name=target["display_name"],
                 segment_count=2,  # Merged from 2 speakers
+                # The write replaces the whole document: without the file's tenant an org
+                # speaker's voiceprint would come back unstamped, i.e. personal.
+                organization_id=target.get("organization_id"),
             )
             logger.info(f"Updated target speaker {target['id']} with averaged embedding")
         else:

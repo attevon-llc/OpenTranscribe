@@ -69,6 +69,10 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
             "media_file_uuid": str(target_speaker.media_file.uuid)
             if target_speaker.media_file
             else None,
+            # The file's tenant: the averaged voiceprint is rewritten as a whole document.
+            "organization_id": int(target_speaker.media_file.organization_id)
+            if target_speaker.media_file and target_speaker.media_file.organization_id is not None
+            else None,
         }
 
 

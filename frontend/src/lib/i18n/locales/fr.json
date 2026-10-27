@@ -3985,6 +3985,7 @@
   "orgAudit.event.policyChange": "A modifié la politique de confidentialité",
   "orgAudit.event.voiceprintsPurged": "A supprimé les empreintes vocales stockées",
   "orgAudit.event.genderPurged": "A supprimé les données de genre déduit",
+  "orgAudit.event.labelsResynced": "A reconstruit les étiquettes de locuteur de l'index de recherche après la modification d'un réglage d'empreintes vocales",
   "holds.navLabel": "Conservations légales",
   "holds.title": "Conservations légales",
   "holds.description": "Une conservation légale empêche, tant qu'elle est en vigueur, que des fichiers soient supprimés, purgés par la rétention, effacés avec un compte ou régénérés par un retraitement. Vous pouvez conserver des fichiers précis ou une collection entière, y compris les fichiers qui y seront ajoutés plus tard. Le motif n'est visible que des administrateurs de votre organisation.",

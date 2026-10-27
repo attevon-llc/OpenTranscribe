@@ -84,9 +84,53 @@ def apply_tag_filter(query: Query, tag: list[str] | None) -> Query:
     return query
 
 
-def apply_speaker_filter(query: Query, speaker: list[str] | None) -> Query:
+#: The ``load_only`` column set a gallery-style list needs on each file's speakers: the
+#: label inputs (so building the speaker summary issues no per-speaker lazy load) and the
+#: provenance the privacy redaction reads (``identity_source``, ``media_file_id``,
+#: ``profile_id``, ``verified``).
+LIST_SPEAKER_COLUMNS = (
+    Speaker.uuid,
+    Speaker.name,
+    Speaker.display_name,
+    Speaker.suggested_name,
+    Speaker.confidence,
+    Speaker.suggestion_source,
+    Speaker.verified,
+    Speaker.identity_source,
+    Speaker.media_file_id,
+    Speaker.profile_id,
+)
+
+
+def hidden_speaker_name_clause(db: Session, query: Query, speaker: list[str] | None):
+    """The SQL condition "this speaker's display name is withheld", or ``None`` with no filter.
+
+    A speaker filter matches the name the response would show: a display name a voiceprint
+    made is not matchable while the file's voiceprints are off (#1280). Bounded by the files of
+    ``query`` (call it with the query before the filters are applied) and resolved per
+    (owner, organization) scope, so a gallery pays one extra query, and only when a speaker
+    filter was actually given.
+    """
+    if not speaker:
+        return None
+    from app.services.privacy.redact_view import PrivacyView
+    from app.services.privacy.redact_view import machine_identity_clauses
+
+    name_hidden, _link_hidden = machine_identity_clauses(
+        PrivacyView(db), query.with_entities(MediaFile.id).order_by(None)
+    )
+    return name_hidden
+
+
+def apply_speaker_filter(
+    query: Query, speaker: list[str] | None, name_hidden: sa.ColumnElement[bool] | None = None
+) -> Query:
     """
     Apply speaker filter using display name or original name.
+
+    ``name_hidden`` (from :func:`hidden_speaker_name_clause`) makes a display name that is
+    withheld for the speaker's file unmatchable: the filter then agrees with the chips the
+    page shows. The diarizer name still matches.
 
     Uses an EXISTS subquery instead of joining through transcript_segment
     then calling DISTINCT.  This eliminates the Cartesian product that occurs
@@ -96,14 +140,20 @@ def apply_speaker_filter(query: Query, speaker: list[str] | None) -> Query:
     Args:
         query: Base query
         speaker: List of speaker names
+        name_hidden: Speakers whose display name must not be matched (see above).
 
     Returns:
         Filtered query
     """
     if speaker and len(speaker) > 0:
+        from app.services.privacy.redact_view import visible_display_name_expr
+
+        shown_name = (
+            Speaker.display_name if name_hidden is None else visible_display_name_expr(name_hidden)
+        )
         speaker_or_conditions = []
         for s in speaker:
-            speaker_or_conditions.append(sa.or_(Speaker.display_name == s, Speaker.name == s))
+            speaker_or_conditions.append(sa.or_(shown_name == s, Speaker.name == s))
 
         if speaker_or_conditions:
             exists_subq = (
@@ -485,7 +535,9 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
 
     # More expensive filters — subqueries / external service
     query = apply_tag_filter(query, filters.get("tag"))
-    query = apply_speaker_filter(query, filters.get("speaker"))
+    query = apply_speaker_filter(
+        query, filters.get("speaker"), name_hidden=filters.get("speaker_name_hidden")
+    )
     query = apply_owner_filter(query, filters.get("owner_user_ids"))
     query = apply_transcript_search_filter(
         query,

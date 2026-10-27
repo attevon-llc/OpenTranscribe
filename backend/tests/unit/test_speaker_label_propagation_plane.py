@@ -56,8 +56,12 @@ def test_the_rename_propagation_plane_agrees_with_the_chunk_index_writer():
         suggestion_source="voice_match",
     )
 
-    assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(speaker)
-    assert canonical_speaker_label_for_row(speaker) == _resolve_reindex_speaker_name(speaker)
+    assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(
+        speaker, voiceprint_names=True
+    )
+    assert canonical_speaker_label_for_row(speaker) == _resolve_reindex_speaker_name(
+        speaker, voiceprint_names=True
+    )
     assert canonical_speaker_label_for_row(speaker) == "Joe Rogan (Host)"
 
 
@@ -73,7 +77,9 @@ def test_a_suggestion_below_threshold_is_a_control_not_a_finding():
     )
 
     assert canonical_speaker_label_for_row(speaker) == "SPEAKER_01"
-    assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(speaker)
+    assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(
+        speaker, voiceprint_names=True
+    )
 
 
 def test_a_speaker_with_no_name_at_all_still_propagates():
@@ -84,7 +90,9 @@ def test_a_speaker_with_no_name_at_all_still_propagates():
     speaker = _speaker(name=None, display_name=None, suggested_name=None, confidence=None)
 
     assert canonical_speaker_label_for_row(speaker) == UNKNOWN_SPEAKER_LABEL
-    assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(speaker)
+    assert canonical_speaker_label_for_row(speaker) == resolve_chunk_speaker_name(
+        speaker, voiceprint_names=True
+    )
     assert canonical_speaker_label_for_row(speaker)  # non-empty — the dispatch guard's floor
 
 
@@ -95,7 +103,7 @@ def test_a_drifted_write_plane_would_be_caught_by_the_agreement_test_above(monke
     agreement assertion above would have failed had the drift been real."""
     import app.tasks.search_indexing_task as sit
 
-    def _old_ad_hoc_resolution(speaker):
+    def _old_ad_hoc_resolution(speaker, *, voiceprint_names=True):
         if speaker is None:
             return "Unknown"
         return str(speaker.display_name or speaker.name or "Unknown")
@@ -109,9 +117,11 @@ def test_a_drifted_write_plane_would_be_caught_by_the_agreement_test_above(monke
         suggestion_source="voice_match",
     )
 
-    assert sit.resolve_chunk_speaker_name(speaker) == "SPEAKER_01"
+    assert sit.resolve_chunk_speaker_name(speaker, voiceprint_names=True) == "SPEAKER_01"
     assert canonical_speaker_label_for_row(speaker) == "Joe Rogan (Host)"
-    assert sit.resolve_chunk_speaker_name(speaker) != canonical_speaker_label_for_row(speaker), (
+    assert sit.resolve_chunk_speaker_name(
+        speaker, voiceprint_names=True
+    ) != canonical_speaker_label_for_row(speaker), (
         "the drifted (old) write-plane resolution must disagree with the propagation "
         "plane's canonical resolver, proving the agreement test above is load-bearing "
         "rather than vacuous"

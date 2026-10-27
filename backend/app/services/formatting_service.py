@@ -48,6 +48,7 @@ from app.models.media import Speaker
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -140,12 +141,16 @@ class FormattingService:
         )
 
     @staticmethod
-    def create_speaker_summary(speakers: list[Speaker]) -> dict[str, Any]:
+    def create_speaker_summary(
+        speakers: list[Speaker], privacy: PrivacyView | None = None
+    ) -> dict[str, Any]:
         """
         Create a summary of speakers for file listing.
 
         Args:
             speakers: List of Speaker objects
+            privacy: A ``PrivacyView`` shared by the caller's whole page, so the voiceprint
+                policy is read once per file scope rather than once per speaker (#1280).
 
         Returns:
             Dictionary with speaker count and primary speakers
@@ -156,13 +161,17 @@ class FormattingService:
         # Canonical resolution (display_name > confident suggestion > raw
         # name), via `format_speaker_name` — return all speakers, frontend
         # handles truncation based on available space.
-        speaker_names = [FormattingService.format_speaker_name(speaker) for speaker in speakers]
+        speaker_names = [
+            FormattingService.format_speaker_name(speaker, privacy) for speaker in speakers
+        ]
 
         return {"count": len(speakers), "primary_speakers": speaker_names}
 
     @staticmethod
     def format_media_file(
-        media_file: MediaFile, speakers: list[Speaker] | None = None
+        media_file: MediaFile,
+        speakers: list[Speaker] | None = None,
+        privacy: PrivacyView | None = None,
     ) -> MediaFileSchema:
         """
         Add formatted fields to a MediaFile object.
@@ -170,6 +179,8 @@ class FormattingService:
         Args:
             media_file: MediaFile object
             speakers: Optional list of speakers for the file
+            privacy: A ``PrivacyView`` shared across a page of files (see
+                :meth:`create_speaker_summary`)
 
         Returns:
             MediaFileSchema with formatted fields
@@ -227,7 +238,7 @@ class FormattingService:
 
         # Add speaker summary if speakers provided
         if speakers:
-            updates["speaker_summary"] = FormattingService.create_speaker_summary(speakers)
+            updates["speaker_summary"] = FormattingService.create_speaker_summary(speakers, privacy)
 
         return validated.model_copy(update=updates)  # type: ignore[no-any-return]
 
@@ -375,7 +386,7 @@ class FormattingService:
             segment_dict["toxicity"] = None
 
     @staticmethod
-    def format_speaker_name(speaker: Speaker) -> str:
+    def format_speaker_name(speaker: Speaker, privacy: PrivacyView | None = None) -> str:
         """
         Get the best display name for a speaker.
 
@@ -386,11 +397,13 @@ class FormattingService:
 
         Args:
             speaker: Speaker object
+            privacy: A shared ``PrivacyView`` to ask the voiceprint policy through; omitted,
+                the speaker's own session is used (one policy read per call).
 
         Returns:
             Display name for the speaker
         """
-        return canonical_speaker_label_for_row(speaker)
+        return canonical_speaker_label_for_row(speaker, privacy)
 
     @staticmethod
     def get_speaker_number(speaker_name: str) -> int:

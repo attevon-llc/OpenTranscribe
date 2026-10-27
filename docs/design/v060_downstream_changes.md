@@ -63,6 +63,21 @@ User documentation: `docs-site/docs/features/privacy-controls.md`.
   profiles, grouped by `(owner, organization)` so it runs once per owner. Every hook must return the
   literal `True`; a raise or any other value denies and is logged. No hooks means allow. A hook runs
   in a savepoint of the borrowed session.
+- **Consent hooks are asked per FILE on the read side and per SUBJECT on the write backstop.**
+  `PrivacyView` (every response, export, caption, roster and index writer) hands the hook the file's
+  id (`VoiceprintConsentRequest.media_file_id`) and remembers the answer per file while any hook is
+  registered, so a hook that refuses ONE file turns off that file only; without hooks one answer per
+  `(owner, organization)` serves every file. `assert_voiceprint_write_allowed` (the OpenSearch write
+  backstop) has no file, so it passes `media_file_id=None` and decides per `(owner, organization)`.
+  Write a hook that refuses by file to also refuse by subject when the subject must not be written at all.
+- **A ceiling resolver or consent hook that changes its answer relabels the index only through the
+  safety net.** The switch hooks (`policy_admin`) call `label_reindex.request_label_resync(db, scope,
+  actor_user_id=, switch=, from_value=, to_value=)`; core cannot observe a resolver or hook change. A
+  deployment whose resolver flips an organization (a plan change, a revoked consent) should call
+  `request_label_resync(db, ResyncScope("organization", organization_id=...), ...)` at that moment. If it
+  does not, `search_index_maintenance` runs `detect_label_drift` every tick (5,000 files per tick, resumable)
+  and re-indexes files whose indexed speaker labels disagree with the policy, so the delay is bounded by
+  the maintenance interval and the library size, not unbounded.
 - **Redaction floor union.** `resolve_redaction_floor` now returns the organization's STORED floor
   (`organization_policy.floor_*`, written through `PATCH /api/org-admin/policy`) unioned with the
   registered `RedactionFloorResolver`'s result, strictest wins. A deployment that already supplies
@@ -382,6 +397,13 @@ on. Deleted flag: `chat.rag.map_tier_hybrid`.
   `skipped_by_policy`, and a remote LLM never receives the gender cross-reference. A purge needs the
   switch off first, `"confirm": "PURGE"`, and (for scope `all`) a single-tenant deployment.
   Register your consent hook and ceiling resolver, then test a task that runs with no request.
+- Voiceprint-made identities (`speaker.identity_source`, Alembic `v449`): with voiceprints off, a name a
+  voiceprint wrote is replaced by the diarizer label in every response, export, caption, prompt, roster
+  and the search index (chunks, digest, facts, summary leaves), and the profile link a voiceprint added is
+  not shown or indexed. A switch change queues the `privacy.label_resync` task (register
+  `app.tasks.privacy_label_resync_task` in your Celery `include=` if you override it) and writes a
+  `privacy.labels.resync` audit event with file counts. A summary generated earlier is stored as written
+  and may still name a person; its INDEXED copy does not.
 - Images no longer contain `pip`; anything that installed packages into a running container
   must move to the image build.
 - Third-party telemetry is off by default (section 4).

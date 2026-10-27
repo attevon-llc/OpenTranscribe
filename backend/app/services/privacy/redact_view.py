@@ -37,6 +37,7 @@ from fastapi import status
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.services.privacy import policy
+from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import Decision
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import VOICEPRINT
@@ -83,7 +84,7 @@ class PrivacyView:
     def __init__(self, db: Session) -> None:
         self._db = db
         self._file_scope: dict[int, Scope | None] = {}
-        self._voiceprints: dict[Scope, Decision] = {}
+        self._voiceprints: dict[Scope | tuple[Scope, int], Decision] = {}
         self._gender: dict[Scope, Decision] = {}
 
     def preload_files(self, file_ids: Iterable[int]) -> None:
@@ -94,10 +95,16 @@ class PrivacyView:
         if not wanted:
             return
         try:
-            rows = (
-                self._db.query(MediaFile.id, MediaFile.user_id, MediaFile.organization_id)
-                .filter(MediaFile.id.in_(wanted))
-                .all()
+            # A SAVEPOINT: this read runs inside the caller's transaction, and a failed
+            # statement aborts the whole transaction on PostgreSQL. Rolled back to the
+            # savepoint, the files read as off and the caller can still issue queries.
+            rows = policy._isolated(
+                self._db,
+                lambda: (
+                    self._db.query(MediaFile.id, MediaFile.user_id, MediaFile.organization_id)
+                    .filter(MediaFile.id.in_(wanted))
+                    .all()
+                ),
             )
         except Exception:
             logger.exception("privacy view: could not read file scopes; denying")
@@ -116,16 +123,24 @@ class PrivacyView:
     def voiceprints_for_scope(
         self, user_id: int, organization_id: int | None, media_file_id: int | None = None
     ) -> Decision:
-        """May voiceprints exist for this scope? Layers plus the ``create`` consent hooks."""
+        """May voiceprints exist for this scope? Layers plus the ``create`` consent hooks.
+
+        The layers decide per (owner, organization), so one answer serves every file of a
+        scope. A consent hook is handed the file and may refuse one file of a scope, so while
+        any hook is registered the answer is remembered per file instead.
+        """
         scope = (int(user_id), organization_id)
-        if scope not in self._voiceprints:
-            self._voiceprints[scope] = policy.voiceprint_decision(
+        key: Scope | tuple[Scope, int] = scope
+        if media_file_id is not None and has_voiceprint_consent_hooks():
+            key = (scope, int(media_file_id))
+        if key not in self._voiceprints:
+            self._voiceprints[key] = policy.voiceprint_decision(
                 self._db,
                 user_id=scope[0],
                 organization_id=scope[1],
                 media_file_id=media_file_id,
             )
-        return self._voiceprints[scope]
+        return self._voiceprints[key]
 
     def gender_for_scope(self, user_id: int, organization_id: int | None) -> Decision:
         """May gender be inferred for this scope?"""
@@ -338,7 +353,64 @@ def machine_identity_clauses(
         ``(false(), false())`` when no scope is off, so callers pay nothing further.
     """
     from sqlalchemy import and_
+
+    from app.models.media import Speaker
+
+    in_off_file = _in_off_file(
+        view,
+        file_ids_select,
+        Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+    )
+    if in_off_file is None:
+        from sqlalchemy import false
+
+        return false(), false()
+    name_hidden = and_(Speaker.identity_source == VOICEPRINT, in_off_file)
+    link_hidden = and_(Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)), in_off_file)
+    return name_hidden, link_hidden
+
+
+def hidden_suggestion_clause(
+    view: Session | PrivacyView, file_ids_select: Any
+) -> ColumnElement[bool]:
+    """SQL twin of :func:`hides_voiceprint_suggestion` for queries that never load rows.
+
+    True for a speaker whose stored voiceprint suggestion is withheld: its source is a
+    voiceprint match, nobody verified it (or a voiceprint wrote the ``verified``), and its
+    file's scope has voiceprints off. Scopes are decided exactly as in
+    :func:`machine_identity_clauses`. ``false()`` when no scope is off.
+    """
+    from sqlalchemy import and_
     from sqlalchemy import false
+    from sqlalchemy import or_
+
+    from app.models.media import Speaker
+    from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+
+    embedding = Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES))
+    in_off_file = _in_off_file(view, file_ids_select, embedding)
+    if in_off_file is None:
+        return false()
+    return and_(
+        embedding,
+        or_(Speaker.verified.isnot(True), Speaker.identity_source == VOICEPRINT),
+        in_off_file,
+    )
+
+
+def _in_off_file(
+    view: Session | PrivacyView, file_ids_select: Any, carries: ColumnElement[bool]
+) -> ColumnElement[bool] | None:
+    """``Speaker.media_file_id IN (files of off scopes)``, or ``None`` when no scope is off.
+
+    The off scopes are decided in Python (the policy has layers and hooks SQL cannot ask):
+    one query reads the DISTINCT ``(owner, organization)`` of the files in ``file_ids_select``
+    that hold a speaker satisfying ``carries``, and each scope is asked once through the view.
+    Scopes are matched with ``or_`` of per-scope conditions, never ``tuple_(...).in_(...)``:
+    ``(user, NULL) IN (...)`` is NULL in SQL and would silently let every personal-workspace
+    row through.
+    """
+    from sqlalchemy import and_
     from sqlalchemy import or_
     from sqlalchemy import select
 
@@ -350,11 +422,7 @@ def machine_identity_clauses(
         select(MediaFile.user_id, MediaFile.organization_id)
         .where(
             MediaFile.id.in_(file_ids_select),
-            MediaFile.id.in_(
-                select(Speaker.media_file_id).where(
-                    Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES))
-                )
-            ),
+            MediaFile.id.in_(select(Speaker.media_file_id).where(carries)),
         )
         .distinct()
     ).all()
@@ -366,7 +434,7 @@ def machine_identity_clauses(
         ).enabled
     ]
     if not off:
-        return false(), false()
+        return None
     in_off_scope = or_(
         *(
             and_(
@@ -379,10 +447,7 @@ def machine_identity_clauses(
         )
     )
     off_files = select(MediaFile.id).where(MediaFile.id.in_(file_ids_select), in_off_scope)
-    in_off_file = Speaker.media_file_id.in_(off_files)
-    name_hidden = and_(Speaker.identity_source == VOICEPRINT, in_off_file)
-    link_hidden = and_(Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)), in_off_file)
-    return name_hidden, link_hidden
+    return Speaker.media_file_id.in_(off_files)
 
 
 def visible_display_name_expr(name_hidden: ColumnElement[bool]) -> ColumnElement[Any]:

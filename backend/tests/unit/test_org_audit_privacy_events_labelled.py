@@ -21,6 +21,7 @@ EVENTS = {
     AuditEventType.ORG_POLICY_CHANGE: "orgAudit.event.policyChange",
     AuditEventType.PRIVACY_VOICEPRINT_PURGE: "orgAudit.event.voiceprintsPurged",
     AuditEventType.PRIVACY_GENDER_PURGE: "orgAudit.event.genderPurged",
+    AuditEventType.PRIVACY_LABEL_RESYNC: "orgAudit.event.labelsResynced",
 }
 LOCALES = sorted(p.stem for p in (FRONTEND / "locales").glob("*.json"))
 

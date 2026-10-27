@@ -41,6 +41,7 @@ from app.services.transcript_export_turns import comment_rows_from
 from app.services.transcript_export_turns import group_turns
 from app.services.transcript_export_turns import masked_segments
 from app.services.transcript_export_turns import speaker_namer
+from app.services.transcript_export_turns import voiceprint_names_for
 
 if TYPE_CHECKING:
     from app.schemas.transcript_export import TranscriptDocumentExportRequest
@@ -159,7 +160,14 @@ def prepare_document(
     # be flushed over the stored transcript when the worker's session commits on exit.
     masked = masked_segments(segments, cfg, reveal)
     masked.sort(key=lambda s: s["start_time"])
-    turns = group_turns(masked, speaker_namer(speakers, labels.speaker_default_label))
+    turns = group_turns(
+        masked,
+        speaker_namer(
+            speakers,
+            labels.speaker_default_label,
+            voiceprint_names=voiceprint_names_for(speakers),
+        ),
+    )
     blocks = build_blocks(
         turns, comment_rows_from(comments, options.include_comments), options, labels
     )

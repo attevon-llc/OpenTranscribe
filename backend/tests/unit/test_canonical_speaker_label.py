@@ -287,8 +287,8 @@ def test_the_chunk_index_writers_agree_with_get_speaker_name():
     resolved = get_speaker_name(_StatsSegment("hi", 0.0, 1.0, speaker))
     assert resolved == "Priya"
 
-    assert resolve_chunk_speaker_name(speaker) == resolved
-    assert _resolve_reindex_speaker_name(speaker) == resolved
+    assert resolve_chunk_speaker_name(speaker, voiceprint_names=True) == resolved
+    assert _resolve_reindex_speaker_name(speaker, voiceprint_names=True) == resolved
 
 
 def test_files_crud_and_formatting_service_agree_with_get_speaker_name():
@@ -323,7 +323,7 @@ def test_every_plane_agrees_on_the_canonical_unknown_spelling():
     from app.api.endpoints.files.crud import _resolve_segment_speaker_name
     from app.tasks.search_indexing_task import resolve_chunk_speaker_name
 
-    assert resolve_chunk_speaker_name(None) == UNKNOWN_SPEAKER_LABEL
+    assert resolve_chunk_speaker_name(None, voiceprint_names=True) == UNKNOWN_SPEAKER_LABEL
     assert _resolve_segment_speaker_name(None) == UNKNOWN_SPEAKER_LABEL
 
 
@@ -334,7 +334,7 @@ def test_a_drifted_plane_would_be_caught_by_the_agreement_tests_above(monkeypatc
     would have failed had the drift been real."""
     import app.tasks.search_indexing_task as sit
 
-    def _old_ad_hoc_resolution(speaker):
+    def _old_ad_hoc_resolution(speaker, *, voiceprint_names=True):
         if speaker is None:
             return "Unknown"
         display_name = speaker.display_name if speaker and speaker.display_name else speaker.name
@@ -348,11 +348,11 @@ def test_a_drifted_plane_would_be_caught_by_the_agreement_tests_above(monkeypatc
     resolved = get_speaker_name(_StatsSegment("hi", 0.0, 1.0, speaker))
 
     assert resolved == "Marcus"
-    assert sit.resolve_chunk_speaker_name(speaker) == "SPEAKER_00", (
+    assert sit.resolve_chunk_speaker_name(speaker, voiceprint_names=True) == "SPEAKER_00", (
         "the drifted (old) resolution must disagree with the canonical one, "
         "proving the agreement tests above are load-bearing rather than vacuous"
     )
-    assert sit.resolve_chunk_speaker_name(speaker) != resolved
+    assert sit.resolve_chunk_speaker_name(speaker, voiceprint_names=True) != resolved
 
 
 # --------------------------------------------------------------- facts coverage/exclusion

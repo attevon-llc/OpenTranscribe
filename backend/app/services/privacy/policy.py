@@ -476,6 +476,12 @@ def assert_voiceprint_write_allowed(
 ) -> bool:
     """Backstop for every OpenSearch voiceprint write. True = the write may proceed.
 
+    The decision is per SUBJECT (owner and organization), never per file: a document is written
+    for an owner, and no file is known at this point, so the ``create`` consent hooks receive
+    ``media_file_id=None``. A hook that refuses one file only (see ``PrivacyView``, which does
+    ask per file) therefore cannot stop this write backstop; the entry gates and the read side
+    do.
+
     Despite the name it returns instead of raising: a denied write logs once per scope and the
     caller returns its own existing "not written" value. The answer is cached per
     ``(user_id, organization_id)`` for ``PRIVACY_WRITE_BACKSTOP_TTL_SECONDS`` because this sits

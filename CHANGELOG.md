@@ -1060,6 +1060,25 @@ off by default.
 
 ### Fixed
 
+- **Turning voiceprints off now hides a voice-made name everywhere it was printed or indexed
+  (#1280).** The search index, the speaker summary text in it, the facts and digest, the
+  summarization prompt, exports and captions, the chat "who said" lookup, the gallery and
+  collection speaker filter, and the profile appearance counts now follow the file's voiceprint
+  switch. A name a voiceprint wrote is replaced by the diarizer label (for example `SPEAKER_00`),
+  and the profile link a voiceprint added is neither shown, counted nor indexed; a name a person
+  typed or confirmed is never touched. Nothing is deleted by hiding: turning the switch back on
+  restores it. The choice is made once per file, not once per segment, and an unreadable policy
+  hides. A summary generated earlier is stored as written (regenerate it to drop a name from the
+  text); its copy in the search index is masked.
+- **A voiceprint switch change rebuilds the search labels, and says what it did (#1280).** The
+  rebuild is recorded before it is queued, survives a broker or worker failure, and is finished
+  by the periodic search maintenance; each request and each finished scope writes a
+  `privacy.labels.resync` audit event with the number of files selected, queued, already pending
+  and failed. The same maintenance now compares the indexed speaker labels of voice-named files
+  with what the policy implies and re-indexes files that disagree. A speaker rename on a file
+  whose voiceprints are off rebuilds the file instead of rewriting labels the index may not hold.
+- **A failed privacy scope read no longer aborts the request's transaction, and a consent hook
+  can refuse a single file (#1280).**
 - **A speaker's organization comes from its file (#1280).** Speakers are created without their
   own organization, so three places that read it got the wrong answer: renaming a speaker profile
   inside an organization skipped every speaker in that organization (and a personal rename

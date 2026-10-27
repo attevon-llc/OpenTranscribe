@@ -140,6 +140,13 @@ class AuditEventType(StrEnum):
     ORG_POLICY_CHANGE = "org.policy.change"
     PRIVACY_VOICEPRINT_PURGE = "privacy.voiceprints.purge"
     PRIVACY_GENDER_PURGE = "privacy.gender.purge"
+    # A voiceprint switch changed and the speaker labels in the search index are being rebuilt
+    # (issue #1280). Written when the resync is requested (``details.phase`` ``requested``) and
+    # when a scope finishes (``completed``, or ``incomplete`` when some files could not be
+    # queued and the scope stays pending), plus ``drift`` when the maintenance scan found
+    # indexed labels that disagree with the policy. ``details`` holds the switch, its from/to
+    # value, the scope kind and ids, and file COUNTS: never a name or a file id.
+    PRIVACY_LABEL_RESYNC = "privacy.labels.resync"
 
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.

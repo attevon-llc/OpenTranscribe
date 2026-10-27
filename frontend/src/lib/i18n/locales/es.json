@@ -3985,6 +3985,7 @@
   "orgAudit.event.policyChange": "Cambió la política de privacidad",
   "orgAudit.event.voiceprintsPurged": "Eliminó las huellas de voz almacenadas",
   "orgAudit.event.genderPurged": "Eliminó los datos de género inferido",
+  "orgAudit.event.labelsResynced": "Reconstruyó las etiquetas de hablante del índice de búsqueda tras cambiar un interruptor de huellas de voz",
   "holds.navLabel": "Retenciones legales",
   "holds.title": "Retenciones legales",
   "holds.description": "Una retención legal impide, mientras esté en vigor, que los archivos se eliminen, los borre la retención, se supriman junto con una cuenta o se regeneren al reprocesarlos. Puede retener archivos concretos o una colección entera, incluidos los archivos que se añadan después. El motivo solo lo ven los administradores de su organización.",

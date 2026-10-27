@@ -281,6 +281,37 @@ def _dispatch_facts_backfill(
     )
 
 
+def _run_label_resync_arm(db: Any, stats: dict[str, int | bool | str]) -> None:
+    """Finish a pending voiceprint-switch relabelling and look for labels that drifted.
+
+    ``privacy.label_resync`` normally does the first part right after the switch changes; this
+    covers a dispatch that never ran (broker down, worker lost) and a scope that stayed
+    pending because some files could not be queued. The drift scan catches what no switch hook
+    can see: a derived deployment's ceiling resolver or consent hook changing its answer.
+    Each part is contained: a failure here must not stop the rest of the maintenance pass.
+
+    Args:
+        db: Open session.
+        stats: The maintenance stats dict, annotated in place.
+    """
+    from app.services.privacy.label_reindex import detect_label_drift
+    from app.services.privacy.label_reindex import read_pending
+    from app.services.privacy.label_reindex import run_label_resync
+
+    stats["label_resync_scopes"] = 0
+    stats["label_drift_files"] = 0
+    try:
+        if read_pending(db):
+            outcomes = run_label_resync(db)
+            stats["label_resync_scopes"] = sum(1 for o in outcomes if o.finished)
+    except Exception:
+        logger.exception("privacy label resync arm failed")
+    try:
+        stats["label_drift_files"] = detect_label_drift(db).drifted
+    except Exception:
+        logger.exception("privacy label drift scan failed")
+
+
 def _is_reindex_running() -> bool:
     """Check if a reindex is already in progress (any user)."""
     r = get_redis()
@@ -327,6 +358,12 @@ def _run_search_maintenance() -> dict[str, Any]:
             from app.services.speaker_label_backfill import backfill_llm_suggested_labels
 
             backfill_llm_suggested_labels(db, stats)
+
+        # A voiceprint switch changed and its relabelling is not finished, or the index holds
+        # labels the policy no longer implies. Independent of the guard below for the same
+        # reason: it queues the debounced per-file reindex, not a per-user coordinator.
+        with session_scope() as db:
+            _run_label_resync_arm(db, stats)
 
         # Don't dispatch reindex if one is already running
         if _is_reindex_running():

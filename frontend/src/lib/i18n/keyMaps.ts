@@ -310,6 +310,7 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'org.policy.change': 'orgAudit.event.policyChange',
   'privacy.voiceprints.purge': 'orgAudit.event.voiceprintsPurged',
   'privacy.gender.purge': 'orgAudit.event.genderPurged',
+  'privacy.labels.resync': 'orgAudit.event.labelsResynced',
 };
 
 /** What a legal hold on a file or collection says to the person it stopped (issue #1276). */

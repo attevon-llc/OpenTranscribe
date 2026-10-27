@@ -688,6 +688,12 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_content_hold_collection_scope')"
     )
 
+    # v449: who wrote a speaker's name/link (issue #1280). Keyed on its CHECK, created after
+    # the column; the backfill runs in the same transaction.
+    has_identity_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_speaker_identity_source')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -757,8 +763,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v447: same as v446 plus the organization content holds. The newest revision on this
-    # chain, so this is the top of the ladder.
+    # v449: same as v447 plus speaker.identity_source. The newest revision on this chain, so
+    # this is the top of the ladder. (Its parent is v447 on this branch; when v448 is merged
+    # in, v449 is re-parented onto it and this arm also requires v448's marker.)
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+        and has_collection_visibility
+        and has_content_hold
+        and has_identity_source
+    ):
+        return "v449_add_speaker_identity_source"
+    # v447: same as v446 plus the organization content holds.
     if (
         matches_v442
         and has_takedown_notice

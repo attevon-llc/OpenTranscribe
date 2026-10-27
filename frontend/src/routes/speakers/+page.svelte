@@ -40,6 +40,7 @@
     SpeakerProfile
   } from '$lib/types/speakerCluster';
   import { apiCache } from '$lib/apiCache';
+  import SpeakerPrivacyNotice from '$components/privacy/SpeakerPrivacyNotice.svelte';
   import { createDebouncedHandler } from '$lib/utils/debounce';
 
   type Tab = 'clusters' | 'profiles' | 'inbox';
@@ -915,6 +916,8 @@
       {/if}
     </button>
   </div>
+
+  <SpeakerPrivacyNotice show={activeTab === 'profiles' ? 'gender' : 'both'} />
 
   <!-- Clusters Tab -->
   {#if activeTab === 'clusters'}

@@ -47,7 +47,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   response, and `assert_voiceprint_write_allowed` only inside OpenSearch speaker writes (10 s cache). `consent.py` is the seam a
   consent implementation registers a hook on (all hooks must return `True`; a raise denies). Switching a layer off HIDES, only
   `purge.py` deletes, and only once the switch is off. A purge is MEASURED: `purge_voiceprints.py` (relational half + OpenSearch
-  documents by the Postgres ids of the scope, never by a document's `organization_id`), `purge_residual.py` (a fresh-session,
+  documents by the Postgres ids of the scope; an ORGANIZATION purge also deletes and measures the documents stamped with its
+  `organization_id` (`purge_voiceprints.org_stamp_clause`: orphans and integer-keyed legacy documents have no row), a personal or
+  user purge never deletes by stamp; a pass hands the cluster centroid ids it could not confirm gone to the next pass as
+  `carried_cluster_uuids`, because their rows are already deleted; "outside the scope" is `not_in_scope`, a NOT EXISTS anti-join,
+  never `NOT IN (SELECT ...)`), `purge_residual.py` (a fresh-session,
   post-refresh check whose values must all be 0; unmeasurable = unverified, never clean), `purge.run_purge_pass` returns a
   `PassResult` with exact counts per store, and the task fails the purge on a final residual. It also reverts what a voiceprint
   named (`speaker.identity_source`, below) and never touches `human`/NULL identities or another tenant's rows.
@@ -487,8 +491,16 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   AST gate: a function that assigns either field without calling the helpers or setting `identity_source` must be in its `_ALLOWED`
   table with a reason. Readers hide a voiceprint-made name/link while the file's voiceprints are off (`redact_view`,
   `machine_identity_clauses` for queries that never load rows: the speaker name directory and profile occurrences use them); a purge
-  reverts `voiceprint` rows (unnamed, unlinked, unverified, voice suggestion cleared) and unlinks `voiceprint_link` rows. v449 backfilled
-  only the provable legacy shape and recorded the count in `system_settings` key `privacy.identity_source_backfill`.
+  reverts `voiceprint` rows (unnamed, unlinked, unverified, voice suggestion cleared) and unlinks `voiceprint_link` rows together
+  with the voice suggestion and confidence of the match that added the link (`hides_voiceprint_suggestion` treats both machine sources
+  alike). An Inbox skip is a review marker, not a confirmation: `after_skip` marks a name-less, link-less row that carries a voice
+  suggestion `voiceprint`, so the suggestion stays the machine's. A profile rename (`speaker_profile_rename`) reaches only members
+  whose link is visible under their file's decision. Every cross-recording reader (`/speakers/{uuid}/cross-media` and its debug
+  twins, the speaker media preview, the merge-completion event, the topic-extraction prompt) goes through `hide_machine_identities`
+  / `get_speaker_name` for its OWN file; none matches on the raw `display_name` / `profile_id`. v449 backfilled only rows with
+  positive evidence (the shape, the profile older than the speaker, an earlier linked speaker: a typed name that a legacy re-match
+  rewrote has the shape but fails the evidence) and recorded `stamped` and `shape_left_unmarked` in `system_settings` key
+  `privacy.identity_source_backfill`; a purge cannot be undone, so the backfill errs toward NULL.
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

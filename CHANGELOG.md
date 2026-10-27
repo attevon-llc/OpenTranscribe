@@ -132,11 +132,16 @@ off by default.
   organization (cluster documents, and speaker documents rewritten by the consistency repair,
   the v4 migration, a speaker merge or the index rebuild).
 - **Speaker names now record whether a person or a voiceprint wrote them (#1280).** Migration `v449`
-  adds `speaker.identity_source` and marks as voiceprint-made only the existing identities the
-  database can prove a voiceprint wrote (a verified speaker linked to a profile, whose name equals
-  both its profile-match suggestion and the profile's name). Everything else is treated as a
-  person's, so it stays visible while voiceprints are off and a purge leaves it alone. The count of
-  rows marked is logged at upgrade (`v449: recognised N existing speaker identities ...`) and kept
+  adds `speaker.identity_source` and marks as voiceprint-made only the existing identities there is
+  positive evidence a voiceprint wrote: a verified speaker linked to a profile, whose name equals
+  both its profile-match suggestion and the profile's name, where the profile already existed when
+  the speaker was created and another speaker had been linked to it earlier (a person who types a
+  name creates the profile afterwards, so a typed name that a later re-match rewrote is not
+  marked). Everything else is treated as a person's, so it stays visible while voiceprints are off
+  and a purge leaves it alone. A person who assigned an existing profile to a later speaker can
+  still be marked, and a purge clears a marked name for good (turning the switch back on only
+  un-hides). The count marked and the count of ambiguous rows left unmarked are logged at upgrade
+  (`v449: recognised N existing speaker identities ... left M ambiguous ones unmarked`) and kept
   in `system_settings` under `privacy.identity_source_backfill`; the query that reads it and the
   comparison with unproven rows are in Operations > Upgrading to 0.6.0. Summaries and topics a
   language model already wrote are not rewritten.
@@ -731,6 +736,23 @@ off by default.
   a person typed, accepted, assigned or confirmed (including promoting a cluster to a profile) is
   never hidden. Merging two speakers keeps the survivor's own origin; clearing a name keeps a
   machine link as a link and nothing else.
+- **Cross-recording speaker views, previews and prompts follow each recording's voiceprint switch
+  (#1280).** A speaker's "other recordings" list, its administrator debug twins, the speaker
+  preview, the speaker-merge notification and the topic-suggestion prompt used to read the raw
+  name and profile link, so a recording that only a voiceprint link connected, a voiceprint-made
+  name, or the match confidence showed while voiceprints were off. Each recording is now judged by
+  its own switch. Skipping a voice suggestion in the Inbox no longer makes it count as a person's
+  confirmation: it stays hidden while off and a purge clears it. A voiceprint link added to a name
+  a person typed hides, and a purge removes, the suggestion and confidence of that match with it.
+  A profile rename no longer writes the new name into a speaker whose link is hidden.
+- **A purge finishes what it started and measures what it reached (#1280).** A cluster centroid
+  document the first pass could not delete is carried to the second pass instead of being forgotten
+  with its deleted cluster row, so a purge can no longer report success with a centroid still
+  indexed. An organization purge also deletes and measures documents carrying its own stamp that
+  have no database row; the query that selects clusters outside the scope is an anti-join instead
+  of `NOT IN`, which did not finish on a million speakers; a person's purge no longer deletes a
+  promoted cluster another member owns; and `speaker_links_removed` no longer counts markers whose
+  profile was already deleted.
 - **A purge now reverts, deletes and verifies (#1280).** Stored voiceprints are selected by what
   the database says belongs to the purged scope (the recording's tenant, the profile's, the
   cluster's members'), not by the stamp on each search document, so a document written before the

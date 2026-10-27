@@ -327,6 +327,10 @@ class PassResult:
 
     outcomes: dict[str, TargetOutcome] = field(default_factory=dict)
     errors: list[dict[str, Any]] = field(default_factory=list)
+    #: Cluster centroid documents whose deletion this pass could not confirm. The cluster rows
+    #: are already gone from Postgres, so the next pass cannot recompute these ids: it must be
+    #: handed them (``run_purge_pass(carried_cluster_uuids=...)``) or they are never retried.
+    unfinished_cluster_uuids: list[str] = field(default_factory=list)
 
     def counts(self) -> GroupedCounts:
         """All targets' counts, grouped per store."""
@@ -359,11 +363,22 @@ def run_purge_pass(
     *,
     session_factory: Callable[[], Session],
     reindex: Callable[[list[tuple[int, str, int]]], int] | None = None,
+    carried_cluster_uuids: Iterable[str] = (),
 ) -> PassResult:
     """One full pass over the targets: relational rows, OpenSearch documents, then verification.
 
     Each relational step opens its own short session and closes it before the next, and the
     OpenSearch delete (slow) holds none. Idempotent, which is what lets the task run it twice.
+
+    Args:
+        scope: Whose data.
+        targets: Which targets.
+        session_factory: Opens a short session.
+        reindex: See :func:`refresh_cleared_speakers`.
+        carried_cluster_uuids: ``PassResult.unfinished_cluster_uuids`` of the previous pass. A
+            pass deletes the cluster ROWS before their centroid documents, so a document whose
+            delete failed has no row left to name it; its id is carried here to be deleted and
+            measured again.
     """
     wanted = set(targets)
     result = PassResult()
@@ -387,10 +402,15 @@ def run_purge_pass(
             raise
         finally:
             db.close()
+        done.targets.cluster_uuids = list(
+            dict.fromkeys([*done.targets.cluster_uuids, *map(str, carried_cluster_uuids)])
+        )
         outcome.counts[OPENSEARCH].update(purge_voiceprint_docs(scope, done.targets, result.errors))
         outcome.residual = measure_voiceprint_residual(
             scope, done.targets, session_factory=session_factory, errors=result.errors
         )
+        if outcome.residual.counts.get("cluster_docs") != 0:  # still there, or never measured
+            result.unfinished_cluster_uuids = list(done.targets.cluster_uuids)
         result.outcomes[VOICEPRINTS] = outcome
 
     if INFERRED_GENDER in wanted:

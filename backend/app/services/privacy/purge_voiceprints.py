@@ -11,7 +11,8 @@ What is deleted, and what is only reverted
 -------------------------------------------
 * A name and link a voiceprint wrote (``speaker.identity_source = 'voiceprint'``) revert to an
   unnamed, unlinked, unverified speaker. A link a voiceprint added to a person's own name
-  (``'voiceprint_link'``) is removed and the name and ``verified`` stay. A ``human`` or NULL
+  (``'voiceprint_link'``) is removed, with the voice suggestion and confidence of the match
+  that added it; the name and ``verified`` stay. A ``human`` or NULL
   identity is never touched. Machine-identified speakers leave promoted clusters (a cluster left
   empty is deleted).
 * Voiceprint suggestions nobody verified; ``speaker_match`` rows with EITHER side in scope (a
@@ -19,7 +20,11 @@ What is deleted, and what is only reverted
   it is voice-derived data of the purged scope, and counted separately); unpromoted clusters
   whose members are all in scope (a cluster that also holds another scope's speakers only loses
   the in-scope ones and has its centroid rebuilt from the rest); profile embedding counters.
-* The speaker, profile and cluster-centroid documents of those ids, in every speaker index.
+* The speaker, profile and cluster-centroid documents of those ids, in every speaker index. An
+  ORGANIZATION purge also deletes the documents carrying that organization's stamp
+  (:func:`org_stamp_clause`): an orphan document Postgres has no row for, or one keyed by the
+  pre-uuid integer speaker id, is the organization's all the same. A personal or user purge is
+  id-scoped only: a document with no stamp is never reached by it.
 
 Another tenant's rows, profiles and documents are never touched.
 """
@@ -36,6 +41,7 @@ from typing import cast
 from sqlalchemy import and_
 from sqlalchemy import case
 from sqlalchemy import delete
+from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -110,11 +116,64 @@ def _scope_speaker_ids(scope: PurgeScope) -> Any:
     return select(Speaker.id).where(*scope.speaker_filters())
 
 
-def _revert_machine_identities(db: Session, scope: PurgeScope) -> tuple[list[int], list[int], int]:
+def org_stamp_clause(scope: PurgeScope, kind: str) -> dict[str, Any] | None:
+    """Documents of ``kind`` carrying the purged organization's own stamp, or ``None``.
+
+    Only an ORGANIZATION scope has one: a positive match on ``organization_id`` is the
+    organization's data whether or not Postgres still has the row. It is never used for a
+    personal or user scope, where an absent stamp means "personal" and a stamp-based delete
+    would reach a document it must not.
+
+    Args:
+        scope: The purge scope.
+        kind: ``speaker`` / ``profile`` / ``cluster`` (the ``document_type`` of the document;
+            a speaker document has none).
+    """
+    if scope.kind != "organization":
+        return None
+    stamp = {"term": {"organization_id": scope.organization_id}}
+    if kind == "speaker":
+        return {
+            "bool": {
+                "filter": [stamp],
+                "must_not": [{"terms": {"document_type": ["profile", "cluster"]}}],
+            }
+        }
+    return {"bool": {"filter": [stamp, {"term": {"document_type": kind}}]}}
+
+
+def not_in_scope(scope: PurgeScope, speaker_id_column: Any) -> Any:
+    """``speaker_id_column`` names a speaker OUTSIDE ``scope``, as an anti-join.
+
+    ``NOT EXISTS`` rather than ``NOT IN (SELECT ...)``: Postgres evaluates the latter as a
+    hashed SubPlan that spills to a per-row rescan once the subquery exceeds ``work_mem``, which
+    is quadratic past about a million speakers (the first 5,000-cluster chunk did not finish in
+    ten minutes at 4 MB). An anti-join stays linear.
+    """
+    from sqlalchemy.orm import aliased
+
+    from app.models.media import MediaFile
+    from app.models.media import Speaker
+
+    inner = aliased(Speaker)
+    return ~exists(
+        select(1)
+        .select_from(inner)
+        .join(MediaFile, MediaFile.id == inner.media_file_id)
+        .where(inner.id == speaker_id_column, *scope.sql_filters(MediaFile))
+    )
+
+
+def _revert_machine_identities(
+    db: Session, scope: PurgeScope
+) -> tuple[list[int], list[int], int, int]:
     """Steps 1 and 2: revert voiceprint-made identities, unlink voiceprint-made links.
 
     Returns:
-        ``(reverted_ids, unlinked_ids, suggestions_cleared_with_them)``.
+        ``(reverted_ids, unlinked_ids, suggestions_cleared_with_them, links_removed)``.
+        ``links_removed`` counts only links that still pointed at a profile: a deleted profile
+        already set the speaker's ``profile_id`` NULL (``ON DELETE SET NULL``), leaving a
+        marker with no link to remove.
     """
     from app.models.media import Speaker
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
@@ -127,8 +186,19 @@ def _revert_machine_identities(db: Session, scope: PurgeScope) -> tuple[list[int
             .select_from(Speaker)
             .where(
                 *scope.speaker_filters(),
-                Speaker.identity_source == VOICEPRINT,
+                Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
                 has_voice_suggestion,
+            )
+        ).scalar_one()
+    )
+    links_removed = int(
+        db.execute(
+            select(func.count())
+            .select_from(Speaker)
+            .where(
+                *scope.speaker_filters(),
+                Speaker.identity_source == VOICEPRINT_LINK,
+                Speaker.profile_id.isnot(None),
             )
         ).scalar_one()
     )
@@ -159,12 +229,22 @@ def _revert_machine_identities(db: Session, scope: PurgeScope) -> tuple[list[int
         for row in db.execute(
             update(Speaker)
             .where(*scope.speaker_filters(), Speaker.identity_source == VOICEPRINT_LINK)
-            .values(profile_id=None, identity_source=None)
+            .values(
+                profile_id=None,
+                identity_source=None,
+                # The match that added the link is voice data too: its suggestion and
+                # confidence go, the person's own name and verification stay.
+                suggested_name=case((has_voice_suggestion, None), else_=Speaker.suggested_name),
+                suggestion_source=case(
+                    (has_voice_suggestion, None), else_=Speaker.suggestion_source
+                ),
+                confidence=case((has_voice_suggestion, None), else_=Speaker.confidence),
+            )
             .returning(Speaker.id)
             .execution_options(synchronize_session=False)
         )
     ]
-    return reverted, unlinked, with_suggestion
+    return reverted, unlinked, with_suggestion, links_removed
 
 
 def _remove_from_promoted_clusters(
@@ -280,8 +360,8 @@ def _purge_clusters(
     memberless_in_scope = select(SpeakerCluster.id).where(
         unpromoted,
         *scope.sql_filters(SpeakerCluster),
-        ~SpeakerCluster.id.in_(select(SpeakerClusterMember.cluster_id)),
-        ~SpeakerCluster.id.in_(select(Speaker.cluster_id).where(Speaker.cluster_id.isnot(None))),
+        ~exists().where(SpeakerClusterMember.cluster_id == SpeakerCluster.id),
+        ~exists().where(Speaker.cluster_id == SpeakerCluster.id),
     )
     candidates.update(int(r[0]) for r in db.execute(memberless_in_scope))
 
@@ -292,7 +372,7 @@ def _purge_clusters(
             for r in db.execute(
                 select(SpeakerClusterMember.cluster_id).where(
                     SpeakerClusterMember.cluster_id.in_(chunk),
-                    SpeakerClusterMember.speaker_id.notin_(in_scope),
+                    not_in_scope(scope, SpeakerClusterMember.speaker_id),
                 )
             )
         )
@@ -300,7 +380,7 @@ def _purge_clusters(
             int(r[0])
             for r in db.execute(
                 select(Speaker.cluster_id).where(
-                    Speaker.cluster_id.in_(chunk), Speaker.id.notin_(in_scope)
+                    Speaker.cluster_id.in_(chunk), not_in_scope(scope, Speaker.id)
                 )
             )
         )
@@ -399,9 +479,9 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
     targets.profile_uuids = [str(r[1]) for r in profile_rows]
     scope_profile_ids = [int(r[0]) for r in profile_rows]
 
-    reverted, unlinked, suggestions_with_them = _revert_machine_identities(db, scope)
+    reverted, unlinked, suggestions_with_them, links_removed = _revert_machine_identities(db, scope)
     counts["speaker_identities_reverted"] = len(reverted)
-    counts["speaker_links_removed"] = len(unlinked)
+    counts["speaker_links_removed"] = links_removed
     counts["suggestions_cleared"] = suggestions_with_them
     machine_ids = reverted + unlinked
 
@@ -411,8 +491,21 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
 
     owned_profiles = set(scope_profile_ids)
     emptied = [t for t in touched if t[2] == 0]
+    emptied_owner = {
+        int(r[0]): int(r[1])
+        for r in db.execute(
+            select(SpeakerCluster.id, SpeakerCluster.user_id).where(
+                SpeakerCluster.id.in_([t[0] for t in emptied])
+            )
+        )
+    }
     for cluster_id, cluster_uuid, _count, _profile in emptied:
+        # The centroid averaged the voices this purge removed, so it always goes. The row goes
+        # too unless a person's own purge reaches a cluster another member owns: that row is
+        # theirs, and an empty one is harmless (they re-cluster, or delete it).
         targets.cluster_uuids.append(cluster_uuid)
+        if scope.kind == "user" and emptied_owner.get(cluster_id) != scope.user_id:
+            continue
         counts["promoted_clusters_deleted"] += _rowcount(
             db, delete(SpeakerCluster).where(SpeakerCluster.id == cluster_id)
         )
@@ -551,13 +644,13 @@ def purge_voiceprint_docs(
     label = f"scope {scope.kind}"
     return {
         "speaker_docs_deleted": delete_speaker_docs_by_ids(
-            ids["speaker"], errors=errors, label=label
+            ids["speaker"], also=org_stamp_clause(scope, "speaker"), errors=errors, label=label
         ),
         "profile_docs_deleted": delete_speaker_docs_by_ids(
-            ids["profile"], errors=errors, label=label
+            ids["profile"], also=org_stamp_clause(scope, "profile"), errors=errors, label=label
         ),
         "cluster_docs_deleted": delete_speaker_docs_by_ids(
-            ids["cluster"], errors=errors, label=label
+            ids["cluster"], also=org_stamp_clause(scope, "cluster"), errors=errors, label=label
         ),
     }
 

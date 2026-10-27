@@ -483,6 +483,8 @@ IMPORTANT GUIDELINES:
                 constructed with; the read phase passes its own short one.
         """
         from app.models.media import TranscriptSegment
+        from app.services.privacy.gates import voiceprints_allowed
+        from app.utils.transcript_builders import get_speaker_name
         from app.utils.transcript_builders import mask_segment_text
 
         segments = (
@@ -500,10 +502,15 @@ IMPORTANT GUIDELINES:
         if not segments:
             return None
 
+        # The prompt may go to a remote provider, so a speaker is named the way every other
+        # printer of a label names it: through the canonical label, with the FILE's voiceprint
+        # decision (#1280). A name a voiceprint made is left out while voiceprints are off.
+        voiceprint_names = voiceprints_allowed(int(media_file.id), self._session(db))
+
         # Combine segments into full transcript
         transcript_parts = []
         for segment in segments:
-            speaker_name = segment.speaker.display_name if segment.speaker else "Unknown"
+            speaker_name = get_speaker_name(segment, voiceprint_names=voiceprint_names)
             transcript_parts.append(f"{speaker_name}: {mask_segment_text(segment, redaction_cfg)}")
 
         return "\n".join(transcript_parts)

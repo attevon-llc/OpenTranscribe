@@ -203,9 +203,10 @@ def require_voiceprints(db: Session, *, user_id: int, organization_id: int | Non
 def hides_voiceprint_suggestion(speaker: Any) -> bool:
     """A stored suggestion a voiceprint wrote that is not a person's verified word (D5).
 
-    Hidden when nobody verified it, and also when ``verified`` was written by a voiceprint
-    path (``identity_source = 'voiceprint'``): an auto-accepted match sets ``verified`` too,
-    and its suggestion is the evidence of the match.
+    Hidden when nobody verified it, and also when a voiceprint path wrote the row's identity
+    (``identity_source`` ``voiceprint`` or ``voiceprint_link``): an auto-accepted match sets
+    ``verified`` too, and its suggestion and confidence are the evidence of the match, even
+    where the name it matched was a person's own.
 
     ``getattr`` for ``verified`` / ``identity_source``: a columns-only row that did not select
     ``verified`` cannot prove a person verified the suggestion, so it reads as unverified (the
@@ -215,7 +216,7 @@ def hides_voiceprint_suggestion(speaker: Any) -> bool:
         return False
     return (
         getattr(speaker, "verified", None) is not True
-        or getattr(speaker, "identity_source", None) == VOICEPRINT
+        or getattr(speaker, "identity_source", None) in MACHINE_IDENTITY_SOURCES
     )
 
 
@@ -393,7 +394,10 @@ def hidden_suggestion_clause(
         return false()
     return and_(
         embedding,
-        or_(Speaker.verified.isnot(True), Speaker.identity_source == VOICEPRINT),
+        or_(
+            Speaker.verified.isnot(True),
+            Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+        ),
         in_off_file,
     )
 

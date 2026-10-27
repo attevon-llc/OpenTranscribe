@@ -604,3 +604,28 @@ purge dialog states). A reverted build behaves exactly as `f63b4043`.
   person's confirmation (kept by a purge, as promoted clusters already are) or voiceprint-derived?
 - **Q3 (recommended: accept, disclosed).** LLM-written summaries and topics that already name a
   hidden speaker are not rewritten or hidden; regenerating them while off removes the name.
+
+## 12. Addendum: audit follow-up (supersedes D3 and §10.1 where they differ)
+
+- **D3, the backfill, is narrower.** The shape alone is not evidence: before v449 a re-extracted
+  voiceprint re-ran the match over a speaker a person had already named and rewrote the same
+  fields, so a typed name with an auto-created profile has the D3 shape. v449 now also requires
+  that the profile existed before the speaker (`speaker.created_at > speaker_profile.created_at`;
+  naming a speaker creates the profile afterwards) and that another speaker linked to the profile
+  is older (a match needs a stored voice). Misclassifying a person's name as the machine's is data
+  loss (a purge is irreversible); the reverse only under-hides. The record gains
+  `shape_left_unmarked`. Residual: a person who assigned an existing profile to a later speaker,
+  then had the voiceprint re-extracted. `lock_timeout` is 30 s for the revision's DDL.
+- **A skip is not a confirmation.** The Inbox skip sets `verified` to stop listing the row; a row
+  with a voice suggestion and no name or link of its own is marked `voiceprint` so the suggestion
+  stays the machine's (`after_skip`). A `voiceprint_link` row's suggestion and confidence are the
+  machine's too (hidden while off, cleared by a purge).
+- **Readers:** the cross-recording list, its debug twins, the media preview, the merge event and
+  the topic-extraction prompt judge each row by its own file. A profile rename skips members whose
+  link is hidden.
+- **Purge:** cluster centroid ids a pass could not confirm gone travel to the next pass; an
+  organization purge also deletes and measures its positively stamped documents; "outside the
+  scope" is an anti-join. Recommendation, not done (v449 is the only new migration):
+  `CREATE INDEX CONCURRENTLY ... ON speaker (media_file_id) WHERE identity_source IN
+  ('voiceprint','voiceprint_link')` in a later revision, to cut `machine_identity_clauses` (about
+  170 ms per call at 1.1M speakers, a scan of `identity_source`).

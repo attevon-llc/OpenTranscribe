@@ -33,6 +33,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.utils.speaker_labels import is_assigned_speaker_name
+from app.utils.speaker_labels import is_embedding_suggestion_source
 
 VOICEPRINT = "voiceprint"
 VOICEPRINT_LINK = "voiceprint_link"
@@ -114,6 +115,23 @@ def after_name_cleared(speaker: Any) -> None:
         speaker.identity_source = None
     elif speaker.identity_source == VOICEPRINT:
         speaker.identity_source = VOICEPRINT_LINK
+
+
+def after_skip(speaker: Any) -> None:
+    """A person dismissed this speaker from the Inbox, which sets ``verified`` without choosing a name.
+
+    A skip is a review marker, not a confirmation, so it must not turn a voiceprint's
+    suggestion into something a person vouched for. A speaker that carries such a suggestion
+    and has no name or profile link of its own is marked ``voiceprint``: the privacy rules then
+    treat its ``verified`` flag and its suggestion as the voiceprint's (hidden while off,
+    cleared by a purge, which returns it to the Inbox). A speaker that already has a name or
+    a link keeps the provenance whoever wrote it recorded.
+    """
+    if not is_embedding_suggestion_source(speaker.suggestion_source):
+        return
+    if speaker.profile_id is not None or is_assigned_speaker_name(speaker.display_name):
+        return
+    speaker.identity_source = VOICEPRINT
 
 
 def hides_name(identity_source: str | None, voiceprints_enabled: bool) -> bool:

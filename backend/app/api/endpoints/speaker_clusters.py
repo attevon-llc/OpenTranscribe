@@ -29,6 +29,7 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import hide_machine_identities
 from app.services.privacy.redact_view import require_voiceprints
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
@@ -292,9 +293,13 @@ def get_speaker_media_preview(
     seg_start = float(best_seg.start_time) if best_seg else 0.0
     seg_end = float(best_seg.end_time) if best_seg else 0.0
 
+    # A name a voiceprint made is not offered while this file's voiceprints are off (#1280).
+    hide_machine_identities(PrivacyView(db), [speaker])
+    speaker_name = speaker.display_name or speaker.name
+
     return {
         "speaker_uuid": str(speaker.uuid),
-        "speaker_name": speaker.display_name or speaker.name,
+        "speaker_name": speaker_name,
         "file_uuid": str(media_file.uuid),
         "file_name": media_file.filename,
         # Display title (matches search results); falls back to the raw filename.

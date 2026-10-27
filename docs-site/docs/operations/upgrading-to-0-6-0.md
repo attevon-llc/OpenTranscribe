@@ -72,7 +72,7 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v445` | Adds the `organization_policy` table: an organization's switches for voiceprint matching and inferred gender, and its redaction floor | No (empty until an organization saves a choice; both switches default on) |
 | `v446` | Adds `collection.visibility` (`organization` or `restricted`) so an organization collection can be limited to its creator, the organization admins and the people it is shared with | No: every existing collection stays visible to the whole organization until someone restricts it |
 | `v447` | Adds the `content_hold` and `content_hold_file` tables, which record the legal holds an organization administrator places on files and collections | No (empty until an administrator places a hold) |
-| `v449` | Adds `speaker.identity_source`, which records whether a speaker's name and profile link came from a person or from a voiceprint match | One data fix: it marks as voiceprint-made the existing identities the database can prove a voiceprint wrote (see [Which existing speaker names count as voiceprint-made](#which-existing-speaker-names-count-as-voiceprint-made)) and records how many it marked. Nothing else is rewritten; no name or link changes |
+| `v449` | Adds `speaker.identity_source`, which records whether a speaker's name and profile link came from a person or from a voiceprint match | One data fix: it marks as voiceprint-made the existing identities the database has positive evidence a voiceprint wrote (see [Which existing speaker names count as voiceprint-made](#which-existing-speaker-names-count-as-voiceprint-made)) and records how many it marked. Nothing else is rewritten; no name or link changes |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.
@@ -240,28 +240,42 @@ match wrote, and never a name a person typed or confirmed. Telling them apart ne
 wrote each one, and releases before 0.6.0 did not keep it: an automatic match and a person's
 accept leave identical rows. Migration `v449` adds the record (`speaker.identity_source`: NULL for
 unknown, `voiceprint`, `voiceprint_link`, or `human`) and fills it in for existing rows only where
-the database can prove a voiceprint wrote them:
+there is **positive evidence** that a voiceprint wrote them. Mistaking a person's name for a
+voiceprint's is the costly error (a purge clears it and nothing brings it back), so every doubtful
+row stays unknown and is treated as a person's.
 
-- A speaker is marked `voiceprint` when it is verified, linked to a profile, shows a name equal to
-  both its stored suggestion and that profile's name, and that suggestion's source is a profile
-  match. The matcher only stores such a suggestion at 75% similarity or more, and it is the same
-  comparison that auto-accepts, so every such row was auto-accepted when it was written. A
-  later rename by a person clears the suggestion, so a row that still shows the shape has not
-  been renamed.
+A speaker is marked `voiceprint` when all of these hold:
+
+- It is verified, linked to a profile, and shows a name equal to both its stored suggestion and
+  that profile's name, and the suggestion's source is a profile match. The matcher only stores such
+  a suggestion at 75% similarity or more, and it is the same comparison that auto-accepts.
+- The profile already existed when the speaker was created. A person who types a name creates the
+  profile afterwards, so the speaker that started a profile is never marked.
+- Another speaker linked to that profile was created earlier, because a match compares against a
+  profile's stored voice, which only exists once a speaker has been linked to it.
+
+The shape alone is not proof. Before 0.6.0 a re-extracted voiceprint re-ran the match over a
+speaker that already had a name and rewrote the same fields, so a name a person typed can look
+exactly like an automatic match; the two conditions above are what tell them apart. A row that
+still has the shape is **not** necessarily one nobody has renamed.
+
 - **Everything else is treated as a person's**, because the database cannot tell it apart: an
   automatic match to another speaker (not to a profile), a link added by propagation, a retroactive
-  match, and a cluster join made before the upgrade. Those names stay visible while voiceprints are
-  off and a purge does not touch them. From 0.6.0 on, every one of these paths records its origin.
-- The rule can mark a few rows that a person later confirmed by assigning the identical profile in a
-  batch, or rows `v439` stamped from data older than the suggestion column. Such a name is hidden
-  while voiceprints are off and reverted by a purge, and it is restored by turning the switch back
-  on.
+  match onto a recording older than the profile, and a cluster join made before the upgrade. Those
+  names stay visible while voiceprints are off and a purge does not touch them. From 0.6.0 on,
+  every one of these paths records its origin.
+- **A few rows can still be marked wrongly.** A person who assigned an existing profile to a later
+  speaker, and whose voiceprint was then re-extracted, has the marked shape, as does a batch
+  assignment of the same profile, or a row `v439` stamped from data older than the suggestion
+  column. Such a name is hidden while voiceprints are off, and a **purge
+  clears it for good**. Turning the switch back on shows a hidden name again; a purge cannot be
+  undone. Check the counts below before you purge on an install that predates 0.6.0.
 
-**How many rows were marked** is recorded when the migration runs, in the upgrade log and in the
-database, so you can read it back at any time:
+**How many rows were marked, and how many were left alone** is recorded when the migration runs, in
+the upgrade log and in the database, so you can read it back at any time:
 
 ```sql
--- The count the migration recorded (JSON: revision, stamped, recorded_at)
+-- What the migration recorded (JSON: revision, stamped, shape_left_unmarked, recorded_at)
 SELECT value FROM system_settings WHERE key = 'privacy.identity_source_backfill';
 
 -- The state now: names recognised as voiceprint-made, and legacy rows that look
@@ -272,9 +286,11 @@ SELECT count(*) FILTER (WHERE identity_source = 'voiceprint') AS recognised,
 FROM speaker;
 ```
 
-The log line reads `v449: recognised N existing speaker identities as voiceprint-made`. If you
-expected more, check `unknown`: that is the number of verified rows whose suggestion came from a
-voice match but that the upgrade could not prove were not confirmed by a person.
+The log line reads `v449: recognised N existing speaker identities as voiceprint-made and left M
+ambiguous ones unmarked`. `shape_left_unmarked` (M) is the number of rows that had the automatic
+match shape but lacked the evidence above, so they were left as a person's. `unknown` counts every
+verified row whose suggestion came from a voice match and that is still unmarked: if you expected
+more names to be hidden, it is the number of rows the upgrade could not prove.
 
 **What does not change.** Summaries and topics a language model generated earlier are stored as
 written and may still name a person a voiceprint supplied. Their copy in the search index and in

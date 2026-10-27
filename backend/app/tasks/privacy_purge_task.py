@@ -7,7 +7,9 @@ they have checked the confirmation word and that the switch is off. The deletion
 Two passes, one task id. Pass 1 deletes. Pass 2 runs ``SECOND_PASS_DELAY_SECONDS`` later and
 repeats the same idempotent deletion, to catch a voiceprint written by something that decided
 before the switch flipped (the OpenSearch write backstop trusts a cached answer for up to
-``PRIVACY_WRITE_BACKSTOP_TTL_SECONDS``). The task's row (``task_type="privacy_purge"``) stays
+``PRIVACY_WRITE_BACKSTOP_TTL_SECONDS``). Pass 2 recomputes its targets from Postgres, which no
+longer has the clusters pass 1 deleted, so pass 1 hands it the ids of any cluster centroid
+document it could not confirm gone (``carried_cluster_uuids``). The task's row (``task_type="privacy_purge"``) stays
 ``in_progress`` until pass 2 ends.
 
 Because a purge is irreversible and the layer can be switched back on between the request and the
@@ -56,6 +58,7 @@ def privacy_purge_task(
     targets: list[str],
     actor_user_id: int,
     phase: int = 1,
+    carried_cluster_uuids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Purge ``targets`` ("voiceprints", "inferred_gender") for ``scope``. Both passes.
 
@@ -66,6 +69,8 @@ def privacy_purge_task(
         actor_user_id: Who asked. Only the id travels through the broker; the audit username is
             looked up here.
         phase: 1 for the first pass; the task schedules phase 2 itself.
+        carried_cluster_uuids: Cluster centroid documents the previous pass could not confirm
+            deleted. Their Postgres rows are gone, so only the previous pass knows the ids.
 
     Returns:
         ``{"status": "completed" | "aborted" | "failed", ...}`` with this pass's counts.
@@ -106,7 +111,12 @@ def privacy_purge_task(
 
     _set_status(task_id, TASK_STATUS_IN_PROGRESS)
     try:
-        result = purge.run_purge_pass(purge_scope, wanted, session_factory=SessionLocal)
+        result = purge.run_purge_pass(
+            purge_scope,
+            wanted,
+            session_factory=SessionLocal,
+            carried_cluster_uuids=carried_cluster_uuids or (),
+        )
     except Exception:
         logger.exception("privacy purge %s failed in pass %s", task_id, phase)
         audit(f"pass_{phase}_failed", AuditOutcome.FAILURE, reason="error")
@@ -150,6 +160,7 @@ def privacy_purge_task(
                     "targets": wanted,
                     "actor_user_id": actor_user_id,
                     "phase": 2,
+                    "carried_cluster_uuids": result.unfinished_cluster_uuids,
                 },
                 task_id=task_id,
                 countdown=purge.SECOND_PASS_DELAY_SECONDS,

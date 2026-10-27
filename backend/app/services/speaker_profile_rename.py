@@ -37,6 +37,8 @@ from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.permission_service import file_ids_in_scope
+from app.services.privacy.redact_view import PrivacyView
+from app.utils.speaker_identity_source import hides_link
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,10 @@ def apply_profile_name_to_speakers(
     confident ``suggested_name`` is indexed under the *suggestion*, and a member
     with neither is indexed under the raw diarizer label. Keying on the profile's
     own previous name would match nothing for either (issue #605).
+
+    Only members whose link is VISIBLE under their file's voiceprint decision are rewritten
+    (a link a voiceprint made is hidden while voiceprints are off, so that speaker is not
+    treated as a member until they are on again).
 
     Writes only; the caller owns the commit **and** the dispatch, because a
     rolled-back rename must never reach the index.
@@ -94,6 +100,17 @@ def apply_profile_name_to_speakers(
             Speaker.media_file_id.in_(file_ids_in_scope(organization_id))
         )
     linked_speakers = linked_query.all()
+    # A link a voiceprint made is not a link while its file's voiceprints are off (#1280): the
+    # speaker is not a member of this profile as far as anyone can see, so the rename does not
+    # reach it. Pushing the profile's name into it would leave a name only the hidden link
+    # explains, which a purge would then keep.
+    view = PrivacyView(db)
+    view.preload_files(int(s.media_file_id) for s in linked_speakers)
+    linked_speakers = [
+        s
+        for s in linked_speakers
+        if not hides_link(s.identity_source, view.voiceprints(int(s.media_file_id)).enabled)
+    ]
 
     # One grouped lookup, not a lazy `speaker.media_file.uuid` per row: a
     # well-used profile spans dozens of files.

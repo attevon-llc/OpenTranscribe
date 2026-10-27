@@ -20,8 +20,8 @@ from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
 
+from app.services.privacy.purge_voiceprints import org_stamp_clause
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
-from app.utils.speaker_identity_source import VOICEPRINT
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -105,7 +105,10 @@ def measure_voiceprint_residual(
             .where(
                 *scope.speaker_filters(),
                 Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
-                or_(Speaker.verified.isnot(True), Speaker.identity_source == VOICEPRINT),
+                or_(
+                    Speaker.verified.isnot(True),
+                    Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+                ),
             ),
         )
         result.counts["speaker_matches"] = _count(
@@ -151,7 +154,9 @@ def measure_voiceprint_residual(
         ("profile_docs", "profile"),
         ("cluster_docs", "cluster"),
     ):
-        found = count_speaker_docs_by_ids(ids[kind], errors=errors)
+        found = count_speaker_docs_by_ids(
+            ids[kind], also=org_stamp_clause(scope, kind), errors=errors
+        )
         if found is None:
             result.unverified.append(key)
         else:

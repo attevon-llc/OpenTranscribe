@@ -101,8 +101,8 @@ In **Settings → Speaker Identification → Speaker Engine**. These controls ap
 | Setting | Default | What it does |
 |---|---|---|
 | **Acoustic Backchannel Re-check** | Off | Master switch for the stage. |
-| **Cosine margin** | `0.05` | How much *better* another speaker's voiceprint must match before a word is reassigned. Higher = more conservative (fewer changes). Range 0–1. |
-| **Max word duration** | `1.0` s | Only words at or below this length are re-checked (backchannels are short). Range 0.1–5 s. |
+| **Re-check Cosine Margin** | `0.05` | How much *better* another speaker's voiceprint must match before a word is reassigned. Higher = more conservative (fewer changes). Range 0–1. |
+| **Re-check Max Word Duration (s)** | `1.0` s | Only words at or below this length are re-checked (backchannels are short). Range 0.1–5 s. |
 
 If you see the re-check making changes you disagree with, raise the cosine margin; to make it more aggressive, lower it.
 

@@ -37,8 +37,8 @@ on.
 ## Reading your usage
 
 ```
-GET /usage/me?days=30          # totals + per-model breakdown
-GET /usage/me/daily?days=30    # daily series, for charting
+GET /api/usage/me?days=30          # totals + per-model breakdown
+GET /api/usage/me/daily?days=30    # daily series, for charting
 ```
 
 `days` accepts 1–365 and defaults to 30.
@@ -88,14 +88,14 @@ The number that surprises people is the **retrieved context**, not the question.
 
 A chat message sends the retrieved transcript excerpts plus recent conversation
 history, so a five-word question can still carry several thousand input tokens.
-At the default of ~12 excerpts of ~200 words each, that is roughly 3,000–4,000
-tokens on *every* message regardless of what you typed.
+At the default of up to 40 excerpts of ~200 words each, that can be 10,000 tokens
+or more on *every* message regardless of what you typed.
 
 To reduce it:
 
 - **Scope tightly.** Fewer recordings means fewer, better excerpts.
 - **Start a new chat when the topic changes** — long threads carry history forward.
-- **Lower "Excerpts per answer"** in **Settings → Chat → Advanced** (administrators).
+- **Lower "Excerpts per answer"** in **Settings → Chat** (your own chats) or **Settings → Chat → Advanced features** (administrators, for everyone).
 - **Turn off "Use my transcripts"** for questions that aren't about your
   recordings; no retrieval happens, so only your question is sent.
 
@@ -104,5 +104,5 @@ See [AI Chat](./rag-chat.md#chatting-efficiently) for the fuller version.
 ## Limits
 
 Administrators can cap per-user messages per hour and concurrent replies in
-**Settings → Chat → Advanced**. These bound request *volume*; the excerpt settings
+**Settings → Chat → Advanced features**. These bound request *volume*; the excerpt settings
 above bound the tokens each request costs.

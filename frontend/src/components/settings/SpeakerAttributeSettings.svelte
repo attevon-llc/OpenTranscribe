@@ -10,6 +10,8 @@
   } from '$lib/api/speakerAttributeSettings';
   import { refreshSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
   import { llmStatusStore } from '$stores/llmStatus';
+  import { PrivacyApi, type PrivacyLayer } from '$lib/api/privacy';
+  import { LOCKED_BY_KEYS, isLockedAboveUser } from '$lib/settings/privacyPolicy';
 
   let settings: SpeakerAttributeSettings = {
     detection_enabled: true,
@@ -34,12 +36,31 @@
   $: noProvider =
     !$llmStatusStore.checking && $llmStatusStore.lastChecked !== null && !$llmStatusStore.available;
 
-  const dispatch = createEventDispatcher<{ change: { hasChanges: boolean } }>();
+  // Which layer above the person has gender inference off (issue #1280). Read apart from the
+  // settings so a failure leaves the switch usable; the server still refuses what it must.
+  let genderLockedBy: PrivacyLayer | null = null;
+  $: genderLocked = isLockedAboveUser(genderLockedBy);
+
+  async function loadGenderPolicy() {
+    try {
+      genderLockedBy = (await PrivacyApi.getEffective()).gender_inference.locked_by;
+    } catch (e) {
+      genderLockedBy = null;
+      console.error(e);
+    }
+  }
+
+  const dispatch = createEventDispatcher<{
+    change: { hasChanges: boolean };
+    /** The gender switch was saved or reset: the purge card beside this one re-reads it. */
+    saved: void;
+  }>();
   $: dispatch('change', { hasChanges: isDirty });
 
   onMount(() => {
     void llmStatusStore.initialize();
     void loadSettings();
+    void loadGenderPolicy();
   });
 
   async function loadSettings() {
@@ -77,6 +98,7 @@
       // Speaker cards read the cached preference; without this they keep the old badge
       // visibility until the cache goes stale.
       void refreshSpeakerAttributePrefs(true);
+      dispatch('saved');
       successMessage = $t('settings.speakerAttributes.saved');
       setTimeout(() => (successMessage = ''), 3000);
     } catch (e) {
@@ -94,6 +116,7 @@
       await resetSpeakerAttributeSettings();
       await loadSettings();
       void refreshSpeakerAttributePrefs(true);
+      dispatch('saved');
       successMessage = $t('settings.speakerAttributes.reset');
       setTimeout(() => (successMessage = ''), 3000);
     } catch (e) {
@@ -144,13 +167,32 @@
             <p class="setting-description">
               {$t('settings.speakerAttributes.genderDetectionDesc')}
             </p>
+            <p class="setting-note" id="gender-notice" data-testid="gender-inference-notice">
+              {$t('privacy.gender.settingsNotice')}
+            </p>
+            {#if genderLocked && genderLockedBy}
+              <p class="setting-note locked-note" id="gender-locked" data-testid="gender-locked">
+                {$t(LOCKED_BY_KEYS[genderLockedBy])}
+              </p>
+            {/if}
           </div>
           <label class="toggle">
-            <input
-              type="checkbox"
-              id="gender-detection"
-              bind:checked={settings.gender_detection_enabled}
-            />
+            {#if genderLocked}
+              <input
+                type="checkbox"
+                id="gender-detection"
+                checked={false}
+                disabled
+                aria-describedby="gender-notice gender-locked"
+              />
+            {:else}
+              <input
+                type="checkbox"
+                id="gender-detection"
+                aria-describedby="gender-notice"
+                bind:checked={settings.gender_detection_enabled}
+              />
+            {/if}
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -292,6 +334,11 @@
     color: var(--text-muted, #999);
     margin: 0.375rem 0 0;
     line-height: 1.3;
+  }
+
+  .locked-note {
+    color: var(--text-color, #e0e0e0);
+    font-weight: 500;
   }
 
   .toggle {

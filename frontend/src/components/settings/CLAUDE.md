@@ -367,6 +367,25 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   `ui/HoldBadge.svelte` over the server's `hold` field (who holds it, never why), and a delete,
   remove or reprocess refusal is translated by `getErrorMessage` from `held_by`
   (`HOLD_REFUSAL_KEYS` in `lib/i18n/keyMaps.ts`).
+- **Privacy controls (issue #1280)** are four small surfaces over ONE restrict-only policy (platform,
+  deployment, organization and user ANDed; any layer off turns the feature off; the server names the
+  highest one as `locked_by`). All four use `components/privacy/PrivacySwitchCard` (a CONTROLLED switch:
+  it asks the parent to change and shows what the server returns, so a refused save never leaves it
+  lying) and `PurgeConfirmDialog`: `OrgPrivacyPolicyPanel` (org admin; lazy section `org-privacy`,
+  `orgPrivacy` in `sectionLoaders`; shown only via `orgPrivacyVisible` in `$lib/settings/privacyPolicy`:
+  managed edition AND `org.defaults` granted with audience `org_admin` AND `org_role === 'org:admin'`;
+  lives in core, so a derived `$lib/cloud` still gets it), `InstancePrivacyCard` (super_admin, mounted
+  on the Privacy & Redaction **policy** tab above `RedactionPolicySettings`), `UserPrivacyCard` (under
+  Voice Attributes, beside `SpeakerAttributeSettings`) and the gender lock inside
+  `SpeakerAttributeSettings` (read from `GET /privacy/effective`, shown disabled with the reason; the
+  gender switch exists in ONE place and `UserPrivacyCard.reload()` is called when it is saved). Rules:
+  switches apply immediately (no Save button, no dirty state); a purge button is enabled only once the
+  switch is OFF at that layer (the API 409s `policy_still_enabled` otherwise) and the dialog needs a
+  ticked box AND the typed word `PURGE`; the instance "everything" scope is offered only when
+  `tenancyMode === 'single'` (unknown fails closed, the server refuses it in multi-tenant mode). Gender
+  inference stays ON by default and every place it is shown or configured says it is inferred
+  automatically and can be turned off (`privacy.gender.*`). The org **redaction floor** (#1279) is a
+  later release: `OrgPolicy.redaction_floor` is in the contract but this client neither reads nor sends it.
 - **Audit screens: `AuditLogViewer` (super_admin, platform-wide) and `OrgAuditLogPanel`
   (org admin, issue #1277) are two thin shells over the SAME `audit/AuditLogFilters.svelte` and
   `audit/AuditLogTable.svelte`.** `orgView` is the only difference: a member picker

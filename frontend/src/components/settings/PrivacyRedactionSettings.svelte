@@ -16,6 +16,7 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ContentRedactionSettings from '$components/settings/ContentRedactionSettings.svelte';
   import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
+  import InstancePrivacyCard from '$components/settings/InstancePrivacyCard.svelte';
   import {
     privacyRedactionTabs,
     resolvePrivacyRedactionTab,
@@ -91,7 +92,10 @@
       aria-labelledby="tab-policy"
       hidden={activeId !== 'policy'}
     >
-      {#if visited.policy}<RedactionPolicySettings />{/if}
+      {#if visited.policy}
+        <InstancePrivacyCard />
+        <RedactionPolicySettings />
+      {/if}
     </div>
   {/if}
 </div>

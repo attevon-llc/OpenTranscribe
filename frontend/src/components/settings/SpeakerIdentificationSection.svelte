@@ -18,6 +18,7 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import SpeakerDetectionSettings from '$components/settings/SpeakerDetectionSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
+  import UserPrivacyCard from '$components/settings/UserPrivacyCard.svelte';
   import SpeakerAttributeBulkPanel from '$components/settings/SpeakerAttributeBulkPanel.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
   import HuggingFaceTokenCard from '$components/settings/HuggingFaceTokenCard.svelte';
@@ -56,6 +57,8 @@
 
   const visited: Record<string, boolean> = {};
   $: if (activeId) visited[activeId] = true;
+
+  let privacyCard: UserPrivacyCard | undefined;
 
   let dirty = { detection: false, attributes: false, engine: false };
   $: settingsModalStore.setDirty('speaker-identification', Object.values(dirty).some(Boolean));
@@ -131,7 +134,11 @@
       hidden={activeId !== 'spk-attributes'}
     >
       {#if visited['spk-attributes']}
-        <SpeakerAttributeSettings on:change={(e) => (dirty.attributes = e.detail.hasChanges)} />
+        <SpeakerAttributeSettings
+          on:change={(e) => (dirty.attributes = e.detail.hasChanges)}
+          on:saved={() => privacyCard?.reload()}
+        />
+        <UserPrivacyCard bind:this={privacyCard} />
       {/if}
     </div>
   {/if}

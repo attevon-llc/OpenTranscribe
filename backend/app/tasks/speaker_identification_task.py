@@ -37,6 +37,7 @@ from app.services.llm_service import LLMService
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
 from app.services.metadata_speaker_extractor import build_cross_reference_context
 from app.services.metadata_speaker_extractor import cross_reference_attributes
+from app.services.permission_service import org_scope_pred
 from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
@@ -48,9 +49,23 @@ from app.utils.user_settings_helpers import get_user_llm_output_language
 logger = logging.getLogger(__name__)
 
 
-def _get_known_speakers(db: Session, user_id: int) -> list[dict[str, Any]]:
-    """Get known speaker profiles for the user."""
-    profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
+def _get_known_speakers(
+    db: Session, user_id: int, organization_id: int | None
+) -> list[dict[str, Any]]:
+    """Get the user's speaker profiles in the file's tenant.
+
+    The names go to the LLM provider, so only the tenant of the file being identified
+    contributes: an organization file lists that organization's profiles, a personal file
+    (``organization_id`` None) the user's org-less ones.
+    """
+    profiles = (
+        db.query(SpeakerProfile)
+        .filter(
+            SpeakerProfile.user_id == user_id,
+            org_scope_pred(SpeakerProfile.organization_id, organization_id),
+        )
+        .all()
+    )
     return [
         {
             "name": profile.name,
@@ -520,7 +535,7 @@ def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
         # What leaves is a string and a list of dicts.
         full_transcript = build_full_transcript(transcript_segments, redaction_cfg)
         speaker_segments = build_speaker_segments(transcript_segments, redaction_cfg=redaction_cfg)
-        known_speakers = _get_known_speakers(db, user_id)
+        known_speakers = _get_known_speakers(db, user_id, media_file.organization_id)
         metadata_context = _build_metadata_context(media_file)
         if metadata_context:
             logger.info(f"Built metadata context for speaker ID ({len(metadata_context)} chars)")

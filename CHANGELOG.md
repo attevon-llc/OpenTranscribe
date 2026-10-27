@@ -1060,6 +1060,17 @@ off by default.
 
 ### Fixed
 
+- **A speaker's organization comes from its file (#1280).** Speakers are created without their
+  own organization, so three places that read it got the wrong answer: renaming a speaker profile
+  inside an organization skipped every speaker in that organization (and a personal rename
+  matched speakers of every organization), and two permission checks for platform support access
+  treated an in-organization speaker as personal (and the cross-tenant access record named no
+  organization). Each now uses the organization of the speaker's file. A new test fails if code
+  is added that filters or authorizes on the speaker's own organization column.
+- **Speaker identification lists only the file's own profiles (#1280).** The known-speaker names
+  sent to the language model now come from the tenant of the file being identified (an
+  organization file: that organization's profiles; a personal file: your personal profiles)
+  instead of every profile you have in any tenant.
 - **A rewritten voiceprint cluster keeps its organization (#1280).** Updating a cluster's
   centroid rewrote the whole search document without its `organization_id`, so the cluster no
   longer matched its organization's tenant filter. The stored value is now carried over. Installs

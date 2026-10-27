@@ -458,7 +458,8 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   shared `PrivacyView`). Every printer of a label goes through it (exports, captions, the chunk and reindex writers,
   `get_speaker_name`, the chat roster, `SpeakerStatusService`), so a new one must too. In a response, redact first and
   decorate second: `add_computed_status` derives `status_text` and `resolved_display_name` from the suggestion that
-  `redact_speaker_rows` withholds.
+  `redact_speaker_rows` withholds. `services/privacy/label_reindex.py` queues the existing debounced re-index (and facts)
+  for the files such a name decides when a voiceprint switch changes value (called by the three `policy_admin` writers).
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

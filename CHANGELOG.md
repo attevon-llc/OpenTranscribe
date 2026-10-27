@@ -256,7 +256,9 @@ off by default.
   `txt`/`json`/`csv`/`md`/`srt`/`vtt` exports, the Word and PDF documents, the captions or the
   subtitle downloads, and not in the search index or the speaker roster chat resolves names
   against. The speaker shows as its diarizer label until a person names it; a name a person typed or
-  verified stays. One function, `canonical_speaker_label_for_row`, decides it everywhere.
+  verified stays. One function, `canonical_speaker_label_for_row`, decides it everywhere. Changing a
+  voiceprint switch (a person's, an organization's or the deployment's) queues the existing debounced
+  re-index for the files such a name decides, so the search index follows the switch both ways.
 - **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
   administrator, a super admin or the person themselves can permanently delete what it hid:
   `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,

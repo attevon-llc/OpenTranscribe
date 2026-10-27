@@ -114,7 +114,11 @@ the policy only when the voiceprint suggestion is what would decide the name:
 - the search index (chunks, and the digest and facts built from the same label, whenever they are
   rebuilt) and the speaker roster that chat resolves "who said ..." against.
 
-A name a person typed or verified is not a voiceprint's and stays.
+A name a person typed or verified is not a voiceprint's and stays. Switching a voiceprint layer
+on or off, for a person, an organization or the deployment, queues the existing debounced
+re-index for the files whose name only a voiceprint supplied (and regenerates their facts), so the
+search index follows the switch in both directions without waiting for another edit to the file.
+Only a switch that actually changed value does this.
 
 ### Where inferred gender is withheld
 

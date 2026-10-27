@@ -32,6 +32,7 @@ from app.schemas.privacy import OrgPolicyUpdate
 from app.schemas.privacy import PrivacyDecision
 from app.schemas.privacy import RedactionFloorOut
 from app.schemas.privacy import UserLockLayer
+from app.services.privacy.label_reindex import queue_label_reindex
 from app.services.privacy.policy import clear_write_backstop_cache
 from app.services.privacy.policy import resolve_privacy_policy
 from app.services.privacy.purge import PurgeScope
@@ -121,6 +122,8 @@ def update_instance_policy(
         set_setting(db, key, new, _INSTANCE_DESCRIPTIONS[key])
         changes.append({"setting": key, "from": current, "to": new})
     clear_write_backstop_cache()
+    if any(c["setting"] == constants.PRIVACY_VOICEPRINT_MATCHING_KEY for c in changes):
+        queue_label_reindex(db)
     return changes
 
 
@@ -140,6 +143,7 @@ def read_user_switch(db: Session, user_id: int) -> bool:
 
 def write_user_switch(db: Session, user_id: int, enabled: bool) -> None:
     """Store the person's own voiceprint switch and commit."""
+    changed = read_user_switch(db, user_id) != enabled
     value = "true" if enabled else "false"
     row = db.execute(
         select(UserSetting).where(
@@ -159,6 +163,8 @@ def write_user_switch(db: Session, user_id: int, enabled: bool) -> None:
         row.setting_value = value
     db.commit()
     clear_write_backstop_cache()
+    if changed:
+        queue_label_reindex(db, user_id=user_id)
 
 
 def user_lock_layer(db: Session, organization_id: int | None) -> UserLockLayer | None:
@@ -266,6 +272,8 @@ def apply_org_policy_update(
     row.updated_by_user_id = actor_user_id
     db.commit()
     clear_write_backstop_cache()
+    if "voiceprint_matching_enabled" in changed:
+        queue_label_reindex(db, organization_id=organization_id)
     return sorted(changed)
 
 

@@ -344,19 +344,33 @@ def _store_speaker_predictions(
         tracker.flush(db)
 
 
-def _apply_cross_reference_context(
+def _gender_cross_reference_context(
     db: Session,
     file_id: int,
     media_file,
     speaker_segments: list[dict[str, Any]],
-    metadata_context: str,
 ) -> str:
-    """Fold gender/metadata cross-references into the prompt context.
+    """Build the voice/name gender cross-reference block, or "" when it must not exist.
 
-    Pure DB + regex work, so it belongs in the read phase; it also *writes*
-    alignment results back to ``speaker.attribute_confidence`` for the UI.
+    Pure DB + regex work, so it belongs in the read phase; it also *writes* alignment results
+    back to ``speaker.attribute_confidence`` for the UI. All of it is gender inference (the
+    stored voice verdict and a first-name guess compared with it), so it runs only when gender
+    inference is permitted for the file's owner and organization (issue #1280), read fresh here
+    from the file's own row. While it is off the stored verdicts are hidden, not deleted, and
+    nothing is derived from them.
+
+    The block is returned separately and NOT folded into the prompt here: whether it may leave
+    the machine depends on the provider that will receive it, which is only known once the
+    provider call is made. See :func:`_with_gender_context`.
     """
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
+
     try:
+        if not resolve_speaker_attribute_flags_for_file(db, file_id).gender_prediction_allowed:
+            logger.info(
+                "Gender cross-reference skipped for file %s: gender inference is off", file_id
+            )
+            return ""
         speakers_with_attrs = (
             db.query(Speaker)
             .filter(
@@ -366,7 +380,7 @@ def _apply_cross_reference_context(
             .all()
         )
         if not speakers_with_attrs:
-            return metadata_context
+            return ""
 
         speaker_attrs = {
             str(s.name): {
@@ -386,16 +400,33 @@ def _apply_cross_reference_context(
         )
         cross_refs = cross_reference_attributes(extraction.hints, speaker_attrs, speaker_segments)
         xref_context = build_cross_reference_context(cross_refs)
-        if xref_context:
-            metadata_context = f"{metadata_context}\n\n{xref_context}"
-            logger.info(f"Added {len(cross_refs)} cross-references to context")
+        if cross_refs:
+            logger.info(f"Built {len(cross_refs)} gender cross-references")
         # Store alignment results in speaker attribute_confidence for frontend display
         if cross_refs:
             _store_alignment_results(db, file_id, cross_refs)
+        return xref_context
     except Exception as e:
         logger.debug(f"Cross-reference enrichment skipped: {e}")
+        return ""
 
-    return metadata_context
+
+def _with_gender_context(metadata_context: str, gender_context: str, llm_config: object) -> str:
+    """Append the gender cross-reference to the prompt context only for a LOCAL provider.
+
+    A remote provider is a third party: sending it "voice: female 92%" is a data-egress event
+    for an inferred biometric attribute, so it never receives it (issue #1280, D7). The
+    classification is :func:`app.services.redaction.llm_guard.is_local_provider`, the same
+    seam the redaction policy uses, and it fails closed: any ambiguity reads as remote.
+    """
+    if not gender_context:
+        return metadata_context
+    from app.services.redaction.llm_guard import is_local_provider
+
+    if not is_local_provider(llm_config):
+        logger.info("Gender cross-reference withheld: the speaker-ID LLM provider is not local")
+        return metadata_context
+    return f"{metadata_context}\n\n{gender_context}"
 
 
 def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
@@ -494,9 +525,7 @@ def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
         if metadata_context:
             logger.info(f"Built metadata context for speaker ID ({len(metadata_context)} chars)")
 
-        metadata_context = _apply_cross_reference_context(
-            db, file_id, media_file, speaker_segments, metadata_context
-        )
+        gender_context = _gender_cross_reference_context(db, file_id, media_file, speaker_segments)
 
         output_language = (
             get_user_llm_output_language(db, user_id) if user_id else DEFAULT_LLM_OUTPUT_LANGUAGE
@@ -511,6 +540,7 @@ def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
         "speaker_segments": speaker_segments,
         "known_speakers": known_speakers,
         "metadata_context": metadata_context,
+        "gender_context": gender_context,
         "output_language": output_language,
     }
 
@@ -561,6 +591,7 @@ def identify_speakers_llm_task(self, file_uuid: str):
             inputs["known_speakers"],
             inputs["metadata_context"],
             inputs["output_language"],
+            gender_context=inputs.get("gender_context", ""),
         )
 
         if predictions is None:
@@ -610,6 +641,7 @@ def _generate_predictions(
     known_speakers: list[dict[str, Any]],
     metadata_context: str = "",
     output_language: str = DEFAULT_LLM_OUTPUT_LANGUAGE,
+    gender_context: str = "",
 ) -> dict[str, Any] | None:
     """Phase 2 — run the LLM. **No DB session is held here.**
 
@@ -642,7 +674,7 @@ def _generate_predictions(
             speaker_segments,
             known_speakers,
             output_language,
-            metadata_context,
+            _with_gender_context(metadata_context, gender_context, llm_service.config),
         )
         if not predictions.get("error"):
             predictions["llm_provenance"] = provenance

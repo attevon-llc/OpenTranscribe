@@ -15,6 +15,44 @@ and `finish` need `--yes` and the owner's go.
 3. Gate 0c: `gh workflow run pre-commit.yml --ref master` on the final master head is fully green.
    Known flake #1305 is fixed by lane B first; a red result is investigated, never just re-run.
 
+## Git flow (read before touching anything)
+The scripts own tags, the release branch and the GitHub release; this section only says WHERE to run them.
+Source of truth: `.claude/skills/release/SKILL.md`, `docs-site/docs/developer-guide/releasing.md`.
+- **Never** hand-run `git tag`, `docker push`, `gh release create`, or edit `VERSION`, `pyproject.toml`,
+  `package.json`, `package-lock.json` (use `release.sh bump`). No `--no-verify`, no force-push, no
+  squash-merge; every merge into master is a merge commit via PR.
+- Master is protected (4 required checks + a review; no force-push or deletion). The main checkout stays
+  on `master` and backs the live dev stack: **do not run the release from it.**
+- Freeze: once both integration PRs and Gate 0c are done, nothing else merges to master until the tag.
+- **Release candidate branch.** Cut `release/prep-0.6.0` from the verified master head in its own
+  worktree (`git worktree add .claude/worktrees/release-0.6.0 -b release/prep-0.6.0 origin/master`;
+  from the MAIN checkout, never from inside another worktree). A worktree lacks gitignored files that
+  `preflight` needs: copy (do not read) `nginx/ssl/server.crt` + `server.key` and
+  `scripts/release-tests/.env.test-secrets` from the main checkout.
+- Run every stage from that worktree: `bump` makes the `chore(release): bump version to 0.6.0` commit
+  there; the CHANGELOG prose, blog, screenshots/GIF/baseline commits and docs fixes are further
+  commits on that branch (conventional commits); the worktree must be CLEAN before `tag`.
+- The image that is built, scanned and rehearsed must be the exact commit that is tagged (the About
+  dialog shows the build SHA). So **tag the prep branch head**, never a later merge commit.
+- `tag` pushes an ANNOTATED tag `v0.6.0` and cuts `release/0.6` from the tag (first minor ships
+  there; it fails if the tag is not an ancestor of that branch). Check `git ls-remote origin
+  release/0.6` afterwards.
+- **Bring it back to master:** after `tag`, open a PR `release/prep-0.6.0` -> `master` (merge commit,
+  Backend Tests PASSED), so master contains the bump, CHANGELOG and docs. Verify
+  `git merge-base --is-ancestor v0.6.0 origin/master`. (0.5.1's bump rode a PR the same way.)
+- Delete merged lane/prep branches and worktrees afterwards (`git worktree remove`, then
+  `git branch -d`; never `-D` a branch whose work is unmerged).
+
+## Docs audit (before the prose freeze)
+README.md (1,369 lines), 80 docs-site pages, user-facing `docs/*.md`, `docs/RELEASE_PROCESS.md`,
+`scripts/release-tests/README.md` and the 53 CLAUDE.md files may all be stale after the Oct 20 UI
+overhaul and the 0.6.0 work. Six Sonnet auditors (README; install + getting-started + configuration;
+features + user-guide; operations + authentication; developer guide + linked docs + release docs;
+CLAUDE.md files) check every claim against the code (commands, paths, routes, env vars, ports, image
+names, UI labels from `frontend/src/lib/i18n/locales/en.json`), fix what is wrong, and list gaps. They do
+NOT edit CHANGELOG.md, the blog post, `upgrading-to-0-6-0.md` or privacy pages (other lanes own them).
+Then `cd docs-site && npm run build` must pass with no broken links.
+
 ## Schedule
 | Day | Work |
 |---|---|
@@ -81,7 +119,13 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
 
 ## Release stage order
 `preflight -> bump -> verify -> test -> build -> scan -> rehearse -> tag -> publish -> smoke -> promote -> finish`.
-Run `./scripts/release.sh reset 0.6.0` first (rehearsal history reads as current until reset).
+Write the CHANGELOG prose and the blog post right AFTER `bump` (it promotes `[Unreleased]` to
+`[0.6.0] - <date>` and opens a fresh one) and BEFORE `verify` (which builds the docs site so a
+duplicate blog slug is caught). Build uses `BUILD_MODE=local ./scripts/docker-build-push.sh` via the
+stage, never a bare `docker build` (it would report version "unknown"). `tag` before `publish`;
+`promote` and `finish` last. `scan` scans the local images; `rehearse` needs `./opentr.sh stop` first.
+Run `./scripts/release.sh reset 0.6.0` first (rehearsal history reads as current until reset; a
+preflight run on Oct 28 already wrote a ledger entry).
 `rehearse` refuses (exit 3) while the live stack is up. Exit codes: 0 pass, 1 gate failed, 2 misuse,
 3 precondition unmet, 4 operator abort. A gate override is `--force-<stage> "reason"` and is recorded
 as overridden, never as a pass.

@@ -102,6 +102,8 @@ flowchart LR
 6. **Indexing** - Adding the transcript to the search index
 7. **Complete** - Ready to view!
 
+To see, before you upload, where each step will run for you (this server or a named cloud provider) and whether anything blocks it, open **Settings → Transcription & Speakers → Processing pipeline**.
+
 If an AI provider is configured, summaries, topics and speaker name suggestions follow once the
 transcript is ready. To see which provider and model handled each step of a finished file, open
 the file and expand its **Processing** section. See

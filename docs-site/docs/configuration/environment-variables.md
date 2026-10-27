@@ -428,9 +428,9 @@ What each line implies:
   (`./opentr.sh start prod --build`); the seams themselves branch on the values above, not on a
   deployment-type flag.
 
-## Cloud ASR Providers
+## Cloud ASR Quick Reference
 
-Configure cloud-based speech recognition as an alternative to local GPU processing.
+Configure cloud-based speech recognition as an alternative to local GPU processing. Details, the per-provider table and the Amazon Transcribe bucket requirement are under [Cloud ASR Providers](#cloud-asr-providers) below.
 
 ```bash
 # ASR Provider Selection

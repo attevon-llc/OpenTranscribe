@@ -73,7 +73,7 @@ See [Hardware Requirements](./hardware-requirements.md) for detailed specs.
 For GPU acceleration with the full image (recommended; the lite image never uses a GPU):
 
 1. **NVIDIA GPU** with CUDA support (GTX 1060 or better)
-2. **NVIDIA Driver** (version 470.x or higher)
+2. **NVIDIA Driver** (525.60.13 or higher, because the image uses CUDA 12; Blackwell / RTX 50-series cards need 570+)
 3. **NVIDIA Container Toolkit** installed
 
 See [GPU Setup Guide](./gpu-setup.md) for installation instructions.

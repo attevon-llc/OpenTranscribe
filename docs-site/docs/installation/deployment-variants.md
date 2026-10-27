@@ -168,6 +168,7 @@ everyone; users then see that their administrator manages speaker detection.
 Audio is sent to a third party only for a step that a cloud provider performs:
 
 - **Cloud transcription** sends the audio to that provider.
+  Amazon Transcribe additionally stages the audio in an S3 bucket you own: `AWS_TRANSCRIBE_BUCKET` is required (there is no default), and the temporary objects are deleted after each job. See [environment variables](../configuration/environment-variables.md#cloud-asr-providers).
 - **pyannote.ai speaker detection** sends the audio to pyannote.ai.
 - **Another provider for speakers only** sends the audio to that provider as a full
   transcription request. Its text is thrown away; only the speaker turns are kept.

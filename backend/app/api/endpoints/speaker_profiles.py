@@ -116,6 +116,19 @@ def list_speaker_profiles(
 
         profile_ids = [p.id for p in profiles]
 
+        # A link a voiceprint made is not counted while its file's voiceprints are off
+        # (#1280): the profile would otherwise report appearances the speaker pages hide.
+        # Decided per speaker by its FILE's scope; a person's own link is always counted.
+        from sqlalchemy import select
+
+        from app.services.privacy.redact_view import PrivacyView
+        from app.services.privacy.redact_view import machine_identity_clauses
+
+        _name_hidden, link_hidden = machine_identity_clauses(
+            PrivacyView(db),
+            select(Speaker.media_file_id).where(Speaker.profile_id.in_(profile_ids)),
+        )
+
         # Batch query: media count and instance count per profile (1 query)
         count_rows = (
             db.query(
@@ -123,7 +136,7 @@ def list_speaker_profiles(
                 sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
                 sa_func.count(Speaker.id).label("instance_count"),
             )
-            .filter(Speaker.profile_id.in_(profile_ids))
+            .filter(Speaker.profile_id.in_(profile_ids), ~link_hidden)
             .group_by(Speaker.profile_id)
             .all()
         )

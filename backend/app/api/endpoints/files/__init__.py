@@ -63,6 +63,7 @@ from app.services.content_audit import record_file_event
 from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
+from app.services.privacy.redact_view import PrivacyView
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -81,9 +82,11 @@ from .crud import get_stream_url_info
 from .crud import set_file_urls
 from .crud import update_media_file
 from .crud import update_single_transcript_segment
+from .filtering import LIST_SPEAKER_COLUMNS
 from .filtering import apply_all_filters
 from .filtering import get_accessible_owners
 from .filtering import get_metadata_filters
+from .filtering import hidden_speaker_name_clause
 from .filtering import resolve_owner_user_ids
 from .post_processing import router as post_processing_router
 from .reprocess import process_file_reprocess
@@ -291,11 +294,7 @@ def list_media_files(
     # - defer heavy JSON columns not required by the list Pydantic schema
     list_options = [
         joinedload(MediaFile.user),
-        selectinload(MediaFile.speakers).load_only(
-            Speaker.uuid,  # type: ignore[arg-type]
-            Speaker.name,  # type: ignore[arg-type]
-            Speaker.display_name,  # type: ignore[arg-type]
-        ),
+        selectinload(MediaFile.speakers).load_only(*LIST_SPEAKER_COLUMNS),  # type: ignore[arg-type]
         defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
         defer(MediaFile.waveform_data),  # type: ignore[arg-type]
     ]
@@ -375,6 +374,10 @@ def list_media_files(
         "organization_id": org_scope,
     }
 
+    # A speaker filter matches the names the page shows, so a name withheld by the privacy
+    # policy (#1280) is not matchable.
+    filters["speaker_name_hidden"] = hidden_speaker_name_clause(db, base_query, speaker)
+
     # Apply all filters
     filtered_query = apply_all_filters(base_query, filters)
 
@@ -408,6 +411,10 @@ def list_media_files(
     paginated_query = filtered_query.offset(offset).limit(page_size)
     result = paginated_query.all()
 
+    # One privacy view for the page: the speaker chips ask the voiceprint policy per FILE
+    # scope, and a page of files spans a handful of scopes, not one per speaker (#1280).
+    privacy = PrivacyView(db)
+
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
@@ -415,7 +422,7 @@ def list_media_files(
 
         # Use the FormattingService method which handles formatting correctly
         # Pass speakers for speaker_summary in list view
-        formatted_file = FormattingService.format_media_file(file, file.speakers)
+        formatted_file = FormattingService.format_media_file(file, file.speakers, privacy=privacy)
         formatted_file.can_delete = can_delete_file(
             current_user,
             file,

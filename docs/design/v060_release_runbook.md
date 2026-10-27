@@ -117,6 +117,17 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
       The downstream list must include `AWS_TRANSCRIBE_BUCKET`, the new seam notes, and migrations
       v440-v448. Note the multi-tenant demo is affected by the tenant-scope fixes until it redeploys.
 
+- [ ] **Security reports**: `security-reports/SECURITY-ADVISORY.md` is stamped "Applies to v0.5.1" and
+      names nginx 1.29.8 (the frontend image is now nginx 1.31.2): refresh it for 0.6.0 from the
+      `scan` stage output. The committed `*-dockle.json` reports show FATAL DKL-DI-0005 ("clear apt-get
+      caches") on the backend and lite images; the release `scan` criteria do not gate on Dockle, so
+      decide: fix the Dockerfile apt cleanup or record the finding in the advisory.
+      `security-scan.sh` usage text omits `lite` and `blackwell`; `generate-roadmap.py`'s docstring still
+      says a deleted CI job calls `--check`.
+- [ ] **License/SBOM report** (`security-reports/license-compliance/`): no release stage regenerates it.
+      Re-run `scripts/generate-sbom-report.py` against the 0.6.0 images (output dir is fixed on the
+      docs-audit branch) so the report matches what ships.
+
 ## Release stage order
 `preflight -> bump -> verify -> test -> build -> scan -> rehearse -> tag -> publish -> smoke -> promote -> finish`.
 Write the CHANGELOG prose and the blog post right AFTER `bump` (it promotes `[Unreleased]` to

@@ -48,7 +48,8 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
 `bulk_add_speaker_embeddings_v4` / `add_speaker_embedding`, `profiles.store_profile_embedding_v4` / `store_profile_embedding` and
 the cluster-centroid writes in `clusters.py` call `services/privacy/policy.assert_voiceprint_write_allowed(user_id, organization_id)`
 first and return their existing "not written" value when it is False (the scope comes from the document's own owner and
-organization, never request state; the cluster update reads it from the stored document). The answer is cached 10 s per
+organization, never request state; the cluster update reads it from the stored document and carries its `organization_id`
+over, because the rewrite replaces the whole document and a document without the stamp reads as personal). The answer is cached 10 s per
 process (`PRIVACY_WRITE_BACKSTOP_TTL_SECONDS`), a resolver or storage error denies and is not cached. A NEW function that writes a
 speaker, profile or cluster embedding document must call it too; do not rely on the caller having checked, because the callers
 are Celery tasks that may have been planned before a switch flipped. Deleting these documents is the purge

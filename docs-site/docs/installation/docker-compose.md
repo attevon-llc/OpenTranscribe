@@ -248,6 +248,8 @@ Open your browser and navigate to:
 
 PostgreSQL (5176), Redis (5177) and the MinIO API (5178) are also published on loopback only.
 
+To sign in the first time, use the bootstrap administrator: `admin@example.com` (or `INITIAL_ADMIN_EMAIL`) with `INITIAL_ADMIN_PASSWORD` if you set one in `.env`, otherwise the random password the backend logs once at first start (`./opentranscribe.sh logs backend`). See [Quick Start](../getting-started/quick-start.md#1-sign-in-as-the-bootstrap-administrator).
+
 ## Docker Compose Structure
 
 OpenTranscribe uses a base + override pattern:

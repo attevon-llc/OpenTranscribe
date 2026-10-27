@@ -82,18 +82,27 @@ Open your browser and navigate to:
 
 ## First Transcription
 
-### 1. Create an Account
+### 1. Sign In as the Bootstrap Administrator
 
-When you first access OpenTranscribe, you'll see the registration page:
+On first start the backend creates one `super_admin` account, `admin@example.com` (or the
+address in `INITIAL_ADMIN_EMAIL`). What its password is depends on the deployment:
 
-1. Enter your email and password
-2. Click "Create Account"
-3. You're automatically logged in
+- **Installer or production install** (the default): unless you set `INITIAL_ADMIN_PASSWORD` in
+  `.env` before the first start, a random password is generated and written **once** to the
+  backend log. Read it with `./opentranscribe.sh logs backend` and look for
+  `Created bootstrap admin ... with a GENERATED password`. A generated password must be changed
+  at first sign-in. The installer's closing banner still prints `admin@example.com` / `password`;
+  that credential only exists on a development stack.
+- **Development stack** (`./opentr.sh start dev`): `admin@example.com` / `password`.
+
+Other people can create their own accounts from the registration page (email, password, then
+"Create Account") unless self-registration is turned off (`ALLOW_OPEN_REGISTRATION=false`, or
+Settings → Authentication). Administrators can also require approval of new accounts.
 
 ### Guided First-Run Setup Wizard
 
-The very first account created on a fresh install becomes the bootstrap `super_admin`, and that
-account sees a one-time guided setup wizard on first login instead of the empty gallery. Rather
+The bootstrap `super_admin` sees a one-time guided setup wizard on first login instead of the
+empty gallery. Rather
 than leaving you to discover dozens of auth-related environment variables and several admin
 tabs on your own, it surfaces the three things a first-time operator actually needs:
 

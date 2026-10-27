@@ -1268,6 +1268,7 @@ def update_transcript_segment(
     file_uuid: str,
     segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
+    http_request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1284,6 +1285,7 @@ def update_transcript_segment(
         current_user,
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
+        request=http_request,
     )
 
     # Transcript has been updated - subtitles will be regenerated on-demand

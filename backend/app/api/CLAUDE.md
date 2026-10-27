@@ -131,7 +131,7 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |
 | `GET /embeddings/migration/mode` | super_admin; pure config read (declares an unused `db` dependency) |
 | `POST /tasks/system/fix-file/{uuid}` | Per-file version of the stuck-file fix; admin sees any file |
-| `GET /tags/unused` · `DELETE /tags/cleanup` | `/cleanup` is caller-scoped by default; `scope=all_users` needs `confirm=true`. See Gotchas |
+| `GET /tags/unused` · `DELETE /tags/cleanup` | `/cleanup` is caller-scoped by default; `scope=all_users` needs `confirm=true` and, in a multi-tenant deployment, a super_admin (`ctx.bypass.deployment_scope_writable`). See Gotchas |
 | `POST /files/waveforms/generate` · `GET /files/waveforms/status` | Bulk waveform backfill + coverage. Admin via an **inline** `is_admin` check, not a dependency |
 | `POST /files/{uuid}/waveform/generate` · `POST /files/{uuid}/analytics/refresh` | Per-file recompute |
 | `DELETE /files/{uuid}/force` · `POST /files/{uuid}/{retry,recover,cancel}` | Recovery verbs on `files/management.py`; see the `get_current_user` gotcha |
@@ -141,6 +141,11 @@ noted. Admin (`get_current_admin_user`) unless stated.
 set: super_admin (`get_current_active_superuser`) under the `engine.settings` capability, write-only
 (`{is_set, source}` is all any route returns), fixed-sentence test results, audit event
 `admin.settings.change` with the action and never the value.
+
+`/asr-settings/local-model/{active,set,restart}` live in `endpoints/asr_local_model.py` and sit behind
+`asr.model_selection`, not `asr.user_providers` like the rest of `/asr-settings` (#1207): a deployment without
+bring-your-own ASR keys still lets its super_admin pin the local model. Same prefix and paths, a second
+`include_router_with_consistency` in `router.py`.
 
 `/admin/asr-providers` (GET/PUT, super_admin, capability `asr.user_providers`) is the cloud-ASR
 provider policy (#1246): which providers plain users may pick, whether they may add their own
@@ -276,7 +281,10 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
   break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
   the first remaining config that keeps the choice runnable, else clears, and answers the
-  switch shape too (`config_uuid` + `pipeline_issues`, #1236). A #1109-locked source is never
+  switch shape too (`config_uuid` + `pipeline_issues`, #1236). `PUT /asr-settings/config/{uuid}`
+  with `is_active: false` is a switch as well (an off configuration is treated as absent, #1207):
+  it asks the plan for every user whose active pointer names the config, the owner and the members
+  of a shared one, and answers the same 409. A #1109-locked source is never
   refused on the diarization step. `DELETE /asr-settings/config/{uuid}` and `/all` answer
   `ASRConfigDeleted` (the switch shape plus `deleted` and `diarizer_source_reverted`, #1226):
   a deleted config named as someone's speaker detector (`asr_config`) resets that choice for

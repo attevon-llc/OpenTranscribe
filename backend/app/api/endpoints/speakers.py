@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
@@ -1163,21 +1164,18 @@ def debug_cross_media_by_name(
     """
     Debug endpoint to test cross-media logic for a specific speaker name.
 
-    The route is admin-gated, but in multi-tenant mode the queries stay inside the
-    caller's active tenant: it returns speaker names and file titles.
+    The route is admin-gated, but it returns speaker names and file titles, so it stays
+    inside the request's active tenant, and reads other users' rows there only where the
+    request's bypass sees all of the scope (single-tenant mode, or an organization
+    support-access grant). Otherwise it is the caller's own.
     """
     try:
-        in_scope = (
-            None
-            if ctx.bypass.sees_all_in_scope
-            else Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id))
-        )
+        in_scope = Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id))
         # Find all matching speakers
         query = db.query(Speaker).filter(Speaker.display_name == speaker_name)
-        if not current_user.is_admin:
+        if not ctx.bypass.sees_all_in_scope:
             query = query.filter(Speaker.user_id == current_user.id)
-        if in_scope is not None:
-            query = query.filter(in_scope)
+        query = query.filter(in_scope)
         matching_speakers = query.all()
 
         results: dict[str, Any] = {
@@ -1206,10 +1204,9 @@ def debug_cross_media_by_name(
                         Speaker.profile_id == speaker.profile_id,
                     )
                 )
-                if not current_user.is_admin:
+                if not ctx.bypass.sees_all_in_scope:
                     profile_q = profile_q.filter(Speaker.user_id == current_user.id)
-                if in_scope is not None:
-                    profile_q = profile_q.filter(in_scope)
+                profile_q = profile_q.filter(in_scope)
                 profile_speakers = profile_q.all()
 
                 cross_media_result["method_used"] = "profile_based"
@@ -1236,10 +1233,9 @@ def debug_cross_media_by_name(
                         Speaker.id != speaker.id,  # Exclude self
                     )
                 )
-                if not current_user.is_admin:
+                if not ctx.bypass.sees_all_in_scope:
                     similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-                if in_scope is not None:
-                    similar_q = similar_q.filter(in_scope)
+                similar_q = similar_q.filter(in_scope)
                 similar_speakers = similar_q.all()
 
                 cross_media_result["method_used"] = "display_name_based"
@@ -1477,6 +1473,7 @@ def confirm_speaker_gender(
 
 @router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
 def merge_speakers(
+    request: Request,
     speaker_uuid: str,
     target_speaker_uuid: str,
     db: Session = Depends(get_db),
@@ -1543,6 +1540,9 @@ def merge_speakers(
 
     # Capture the source identity before the row disappears
     source_speaker_uuid = str(source_speaker.uuid)
+    target_speaker_uuid_str = str(target_speaker.uuid)
+    # The file whose segments just moved onto the target (the source's own).
+    segments_file = source_speaker.media_file
     # ...and the clusters/profile it belonged to, which the CASCADE is about to forget.
     # Its voiceprint stays until the background task has folded it into the target.
     source_impact = capture_speaker_impact(db, [source_speaker_id], removed=False, reindex=False)
@@ -1553,6 +1553,21 @@ def merge_speakers(
     # Delete the source speaker
     db.delete(source_speaker)
     db.commit()
+
+    # A merge rewrites the speaker of every segment the source had, which is an edit of the
+    # transcript: on a held file it is allowed and recorded (issue #1307). After the commit,
+    # so a rolled-back merge leaves no event; nothing is written for a file nobody holds.
+    from app.services.content_hold_service import record_edit_on_held_file
+
+    record_edit_on_held_file(
+        db,
+        request,
+        current_user,
+        segments_file,
+        kind="speaker_merge",
+        speaker_uuids=[source_speaker_uuid, target_speaker_uuid_str],
+        bypass=ctx.bypass,
+    )
 
     # The source is no longer a member: its clusters and profile drop it NOW, not when the
     # background task gets to it (issue #1214). The target side waits for the averaged

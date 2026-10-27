@@ -275,6 +275,27 @@ retry once and then fail loudly naming the object — don't widen and hope.
 ⚠️ **Neither shape is a flaky test, and treating them as flake is how they survive.** Before
 "fixing" a red gate, check whether the assertion is about the code at all.
 
+## Platform access matrix (issue #1281)
+
+`unit/test_platform_access_matrix.py` compares `docs/security/platform-access-matrix.tsv` with
+what `fixtures/platform_access_matrix.py` derives from the live route table and an AST scan of
+`app/`; `api/test_support_access_matrix.py` drives the real routes (per-chokepoint grant quartet,
+a no-grant leak sweep over every parameterless GET, an org-grant list-scope test, the metadata
+audit test) on the `support_world` fixture. A new platform route, `.allows(` site or bypass
+construction fails the unit test until the TSV is regenerated
+(`scripts/generate-platform-access-matrix.py --write`) and its diff read. The leak sweep is only
+as strong as what it seeds: when you add a tenant-content table a platform route could list, seed
+a canary row for it in `_seed_tenant`.
+
+The hand-written half is `fixtures/platform_access_matrix_tables.py`, and every table in it is
+keyed so that a NEW item has no entry and shows `UNCLASSIFIED`: `CONTENT_GUARDS` (per content
+route; the handler's CODE is checked against the claim, never a substring, so a docstring saying
+"bypasses the schedule" cannot make a route look grant-gated, which it did for five routes),
+`INLINE_ROLE_ROUTES` (routes that test the signed-in user's role inline, which the dependency
+walk cannot see; the scan covers EVERY route, including ones that take the request context, and
+follows a helper one call deep), and `SCOPE_WIDENER_SITES` / `REVEAL_WIDENER_SITES` with `TENANT_MARKERS` (a name
+the widening function must still mention, so dropping the tenant predicate fails the unit test).
+
 ## Safety rules (non-negotiable) — enforced by `unit/test_e2e_data_hygiene.py`
 
 These three rules used to be prose only, and had already been broken: a registration test

@@ -36,6 +36,7 @@ from app.tasks.transcription import cpu_task as cpu_task_module
 from app.tasks.transcription import postprocess as postprocess_module
 from app.tasks.transcription import preprocess as preprocess_module
 from app.tasks.transcription import run_ownership
+from app.utils.task_utils import create_task_record
 from tests.unit._fake_liveness_redis import BrokenRedis
 from tests.unit._fake_liveness_redis import FakeRedis
 from tests.unit._fake_liveness_redis import install_fake_redis
@@ -151,13 +152,14 @@ def test_a_run_replaced_by_a_newer_transcription_stands_down(
     db_session, normal_user, fake_redis, ownership_reads_test_session
 ):
     """Superseded without being failed first -- e.g. a replacement dispatched by a path that
-    left the old row alone. The newer run is what owns the file now."""
+    left the old row alone. Since v448 (#1185) creating the replacement's row is what fails the
+    old one, so the file never holds two active runs and the old run reads as failed."""
     media_file = _file(db_session, normal_user)
     old = _run(
         db_session, normal_user, media_file, status="in_progress", created_ago=timedelta(hours=2)
     )
-    _run(
-        db_session, normal_user, media_file, status="in_progress", created_ago=timedelta(minutes=5)
+    replacement = create_task_record(
+        db_session, f"g1020-{uuid.uuid4()}", normal_user.id, media_file.id, "transcription"
     )
     reached: list[str] = []
 
@@ -165,6 +167,8 @@ def test_a_run_replaced_by_a_newer_transcription_stands_down(
 
     assert result["status"] == "superseded"
     assert reached == []
+    db_session.refresh(old)
+    assert (old.status, old.error_message) == ("failed", f"superseded by {replacement.id}")
 
 
 def test_the_current_run_still_proceeds(

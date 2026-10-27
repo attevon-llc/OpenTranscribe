@@ -33,6 +33,8 @@ picture rather than this list, which stays short on purpose.
                                        # one command, one consolidated report; minutes)
 ./scripts/test-matrix.sh all          # exhaustive deployment-mode rehearsal (dev/prod/lite/PKI/
                                        # GPU-scale/fresh-install/upgrade); run before a release
+python3 scripts/check-requirements-resolve.py   # prove every backend requirements file resolves
+                                       # (pip --dry-run) and lite/CI match prod; ~5 min, needs network
 ```
 
 ## Scripts Overview

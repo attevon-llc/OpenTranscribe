@@ -102,6 +102,11 @@ class TestRedactionReprocessGuard:
             def refresh(self, *_a, **_kw):
                 pass
 
+            def execute(self, *_a, **_kw):
+                # create_task_record fails the file's older active rows of the step first
+                # (v448, issue #1185); there are none here.
+                return MagicMock(all=list)
+
         session = _FakeSession()
 
         class _Scope:

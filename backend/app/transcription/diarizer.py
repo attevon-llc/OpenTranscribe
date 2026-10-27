@@ -44,6 +44,11 @@ class SpeakerDiarizer:
     #: there is no internal failover here, so the provider never changes call to call.
     last_provider = "pyannote"
 
+    #: Why this instance exists instead of the native sidecar (issue #1184): set by
+    #: ``ModelManager`` when it built this engine because the native one could not serve.
+    #: None means PyAnnote was the configured choice.
+    last_fallback_reason: str | None = None
+
     def __init__(self, config: TranscriptionConfig):
         self.config = config
         self._pipeline: Any = None

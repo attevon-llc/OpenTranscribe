@@ -150,20 +150,31 @@ def pipeline_env(monkeypatch):
 def add_asr_config(db_session, normal_user) -> Callable[..., object]:
     """Store a ``UserASRSettings`` row; ``active=True`` also points the user at it.
 
+    ``enabled`` is the row's own ``is_active`` flag (switched on/off), distinct from ``active``,
+    which is whether the user's ``active_asr_config_id`` pointer names it.
+
     Writes the same row plus ``active_asr_config_id`` pointer the ASR settings endpoints
     write, so the code under test resolves it through its real path.
     """
     from app.models import UserSetting
     from app.models.user_asr_settings import UserASRSettings
 
-    def _add(provider: str, model: str, *, active: bool = False, owner=None, shared=False):
+    def _add(
+        provider: str,
+        model: str,
+        *,
+        active: bool = False,
+        owner=None,
+        shared=False,
+        enabled: bool = True,
+    ):
         owner = owner or normal_user
         cfg = UserASRSettings(
             user_id=owner.id,
             name=f"{provider}-{model}-fixture",
             provider=provider,
             model_name=model,
-            is_active=True,
+            is_active=enabled,
             is_shared=shared,
         )
         db_session.add(cfg)

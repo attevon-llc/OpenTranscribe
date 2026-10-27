@@ -442,11 +442,11 @@ describe('Transcription and Speaker Identification sections', () => {
     expect(select.value).toBe('transcription');
   });
 
-  it('drops the provider tab, not the whole row, when the ASR capability is off', async () => {
+  it('drops the provider tab, not the whole row, when both ASR capabilities are off', async () => {
     capabilities.set({
       edition: 'community',
       loaded: true,
-      capabilities: { 'asr.user_providers': false },
+      capabilities: { 'asr.user_providers': false, 'asr.model_selection': false },
       audience: {},
       maxUploadBytes: undefined,
     });
@@ -454,6 +454,18 @@ describe('Transcription and Speaker Identification sections', () => {
     expect(navItem(container, 'settings.transcription.title')).not.toBeNull();
     expect(tab(container, 'tx-provider')).toBeNull();
     expect(tab(container, 'tx-language')).not.toBeNull();
+  });
+
+  it('keeps the provider tab for local-model pinning when only bring-your-own providers are off (#1207)', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'asr.user_providers': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = await openAs('super_admin', 'transcription');
+    expect(tab(container, 'tx-provider')).toHaveAttribute('aria-controls', 'tabpanel-tx-provider');
   });
 
   it('follows the Maintenance link card to the Speaker Embedding tab of Data & Storage', async () => {

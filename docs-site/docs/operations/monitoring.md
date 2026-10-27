@@ -41,6 +41,7 @@ Key metric names (stable; dashboards are built against these):
 | `transcription_files_infra_requeued` | Gauge | — |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
+| `diarization_runs_total` | Counter | `backend` (`native`/`pyannote`), `reason` (`served`, `pinned`, or the cause of a fallback: `unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`). Incremented in the GPU worker, so it is served on `WORKER_METRICS_PORT` when that is enabled. Alert on `backend="pyannote"` with any reason other than `pinned`. |
 
 :::note[Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.]
 :::
@@ -199,6 +200,21 @@ as depth) within about a minute, so:
 | Lost runs | `transcription_runs_without_lease > 0` for 5 min | in-flight transcriptions neither running nor queued; recovery should clear them within minutes |
 | Stuck delivery | `celery_queue_oldest_unacked_age_seconds` above your longest expected stage | a held message is older than any legitimate run |
 | Poison input | `transcription_files_infra_requeued > 0` | a file has lost its worker `TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD` times |
+
+### Superseded task rows
+
+A task row can stay `pending` or `in_progress` after a newer run of the same step has completed
+for the same file (a late write from the older run reopened it). The periodic health check
+(`system.health_check`, every 10 minutes) marks such rows `failed` with the reason
+`superseded by <task id>` before it does anything else.
+
+| Metric | Meaning |
+|---|---|
+| `task_rows_superseded_active` | rows the next sweep will resolve, from the same query the sweep uses; alert if it stays above zero for longer than 15 minutes (the sweep is not running) |
+| `task_rows_superseded_total{task_type}` | rows resolved, by task type; a counter incremented in the Celery worker, so it is served on the worker metrics port (`WORKER_METRICS_PORT`), not by the API |
+
+The database also allows only one active (`pending` or `in_progress`) task row per file and task
+type. Starting a step again supersedes the file's older active row of that step.
 
 Recovery behaviour and its settings: [Environment variables → Task Recovery](../configuration/environment-variables.md#task-recovery).
 - **Signups / uploads rate** product counters (API-process events).

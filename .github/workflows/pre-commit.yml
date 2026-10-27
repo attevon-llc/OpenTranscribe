@@ -175,6 +175,35 @@ jobs:
               - 'frontend/**'
               - '.github/workflows/pre-commit.yml'
 
+  # Resolves every backend requirements file with `pip install --dry-run` (nothing is
+  # installed, no torch download beyond metadata) and fails on ResolutionImpossible. No
+  # other job resolves requirements.txt: backend-tests installs requirements-ci.txt, and
+  # security-scan.yml's pip-audit is non-blocking. That gap let `typer==0.27.3` sit beside
+  # `huggingface-hub==1.17.0` (which caps typer<0.26) so the prod file could not be
+  # installed. It also fails when requirements-lite/-ci resolve a different version of any
+  # package requirements.txt resolves (CI testing starlette 1.10 while the image ships 1.9).
+  # Same script runs locally: python3 scripts/check-requirements-resolve.py
+  requirements-resolve:
+    name: Requirements resolve
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # 3.13 to match the images; a different minor can resolve differently.
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Resolve every requirements file and compare lite/CI/dev to prod
+        run: |
+          python -m pip install --upgrade pip
+          python scripts/check-requirements-resolve.py
+
   backend-tests:
     # Best-effort safety net: runs the unit/API suite + security-gated suites
     # against a fresh Postgres with CPU-only deps (requirements-ci.txt — no

@@ -180,6 +180,15 @@ indexing → WebSocket notification.
   transcription row that is no longer active, so a superseded stage's late progress write can
   never resurrect a reclaimed row. Other task types are exempt: they `self.retry()` under the
   same id and must be able to reopen their own failed row.
+- **Superseded task rows (issue #1185).** `system.health_check` runs
+  `services/task_row_supersede.resolve_superseded_task_rows` FIRST (before stuck-task recovery, so that
+  step never "recovers" a step that already finished): an active row with a NEWER `completed` row of the
+  same `task_type` and `media_file_id` is failed as `superseded by <id>`, counted in
+  `task_rows_superseded_total{task_type}`, and clears a `MediaFile.active_task_id` that still names it. A
+  batch of 500 per run; a sweep failure is logged and recovery carries on. The same module's predicate
+  feeds the `task_rows_superseded_active` gauge, and `v448` makes a second active row per file and step
+  impossible: `create_task_record` supersedes the older one when a step starts again. Don't write a second
+  definition of "superseded" (the migration repeats the rule in SQL; keep them in step).
 - **ONE retry policy: `services/transcription_retry.py`.** Every way a run ends early goes
   through it — a stage that raised (`_handle_transcription_failure`, preprocess's
   `_mark_pipeline_error`), a worker that died (`core/broker_orphans.py` reaper, and the health

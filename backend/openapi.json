@@ -28814,7 +28814,7 @@
         ]
       },
       "post": {
-        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless that would make their stored speaker\ndetection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards. On lite a ``local``\nconfig is refused (409 ``local_asr_unavailable``, #1228): it could never transcribe.",
+        "description": "Create a new ASR configuration.\n\nThe user's first config is auto-activated unless it was created inactive or that would make\ntheir stored speaker detection choice unrunnable (issue #1225); ``auto_activated`` says which, and\n``pipeline_issues`` describes the pipeline in effect afterwards. On lite a ``local``\nconfig is refused (409 ``local_asr_unavailable``, #1228): it could never transcribe.",
         "operationId": "create_asr_config_api_asr_settings_post",
         "requestBody": {
           "content": {
@@ -28861,7 +28861,7 @@
     },
     "/api/asr-settings/all": {
       "delete": {
-        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete. On lite,\nwhere the default is local Whisper, deleting a user's configs is refused (409\n``local_asr_unavailable``, #1228).",
+        "description": "Delete all ASR configurations for the current user (reverts to system default).\n\nSpeaker-detection choices naming any of them are reset like a single delete. On lite,\nwhere the default is local Whisper, deleting a user's configs is refused (409\n``local_asr_unavailable``, #1228). Each shared configuration is treated as a single\ndelete treats it: a member who runs on it is assessed first (the whole call is refused,\nand nothing is deleted, if any member would be stranded), and the members' active\npointers are cleared with it.",
         "operationId": "delete_all_asr_configs_api_asr_settings_all_delete",
         "responses": {
           "200": {
@@ -29009,7 +29009,7 @@
         ]
       },
       "put": {
-        "description": "Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).",
+        "description": "Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).\n\nTurning a configuration OFF is refused with 409 ``{code, message}`` when a user whose\nactive pointer names it (the owner, or a member of a shared one) would fall back to a\ndefault the stored speaker detection or the deployment cannot run (#1225, #1228).",
         "operationId": "update_asr_config_api_asr_settings_config__config_uuid__put",
         "parameters": [
           {
@@ -29223,7 +29223,7 @@
     },
     "/api/asr-settings/set-active": {
       "post": {
-        "description": "Set the active ASR configuration for the current user.\n\n409 ``{code, message}`` when the switch would make the stored speaker detection choice\nunrunnable (issue #1225); otherwise ``pipeline_issues`` describes the new pipeline.",
+        "description": "Set the active ASR configuration for the current user.\n\n409 ``{code, message}`` when the switch would make the stored speaker detection choice\nunrunnable (issue #1225); 409 ``asr_config_inactive`` for a configuration whose\n``is_active`` is off; otherwise ``pipeline_issues`` describes the new pipeline.",
         "operationId": "set_active_asr_config_api_asr_settings_set_active_post",
         "requestBody": {
           "content": {
@@ -40871,7 +40871,7 @@
     },
     "/api/prompts/shared/{prompt_uuid}/toggle": {
       "post": {
-        "description": "Toggle sharing on a prompt. Owner or admin can toggle.",
+        "description": "Toggle sharing on a prompt. The owner, or an admin of the prompt's tenant, can toggle.\n\nA prompt outside the caller's tenant answers 404, the same as a missing one, so its\nexistence is not disclosed. A personal workspace is its own tenant: in a multi-tenant\ndeployment nobody but the owner reaches a personal prompt, and the platform role only\ndoes through a write support grant for that user. Inside an organization the authority\nis the org admin role or a write grant (which assumes the granted tenant), never the\nplatform role alone. A single-tenant deployment keeps instance-wide admin access.",
         "operationId": "share_prompt_api_prompts_shared__prompt_uuid__toggle_post",
         "parameters": [
           {
@@ -41597,7 +41597,7 @@
     },
     "/api/search/degraded-embeddings": {
       "get": {
-        "description": "Preview the files stranded text-only by a neural-search degraded window (#626).\n\nRead-only survey — pairs with ``POST /search/reembed-degraded``, which requires this\npreview to be confirmed rather than dispatching on click.",
+        "description": "Preview the files stranded text-only by a neural-search degraded window (#626).\n\nRead-only survey — pairs with ``POST /search/reembed-degraded``, which requires this\npreview to be confirmed rather than dispatching on click.\n\n``total_files`` is the size of what a re-embed would touch, which is deployment-wide, so\nthe deployment-wide figures (``total_files`` and ``outside_scope_files``) go to a caller\nwho holds the deployment-scope right (every admin in a single-tenant deployment, a\n``super_admin`` otherwise). Any other admin of a multi-tenant deployment gets the counts\nof the files listed to them, and ``outside_scope_files`` is 0. In that deployment ``files``\nnames only the files of the caller's active tenant (the caller's own rows, unless the\nrequest's bypass sees the whole scope). A single-tenant deployment lists everything.",
         "operationId": "get_degraded_embeddings_api_search_degraded_embeddings_get",
         "parameters": [
           {
@@ -42043,7 +42043,7 @@
     },
     "/api/search/reembed-degraded": {
       "post": {
-        "description": "Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.\n\nChecks the task's own lock before dispatching, rather than dispatching into a lock it\nknows is already held — matches ``start_embedding_consistency_repair``'s shape in\n``admin.py``.",
+        "description": "Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.\n\nDeployment-wide: it re-embeds every tenant's files, so it needs the deployment-scope\nright (every admin in a single-tenant deployment, a ``super_admin`` otherwise).\n\nChecks the task's own lock before dispatching, rather than dispatching into a lock it\nknows is already held — matches ``start_embedding_consistency_repair``'s shape in\n``admin.py``.",
         "operationId": "trigger_reembed_degraded_api_search_reembed_degraded_post",
         "parameters": [
           {
@@ -44256,7 +44256,7 @@
     },
     "/api/speakers/debug/cross-media-by-name": {
       "get": {
-        "description": "Debug endpoint to test cross-media logic for a specific speaker name.\n\nThe route is admin-gated, but in multi-tenant mode the queries stay inside the\ncaller's active tenant: it returns speaker names and file titles.",
+        "description": "Debug endpoint to test cross-media logic for a specific speaker name.\n\nThe route is admin-gated, but it returns speaker names and file titles, so it stays\ninside the request's active tenant, and reads other users' rows there only where the\nrequest's bypass sees all of the scope (single-tenant mode, or an organization\nsupport-access grant). Otherwise it is the caller's own.",
         "operationId": "debug_cross_media_by_name_api_speakers_debug_cross_media_by_name_get",
         "parameters": [
           {
@@ -45454,7 +45454,7 @@
     },
     "/api/tags/cleanup": {
       "delete": {
-        "description": "Delete owned tags no file anywhere carries (admin only).\n\n**Defaults to the caller's own tags.** This used to be unconditionally\ndeployment-wide while its inspection sibling ``GET /tags/unused`` is\ncaller-scoped, so an admin who read the list and then called this deleted\nrows they were never shown — irreversibly, with no impact preview and no\nparameter that could have warned them. The wide sweep is still available, but\nonly by naming it (``scope=all_users``) *and* acknowledging it\n(``confirm=true``), the same shape as ``POST /org-admin/gdpr/erase-organization``.\n\n\"Unused\" is measured against every ``file_tag`` row in the deployment, not\nthe caller's accessible files, so a tag still attached to a file the caller\ncan no longer see survives: ``GET /tags/unused`` may therefore list a tag\nthis endpoint declines to delete. That gap is deliberate — the alternative is\nstripping a tag off another account's file. System tags (no owner, no tenant)\nare exempt in both scopes; being unattached is their normal state. ``mine`` is\nthe caller's tags in the request's tenant only.\n\nArgs:\n    scope: ``mine`` (default) or ``all_users``.\n    confirm: Must be true for ``scope=all_users``.\n\nReturns:\n    ``deleted_count``, the ``scope`` that was applied, and a message.\n\nRaises:\n    HTTPException: 403 for a non-admin caller, 400 for ``all_users`` without\n    ``confirm``, 500 if the sweep fails.",
+        "description": "Delete owned tags no file anywhere carries (admin only).\n\n**Defaults to the caller's own tags.** This used to be unconditionally\ndeployment-wide while its inspection sibling ``GET /tags/unused`` is\ncaller-scoped, so an admin who read the list and then called this deleted\nrows they were never shown — irreversibly, with no impact preview and no\nparameter that could have warned them. The wide sweep is still available, but\nonly by naming it (``scope=all_users``) *and* acknowledging it\n(``confirm=true``), the same shape as ``POST /org-admin/gdpr/erase-organization``.\n\n\"Unused\" is measured against every ``file_tag`` row in the deployment, not\nthe caller's accessible files, so a tag still attached to a file the caller\ncan no longer see survives: ``GET /tags/unused`` may therefore list a tag\nthis endpoint declines to delete. That gap is deliberate — the alternative is\nstripping a tag off another account's file. System tags (no owner, no tenant)\nare exempt in both scopes; being unattached is their normal state. ``mine`` is\nthe caller's tags in the request's tenant only.\n\nArgs:\n    scope: ``mine`` (default) or ``all_users``.\n    confirm: Must be true for ``scope=all_users``.\n\nReturns:\n    ``deleted_count``, the ``scope`` that was applied, and a message.\n\nRaises:\n    HTTPException: 403 for a non-admin caller (and, in a multi-tenant deployment,\n    for ``all_users`` from anyone but a super_admin), 400 for ``all_users``\n    without ``confirm``, 500 if the sweep fails.",
         "operationId": "cleanup_unused_tags_api_tags_cleanup_delete",
         "parameters": [
           {
@@ -45774,7 +45774,7 @@
     },
     "/api/tags/promote": {
       "post": {
-        "description": "Publish owned tags into the shared vocabulary (admin only).\n\nThe consolidation lever for a multi-user deployment: ownership keeps one\naccount from renaming another's tag, but it also lets four private\n\"Interview\" rows accumulate with nothing to point at. Promoting one makes it\nthe row every account resolves onto, and folds the same-named private rows\ninto it so their file associations are preserved rather than orphaned.\n\nRegistered **before** ``PATCH /{tag_uuid}`` and the other path-parameter\nroutes for the usual FastAPI reason — ``/promote`` would otherwise be\nswallowed by ``/{tag_uuid}``.",
+        "description": "Publish owned tags into the shared vocabulary (admin only).\n\nIn a multi-tenant deployment this needs a ``super_admin``: the result is visible to every\ntenant. Only same-named tags of the promoted tag's own tenant are folded into it.\n\nThe consolidation lever for a multi-user deployment: ownership keeps one\naccount from renaming another's tag, but it also lets four private\n\"Interview\" rows accumulate with nothing to point at. Promoting one makes it\nthe row every account resolves onto, and folds the same-named private rows\ninto it so their file associations are preserved rather than orphaned.\n\nRegistered **before** ``PATCH /{tag_uuid}`` and the other path-parameter\nroutes for the usual FastAPI reason — ``/promote`` would otherwise be\nswallowed by ``/{tag_uuid}``.",
         "operationId": "promote_tags_endpoint_api_tags_promote_post",
         "requestBody": {
           "content": {
@@ -49200,7 +49200,7 @@
         ]
       },
       "post": {
-        "description": "Create a watch source (local folder, S3 bucket or SMB share) for auto-import.\n\nConsumed by the Watch Sources settings page; equally a scriptable way to\nprovision imports on a new deployment. Any active user may create their own.\n\nTwo non-obvious rules: a ``local`` source is refused with 400 unless the server\nhas ``WATCH_FOLDER_PATH`` mounted — the path is a server-side mount, not a\nclient-supplied one — and ``assign_to_user_uuid`` is honoured **only for an\nadmin**, letting them stand up a source whose imported files land in another\nuser's library. Secrets in the payload are encrypted by ``_apply_fields``.\n\n``organization_id`` is captured once here from the creating request's context\n(issue #262c) so later background scans stamp imports with that tenant instead\nof guessing from the owner's memberships; ``None`` means personal scope.",
+        "description": "Create a watch source (local folder, S3 bucket or SMB share) for auto-import.\n\nConsumed by the Watch Sources settings page; equally a scriptable way to\nprovision imports on a new deployment. Any active user may create their own.\n\nTwo non-obvious rules: a ``local`` source is refused with 400 unless the server\nhas ``WATCH_FOLDER_PATH`` mounted — the path is a server-side mount, not a\nclient-supplied one — and ``assign_to_user_uuid`` is honoured **only for an\nadmin**, letting them stand up a source whose imported files land in another\nuser's library. In a multi-tenant deployment that is refused (404, like an\nunknown account) unless the request's bypass allows a write in the target's\ntenant, which a support grant never does on this route. Secrets in the payload are encrypted by ``_apply_fields``.\n\n``organization_id`` is captured once here from the creating request's context\n(issue #262c) so later background scans stamp imports with that tenant instead\nof guessing from the owner's memberships; ``None`` means personal scope.",
         "operationId": "create_watch_source_api_watch_sources_post",
         "requestBody": {
           "content": {

@@ -20,6 +20,7 @@ from app.models.media import FileStatus
 from app.models.media import Task
 from app.services.task_detection_service import task_detection_service
 from app.services.task_recovery_service import task_recovery_service
+from app.services.task_row_supersede import resolve_superseded_task_rows
 from app.utils.task_lock import with_task_lock
 
 logger = logging.getLogger(__name__)
@@ -284,6 +285,8 @@ def periodic_health_check_task(self):
         Dictionary with summary of actions taken
     """
     summary = {
+        "superseded_task_rows_found": 0,
+        "superseded_task_rows_resolved": 0,
         "stuck_tasks_found": 0,
         "stuck_tasks_recovered": 0,
         "inconsistent_files_found": 0,
@@ -310,6 +313,17 @@ def periodic_health_check_task(self):
 
     try:
         with session_scope() as db:
+            # Step 0: Resolve rows a newer completed run of the same step has superseded
+            # (issue #1185). First, so the stuck-task step below never "recovers" a row whose
+            # step already finished. Its failure must not take the rest of recovery with it.
+            try:
+                sweep = resolve_superseded_task_rows(db)
+                summary["superseded_task_rows_found"] = sweep["found"]
+                summary["superseded_task_rows_resolved"] = sweep["resolved"]
+            except Exception as sweep_err:
+                db.rollback()
+                logger.error(f"Superseded task row sweep failed (non-fatal): {sweep_err}")
+
             # Step 1: Identify and recover stuck tasks
             stuck_tasks = task_detection_service.identify_stuck_tasks(db)
             summary["stuck_tasks_found"] = len(stuck_tasks)
@@ -471,6 +485,7 @@ def periodic_health_check_task(self):
             # Log summary
             logger.info(
                 f"Periodic health check completed: "
+                f"Resolved {summary['superseded_task_rows_resolved']} superseded task rows; "
                 f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
                 f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
                 f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}; "

@@ -57,6 +57,7 @@ def _aws_cfg(**overrides):
         "region": "us-west-2",
         "api_key": encrypt_api_key("SECRET-ACCESS-KEY"),
         "access_key_id": encrypt_api_key("AKIAEXAMPLEKEYID"),
+        "is_active": True,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -165,6 +166,7 @@ def _gladia_cfg(**overrides):
         "region": None,
         "api_key": encrypt_api_key("GLADIA-KEY"),
         "access_key_id": None,
+        "is_active": True,
     }
     base.update(overrides)
     return SimpleNamespace(**base)

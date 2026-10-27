@@ -454,6 +454,18 @@ export class ASRSettingsApi {
   }
 
   /**
+   * Turn a configuration on or off. A configuration that is off is never used for a job and
+   * cannot be made the active one. Answers 409 when turning it off would leave someone
+   * running on a default the deployment or their speaker detection cannot run.
+   */
+  static async setEnabled(uuid: string, enabled: boolean): Promise<UserASRSettingsResponse> {
+    const response = await axiosInstance.put(`${this.BASE_PATH}/config/${uuid}`, {
+      is_active: enabled,
+    });
+    return response.data;
+  }
+
+  /**
    * Test connection to an ASR provider without saving
    */
   static async testConnection(params: ASRConnectionTestRequest): Promise<ASRConnectionTestResult> {

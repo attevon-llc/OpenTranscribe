@@ -184,14 +184,21 @@ def cleanup_unused_tags(
         ``deleted_count``, the ``scope`` that was applied, and a message.
 
     Raises:
-        HTTPException: 403 for a non-admin caller, 400 for ``all_users`` without
-        ``confirm``, 500 if the sweep fails.
+        HTTPException: 403 for a non-admin caller (and, in a multi-tenant deployment,
+        for ``all_users`` from anyone but a super_admin), 400 for ``all_users``
+        without ``confirm``, 500 if the sweep fails.
     """
     # Only allow admin users to perform this operation
-    if not current_user.is_admin:
+    if not ctx.bypass.user_is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can clean up unused tags",
+        )
+
+    if scope == "all_users" and not ctx.bypass.deployment_scope_writable:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Deployment-wide tag cleanup is not available to this account",
         )
 
     if scope == "all_users" and not confirm:

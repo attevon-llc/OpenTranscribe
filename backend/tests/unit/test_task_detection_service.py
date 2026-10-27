@@ -200,7 +200,7 @@ def test_stuck_tasks_need_both_staleness_and_an_exceeded_budget(service, db_sess
     stale_but_young = _task(
         db_session,
         normal_user,
-        media_file,
+        _file(db_session, normal_user),  # one active row per file and step (v448, #1185)
         task_type="summarization",
         status="in_progress",
         created_at=NOW - timedelta(seconds=600),
@@ -229,7 +229,7 @@ def test_orphaned_tasks_use_the_hour_threshold(service, db_session, normal_user)
     recent = _task(
         db_session,
         normal_user,
-        media_file,
+        _file(db_session, normal_user),  # one active row per file and step (v448, #1185)
         task_type="summarization",
         updated_at=NOW - timedelta(minutes=10),
     )
@@ -488,7 +488,7 @@ def test_stuck_llm_tasks_are_scoped_to_llm_types_and_six_hours(service, db_sessi
     young_llm = _task(
         db_session,
         normal_user,
-        media_file,
+        _file(db_session, normal_user),  # one active row per file and step (v448, #1185)
         task_type="summarization",
         status="in_progress",
         created_at=NOW - timedelta(hours=1),

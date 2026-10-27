@@ -38,10 +38,11 @@ _TESTS_ROOT = Path(__file__).resolve().parents[1]
 #: the DDL those suites execute, so the scanner has to read them to see it at all.
 _VERSIONS_DIR = _TESTS_ROOT.parent / "alembic" / "versions"
 
-#: Statements that take ACCESS EXCLUSIVE. ``CREATE INDEX`` (without CONCURRENTLY) and
-#: ``TRUNCATE`` are included because they block DML on the target just as hard.
+#: Statements that take ACCESS EXCLUSIVE. ``CREATE INDEX`` (without CONCURRENTLY, UNIQUE or
+#: not) and ``TRUNCATE`` are included because they block DML on the target just as hard.
 _DDL = re.compile(
-    r"\b(ALTER\s+TABLE|DROP\s+TABLE|CREATE\s+TABLE|TRUNCATE|CREATE\s+INDEX|DROP\s+INDEX)\b",
+    r"\b(ALTER\s+TABLE|DROP\s+TABLE|CREATE\s+TABLE|TRUNCATE|CREATE\s+(UNIQUE\s+)?INDEX"
+    r"|DROP\s+INDEX)\b",
     re.IGNORECASE,
 )
 
@@ -144,28 +145,59 @@ def _resolve_string(node: ast.AST, known: dict[str, str]) -> str | None:
     return None
 
 
+def _returned_strings(fn: ast.FunctionDef, known: dict[str, str]) -> list[str]:
+    """Static text of every string a module-level function returns (literal / f-string)."""
+    out: list[str] = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Return) and node.value is not None:
+            resolved = _resolve_string(node.value, known)
+            if resolved is not None:
+                out.append(resolved)
+    return out
+
+
 @functools.cache
 def _revision_ddl_constants(revision: str) -> frozenset[str]:
-    """``*_SQL`` constants in one ``alembic/versions`` revision whose value is DDL."""
+    """Names in one ``alembic/versions`` revision through which a test replays DDL.
+
+    Three shapes: a ``*_SQL`` constant whose value is DDL; a module-level *builder*
+    function that returns DDL (``def build_upgrade_sql(lock_timeout) -> str``, v448 — it
+    takes a parameter so a test can shorten a timeout); and a ``*_SQL`` constant bound to a
+    call of such a builder (``UPGRADE_SQL = build_upgrade_sql()``). The last two were
+    invisible: ``_resolve_string`` cannot follow a call, so v448's lock tests executed
+    ``CREATE UNIQUE INDEX`` unmarked-looking and were reported as read-only.
+    """
     path = _VERSIONS_DIR / f"{revision}.py"
     if not path.exists():
         return frozenset()
+    body = ast.parse(path.read_text()).body
     values: dict[str, str] = {}
     ddl: set[str] = set()
-    for node in ast.parse(path.read_text()).body:
+
+    def is_ddl(text: str) -> bool:
+        return bool(_DDL.search(text)) and not _TEMP_TABLE.search(text)
+
+    for node in body:
+        if isinstance(node, ast.FunctionDef) and any(
+            is_ddl(text) for text in _returned_strings(node, values)
+        ):
+            ddl.add(node.name)
+    for node in body:
         if not isinstance(node, ast.Assign):
             continue
+        builder_call = (
+            isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id in ddl
+        )
         resolved = _resolve_string(node.value, values)
-        if resolved is None:
-            continue
         for target in node.targets:
             if not isinstance(target, ast.Name):
                 continue
-            values[target.id] = resolved
-            if (
-                target.id.endswith("_SQL")
-                and _DDL.search(resolved)
-                and not _TEMP_TABLE.search(resolved)
+            if resolved is not None:
+                values[target.id] = resolved
+            if target.id.endswith("_SQL") and (
+                builder_call or (resolved is not None and is_ddl(resolved))
             ):
                 ddl.add(target.id)
     return frozenset(ddl)

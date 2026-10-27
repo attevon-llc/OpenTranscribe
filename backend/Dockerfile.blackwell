@@ -137,7 +137,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # ---------------------------------------------------------------------------
 # Install application dependencies
 # ---------------------------------------------------------------------------
-COPY requirements.txt .
+COPY requirements.txt requirements-nodeps.txt ./
 RUN pip install --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # ---------------------------------------------------------------------------
@@ -154,9 +154,10 @@ RUN pip install --no-cache-dir --force-reinstall \
 # NVIDIA PyTorch 25.01 base bundling libraries that still passed the deprecated
 # `use_auth_token` parameter removed in huggingface_hub>=0.24.
 #
-# That pin now BREAKS THE IMAGE OUTRIGHT. `transformers==4.57.6` (requirements.txt)
-# declares `huggingface-hub<1.0,>=0.34.0` and enforces it at import time, so the
-# downgrade turns `import transformers` into a hard ImportError:
+# That pin now BREAKS THE IMAGE OUTRIGHT. `transformers` (requirements.txt) declares a
+# `huggingface-hub` floor and enforces it at import time, so the downgrade turns
+# `import transformers` into a hard ImportError (shown for the 4.57.6 era; 5.10 floors
+# the hub at 1.5 and fails the same way):
 #
 #   ImportError: huggingface-hub>=0.34.0,<1.0 is required for a normal functioning
 #   of this module, but found huggingface-hub==0.23.5.
@@ -166,7 +167,7 @@ RUN pip install --no-cache-dir --force-reinstall \
 # by applying the downgrade to a prod image built from this same requirements.txt.
 #
 # The pin's own premise has also expired: nothing left in the install passes
-# `use_auth_token`, and production has run huggingface_hub 0.36.x for some time.
+# `use_auth_token`, and production runs the huggingface_hub that requirements.txt pins.
 # So the correct version is simply the one requirements.txt pins.
 #
 # ⚠️ If a `use_auth_token` TypeError ever reappears from a base-image library, fix
@@ -174,9 +175,13 @@ RUN pip install --no-cache-dir --force-reinstall \
 # forbids. `tests/unit/test_requirements_pinned.py` fails if this comes back.
 
 # ---------------------------------------------------------------------------
-# Install WhisperX (with --no-deps to preserve NVIDIA torch stack)
+# Install WhisperX, faster-whisper and gliner (second step, --no-deps: preserves the NVIDIA
+# torch stack and keeps the pinned onnxruntime-gpu authoritative)
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir --no-deps "whisperx==3.8.1"
+# Same two-step install as Dockerfile.prod: requirements-nodeps.txt is the only place these
+# are pinned. This used to be an inline `whisperx==3.8.1` (prod ships 3.8.6) and never
+# installed faster-whisper or gliner at all, so the image differed from prod and a venv.
+RUN pip install --no-cache-dir --no-warn-script-location --no-deps -r requirements-nodeps.txt
 
 # ---------------------------------------------------------------------------
 # Install PyAnnote fork with GPU optimizations

@@ -39,6 +39,39 @@ from app.services.tag_sharing import share_tag
 from app.utils.uuid_helpers import get_by_uuid
 
 
+def _audit_tag_share(
+    request: Request,
+    actor: User,
+    tag: Tag,
+    event_type: AuditEventType,
+    *,
+    target_user_id: int | None,
+    target_group_id: int | None,
+) -> None:
+    """Write the share / unshare audit event for a tag.
+
+    ⚠️ Never put the tag's NAME in the event. A tag name is user text and can be sensitive (a
+    client, a diagnosis, a case), and an audit log is read by people who may not see the tag.
+    The record says WHO shared WHICH tag (its uuid) with WHOM, which is what an audit needs;
+    collections already worked this way (issue #1307).
+    """
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=event_type,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=actor.id,
+        username=str(actor.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=request_org_id(request),
+        target_user_id=target_user_id,
+        resource_type="tag",
+        resource_uuid=str(tag.uuid),
+        tenant_scope=TENANT_SCOPE_ORG if tag.organization_id is not None else TENANT_SCOPE_PERSONAL,
+        details={"target_group_id": target_group_id},
+    )
+
+
 @router.get("/{tag_uuid}/shares", response_model=list[TagShareTarget])
 def list_tag_shares(
     tag_uuid: UUID,
@@ -55,7 +88,7 @@ def list_tag_shares(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -86,7 +119,7 @@ def create_tag_share(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -120,23 +153,13 @@ def create_tag_share(
 
     on_tags_changed(db, user_id=current_user.id)
 
-    req_ctx = get_request_context(request)
-    audit_logger.log(
-        event_type=AuditEventType.RESOURCE_SHARE,
-        outcome=AuditOutcome.SUCCESS,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        source_ip=req_ctx["source_ip"],
-        user_agent=req_ctx["user_agent"],
-        organization_id=request_org_id(request),
+    _audit_tag_share(
+        request,
+        current_user,
+        tag,
+        AuditEventType.RESOURCE_SHARE,
         target_user_id=target_user_id,
-        resource_type="tag",
-        resource_uuid=str(tag.uuid),
-        tenant_scope=TENANT_SCOPE_ORG if tag.organization_id is not None else TENANT_SCOPE_PERSONAL,
-        details={
-            "resource_name": tag.name,
-            "target_group_id": target_group_id,
-        },
+        target_group_id=target_group_id,
     )
 
     return _share_target(share)
@@ -166,7 +189,7 @@ def revoke_tag_share(
         db,
         [tag_uuid],
         user_id=current_user.id,
-        is_admin=current_user.is_admin,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
@@ -180,21 +203,11 @@ def revoke_tag_share(
     on_tags_changed(db, user_id=current_user.id)
 
     tag = db.query(Tag).filter(Tag.id == tag_id).one()
-    req_ctx = get_request_context(request)
-    audit_logger.log(
-        event_type=AuditEventType.RESOURCE_UNSHARE,
-        outcome=AuditOutcome.SUCCESS,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        source_ip=req_ctx["source_ip"],
-        user_agent=req_ctx["user_agent"],
-        organization_id=request_org_id(request),
+    _audit_tag_share(
+        request,
+        current_user,
+        tag,
+        AuditEventType.RESOURCE_UNSHARE,
         target_user_id=share.target_user_id,
-        resource_type="tag",
-        resource_uuid=str(tag.uuid),
-        tenant_scope=TENANT_SCOPE_ORG if tag.organization_id is not None else TENANT_SCOPE_PERSONAL,
-        details={
-            "resource_name": tag.name,
-            "target_group_id": share.target_group_id,
-        },
+        target_group_id=share.target_group_id,
     )

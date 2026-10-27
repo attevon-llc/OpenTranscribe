@@ -53,7 +53,16 @@
     email: 'settings.emailNotifications.heading',
     global: 'settings.watchSources.globalHeading',
   };
-  let activeTab: string = 'sources';
+  /** Deep-link support: the settings search can target the email or global tab. */
+  export let initialTab: WatchSourcesTabId = 'sources';
+
+  // string, not the id union: the Tabs component's bound activeId is string-typed.
+  let activeTab: string = initialTab;
+  let seenInitial = initialTab;
+  $: if (initialTab !== seenInitial) {
+    seenInitial = initialTab;
+    activeTab = initialTab;
+  }
   $: tabIds = watchSourcesTabs(isSuperAdmin);
   $: if (!tabIds.includes(activeTab as WatchSourcesTabId)) {
     activeTab = resolveWatchSourcesTab(activeTab as WatchSourcesTabId, tabIds);
@@ -261,6 +270,12 @@
     />
   {/if}
 
+  <div
+    id="tabpanel-sources"
+    role={tabItems.length > 1 ? 'tabpanel' : undefined}
+    aria-labelledby={tabItems.length > 1 ? 'tab-sources' : undefined}
+    hidden={activeTab !== 'sources'}
+  >
   {#if activeTab === 'sources'}
     {#if isAdmin}
       <div class="scope-toggle">
@@ -339,8 +354,11 @@
       </div>
     {/if}
   {/if}
+  </div>
 
-  {#if isSuperAdmin && activeTab === 'email'}
+  {#if isSuperAdmin}
+  <div id="tabpanel-email" role="tabpanel" aria-labelledby="tab-email" hidden={activeTab !== 'email'}>
+  {#if activeTab === 'email'}
     <EmailConfigList
       configs={emailConfigs}
       showHelp={showEmailHelp}
@@ -351,9 +369,13 @@
       on:toggleHelp={() => (showEmailHelp = !showEmailHelp)}
     />
   {/if}
+  </div>
 
-  {#if isSuperAdmin && activeTab === 'global' && globalSettings}
+  <div id="tabpanel-global" role="tabpanel" aria-labelledby="tab-global" hidden={activeTab !== 'global'}>
+  {#if activeTab === 'global' && globalSettings}
     <GlobalWatchSettingsForm bind:settings={globalSettings} {saving} on:save={saveGlobalSettings} />
+  {/if}
+  </div>
   {/if}
 {/if}
 

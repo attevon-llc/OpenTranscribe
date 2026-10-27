@@ -21,6 +21,7 @@ from app.models.user import User
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.services.platform_bypass import PlatformBypass
+from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
@@ -353,6 +354,9 @@ def update_segment_speaker(
 
     # Reported last: the reassignment and its reindex have already gone through.
     raise_if_incomplete(cleanup_residual)
+
+    if segment.speaker is not None:
+        redact_speaker_rows(db, [segment.speaker])
 
     # Format the response with speaker details
     response_data = TranscriptSegmentSchema(

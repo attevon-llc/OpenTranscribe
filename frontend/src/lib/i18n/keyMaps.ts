@@ -307,6 +307,9 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'content.hold.release': 'orgAudit.event.holdRelease',
   'content.hold.refused': 'orgAudit.event.holdRefused',
   'transcript.view_unredacted': 'orgAudit.event.transcriptRevealed',
+  'org.policy.change': 'orgAudit.event.policyChange',
+  'privacy.voiceprints.purge': 'orgAudit.event.voiceprintsPurged',
+  'privacy.gender.purge': 'orgAudit.event.genderPurged',
 };
 
 /** What a legal hold on a file or collection says to the person it stopped (issue #1276). */

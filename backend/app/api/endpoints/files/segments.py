@@ -29,6 +29,7 @@ from .crud import _get_transcript_segments
 from .crud import _redaction_pending
 from .crud import _resolve_redaction_for_request
 from .crud import get_media_file_by_uuid
+from .crud import redact_response_speakers
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -97,6 +98,8 @@ def get_file_segments(
             SpeakerStatusService.add_computed_status(segment.speaker)
             processed_ids.add(int(segment.speaker.id))
             unique_speakers.append(segment.speaker)
+
+    redact_response_speakers(db, unique_speakers, transcript_segments)
 
     formatted_segments = _format_transcript_segments(
         transcript_segments, unique_speakers, redaction_cfg, reveal_categories

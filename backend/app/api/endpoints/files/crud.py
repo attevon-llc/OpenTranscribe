@@ -34,6 +34,7 @@ from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.platform_bypass import PlatformBypass
+from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
@@ -508,6 +509,33 @@ def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0
     return groups
 
 
+def redact_response_speakers(
+    db: Session,
+    speakers: list[Speaker],
+    transcript_segments: list[TranscriptSegment] | None = None,
+) -> None:
+    """Apply the privacy policy to every speaker row a transcript response will serialize.
+
+    A segment embeds its full speaker, so the file's own speaker list and each segment's
+    speaker are the same surface: both are redacted here, together, with the shared
+    ``redact_speaker_rows`` (inferred gender and unverified voiceprint suggestions are
+    withheld while the owner's scope has them off). Call it after the last commit of the
+    request and before the rows are validated into response schemas, because a commit
+    expires the instances and a reload would put the stored values back.
+
+    Args:
+        db: Database session.
+        speakers: The file's speaker rows.
+        transcript_segments: Segments whose ``speaker`` is serialized with them.
+    """
+    unique: dict[int, Speaker] = {int(s.id): s for s in speakers}
+    for segment in transcript_segments or []:
+        if segment.speaker is not None:
+            unique.setdefault(int(segment.speaker.id), segment.speaker)
+    if unique:
+        redact_speaker_rows(db, unique.values())
+
+
 def _format_transcript_segments(
     transcript_segments: list[TranscriptSegment],
     speakers: list[Speaker],
@@ -970,6 +998,9 @@ def get_media_file_detail(
             total_segments = 0
             total_speaker_segments = 0
 
+        # Last step before serialization: nothing below commits, so the redaction holds.
+        redact_response_speakers(db, speakers, transcript_segments)
+
         # Build the response
         response = _build_media_file_response(
             db_file=db_file,
@@ -1309,6 +1340,9 @@ def update_single_transcript_segment(
 
         if not AnalyticsService.refresh_analytics(db, db_file.id):
             logger.warning("Analytics refresh failed after text edit on file %s", db_file.uuid)
+
+    if segment.speaker is not None:
+        redact_speaker_rows(db, [segment.speaker])
 
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(

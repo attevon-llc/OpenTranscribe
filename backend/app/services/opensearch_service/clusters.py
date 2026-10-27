@@ -248,6 +248,10 @@ def update_cluster_embedding(
             "label": label if label is not None else existing_label,
             "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
+        # The rewrite replaces the whole document, so the tenant stamp must be carried over:
+        # every tenant-scoped read filters on it, and a document without it reads as personal.
+        if existing_org is not None:
+            doc["organization_id"] = existing_org
 
         _client.opensearch_client.index(
             index=active_index,

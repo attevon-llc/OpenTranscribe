@@ -105,6 +105,24 @@ def _provider_policy_flags(
     return asr_ok, diar_ok
 
 
+def _active_organization_id(db: Session, user_id: int, request: Request | None) -> int | None:
+    """The organization the request acts in, or ``None`` (personal, or no request).
+
+    The same resolution every request-scoped route uses (``resolve_org_context``: the
+    token's organization confirmed against the membership mirror), so a settings preview
+    and the next upload are judged in one scope.
+    """
+    if request is None:
+        return None
+    from app.api import deps_context
+    from app.models.user import User
+
+    user = db.get(User, user_id)
+    if user is None:
+        return None
+    return deps_context.resolve_org_context(request, db, user)[0]
+
+
 def load_plan_inputs(
     db: Session,
     user_id: int,
@@ -133,9 +151,14 @@ def load_plan_inputs(
         active_asr_config: Plan as if this ``UserASRSettings`` row (``None``: no row) were
             the active transcription config (the ASR-side switches, issue #1225).
         organization_id: The tenant of the file being planned, taken from its row. ``None``
-            is personal scope, which never reads an organization policy: a caller planning a
-            real file MUST pass it, a settings preview with no file may omit it.
+            is personal scope, which never reads an organization policy, so a caller planning
+            a real file MUST pass it (together with ``media_file_id``).
         media_file_id: The file being planned, for the voiceprint consent hooks.
+
+    A PREVIEW (no ``media_file_id``) given a ``request`` plans in the organization that
+    request acts in, so what a settings page shows matches what the upload dispatched
+    from that session would do: a voiceprint step must not read as enabled while the
+    organization forbids it (issue #1280). Without a request it plans in personal scope.
     """
     from app.core.config import settings
     from app.core.constants import gpu_split_enabled
@@ -189,6 +212,8 @@ def load_plan_inputs(
 
     from app.services.privacy.policy import voiceprint_decision
 
+    if organization_id is None and media_file_id is None:
+        organization_id = _active_organization_id(db, user_id, request)
     voiceprints_allowed = voiceprint_decision(
         db, user_id=user_id, organization_id=organization_id, media_file_id=media_file_id
     ).enabled

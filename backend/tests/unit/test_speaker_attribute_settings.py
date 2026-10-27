@@ -27,6 +27,8 @@ class TestSpeakerAttributeSettings:
             "age_detection_enabled": True,
             "show_attributes_on_cards": True,
             "auto_llm_speaker_identification": True,
+            # Read-only: no layer above the user locks gender unless the resolver says so.
+            "gender_locked_by": None,
         }
 
     def test_explicit_values_override_defaults(self):

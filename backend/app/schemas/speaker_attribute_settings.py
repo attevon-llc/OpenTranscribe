@@ -1,6 +1,7 @@
 """Pydantic schemas for speaker attribute detection settings."""
 
 from pydantic import BaseModel
+from pydantic import Field
 
 
 class SpeakerAttributeSettings(BaseModel):
@@ -11,6 +12,15 @@ class SpeakerAttributeSettings(BaseModel):
     age_detection_enabled: bool = True
     show_attributes_on_cards: bool = True
     auto_llm_speaker_identification: bool = True
+    gender_locked_by: str | None = Field(
+        default=None,
+        description=(
+            "The privacy layer above the user (platform, instance or organization) that "
+            "forbids gender inference for the caller's active organization, or null. When "
+            "set, gender_detection_enabled is false whatever the user chose. Read-only: "
+            "a PUT ignores it."
+        ),
+    )
 
 
 class SpeakerAttributeSettingsUpdate(BaseModel):

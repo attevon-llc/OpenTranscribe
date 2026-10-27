@@ -75,7 +75,7 @@ off by default.
   `AWS_TRANSCRIBE_BUCKET_OWNER` too: without it the account id is looked up from STS, and jobs fail
   with a message naming the setting. Objects left in the
   old `opentranscribe-tmp-<region>` bucket, if you own it, can be deleted.
-- **Twenty-one migrations, `v397` to `v447`, run automatically at backend start.** They add columns
+- **Twenty-two migrations, `v397` to `v448`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -1529,6 +1529,28 @@ off by default.
 
 ### Security
 
+- **A failed audit of a transcript edit on a legally held file is logged as an error.** The edit
+  has already committed when the audit runs, so it cannot be refused; the log line now carries the
+  file's uuid at ERROR level instead of a warning, and the function's documentation says it is
+  best-effort.
+- **`check-requirements-resolve.py --only <variant>` no longer skips the drift check.** Selecting
+  `requirements-lite.txt`, `-ci.txt` or `-dev.txt` also resolves `requirements.txt`, the reference
+  the comparison needs.
+- **A personal tag is shared only inside the personal workspace.** In a multi-tenant deployment a
+  personal tag can be shared with organization-less users and with groups made only of them;
+  sharing it with a member of an organization is refused (422). A single-tenant deployment keeps
+  sharing with every account.
+- **Deleting all ASR configurations treats shared ones like a single delete.** Members who run on
+  a shared configuration are assessed first (the call is refused, and nothing is deleted, if one
+  would be left with a pipeline that cannot run) and their active pointer is cleared with it.
+- **`super_admin` is an administrator for the summary switch.** With the system-wide AI summary
+  switch off, a `super_admin` can generate a summary and sees `can_generate` as the `admin` role
+  already did.
+- **The degraded-embeddings re-embed is deployment-wide and says so.** `POST
+  /api/search/reembed-degraded` needs a `super_admin` in a multi-tenant deployment (any admin in a
+  single-tenant one), and `GET /api/search/degraded-embeddings` reports file counts for the
+  caller's own tenant unless the caller holds that right. Pinning or restarting the local Whisper
+  model was already `super_admin` only; a test now pins it.
 - **Editing a shared (system) tag leaves the watch sources that mean a tenant's own tag alone.**
   A stored watch-source tag name resolves to the source's own tenant's tag first and to the shared
   tag only when the tenant has none. Renaming, merging or deleting a shared tag therefore rewrites

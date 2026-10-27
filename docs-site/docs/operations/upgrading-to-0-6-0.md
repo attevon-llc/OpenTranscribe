@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-Twenty-one migrations run automatically when the backend starts, from `v397` to `v447`. On a
+Twenty-two migrations run automatically when the backend starts, from `v397` to `v448`. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.

@@ -67,6 +67,7 @@ Platform-operation categories (a route's category is derived, and `UNCLASSIFIED`
 | Category | What it may do | Proof |
 |---|---|---|
 | `grant-gated` | acts on a tenant's row or list; takes the request bypass | the chokepoint tests below |
+| `deployment-scope` | rebuilds, repairs or sweeps something no single tenant owns (search indices, the embedding model, orphan sweeps); refused unless `ctx.bypass.deployment_scope_writable` (any admin in a single-tenant deployment, a `super_admin` otherwise; a grant never confers it) | structural (handler must ask for the right) and `tests/api/test_deployment_ops_gating.py` |
 | `metadata-audited` | returns other tenants' filenames or owners; emits one `platform_admin.metadata.access` event (ids and counts, never names) in multi-tenant mode | structural (handler must call `audit_metadata_access`) and behavioural test |
 | `account-admin` | user records, roles, sessions, approvals, identity mapping | sweep: no tenant content in any response |
 | `settings` | deployment configuration and credentials | sweep |

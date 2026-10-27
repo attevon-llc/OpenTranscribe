@@ -1551,6 +1551,16 @@ off by default.
   single-tenant one), and `GET /api/search/degraded-embeddings` reports file counts for the
   caller's own tenant unless the caller holds that right. Pinning or restarting the local Whisper
   model was already `super_admin` only; a test now pins it.
+- **Deployment-wide maintenance operations need a super admin in a multi-tenant deployment.**
+  Reindexing and stopping a reindex, repairing the search indices, switching the embedding or
+  neural model and registering, deploying or undeploying one (`/api/search/reindex`,
+  `/reindex/stop`, `/repair-indices`, `/models`, `/models/neural/*`), the orphan sweeps for the
+  search indices and for storage, the speaker and profile embedding repairs, the imohash
+  recompute, the derived-cache clear and the manual retention run (`/api/admin/...`) all act on
+  every tenant's data, so they now follow the same rule as the degraded-file re-embed: any
+  administrator in a single-tenant deployment, only a `super_admin` otherwise (403 for a plain
+  administrator, before anything runs). Single-tenant deployments and `super_admin` accounts see
+  no change. Read-only status and counts endpoints are unchanged.
 - **Editing a shared (system) tag leaves the watch sources that mean a tenant's own tag alone.**
   A stored watch-source tag name resolves to the source's own tenant's tag first and to the shared
   tag only when the tenant has none. Renaming, merging or deleting a shared tag therefore rewrites

@@ -73,7 +73,7 @@ class Row:
 
 # ---------------------------------------------------------------------------------------------
 # Platform-role routes: (regex over "METHOD path", category, why that category is acceptable)
-# First match wins. ``grant-gated`` and ``metadata-audited`` are not in this table: they are
+# First match wins. ``grant-gated``, ``deployment-scope`` and ``metadata-audited`` are not in this table: they are
 # derived (the handler takes the request bypass / calls ``audit_metadata_access``).
 # ---------------------------------------------------------------------------------------------
 PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
@@ -154,6 +154,7 @@ AUDITED_ROUTES = (
 )
 
 CATEGORY_TESTS = {
+    "deployment-scope": "tests/api/test_deployment_ops_gating.py",
     "grant-gated": f"{MATRIX_TEST}::test_every_chokepoint_demands_a_valid_grant",
     "metadata-audited": f"{MATRIX_TEST}::test_cross_tenant_filename_listings_are_audited",
     "grant-lifecycle": "tests/api/test_support_access_lifecycle.py",
@@ -198,6 +199,19 @@ def uses_bypass(source: str) -> bool:
         (isinstance(n, ast.Name) and n.id == "bypass")
         or (isinstance(n, ast.Attribute) and n.attr == "bypass")
         for n in ast.walk(tree)
+    )
+
+
+DEPLOYMENT_SCOPE_CALLS = frozenset({"require_deployment_scope", "deployment_scope_writable"})
+
+
+def uses_deployment_scope(source: str) -> bool:
+    """Whether the handler's CODE asks the bypass for the deployment-scope right."""
+    tree = _handler_tree(source)
+    if tree is None:
+        return False
+    return any(
+        isinstance(n, ast.Attribute) and n.attr in DEPLOYMENT_SCOPE_CALLS for n in ast.walk(tree)
     )
 
 
@@ -447,6 +461,17 @@ def _platform_op(key: str, header: str, names: set[str], source: str) -> Row:
     if key in AUDITED_ROUTES:
         category = "metadata-audited"
         guard = "audit_metadata_access in the handler (one PLATFORM_ADMIN_METADATA_ACCESS event)"
+    # A read that merely widens its counts is refused nothing, so it is not this category.
+    elif (
+        "get_current_context" in names
+        and not key.startswith("GET ")
+        and uses_deployment_scope(source)
+    ):
+        category = "deployment-scope"
+        guard = (
+            "ctx.bypass.deployment_scope_writable: any admin in a single-tenant deployment, a "
+            "super_admin otherwise; a grant is per tenant and never confers it"
+        )
     elif "get_current_context" in names and uses_bypass(source):
         category = "grant-gated"
         guard = "bypass.allows / sees_all_in_scope on the request context"

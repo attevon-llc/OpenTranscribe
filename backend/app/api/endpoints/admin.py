@@ -21,6 +21,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
@@ -1289,12 +1291,14 @@ def update_cache_configuration(
 @router.post("/settings/cache-config/clear", response_model=CacheClearResponse)
 def clear_cache_now(
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> CacheClearResponse:
     """Immediately purge all derived cache assets (admin only).
 
     Safe: derived assets are regenerated on the next download. Originals are untouched.
     """
+    ctx.bypass.require_deployment_scope("Clearing the derived cache")
     from app.services import cache_management_service
 
     logger.info(f"Manual derived-cache clear by admin {current_user.email}")
@@ -1373,6 +1377,7 @@ def preview_retention_deletion(
 @router.post("/settings/retention-config/run", response_model=RetentionRunResponse)
 def trigger_retention_run(
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionRunResponse:
     """
@@ -1382,6 +1387,7 @@ def trigger_retention_run(
     the time-window check and the retention_enabled flag. Useful for
     on-demand cleanup without enabling the automatic schedule.
     """
+    ctx.bypass.require_deployment_scope("Running retention cleanup")
     logger.info(f"Manual retention run triggered by admin {current_user.email}")
 
     from app.core.celery import celery_app
@@ -2680,6 +2686,7 @@ def start_data_integrity_check(
         ),
     ),
     confirm: bool = Query(False, description="Required with force=true."),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an OpenSearch orphan cleanup task.
@@ -2698,6 +2705,7 @@ def start_data_integrity_check(
     after the index is read and before anything is deleted, and an EMPTY Postgres
     side is refused outright, force or not.
     """
+    ctx.bypass.require_deployment_scope("The orphan sweep")
     from app.tasks.opensearch_integrity_task import get_integrity_status
     from app.tasks.opensearch_integrity_task import opensearch_orphan_cleanup_task
 
@@ -2803,9 +2811,11 @@ def get_embedding_consistency_counts(
 
 @router.post("/embedding-consistency/repair")
 def start_embedding_consistency_repair(
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an embedding consistency repair task."""
+    ctx.bypass.require_deployment_scope("Repairing speaker embeddings")
     from app.tasks.speaker_embedding_consistency import get_embedding_consistency_status
     from app.tasks.speaker_embedding_consistency import speaker_embedding_consistency_check_task
 
@@ -2860,9 +2870,11 @@ def get_gpu_profiles(
 
 @router.post("/embedding-consistency/stop")
 def stop_embedding_consistency_repair(
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Cancel a running embedding consistency repair."""
+    ctx.bypass.require_deployment_scope("Stopping the speaker embedding repair")
     from app.tasks.speaker_embedding_consistency import stop_consistency_repair
 
     return stop_consistency_repair()
@@ -2871,6 +2883,7 @@ def stop_embedding_consistency_repair(
 @router.post("/profile-embeddings/repair")
 def repair_profile_embeddings(
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Recalculate all profile embeddings by averaging assigned speakers.
@@ -2878,6 +2891,7 @@ def repair_profile_embeddings(
     Fixes profiles where the embedding was stored from a single speaker
     instead of the true centroid of all assigned speakers.
     """
+    ctx.bypass.require_deployment_scope("Repairing profile embeddings")
     from app.models.media import SpeakerProfile
     from app.services.profile_embedding_service import ProfileEmbeddingService
 
@@ -2958,6 +2972,7 @@ def get_imohash_recompute_status(
 @router.post("/imohash-recompute/start")
 def start_imohash_recompute(
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Manually (re)trigger the imohash fingerprint recompute (admin only).
@@ -2966,6 +2981,7 @@ def start_imohash_recompute(
     to run any time; it overwrites every ``media_file.imohash`` via fast ranged
     reads. No-op guard if a recompute is already running.
     """
+    ctx.bypass.require_deployment_scope("The imohash recompute")
     from app.tasks.imohash_recompute import RECOMPUTE_FLAG_KEY
     from app.tasks.imohash_recompute import recompute_all
     from app.tasks.imohash_recompute import recompute_progress

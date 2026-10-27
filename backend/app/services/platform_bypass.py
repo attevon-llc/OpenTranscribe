@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Literal
 
+from fastapi import HTTPException
 from sqlalchemy import exists
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -138,6 +139,22 @@ class PlatformBypass:
         if self.mode is TenancyMode.SINGLE:
             return True
         return bool(self.user is not None and self.user.is_super_admin)
+
+    def require_deployment_scope(self, operation: str) -> None:
+        """403 unless ``deployment_scope_writable``; the one refusal every deployment-wide route uses.
+
+        Args:
+            operation: What the route does, as a noun phrase that starts the message
+                ("Reindexing"), so the refusal names the action it refused.
+
+        Raises:
+            HTTPException: 403 when the caller lacks the deployment-scope right.
+        """
+        if not self.deployment_scope_writable:
+            raise HTTPException(
+                status_code=403,
+                detail=f"{operation} covers every tenant and needs a super admin",
+            )
 
     @property
     def admin_reveal_allowed(self) -> bool:

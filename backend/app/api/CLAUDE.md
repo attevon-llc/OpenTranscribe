@@ -226,6 +226,16 @@ Shaped for a script or agent rather than a screen.
 
 ### Model administration
 
+**Deployment-wide mutating routes take `ctx.bypass.require_deployment_scope("<Operation>")`** (403 for a
+plain admin in a multi-tenant deployment, any admin in a single-tenant one, `super_admin` always;
+never conferred by a support grant): `POST /search/{reindex,reindex/stop,repair-indices,models,
+reembed-degraded}`, `POST /search/models/neural/{model}/{register,deploy,undeploy}`, `PUT
+/search/models/neural/active`, `POST /admin/{data-integrity,data-integrity/storage,
+embedding-consistency/repair,embedding-consistency/stop,profile-embeddings/repair,
+imohash-recompute/start,settings/cache-config/clear,settings/retention-config/run}`. The matrix
+category is `deployment-scope`; `tests/api/test_deployment_ops_gating.py` is the per-route proof
+(add a new such route to its `OPS` table). Read-only status/count routes stay plain-admin.
+
 OpenSearch neural-search lifecycle, admin-gated and idempotent (`already_registered` /
 `already_deployed`): `POST /search/models/neural/{model}/{register,deploy,undeploy}`.
 Read state via `GET /search/models/neural/status` (which also carries the `embedding_provenance`

@@ -315,6 +315,15 @@ Users can see which embedding model is active:
 Model selection is an admin-only feature. Users can only see which model is active and view search preferences.
 :::
 
+:::note[Several organizations]
+Everything that rebuilds, repairs or reconfigures the search index for the whole deployment acts
+on every organization's data at once: **Reindex All Transcripts**, stopping a reindex, **Repair
+Indices**, switching the embedding model, and registering, deploying or undeploying a neural
+model. On a deployment that hosts several organizations these need a super admin; any other
+administrator receives a 403 and nothing runs. A single-tenant deployment lets every
+administrator run them. Viewing status, index health and the model list is unchanged.
+:::
+
 ## Backend & Infrastructure
 
 ### Architecture

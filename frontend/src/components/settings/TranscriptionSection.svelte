@@ -30,9 +30,10 @@
   export let isSuperAdmin = false;
   export let prefsCap = true;
   export let asrCap = true;
+  export let modelSelectionCap = true;
   export let vocabCap = true;
 
-  $: specs = transcriptionTabs({ prefsCap, asrCap, vocabCap });
+  $: specs = transcriptionTabs({ prefsCap, asrCap, modelSelectionCap, vocabCap });
 
   // string, not the id union: <Tabs bind:activeId> is string-typed.
   let activeId: string = initialTab;
@@ -97,7 +98,12 @@
     >
       {#if visited['tx-provider']}
         <p class="tab-description">{$t('settings.asrProvider.description')}</p>
-        <ASRSettings {isAdmin} {isSuperAdmin} />
+        <ASRSettings
+          {isAdmin}
+          {isSuperAdmin}
+          userProvidersCap={asrCap}
+          {modelSelectionCap}
+        />
       {/if}
     </div>
   {/if}

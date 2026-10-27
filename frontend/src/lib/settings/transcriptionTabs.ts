@@ -21,8 +21,10 @@ export interface TranscriptionTab {
 export interface TranscriptionAccess {
   /** `transcription.prefs` capability. */
   prefsCap: boolean;
-  /** `asr.user_providers` capability. */
+  /** `asr.user_providers` capability: bring-your-own cloud ASR providers. */
   asrCap: boolean;
+  /** `asr.model_selection` capability: pinning the local Whisper model. */
+  modelSelectionCap: boolean;
   /** `vocab.user` capability. */
   vocabCap: boolean;
 }
@@ -30,7 +32,8 @@ export interface TranscriptionAccess {
 export function transcriptionTabs(access: TranscriptionAccess): TranscriptionTab[] {
   const tabs: TranscriptionTab[] = [];
   if (access.prefsCap) tabs.push({ id: 'tx-language', locked: false });
-  if (access.asrCap) tabs.push({ id: 'tx-provider', locked: false });
+  // The provider tab holds both halves; it is absent only when neither is available.
+  if (access.asrCap || access.modelSelectionCap) tabs.push({ id: 'tx-provider', locked: false });
   if (access.vocabCap) tabs.push({ id: 'tx-vocabulary', locked: false });
   if (access.prefsCap) tabs.push({ id: 'tx-accuracy', locked: false });
   return tabs;

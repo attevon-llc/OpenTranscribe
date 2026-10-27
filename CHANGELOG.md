@@ -958,6 +958,13 @@ off by default.
 
 ### Fixed
 
+- **Turning off bring-your-own ASR providers no longer removes local-model pinning, and an inactive
+  ASR configuration no longer runs (#1207).** The super_admin local-model routes
+  (`/api/asr-settings/local-model/*`, same paths) now sit behind `asr.model_selection` instead of
+  `asr.user_providers`, and the Provider tab stays for a super_admin when only the latter is off.
+  `UserASRSettings.is_active` is now honoured: an inactive configuration falls back to the
+  deployment default for jobs and as a speaker detector, `POST /api/asr-settings/set-active` refuses
+  it (409 `asr_config_inactive`), and it is not auto-activated or promoted.
 - **Chat and Watch Sources settings tabs work with a keyboard and a screen reader (#1210).** Each
   tab now controls a real `tabpanel` named by it (the panels were missing, so `aria-controls`
   pointed at nothing), the chat tab ids are namespaced (`chat-general`, `chat-advanced`), and the

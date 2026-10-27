@@ -196,6 +196,9 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   Every tab strip needs a matching `role="tabpanel"` with `id="tabpanel-<tabId>"` and
   `aria-labelledby="tab-<tabId>"` (the shared `ui/Tabs` points `aria-controls`/`id` at those names), and
   tab ids are namespaced per section (`chat-general`, `tx-language`) so panels in one modal never collide.
+  The Transcription provider tab exists when `asr.user_providers` OR `asr.model_selection` is on; `ASRSettings`
+  takes `userProvidersCap`/`modelSelectionCap` and, with the former off, hides the provider list, status and
+  policy and never calls those (404ing) endpoints, leaving the local model and its library (#1207).
   Deep links go through `SECTION_ALIASES` (`watch-sources-email`/`-global` -> `watchSourcesTabFor`; Chat's
   `chat-admin` opens `chat-advanced`).
 - **Transcription and Speaker Identification are two tabbed rows** under the group _Transcription &

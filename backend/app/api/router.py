@@ -12,6 +12,7 @@ from .endpoints import admin_scim_tokens
 from .endpoints import admin_storage_integrity
 from .endpoints import admin_takedown_notices
 from .endpoints import admin_timing
+from .endpoints import asr_local_model
 from .endpoints import asr_provider_policy
 from .endpoints import asr_settings
 from .endpoints import auth
@@ -309,6 +310,15 @@ include_router_with_consistency(
     prefix="/asr-settings",
     tags=["asr-settings"],
     capability="asr.user_providers",
+)
+# Pinning the local Whisper model rides its own capability: a deployment that turns off
+# bring-your-own cloud ASR keys (asr.user_providers) still lets its operator pick the model
+# (issue #1207). Same prefix as above; the paths are unchanged.
+include_router_with_consistency(
+    asr_local_model.router,
+    prefix="/asr-settings",
+    tags=["asr-settings"],
+    capability="asr.model_selection",
 )
 include_router_with_consistency(
     asr_provider_policy.router,

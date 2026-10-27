@@ -131,9 +131,9 @@ describe('TranscriptionSection', () => {
     expect(tab(container, 'tx-vocabulary')?.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('drops the provider tab when the ASR capability is off and falls back from it', () => {
+  it('drops the provider tab when both ASR capabilities are off and falls back from it', () => {
     const { container } = render(TranscriptionSection, {
-      props: { asrCap: false, initialTab: 'tx-provider' },
+      props: { asrCap: false, modelSelectionCap: false, initialTab: 'tx-provider' },
     });
     expect(tab(container, 'tx-provider')).toBeNull();
     expect(tab(container, 'tx-language')?.getAttribute('aria-selected')).toBe('true');

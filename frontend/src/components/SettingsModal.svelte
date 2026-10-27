@@ -284,6 +284,7 @@
   $: transcriptionAccess = {
     prefsCap: capOn(capState, 'transcription.prefs'),
     asrCap: capOn(capState, 'asr.user_providers'),
+    modelSelectionCap: capOn(capState, 'asr.model_selection'),
     vocabCap: capOn(capState, 'vocab.user'),
   };
 

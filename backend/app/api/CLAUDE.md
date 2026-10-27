@@ -142,6 +142,11 @@ set: super_admin (`get_current_active_superuser`) under the `engine.settings` ca
 (`{is_set, source}` is all any route returns), fixed-sentence test results, audit event
 `admin.settings.change` with the action and never the value.
 
+`/asr-settings/local-model/{active,set,restart}` live in `endpoints/asr_local_model.py` and sit behind
+`asr.model_selection`, not `asr.user_providers` like the rest of `/asr-settings` (#1207): a deployment without
+bring-your-own ASR keys still lets its super_admin pin the local model. Same prefix and paths, a second
+`include_router_with_consistency` in `router.py`.
+
 `/admin/asr-providers` (GET/PUT, super_admin, capability `asr.user_providers`) is the cloud-ASR
 provider policy (#1246): which providers plain users may pick, whether they may add their own
 keys, and the admin-shared configurations (flags only, listed for the caller's active

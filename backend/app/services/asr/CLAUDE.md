@@ -85,6 +85,12 @@ way as soon as its catalog entry says `supports_diarization` and its parser fill
 - The pipeline plan's transcription step routes non-local providers to the **`cloud-asr`**
   queue (service `celery-cloud-asr-worker`, concurrency 16) so network-bound jobs never block the
   GPU; `tasks/transcription/dispatch.py:_plan_for_dispatch` resolves it once per run.
+- **`UserASRSettings.is_active` is read (#1207).** `_active_config_row` treats an inactive row exactly like a
+  dangling pointer (env / local fallback, a warning that says why), so `create_for_user`, `resolve_active_config`
+  and the pipeline plan agree; `get_diarizer_asr_config` returns `None` for it too. `POST /set-active` refuses it
+  (409 `asr_config_inactive`), a first config created inactive is not auto-activated, the promotion on deleting
+  the active config skips inactive rows, and `/status` and the list do not present an inactive pointer as active.
+  The pointer itself is kept, so switching the row back on resumes it.
 - `resolve_config(cfg)` is the same env / local fallback for ANY row (or `None`): it lets
   `services/asr_switch_plan` plan a switch before making it. Every ASR-side switch
   (`set-active`, `clear-active`, first-config auto-activation, the promotion on delete)

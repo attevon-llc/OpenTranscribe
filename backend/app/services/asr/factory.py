@@ -555,8 +555,9 @@ class ASRProviderFactory:
     def _active_config_row(user_id: int, db) -> UserASRSettings | None:
         """The user's active ``UserASRSettings`` row (own or shared), or ``None``.
 
-        ``None`` covers no pointer, a dangling or no-longer-shared pointer, and a row that
-        cannot be read; each falls back to env/local in every caller.
+        ``None`` covers no pointer, a dangling or no-longer-shared pointer, a row that
+        cannot be read, and a row its owner marked inactive (``is_active``); each falls back
+        to env/local in every caller.
         """
         from app import models
 
@@ -598,6 +599,16 @@ class ASRProviderFactory:
                 setting.setting_value,
                 user_id,
             )
+            return None
+        if not cfg.is_active:
+            # The owner switched this config off (``UserASRSettings.is_active``). The pointer
+            # is kept, so switching it back on resumes it; until then it must not run.
+            logger.warning(
+                "ASR config id=%s for user %d is inactive — falling back to env/local",
+                setting.setting_value,
+                user_id,
+            )
+            return None
         return cfg
 
     @staticmethod

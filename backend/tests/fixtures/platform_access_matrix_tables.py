@@ -148,6 +148,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/my-files/request-recovery": "caller",
     "POST /api/my-files/{file_uuid}/retry": "bypass",
     "POST /api/prompts/active/set": "caller",
+    "POST /api/prompts/shared/{prompt_uuid}/toggle": "caller",
     "POST /api/prompts/{prompt_uuid}/clone": "caller",
     "POST /api/speaker-clusters/batch-verify": "caller",
     "POST /api/speaker-clusters/{cluster_uuid}/analyze-outliers": "caller",
@@ -222,11 +223,6 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
     "POST /api/legal/acknowledgments": (
         "settings",
         "only a super_admin may accept the operator acknowledgment; deployment-level record",
-    ),
-    "POST /api/prompts/shared/{prompt_uuid}/toggle": (
-        "owner-or-admin-override",
-        "an admin may change sharing on a prompt another user owns, with no tenant check on the "
-        "prompt row; the scope question is open and reported in the lane report, not settled here",
     ),
 }
 

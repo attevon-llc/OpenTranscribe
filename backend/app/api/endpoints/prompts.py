@@ -42,19 +42,33 @@ logger = logging.getLogger(__name__)
 MAX_USER_PROMPTS = 50
 
 
-def _shared_in_tenant(ctx: RequestContext) -> Any:
-    """Other users' shared prompts that reach the caller's active tenant.
-
-    The owner must be in that tenant, and a prompt stamped for an organization is only
-    ever shared inside that organization.
-    """
+def _stamp_in_tenant(ctx: RequestContext) -> Any:
+    """A prompt's own organization stamp, when it has one, must name the active tenant."""
     org_col = models.SummaryPrompt.organization_id
+    return (
+        org_col.is_(None) if ctx.org_id is None else or_(org_col.is_(None), org_col == ctx.org_id)
+    )
+
+
+def _in_tenant(ctx: RequestContext) -> Any:
+    """Prompts that belong to the caller's active tenant, shared or not.
+
+    The owner must be in that tenant, and a prompt stamped for an organization belongs
+    only to that organization.
+    """
+    return and_(
+        owner_in_tenant(models.SummaryPrompt.user_id, ctx.org_id),
+        _stamp_in_tenant(ctx),
+    )
+
+
+def _shared_in_tenant(ctx: RequestContext) -> Any:
+    """Other users' shared prompts that reach the caller's active tenant."""
     return and_(
         models.SummaryPrompt.is_shared == True,  # noqa: E712
         models.SummaryPrompt.user_id != ctx.user.id,
         not_(models.SummaryPrompt.is_system_default),
-        owner_in_tenant(models.SummaryPrompt.user_id, ctx.org_id),
-        org_col.is_(None) if ctx.org_id is None else or_(org_col.is_(None), org_col == ctx.org_id),
+        _in_tenant(ctx),
     )
 
 
@@ -678,11 +692,26 @@ def share_prompt(
     share_data: schemas.SummaryPromptShare,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
-    """Toggle sharing on a prompt. Owner or admin can toggle."""
+    """Toggle sharing on a prompt. The owner, or an admin of the same tenant, can toggle.
+
+    A prompt outside the caller's tenant answers 404, the same as a missing one, so its
+    existence is not disclosed. A platform role without a support-access grant is scoped to
+    its own tenant like any other admin; a write grant assumes the granted tenant.
+    """
+    current_user = ctx.user
     prompt = get_prompt_by_uuid(db, prompt_uuid)
 
+    if prompt.user_id != current_user.id and not prompt.is_system_default:
+        in_tenant = (
+            db.query(models.SummaryPrompt.id)
+            .filter(models.SummaryPrompt.id == prompt.id, _in_tenant(ctx))
+            .first()
+            is not None
+        )
+        if not in_tenant:
+            raise HTTPException(status_code=404, detail="Prompt not found")
     if prompt.user_id != current_user.id and current_user.role not in ("admin", "super_admin"):
         raise HTTPException(status_code=403, detail="Not authorized to share this prompt")
     if prompt.is_system_default:
@@ -707,7 +736,7 @@ def share_prompt(
     db.commit()
     db.refresh(prompt)
 
-    ctx = get_request_context(request)
+    req_meta = get_request_context(request)
     audit_logger.log(
         event_type=AuditEventType.PROMPT_SHARE
         if share_data.is_shared
@@ -715,8 +744,8 @@ def share_prompt(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=ctx["source_ip"],
-        user_agent=ctx["user_agent"],
+        source_ip=req_meta["source_ip"],
+        user_agent=req_meta["user_agent"],
         # Org attribution (issue #262a): resolved by resolve_org_context when
         # the request carried org context; None (personal/community) otherwise.
         organization_id=request_org_id(request),

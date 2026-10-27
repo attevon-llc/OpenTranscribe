@@ -1669,25 +1669,31 @@ def _handle_profile_embedding_updates(
         The cleanup's residuals; empty when every aggregate was rebuilt or erased.
     """
     from app.services.speaker_cleanup import SpeakerImpact
+    from app.services.speaker_cleanup import profile_move_impact
 
-    # Privacy policy (#1280): rebuilding a profile or cluster voiceprint is a voiceprint
-    # write. The label and profile link the user just made are theirs and stay; the aggregate
-    # is simply not recomputed (and not erased) while the speaker's file has voiceprints off,
-    # so re-enabling the layer finds it as it was.
+    # Privacy policy (#1280): only the WRITE side is gated. A speaker leaving a profile or
+    # cluster is reconciled whatever the switch says (the old aggregate still averages its
+    # voice, #1214); what is declined while voiceprints are off is folding a voice IN.
     file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
-    if file_id is None or not PrivacyView(db).voiceprints(int(file_id)).enabled:
-        logger.info(
-            "Profile embedding rebuild for speaker %s skipped by privacy policy", speaker_id
-        )
-        return []
+    voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
 
     if old_profile_id == new_profile_id:
         if not (display_name_changed and new_profile_id):
             return []
+        if not voiceprints_on:
+            logger.info(
+                "Profile rename refresh for speaker %s declined by privacy policy", speaker_id
+            )
+            return []
         impact = SpeakerImpact(profile_ids={new_profile_id})
     else:
-        impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
-        impact.profile_ids |= {p for p in (old_profile_id, new_profile_id) if p}
+        impact = profile_move_impact(
+            db,
+            speaker_id,
+            old_profile_id,
+            new_profile_id,
+            voiceprints_enabled=voiceprints_on,
+        )
     return reconcile_speaker_impact(db, impact)
 
 
@@ -2587,6 +2593,9 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
                 media_file_id=target["media_file_id"],
                 display_name=target["display_name"],
                 segment_count=2,  # Merged from 2 speakers
+                # The write replaces the whole document: without the file's tenant an org
+                # speaker's voiceprint would come back unstamped, i.e. personal.
+                organization_id=target.get("organization_id"),
             )
             logger.info(f"Updated target speaker {target['id']} with averaged embedding")
         else:

@@ -123,7 +123,12 @@ class PurgeScope:
         )
 
     def sql_filters(self, model: Any) -> list[Any]:
-        """Conditions selecting this scope's rows of a table with ``user_id`` / ``organization_id``."""
+        """Conditions selecting this scope's rows of a table with ``user_id`` / ``organization_id``.
+
+        Not for ``Speaker``: production never stamps ``speaker.organization_id`` (the diarization
+        helper creates the row without it), so a speaker's tenant is its FILE's. Use
+        :meth:`speaker_filters`.
+        """
         if self.kind == "instance_all":
             return []
         if self.kind == "instance_personal":
@@ -136,6 +141,20 @@ class PurgeScope:
             else model.organization_id == self.organization_id
         )
         return [model.user_id == self.user_id, org]
+
+    def speaker_filters(self) -> list[Any]:
+        """Conditions selecting this scope's speakers, by the tenant of the speaker's FILE.
+
+        ``PrivacyView`` and every other reader take a speaker's tenant from
+        ``media_file.organization_id``; ``speaker.organization_id`` is NULL for every speaker the
+        pipeline created, so filtering on it matched nothing for an organization and everything
+        in the personal workspace.
+        """
+        from app.models.media import MediaFile
+        from app.models.media import Speaker
+
+        file_ids = select(MediaFile.id).where(*self.sql_filters(MediaFile))
+        return [Speaker.media_file_id.in_(file_ids)]
 
 
 @dataclass
@@ -189,7 +208,7 @@ def _rowcount(db: Session, statement: Any) -> int:
 def _scope_speaker_ids(scope: PurgeScope) -> Any:
     from app.models.media import Speaker
 
-    return select(Speaker.id).where(*scope.sql_filters(Speaker))
+    return select(Speaker.id).where(*scope.speaker_filters())
 
 
 def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> tuple[dict[str, int], list[int]]:
@@ -262,7 +281,7 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> tuple[dict[str
         for row in db.execute(
             update(Speaker)
             .where(
-                *scope.sql_filters(Speaker),
+                *scope.speaker_filters(),
                 Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
                 or_(Speaker.verified.is_(None), Speaker.verified.is_(False)),
             )
@@ -300,7 +319,7 @@ def purge_inferred_gender_postgres(db: Session, scope: PurgeScope) -> dict[str, 
     cleared = _rowcount(
         db,
         update(Speaker)
-        .where(*scope.sql_filters(Speaker), *inferred)
+        .where(*scope.speaker_filters(), *inferred)
         .values(predicted_gender=None, attribute_confidence=bag, attributes_predicted_at=None)
         .execution_options(synchronize_session=False),
     )

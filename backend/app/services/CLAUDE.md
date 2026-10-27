@@ -50,7 +50,12 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `policy_admin.py` is the write side the routes share. Never re-read `speaker_attribute.*` or a user toggle to decide gender:
   `speaker_attribute_settings.resolve_speaker_attribute_flags(..., organization_id=)` already ANDs the policy ceiling; pass the
   FILE's organization from its row. The speaker-ID LLM never gets the gender cross-reference from a non-local provider
-  (`speaker_identification_task._with_gender_context`). User docs: `docs-site/docs/features/privacy-controls.md`.
+  (`speaker_identification_task._with_gender_context`). A speaker's tenant is its FILE's (`media_file.organization_id`):
+  `speaker.organization_id` is never stamped by the pipeline, so purge and every reader join through the file
+  (`PurgeScope.speaker_filters`), and every writer that rebuilds a speaker document passes the file's organization
+  (`PreparedFile.organization_id`, the merge plan's `organization_id`) or the voiceprint reads as personal. A removal
+  or erasure is never gated by the switch (`speaker_cleanup.profile_move_impact` drops only the aggregate a voice
+  would JOIN while off). User docs: `docs-site/docs/features/privacy-controls.md`.
 - **Collection visibility** — `collection_visibility.py` is the one place that answers "which
   collections may this caller see, and which files does that make readable" (#1051, #1275).
   `collection_permission_ranks` / `collection_permission` are the ONE statement behind

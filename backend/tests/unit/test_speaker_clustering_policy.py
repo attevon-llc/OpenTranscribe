@@ -113,6 +113,25 @@ def test_reclustering_leaves_a_scope_with_voiceprints_off_exactly_as_it_is(
     assert (org_cluster_uuid in speaker_os_seams["clusters"]) is (not org_allowed)
 
 
+@pytest.mark.parametrize("org_allowed", [True, False])
+def test_reclustering_does_not_group_the_speakers_of_a_scope_that_has_no_clusters_yet(
+    db_session, normal_user, speaker_os_seams, org_allowed
+):
+    org = make_org(db_session, voiceprints=org_allowed)
+    personal = [_speaker(db_session, normal_user, None, speaker_os_seams, VOICE) for _ in range(2)]
+    in_org = [_speaker(db_session, normal_user, org, speaker_os_seams, OTHER) for _ in range(3)]
+    make_cluster(db_session, normal_user, *personal, label="personal")  # the user has a cluster
+    org_speaker_ids = [sp.id for sp in in_org]  # ...but none in the organization yet
+
+    result = SpeakerClusteringService(db_session).batch_recluster(normal_user.id)
+
+    db_session.expire_all()
+    grouped = [db_session.get(Speaker, i).cluster_id is not None for i in org_speaker_ids]
+    # Control: with the switch on the same call groups the organization's speakers.
+    assert grouped == [org_allowed] * 3
+    assert result["skipped_by_policy_scopes"] == (0 if org_allowed else 1)
+
+
 # ---------------------------------------------------------------------------
 # Reads: lists and details
 # ---------------------------------------------------------------------------

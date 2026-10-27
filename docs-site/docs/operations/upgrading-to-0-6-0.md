@@ -173,11 +173,18 @@ stored in your browser, so each browser keeps its own.
 
 Voiceprint matching and inferred gender now each have a restrict-only switch at four levels
 (platform, deployment, organization, user). See [Privacy controls](../features/privacy-controls.md).
-The upgrade changes no result by itself: the only new table (`v445`, listed above) is empty, both
+The upgrade rewrites and deletes nothing: the only new table (`v445`, listed above) is empty, both
 deployment switches default **on**, no consent hook is registered and no platform ceiling exists.
-No voiceprint, profile or gender value is touched.
+No voiceprint, profile or gender value is touched. It is **not** neutral for everyone, though. The
+person-level gender switch is the setting that already existed (**Settings > Speaker
+Identification > Voice Attributes**, stored as `speaker_attribute_gender_detection_enabled`), so a
+person who had **already turned inferred gender off** now has every stored inferred gender hidden
+everywhere: in their own views and also for collaborators who see their recordings through sharing
+or an organization, because the setting of the recording's owner applies. A gender someone
+confirmed by hand stays visible. Nothing is deleted, so turning the setting back on restores the
+values.
 
-Several behaviors do change, because they now honor the policy and the user's own gender setting:
+Several more behaviors change, because they now honor the policy and the user's own gender setting:
 
 - The speaker-name (LLM) step no longer sends its voice-versus-first-name gender comparison to a
   **remote** provider, even with gender inference on. A local model still receives it.
@@ -213,11 +220,16 @@ Several behaviors do change, because they now honor the policy and the user's ow
 4. Before you run the v4 embedding migration, check that no scope you want to keep has
    voiceprints off.
 5. If you use organizations, run the two backfill commands under [Tenancy mode](#tenancy-mode).
-   Earlier releases rewrote a voiceprint cluster document without its organization whenever the
-   cluster's centroid was updated, so the cluster stopped matching its organization's searches. The
-   first command stamps each such document again when every member of the cluster belongs to one
-   organization. A cluster whose members span scopes is left unstamped, and the next re-cluster
-   rebuilds it. An install without organizations is unaffected.
+   Earlier releases rewrote some voiceprint documents without their organization: a cluster
+   document whenever its centroid was updated, and a speaker's own document when the embedding
+   consistency repair, the v4 embedding migration, a speaker merge or the speaker index rebuild
+   rewrote it. Such a document reads as personal, so it stops matching its organization's
+   searches, and an organization's **Delete stored voiceprints** would not find it. The first
+   command stamps each such document again with the organization of its recording (a cluster only
+   when every member belongs to one organization; a cluster whose members span scopes is left
+   unstamped and the next re-cluster rebuilds it). Run it before you delete stored voiceprints.
+   This is a manual step: nothing runs it for you, on upgrade or later. An install without
+   organizations is unaffected.
 
 Deleting stored voiceprints or inferred gender is a separate action, available only after the
 switch is off, and it cannot be undone. Backups and search snapshots keep their copies until they
@@ -251,7 +263,8 @@ docker compose exec backend python -m app.tasks.tenant_backfill_task
 docker compose exec backend python -m app.scripts.backfill_tenant_stamps --sync-voiceprints
 ```
 
-The first stamps older search and voiceprint documents with their file's organization. The
+The first stamps older search and voiceprint documents with their file's organization (it is also
+a Celery task, `tenant_backfill_organization_id`, and is safe to repeat). The
 second copies the organization that migration `v430` filled in onto speaker-profile
 voiceprints, and lists the few rows whose organization was ambiguous so an administrator can
 decide. An install without organizations has nothing to stamp and can skip both.

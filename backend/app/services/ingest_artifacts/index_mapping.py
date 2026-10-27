@@ -49,6 +49,7 @@ Stage 3, by ``services/search/indexing_service.py``.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import sizing
@@ -295,6 +296,26 @@ def summary_chunk_index(leaf_index: int) -> int:
     return SUMMARY_CHUNK_INDEX_BASE - int(leaf_index)
 
 
+def mask_names(text: str, masks: dict[str, str]) -> str:
+    """Replace each key of ``masks`` found in ``text`` by its value.
+
+    Whole-word and case-insensitive: ``Alice Zylofenix`` matches ``alice zylofenix`` and not
+    ``Alice Zylofenixes``. Longer names are tried first, in one pass, so a replacement is never
+    itself rescanned and a name that contains another is replaced whole. Used to keep a hidden
+    speaker name out of text that is INDEXED (the stored text is untouched).
+    """
+    if not masks or not text:
+        return text
+    by_key = {name.casefold(): label for name, label in masks.items() if name.strip()}
+    if not by_key:
+        return text
+    names = sorted(by_key, key=len, reverse=True)
+    pattern = re.compile(
+        r"(?<!\w)(?:" + "|".join(re.escape(n) for n in names) + r")(?!\w)", re.IGNORECASE
+    )
+    return pattern.sub(lambda match: by_key[match.group(0).casefold()], text)
+
+
 def build_summary_documents(
     *,
     file_uuid: str,
@@ -302,6 +323,7 @@ def build_summary_documents(
     summary_data: Any,
     facts: dict[str, Any],
     base_metadata: dict[str, Any],
+    name_masks: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """One document per string leaf of ``media_file.summary_data`` (issue #963).
 
@@ -326,6 +348,9 @@ def build_summary_documents(
         summary_data: The stored ``media_file.summary_data`` payload.
         facts: The stored ``file_facts.facts`` payload, for the roster and date.
         base_metadata: Per-file fields shared with chunk/digest documents.
+        name_masks: ``{hidden name: diarizer label}`` for the speaker names the file's privacy
+            policy currently hides (#1280). They are replaced in what is INDEXED (the content
+            and the text that is embedded); the stored ``summary_data`` is never rewritten.
 
     Returns:
         One document per string leaf, in leaf-walk order.
@@ -340,6 +365,7 @@ def build_summary_documents(
     documents: list[dict[str, Any]] = []
 
     for index, (key_path, leaf_text) in enumerate(walk_summary_leaves(summary_data, "")):
+        leaf_text = mask_names(leaf_text, name_masks or {})
         document: dict[str, Any] = dict(base_metadata)
         document.update(
             {

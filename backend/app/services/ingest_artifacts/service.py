@@ -94,6 +94,38 @@ def load_ordered_segments(db: Session, file_id: int) -> list[dict[str, Any]]:
     ]
 
 
+def hidden_speaker_names(db: Session, file_id: int) -> dict[str, str]:
+    """``{hidden name: diarizer label}`` for the speaker names this file's policy withholds.
+
+    Empty while the file's voiceprints are on. While they are off: the ``display_name`` of a
+    speaker a voiceprint named (``identity_source = 'voiceprint'``) and the stored voiceprint
+    suggestion nobody verified, each mapped to that speaker's diarizer label. Text that was
+    written earlier (an LLM summary quotes names) is matched against these before it is
+    INDEXED. A name another speaker of the file visibly carries is left alone: masking it would
+    hide a person's word. Unreadable policy = off (``voiceprints_allowed`` fails closed).
+    """
+    from app.models.media import Speaker
+    from app.services.privacy.redact_view import hides_voiceprint_suggestion
+    from app.utils.speaker_identity_source import hides_name
+    from app.utils.speaker_labels import is_assigned_speaker_name
+
+    if voiceprints_allowed(file_id, db):
+        return {}
+    rows = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+    masks: dict[str, str] = {}
+    visible: set[str] = set()
+    for row in rows:
+        name_hidden = hides_name(row.identity_source, False)
+        if is_assigned_speaker_name(row.display_name):
+            if name_hidden:
+                masks[str(row.display_name)] = str(row.name)
+            else:
+                visible.add(str(row.display_name).casefold())
+        if hides_voiceprint_suggestion(row) and is_assigned_speaker_name(row.suggested_name):
+            masks.setdefault(str(row.suggested_name), str(row.name))
+    return {name: label for name, label in masks.items() if name.casefold() not in visible}
+
+
 def source_fingerprint(segments: list[dict[str, Any]]) -> str:
     """SHA-256 over the ordered segments — the "has anything changed?" key.
 

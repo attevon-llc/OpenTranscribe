@@ -16,6 +16,15 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - `config.py` — `resolve_effective_config(db, user_id)` → `EffectiveRedactionConfig` (user
   `UserSetting` prefs ∪ admin `SystemSettings` `redaction.force_*` floor);
   `detection_config_for_all`, `detector_language_support`.
+- **Org floor = stored ∪ resolver (#1279/#1280).** `core/tenant_limits.resolve_redaction_floor(db, organization_id)` unions the
+  organization's STORED floor (`organization_policy.floor_*` columns, saved through `PATCH /org-admin/policy`) with whatever the
+  registered `RedactionFloorResolver` returns, strictest wins (categories and PII entities unite, custom words dedupe
+  case-insensitively, the lower toxicity threshold wins, the booleans OR). Forced custom words imply the `custom` category. Both
+  then union with the global `redaction.force_*` floor in `config._apply_tenant_floor`, so a derived deployment that supplies
+  floors from its own tables keeps working and an org admin's saved floor is never dropped by registering a resolver. The stored
+  half is read on the caller's own session and a DB error PROPAGATES (an unreadable floor must not read as "no floor"); the
+  resolver half stays best-effort. Personal scope (`organization_id=None`) never reads an organization row. The floor can only
+  add. The Settings screen for it is not part of v0.6.0; the API field `redaction_floor` is.
 - `service.py` — `RedactionService.detect_and_store` / `mask_segment` / `is_segment_toxic`.
 - `export_policy.py` — **who** an export is masked for, **whether** it may be produced yet
   (`export_masking_is_pending`), and the policy digest that keys a cached burned-in render

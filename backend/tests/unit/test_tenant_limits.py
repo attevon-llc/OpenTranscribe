@@ -18,6 +18,12 @@ _NO_DB = cast(Session, None)
 
 
 @pytest.fixture(autouse=True)
+def _no_stored_floor(monkeypatch):
+    """These cases use a database stand-in; the stored floor has its own real-database tests."""
+    monkeypatch.setattr("app.core.tenant_limits._stored_org_floor", lambda db, org_id: None)
+
+
+@pytest.fixture(autouse=True)
 def _reset_resolvers():
     from app.core.tenant_limits import reset_resolvers
 

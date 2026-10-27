@@ -42,6 +42,7 @@ from app.services.privacy import purge
 from app.services.privacy.policy import clear_write_backstop_cache
 from app.tasks import privacy_purge_task as task_module
 from app.tasks.privacy_purge_task import privacy_purge_task
+from app.tasks.transcription.speaker_processor import create_or_get_speaker
 from tests.fixtures.fake_speaker_index import FakeOpenSearch
 
 ORG_PURGE = "/api/org-admin/policy/purge"
@@ -150,14 +151,11 @@ def seed(gov, os_, owner, org, tag: str) -> SimpleNamespace:
     file_b = gov.file(owner, org=org if org is not None else None)
 
     def speaker(media_file, name, **fields) -> Speaker:
-        row = Speaker(
-            name=name,
-            user_id=owner.id,
-            organization_id=org_id,
-            media_file_id=media_file.id,
-            **fields,
-        )
-        db.add(row)
+        # Built by the helper transcription uses, so the row has exactly the columns production
+        # gives it (``organization_id`` is NOT one of them: a speaker's tenant is its file's).
+        row = create_or_get_speaker(db, owner.id, media_file.id, name)
+        for column, value in fields.items():
+            setattr(row, column, value)
         db.flush()
         return row
 
@@ -228,6 +226,7 @@ def seed(gov, os_, owner, org, tag: str) -> SimpleNamespace:
 
     for label in ("speaker", "profile", "cluster"):
         os_.add(f"{label}-{tag}", owner.id, org_id)
+    assert guess.organization_id is None, "speakers are not stamped with a tenant in production"
     return SimpleNamespace(
         tag=tag,
         owner=owner,
@@ -626,6 +625,54 @@ def test_a_person_purges_only_their_own_data_in_the_active_scope(
     assert_purged(gov.db, mine, opensearch)
     assert_untouched(gov.db, bobs, opensearch)
     assert_untouched(gov.db, mine_personal, opensearch)
+
+
+def _switch_off_for(db, user) -> None:
+    for key in (
+        constants.PRIVACY_USER_VOICEPRINT_MATCHING_KEY,
+        constants.PRIVACY_USER_GENDER_DETECTION_KEY,
+    ):
+        db.add(UserSetting(user_id=user.id, setting_key=key, setting_value="false"))
+    db.commit()
+
+
+def test_the_personal_workspace_purge_leaves_the_same_persons_organization_data(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    mine_personal = seed(gov, opensearch, gov.alice, None, "alice-personal")
+    mine_org = seed(gov, opensearch, gov.alice, gov.org, "alice-org")
+    others_personal = seed(gov, opensearch, gov.bob, None, "bob-personal")
+    _switch_off_for(gov.db, gov.alice)
+
+    response = purge_via_api(client, gov, gov.alice, ME_PURGE, org=None)
+    assert response.status_code == status.HTTP_202_ACCEPTED, response.text
+    result = in_process_task(broker[0])
+
+    assert_purged(gov.db, mine_personal, opensearch)
+    assert_untouched(gov.db, mine_org, opensearch)
+    assert_untouched(gov.db, others_personal, opensearch)
+    # Only the personal workspace's rows were counted: 2 speakers carry inferred gender, 1 match.
+    assert result["counts"]["gender_speakers_cleared"] == 2
+    assert result["counts"]["matches_deleted"] == 1
+    assert result["counts"]["suggestions_cleared"] == 1
+
+
+def test_an_organization_purge_counts_the_organizations_speakers_not_zero(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    seed(gov, opensearch, gov.bob, gov.org, "orgA2")
+    seed(gov, opensearch, gov.alice, None, "personal")
+    turn_off(gov.db, gov.org)
+
+    purge_via_api(client, gov, gov.admin, ORG_PURGE)
+    result = in_process_task(broker[0])
+
+    # Two seeds in the organization, each with two inferred-gender speakers, a match and a
+    # voiceprint suggestion; the personal workspace's identical rows are not in these numbers.
+    assert result["counts"]["gender_speakers_cleared"] == 4
+    assert result["counts"]["matches_deleted"] == 2
+    assert result["counts"]["suggestions_cleared"] == 2
 
 
 def test_a_person_may_purge_once_their_organization_turned_it_off_without_changing_their_switch(

@@ -69,20 +69,22 @@ certificate, unconditionally, and always have been.
 
 ## Configuration reference
 
-| Field | Config key | Default |
-|---|---|---|
-| Enabled | `pki_enabled` | `false` |
-| CA certificate path | `pki_ca_cert_path` | — |
-| Certificate header | `pki_cert_header` | `X-Client-Cert` |
-| DN header | `pki_cert_dn_header` | `X-Client-Cert-DN` |
-| Trusted proxies | `pki_trusted_proxies` | — (**required when enabled**) |
-| Mode | `pki_mode` | `header` |
-| Admin DNs | `pki_admin_dns` | — |
-| Verify revocation | `pki_verify_revocation` | `false` |
-| Revocation soft-fail | `pki_revocation_soft_fail` | `false` |
-| OCSP timeout (s) | `pki_ocsp_timeout_seconds` | `5` (1–120) |
-| CRL cache (s) | `pki_crl_cache_seconds` | `3600` (1–604800) |
-| Allow password fallback | `pki_allow_password_fallback` | `true` |
+| Field | Config key | Environment variable | Default |
+|---|---|---|---|
+| Enabled | `pki_enabled` | `PKI_ENABLED` | `false` |
+| CA certificate path | `pki_ca_cert_path` | `PKI_CA_CERT_PATH` | — |
+| Certificate header | `pki_cert_header` | `PKI_CERT_HEADER` | `X-Client-Cert` |
+| DN header | `pki_cert_dn_header` | `PKI_CERT_DN_HEADER` | `X-Client-Cert-DN` |
+| Trusted proxies | `pki_trusted_proxies` | `PKI_TRUSTED_PROXIES` | — (**required when enabled**) |
+| Mode | `pki_mode` | — (Admin UI only) | `header` |
+| Admin DNs | `pki_admin_dns` | `PKI_ADMIN_DNS` | — |
+| Verify revocation | `pki_verify_revocation` | `PKI_VERIFY_REVOCATION` | `false` |
+| Revocation soft-fail | `pki_revocation_soft_fail` | `PKI_REVOCATION_SOFT_FAIL` | `false` |
+| OCSP timeout (s) | `pki_ocsp_timeout_seconds` | `PKI_OCSP_TIMEOUT_SECONDS` | `5` (1–120) |
+| CRL cache (s) | `pki_crl_cache_seconds` | `PKI_CRL_CACHE_SECONDS` | `3600` (1–604800) |
+| OCSP cache size | — | `PKI_OCSP_CACHE_MAX_SIZE` | `1000` (LRU) |
+| CRL cache size | — | `PKI_CRL_CACHE_MAX_SIZE` | `1000` (LRU) |
+| Allow password fallback | `pki_allow_password_fallback` | — (Admin UI only) | `true` |
 
 `pki_admin_dns` is a `;`-separated list of full subject DNs that should receive `admin` — a DN
 itself contains commas, so `,` cannot delimit multiple entries. DN matching is exact and

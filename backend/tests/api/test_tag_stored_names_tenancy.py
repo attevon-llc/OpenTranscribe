@@ -96,3 +96,68 @@ def test_an_organization_tag_edit_stays_inside_the_organization(support_world):
     assert _names(w.db, in_org) == []
     assert _names(w.db, in_other_org) == [word]
     assert _names(w.db, personal) == [word]
+
+
+def _system_word_world(w):
+    """A system tag ``word`` plus a same-named tag in one org and one personal workspace.
+
+    Promotion without folding lets a system tag and a tenant's own tag share a name, so a stored
+    ``word`` means the system tag only in a tenant that holds no ``word`` of its own.
+    """
+    word = f"sysword{uuid.uuid4().hex[:6]}"
+    system = make_tag(w.db, name=word, user_id=None, org_id=None)
+    make_tag(w.db, name=word, user_id=w.org_admin.id, org_id=w.org.id)
+    make_tag(w.db, name=word, user_id=w.owner.id, org_id=None)
+    shadowed_org = make_watch_source(
+        w.db, user_id=w.owner.id, org_id=w.org.id, names=[word, "keep"]
+    )
+    shadowed_personal = make_watch_source(
+        w.db, user_id=w.owner.id, org_id=None, names=[word, "keep"]
+    )
+    on_system_org = make_watch_source(
+        w.db, user_id=w.owner.id, org_id=w.other_org.id, names=[word, "keep"]
+    )
+    on_system_personal = make_watch_source(
+        w.db, user_id=w.admin.id, org_id=None, names=[word, "keep"]
+    )
+    return word, system, [shadowed_org, shadowed_personal], [on_system_org, on_system_personal]
+
+
+def test_renaming_a_system_tag_rewrites_only_lists_that_mean_it(support_world):
+    w = support_world
+    word, system, shadowed, on_system = _system_word_world(w)
+    renamed = f"{word}x"
+    response = w.client.patch(
+        f"/api/tags/{system.uuid}", headers=w.super_headers, json={"name": renamed}
+    )
+    assert response.status_code == 200, response.text
+    for source in on_system:
+        assert _names(w.db, source) == [renamed, "keep"], source.id
+    _untouched(w.db, shadowed, word)
+
+
+def test_deleting_a_system_tag_strips_only_lists_that_mean_it(support_world):
+    w = support_world
+    word, system, shadowed, on_system = _system_word_world(w)
+    response = w.client.delete(
+        "/api/tags", headers=w.super_headers, params={"tag_uuids": [str(system.uuid)]}
+    )
+    assert response.status_code == 200, response.text
+    for source in on_system:
+        assert _names(w.db, source) == ["keep"], source.id
+    _untouched(w.db, shadowed, word)
+
+
+def test_merging_a_system_tag_rewrites_only_lists_that_mean_it(support_world):
+    w = support_world
+    word, system, shadowed, on_system = _system_word_world(w)
+    survivor = make_tag(w.db, name=f"{word}-survivor", user_id=None, org_id=None)
+    response = w.client.post(
+        f"/api/tags/{survivor.uuid}/merge",
+        headers=w.super_headers,
+        json={"source_uuids": [str(system.uuid)]},
+    )
+    assert response.status_code == 200, response.text
+    for source in on_system:
+        assert _names(w.db, source) == [survivor.name, "keep"], source.id
+    _untouched(w.db, shadowed, word)

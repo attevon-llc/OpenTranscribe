@@ -1527,6 +1527,10 @@ off by default.
 
 ### Security
 
+- **Editing a shared (system) tag leaves the watch sources that mean a tenant's own tag alone.**
+  A stored watch-source tag name resolves to the source's own tenant's tag first and to the shared
+  tag only when the tenant has none. Renaming, merging or deleting a shared tag therefore rewrites
+  the stored names of the sources whose tenant holds no same-named tag of its own, and nobody else's.
 - **Tag edits, the shared tag vocabulary and watch-source assignment follow tenant boundaries.**
   Renaming, merging or deleting a tag rewrites the stored watch-source tag names of that tag's own
   tenant only. In a multi-tenant deployment the shared (system) vocabulary, tag promotion and

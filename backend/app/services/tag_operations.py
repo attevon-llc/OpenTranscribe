@@ -330,6 +330,12 @@ def _sources_in_tenant(db: Session, tenant: tuple):
     rewrite reaches the sources of that tenant and no others: an organization's
     sources for an organization tag, the owner's organization-less sources for a
     personal one, and every source for a system tag (the shared vocabulary).
+
+    The system case is a candidate set, not the final answer: a stored name
+    resolves to the tenant's own tag first and to the system tag only when the
+    tenant has none (:func:`app.services.tag_service.lookup_existing_tag`), so
+    :func:`rewrite_stored_tag_names` drops the sources of a tenant that holds a
+    same-named tag of its own.
     """
     query = db.query(WatchSource).filter(WatchSource.tag_names.isnot(None))
     kind = tenant[0]
@@ -338,6 +344,38 @@ def _sources_in_tenant(db: Session, tenant: tuple):
     if kind == "user":
         return query.filter(WatchSource.user_id == tenant[1], WatchSource.organization_id.is_(None))
     return query
+
+
+def _names_held_by_source_tenants(
+    db: Session, sources: Sequence[WatchSource], names: set[str]
+) -> dict[tuple, set[str]]:
+    """Normalized ``names`` that each source's tenant holds as its own (non-system) tag.
+
+    Keyed by ``("org", id)`` for a source stamped with an organization and
+    ``("user", id)`` for an organization-less one. One query per kind, not per source.
+    """
+    org_ids = {int(s.organization_id) for s in sources if s.organization_id is not None}
+    user_ids = {int(s.user_id) for s in sources if s.organization_id is None}
+    held: dict[tuple, set[str]] = {}
+    if not org_ids and not user_ids:
+        return held
+
+    def _normalized(tag_name: str, stored: str | None) -> str:
+        return stored or normalize_tag_name(tag_name)
+
+    if org_ids:
+        for org_id, name, stored in db.query(
+            Tag.organization_id, Tag.name, Tag.normalized_name
+        ).filter(Tag.organization_id.in_(org_ids)):
+            if _normalized(name, stored) in names:
+                held.setdefault(("org", int(org_id)), set()).add(_normalized(name, stored))
+    if user_ids:
+        for user_id, name, stored in db.query(Tag.user_id, Tag.name, Tag.normalized_name).filter(
+            Tag.user_id.in_(user_ids), Tag.organization_id.is_(None)
+        ):
+            if _normalized(name, stored) in names:
+                held.setdefault(("user", int(user_id)), set()).add(_normalized(name, stored))
+    return held
 
 
 def rewrite_stored_tag_names(
@@ -362,7 +400,10 @@ def rewrite_stored_tag_names(
         doomed_normalized: Normalized names to rewrite or strip.
         replacement: Name to substitute, or ``None`` to strip the entry.
         tenant: The :func:`tenant_key` of the tag being changed. Only sources of
-            that tenant are touched.
+            that tenant are touched. For a **system** tag that means every source
+            whose tenant holds no tag of its own with the same normalized name:
+            such a source's stored word resolves to the tenant's tag, not the
+            system one, so it is left as written.
 
     Returns:
         The number of watch sources changed.
@@ -373,9 +414,29 @@ def rewrite_stored_tag_names(
     replacement_normalized = normalize_tag_name(replacement) if replacement else ""
     changed = 0
 
-    for source in _sources_in_tenant(db, tenant).all():
+    sources = _sources_in_tenant(db, tenant).all()
+    shadowed = (
+        _names_held_by_source_tenants(db, sources, doomed_normalized)
+        if tenant[0] == "system"
+        else {}
+    )
+
+    for source in sources:
         stored = source.tag_names
         if not isinstance(stored, list):
+            continue
+        source_tenant = (
+            ("org", int(source.organization_id))
+            if source.organization_id is not None
+            else ("user", int(source.user_id))
+        )
+        if shadowed.get(source_tenant):
+            # The tenant's own tag wins the name for this source; for a rewrite of a
+            # system tag only the names the tenant does not hold are the system tag's.
+            doomed_here = doomed_normalized - shadowed[source_tenant]
+        else:
+            doomed_here = doomed_normalized
+        if not doomed_here:
             continue
 
         rewritten: list = []
@@ -388,7 +449,7 @@ def rewrite_stored_tag_names(
                 continue
 
             entry_normalized = normalize_tag_name(entry)
-            if entry_normalized in doomed_normalized:
+            if entry_normalized in doomed_here:
                 modified = True
                 if replacement is None:
                     continue

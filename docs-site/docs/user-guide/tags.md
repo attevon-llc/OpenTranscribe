@@ -84,6 +84,10 @@ On a deployment that hosts several organizations, changing the shared vocabulary
 super admin, and only identically-named tags of the promoted tag's own workspace are folded
 into it; other organizations' tags are left as they are.
 
+A watch source stores tag names, and a name means the tag of the source's own workspace when that
+workspace has one, and the shared tag otherwise. Renaming, merging or deleting a shared tag
+therefore updates only the watch sources of workspaces that have no tag of that name of their own.
+
 Every install also seeds a small shared vocabulary — `Important`, `Meeting`,
 `Interview`, `Personal` — and typing one of those names attaches the shared tag rather
 than forking a private copy.

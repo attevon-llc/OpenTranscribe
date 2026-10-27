@@ -177,7 +177,7 @@ The upgrade changes no result by itself: the only new table (`v445`, listed abov
 deployment switches default **on**, no consent hook is registered and no platform ceiling exists.
 No voiceprint, profile or gender value is touched.
 
-Four behaviors do change, because they now honor the policy and the user's own gender setting:
+Several behaviors do change, because they now honor the policy and the user's own gender setting:
 
 - The speaker-name (LLM) step no longer sends its voice-versus-first-name gender comparison to a
   **remote** provider, even with gender inference on. A local model still receives it.
@@ -188,6 +188,17 @@ Four behaviors do change, because they now honor the policy and the user's own g
   voiceprint switch is off.
 - The v4 embedding migration skips files whose scope has voiceprints off and reports
   `skipped_by_policy` at finalize. The index that goes live holds no voiceprints for them.
+  `GET /api/embeddings/migration/status` now carries `policy_skipped` so you can see the count
+  before you start, and `POST /api/embeddings/migration/start` answers 409 `voiceprints_disabled`
+  only when every recording is in a scope with voiceprints off.
+- The consistency check reports `skipped_by_policy` and does not count a missing voiceprint in a
+  scope with voiceprints off as missing, so it queues no repair for it.
+- `GET /api/user-settings/speaker-attributes` now answers for the organization the request works
+  in. `gender_detection_enabled` is the effective value and a new `gender_locked_by` names the layer
+  (`platform`, `instance`, `organization`) that forbids it, or is `null`.
+- A response that embeds a speaker (the file detail, the segment list, and the responses of a
+  segment text edit and a speaker reassignment) returns the inferred gender and its name-versus-voice
+  alignment as `null` while gender is off for that recording's scope.
 
 **Check this afterwards:**
 
@@ -201,10 +212,22 @@ Four behaviors do change, because they now honor the policy and the user's own g
    now shows next to every gender.
 4. Before you run the v4 embedding migration, check that no scope you want to keep has
    voiceprints off.
+5. If you use organizations, run the two backfill commands under [Tenancy mode](#tenancy-mode).
+   Earlier releases rewrote a voiceprint cluster document without its organization whenever the
+   cluster's centroid was updated, so the cluster stopped matching its organization's searches. The
+   first command stamps each such document again when every member of the cluster belongs to one
+   organization. A cluster whose members span scopes is left unstamped, and the next re-cluster
+   rebuilds it. An install without organizations is unaffected.
 
 Deleting stored voiceprints or inferred gender is a separate action, available only after the
 switch is off, and it cannot be undone. Backups and search snapshots keep their copies until they
-rotate.
+rotate. A gender purge does not clear a speaker profile's gender, because only a person confirming
+it sets that value.
+
+An organization's audit log (managed editions) records `org.policy.change`,
+`privacy.voiceprints.purge` and `privacy.gender.purge`. The organization's redaction floor can be
+read and set through `/api/org-admin/policy`, but its screen is not part of this release.
+A community install has no organization layer: that route answers 404 there.
 
 ### Tenancy mode
 

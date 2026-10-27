@@ -75,3 +75,13 @@ def file_in(db, user, org: Organization | None) -> Any:
     media_file.organization_id = org.id if org is not None else None
     db.flush()
     return media_file
+
+
+def note(sink: list[Any], value: Any, result: Any = None) -> Any:
+    """Record ``value`` in ``sink`` and return ``result``.
+
+    ``list.append`` returns None, so a recording lambda cannot be written with it; this is
+    the one-line form for a test double that must both note a call and answer it.
+    """
+    sink.append(value)
+    return result

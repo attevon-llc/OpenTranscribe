@@ -77,7 +77,7 @@ cd opentranscribe
 Open your browser and navigate to:
 
 - **Web Interface**: http://localhost:5173
-- **API Documentation**: http://localhost:5174/docs
+- **API Documentation**: http://localhost:5174/api/docs (disabled on production deployments unless `ENABLE_API_DOCS=true` is set in `.env`)
 - **Task Monitor** (Flower): http://localhost:5175/flower
 
 ## First Transcription
@@ -242,7 +242,7 @@ docker ps
 nvidia-smi
 
 # Test GPU in Docker
-docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 ```
 
 ### Permission Errors
@@ -254,7 +254,7 @@ docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi
 
 ### Slow Transcription
 
-- Ensure GPU acceleration is enabled (`USE_GPU=true` in `.env`)
+- Ensure GPU acceleration is enabled: `./opentranscribe.sh compose-files` should list `docker-compose.gpu.yml`, and `FORCE_CPU_MODE` in `.env` should not be `true`
 - Reduce model size if running out of memory
 - Check GPU memory usage with `nvidia-smi`
 

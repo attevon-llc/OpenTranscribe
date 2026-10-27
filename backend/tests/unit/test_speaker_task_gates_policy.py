@@ -221,6 +221,7 @@ def test_the_merge_task_averages_the_two_voiceprints_only_when_allowed(
         "id": 1,
         "uuid": "dst-uuid",
         "display_name": None,
+        "shown_display_name": None,
         "media_file_uuid": None,
     }
     monkeypatch.setattr(speaker_merge_task, "_load_merge_plan", lambda uuid: plan)

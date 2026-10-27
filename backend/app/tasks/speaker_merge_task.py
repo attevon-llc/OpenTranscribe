@@ -41,6 +41,7 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
     Returns ``None`` when the surviving speaker no longer exists.
     """
     from app.services.privacy.redact_view import PrivacyView
+    from app.utils.speaker_identity_source import hides_name
     from app.utils.uuid_helpers import get_speaker_by_uuid
 
     with session_scope() as db:
@@ -48,13 +49,18 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
         if not target_speaker:
             return None
 
+        voiceprints_allowed = PrivacyView(db).voiceprints(int(target_speaker.media_file_id)).enabled
         return {
             # Privacy policy (#1280): read fresh, at run time, for the surviving speaker's
             # file. A merge that was queued before a layer was switched off must not write
             # an averaged voiceprint after it. Unknown file or unreadable policy = False.
-            "voiceprints_allowed": PrivacyView(db)
-            .voiceprints(int(target_speaker.media_file_id))
-            .enabled,
+            "voiceprints_allowed": voiceprints_allowed,
+            # What the completion event may name: a name a voiceprint made is not sent while
+            # the file's voiceprints are off. ``display_name`` stays the stored value (it is
+            # only ever written into the voiceprint document, which an off file never gets).
+            "shown_display_name": None
+            if hides_name(target_speaker.identity_source, voiceprints_allowed)
+            else (str(target_speaker.display_name) if target_speaker.display_name else None),
             "uuid": str(target_speaker.uuid),
             "id": int(target_speaker.id),
             "user_id": int(target_speaker.user_id),
@@ -167,7 +173,7 @@ def process_speaker_merge_background(
         # instead refetch segments outright. The rename event carries no such field.
         _merge_notification_data = {
             "speaker_uuid": target_speaker_uuid,
-            "display_name": target["display_name"] or "",
+            "display_name": target["shown_display_name"] or "",
             "processing_status": "complete",
             "auto_applied_count": 0,
             "suggested_count": 0,

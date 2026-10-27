@@ -243,9 +243,6 @@ QUERY_ALLOWED: dict[str, str] = {
     "services/speaker_cleanup.py::_resync_speaker_docs": (
         "same speaker-document sync: the voiceprint index is erased by the purge, not hidden"
     ),
-    "api/endpoints/speakers.py::debug_cross_media_data": (
-        "admin-only debug dump of the stored rows; it exists to show what is stored"
-    ),
     "utils/transcript_comparison.py::export_baseline": (
         "developer regression snapshot of the stored rows, written to local disk by "
         "`baseline_export_task`; not a user surface"

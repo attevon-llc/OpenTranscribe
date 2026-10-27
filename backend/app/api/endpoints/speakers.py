@@ -11,6 +11,7 @@ from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import load_only
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -33,6 +34,7 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import hide_machine_identities
 from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.privacy.redact_view import visible_display_name_expr
@@ -47,6 +49,7 @@ from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_identity_source import VOICEPRINT
 from app.utils.speaker_identity_source import after_name_cleared
 from app.utils.speaker_identity_source import after_unlink
 from app.utils.speaker_identity_source import record_human_identity
@@ -1046,20 +1049,31 @@ def debug_cross_media_data(
             )
 
         # Get all speakers for this user (project only needed fields)
+        # Entities (not bare columns) so the privacy view can withhold what a voiceprint
+        # made: a name or link of a file whose voiceprints are off is not reported (#1280).
         speaker_rows = (
-            db.query(
-                Speaker.id,
-                Speaker.name,
-                Speaker.display_name,
-                Speaker.profile_id,
-                Speaker.media_file_id,
-                Speaker.verified,
-                Speaker.confidence,
+            db.query(Speaker)
+            .options(
+                load_only(
+                    Speaker.id,
+                    Speaker.name,
+                    Speaker.display_name,
+                    Speaker.profile_id,
+                    Speaker.media_file_id,
+                    Speaker.verified,
+                    Speaker.confidence,
+                    Speaker.identity_source,
+                )
             )
             .filter(Speaker.user_id == current_user.id)
             .order_by(Speaker.media_file_id, Speaker.id)
             .all()
         )
+        # id -> identity_source, read now: the commit below expires the loaded rows.
+        withheld = {
+            int(s.id): s.identity_source
+            for s in hide_machine_identities(PrivacyView(db), speaker_rows)
+        }
 
         for s in speaker_rows:
             debug_info["speakers"].append(
@@ -1070,7 +1084,7 @@ def debug_cross_media_data(
                     "profile_id": s.profile_id,
                     "media_file_id": s.media_file_id,
                     "verified": s.verified,
-                    "confidence": s.confidence,
+                    "confidence": None if s.id in withheld else s.confidence,
                 }
             )
 
@@ -1095,7 +1109,13 @@ def debug_cross_media_data(
 
         # Get the index-side view. No session is held across it — the helper does
         # not take one.
-        debug_info.update(_collect_index_debug_documents(current_user.id))
+        index_documents = _collect_index_debug_documents(current_user.id)
+        for document in index_documents.get("opensearch_speakers", []):
+            if document.get("speaker_id") in withheld:
+                document["profile_id"] = None
+                if withheld[document["speaker_id"]] == VOICEPRINT:
+                    document["display_name"] = None
+        debug_info.update(index_documents)
 
         # Add summary analysis
         debug_info["analysis"] = {
@@ -1143,7 +1163,12 @@ def debug_cross_media_by_name(
             query = query.filter(Speaker.user_id == current_user.id)
         if in_scope is not None:
             query = query.filter(in_scope)
+        # Matching is on the name and link the caller may see (issue #1280): each row is
+        # judged by its own file's switch, and a voiceprint-made name is not a match.
+        privacy = PrivacyView(db)
         matching_speakers = query.all()
+        hide_machine_identities(privacy, matching_speakers)
+        matching_speakers = [s for s in matching_speakers if s.display_name == speaker_name]
 
         results: dict[str, Any] = {
             "speakers_found": len(matching_speakers),
@@ -1176,6 +1201,10 @@ def debug_cross_media_by_name(
                 if in_scope is not None:
                     profile_q = profile_q.filter(in_scope)
                 profile_speakers = profile_q.all()
+                hide_machine_identities(privacy, profile_speakers)
+                profile_speakers = [
+                    p for p in profile_speakers if p.profile_id == speaker.profile_id
+                ]
 
                 cross_media_result["method_used"] = "profile_based"
                 cross_media_result["profile_speakers_found"] = len(profile_speakers)
@@ -1206,6 +1235,10 @@ def debug_cross_media_by_name(
                 if in_scope is not None:
                     similar_q = similar_q.filter(in_scope)
                 similar_speakers = similar_q.all()
+                hide_machine_identities(privacy, similar_speakers)
+                similar_speakers = [
+                    p for p in similar_speakers if p.display_name == speaker.display_name
+                ]
 
                 cross_media_result["method_used"] = "display_name_based"
                 cross_media_result["similar_speakers_found"] = len(similar_speakers)
@@ -1285,6 +1318,10 @@ def get_speaker_cross_media_occurrences(
             db, speaker_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
         )
 
+        # What this speaker's file lets the caller see of its name and link. A name or
+        # link a voiceprint made is not an identity to match on while that file's
+        # voiceprints are off (issue #1280); the matching below uses the redacted values.
+        hide_machine_identities(PrivacyView(db), [speaker])
         if speaker.profile_id:
             result = _get_profile_based_occurrences(
                 speaker, current_user, db, ctx.org_id, bypass=ctx.bypass
@@ -2665,8 +2702,14 @@ def _build_occurrence_dict(
     media_file: MediaFile,
     speaker_obj: Speaker,
     same_speaker: bool,
+    *,
+    match_withheld: bool = False,
 ) -> dict[str, Any]:
-    """Build occurrence dictionary for a speaker/media file pair."""
+    """Build occurrence dictionary for a speaker/media file pair.
+
+    ``match_withheld``: a voiceprint made the speaker's identity and its file's voiceprints
+    are off, so the match confidence is not shown either.
+    """
     return {
         "media_file_id": str(media_file.uuid),
         "filename": media_file.filename,
@@ -2674,7 +2717,7 @@ def _build_occurrence_dict(
         "media_file_title": media_file.title or media_file.filename,
         "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else "",
         "speaker_label": speaker_obj.name,
-        "confidence": speaker_obj.confidence,
+        "confidence": None if match_withheld else speaker_obj.confidence,
         "verified": speaker_obj.verified,
         "same_speaker": same_speaker,
     }
@@ -2703,10 +2746,16 @@ def _get_profile_based_occurrences(
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
         query = query.filter(tenant_pred)
+    # Each candidate is judged by its OWN file's switch: a link a voiceprint made in a file
+    # whose voiceprints are off is not a link (its profile_id reads None after this), so the
+    # speaker connects nothing. ``speaker`` arrives already redacted.
     profile_speakers = query.all()
+    hide_machine_identities(PrivacyView(db), profile_speakers)
 
     result: list[dict[str, Any]] = []
     for profile_speaker in profile_speakers:
+        if profile_speaker.profile_id != speaker.profile_id:
+            continue
         if profile_speaker.media_file:
             result.append(
                 _build_occurrence_dict(
@@ -2729,9 +2778,17 @@ def _get_display_name_based_occurrences(
     """Get cross-media occurrences for a speaker without a profile, by display name."""
     result: list[dict[str, Any]] = []
 
-    # Add this speaker instance first
+    # Add this speaker instance first. ``speaker`` arrives redacted; when its identity was
+    # a voiceprint's, the match confidence goes with it.
     if speaker.media_file:
-        result.append(_build_occurrence_dict(speaker.media_file, speaker, same_speaker=True))
+        result.append(
+            _build_occurrence_dict(
+                speaker.media_file,
+                speaker,
+                same_speaker=True,
+                match_withheld=bool(hide_machine_identities(PrivacyView(db), [speaker])),
+            )
+        )
 
     # Skip if speaker doesn't have a valid display name
     if not speaker.display_name or speaker.display_name.startswith("SPEAKER_"):
@@ -2754,8 +2811,11 @@ def _get_display_name_based_occurrences(
     if tenant_pred is not None:
         similar_q = similar_q.filter(tenant_pred)
     similar_speakers = similar_q.all()
+    hide_machine_identities(PrivacyView(db), similar_speakers)
 
     for similar_speaker in similar_speakers:
+        if similar_speaker.display_name != speaker.display_name:
+            continue  # a voiceprint made this name and its file's voiceprints are off
         if similar_speaker.media_file:
             result.append(
                 _build_occurrence_dict(

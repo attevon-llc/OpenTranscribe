@@ -451,6 +451,14 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   through a guess.
 - **The LLM task will not overwrite a voiceprint suggestion** — that would replace the evidence
   the label rests on with a guess.
+- **A voiceprint-derived name obeys the privacy switch (#1280).** `canonical_speaker_label_for_row(row, db=None)`
+  leaves a `voice_match`/`profile_match` name out while the row's FILE has voiceprints off (the row stays unverified; a
+  verified one is a person's and stays) and asks the policy only when that suggestion is what decides the label. An ORM
+  `Speaker` finds its own session; a columns-only row must select `verified` and `media_file_id` and be given `db` (or a
+  shared `PrivacyView`). Every printer of a label goes through it (exports, captions, the chunk and reindex writers,
+  `get_speaker_name`, the chat roster, `SpeakerStatusService`), so a new one must too. In a response, redact first and
+  decorate second: `add_computed_status` derives `status_text` and `resolved_display_name` from the suggestion that
+  `redact_speaker_rows` withholds.
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

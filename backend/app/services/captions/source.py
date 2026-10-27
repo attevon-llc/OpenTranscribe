@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.services.captions.model import CaptionSegment
+from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 if TYPE_CHECKING:
@@ -62,13 +63,16 @@ def speaker_labels_for(
             Speaker.suggested_name,
             Speaker.confidence,
             Speaker.suggestion_source,
+            Speaker.verified,
+            Speaker.media_file_id,
         )
         .filter(Speaker.id.in_(speaker_ids))
         .all()
     )
+    privacy = PrivacyView(db)
     return {
         int(row.id): render_speaker_label(
-            canonical_speaker_label_for_row(row), placeholder_template
+            canonical_speaker_label_for_row(row, privacy), placeholder_template
         )
         for row in rows
     }

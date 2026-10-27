@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.media import Speaker
-from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +173,7 @@ class SpeakerStatusService:
         Returns:
             Best available display name
         """
-        return canonical_speaker_label(
-            speaker.name,
-            display_name=speaker.display_name,
-            suggested_name=speaker.suggested_name,
-            confidence=speaker.confidence,
-            suggestion_source=speaker.suggestion_source,
-        )
+        return canonical_speaker_label_for_row(speaker)
 
     @staticmethod
     def compute_status_for_speakers(db: Session, speakers: list[Speaker]) -> list[dict]:

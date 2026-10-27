@@ -173,10 +173,53 @@ def require_voiceprints(db: Session, *, user_id: int, organization_id: int | Non
 
 
 def hides_voiceprint_suggestion(speaker: Speaker) -> bool:
-    """A stored suggestion a voiceprint wrote that nobody verified (the D5 predicate)."""
+    """A stored suggestion a voiceprint wrote that nobody verified (the D5 predicate).
+
+    ``getattr`` for ``verified``: a columns-only row that did not select it cannot prove a
+    person verified the suggestion, so it reads as unverified (the hiding side).
+    """
     return (
-        is_embedding_suggestion_source(speaker.suggestion_source) and speaker.verified is not True
+        is_embedding_suggestion_source(getattr(speaker, "suggestion_source", None))
+        and getattr(speaker, "verified", None) is not True
     )
+
+
+def voiceprint_label_hidden(row: Any, db: Session | PrivacyView | None = None) -> bool:
+    """Must this row's voiceprint-derived NAME stay out of a label right now?
+
+    The canonical label promotes a confident voiceprint suggestion to the speaker's name, so
+    every surface that prints a label (exports, captions, the search index, chat) shows a
+    voice-matched name that the speaker and profile responses already withhold. This is the
+    same D5 question for those surfaces: hidden when the suggestion is the unverified work of
+    a voiceprint and the row's FILE has voiceprints off. Fails closed (hidden) when the file's
+    policy cannot be read or the row names a file but no session can be found to ask.
+
+    Args:
+        row: A ``Speaker`` or a columns-only row exposing ``media_file_id``,
+            ``suggestion_source`` and ``verified``.
+        db: A session, or a :class:`PrivacyView` to share its memo across rows. Omitted: the
+            session the row is attached to.
+    """
+    if not hides_voiceprint_suggestion(row):
+        return False
+    file_id = getattr(row, "media_file_id", None)
+    if file_id is None:
+        return False  # not a persisted record: nothing to scope it to
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.orm import object_session
+
+    state = sa_inspect(row, raiseerr=False)
+    if db is None and state is not None and state.transient:
+        return False  # a value somebody constructed, never read from a file
+    session = db if db is not None else (object_session(row) if state is not None else None)
+    if session is None:
+        return True  # names a file but nothing can be asked: hide
+    try:
+        view = session if isinstance(session, PrivacyView) else PrivacyView(session)
+        return not view.voiceprints(int(file_id)).enabled
+    except Exception:
+        logger.exception("privacy view: could not decide the label of file %s; hiding", file_id)
+        return True
 
 
 def redact_speaker_rows(db: Session | PrivacyView, speakers: Iterable[Speaker]) -> None:

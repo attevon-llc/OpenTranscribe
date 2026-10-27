@@ -249,6 +249,14 @@ off by default.
   gender alone, because only a person confirming it sets that value. The organization redaction
   floor is stored and served by `/api/org-admin/policy`; its screen follows in v0.7.0 (#1279). A
   community install has no organization layer, so that route answers 404 there.
+- **A voice-matched speaker name follows the voiceprint switch (#1280).** While voiceprints are off
+  for a recording's scope, a name that only a voiceprint match supplied is no longer printed as the
+  speaker's name: not in the file detail or segment pages (`resolved_display_name`, `status_text`,
+  `resolved_speaker_name`, which used to be computed before the redaction ran), not in the
+  `txt`/`json`/`csv`/`md`/`srt`/`vtt` exports, the Word and PDF documents, the captions or the
+  subtitle downloads, and not in the search index or the speaker roster chat resolves names
+  against. The speaker shows as its diarizer label until a person names it; a name a person typed or
+  verified stays. One function, `canonical_speaker_label_for_row`, decides it everywhere.
 - **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
   administrator, a super admin or the person themselves can permanently delete what it hid:
   `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,

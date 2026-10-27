@@ -50,6 +50,7 @@ from app.schemas.media import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple
 from app.utils.time_format import format_timestamp_with_tenths
 
@@ -389,13 +390,7 @@ class FormattingService:
         Returns:
             Display name for the speaker
         """
-        return canonical_speaker_label(
-            speaker.name,
-            display_name=speaker.display_name,
-            suggested_name=getattr(speaker, "suggested_name", None),
-            confidence=getattr(speaker, "confidence", None),
-            suggestion_source=getattr(speaker, "suggestion_source", None),
-        )
+        return canonical_speaker_label_for_row(speaker)
 
     @staticmethod
     def get_speaker_number(speaker_name: str) -> int:

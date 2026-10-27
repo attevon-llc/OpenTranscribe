@@ -172,17 +172,17 @@ def _current_speaker_name(speaker_id: int) -> str | None:
                     Speaker.suggested_name,
                     Speaker.confidence,
                     Speaker.suggestion_source,
+                    Speaker.verified,
+                    Speaker.media_file_id,
                 )
                 .filter(Speaker.id == speaker_id)
                 .first()
             )
+            # Inside the session: the label asks the privacy policy about the row's file.
+            return canonical_speaker_label_for_row(row, db) if row else None
     except Exception as exc:  # noqa: BLE001 — fall back to the dispatched name
         logger.warning(f"Could not re-resolve speaker {speaker_id} at run time: {exc}")
         return None
-
-    if not row:
-        return None
-    return canonical_speaker_label_for_row(row)
 
 
 def _current_file_title(file_uuid: str) -> str | None:

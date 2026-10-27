@@ -67,7 +67,7 @@ profile), not for whoever is looking at it or whoever started a job.
 | **Pipeline plan** (at upload and reprocess) | The speaker-recognition step is not scheduled. The pipeline view shows an informational notice: speaker recognition across recordings is off for this recording, speakers are still told apart within it. The diarizer is told not to return voiceprint vectors, so they never leave the worker. | The diarization sidecar is not asked for gender. |
 | **Entry gates** (every stage, fresh read, no cache) | Each stage that produces or uses a voiceprint checks again when it starts, so a recording already in flight when a switch flipped is stopped too. A stopped stage reports "skipped by policy", not an error. | The same check in the gender attribute task, the sidecar gender write and the speaker-name step. |
 | **Write backstop** (every OpenSearch write) | Every write of a speaker, profile or cluster document is checked again. A refused write is logged once per scope and returns without writing. The answer is cached for 10 seconds per process, so a switch change reaches every process within 10 seconds. A failed check denies and is not cached. | Not applicable (gender is stored in the database, not in a voiceprint document). |
-| **Reads and serialization** | Voiceprint-based name suggestions are not made. A stored suggestion that a voiceprint match wrote and nobody verified is left out of responses. Cluster lists are empty for that scope. A transcript-derived AI suggestion is still offered. | Inferred gender is returned as `null` wherever a response embeds a speaker (see [Where inferred gender is withheld](#where-inferred-gender-is-withheld)). A profile's gender is voted on by confirmed genders only. |
+| **Reads and serialization** | Voiceprint-based name suggestions are not made. A stored suggestion that a voiceprint match wrote and nobody verified is left out of responses. Cluster lists are empty for that scope. A name that only a voiceprint match supplied is also left out of every speaker label (see [Where a voice-matched name is withheld](#where-a-voice-matched-name-is-withheld)). A transcript-derived AI suggestion is still offered. | Inferred gender is returned as `null` wherever a response embeds a speaker (see [Where inferred gender is withheld](#where-inferred-gender-is-withheld)). A profile's gender is voted on by confirmed genders only. |
 | **Actions that would create or recompute voiceprints** | The cluster actions re-cluster, analyze outliers, promote, merge and split answer **409** `voiceprints_disabled` with `locked_by`. The admin profile-embedding repair answers the same when every profile is off, and otherwise skips the profiles that are off. | Not applicable. |
 | **Batch jobs** | The admin v4 embedding migration, the consistency repair, the speaker merge task's voiceprint averaging, cluster tasks, profile rebuilds, retroactive matching and `batch_speaker_matching` skip scopes that are off and report a `skipped_by_policy` count. | The admin gender migration and the combined speaker analysis skip files whose owner or organization forbids it, and a forced reset leaves those files' values alone. |
 | **Clusters** | A speaker is not placed in a cluster, and the cluster reads return nothing for the scope. | Gender no longer influences cluster joins or evictions unless a person confirmed it. |
@@ -95,6 +95,26 @@ has voiceprints off and reports `skipped_by_policy` when it finishes. After the 
 it holds no voiceprints for those scopes. Their old documents stay in the preserved backup index and
 are not restored. Rebuild them later, after switching the layer back on, with the existing
 re-run speaker identification reprocess stage.
+
+### Where a voice-matched name is withheld
+
+A speaker's displayed name is a name a person typed or verified, or else a name a voiceprint match
+suggested with high confidence. While voiceprints are off for a recording's owner and
+organization, the second source is ignored everywhere a name is printed, and the speaker shows
+under the diarizer's label (`SPEAKER_00`) until a person names it. Every place goes through one
+function, `canonical_speaker_label_for_row` in `backend/app/utils/speaker_labels.py`, which asks
+the policy only when the voiceprint suggestion is what would decide the name:
+
+- the file detail and the paginated segments, including `resolved_display_name`, `status_text`
+  (the "High confidence match" line) and `resolved_speaker_name`; the status is now computed after
+  the redaction, not before,
+- the speaker list and detail,
+- every transcript export (`txt`, `json`, `csv`, `md`, `srt`, `vtt`), the Word and PDF documents,
+  the player captions and the subtitle downloads,
+- the search index (chunks, and the digest and facts built from the same label, whenever they are
+  rebuilt) and the speaker roster that chat resolves "who said ..." against.
+
+A name a person typed or verified is not a voiceprint's and stays.
 
 ### Where inferred gender is withheld
 

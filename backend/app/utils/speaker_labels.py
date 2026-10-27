@@ -174,7 +174,7 @@ def canonical_speaker_label(
     return UNKNOWN_SPEAKER_LABEL
 
 
-def canonical_speaker_label_for_row(row: Any) -> str:
+def canonical_speaker_label_for_row(row: Any, db: Any = None) -> str:
     """The label a (re)index would write for this ``Speaker`` row, right now.
 
     Issue #605: eight repair/propagation call sites (``rename_propagation_task``,
@@ -191,21 +191,42 @@ def canonical_speaker_label_for_row(row: Any) -> str:
     re-unpacking the same four attributes with its own copy of the rule — a copy
     is exactly how the eight sites drifted in the first place.
 
+    **Honours the privacy policy** (#1280, plan D5): a name that only a voiceprint
+    suggestion supplies is not used while the row's file has voiceprints off, so a label
+    printed by an export, a caption, the search index or the chat roster agrees with the
+    speaker responses that already withhold that suggestion. The policy is asked only when
+    the suggestion is what decides the label (the common row costs no query).
+
+    ``db`` is a session or a ``PrivacyView`` for a columns-only row (which has no session of
+    its own and must then also expose ``media_file_id`` and ``verified``); an ORM row uses
+    its own session.
+
     Args:
         row: Anything exposing ``.name`` / ``.display_name`` / ``.suggested_name``
             / ``.confidence`` / ``.suggestion_source`` — a ``Speaker`` ORM instance, a SQLAlchemy
             columns-only row/tuple with matching attribute names, or a test
             stand-in.
+        db: A session or ``PrivacyView`` for a columns-only row; see above.
 
     Returns:
         The canonical display label — never empty, never the bare ``"Unknown"``.
     """
-    return canonical_speaker_label(
-        row.name,
-        display_name=row.display_name,
-        suggested_name=row.suggested_name,
-        confidence=row.confidence,
-        # getattr: a stand-in or columns-only row that predates the provenance rule
-        # degrades to "unknown source" (suggestion ignored) rather than raising.
-        suggestion_source=getattr(row, "suggestion_source", None),
-    )
+    suggestion_source = getattr(row, "suggestion_source", None)
+    # getattr: a stand-in or columns-only row that predates the provenance rule
+    # degrades to "unknown source" (suggestion ignored) rather than raising.
+
+    def label(source: str | None) -> str:
+        return canonical_speaker_label(
+            row.name,
+            display_name=row.display_name,
+            suggested_name=getattr(row, "suggested_name", None),
+            confidence=getattr(row, "confidence", None),
+            suggestion_source=source,
+        )
+
+    resolved = label(suggestion_source)
+    if resolved == label(None):
+        return resolved  # no suggestion decides this label: nothing to withhold
+    from app.services.privacy.redact_view import voiceprint_label_hidden
+
+    return label(None) if voiceprint_label_hidden(row, db) else resolved

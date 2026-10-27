@@ -19,6 +19,10 @@ import { clearUserState } from '$lib/session/clearUserState';
 import { apiCache, CacheTTL } from '$lib/apiCache';
 import { capabilities } from '$stores/capabilities';
 import { peekSectionData, setSectionData } from '$lib/settings/sectionData';
+import { loadEffectivePrivacy } from '$stores/privacyPolicy';
+
+const privacyApi = vi.hoisted(() => ({ getEffective: vi.fn() }));
+vi.mock('$lib/api/privacy', () => ({ PrivacyApi: privacyApi }));
 
 describe('clearUserState', () => {
   beforeEach(() => {
@@ -47,6 +51,29 @@ describe('clearUserState', () => {
 
     expect(peekSectionData('settings:auth-config')).toBeUndefined();
     expect(peekSectionData('settings:pipeline')).toBeUndefined();
+  });
+
+  it('forgets the cached privacy policy, so User B never reads User A’s organization policy', async () => {
+    // Speaker surfaces cache GET /privacy/effective for 15 s per file; the answer is the previous
+    // tenant's file owner/organization policy and must not outlive the session (issue #1280).
+    privacyApi.getEffective.mockReset();
+    privacyApi.getEffective
+      .mockResolvedValueOnce({
+        organization_uuid: 'org-a',
+        voiceprint_matching: { enabled: false },
+      })
+      .mockResolvedValueOnce({
+        organization_uuid: 'org-b',
+        voiceprint_matching: { enabled: true },
+      });
+    expect((await loadEffectivePrivacy('file-1'))?.organization_uuid).toBe('org-a');
+    expect((await loadEffectivePrivacy('file-1'))?.organization_uuid).toBe('org-a');
+    expect(privacyApi.getEffective).toHaveBeenCalledTimes(1);
+
+    await clearUserState();
+
+    expect((await loadEffectivePrivacy('file-1'))?.organization_uuid).toBe('org-b');
+    expect(privacyApi.getEffective).toHaveBeenCalledTimes(2);
   });
 
   it('resets capabilities to unloaded community defaults (cloud tier leak)', async () => {

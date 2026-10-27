@@ -251,8 +251,9 @@ def record_edit_on_held_file(
     file: MediaFile,
     *,
     kind: str,
-    segment_uuid: str,
+    segment_uuid: str | None = None,
     fields: Iterable[str] = (),
+    speaker_uuids: Iterable[str] = (),
     bypass: Any = None,
 ) -> bool:
     """Audit a transcript edit made while ``file`` is under a legal hold (issue #1307).
@@ -263,35 +264,46 @@ def record_edit_on_held_file(
     is not a governance event), and the event is always recorded, not opt-in: held files are few
     and this is the trail the hold exists to keep.
 
+    Its own reads run in a SAVEPOINT: a database error here must not leave the caller's
+    transaction aborted for the writes that follow the call.
+
     Args:
-        kind: ``segment_edit`` (text or times) or ``segment_speaker`` (reassignment).
-        segment_uuid: The segment's uuid. An id, never its text.
+        kind: ``segment_edit`` (text or times), ``segment_speaker`` (reassignment) or
+            ``speaker_merge`` (every segment of one speaker moved onto another).
+        segment_uuid: The segment's uuid, for the single-segment kinds. An id, never its text.
         fields: Names of the columns changed (``text``, ``start_time``, ``end_time``). Never
             their values.
+        speaker_uuids: The speakers a merge involved, source and target. Ids, never names.
         bypass: The request's platform bypass, so a support-access grant is recorded.
 
     Returns:
         Whether an event was written. Never raises.
     """
     try:
-        state = hold_states(db, [int(file.id)]).get(int(file.id))
-        if state is None or not state.held:
-            return False
-        return record_content_event(
-            db,
-            request,
-            event=AuditEventType.CONTENT_TRANSCRIPT_EDIT,
-            actor=actor,
-            resource=AuditedResource.file(file),
-            details={
+        with db.begin_nested():
+            state = hold_states(db, [int(file.id)]).get(int(file.id))
+            if state is None or not state.held:
+                return False
+            details: dict[str, Any] = {
                 "kind": kind,
-                "segment_uuid": segment_uuid,
                 "fields": sorted(fields),
                 "held_by": state.held_by,
-            },
-            dedup=False,
-            bypass=bypass,
-        )
+            }
+            if segment_uuid is not None:
+                details["segment_uuid"] = segment_uuid
+            speakers = sorted(speaker_uuids)
+            if speakers:
+                details["speaker_uuids"] = speakers
+            return record_content_event(
+                db,
+                request,
+                event=AuditEventType.CONTENT_TRANSCRIPT_EDIT,
+                actor=actor,
+                resource=AuditedResource.file(file),
+                details=details,
+                dedup=False,
+                bypass=bypass,
+            )
     except Exception:  # noqa: BLE001 - an audit failure must not fail the edit
         logger.warning("held-file edit audit failed (edit unaffected)", exc_info=True)
         return False

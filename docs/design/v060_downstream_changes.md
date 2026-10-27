@@ -75,6 +75,40 @@ User documentation: `docs-site/docs/features/privacy-controls.md`.
   `filter_shareable_profiles`). Response shaping: `app.services.privacy.redact_view`. Write
   backstop: `assert_voiceprint_write_allowed(user_id, organization_id)` on every OpenSearch speaker,
   profile and cluster write. Extension code that writes a voiceprint document itself must call it.
+- **Plan previews and real files are judged in different organizations.** A preview names no
+  file (`GET /api/user-settings/pipeline`, the ASR-switch previews): it is judged in the
+  organization the request works in (`load_plan_inputs(..., request=request)`), so a settings page
+  never shows speaker recognition as enabled while that organization forbids it. A real file is
+  judged in its own row's organization (`organization_id` and `media_file_id` passed together).
+  A resolver that depends on the organization must expect both shapes.
+- **Gender is withheld wherever a response embeds a speaker.** `redact_response_speakers`
+  (`backend/app/api/endpoints/files/crud.py`) covers the file detail and
+  `GET /files/{uuid}/segments`; the segment text-edit and speaker-reassign responses call
+  `redact_speaker_rows`. The stored `attribute_confidence` keys `gender`, `alignment` and
+  `alignment_hint` go together, and the speaker-attribute purge drops the same three.
+  `speaker_profile.predicted_gender` is a person-confirmed value and a gender purge does not clear it.
+- **Admin batch jobs report what they skipped.** `GET /embeddings/migration/status` has
+  `policy_skipped` (`files_total`, `files_skipped`, `scopes_total`, `scopes_skipped`, `locked_by`
+  as a list); `POST /embeddings/migration/start` is 409 `voiceprints_disabled` (with a single
+  `locked_by`) only when every recording is in a forbidden scope. `skipped_by_policy` appears in the
+  consistency orchestrator's return value and last run, its progress payload and
+  `get_embedding_consistency_counts`; documents missing from an off scope are not counted as
+  `main_missing` or `v4_missing` and trigger no repair.
+- **Speaker-attribute settings are organization-aware.** `GET|PUT /user-settings/speaker-attributes`
+  resolve for the active organization. `gender_detection_enabled` is the effective value;
+  `gender_locked_by` is `platform`, `instance`, `organization` or `null`, and a person's own switch
+  is never reported as a lock.
+- **Organization audit.** `org.policy.change`, `privacy.voiceprints.purge` and
+  `privacy.gender.purge` are labelled in the organization audit screen (`ORG_AUDIT_EVENT_KEYS`,
+  `frontend/src/lib/i18n/keyMaps.ts`) and appear in its event filter. An extension that renders its
+  own audit view should label them too.
+- **Redaction floor screen: not in this release.** `redaction_floor` is stored and served by
+  `/api/org-admin/policy`; the organization screen for it is #1279 in v0.7.0.
+- **Cluster documents keep `organization_id` on rewrite.** `update_cluster_embedding` carries the
+  stored value over (tenant-scoping fix). A deployment with organizations that holds cluster
+  documents rewritten earlier re-stamps them with `python -m app.tasks.tenant_backfill_task`
+  (single-organization clusters only; a cluster spanning scopes stays unstamped until the next
+  re-cluster).
 - **Frontend.** The organization panel is part of core (it is not an overlay component), so a
   deployment that replaces `$lib/cloud` still gets it. It shows only when `isCloudEdition`,
   `org.defaults` is granted with audience `org_admin`, and the user's `org_role` is `org:admin`.

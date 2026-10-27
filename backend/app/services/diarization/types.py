@@ -18,6 +18,12 @@ class DiarizeConfig:
     #: A WAV the diar-native sidecar can open directly (the pipeline scratch copy), so this
     #: server's engine need not re-encode the audio. Only the local provider reads it.
     sidecar_wav_path: str | None = None
+    #: The privacy policy's answers for this file (``services/privacy/policy``). Only the
+    #: local provider reads them: ``False`` means no per-speaker centroids come back and the
+    #: sidecar is not asked for gender. They default to allowed because a cloud detector has
+    #: neither to give; the post stage sets them from the file's own policy.
+    return_centroids: bool = True
+    request_gender: bool = True
 
 
 @dataclass

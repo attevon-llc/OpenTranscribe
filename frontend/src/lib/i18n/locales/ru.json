@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "Этот провайдер берёт плату за полную транскрипцию каждой записи и получает аудио, хотя используются только его спикеры.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "Это ваш провайдер транскрипции, поэтому используется его собственное определение спикеров и плата не взимается дважды.",
   "settings.pipeline.issue.source_locked": "Определением спикеров в этой установке управляет ваш администратор.",
+  "settings.pipeline.issue.voiceprints_disabled": "Распознавание спикеров между записями отключено для этой записи, поэтому голосовые профили не создаются и не сопоставляются. Внутри записи спикеры по-прежнему различаются.",
   "settings.speakerIdentification.source.asrConfig": "Определение спикеров другим провайдером",
   "settings.speakerIdentification.source.asrConfigDesc": "Другой сохранённый провайдер отмечает, кто говорил. Он полностью транскрибирует каждую запись и получает аудио; используются только его метки спикеров.",
   "settings.speakerIdentification.source.asrConfigSelect": "Провайдер для определения спикеров",

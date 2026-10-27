@@ -16,7 +16,7 @@ const hasKey = (key: string) => EN_KEYS.has(key);
 const conflict = (detail: unknown) => ({ response: { status: 409, data: { detail } } });
 
 describe('PIPELINE_ISSUE_CODES', () => {
-  it('lists the fifteen codes the resolver can emit, each with a sentence in en.json', () => {
+  it('lists the sixteen codes the resolver can emit, each with a sentence in en.json', () => {
     // Mirrors ISSUE_MESSAGES in backend/app/services/pipeline_plan.py.
     expect([...PIPELINE_ISSUE_CODES].sort()).toEqual(
       [
@@ -35,6 +35,7 @@ describe('PIPELINE_ISSUE_CODES', () => {
         'segment_timing_only',
         'source_locked',
         'speaker_hints_ignored',
+        'voiceprints_disabled',
       ].sort()
     );
     for (const code of PIPELINE_ISSUE_CODES) {
@@ -83,6 +84,7 @@ describe('fixTargets', () => {
 
   it('offers no link for an administrator-owned setting', () => {
     expect(fixTargets({ code: 'source_locked', step: 'diarization' })).toEqual([]);
+    expect(fixTargets({ code: 'voiceprints_disabled', step: 'speaker_id' })).toEqual([]);
   });
 
   it('falls back to the step own tab for a code this build does not know', () => {

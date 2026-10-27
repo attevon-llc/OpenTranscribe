@@ -40,6 +40,8 @@ from app.services.minio_service import cleanup_temp_audio
 from app.services.minio_service import download_file
 from app.services.minio_service import download_temp_audio
 from app.services.minio_service import temp_audio_exists
+from app.services.privacy.gates import gender_allowed
+from app.services.privacy.gates import voiceprints_allowed
 from app.tasks.transcription.user_settings import SpeakerRange
 from app.tasks.transcription.user_settings import resolve_speaker_range_for_user
 from app.utils import benchmark_timing
@@ -247,8 +249,15 @@ def _detect(
     audio_file_path: str,
     speaker_range: SpeakerRange,
     sidecar_wav_path: str | None,
+    *,
+    return_centroids: bool = True,
+    request_gender: bool = True,
 ) -> _Detection:
     """Run the detector with NO session open.
+
+    ``return_centroids`` / ``request_gender`` are the privacy policy's answers for the file
+    (read by the caller, which holds the file id): ``False`` keeps this server's engine from
+    returning per-speaker vectors or classifying gender.
 
     Raises:
         _CloudDetectionFailedError: a cloud detector failed at the vendor.
@@ -261,6 +270,8 @@ def _detect(
         max_speakers=speaker_range.max_speakers,
         num_speakers=speaker_range.num_speakers,
         sidecar_wav_path=sidecar_wav_path,
+        return_centroids=return_centroids,
+        request_gender=request_gender,
     )
     if engine == "local":
         result = detector.diarize(audio_file_path, config)
@@ -367,7 +378,18 @@ def _voiceprint_stage(
     inline, as the inline pipeline does); otherwise the CPU embedding stage computes them
     through the one extractor interface. It never meters or closes the run: this post
     stage is the run's terminus.
+
+    With the privacy policy off for the file's owner or organization it does nothing and
+    returns False: no matching, no staged centroids, no embedding stage. The speakers
+    themselves (labels within this recording) are already saved and stay.
     """
+    if not voiceprints_allowed(meta["file_id"]):
+        logger.info(
+            "Voiceprints are off by policy for file %s; skipping the voiceprint stage",
+            meta["file_id"],
+        )
+        return False
+
     from app.tasks.transcription.context import TranscriptionContext
     from app.tasks.transcription.embeddings import _process_speaker_embeddings_native
     from app.tasks.transcription.embeddings import _should_use_native_embeddings
@@ -598,6 +620,9 @@ def rediarize_task(
                     audio_file_path,
                     speaker_range,
                     audio_file_path if temp_dir is None else None,
+                    # Fresh policy reads for THIS file (owner + organization from its row).
+                    return_centroids=voiceprints_allowed(file_id),
+                    request_gender=gender_allowed(file_id),
                 )
         except _CloudDetectionFailedError:
             # Non-fatal: the transcript stands, without speakers, with the reason recorded.

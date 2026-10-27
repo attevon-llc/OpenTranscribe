@@ -116,6 +116,8 @@ def load_plan_inputs(
     diarization_asr_config_uuid: object = _UNSET,
     gpu_split: bool | None = None,
     active_asr_config: object = _UNSET,
+    organization_id: int | None = None,
+    media_file_id: int | None = None,
 ) -> PlanInputs:
     """The inputs the user's next file would be planned with.
 
@@ -130,6 +132,10 @@ def load_plan_inputs(
         gpu_split: Whether the split GPU topology is live; ``None`` reads the request flag.
         active_asr_config: Plan as if this ``UserASRSettings`` row (``None``: no row) were
             the active transcription config (the ASR-side switches, issue #1225).
+        organization_id: The tenant of the file being planned, taken from its row. ``None``
+            is personal scope, which never reads an organization policy: a caller planning a
+            real file MUST pass it, a settings preview with no file may omit it.
+        media_file_id: The file being planned, for the voiceprint consent hooks.
     """
     from app.core.config import settings
     from app.core.constants import gpu_split_enabled
@@ -181,6 +187,12 @@ def load_plan_inputs(
         db, user_id, provider if cfg is not None else None, source, diarizer_config
     )
 
+    from app.services.privacy.policy import voiceprint_decision
+
+    voiceprints_allowed = voiceprint_decision(
+        db, user_id=user_id, organization_id=organization_id, media_file_id=media_file_id
+    ).enabled
+
     return PlanInputs(
         deployment_mode=str(settings.DEPLOYMENT_MODE).lower(),
         asr_provider=provider,
@@ -199,6 +211,7 @@ def load_plan_inputs(
         gpu_split=gpu_split_enabled() if gpu_split is None else gpu_split,
         asr_provider_allowed=asr_allowed,
         diarizer_provider_allowed=diarizer_allowed,
+        voiceprints_allowed=voiceprints_allowed,
     )
 
 

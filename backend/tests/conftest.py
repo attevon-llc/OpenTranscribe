@@ -376,6 +376,9 @@ pytest_plugins = [
     # the Celery task body) with storage and Redis recorded, so a test reads the bytes a user
     # would download (#1278). Opt-in; nothing autouse.
     "fixtures.document_export",
+    # `privacy_world` / `privacy_allows_all`: the real privacy policy (#1280) read from the
+    # test's own rows, and its opt-out for suites that pass fake file ids. Opt-in.
+    "fixtures.privacy_world",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

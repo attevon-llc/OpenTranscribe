@@ -93,5 +93,5 @@ def test_local_engine_passes_wav_path_to_native_and_omits_for_pyannote(tmp_path)
     ):
         result = LocalDiarizationProvider().diarize(audio_path, config)
 
-    non_native_diarizer.diarize.assert_called_once_with(fake_audio)
+    non_native_diarizer.diarize.assert_called_once_with(fake_audio, return_centroids=True)
     assert result.provider_name == "pyannote"

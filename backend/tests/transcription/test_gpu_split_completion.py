@@ -491,6 +491,8 @@ def _make_raw_transcript_result() -> RawTranscriptResult:
 class _StubEngineConfigDiarOnly:
     class _TC:
         enable_diarization = True
+        enable_native_embeddings = True
+        request_gender = True
         concurrent_requests = 1
         device = "cpu"
         diarizer_backend = "native"
@@ -524,7 +526,7 @@ class TestDiarizerOnlyStagePersistsResolvedProvenance:
             last_provider = "SENTINEL-PROVIDER-706"
             last_model = "SENTINEL-MODEL-706"
 
-            def diarize(self, audio):
+            def diarize(self, audio, **_per_call):
                 return (_FakeDiarizeDF(), {}, {})
 
         manager = MagicMock()
@@ -582,7 +584,7 @@ class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
                 self.last_provider = "unset"
                 self.last_model = "unset"
 
-            def diarize(self, audio):
+            def diarize(self, audio, **_per_call):
                 # Simulates a real diarizer resolving its identity only once diarize()
                 # actually runs (issue #706's whole point).
                 self.last_provider = "native"
@@ -595,6 +597,8 @@ class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
 
         class _StubTC:
             diarizer_backend = "native"
+            enable_native_embeddings = True
+            request_gender = True
 
         async_diarization = _AsyncDiarization(
             audio=MagicMock(),

@@ -562,7 +562,7 @@ class _FakeFallback:
     def unload_model(self) -> None:
         self.is_loaded = False
 
-    def diarize(self, audio):
+    def diarize(self, audio, **_per_call):
         from app.transcription.diarize_result import DiarizeResult
 
         return (

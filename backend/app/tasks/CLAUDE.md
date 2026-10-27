@@ -30,6 +30,21 @@ indexing → WebSocket notification.
   run**: postprocess when nothing was handed off, the post stage when it ran, the embedding
   stage for `embedding_stage` runs (`closes_pipeline`; the post stage dispatches it with
   `closes_pipeline=False`). Pinned cell by cell in `tests/unit/test_pipeline_execution_matrix.py`.
+- **Voiceprint and gender stages are gated by the privacy policy (#1280), in three tiers.**
+  (1) The plan: `PlanInputs.voiceprints_allowed` (dispatch passes the FILE's organization and id, from
+  its row) makes `speaker_id.execution` `none` plus an info issue `voiceprints_disabled`; the per-job
+  `TranscriptionConfig` gets `enable_native_embeddings=False` / `request_gender=False` from
+  `services/privacy/gates.job_privacy_overrides` (a restriction only: an allowed job keeps the
+  deployment's own defaults). (2) Every stage that produces or consumes a voiceprint asks again with a
+  fresh read, `services/privacy/gates.voiceprints_allowed(file_id)`: the postprocess inline match,
+  v4 staging and embedding-stage dispatch, `finalize._centroids_for_chain`, the embeddings helpers, the
+  voiceprint stage task (which still completes and meters the run), the reassignment update and the post
+  stage. A denied stage returns "skipped by policy", never an error. (3) The OpenSearch write
+  functions refuse a forbidden scope (`assert_voiceprint_write_allowed`). ⚠️ **The per-job answers
+  travel as PER-CALL arguments** (`diarize(..., return_centroids=, request_gender=)` via
+  `_run_diarize(tc=)`): the ModelManager shares ONE diarizer, and the config it was built with, across
+  every job on a worker, so a per-job value left on `diarizer.config` is some earlier job's. A new
+  stage that touches a voiceprint calls the gate first; a gate that cannot read the file denies.
 - `rediarize_task.py` — the post stage AND the user's manual "re-detect speakers" (which
   plans with the file owner's current choice and never meters). Read phase → detector with
   no session open → `finalize_segments` re-split → write phase → voiceprint stage once

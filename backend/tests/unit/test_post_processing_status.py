@@ -388,7 +388,7 @@ class TestStoredState:
 
 class TestPlan:
     @pytest.fixture
-    def fanout(self, monkeypatch):
+    def fanout(self, monkeypatch, privacy_allows_all):
         from app.tasks.transcription import postprocess
 
         plans: list[tuple[int, dict, float]] = []

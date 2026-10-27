@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "That provider bills a full transcription of every recording and receives the audio, but only its speakers are used.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "This is your transcription provider, so its own speaker detection is used and nothing is billed twice.",
   "settings.pipeline.issue.source_locked": "Your administrator manages speaker detection for this deployment.",
+  "settings.pipeline.issue.voiceprints_disabled": "Speaker recognition across recordings is turned off for this recording, so no voice profiles are created or matched. Speakers are still told apart within the recording.",
   "settings.speakerIdentification.source.asrConfig": "Another provider's speaker detection",
   "settings.speakerIdentification.source.asrConfigDesc": "Another saved provider labels who spoke. It transcribes every recording in full and receives the audio; only its speaker labels are used.",
   "settings.speakerIdentification.source.asrConfigSelect": "Provider for speaker detection",

@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "Dieser Anbieter berechnet jede Aufnahme als vollständige Transkription und erhält das Audio, obwohl nur seine Sprecher verwendet werden.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "Das ist Ihr Transkriptionsanbieter, daher wird seine eigene Sprechererkennung genutzt und nichts doppelt berechnet.",
   "settings.pipeline.issue.source_locked": "Ihr Administrator verwaltet die Sprechererkennung für diese Installation.",
+  "settings.pipeline.issue.voiceprints_disabled": "Die Sprechererkennung über Aufnahmen hinweg ist für diese Aufnahme ausgeschaltet, daher werden keine Stimmprofile erstellt oder abgeglichen. Sprecher werden innerhalb der Aufnahme weiterhin unterschieden.",
   "settings.speakerIdentification.source.asrConfig": "Sprechererkennung eines anderen Anbieters",
   "settings.speakerIdentification.source.asrConfigDesc": "Ein anderer gespeicherter Anbieter kennzeichnet, wer gesprochen hat. Er transkribiert jede Aufnahme vollständig und erhält das Audio; nur seine Sprecherlabels werden verwendet.",
   "settings.speakerIdentification.source.asrConfigSelect": "Anbieter für die Sprechererkennung",

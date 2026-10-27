@@ -4905,6 +4905,7 @@
   "settings.pipeline.issue.diarizer_double_billing": "Ce fournisseur facture une transcription complète de chaque enregistrement et reçoit l’audio, alors que seuls ses locuteurs sont utilisés.",
   "settings.pipeline.issue.diarizer_same_as_transcription": "C’est votre fournisseur de transcription : sa propre détection de locuteurs est utilisée et rien n’est facturé deux fois.",
   "settings.pipeline.issue.source_locked": "Votre administrateur gère la détection des locuteurs pour ce déploiement.",
+  "settings.pipeline.issue.voiceprints_disabled": "La reconnaissance des locuteurs entre enregistrements est désactivée pour cet enregistrement : aucun profil vocal n'est créé ni comparé. Les locuteurs restent distingués au sein de l'enregistrement.",
   "settings.speakerIdentification.source.asrConfig": "Détection des locuteurs d'un autre fournisseur",
   "settings.speakerIdentification.source.asrConfigDesc": "Un autre fournisseur enregistré indique qui parle. Il transcrit chaque enregistrement en entier et reçoit l’audio ; seules ses étiquettes de locuteurs sont utilisées.",
   "settings.speakerIdentification.source.asrConfigSelect": "Fournisseur pour la détection des locuteurs",

@@ -139,8 +139,15 @@ def _run_diarize(
     *,
     allow_local_fallback: bool = True,
     skip_sidecar: bool = False,
+    tc=None,
 ):
     """Call diarizer.diarize(), handing NativeSpeakerDiarizer a pre-existing WAV when we have one.
+
+    ``tc`` is THIS job's ``TranscriptionConfig``. Its ``enable_native_embeddings`` and
+    ``request_gender`` (the privacy policy's answers for the file) are handed to the diarizer
+    as per-call arguments, never left on the diarizer's own config: the ModelManager caches
+    one diarizer per worker, keyed by model, so the config it holds belongs to whichever job
+    built it. Only a restriction travels this way; a missing ``tc`` restricts nothing.
 
     NativeSpeakerDiarizer.diarize() accepts an optional wav_path to skip re-encoding audio it
     can already reach on the shared volume (issue #661) — Stage 1's WAV in the 3-stage Celery
@@ -158,14 +165,17 @@ def _run_diarize(
     """
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
+    return_centroids = None if tc is None else bool(tc.enable_native_embeddings)
     if isinstance(diarizer, NativeSpeakerDiarizer):
         return diarizer.diarize(
             audio,
             wav_path=wav_path,
             allow_local_fallback=allow_local_fallback,
             skip_sidecar=skip_sidecar,
+            return_centroids=return_centroids,
+            request_gender=None if tc is None else bool(tc.request_gender),
         )
-    return diarizer.diarize(audio)
+    return diarizer.diarize(audio, return_centroids=return_centroids)
 
 
 def _collect_diarization(
@@ -222,7 +232,7 @@ def _collect_diarization(
             # unreachable/wedged/backpressured (DiarSidecarUnavailableError) must not be retried
             # at the sidecar a second time here — see _run_diarize's skip_sidecar docstring.
             skip_sidecar = async_diarization is not None and async_diarization.failed_unavailable
-            result = _run_diarize(diarizer, audio, wav_path, skip_sidecar=skip_sidecar)
+            result = _run_diarize(diarizer, audio, wav_path, skip_sidecar=skip_sidecar, tc=tc)
             provider, model = diarizer.last_provider, diarizer.last_model
     logger.info(
         "TIMING: diarization step completed in %.3fs%s",
@@ -263,7 +273,7 @@ class _AsyncDiarization:
                 # treats that exactly like any other overlapped failure: log, return None, and
                 # let the caller retry sequentially once transcription is known to be done.
                 self._value = _run_diarize(
-                    self._diarizer, audio, wav_path, allow_local_fallback=False
+                    self._diarizer, audio, wav_path, allow_local_fallback=False, tc=tc
                 )
             except BaseException as exc:  # noqa: BLE001 — handed to the caller, not swallowed
                 self._error = exc
@@ -1146,7 +1156,7 @@ class _DiarizerOnlyStage:
             with stage_timing.stage("diarization"), profiler.step("diarization"):
                 diarizer = manager.get_diarizer(tc)
                 diarize_df, overlap_info, native_embeddings = _run_diarize(
-                    diarizer, audio, transcript.local_wav_path
+                    diarizer, audio, transcript.local_wav_path, tc=tc
                 )
                 diar_provider, diar_model = diarizer.last_provider, diarizer.last_model
             logger.info(

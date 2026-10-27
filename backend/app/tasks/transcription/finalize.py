@@ -11,6 +11,7 @@ import time
 from app.core import stage_timing
 from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
+from app.services.privacy.gates import voiceprints_allowed
 from app.utils.task_utils import update_task_status
 
 from .context import TranscriptionContext
@@ -128,6 +129,28 @@ def apply_garbage_cleanup(db, user_id: int, segments: list) -> tuple[list, int]:
 
 
 @stage_timing.stage("finalize")
+def _centroids_for_chain(result: dict, file_id: int) -> tuple[dict | None, bool]:
+    """The per-speaker centroids to carry down the chain, JSON-safe, and whether to match them.
+
+    Nothing is carried when the privacy policy forbids voiceprints for the file. The job was
+    already configured to return none, so reaching here with centroids means a stage that
+    predates the switch, or a diarizer that ignored it: nothing downstream may see one.
+    """
+    native_embs = result.get("native_speaker_embeddings")
+    if native_embs and not voiceprints_allowed(file_id):
+        logger.info("Voiceprints are off by policy for file %s; dropping centroids", file_id)
+        return None, False
+    if not native_embs:
+        return None, False
+    return (
+        {
+            label: emb.tolist() if hasattr(emb, "tolist") else list(emb)
+            for label, emb in native_embs.items()
+        },
+        _should_use_native_embeddings(result),
+    )
+
+
 def _process_and_save_critical(
     ctx: TranscriptionContext,
     result: dict,
@@ -257,16 +280,7 @@ def _process_and_save_critical(
         "(GPU worker now free)"
     )
 
-    # Serialize native embeddings for JSON chain transfer
-    native_embeddings_serialized = None
-    use_native = False
-    native_embs = result.get("native_speaker_embeddings")
-    if native_embs:
-        use_native = _should_use_native_embeddings(result)
-        native_embeddings_serialized = {
-            label: emb.tolist() if hasattr(emb, "tolist") else list(emb)
-            for label, emb in native_embs.items()
-        }
+    native_embeddings_serialized, use_native = _centroids_for_chain(result, ctx.file_id)
 
     return {
         "status": "success",

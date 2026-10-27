@@ -78,7 +78,7 @@ class FakeSpeakerDiarizer:
     def unload_model(self) -> None:
         self.is_loaded = False
 
-    def diarize(self, audio):
+    def diarize(self, audio, **_per_call):
         self.diarize_calls += 1
         return (
             DiarizeResult(

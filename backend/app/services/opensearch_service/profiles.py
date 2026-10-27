@@ -14,6 +14,7 @@ from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _safe_index_exists
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.privacy.policy import assert_voiceprint_write_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,10 @@ def store_profile_embedding_v4(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
+        return False
+
+    # Tier 3 of the privacy policy: a profile average is a voiceprint (issue #1280).
+    if not assert_voiceprint_write_allowed(user_id, organization_id):
         return False
 
     v4_index = get_speaker_index_v4()
@@ -238,6 +243,10 @@ def store_profile_embedding(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
+        return False
+
+    # Tier 3 of the privacy policy (see store_profile_embedding_v4).
+    if not assert_voiceprint_write_allowed(user_id, organization_id):
         return False
 
     try:

@@ -250,7 +250,7 @@ def test_rediarize_resolves_a_blank_range_to_the_saved_one(saved_range, db_sessi
     db_session.commit()
     captured: list[SpeakerRange] = []
 
-    def _detect(engine, detector, audio_file_path, speaker_range, sidecar_wav_path):
+    def _detect(engine, detector, audio_file_path, speaker_range, sidecar_wav_path, **_privacy):
         captured.append(speaker_range)
         raise _StopError
 

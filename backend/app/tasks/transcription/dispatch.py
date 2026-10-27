@@ -126,6 +126,10 @@ def _plan_for_dispatch(
             whisper_model=whisper_model,
             disable_diarization=skip_diarization,
             gpu_split=gpu_split,
+            # The file's own tenant, from its row: the privacy policy is judged per
+            # (owner, organization), never from whoever dispatched.
+            organization_id=media_file.organization_id,
+            media_file_id=int(media_file.id),
         )
 
     plan = _plan(gpu_split_enabled())

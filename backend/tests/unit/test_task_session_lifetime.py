@@ -215,6 +215,9 @@ def embedding_task_env(db_session, monkeypatch):
     recorded: dict = {}
 
     monkeypatch.setattr(seb, "session_scope", tracker.scope)
+    # The privacy gate reads the file's policy in its own short scope, which the tracker also
+    # counts: it must close before the slow phase starts like every other scope.
+    monkeypatch.setattr("app.services.privacy.gates.session_scope", tracker.scope)
 
     # --- audio staging (MinIO) ---
     def _temp_exists(file_uuid):

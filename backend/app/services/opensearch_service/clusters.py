@@ -8,6 +8,7 @@ from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.privacy.policy import assert_voiceprint_write_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ def store_cluster_embedding(
 
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
+        return False
+
+    # Tier 3 of the privacy policy: a cluster centroid is an average of voiceprints.
+    if not assert_voiceprint_write_allowed(user_id, organization_id):
         return False
 
     try:
@@ -226,8 +231,13 @@ def update_cluster_embedding(
             existing = _client.opensearch_client.get(index=active_index, id=doc_id)
             user_id = existing["_source"].get("user_id")
             existing_label = existing["_source"].get("label")
+            existing_org = existing["_source"].get("organization_id")
         except Exception:
             logger.error(f"Cannot update cluster {cluster_uuid}: document not found")
+            return False
+
+        # Tier 3 of the privacy policy, judged on the scope the stored document carries.
+        if not assert_voiceprint_write_allowed(user_id, existing_org):
             return False
 
         doc = {

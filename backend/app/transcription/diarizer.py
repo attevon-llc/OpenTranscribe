@@ -246,12 +246,17 @@ class SpeakerDiarizer:
         logger.info(f"Diarization embedding batch_size: {batch_size} (pinned)")
 
     def diarize(
-        self, audio: np.ndarray
+        self, audio: np.ndarray, *, return_centroids: bool | None = None
     ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
         """Run speaker diarization on audio.
 
         Args:
             audio: Audio waveform as 16kHz mono float32 numpy array.
+            return_centroids: Per-call answer to "may this job's speaker centroids leave the
+                diarizer". ``False`` returns none. Per call, not per config, because the
+                ModelManager shares one diarizer (and the config it was built with) across
+                every job on the worker, so a per-job value on ``self.config`` is stale.
+                Can only restrict: ``None`` leaves ``config.enable_native_embeddings`` alone.
 
         Returns:
             Tuple of:
@@ -352,7 +357,7 @@ class SpeakerDiarizer:
         # Build native embeddings from PyAnnote centroids (shared utility)
         native_embeddings = (
             build_native_embeddings(exclusive, centroids)
-            if self.config.enable_native_embeddings
+            if self.config.enable_native_embeddings and return_centroids is not False
             else {}
         )
 

@@ -108,6 +108,13 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "pipeline-state repair by id or in bulk; returns counts and status, never content",
     ),
     (
+        r"^GET /api/search/degraded-embeddings",
+        "tenant-scoped-diagnostic",
+        "names only the caller's own files in the active tenant (the whole tenant where the "
+        "bypass sees the scope, everything in a single-tenant deployment); other tenants "
+        "appear as a count",
+    ),
+    (
         r"^\w+ /api/(admin/(stats|timing|timing-summary|gpu-profiles|data-integrity|"
         r"embedding-consistency|imohash-recompute|media-duration-backfill|"
         r"profile-embeddings|engine-settings/metrics|settings/cache-config/clear|"
@@ -144,7 +151,6 @@ AUDITED_ROUTES = (
     "GET /api/admin/takedown-notices",
     "GET /api/admin/takedown-notices/export",
     "GET /api/admin/takedown-notices/{notice_uuid}",
-    "GET /api/search/degraded-embeddings",
 )
 
 CATEGORY_TESTS = {

@@ -240,6 +240,10 @@ SCOPE_WIDENER_SITES: dict[str, str] = {
     "api/endpoints/files/filtering.py::get_accessible_owners": (
         "widens a list to every user's rows; the owner facet lists users of every file in the active organization scope, never beyond it"
     ),
+    "api/endpoints/search.py::get_degraded_embeddings": (
+        "widens a list to every user's rows; the degraded-embeddings listing keeps the "
+        "organization predicate and names other tenants' files never, only counts them"
+    ),
     "api/endpoints/speaker_profiles.py::list_speaker_profiles": (
         "widens a list to every user's rows; every profile of the active tenant, filtered by the organization stamp"
     ),
@@ -299,6 +303,7 @@ REVEAL_WIDENER_SITES: dict[str, str] = {
 TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     "api/endpoints/files/__init__.py::list_media_files": ("org_pred",),
     "api/endpoints/files/filtering.py::get_accessible_owners": ("org_pred",),
+    "api/endpoints/search.py::get_degraded_embeddings": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::list_speaker_profiles": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::update_speaker_profile": ("require_profile_in_scope",),
     "api/endpoints/speakers.py::_get_display_name_based_occurrences": ("org_scope_pred",),

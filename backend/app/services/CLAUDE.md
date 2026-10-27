@@ -46,7 +46,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   Celery stage (`voiceprints_allowed(file_id)`, `gender_allowed`, `job_privacy_overrides`), `redact_view.py` when SHAPING a
   response, and `assert_voiceprint_write_allowed` only inside OpenSearch speaker writes (10 s cache). `consent.py` is the seam a
   consent implementation registers a hook on (all hooks must return `True`; a raise denies). Switching a layer off HIDES, only
-  `purge.py` (via `gdpr_erasure_service._erase_speaker_voiceprints`) deletes, and only once the switch is off.
+  `purge.py` deletes, and only once the switch is off. A purge is MEASURED: `purge_voiceprints.py` (relational half + OpenSearch
+  documents by the Postgres ids of the scope, never by a document's `organization_id`), `purge_residual.py` (a fresh-session,
+  post-refresh check whose values must all be 0; unmeasurable = unverified, never clean), `purge.run_purge_pass` returns a
+  `PassResult` with exact counts per store, and the task fails the purge on a final residual. It also reverts what a voiceprint
+  named (`speaker.identity_source`, below) and never touches `human`/NULL identities or another tenant's rows.
   `policy_admin.py` is the write side the routes share. Never re-read `speaker_attribute.*` or a user toggle to decide gender:
   `speaker_attribute_settings.resolve_speaker_attribute_flags(..., organization_id=)` already ANDs the policy ceiling; pass the
   FILE's organization from its row. `SpeakerMatchingService` does that itself for a call that names a speaker
@@ -466,8 +470,25 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   shared `PrivacyView`). Every printer of a label goes through it (exports, captions, the chunk and reindex writers,
   `get_speaker_name`, the chat roster, `SpeakerStatusService`), so a new one must too. In a response, redact first and
   decorate second: `add_computed_status` derives `status_text` and `resolved_display_name` from the suggestion that
-  `redact_speaker_rows` withholds. `services/privacy/label_reindex.py` queues the existing debounced re-index (and facts)
-  for the files such a name decides when a voiceprint switch changes value (called by the three `policy_admin` writers).
+  `redact_speaker_rows` withholds. A voiceprint switch change rebuilds the affected labels through a durable, audited resync
+  (`services/privacy/label_resync.py` + `tasks/privacy_label_resync_task.py`, registered in the Celery `include=` list): the request
+  records a pending scope (`privacy.label_resync.pending`), the task re-indexes the selected files through the existing debounced
+  dispatch and writes `privacy.labels.resync` audit events (requested, finished: counts of files selected/queued/already
+  pending/failed, never a name or a file), and drift detection in the search-maintenance task finishes a rebuild that could not run.
+  Responses hide immediately; the index follows in the background.
+- **Every writer of `Speaker.display_name` / `profile_id` records who wrote it (`speaker.identity_source`, #1280).** Values:
+  `voiceprint` (a voiceprint wrote name AND link), `voiceprint_link` (only the link, onto a name that was there), `human`, NULL
+  (unknown, read as human). Set it ONLY through `utils/speaker_identity_source.py` (`record_machine_identity`,
+  `record_machine_link`, `record_human_identity`, `after_unlink`, `after_name_cleared`), and BEFORE a rename tracker computes its
+  "after" label, because the label depends on it while voiceprints are off. Voiceprint paths (auto-accept, propagation, retroactive
+  matching, upload-time cluster joins: `join_cluster_identity(..., source="voiceprint")`) record machine; a person's action
+  (typing, accepting, assigning, creating a profile, batch-verify, promote, cluster merge) records human. Merging two speakers
+  leaves the survivor's source alone (it keeps its own name and link). `tests/unit/test_speaker_identity_source_discipline.py` is an
+  AST gate: a function that assigns either field without calling the helpers or setting `identity_source` must be in its `_ALLOWED`
+  table with a reason. Readers hide a voiceprint-made name/link while the file's voiceprints are off (`redact_view`,
+  `machine_identity_clauses` for queries that never load rows: the speaker name directory and profile occurrences use them); a purge
+  reverts `voiceprint` rows (unnamed, unlinked, unverified, voice suggestion cleared) and unlinks `voiceprint_link` rows. v449 backfilled
+  only the provable legacy shape and recorded the count in `system_settings` key `privacy.identity_source_backfill`.
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

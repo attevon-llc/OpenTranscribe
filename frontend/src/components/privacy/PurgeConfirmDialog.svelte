@@ -9,6 +9,10 @@
 
   The caller supplies `start`, the one API call for its scope (own data, organization, instance),
   so this component knows nothing about who is purging.
+
+  When the purge ends it shows what the server MEASURED: the count removed per store, whether the
+  check that follows found anything still there (a purge that left something is a failure, and a
+  check that could not run is "not verified", never "clean"), and the audit events that record it.
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
@@ -22,7 +26,12 @@
     type PurgeStatus,
     type PurgeTarget,
   } from '$lib/api/privacy';
-  import { privacyErrorKey, purgeCountTotal } from '$lib/settings/privacyPolicy';
+  import {
+    privacyErrorKey,
+    purgeCountTotal,
+    purgeStoreTotal,
+    purgeVerification,
+  } from '$lib/settings/privacyPolicy';
   import { t } from '$stores/locale';
 
   export let isOpen = false;
@@ -50,6 +59,7 @@
   $: confirmed = understood && typed === PURGE_CONFIRM_WORD;
   $: canDelete = confirmed && !busy && !following && status === null;
   $: finished = status !== null && isTerminalPurgeState(status.status);
+  $: verification = status !== null ? purgeVerification(status) : null;
 
   // Every opening starts from a clean slate: a stale ticked box must never pre-arm a delete.
   function syncOpen(open: boolean) {
@@ -82,7 +92,15 @@
     errorKey = '';
     try {
       const accepted = await start();
-      status = { task_id: accepted.task_id, status: 'pending', counts: null };
+      status = {
+        task_id: accepted.task_id,
+        status: 'pending',
+        counts: null,
+        residual: null,
+        residual_ok: null,
+        residual_unverified: [],
+        audit: [],
+      };
       follow(accepted.task_id);
     } catch (error) {
       console.error('Privacy purge request failed:', error);
@@ -184,6 +202,41 @@
         {:else}
           <p>{$t('privacy.purge.running')}</p>
         {/if}
+        {#if finished && status.counts}
+          <ul class="results" data-testid="purge-results" aria-label={$t('privacy.purge.resultsLabel')}>
+            <li>{$t('privacy.purge.storePostgres', { count: purgeStoreTotal(status.counts, 'postgres') })}</li>
+            <li>
+              {$t('privacy.purge.storeOpensearch', {
+                count: purgeStoreTotal(status.counts, 'opensearch'),
+              })}
+            </li>
+          </ul>
+        {/if}
+        {#if finished && verification}
+          {#if verification.state === 'verified'}
+            <p class="verified" data-testid="purge-verification">
+              {$t('privacy.purge.residualOk')}
+            </p>
+          {:else if verification.state === 'remaining'}
+            <p class="error" role="alert" data-testid="purge-verification">
+              {$t('privacy.purge.residualFound', { count: verification.remaining })}
+            </p>
+          {:else if verification.state === 'unverified'}
+            <p class="error" role="alert" data-testid="purge-verification">
+              {$t('privacy.purge.residualUnverified', { count: verification.unverified })}
+            </p>
+          {/if}
+        {/if}
+        {#if finished && (status.audit ?? []).length > 0}
+          <div class="kept" data-testid="purge-audit">
+            <p>{$t('privacy.purge.auditRef', { task: status.task_id })}</p>
+            <ul class="events">
+              {#each status.audit as ref (ref.event_type)}
+                <li><code dir="ltr">{ref.event_type}</code></li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
         {#if !finished && !following}
           <p class="kept">{$t('privacy.purge.stillRunning')}</p>
         {/if}
@@ -278,6 +331,30 @@
 
   .error {
     color: var(--error-color, #dc2626);
+  }
+
+  .verified {
+    color: var(--color-success-text, #047857);
+  }
+
+  .results {
+    margin: 0;
+    padding-inline-start: 1.25rem;
+    line-height: 1.5;
+  }
+
+  .events {
+    margin: 0.25rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  code {
+    font-size: 0.8125rem;
+    background: var(--surface-secondary, rgba(127, 127, 127, 0.12));
+    border-radius: 4px;
+    padding: 0 0.25rem;
+    white-space: nowrap;
   }
 
   :global([data-theme='dark']) .warning {

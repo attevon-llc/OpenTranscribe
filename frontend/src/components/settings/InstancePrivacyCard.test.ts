@@ -61,7 +61,15 @@ beforeEach(() => {
     voiceprint_matching_enabled: true,
     gender_inference_enabled: true,
   });
-  api.getPurgeStatus.mockResolvedValue({ task_id: 't', status: 'completed', counts: {} });
+  api.getPurgeStatus.mockResolvedValue({
+    task_id: 't',
+    status: 'completed',
+    counts: {},
+    residual: { speaker_docs: 0 },
+    residual_ok: true,
+    residual_unverified: [],
+    audit: [],
+  });
 });
 
 describe('InstancePrivacyCard', () => {

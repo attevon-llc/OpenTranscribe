@@ -298,16 +298,44 @@ class PurgeAccepted(BaseModel):
     task_id: str
 
 
+class PurgeAuditRef(BaseModel):
+    """Where an administrator reads this purge back in the audit log."""
+
+    event_type: str = Field(description="The audit event type, e.g. privacy.voiceprints.purge.")
+    task_id: str = Field(description="The same task id is in every event's details.")
+
+
 class PurgeStatus(BaseModel):
     """``GET /privacy/purge/{task_id}``: readable only by the person who started the purge."""
 
     task_id: str
     status: Literal["pending", "in_progress", "completed", "failed", "skipped"]
-    counts: dict[str, int] | None = Field(
+    counts: dict[str, dict[str, int]] | None = Field(
         default=None,
         description=(
-            "What was deleted, once the purge has finished. Counts only, never a name. A purge "
-            "runs twice (the second pass about a minute later, to catch a write that raced the "
-            "switch), so status stays in_progress until the second pass ends."
+            "What was deleted, once the purge has started, grouped per store (`postgres`, "
+            "`opensearch`). Counts only, never a name. OpenSearch counts are what the store "
+            "reported as deleted. A purge runs twice (the second pass about a minute later, to "
+            "catch a write that raced the switch), so status stays in_progress until the second "
+            "pass ends and the counts add both passes."
         ),
+    )
+    residual: dict[str, int] | None = Field(
+        default=None,
+        description=(
+            "What the latest pass measured, in the purged scope, after it ran. Every value must "
+            "be 0; a non-zero value makes the purge `failed`, never `completed`."
+        ),
+    )
+    residual_ok: bool | None = Field(
+        default=None,
+        description="True only when everything was measured and every residual value is 0.",
+    )
+    residual_unverified: list[str] = Field(
+        default_factory=list,
+        description="Measures that could not be taken. They are not zero; they are unknown.",
+    )
+    audit: list[PurgeAuditRef] = Field(
+        default_factory=list,
+        description="The audit events (one per target) that record this purge, with its counts.",
     )

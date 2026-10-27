@@ -12,7 +12,9 @@ before the switch flipped (the OpenSearch write backstop trusts a cached answer 
 
 Because a purge is irreversible and the layer can be switched back on between the request and the
 run, the task re-checks that the targets are still off before touching anything and aborts if not
-(``reason: policy_enabled``). Every pass writes an audit event with counts only.
+(``reason: policy_enabled``). Every pass writes an audit event: the actor, the scope, the
+targets, the exact counts removed per store, and the residual the pass measured afterwards. A
+non-zero residual after the final pass is a FAILURE (``reason: residual``), never a success.
 """
 
 from __future__ import annotations
@@ -80,7 +82,7 @@ def privacy_purge_task(
     def audit(
         phase_name: str,
         outcome: AuditOutcome,
-        counts: dict[str, int] | None = None,
+        outcomes: dict[str, purge.TargetOutcome] | None = None,
         reason: str | None = None,
     ) -> None:
         purge.audit_purge(
@@ -90,7 +92,8 @@ def privacy_purge_task(
             actor_user_id=actor_user_id,
             actor_username=username,
             outcome=outcome,
-            counts=counts,
+            task_id=task_id,
+            outcomes=outcomes,
             reason=reason,
         )
 
@@ -103,27 +106,43 @@ def privacy_purge_task(
 
     _set_status(task_id, TASK_STATUS_IN_PROGRESS)
     try:
-        counts, errors = purge.run_purge_pass(purge_scope, wanted, session_factory=SessionLocal)
+        result = purge.run_purge_pass(purge_scope, wanted, session_factory=SessionLocal)
     except Exception:
         logger.exception("privacy purge %s failed in pass %s", task_id, phase)
         audit(f"pass_{phase}_failed", AuditOutcome.FAILURE, reason="error")
         _set_status(task_id, TASK_STATUS_FAILED, completed=True)
         return {"status": "failed", "reason": "error"}
 
+    counts = result.counts()
+    residual = result.residual()
     previous = purge.read_record(task_id) if phase > 1 else None
-    total = (
-        dict(previous["counts"]) if previous and isinstance(previous.get("counts"), dict) else {}
+    total: purge.GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}
+    if previous and isinstance(previous.get("counts"), dict):
+        purge.merge_grouped(total, previous["counts"])
+    purge.merge_grouped(total, counts)
+    purge.write_record(
+        task_id,
+        actor_user_id,
+        total,
+        targets=wanted,
+        residual=residual.counts,
+        residual_ok=residual.ok,
+        residual_unverified=sorted(set(residual.unverified)),
     )
-    for key, amount in counts.items():
-        total[key] = total.get(key, 0) + amount
-    purge.write_record(task_id, actor_user_id, total)
 
-    outcome = AuditOutcome.PARTIAL if errors else AuditOutcome.SUCCESS
-    audit(
-        f"pass_{phase}_completed", outcome, counts=counts, reason="store_errors" if errors else None
-    )
+    final = phase > 1
+    # A residual after the final pass is a purge that did not do what it was asked: FAILURE,
+    # never a success with a footnote. After pass 1 it is recorded and pass 2 gets to finish it.
+    if not residual.ok:
+        outcome = AuditOutcome.FAILURE if final else AuditOutcome.PARTIAL
+        outcome_reason: str | None = "residual"
+    elif result.errors:
+        outcome, outcome_reason = AuditOutcome.PARTIAL, "store_errors"
+    else:
+        outcome, outcome_reason = AuditOutcome.SUCCESS, None
+    audit(f"pass_{phase}_completed", outcome, outcomes=result.outcomes, reason=outcome_reason)
 
-    if phase == 1:
+    if not final:
         try:
             self.apply_async(
                 kwargs={
@@ -143,5 +162,16 @@ def privacy_purge_task(
             return {"status": "completed", "counts": counts, "second_pass": "not_scheduled"}
         return {"status": "completed", "counts": counts, "second_pass": "scheduled"}
 
-    _set_status(task_id, TASK_STATUS_FAILED if errors else TASK_STATUS_COMPLETED, completed=True)
+    if not residual.ok:
+        _set_status(task_id, TASK_STATUS_FAILED, completed=True)
+        return {
+            "status": "failed",
+            "reason": "residual",
+            "counts": counts,
+            "residual": residual.counts,
+            "residual_unverified": sorted(set(residual.unverified)),
+        }
+    _set_status(
+        task_id, TASK_STATUS_FAILED if result.errors else TASK_STATUS_COMPLETED, completed=True
+    )
     return {"status": "completed", "counts": counts}

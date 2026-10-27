@@ -73,7 +73,15 @@ const purgeBtn = (id: string) => screen.getByTestId(`${id}-purge`) as HTMLButton
 beforeEach(() => {
   vi.clearAllMocks();
   api.getPolicy.mockResolvedValue(policy());
-  purgeStatus.mockResolvedValue({ task_id: 't-9', status: 'completed', counts: { docs: 1 } });
+  purgeStatus.mockResolvedValue({
+    task_id: 't-9',
+    status: 'completed',
+    counts: { opensearch: { docs: 1 } },
+    residual: { speaker_docs: 0 },
+    residual_ok: true,
+    residual_unverified: [],
+    audit: [],
+  });
 });
 
 describe('OrgPrivacyPolicyPanel', () => {

@@ -46,7 +46,15 @@ const settings = (gender: boolean) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   api.getMine.mockResolvedValue({ voiceprint_matching_enabled: true, locked_by: null });
-  api.getPurgeStatus.mockResolvedValue({ task_id: 't', status: 'completed', counts: {} });
+  api.getPurgeStatus.mockResolvedValue({
+    task_id: 't',
+    status: 'completed',
+    counts: {},
+    residual: { speaker_docs: 0 },
+    residual_ok: true,
+    residual_unverified: [],
+    audit: [],
+  });
   attrs.getSpeakerAttributeSettings.mockResolvedValue(settings(true));
 });
 

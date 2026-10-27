@@ -17,6 +17,8 @@ import {
   privacyErrorCode,
   privacyErrorKey,
   purgeCountTotal,
+  purgeStoreTotal,
+  purgeVerification,
 } from './privacyPolicy';
 
 const ALLOWED = {
@@ -80,9 +82,51 @@ describe('error mapping', () => {
     expect(privacyErrorCode(body('policy_locked'))).toBe('policy_locked');
   });
 
-  it('sums purge counts and ignores a missing report', () => {
-    expect(purgeCountTotal({ speakers: 3, profiles: 2 })).toBe(5);
+  it('sums purge counts per store and overall, and ignores a missing report', () => {
+    const counts = { postgres: { speakers: 3, profiles: 2 }, opensearch: { docs: 4 } };
+    expect(purgeStoreTotal(counts, 'postgres')).toBe(5);
+    expect(purgeStoreTotal(counts, 'opensearch')).toBe(4);
+    expect(purgeStoreTotal(counts, 'elsewhere')).toBe(0);
+    expect(purgeCountTotal(counts)).toBe(9);
     expect(purgeCountTotal(null)).toBe(0);
+    expect(purgeStoreTotal(undefined, 'postgres')).toBe(0);
+  });
+
+  describe('purgeVerification', () => {
+    const base = {
+      residual: { a: 0, b: 0 },
+      residual_ok: true,
+      residual_unverified: [] as string[],
+    };
+
+    it('is verified only when everything was measured and is zero', () => {
+      expect(purgeVerification(base)).toEqual({ state: 'verified' });
+    });
+
+    it('reports what remains, and that outranks "could not check"', () => {
+      const left = { ...base, residual: { a: 1, b: 2 }, residual_ok: false };
+      expect(purgeVerification(left)).toEqual({ state: 'remaining', remaining: 3 });
+      expect(purgeVerification({ ...left, residual_unverified: ['c'] })).toEqual({
+        state: 'remaining',
+        remaining: 3,
+      });
+    });
+
+    it('never reads an unmeasured store as clean', () => {
+      expect(
+        purgeVerification({ ...base, residual_ok: false, residual_unverified: ['c', 'd'] })
+      ).toEqual({ state: 'unverified', unverified: 2 });
+    });
+
+    it('has no verdict before a pass has measured anything', () => {
+      expect(
+        purgeVerification({ residual: null, residual_ok: null, residual_unverified: [] })
+      ).toEqual({ state: 'unknown' });
+    });
+
+    it('does not trust residual_ok on its own: a zero residual with the flag off is unknown', () => {
+      expect(purgeVerification({ ...base, residual_ok: false })).toEqual({ state: 'unknown' });
+    });
   });
 });
 

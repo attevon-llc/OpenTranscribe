@@ -120,6 +120,67 @@ re-index for the files whose name only a voiceprint supplied (and regenerates th
 search index follows the switch in both directions without waiting for another edit to the file.
 Only a switch that actually changed value does this.
 
+### Names and links a voiceprint made
+
+A voiceprint can name a speaker on its own: an automatic match at upload, a retroactive match
+after you name another speaker, or a cluster join. Such a row looks exactly like a name a person
+confirmed, so every speaker records **who wrote its name and profile link** (`identity_source`):
+
+| Recorded as | Meaning | While voiceprints are off | A purge |
+|---|---|---|---|
+| `voiceprint` | A voiceprint wrote the name and the profile link | The name, its "verified" mark and the link are hidden; the speaker shows its diarizer label | Reverted to unnamed, unlinked and unverified |
+| `voiceprint_link` | A voiceprint added only the link, to a name that was already there | The link is hidden; the name stays | The link is removed; the name and its verified mark stay |
+| `human` | A person typed, accepted, assigned or confirmed it, or promoted a cluster to a profile | Nothing is hidden | Nothing is touched |
+| none | Written before 0.6.0, or never named | Nothing is hidden (treated as a person's) | Nothing is touched |
+
+What a person does overrides what a machine did. Typing a name, accepting a suggestion, assigning
+or creating a profile, verifying, batch-verifying and promoting a cluster make the identity
+`human`. Clearing a name keeps a machine link as a link (`voiceprint_link`). Unassigning, rejecting
+or deleting a profile removes the link and leaves whatever name remains as unknown. Merging two
+speakers keeps the survivor's own name, link and origin: a merge does not confirm a machine's
+name.
+
+Hidden means hidden in what is shown, not deleted: the speaker list and the speaker name
+directory (the gallery and chat speaker pickers; a hidden name is listed under the diarizer label
+only when unlabeled speakers are requested), a profile's occurrences (a recording whose only link
+is a machine's is not an occurrence while voiceprints are off), exports, captions, the search
+index and every other place a name is printed. Turning voiceprints back on shows them again.
+
+**Not covered.** Summaries, topic suggestions and other text a language model wrote earlier can
+contain a name that a voiceprint supplied. That text is model output, not a label, so switching
+voiceprints off does not rewrite it; regenerate the summary while voiceprints are off to get one
+without the name. Names on recordings that existed before 0.6.0 follow the upgrade rule in
+[Upgrading to 0.6.0](../operations/upgrading-to-0-6-0.md#which-existing-speaker-names-count-as-voiceprint-made).
+
+### What off hides, and what it keeps
+
+When voiceprints are off for a recording, a speaker name that a voiceprint match wrote is replaced by
+the generic speaker label (for example `SPEAKER_00`) everywhere the name would be shown or searched:
+
+- the transcript, exports and captions,
+- the speaker list and the gallery speaker chips, and filtering by speaker,
+- chat's "who said" lookup,
+- the speaker labels and summary text in the search index,
+- the speaker-detection prompts,
+- profile appearance counts.
+
+A profile link that a voiceprint added is hidden and not counted. A name a person typed, accepted or
+confirmed is **never** hidden, with or without a machine-added link. Nothing is deleted by hiding:
+turning the switch back on shows everything again.
+
+Hiding is immediate in responses. The search index is rebuilt in the background (usually within
+minutes, longer for a very large library); if the rebuild cannot run, the periodic search
+maintenance finishes it. The rebuild is recorded as the `privacy.labels.resync` audit event (see
+[Audit events](#audit-events)).
+
+#### Summaries already written
+
+Summaries and topics that a language model generated earlier are stored as written and may still
+name a person whom a voiceprint identified. Their copy in the search index and in chat is masked
+while voiceprints are off, but the stored text is not rewritten. To remove the name from the stored
+text, regenerate the summary after turning voiceprints off. Only the full name recorded on the
+speaker is masked, not a first name on its own.
+
 ### Where inferred gender is withheld
 
 While gender is off for a recording's owner and organization, a response never carries the
@@ -146,7 +207,7 @@ A purge deletes what a switch only hides. It is **irreversible**.
 
 | Target | Deleted | Kept |
 |---|---|---|
-| `voiceprints` | Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included). Speaker match rows. Unpromoted clusters and their members. Unverified voiceprint-based name suggestions (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted) |
+| `voiceprints` | Names and links a voiceprint made revert to unnamed and unlinked (see [Names and links a voiceprint made](#names-and-links-a-voiceprint-made)), and those speakers leave promoted clusters (a promoted cluster left empty is deleted). Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included), selected by the speakers, profiles and clusters of the purged scope. Speaker match rows with either side in the scope. Unpromoted clusters whose members are all in the scope. Unverified voiceprint-based name suggestions (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names a person typed or confirmed, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted). Another tenant's rows and documents |
 | `inferred_gender` | On speakers whose gender no person confirmed: the predicted gender, the three `attribute_confidence` keys `gender`, `alignment` and `alignment_hint`, and the time the attributes were predicted | Genders a person confirmed, and the gender stored on a speaker profile |
 
 **A gender purge does not clear a profile's gender.** `speaker_profile.predicted_gender` is set only
@@ -182,6 +243,51 @@ purged voiceprints back. After restoring a backup, run the purge again.
 | Yourself | Any signed-in user | `POST /api/privacy/me/purge` | Your own data in the active scope (the organization you are working in, or your personal workspace) |
 | Personal workspaces | A super admin | `POST /api/admin/privacy-policy/purge` with `"scope": "personal"` | Every user's personal-workspace data, never an organization's |
 | Everything | A super admin, **single-tenant deployments only** | The same route with `"scope": "all"` | Literally all speaker data on the instance. In a multi-tenant deployment (any active organization, or `TENANCY_MODE=multi`) this answers **403** `purge_scope_not_allowed`: a platform administrator must not destroy tenant data, and each organization purges its own |
+
+**What a purge selects, and what it never touches.** Speakers belong to their recording's
+organization (or personal workspace), profiles to the organization they are stamped with, and a
+cluster to its members. A purge deletes voiceprint documents by the ids of those rows, never by
+the organization stamped on the document, because a document written before the tenant backfill
+has no stamp: stamp-based deletion would miss it in an organization purge and could reach it from a
+member's personal purge. Two edge cases follow from the same rule:
+
+- A speaker match that joins a speaker in the purged scope to the same person's speaker in another
+  scope is deleted (it is voice-derived data of the purged scope) and counted separately as
+  `cross_scope_matches`. The other scope's speaker row is not modified.
+- A cluster that holds speakers of two scopes (possible only for clusters created before the tenant
+  gates) is not deleted: it loses the purged scope's members and its centroid is rebuilt from the
+  rest (`cross_scope_clusters_trimmed`).
+
+Another tenant's rows, profiles and documents are never touched.
+
+**Measured and verified.** Each pass returns the exact count removed from each store (what
+OpenSearch reports as deleted, never the number of ids asked for), then looks again, in a fresh
+database session and after an index refresh, for what it was supposed to remove in the scope:
+voiceprint-made identities, voiceprint suggestions, speaker matches, unpromoted cluster members,
+profile embedding counters, and the speaker, profile and cluster documents of the scope's ids (for
+`inferred_gender`: speakers that still carry an inferred gender). Every value must be **0**. A
+non-zero value after the final pass makes the purge **fail** (`status` `failed`, audit outcome
+`FAILURE`, reason `residual`); after the first pass it is recorded and the second pass gets to
+finish it. A measure that could not be taken, for example because OpenSearch was unreachable, is
+reported as **unverified**, never as zero, and also fails the purge.
+
+**Read a purge back from the audit log.** Every purge writes one event per target
+(`privacy.voiceprints.purge`, `privacy.gender.purge`) for each phase: requested, each pass
+completed, aborted or failed. Open the events of the purge's task id (shown in the dialog) and read
+the `details` of the completed passes:
+
+| Field | Meaning |
+|---|---|
+| `task_id`, `phase`, `targets` | Which purge and pass, and what it was asked to delete |
+| `scope` | `kind` (`organization`, `user`, `instance_personal`, `instance_all`) and the `organization_id` and `user_id` it covered |
+| `counts.postgres` | `speaker_identities_reverted`, `speaker_links_removed`, `suggestions_cleared`, `speaker_matches_deleted`, `cross_scope_matches`, `speakers_unclustered`, `cluster_members_deleted`, `clusters_deleted`, `cross_scope_clusters_trimmed`, `promoted_cluster_members_removed`, `promoted_clusters_deleted`, `profiles_reset`, `statuses_refreshed`, `gender_speakers_cleared` |
+| `counts.opensearch` | `speaker_docs_deleted`, `profile_docs_deleted`, `cluster_docs_deleted` |
+| `residual`, `residual_ok`, `residual_unverified` | What the check found (all zeros when `residual_ok` is true) and which measures could not be taken |
+| `reason` | `residual` when anything was left, `store_errors` when a store reported a failed delete |
+
+The event's own fields carry the actor (`user_id` and the username), the organization stamp and, when
+an administrator purged someone else's scope, `target_user_id`. The request event also records the
+source IP and user agent. Events hold counts and ids only, never a name.
 
 Every purge writes audit events (see below) and records counts only, never a name.
 
@@ -362,15 +468,23 @@ unknown id, is a 404.
 {
   "task_id": "3f6c1c0e-...",
   "status": "completed",
-  "counts": { "voiceprint_docs_deleted": 412, "clusters_deleted": 17, "suggestions_cleared": 63 }
+  "counts": {
+    "postgres": { "speaker_identities_reverted": 12, "speaker_matches_deleted": 40, "clusters_deleted": 17 },
+    "opensearch": { "speaker_docs_deleted": 412, "profile_docs_deleted": 9, "cluster_docs_deleted": 17 }
+  },
+  "residual": { "speaker_identities_machine": 0, "speaker_docs": 0, "profile_docs": 0 },
+  "residual_ok": true,
+  "residual_unverified": [],
+  "audit": [{ "event_type": "privacy.voiceprints.purge", "task_id": "3f6c1c0e-..." }]
 }
 ```
 
-`status` is `pending`, `in_progress`, `completed`, `failed` or `skipped`. `counts` is `null` until
-a pass has finished and sums both passes. Counts can include `voiceprint_docs_deleted`,
-`matches_deleted`, `clusters_deleted`, `cluster_members_deleted`, `speakers_unclustered`,
-`profiles_reset`, `suggestions_cleared`, `statuses_refreshed`, `reindex_queue_failed` and
-`gender_speakers_cleared`.
+`status` is `pending`, `in_progress`, `completed`, `failed` or `skipped`. `counts` is `null` until a
+pass has finished, is grouped per store (`postgres`, `opensearch`) and sums both passes; the keys
+are listed under [Read a purge back from the audit log](#purging-stored-data). `residual` is what
+the latest pass measured afterwards; `residual_ok` is true only when everything was measured and
+is zero, and anything left makes `status` `failed`. `audit` lists the audit events (one per
+target) that record the purge.
 
 ### Audit events
 
@@ -384,7 +498,8 @@ voiceprints" and "Deleted inferred gender data".
 |---|---|
 | `admin.settings.change` | An instance switch changed (setting name, old and new value) |
 | `org.policy.change` | An organization policy `PATCH` (field names only; stamped with the organization) |
-| `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. Counts only; stamped with the organization when there is one |
+| `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. The completed passes carry the scope, the exact counts per store and the residual check (see [Read a purge back from the audit log](#purging-stored-data)). Counts and ids only; stamped with the organization when there is one |
+| `privacy.labels.resync` | A voiceprint switch changed and the speaker labels in the search index are being rebuilt. Written when the rebuild is requested and again when it finishes. `details` hold the switch, its previous and new value, the scope, and the counts of files selected, queued, already pending and failed. An unfinished rebuild is marked incomplete and retried by the periodic search maintenance. Never names a person or a file |
 
 ## Data inventory
 

@@ -44,7 +44,7 @@ the general procedure, manual `docker compose` steps and skipping versions.
 
 ## Database migrations
 
-Twenty-one migrations run automatically when the backend starts, from `v397` to `v447`. On a
+The migrations from `v397` to `v449` run automatically when the backend starts. On a
 populated database this can take a few minutes on first start. Nearly all of them only add
 columns or tables. Where one changes data, the change is small, targeted, and leaves your
 recordings, transcripts, speakers and voiceprints alone.
@@ -72,6 +72,7 @@ recordings, transcripts, speakers and voiceprints alone.
 | `v445` | Adds the `organization_policy` table: an organization's switches for voiceprint matching and inferred gender, and its redaction floor | No (empty until an organization saves a choice; both switches default on) |
 | `v446` | Adds `collection.visibility` (`organization` or `restricted`) so an organization collection can be limited to its creator, the organization admins and the people it is shared with | No: every existing collection stays visible to the whole organization until someone restricts it |
 | `v447` | Adds the `content_hold` and `content_hold_file` tables, which record the legal holds an organization administrator places on files and collections | No (empty until an administrator places a hold) |
+| `v449` | Adds `speaker.identity_source`, which records whether a speaker's name and profile link came from a person or from a voiceprint match | One data fix: it marks as voiceprint-made the existing identities the database can prove a voiceprint wrote (see [Which existing speaker names count as voiceprint-made](#which-existing-speaker-names-count-as-voiceprint-made)) and records how many it marked. Nothing else is rewritten; no name or link changes |
 
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.
@@ -176,8 +177,9 @@ Voiceprint matching and inferred gender now each have a restrict-only switch at 
 The upgrade rewrites and deletes nothing: the only new table (`v445`, listed above) is empty, both
 deployment switches default **on**, no consent hook is registered and no platform ceiling exists.
 No voiceprint, profile or gender value is touched. It is **not** neutral for everyone, though. The
-person-level gender switch is the setting that already existed (**Settings > Speaker
-Identification > Voice Attributes**, stored as `speaker_attribute_gender_detection_enabled`), so a
+person-level gender switch is the setting that already existed
+(**Settings > Speaker Identification > Voice Attributes**, stored as
+`speaker_attribute_gender_detection_enabled`), so a
 person who had **already turned inferred gender off** now has every stored inferred gender hidden
 everywhere: in their own views and also for collaborators who see their recordings through sharing
 or an organization, because the setting of the recording's owner applies. A gender someone
@@ -230,6 +232,63 @@ Several more behaviors change, because they now honor the policy and the user's 
    unstamped and the next re-cluster rebuilds it). Run it before you delete stored voiceprints.
    This is a manual step: nothing runs it for you, on upgrade or later. An install without
    organizations is unaffected.
+
+#### Which existing speaker names count as voiceprint-made
+
+Switching voiceprints off hides, and a purge deletes, the names and profile links a voiceprint
+match wrote, and never a name a person typed or confirmed. Telling them apart needs a record of who
+wrote each one, and releases before 0.6.0 did not keep it: an automatic match and a person's
+accept leave identical rows. Migration `v449` adds the record (`speaker.identity_source`: NULL for
+unknown, `voiceprint`, `voiceprint_link`, or `human`) and fills it in for existing rows only where
+the database can prove a voiceprint wrote them:
+
+- A speaker is marked `voiceprint` when it is verified, linked to a profile, shows a name equal to
+  both its stored suggestion and that profile's name, and that suggestion's source is a profile
+  match. The matcher only stores such a suggestion at 75% similarity or more, and it is the same
+  comparison that auto-accepts, so every such row was auto-accepted when it was written. A
+  later rename by a person clears the suggestion, so a row that still shows the shape has not
+  been renamed.
+- **Everything else is treated as a person's**, because the database cannot tell it apart: an
+  automatic match to another speaker (not to a profile), a link added by propagation, a retroactive
+  match, and a cluster join made before the upgrade. Those names stay visible while voiceprints are
+  off and a purge does not touch them. From 0.6.0 on, every one of these paths records its origin.
+- The rule can mark a few rows that a person later confirmed by assigning the identical profile in a
+  batch, or rows `v439` stamped from data older than the suggestion column. Such a name is hidden
+  while voiceprints are off and reverted by a purge, and it is restored by turning the switch back
+  on.
+
+**How many rows were marked** is recorded when the migration runs, in the upgrade log and in the
+database, so you can read it back at any time:
+
+```sql
+-- The count the migration recorded (JSON: revision, stamped, recorded_at)
+SELECT value FROM system_settings WHERE key = 'privacy.identity_source_backfill';
+
+-- The state now: names recognised as voiceprint-made, and legacy rows that look
+-- machine-confirmed but could not be proven (these are treated as a person's)
+SELECT count(*) FILTER (WHERE identity_source = 'voiceprint') AS recognised,
+       count(*) FILTER (WHERE identity_source IS NULL AND verified IS TRUE
+                        AND suggestion_source IN ('voice_match','profile_match')) AS unknown
+FROM speaker;
+```
+
+The log line reads `v449: recognised N existing speaker identities as voiceprint-made`. If you
+expected more, check `unknown`: that is the number of verified rows whose suggestion came from a
+voice match but that the upgrade could not prove were not confirmed by a person.
+
+**What does not change.** Summaries and topics a language model generated earlier are stored as
+written and may still name a person a voiceprint supplied. Their copy in the search index and in
+chat is masked while voiceprints are off, but the stored text is not rewritten: regenerate the
+summary after turning voiceprints off to remove the name from it. Only the full name recorded on the
+speaker is masked, not a first name on its own.
+
+**After upgrading, a voiceprint switch change rebuilds the speaker labels in the background.**
+When a person, an organization or the deployment turns voiceprints off or on, the search index
+labels of the affected recordings are rebuilt by a background task, and an
+`privacy.labels.resync` audit event is written when the rebuild is requested and again when it
+finishes. Responses hide immediately; the index follows (usually within minutes, longer for a very
+large library), and if the rebuild cannot run the periodic search maintenance finishes it. If you
+override the Celery `include=` list, register `app.tasks.privacy_label_resync_task` in it.
 
 Deleting stored voiceprints or inferred gender is a separate action, available only after the
 switch is off, and it cannot be undone. Backups and search snapshots keep their copies until they

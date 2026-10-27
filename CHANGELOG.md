@@ -64,7 +64,7 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Twenty-one migrations, `v397` to `v447`, run automatically at backend start.** They add columns
+- **The migrations `v397` to `v449` run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -131,6 +131,15 @@ off by default.
   voiceprints; it also stamps voiceprint documents that earlier releases rewrote without their
   organization (cluster documents, and speaker documents rewritten by the consistency repair,
   the v4 migration, a speaker merge or the index rebuild).
+- **Speaker names now record whether a person or a voiceprint wrote them (#1280).** Migration `v449`
+  adds `speaker.identity_source` and marks as voiceprint-made only the existing identities the
+  database can prove a voiceprint wrote (a verified speaker linked to a profile, whose name equals
+  both its profile-match suggestion and the profile's name). Everything else is treated as a
+  person's, so it stays visible while voiceprints are off and a purge leaves it alone. The count of
+  rows marked is logged at upgrade (`v449: recognised N existing speaker identities ...`) and kept
+  in `system_settings` under `privacy.identity_source_backfill`; the query that reads it and the
+  comparison with unproven rows are in Operations > Upgrading to 0.6.0. Summaries and topics a
+  language model already wrote are not rewritten.
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.
@@ -714,6 +723,28 @@ off by default.
 
 ### Changed
 
+- **Switching voiceprints off now hides names and links a voiceprint made, wherever they are shown
+  (#1280).** An auto-accepted match, a retroactive match, an upload-time cluster join and a
+  profile link added by propagation are recorded as voiceprint-made and hidden while the speaker's
+  file has voiceprints off: the speaker shows its diarizer label and no profile link, in the speaker
+  list and name directory, a profile's occurrences, and every other place a name is printed. A name
+  a person typed, accepted, assigned or confirmed (including promoting a cluster to a profile) is
+  never hidden. Merging two speakers keeps the survivor's own origin; clearing a name keeps a
+  machine link as a link and nothing else.
+- **A purge now reverts, deletes and verifies (#1280).** Stored voiceprints are selected by what
+  the database says belongs to the purged scope (the recording's tenant, the profile's, the
+  cluster's members'), not by the stamp on each search document, so a document written before the
+  tenant backfill is found by its organization's purge and is out of reach of a member's personal
+  one. A purge reverts voiceprint-made names and links to unnamed and unlinked, removes those
+  speakers from promoted clusters, deletes speaker matches with either side in the scope
+  (counted separately when the other side is another scope's), and trims a cluster that also holds
+  another tenant's speakers instead of deleting it. Every pass reports the exact count removed per
+  store (what OpenSearch reports, not the number of ids asked for), then measures what it should
+  have removed in a fresh session after an index refresh. Anything left makes the purge fail; a
+  check that could not run is "not verified", never clean. The audit events carry the actor, the
+  scope's ids, the targets, the per-store counts and the residual, and `GET /api/privacy/purge/{id}`
+  returns the same (`counts` is now grouped per store, plus `residual`, `residual_ok`,
+  `residual_unverified` and `audit`). The purge dialog shows them in all 12 languages.
 - **The admin gender migration, the embedding consistency repair and the v4 embedding migration
   now honor the privacy policy (#1280).** The speaker-attribute (gender) migration and the
   combined speaker analysis used to write gender for every file; they now skip files whose owner
@@ -1079,6 +1110,13 @@ off by default.
   whose voiceprints are off rebuilds the file instead of rewriting labels the index may not hold.
 - **A failed privacy scope read no longer aborts the request's transaction, and a consent hook
   can refuse a single file (#1280).**
+- **A personal voiceprint search no longer matches an organization recording's voiceprint (#1280).**
+  A speaker document written before the tenant backfill has no organization stamp and so read as
+  personal. Speaker searches in personal scope now also exclude the documents of the owner's
+  organization files by file id (and match nothing if those files cannot be listed).
+- **A purge could miss an organization's unstamped voiceprint and reach it from a member's
+  personal purge (#1280).** Documents are now selected by the ids of the scope's speakers, profiles
+  and clusters (see Changed).
 - **A speaker's organization comes from its file (#1280).** Speakers are created without their
   own organization, so three places that read it got the wrong answer: renaming a speaker profile
   inside an organization skipped every speaker in that organization (and a personal rename

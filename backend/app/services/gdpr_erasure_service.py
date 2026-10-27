@@ -79,6 +79,7 @@ org path never triggers. ``erase_user`` works in both editions (the speaker
 """
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -251,6 +252,88 @@ def delete_speaker_docs_by_query(
     if deleted:
         logger.info(f"Erased {deleted} voiceprint doc(s) for {label or 'a scope'}")
     return deleted
+
+
+_DOC_ID_BATCH = 1000
+
+
+def _speaker_index_names(client: Any) -> list[str]:
+    """The speaker indices that exist (v3, v4, alias, legacy backup), without duplicates."""
+    from app.core.constants import get_speaker_index
+    from app.core.constants import get_speaker_index_v3
+    from app.core.constants import get_speaker_index_v3_backup
+    from app.core.constants import get_speaker_index_v4
+
+    wanted = [
+        get_speaker_index(),
+        get_speaker_index_v3(),
+        get_speaker_index_v4(),
+        get_speaker_index_v3_backup(),
+    ]
+    return [idx for idx in dict.fromkeys(wanted) if client.indices.exists(index=idx)]
+
+
+def delete_speaker_docs_by_ids(
+    doc_ids: Iterable[str],
+    *,
+    errors: list[dict[str, Any]] | None = None,
+    label: str = "",
+) -> int:
+    """Delete speaker-index documents by ``_id`` across every speaker index.
+
+    The privacy purge selects voiceprint documents by the ids Postgres says belong to its scope
+    (speaker uuids, ``profile_<uuid>``, ``cluster_<uuid>``), never by the documents' own tenant
+    stamp: a document written before the tenant backfill carries no stamp, and a stamp-based
+    delete misses it in an organization purge and can reach it from a member's personal one.
+    Failures go to ``errors`` and this never raises.
+
+    Returns:
+        What OpenSearch reports as deleted (0 if it is unavailable), never the number of ids
+        asked for.
+    """
+    ids = list(dict.fromkeys(str(i) for i in doc_ids))
+    deleted = 0
+    for start in range(0, len(ids), _DOC_ID_BATCH):
+        batch = ids[start : start + _DOC_ID_BATCH]
+        deleted += delete_speaker_docs_by_query(
+            {"query": {"ids": {"values": batch}}}, errors=errors, label=label
+        )
+    return deleted
+
+
+def count_speaker_docs_by_ids(
+    doc_ids: Iterable[str], *, errors: list[dict[str, Any]] | None = None
+) -> int | None:
+    """How many of these ids still exist as speaker-index documents, after a refresh.
+
+    The residual check of a purge. The indices are listed in ONE request so an alias and the
+    index behind it count a document once. ``None`` means it could not be measured (recorded in
+    ``errors``): an unmeasurable store must never read as an empty one.
+    """
+    ids = list(dict.fromkeys(str(i) for i in doc_ids))
+    if not ids:
+        return 0
+    try:
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client is None:
+            raise RuntimeError("OpenSearch client unavailable")
+        indices = _speaker_index_names(opensearch_client)
+        if not indices:
+            return 0
+        target = ",".join(indices)
+        opensearch_client.indices.refresh(index=target)
+        found = 0
+        for start in range(0, len(ids), _DOC_ID_BATCH):
+            batch = ids[start : start + _DOC_ID_BATCH]
+            resp = opensearch_client.count(index=target, body={"query": {"ids": {"values": batch}}})
+            found += int(resp.get("count", 0))
+        return found
+    except Exception as exc:  # noqa: BLE001 - reported, and the caller treats it as unmeasured
+        logger.warning(f"Voiceprint residual count failed: {exc}")
+        if errors is not None:
+            errors.append({"stage": "residual_count", "error": str(exc)})
+        return None
 
 
 def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) -> None:

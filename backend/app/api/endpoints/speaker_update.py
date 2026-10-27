@@ -28,6 +28,8 @@ from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.db_helpers import org_stamp_is
+from app.utils.speaker_identity_source import record_human_identity
+from app.utils.speaker_identity_source import record_machine_identity
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -107,6 +109,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
             # Assign speaker to existing profile
             speaker.profile_id = existing_profile.id
+            record_human_identity(speaker)  # a person typed this name (issue #1280)
             logger.info(
                 f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
             )
@@ -147,6 +150,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
 
             # Assign speaker to new profile
             speaker.profile_id = new_profile.id
+            record_human_identity(speaker)  # a person typed this name (issue #1280)
             logger.info(
                 f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
             )
@@ -290,8 +294,12 @@ def _apply_high_confidence_match(
     Returns:
         The speaker's search document.
     """
+    previous_display_name = speaker.display_name
     speaker.display_name = trigger["display_name"]  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    # A voiceprint wrote this identity, not a person (issue #1280). Set before the tracker
+    # computes the "after" label below, which depends on it while voiceprints are off.
+    record_machine_identity(speaker, previous_display_name=previous_display_name)
 
     if trigger["profile_id"]:
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None

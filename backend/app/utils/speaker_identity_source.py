@@ -100,6 +100,22 @@ def after_unlink(speaker: Any) -> None:
         speaker.identity_source = None
 
 
+def after_name_cleared(speaker: Any) -> None:
+    """A person emptied the speaker's name without unlinking its profile.
+
+    With no link left there is no identity to describe (NULL). With a link left, a
+    ``voiceprint`` row keeps the machine's link and becomes ``voiceprint_link`` (the name the
+    machine wrote is gone; the link stays hideable and purgeable); a ``human`` or
+    ``voiceprint_link`` row is unchanged. A name still present is not a clearing.
+    """
+    if is_assigned_speaker_name(speaker.display_name):
+        return
+    if speaker.profile_id is None:
+        speaker.identity_source = None
+    elif speaker.identity_source == VOICEPRINT:
+        speaker.identity_source = VOICEPRINT_LINK
+
+
 def hides_name(identity_source: str | None, voiceprints_enabled: bool) -> bool:
     """Must the speaker's ``display_name`` be withheld under this switch?"""
     return not voiceprints_enabled and identity_source == VOICEPRINT

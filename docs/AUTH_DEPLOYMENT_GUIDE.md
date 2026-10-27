@@ -208,7 +208,7 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 
 **Configuration in OpenTranscribe:**
 - Server URL: `http://localhost:8180` (or `http://[server-ip]:8180` for LAN access)
-- Internal URL: `http://transcribe-app-keycloak-1:8080`
+- Internal URL: `http://keycloak:8080`
 - Realm: `opentranscribe`
 - Client ID: `opentranscribe-app`
 - Client Secret: (from Keycloak client Credentials tab)

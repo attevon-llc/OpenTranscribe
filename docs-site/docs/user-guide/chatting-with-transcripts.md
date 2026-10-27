@@ -40,8 +40,8 @@ Collections and tags are resolved **when you ask**, not when you select them —
 a recording added to a collection later is automatically in scope for
 conversations you already started.
 
-You can also start from the gallery: select recordings, then **Chat with N** in
-the bulk actions menu.
+You can also start from the gallery: click **Select Files**, tick recordings, then
+choose **AI chat with N** from the **Process** menu.
 
 ### Asking about one person
 
@@ -180,7 +180,7 @@ file itself. Use chat for questions that point at specific moments.
 | **Regenerate** | Hover the latest answer → circular arrow. |
 | **Stop generating** | The send button becomes Stop while streaming, or press `Escape`. |
 | **Copy** | Hover any message → copy. Code blocks get their own button. |
-| **Export** | Download icon in the header — Markdown or JSON, with sources as links. |
+| **Export** | Download icon in the header — downloads the conversation as Markdown, with sources as links. (The API also offers a JSON export.) |
 | **Rename / archive / delete** | Hover a conversation in the sidebar. |
 
 Shortcuts: `Cmd/Ctrl+Shift+O` for a new chat, `Cmd/Ctrl+/` to focus the composer,
@@ -188,7 +188,7 @@ Shortcuts: `Cmd/Ctrl+Shift+O` for a new chat, `Cmd/Ctrl+/` to focus the composer
 
 ## Chat settings
 
-The gear icon opens per-conversation settings:
+The gear icon in the chat header opens **Chat controls**, the settings for this conversation:
 
 - **Use my transcripts** — turn context off to use the model as a plain
   assistant. A *Context off* chip makes it unmistakable, so an ungrounded answer
@@ -199,14 +199,20 @@ The gear icon opens per-conversation settings:
   words* (keyword only).
 - **Model** — pin a different provider or model for this conversation.
 
-Under **Advanced** there are two more, collapsed because most people never need
-them: **Answer length** (the reply's ceiling — longer costs more) and **Focus**
-(how narrowly the model picks its words; lower is more predictable).
+Under **Advanced** there are more, collapsed because most people never need
+them: **Answer length** (the reply's ceiling — longer costs more), **Focus**
+(how narrowly the model picks its words; lower is more predictable) and, for
+models that support it, **Model reasoning**.
 
-Account-wide defaults live in **Settings → Chat**, where you can also set
-**Excerpts per answer** and turn **Rerank excerpts** off for your own chats.
-Both only ever make your chats *leaner* than the server default — you cannot ask
-for more than your administrator allows.
+Account-wide defaults for new conversations live in **Settings → Chat** (under
+the **AI & Chat** heading): **Use my transcripts by default**, **Default
+retrieval mode**, **Default instructions**, **Excerpts per answer** and
+**Rerank excerpts**. Individual chats can override them. The last two only ever
+make your chats *leaner* than the server default — you cannot ask for more than
+your administrator allows. Administrators also see an **Advanced features** tab
+there with the platform-wide retrieval tuning (candidate excerpts, rerank limits,
+rate limits, conversation retention and the query trace switch); it applies to
+everyone on the server.
 
 ### How instructions stack
 

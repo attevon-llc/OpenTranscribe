@@ -909,6 +909,7 @@ def test_batch_suggestions_run_with_the_database_unreachable(db_session, normal_
         speakers=[speaker],
         user_id=normal_user.id,
         file_org_map={int(media_file.id): None},
+        voiceprints_off_file_ids=frozenset(),
     )
 
     suggestions = result[int(speaker.id)]

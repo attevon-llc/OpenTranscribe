@@ -28,6 +28,7 @@ from app.core.constants import get_speaker_index
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.privacy.redact_view import PrivacyView
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +237,35 @@ class ConsolidatedSuggestion:
     auto_accept: bool = False
 
 
+def _dedupe_rank_and_limit(
+    suggestions: list["ConsolidatedSuggestion"], max_suggestions: int
+) -> list["ConsolidatedSuggestion"]:
+    """Keep the best suggestion per (type, name), profile matches first, capped per type.
+
+    Unlabeled diarizer names (``SPEAKER_XX``) are never offered as a suggestion.
+    """
+    unique: dict[str, ConsolidatedSuggestion] = {}
+    for s in suggestions:
+        key = f"{s.suggestion_type}:{s.name.lower()}"
+        if key not in unique or s.confidence > unique[key].confidence:
+            unique[key] = s
+
+    final = sorted(
+        unique.values(),
+        key=lambda s: (0 if s.suggestion_type == "profile" else 1, -s.confidence),
+    )
+    type_counts: dict[str, int] = {}
+    filtered: list[ConsolidatedSuggestion] = []
+    for s in final:
+        if s.name.startswith("SPEAKER_"):
+            continue
+        if type_counts.get(s.suggestion_type, 0) >= max_suggestions:
+            continue
+        type_counts[s.suggestion_type] = type_counts.get(s.suggestion_type, 0) + 1
+        filtered.append(s)
+    return filtered
+
+
 class SmartSpeakerSuggestionService:
     """
     Advanced speaker suggestion service with intelligent filtering and consolidation.
@@ -302,6 +332,13 @@ class SmartSpeakerSuggestionService:
                 f"Added LLM suggestion: {speaker.suggested_name} "
                 f"(confidence: {speaker.confidence:.2f})"
             )
+
+        # Privacy policy: voiceprints off for the file's owner or organization means the
+        # kNN is never run, so only the transcript-derived LLM suggestion above is offered.
+        if not PrivacyView(db).voiceprints(int(speaker.media_file_id)).enabled:
+            return SmartSpeakerSuggestionService.without_refused(
+                db, {int(speaker_id): suggestions}
+            )[int(speaker_id)]
 
         # Get speaker embedding for profile matching using UUID
         speaker_embedding = get_speaker_embedding(str(speaker.uuid))
@@ -442,6 +479,8 @@ class SmartSpeakerSuggestionService:
         speakers: list[Speaker],
         user_id: int,
         file_org_map: dict[int, int | None],
+        *,
+        voiceprints_off_file_ids: frozenset[int] | set[int],
         confidence_threshold: float = 0.5,
         max_suggestions: int = 10,
     ) -> dict[int, list[ConsolidatedSuggestion]]:
@@ -465,6 +504,10 @@ class SmartSpeakerSuggestionService:
             user_id: Owner, for the profile-document filter.
             file_org_map: ``media_file_id -> organization_id`` for every file the
                 ``speakers`` span, from ``_media_file_org_ids``.
+            voiceprints_off_file_ids: Files whose owner or organization has voiceprints
+                switched off (``PrivacyView.voiceprints_off_file_ids``). Their speakers get
+                no embedding read and no kNN, only the LLM suggestion. Required, with no
+                default, so a caller cannot forget the policy and fail open.
 
         Returns dict mapping speaker.id (int) -> list[ConsolidatedSuggestion].
         """
@@ -485,8 +528,9 @@ class SmartSpeakerSuggestionService:
         for speaker in speakers:
             sid = int(speaker.id)
             suuid = str(speaker.uuid)
-            uuid_to_id[suuid] = sid
-            org_by_uuid[suuid] = file_org_map.get(int(speaker.media_file_id))
+            if int(speaker.media_file_id) not in voiceprints_off_file_ids:
+                uuid_to_id[suuid] = sid
+                org_by_uuid[suuid] = file_org_map.get(int(speaker.media_file_id))
 
             if (
                 speaker.suggested_name
@@ -504,7 +548,7 @@ class SmartSpeakerSuggestionService:
                 )
 
         # Phase 2: Batch-fetch all speaker embeddings (1 mget)
-        embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys()))
+        embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys())) if uuid_to_id else {}
 
         # Phase 3: Check if profiles exist at all (1 search, same for all speakers)
         profiles_exist = False
@@ -539,29 +583,7 @@ class SmartSpeakerSuggestionService:
                 if suggestion:
                     result[sid].append(suggestion)
 
-            # Deduplicate by (type, name)
-            unique: dict[str, ConsolidatedSuggestion] = {}
-            for s in result[sid]:
-                key = f"{s.suggestion_type}:{s.name.lower()}"
-                if key not in unique or s.confidence > unique[key].confidence:
-                    unique[key] = s
-
-            # Sort and filter
-            final = sorted(
-                unique.values(),
-                key=lambda s: (0 if s.suggestion_type == "profile" else 1, -s.confidence),
-            )
-            type_counts: dict[str, int] = {}
-            filtered: list[ConsolidatedSuggestion] = []
-            for s in final:
-                if s.name.startswith("SPEAKER_"):
-                    continue
-                if type_counts.get(s.suggestion_type, 0) >= max_suggestions:
-                    continue
-                type_counts[s.suggestion_type] = type_counts.get(s.suggestion_type, 0) + 1
-                filtered.append(s)
-
-            result[sid] = filtered
+            result[sid] = _dedupe_rank_and_limit(result[sid], max_suggestions)
 
         return result
 

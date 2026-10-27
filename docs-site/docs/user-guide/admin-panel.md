@@ -17,9 +17,9 @@ The Admin Panel is role-gated. The dividing rule is:
 
 | Role | Access |
 |------|--------|
-| **User** | Profile, recording, transcription, personal settings, own MFA, own active sessions |
-| **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
-| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, speech processing (formerly engine configuration), backups, media mirror, watch sources, and the redaction policy floor |
+| **User** | Profile & Security (own MFA and active sessions), transcription and speaker-identification preferences, chat, AI prompts, watch sources, recording, System Statistics, File status |
+| **Admin** | All user sections plus **User Management**, **Quarantine**, **Takedown notices**, the **Recovery** tab of File status (task health and retry settings), and **Data & Storage** (retention, media cache, data integrity, search index, speaker embeddings) |
+| **Super Admin** | All admin sections plus **Authentication**, **Audit Logs**, role changes, and the controls that change how the deployment runs: the **Backup** tab of Data & Storage (with media mirror), the **Speaker Engine** and **Maintenance** tabs of Speaker Identification, pinning the local transcription model, the watch-source global settings and email configurations, and the **Redaction Policy** (redaction floor) tab of Privacy & Redaction |
 
 :::warning[Changed in v0.5.0]
 Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
@@ -28,7 +28,7 @@ Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech proce
 upgrading, or hand the work to an existing super admin.
 :::
 
-To access admin features, open **Settings** (gear icon) and scroll to the admin sections in the sidebar.
+To access admin features, open the user menu (top right of the navigation bar), choose **Settings**, and use the **Administration** and **System** groups in the sidebar. Rows above your role stay visible but are greyed out with a tooltip naming the role they need.
 
 ## System Statistics
 
@@ -165,12 +165,12 @@ editable there.
 
 ## Redaction Policy
 
-The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Privacy & Redaction → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
+The admin enforcement floor for content redaction, on the **Redaction Policy** tab of **Settings → Privacy & Redaction** (super admin; the tab is locked for admins). While per-user redaction preferences live on the **Content Redaction** tab, this admin policy is the floor that **overrides** those preferences for all users.
 
-- **Force categories**: force **PII**, **toxicity**, and/or **profanity** redaction on for every user (cannot be disabled per-user)
-- **Mandate censored exports**: require masked output for all subtitle/transcript exports
-- **Mandate mask-before-LLM**: require redaction before transcripts are sent to LLM features
-- **Re-scan / re-index after model upgrade**: trigger a re-scan and re-index of all files following a detection-model upgrade
+- **Forced categories**: **Force PII redaction for all users**, **Force toxic-speech redaction for all users** (with a **Toxicity threshold**) and **Force profanity redaction for all users** (users cannot turn a forced category off, only add more)
+- **Mandate censored exports**: no user can export the unredacted transcript
+- **Mandate masking before every LLM provider (including self-hosted)**: by default only remote providers receive masked text and a local model receives the transcript unmasked; this switch masks it for local models too
+- **Re-scan all files**: recompute detection across existing transcripts, for example after a detection-model upgrade
 
 ## Authentication Configuration
 
@@ -678,22 +678,17 @@ Shows the last run timestamp, number of files deleted, and the next scheduled ru
 
 ## Retry Settings
 
-The **Retry Settings** section controls how failed transcription tasks are retried.
+The **Failed Task Retries** panel, in the same **Recovery** tab, controls how failed transcription tasks are retried.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| **Limit Retries** | Toggle to cap the number of retry attempts | On |
-| **Max Retries** | Maximum number of retry attempts per task (1-10) | 3 |
+| **Limit retries** | Toggle to cap the number of retry attempts | On |
+| **Max** | Maximum number of retry attempts per task (1-10) | 3 |
 
-When retry limits are disabled, failed tasks will continue retrying indefinitely. Click **Save** to apply changes or **Reset to Defaults** to restore the default values.
+When retry limits are disabled, failed tasks will continue retrying indefinitely. Click **Save** to apply changes or **Reset** to restore the default values.
 
 ## Task Health
 
-The **Task Health** section (visible under System Statistics) shows recent task activity:
+**Settings → System → File status → Recovery** (admins) is the **Task Health Monitor**: it finds stuck work and restarts it. After **Refresh Health Data** it lists stuck tasks and inconsistent files and offers system-wide recovery actions, each behind a confirmation: **Recover Stuck Tasks**, **Fix Inconsistent Files**, **Startup Recovery** and **Recover All User Files**. These affect every user's files and tasks, not only yours.
 
-- Task list with status, file name, duration, and timestamps
-- Counts of pending, running, completed, and failed tasks
-- Success rate percentage
-- Average processing time
-
-This provides a quick operational overview of the transcription pipeline without needing to access the Flower dashboard directly.
+For an operational overview of the pipeline, **System Statistics** shows pending, running, completed and failed task counts, the success rate, average processing time, queue depths, throughput and a **Recent Tasks** list, without needing the Flower dashboard.

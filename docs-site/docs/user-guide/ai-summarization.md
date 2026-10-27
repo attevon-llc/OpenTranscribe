@@ -25,11 +25,10 @@ AI summarization provides:
 
 ### From Web UI
 
-1. Open transcription details
-2. Click **"Generate Summary"**
-3. Select summary type (if custom prompts configured)
-4. Wait for AI processing
-5. View results in Summary tab
+1. Open the file from the gallery
+2. Click **Generate AI Summary** in the file's action row
+3. Wait for AI processing; the button then reads **AI Summary** and opens the summary
+4. To regenerate with a different prompt, choose one in the summary dialog (**Use active prompt** or one of your prompts) and click **Regenerate**
 
 ### AI Summarization Pipeline
 
@@ -98,19 +97,20 @@ Create custom summarization prompts for specific use cases:
 
 ### Organization Context
 
-Administrators can configure **organization context** (Settings → Organization Context) that is automatically injected into AI prompts. This provides the LLM with background information about your organization, improving summary relevance:
+You can configure **organization context** (Settings → Organization Context, under **AI & Chat**) that is automatically injected into AI prompts. This provides the LLM with background information about your organization, improving summary relevance:
 
 - Describe your organization, team structure, or domain
-- Choose whether to include context in default prompts, custom prompts, or both
+- Choose whether to include context with system prompts (**Include with system prompts**), your custom prompts (**Include with custom prompts**), or both
 - Up to 10,000 characters of context text
+- The context is per user; you can also share yours with all users (**Share with all users**), and others can adopt a shared one (**Use this**)
 
 ### Per-Collection Default Prompts
 
 Collections can have a **default AI prompt** assigned. When generating a summary for a file in that collection, the collection's default prompt is automatically selected:
 
-1. Go to **Collections**
-2. Create or edit a collection
-3. Select a **Default Prompt** from your saved custom prompts
+1. Click **Collections** in the gallery toolbar
+2. Create a collection, or click **Edit collection** on an existing one
+3. Select a **Default Summary Prompt** (the default is **None (use active prompt)**)
 4. Files in the collection will use that prompt by default when generating summaries
 
 This is useful for organizing different types of content (e.g., interviews vs. meetings) that need different summarization approaches.
@@ -119,9 +119,10 @@ This is useful for organizing different types of content (e.g., interviews vs. m
 
 Automatic AI summarization can be turned off:
 
-- **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for that file
-- **User default**: Go to Settings → LLM Provider Configuration → AI Summary Settings and disable it to skip automatic summarization on all uploads by default
-- When disabled, summaries can still be generated manually by clicking "Generate Summary" on any completed transcript
+- **Per-upload**: Turn **Generate AI summary** off on the **Options** step of the upload dialog to skip summarization for that file
+- **User default**: Go to Settings → LLM Provider Configuration → AI Summary Settings and turn off **Auto-generate summaries** to skip automatic summarization after every transcription
+- **System-wide** (administrators): **System-wide AI summaries** in the same place turns summaries off for all users
+- When disabled, summaries can still be generated manually by clicking **Generate AI Summary** on any completed transcript
 
 ### Auto-Label Pipeline
 
@@ -155,10 +156,12 @@ Configure auto-labeling in **Settings → Auto-Labeling (Tags & Collections)**:
 
 Best for sensitive content:
 
+Add a configuration under **Settings → LLM Provider Configuration** (provider vLLM, Ollama or Custom, with the server's base URL). The `.env` variables below are only a fallback; a configuration saved in the UI wins.
+
 ```bash
-# vLLM or Ollama
+# vLLM or Ollama (fallback defaults in .env)
 LLM_PROVIDER=vllm
-VLLM_API_URL=http://localhost:8000/v1
+VLLM_BASE_URL=http://localhost:8012/v1
 ```
 
 **Advantages**:
@@ -176,7 +179,7 @@ VLLM_API_URL=http://localhost:8000/v1
 Best for convenience:
 
 ```bash
-# OpenAI
+# OpenAI (fallback defaults in .env; the UI configuration wins)
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxxxx
 
@@ -211,14 +214,14 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx
 
 ![LLM provider configuration in settings](/img/screenshots/settings/settings-llm-config.png)
 
-Edit `.env`:
+Configure providers in **Settings → LLM Provider Configuration** (**Create Configuration**, then **Activate**). Defaults for a deployment can also be set in `.env`; a configuration saved in the UI takes precedence:
 
 ```bash
 # Provider selection
 LLM_PROVIDER=vllm  # or: openai, anthropic, ollama, openrouter
 
 # Provider-specific
-VLLM_API_URL=http://localhost:8000/v1
+VLLM_BASE_URL=http://localhost:8012/v1
 VLLM_MODEL_NAME=meta-llama/Llama-2-70b-chat-hf
 OPENAI_API_KEY=sk-xxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxx
@@ -228,18 +231,19 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx
 
 Create custom prompts in UI:
 1. Go to Settings → AI Summarization Prompts
-2. Click "New Prompt"
+2. Click **Create Prompt**
 3. Configure:
-   - Name
-   - System instructions
-   - JSON schema (for structured output)
-   - Temperature
+   - **Prompt Name**
+   - **Content Type** (General, Meeting, Interview, Podcast, Documentary or Speaker Identification)
+   - **Description**
+   - **Prompt Text** (use the `{transcript}` and `{speaker_data}` placeholders)
 4. Save
 
 Use custom prompts:
-1. Generate Summary
-2. Select your custom prompt
-3. Process
+1. Click **Activate** on a prompt to make it the one used for new summaries, or
+2. Open a file's summary, choose the prompt, and click **Regenerate**
+
+A prompt can be shared with all users (**Share with all users**); others see it under **Shared by Others**.
 
 ## Best Practices
 
@@ -263,10 +267,9 @@ Use custom prompts:
 ```bash
 # Test LLM connection
 ./opentr.sh logs celery-worker | grep -i llm
-
-# Verify provider settings
-grep LLM_ .env
 ```
+
+Also check that a configuration under **Settings → LLM Provider Configuration** is active (**Currently Active**) and passes **Test Connection**.
 
 ### Poor Quality Summaries
 

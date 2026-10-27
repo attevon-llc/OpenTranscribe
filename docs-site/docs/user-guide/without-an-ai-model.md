@@ -101,13 +101,13 @@ because summaries and chat read the transcripts and the search index that alread
 The reverse is also true: removing the provider stops those features and leaves everything else
 untouched.
 
-:::note[Planned: more of this list moves to the "no provider needed" column]
-Work under
-[issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403) adds deterministic
-per-file facts (duration, speaker roster, talk-time), extractive digests, and a composed
-collection overview — all computed without a model, so a no-LLM deployment gets a written
-overview of a collection rather than only a file list. **None of it has shipped yet**; this note
-exists so the intent is on record, not to describe something you can use today.
+:::note[Computed without a model, but not a feature you can open]
+On ingest OpenTranscribe also computes, without any language model, per-file facts (duration,
+speaker roster, talk-time split, turn count, longest monologue), an extractive digest made of
+verbatim sentences from the transcript, and key phrases. Search and chat use them internally;
+there is no screen that shows them as a summary, and a written summary or a chat answer still
+needs a provider. Further model-free overviews are tracked under
+[issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403).
 :::
 
 ## Related

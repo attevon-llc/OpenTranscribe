@@ -18,6 +18,10 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services import system_settings_service
+from app.services.task_row_supersede import is_active_row_conflict
+from app.services.task_row_supersede import record_superseded
+from app.services.task_row_supersede import reopen_if_slot_free
+from app.services.task_row_supersede import supersede_active_siblings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,11 @@ _ACTIVE_TASK_STATUSES = (TASK_STATUS_PENDING, TASK_STATUS_IN_PROGRESS)
 _RUN_FENCED_TASK_TYPES = frozenset({"transcription"})
 
 
+#: A concurrent creator can win the index between our sibling-supersede and our insert; each
+#: attempt re-supersedes the winner, so two attempts settle it and a third is a bug, not a race.
+_CREATE_ATTEMPTS = 3
+
+
 def create_task_record(
     db: Session, celery_task_id: str, user_id: int, media_file_id: int | None, task_type: str
 ) -> Task:
@@ -49,29 +58,72 @@ def create_task_record(
     issue #626's operator-triggered re-embed, which can span many files across many
     owners) — the column is already ``nullable=True`` and ``update_task_status`` already
     guards its own media-file lookup on ``if media_file_id:``.
-    """
-    task = Task(
-        id=celery_task_id,
-        user_id=user_id,
-        media_file_id=media_file_id,
-        task_type=task_type,
-        status=TASK_STATUS_PENDING,
-        progress=0.0,
-        # The column has no insert default; a NULL here put a brand-new transcription row into
-        # the lost-run query before its queued marker existed (issue #1178).
-        updated_at=datetime.now(UTC),
-    )
-    db.add(task)
 
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        # Task already exists (race condition or retry), fetch and return it
-        task = db.query(Task).filter(Task.id == celery_task_id).first()  # type: ignore[assignment]
-        if not task:
-            raise ValueError(f"Failed to create or find task: {celery_task_id}") from None
-        logger.info(f"Task {celery_task_id} already exists, reusing existing record")
+    A file has at most one active row per ``task_type`` (``v448``, issue #1185), and the newer
+    run wins: the file's other active rows of this step are failed with the reason
+    ``superseded by <this id>`` in the same transaction as the insert, so the database never
+    holds two. A concurrent creator that lands between the two statements is superseded the
+    same way on the next attempt.
+    """
+    task: Task | None = None
+    superseded: list[str] = []
+    for attempt in range(1, _CREATE_ATTEMPTS + 1):
+        superseded = (
+            supersede_active_siblings(
+                db, media_file_id=media_file_id, task_type=task_type, by_task_id=celery_task_id
+            )
+            if media_file_id is not None
+            else []
+        )
+        task = Task(
+            id=celery_task_id,
+            user_id=user_id,
+            media_file_id=media_file_id,
+            task_type=task_type,
+            status=TASK_STATUS_PENDING,
+            progress=0.0,
+            # The column has no insert default; a NULL here put a brand-new transcription row
+            # into the lost-run query before its queued marker existed (issue #1178).
+            updated_at=datetime.now(UTC),
+        )
+        db.add(task)
+        try:
+            db.commit()
+            break
+        except IntegrityError as exc:
+            db.rollback()
+            if is_active_row_conflict(exc) and attempt < _CREATE_ATTEMPTS:
+                logger.info(
+                    "Task %s (%s, file %s) lost the active-row index to a concurrent creator; "
+                    "superseding it (attempt %s)",
+                    celery_task_id,
+                    task_type,
+                    media_file_id,
+                    attempt,
+                )
+                continue
+            if is_active_row_conflict(exc):
+                raise
+            # Task already exists (race condition or retry), fetch and return it
+            task = db.query(Task).filter(Task.id == celery_task_id).first()
+            if not task:
+                raise ValueError(f"Failed to create or find task: {celery_task_id}") from None
+            logger.info(f"Task {celery_task_id} already exists, reusing existing record")
+            superseded = []
+            break
+
+    if task is None:  # unreachable: the loop commits, reuses, or raises
+        raise ValueError(f"Failed to create task: {celery_task_id}")
+    if superseded:
+        logger.warning(
+            "Task %s (%s) superseded %d older active row(s) for file %s: %s",
+            celery_task_id,
+            task_type,
+            len(superseded),
+            media_file_id,
+            ", ".join(superseded),
+        )
+        record_superseded([task_type] * len(superseded))
 
     db.refresh(task)
 
@@ -157,18 +209,15 @@ def update_task_status_with_duration(
         if not _write_if_still_active(db, task, status, progress, error_message, completed, now):
             db.commit()  # whatever else the caller staged commits exactly as it always did
             return None, None
+    elif status in _ACTIVE_TASK_STATUSES and task.status not in _ACTIVE_TASK_STATUSES:
+        # A retry reopening its own failed row. A newer run of the same step may have taken the
+        # file's one active slot meanwhile (v448, issue #1185); that run wins and this write is
+        # dropped, exactly as a fenced transcription's is.
+        if not _reopen_task_row(db, task, status, progress, error_message, completed, now):
+            db.commit()
+            return None, None
     else:
-        # Update task fields
-        task.status = status  # type: ignore[assignment]
-        if progress is not None:
-            task.progress = progress  # type: ignore[assignment]
-        if error_message:
-            task.error_message = error_message  # type: ignore[assignment]
-        if completed:
-            task.completed_at = now  # type: ignore[assignment]
-
-        # Always update the timestamp for task state changes
-        task.updated_at = now  # type: ignore[assignment]
+        _apply_task_fields(task, status, progress, error_message, completed, now)
 
     duration_seconds: float | None = None
 
@@ -205,6 +254,58 @@ def update_task_status_with_duration(
         update_media_file_from_task_status(db, int(task_media_file_id))
 
     return task, duration_seconds
+
+
+def _apply_task_fields(
+    task: Task,
+    status: str,
+    progress: float | None,
+    error_message: str | None,
+    completed: bool,
+    now: datetime,
+) -> None:
+    task.status = status  # type: ignore[assignment]
+    if progress is not None:
+        task.progress = progress  # type: ignore[assignment]
+    if error_message:
+        task.error_message = error_message  # type: ignore[assignment]
+    if completed:
+        task.completed_at = now  # type: ignore[assignment]
+
+    # Always update the timestamp for task state changes
+    task.updated_at = now  # type: ignore[assignment]
+
+
+def _reopen_task_row(
+    db: Session,
+    task: Task,
+    status: str,
+    progress: float | None,
+    error_message: str | None,
+    completed: bool,
+    now: datetime,
+) -> bool:
+    """Reopen a terminal row as active; False when another active row holds the file's slot."""
+    reopened = reopen_if_slot_free(
+        db,
+        task,
+        {
+            "status": status,
+            "updated_at": now,
+            "progress": Task.progress if progress is None else progress,
+            "error_message": error_message or Task.error_message,
+            "completed_at": now if completed else Task.completed_at,
+        },
+    )
+    if not reopened:
+        logger.info(
+            "Dropped a %r write to task %s: a newer %s run is already active for file %s",
+            status,
+            task.id,
+            task.task_type,
+            task.media_file_id,
+        )
+    return reopened
 
 
 def _write_if_still_active(

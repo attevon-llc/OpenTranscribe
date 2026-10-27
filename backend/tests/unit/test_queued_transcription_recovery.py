@@ -129,12 +129,20 @@ def test_a_running_transcription_is_judged_from_when_it_started(
 ):
     """A run heartbeating for 10 minutes is inside its budget even if dispatched 2 h ago;
     one heartbeating for 2 h is past it (the backstop for a wedged-but-alive stage)."""
-    media_file = _file(db_session, normal_user)
+    # Two files: a file holds at most one active row per step (v448, issue #1185).
     young_run = _transcription(
-        db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=1)
+        db_session,
+        normal_user,
+        _file(db_session, normal_user),
+        age=timedelta(hours=2),
+        quiet_for=timedelta(hours=1),
     )
     old_run = _transcription(
-        db_session, normal_user, media_file, age=timedelta(hours=3), quiet_for=timedelta(hours=1)
+        db_session,
+        normal_user,
+        _file(db_session, normal_user),
+        age=timedelta(hours=3),
+        quiet_for=timedelta(hours=1),
     )
     fake_redis.mark_running(young_run.id, started_seconds_ago=600)
     fake_redis.mark_running(old_run.id, started_seconds_ago=7200)
@@ -167,12 +175,20 @@ def test_an_unreadable_broker_never_marks_a_transcription_stuck(
 def test_a_queued_transcription_is_not_orphaned_after_an_hour(
     detection, db_session, normal_user, fake_redis
 ):
-    media_file = _file(db_session, normal_user)
+    # Two files: a file holds at most one active row per step (v448, issue #1185).
     queued = _transcription(
-        db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=2)
+        db_session,
+        normal_user,
+        _file(db_session, normal_user),
+        age=timedelta(hours=2),
+        quiet_for=timedelta(hours=2),
     )
     dead = _transcription(
-        db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=2)
+        db_session,
+        normal_user,
+        _file(db_session, normal_user),
+        age=timedelta(hours=2),
+        quiet_for=timedelta(hours=2),
     )
     fake_redis.mark_queued(queued.id)
 

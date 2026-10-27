@@ -855,8 +855,28 @@ class FileTag(Base):
     __table_args__ = (UniqueConstraint("media_file_id", "tag_id"),)
 
 
+#: The partial UNIQUE index behind "one active task row per file and step" (``v448``, issue
+#: #1185). Named here so code that must tell its violation apart from any other integrity error
+#: (``task_utils.is_active_row_conflict``) matches on one definition.
+TASK_ACTIVE_INDEX = "uq_task_active_per_file_type"
+
+
 class Task(Base):
     __tablename__ = "task"
+
+    # A file has at most one pending/in_progress row per task_type (corpus-wide rows with no
+    # file are exempt: NULLs are distinct). Mirrors ``v448``; the migration resolves existing
+    # duplicates first and the writers (``create_task_record``, the reopen paths) take the
+    # conflict deliberately rather than swallowing it.
+    __table_args__ = (
+        Index(
+            TASK_ACTIVE_INDEX,
+            "media_file_id",
+            "task_type",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'in_progress')"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # Celery task ID
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)

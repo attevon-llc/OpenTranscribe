@@ -1,5 +1,8 @@
 """Changing a voiceprint switch re-indexes the files whose speaker label it decides (#1280, D5).
 
+(The durable record, the audit events and the maintenance safety net are in
+``tests/unit/test_privacy_label_resync.py``; this suite is the routes-to-queue behaviour.)
+
 The search chunks, digests and facts roster carry the canonical speaker label. A voice-matched
 name is left out of that label while voiceprints are off and returns when they are on, so the
 documents already in the index go stale the moment a switch moves, in BOTH directions. The write
@@ -25,9 +28,19 @@ from tests.fixtures.speaker_cleanup_seams import make_speaker
 
 
 @pytest.fixture
-def queued(monkeypatch) -> dict[str, list]:
-    """Record the files handed to the debounced re-index and to the facts regeneration."""
+def queued(monkeypatch, db_session) -> dict[str, list]:
+    """Record the files handed to the debounced re-index and to the facts regeneration.
+
+    The ``privacy.label_resync`` task is run in place of the broker: a switch change records
+    the pending resync and dispatches the task, and the task body is what queues the files.
+    """
+    from app.services.privacy.label_reindex import run_label_resync
+
     seen: dict[str, list] = {"reindex": [], "facts": []}
+    monkeypatch.setattr(
+        "app.tasks.privacy_label_resync_task.privacy_label_resync_task.delay",
+        lambda: run_label_resync(db_session),
+    )
 
     def reindex(*, file_id, file_uuid, user_id, priority=None):
         seen["reindex"].append(int(file_id))

@@ -4023,6 +4023,7 @@
   "orgAudit.event.policyChange": "Ha modificato la politica sulla privacy",
   "orgAudit.event.voiceprintsPurged": "Ha eliminato le impronte vocali archiviate",
   "orgAudit.event.genderPurged": "Ha eliminato i dati sul genere dedotto",
+  "orgAudit.event.labelsResynced": "Ha ricostruito le etichette dei parlanti nell'indice di ricerca dopo la modifica di un'impostazione delle impronte vocali",
   "holds.navLabel": "Blocchi legali",
   "holds.title": "Blocchi legali",
   "holds.description": "Un blocco legale impedisce, finché è in vigore, che i file vengano eliminati, rimossi dalla conservazione, cancellati con un account o rigenerati da una rielaborazione. Puoi bloccare file specifici o un'intera raccolta, compresi i file aggiunti in seguito. Il motivo è visibile solo agli amministratori della tua organizzazione.",

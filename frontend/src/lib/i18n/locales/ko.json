@@ -4023,6 +4023,7 @@
   "orgAudit.event.policyChange": "개인정보 보호 정책을 변경했음",
   "orgAudit.event.voiceprintsPurged": "저장된 음성 지문을 삭제했음",
   "orgAudit.event.genderPurged": "추정된 성별 데이터를 삭제했음",
+  "orgAudit.event.labelsResynced": "음성 지문 설정이 변경된 후 검색 색인의 화자 레이블을 다시 만들었음",
   "holds.navLabel": "법적 보존",
   "holds.title": "법적 보존",
   "holds.description": "법적 보존이 유효한 동안에는 파일을 삭제하거나, 보존 기간에 따라 제거하거나, 계정과 함께 지우거나, 재처리로 다시 생성할 수 없습니다. 특정 파일이나 컬렉션 전체(이후 추가되는 파일 포함)를 보존할 수 있습니다. 사유는 조직 관리자에게만 표시됩니다.",

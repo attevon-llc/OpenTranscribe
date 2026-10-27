@@ -32,7 +32,8 @@ from app.schemas.privacy import OrgPolicyUpdate
 from app.schemas.privacy import PrivacyDecision
 from app.schemas.privacy import RedactionFloorOut
 from app.schemas.privacy import UserLockLayer
-from app.services.privacy.label_reindex import queue_label_reindex
+from app.services.privacy.label_reindex import ResyncScope
+from app.services.privacy.label_reindex import request_label_resync
 from app.services.privacy.policy import clear_write_backstop_cache
 from app.services.privacy.policy import resolve_privacy_policy
 from app.services.privacy.purge import PurgeScope
@@ -100,11 +101,16 @@ def read_instance_policy(db: Session) -> InstancePrivacyPolicy:
 
 
 def update_instance_policy(
-    db: Session, *, voiceprint_matching: bool | None, gender_inference: bool | None
+    db: Session,
+    *,
+    voiceprint_matching: bool | None,
+    gender_inference: bool | None,
+    actor_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Write the switches that were given. Returns one ``{setting, from, to}`` per change.
 
-    A switch set to its current value is not written and not reported.
+    A switch set to its current value is not written and not reported. A changed voiceprint
+    switch records a label resync of the whole instance (``actor_user_id`` is who asked).
     """
     before = read_instance_policy(db)
     wanted = (
@@ -122,8 +128,16 @@ def update_instance_policy(
         set_setting(db, key, new, _INSTANCE_DESCRIPTIONS[key])
         changes.append({"setting": key, "from": current, "to": new})
     clear_write_backstop_cache()
-    if any(c["setting"] == constants.PRIVACY_VOICEPRINT_MATCHING_KEY for c in changes):
-        queue_label_reindex(db)
+    for change in changes:
+        if change["setting"] == constants.PRIVACY_VOICEPRINT_MATCHING_KEY:
+            request_label_resync(
+                db,
+                ResyncScope("instance"),
+                actor_user_id=actor_user_id,
+                switch=change["setting"],
+                from_value=bool(change["from"]),
+                to_value=bool(change["to"]),
+            )
     return changes
 
 
@@ -164,7 +178,14 @@ def write_user_switch(db: Session, user_id: int, enabled: bool) -> None:
     db.commit()
     clear_write_backstop_cache()
     if changed:
-        queue_label_reindex(db, user_id=user_id)
+        request_label_resync(
+            db,
+            ResyncScope("user", user_id=user_id),
+            actor_user_id=user_id,
+            switch=constants.PRIVACY_USER_VOICEPRINT_MATCHING_KEY,
+            from_value=not enabled,
+            to_value=enabled,
+        )
 
 
 def user_lock_layer(db: Session, organization_id: int | None) -> UserLockLayer | None:
@@ -246,6 +267,8 @@ def apply_org_policy_update(
 
     changed: list[str] = []
 
+    voiceprints_before = bool(row.voiceprint_matching_enabled)
+
     def set_field(name: str, column: str, new: Any) -> None:
         if getattr(row, column) != new:
             setattr(row, column, new)
@@ -273,7 +296,14 @@ def apply_org_policy_update(
     db.commit()
     clear_write_backstop_cache()
     if "voiceprint_matching_enabled" in changed:
-        queue_label_reindex(db, organization_id=organization_id)
+        request_label_resync(
+            db,
+            ResyncScope("organization", organization_id=organization_id),
+            actor_user_id=actor_user_id,
+            switch="organization_policy.voiceprint_matching_enabled",
+            from_value=voiceprints_before,
+            to_value=not voiceprints_before,
+        )
     return sorted(changed)
 
 

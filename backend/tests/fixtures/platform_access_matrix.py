@@ -15,9 +15,10 @@ Two kinds of row:
 * ``site``: a place in ``app/`` that decides platform access (``.allows(``), resolves a grant,
   builds a bypass, reads the grant header or widens a list to the whole scope.
 
-Hand-written knowledge lives in exactly three tables here (``PLATFORM_OP_RULES``,
-``ALLOWS_KINDS`` and ``SITE_FORMS``). An item the tables do not classify is reported as
-``UNCLASSIFIED``, which the test refuses, so a new path forces a decision.
+Hand-written knowledge lives in ``PLATFORM_OP_RULES``, ``ALLOWS_KINDS`` and ``SITE_FORMS`` here
+and in ``platform_access_matrix_tables.py`` (content-route guards, inline-role routes, scope and
+reveal wideners). An item the tables do not classify is reported as ``UNCLASSIFIED``, which the
+test refuses, so a new path forces a decision.
 
 This module deliberately imports the app lazily: the AST half needs no import at all.
 """
@@ -27,10 +28,18 @@ from __future__ import annotations
 import ast
 import inspect
 import re
+import textwrap
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from fixtures.platform_access_matrix_tables import CONTENT_GUARD_TEXT
+from fixtures.platform_access_matrix_tables import CONTENT_GUARDS
+from fixtures.platform_access_matrix_tables import INLINE_ROLE_ROUTES
+from fixtures.platform_access_matrix_tables import REVEAL_WIDENER_SITES
+from fixtures.platform_access_matrix_tables import SCOPE_WIDENER_SITES
+from fixtures.platform_access_matrix_tables import TENANT_MARKERS
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = BACKEND_ROOT / "app"
@@ -167,6 +176,39 @@ def handler_source(endpoint: Any) -> str:
         return ""
 
 
+def _handler_tree(source: str) -> ast.AST | None:
+    try:
+        return ast.parse(textwrap.dedent(source))
+    except SyntaxError:
+        return None
+
+
+def uses_bypass(source: str) -> bool:
+    """Whether the handler's CODE reads a ``bypass`` (a docstring or comment cannot count)."""
+    tree = _handler_tree(source)
+    if tree is None:
+        return False
+    return any(
+        (isinstance(n, ast.Name) and n.id == "bypass")
+        or (isinstance(n, ast.Attribute) and n.attr == "bypass")
+        for n in ast.walk(tree)
+    )
+
+
+def reads_caller_role(source: str) -> bool:
+    """Whether the handler's code tests ``current_user.is_admin`` or ``current_user.role``."""
+    tree = _handler_tree(source)
+    if tree is None:
+        return False
+    return any(
+        isinstance(n, ast.Attribute)
+        and n.attr in {"is_admin", "role"}
+        and isinstance(n.value, ast.Name)
+        and n.value.id == "current_user"
+        for n in ast.walk(tree)
+    )
+
+
 def _header_state(names: set[str]) -> str:
     if "refuse_under_support_grant" in names:
         return "refused"
@@ -177,8 +219,17 @@ def _header_state(names: set[str]) -> str:
     return "n/a"
 
 
-def classify_route(method: str, path: str, names: set[str], source: str) -> Row | None:
+def classify_route(
+    method: str,
+    path: str,
+    names: set[str],
+    source: str,
+    content_guards: dict[str, str] | None = None,
+    inline_routes: dict[str, tuple[str, str]] | None = None,
+) -> Row | None:
     """The matrix row for one route, or ``None`` when it is not a platform-access path."""
+    content_guards = CONTENT_GUARDS if content_guards is None else content_guards
+    inline_routes = INLINE_ROLE_ROUTES if inline_routes is None else inline_routes
     key = f"{method} {path}"
     header = _header_state(names)
     admin = bool(names & ADMIN_DEPS)
@@ -203,10 +254,10 @@ def classify_route(method: str, path: str, names: set[str], source: str) -> Row 
                 "refuse_under_support_grant: 403 support_grant_action_not_permitted",
                 f"{ENFORCEMENT_TEST}::test_a_grant_is_refused_on_chat_search_upload_export_and_admin",
             )
-        if "bypass" in source:
-            guard = "bypass.allows on the loaded row, or sees_all_in_scope inside the tenant"
-        else:
-            guard = "caller-scoped through the request context (ctx forwarded or user filter)"
+        guard = CONTENT_GUARD_TEXT.get(
+            content_guards.get(key, ""),
+            "UNCLASSIFIED: add the route to CONTENT_GUARDS in platform_access_matrix_tables.py",
+        )
         return Row(
             "route",
             key,
@@ -224,6 +275,11 @@ def classify_route(method: str, path: str, names: set[str], source: str) -> Row 
             "base context: the grant header is never read, so a stale one cannot break it",
             f"{ENFORCEMENT_TEST}::test_lifecycle_routes_ignore_a_stale_header",
         )
+    if reads_caller_role(source):
+        category, why = inline_routes.get(
+            key, ("UNCLASSIFIED", "add the route to INLINE_ROLE_ROUTES with a written reason")
+        )
+        return Row("route", key, f"platform-op:inline:{category}", header, why, SWEEP_TEST)
     return None
 
 
@@ -234,7 +290,7 @@ def _platform_op(key: str, header: str, names: set[str], source: str) -> Row:
     if key in AUDITED_ROUTES:
         category = "metadata-audited"
         guard = "audit_metadata_access in the handler (one PLATFORM_ADMIN_METADATA_ACCESS event)"
-    elif "get_current_context" in names and "bypass" in source:
+    elif "get_current_context" in names and uses_bypass(source):
         category = "grant-gated"
         guard = "bypass.allows / sees_all_in_scope on the request context"
     else:
@@ -342,8 +398,8 @@ SITE_FORMS: dict[str, dict[str, str]] = {
             "builds the frozen view of a grant that has just passed every check"
         ),
     },
-    "scope-widener": {},
-    "reveal-widener": {},
+    "scope-widener": SCOPE_WIDENER_SITES,
+    "reveal-widener": REVEAL_WIDENER_SITES,
 }
 
 SITE_TEST = {
@@ -417,16 +473,48 @@ def site_row(form: str, key: str) -> Row:
             if kind
             else "UNCLASSIFIED: add the function to ALLOWS_KINDS"
         )
-    elif form in {"scope-widener", "reveal-widener"}:
-        guard = (
-            "widens a list to every user's rows inside the ACTIVE tenant: single mode, "
-            "or an organization grant (which assumes that tenant)"
-            if form == "scope-widener"
-            else "owner-only reveal in multi mode; admin reveal only in single mode"
-        )
     else:
-        guard = SITE_FORMS[form].get(key, "UNCLASSIFIED: add the site to SITE_FORMS")
+        guard = SITE_FORMS[form].get(
+            key, "UNCLASSIFIED: add the site to SITE_FORMS (wideners: the *_WIDENER_SITES tables)"
+        )
     return Row("site", key, form, "n/a", guard, SITE_TEST[form])
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name):
+            names.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            names.add(n.attr)
+        elif isinstance(n, ast.keyword) and n.arg:
+            names.add(n.arg)
+    return names
+
+
+def missing_tenant_markers(
+    app_root: Path = APP_ROOT, markers: dict[str, tuple[str, ...]] | None = None
+) -> list[str]:
+    """Scope-widener sites whose function no longer mentions the tenant predicate it relies on."""
+    markers = TENANT_MARKERS if markers is None else markers
+    missing: list[str] = []
+    for key, wanted in sorted(markers.items()):
+        rel, _, func = key.partition("::")
+        path = app_root / rel
+        if not path.is_file():
+            missing.append(f"{key}: no such file")
+            continue
+        tree = ast.parse(path.read_text())
+        bodies = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == func
+        ]
+        if not bodies:
+            missing.append(f"{key}: no such function")
+        elif wanted and not any(set(wanted) & _called_names(b) for b in bodies):
+            missing.append(f"{key}: no longer mentions {' or '.join(wanted)}")
+    return missing
 
 
 def site_rows(sites: Iterable[tuple[str, str]]) -> list[Row]:

@@ -154,6 +154,15 @@ pyexiftool==0.5.6
 yt-dlp==2026.8.19
 
 # Semantic search and NLP
+# transformers / huggingface-hub / tokenizers are transitive here (sentence-transformers,
+# pyannote.audio) and used to float: a fresh `pip install -r requirements-lite.txt` resolved
+# huggingface-hub 2.3.0 + transformers 5.21.0, which neither the app's offline guard nor its
+# model downloader has been run against, while the shipped lite image still held 4.57.6.
+# Pinned to the versions requirements.txt validates, including why hub stops at 1.17
+# (issue #1002, #492).
+transformers==5.10.4
+huggingface-hub==1.17.0
+tokenizers==0.22.2
 sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage

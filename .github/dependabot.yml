@@ -120,16 +120,17 @@ updates:
       # bcrypt 5 removed the __about__ attribute passlib introspects (#234).
       - dependency-name: "bcrypt"
         update-types: ["version-update:semver-major"]
-      # transformers 5 / huggingface-hub 1.x break whisperx + pyannote (#234);
-      # bump together once the ASR stack supports them.
+      # transformers 5.10 + huggingface-hub 1.x are the validated pair (#1002: the CVE fix).
+      # The NEXT majors (transformers 6, huggingface-hub 2) are held: hub 2 is a new client
+      # surface the offline guard and model downloader have not been run against.
+      # Bump together, re-running the offline-guard and local-model downloader tests.
       - dependency-name: "transformers"
         update-types: ["version-update:semver-major"]
       - dependency-name: "huggingface-hub"
         update-types: ["version-update:semver-major"]
-      # sentence-transformers 6.x requires transformers>=5.0.0, which is capped
-      # above (#940 / v0.5.1). Confirmed via a real pip resolve, not just theory:
-      # ResolutionImpossible on "sentence-transformers 6.0.1 depends on
-      # transformers<6.0.0 and >=5.0.0". Bump together with transformers.
+      # sentence-transformers 6.x was blocked by the transformers 4.x cap (#940 / v0.5.1);
+      # transformers is 5.x now, so that blocker is gone. Still a major bump: take it
+      # deliberately with a reranker/embedding retest, not in a batch.
       - dependency-name: "sentence-transformers"
         update-types: ["version-update:semver-major"]
       # websockets 11 -> 16 is a five-major jump touching uvicorn/provider SDK

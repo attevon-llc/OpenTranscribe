@@ -165,7 +165,7 @@ def classify_error(exc: BaseException) -> str:
     Args:
         exc: The exception raised by ``resolve_plan`` or ``download_blocking``.
     """
-    import requests
+    import httpx
     from huggingface_hub import errors as hf_errors
 
     chain: list[BaseException] = []
@@ -196,9 +196,7 @@ def classify_error(exc: BaseException) -> str:
         status = _status_of(err)
         if isinstance(
             err,
-            requests.exceptions.ConnectionError
-            | requests.exceptions.Timeout
-            | hf_errors.LocalEntryNotFoundError,
+            httpx.TransportError | hf_errors.LocalEntryNotFoundError,
         ) or (status is not None and status >= 500):
             return "hf_unreachable"
     return "download_failed"

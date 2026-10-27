@@ -97,9 +97,9 @@ torch==2.11.0
 torchaudio==2.11.0
 ctranslate2==4.8.2
 faster-whisper==1.2.1
-# See requirements.txt for why transformers is capped <5.0.0.
-transformers==4.57.6
-huggingface-hub==0.36.2
+# See requirements.txt for why transformers 5.10+ and huggingface-hub 1.x (issue #1002).
+transformers==5.10.4
+huggingface-hub==1.17.0
 onnx==1.22.0
 onnxruntime==1.30.0
 omegaconf==2.3.1

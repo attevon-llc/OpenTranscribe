@@ -6,8 +6,8 @@ the diarizer's ``HF_HUB_OFFLINE`` checks only improved an error MESSAGE after
 network round trip in the first place. `pyannote.audio.Pipeline.from_pretrained`
 exposes no ``local_files_only`` kwarg, so the fix is
 ``app.utils.hf_hub_offline.force_offline_if_requested`` (mutates
-``huggingface_hub.constants.HF_HUB_OFFLINE`` + drops cached sessions so a fresh one
-mounts the library's ``OfflineAdapter``) plus ``load_with_timeout`` to bound the
+``huggingface_hub.constants.HF_HUB_OFFLINE``, which the library's shared client checks
+on every request) plus ``load_with_timeout`` to bound the
 call regardless of the flag.
 
 These tests stub ``pyannote.audio.Pipeline`` at the point ``diarizer.py`` imports it
@@ -47,7 +47,6 @@ class TestOfflineGuardBlocksTheNetworkAttempt:
         BEFORE any socket operation, for both the v4 load and its v3 fallback.
         """
         from huggingface_hub.utils._http import get_session
-        from huggingface_hub.utils._http import reset_sessions
 
         monkeypatch.setenv("HF_HUB_OFFLINE", "1")
         attempts: list[str] = []
@@ -59,16 +58,12 @@ class TestOfflineGuardBlocksTheNetworkAttempt:
             raise AssertionError("unreachable: the offline adapter must raise first")
 
         _install_fake_pyannote(monkeypatch, _from_pretrained)
-        reset_sessions()
 
         config = TranscriptionConfig(diarization_device="cpu", hf_token=None)
         diarizer = diarizer_mod.SpeakerDiarizer(config)
 
-        try:
-            with pytest.raises(RuntimeError) as exc_info:
-                diarizer.load_model()
-        finally:
-            reset_sessions()
+        with pytest.raises(RuntimeError) as exc_info:
+            diarizer.load_model()
 
         # Both the v4 and v3 attempts ran (proving the guard didn't just skip the
         # call), and the failure reported is the offline block, not a real network

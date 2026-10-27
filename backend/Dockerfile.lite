@@ -298,7 +298,6 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/home/appuser/.cache/huggingface \
-    TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
     TORCH_HOME=/home/appuser/.cache/torch \
     NLTK_DATA=/home/appuser/.cache/nltk_data \
     SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers \

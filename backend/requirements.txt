@@ -134,25 +134,33 @@ ctranslate2==4.8.2
 # constraint upstream). ctranslate2 and huggingface-hub above/below already
 # satisfy its other needs.
 #
-# tokenizers capped by transformers==4.57.6 below, which declares
+# tokenizers capped by transformers==5.10.4 below, which declares
 # tokenizers<=0.23.0,>=0.22.0 in its own metadata -- `pip install
-# tokenizers==0.23.2 transformers==4.57.6` is a real ResolutionImpossible,
-# verified directly via a full `pip install -r requirements.txt` run.
+# tokenizers==0.23.2 transformers==5.10.4` is a real ResolutionImpossible.
 # Dependabot PR #949 proposed 0.23.2; caught before it reached a built image.
-# Lift together with transformers' own major-version cap (dependabot.yml).
+# Lift together with the transformers pin (dependabot.yml).
 av==18.1.0
 tokenizers==0.22.2
 tqdm==4.70.1
 
 # ML/Data processing
-# transformers>=5.0.0 needs huggingface-hub>=1.0.0, but whisperx (3.8.1 and current
-# 3.8.6) caps huggingface-hub<1.0.0, and gliner==0.2.28 caps transformers<5.14.0 -
-# capped here so Dependabot stops proposing an incompatible jump. Revisit once
-# whisperx ships a huggingface-hub>=1.0 compatible release.
-# Floor raised to 4.51.3 (gliner's actual "requires_dist" floor) now that gliner
-# is also --no-deps below and no longer has pip enforcing that constraint for us.
-transformers==4.57.6
-huggingface-hub==0.36.2
+# transformers 5.10+ fixes CVE-2026-4372, CVE-2026-5241 and CVE-2026-9856 (issue #1002).
+# transformers 5.10 needs huggingface-hub>=1.5,<2. whisperx 3.8.6 still declares
+# huggingface-hub<1.0.0, but it is installed --no-deps (requirements-nodeps.txt), so pip
+# never enforces that cap, and the app does not import whisperx at runtime. What matters is
+# what actually runs against hub 1.x: pyannote.audio (fork), faster-whisper, sentence-transformers,
+# gliner (caps transformers<5.17.0, so 5.10.x-5.16.x only) and detoxify all load and run on
+# transformers 5.10 + hub 1.x. The 1.x client is httpx, not requests, and it has no
+# reset_sessions(): see app/utils/hf_hub_offline.py and services/local_models/downloader.py.
+# huggingface-hub is held at 1.17.0, the last release that downloads into the shared
+# `<etag>.incomplete` blob. 1.18+ downloads into a process-unique `<etag>.<rand>.incomplete`
+# and deletes it on failure: no resume, and services/local_models/downloader.bytes_on_disk
+# (the model-download progress bar) cannot see the in-flight file. Moving past 1.17 needs
+# that code adapted first; tests/unit/test_local_model_downloader.py fails on it.
+# Do not move to hub 2.x or transformers 6 without re-running that path (dependabot.yml
+# holds both majors).
+transformers==5.10.4
+huggingface-hub==1.17.0
 # Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
 # virtualenv) — pinned after the dependency-parity gate caught the venv and the
 # image resolving different patch releases (issue #492's exact failure mode).
@@ -333,7 +341,7 @@ preshed==3.0.13
 # which is how this was found.
 en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 # GLiNER = small CPU zero-shot NER for names/addresses (plugs into Presidio).
-# Installed with --no-deps from requirements-nodeps.txt (gliner==0.2.28) — see the
+# Installed with --no-deps from requirements-nodeps.txt (gliner==0.2.29) — see the
 # onnxruntime comment above; its other real dependencies (torch, transformers,
 # huggingface_hub, sentencepiece, tqdm) are all already pinned elsewhere in this file.
 # detoxify = toxicity classification (segment-level). transformers (above) backs

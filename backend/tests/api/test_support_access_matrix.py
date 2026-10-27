@@ -574,8 +574,8 @@ def test_degraded_listing_names_only_files_of_the_active_tenant(support_world, s
     body = response.json()
     assert [f["file_uuid"] for f in body["files"]] == [str(own.uuid)]
     assert body["files"][0]["title"] == own.filename, "the caller's own file is named"
-    assert body["total_files"] == 4, "the count stays the size of what a re-embed would touch"
-    assert body["outside_scope_files"] == 3
+    assert body["total_files"] == 1, "a plain admin is told only about the files listed to them"
+    assert body["outside_scope_files"] == 0
     assert body["affected_users"] == 1
     for tag in seeded.canaries.values():
         assert tag not in response.text
@@ -592,7 +592,7 @@ def test_degraded_listing_in_an_org_context_is_the_callers_rows_inside_that_org(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["files"] == [], "the org's file belongs to its owner, not to the platform admin"
-    assert body["total_files"] == 3
+    assert body["total_files"] == 0
     for tag in seeded.canaries.values():
         assert tag not in response.text
 

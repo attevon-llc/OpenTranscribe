@@ -293,14 +293,6 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
         "retry-ceiling",
         "the role is forwarded to the per-file handlers, which skip the retry ceiling and allow force for admins; each file still passes the chokepoint with ctx.bypass",
     ),
-    "GET /api/files/{file_uuid}/summary-status": (
-        "display-hint",
-        "the role only decides the can_generate hint in the response; the file was resolved with ctx.bypass first",
-    ),
-    "POST /api/files/{file_uuid}/summarize": (
-        "settings-override",
-        "an admin may generate a summary while the system-wide switch is off; the file was resolved with ctx.bypass and the summary is the file owner's",
-    ),
     "GET /api/search/index-health": (
         "platform-ops",
         "non-admins get document counts scoped to themselves, admins the deployment totals; counts only, no content",

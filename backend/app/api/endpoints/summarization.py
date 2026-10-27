@@ -118,7 +118,7 @@ async def trigger_summarization(
         )
 
     # Check system-wide disable (non-admin users blocked)
-    if getattr(current_user, "role", None) != "admin":
+    if not ctx.bypass.user_is_admin:
         from app.utils.summary_settings import is_summary_enabled_system
 
         if not is_summary_enabled_system(db):

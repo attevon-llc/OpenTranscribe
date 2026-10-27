@@ -4,7 +4,7 @@
   # Background Tasks Documentation
 </div>
 
-This directory contains Celery-based background tasks for CPU-intensive AI processing operations. Tasks are designed to run asynchronously to avoid blocking API requests.
+This directory contains the Celery tasks that do the application's long-running work: the transcription pipeline, speaker analysis, search indexing, LLM enrichment, downloads, redaction, maintenance and recovery. Tasks run asynchronously so API requests never block on them. Subsystem rules and hard-won gotchas are in `app/tasks/CLAUDE.md`; read it before changing the pipeline.
 
 ## ⚡ Task System Overview
 
@@ -12,657 +12,267 @@ This directory contains Celery-based background tasks for CPU-intensive AI proce
 ```
 API Request → Task Dispatch → Celery Worker → AI Processing → Database Update → WebSocket Notification
      ↓              ↓              ↓               ↓                ↓                    ↓
-  HTTP Layer    Queue System   Background     AI/ML Models    Data Storage      Real-time UI
+  HTTP Layer    Redis queues   Background     AI/ML Models    Data Storage      Real-time UI
 ```
 
 ### Core Technologies
-- **Celery**: Distributed task queue system
-- **Redis**: Message broker for task queuing
-- **Flower**: Task monitoring and management UI
-- **WhisperX**: Advanced speech recognition with alignment
-- **PyAnnote**: Speaker diarization and voice analysis
-- **Multi-Provider LLMs**: Intelligent summarization with context processing
-- **FFmpeg**: Media processing and conversion
+- **Celery** with a **Redis** broker; **Flower** for monitoring (http://localhost:5175/flower)
+- **WhisperX / faster-whisper** for transcription and **diar-native / PyAnnote** for diarization (engine code in `app/transcription/`)
+- **Multi-provider LLMs** for summarization, topics and speaker suggestions (`app/services/llm_service.py`)
+- **FFmpeg / ffprobe / ExifTool** for media processing
 
 ## Task Structure
 
+`app/tasks/` has roughly 50 modules, grouped by concern:
+
 ```
 tasks/
-├── transcription/                    # 3-stage GPU transcription pipeline
-│   ├── __init__.py                  # Task exports
-│   ├── preprocess.py                # Stage 1: download from MinIO, extract audio
-│   ├── core.py                      # Stage 2: WhisperX + PyAnnote (GPU)
-│   ├── postprocess.py               # Stage 3: index, notify, dispatch enrichment
-│   ├── dispatch.py                  # Task routing helpers
-│   ├── audio_processor.py           # FFmpeg audio conversion/extraction
-│   ├── metadata_extractor.py        # ExifTool media metadata
-│   ├── speaker_processor.py         # Speaker diarization processing
-│   ├── storage.py                   # Database storage utilities
-│   ├── notifications.py             # WebSocket notifications
-│   └── waveform_generator.py        # Waveform data generation
-├── speaker_tasks.py                  # Thin re-export module (do not add logic here)
-├── speaker_identification_task.py    # LLM-powered speaker name suggestions
-├── speaker_update_task.py            # Background speaker record updates
-├── speaker_embedding_task.py         # Embedding extraction and reassignment
-├── reindex_task.py                   # Search reindexing with stop/cancel support
-├── file_retention_task.py            # Auto-deletion based on admin retention policy
-├── analytics.py                      # Analytics and insights processing
-├── cleanup.py                        # Stuck file detection and recovery
-├── summarization.py                  # Multi-provider LLM summarization
-├── summary_retry.py                  # Summary retry logic
-├── youtube_processing.py             # yt-dlp URL download processing
-├── embedding_migration_v4.py         # Speaker embedding migration to v4 format
-├── migration_pipeline.py             # General migration pipeline tasks
-├── embedding_consistency_repair.py   # Embedding index consistency repair
-├── search_maintenance_task.py        # OpenSearch index maintenance
-├── search_indexing_task.py           # Search indexing tasks
-├── thumbnail.py                      # Thumbnail generation
-├── waveform.py                       # Waveform generation (standalone)
-├── rediarize_task.py                 # Re-diarization tasks
-├── topic_extraction.py               # LLM topic extraction
-└── utility.py                        # Shared task utilities
+├── transcription/                    # The processing pipeline (see below)
+├── Speakers
+│   ├── speaker_embedding_task.py            # Voiceprint extraction and reassignment updates
+│   ├── speaker_identification_task.py       # LLM name suggestions (never auto-applied)
+│   ├── speaker_update_task.py, speaker_merge_task.py   # Background speaker updates and merges
+│   ├── speaker_attribute_task.py, speaker_attribute_migration_task.py, combined_speaker_analysis_task.py
+│   ├── speaker_clustering.py, rename_propagation_task.py, rediarize_task.py
+│   ├── speaker_embedding_consistency.py, embedding_consistency_repair.py
+│   ├── embedding_migration_v4.py, speaker_embedding_migration.py, migration_pipeline.py
+│   └── speaker_tasks.py                     # Re-export shim; keeps legacy task names alive (no logic here)
+├── Search
+│   ├── search_indexing_task.py              # Index a completed transcript (retries over a horizon)
+│   ├── search_index_sweep_task.py           # Beat sweep re-dispatching files missing from search
+│   ├── search_maintenance_task.py, search_reembed_task.py, reindex_task.py, opensearch_integrity_task.py, tenant_backfill_task.py
+├── LLM enrichment
+│   ├── summarization.py, summary_retry.py   # ai.generate_summary and retry
+│   ├── topic_extraction.py, auto_labeling.py
+│   └── ingest_artifacts_task.py             # Deterministic (no-LLM) facts / digest / keyphrases
+├── Media
+│   ├── media_download.py, youtube_processing.py, transcript_document.py   # Downloads, yt-dlp, DOCX/PDF export
+│   ├── thumbnail.py, thumbnail_migration.py, waveform.py, waveform_generation.py, playback_rendition.py
+│   └── imohash_recompute.py, local_model_download.py
+├── Governance and compliance
+│   ├── redaction_task.py                    # Content-redaction detection (redaction queue)
+│   ├── erasure_reconciliation.py, account_lifecycle.py, session_cap.py, chat_retention.py
+│   └── directory_sync_task.py
+├── Operations
+│   ├── cleanup.py                           # Stuck-file recovery, retention, scratch janitor, upload sweeper
+│   ├── recovery.py, recovery_tasks.py       # Reclaim lost runs; storage re-ingestion
+│   ├── storage_orphan_sweep_task.py, backup_tasks.py, watch_source_tasks.py
+│   ├── analytics.py, baseline_export.py, utility.py
 ```
 
 ## Transcription Pipeline (`transcription/`)
 
-### 3-Stage Pipeline Overview
-
-The transcription pipeline runs as three chained Celery tasks, separating concerns and allowing the GPU worker to be freed as early as possible:
+### How a recording is processed
+`services/pipeline_plan.py` decides, per file, which engines run (local GPU/CPU or cloud for transcription; ASR-provided, local or cloud diarization), where, and on which queue. `transcription/dispatch.py` resolves the plan once, refuses a blocking issue before anything is published, and builds a Celery chain. The default local path is three stages:
 
 ```
-preprocess_for_transcription  →  transcribe_gpu_task  →  finalize_transcription
-     (download audio)            (WhisperX + PyAnnote)   (index + notify + dispatch)
-          CPU                            GPU                      CPU
+transcription.preprocess  →  transcription.gpu_transcribe  →  transcription.postprocess
+ (download, ffmpeg)            (Whisper + inline speakers)       (voiceprints, index, notify)
+        CPU                              GPU                              CPU
 ```
 
-Celery task names: `transcription.preprocess` → `transcription.gpu_transcribe` →
-`transcription.postprocess`.
+Task functions: `preprocess_for_transcription` (`preprocess.py`), `transcribe_gpu_task` (`core.py`), `finalize_transcription` (`postprocess.py`).
 
-Enrichment tasks (speaker embedding, LLM identification) are dispatched asynchronously from postprocess — they do not block the GPU worker.
+Other stage tasks, selected by the plan:
+- `transcription.cpu_transcribe` (`cpu_task.py`): CPU Whisper, full image only
+- `transcription.diarize_gpu` (`diarize_task.py`): diarization only, for the multi-GPU split (`gpu-diarize` queue)
+- `cloud_asr.py`: the cloud ASR provider pipeline (`cloud-asr` queue)
+- `rediarize_task.py`: the post stage that detects speakers on an already-saved transcript, and the manual "re-detect speakers" action
 
-### Stage 1: Preprocess (`preprocess.py`)
-- Downloads file from MinIO
-- Extracts audio with FFmpeg
-- Extracts media metadata with ExifTool
-- Dispatches `transcribe_gpu_task`
+Enrichment (speaker embeddings, indexing, summarization, topics, facts, redaction) is dispatched asynchronously from postprocess and does not hold the GPU. `transcription.enrich_and_dispatch` (in `postprocess.py`) fans it out.
 
-### Stage 2: GPU Transcription (`core.py`)
-Main GPU-side orchestrator:
+### Modules in `transcription/`
+| Module | Role |
+|---|---|
+| `preprocess.py` | Stage 1: download from MinIO, extract audio with FFmpeg, probe metadata |
+| `core.py` | Stage 2 (GPU): transcription with the engine in `app/transcription/` |
+| `postprocess.py` | Stage 3: results, voiceprints, indexing, notifications, downstream dispatch |
+| `dispatch.py` | Plan resolution and Celery chain orchestration |
+| `finalize.py`, `downstream.py` | Critical-path persistence (segments, speakers, DB) and post-transcription dispatch |
+| `cpu_task.py`, `diarize_task.py`, `cloud_asr.py` | Alternative stage 2 implementations |
+| `pipelines.py`, `context.py` | Local engine pipelines and configuration; shared task context and failure handlers |
+| `audio_processor.py` | `prepare_audio_for_transcription`, `extract_audio_from_video`, `convert_audio_format` |
+| `metadata_extractor.py` | `extract_media_metadata` (ExifTool), `get_important_metadata`, `update_media_file_metadata`, ffprobe fallbacks |
+| `speaker_processor.py` | Speaker label normalization, speaker row creation, overlap marking, sidecar gender |
+| `embeddings.py` | Speaker-embedding extraction/matching in the pipeline |
+| `storage.py` | `save_transcript_segments`, `update_media_file_transcription_status` |
+| `notifications.py` | WebSocket notifications (`send_progress_notification`, `send_completion_notification`, `send_error_notification`, ...) |
+| `requested_options.py`, `user_settings.py` | Per-file request options and per-user transcription preferences |
+| `run_ownership.py`, `cancellation.py` | Stand down superseded runs; user-cancel handling |
+| `hooks.py`, `waveform_generator.py` | Cloud-edition seam hooks; waveform generation |
 
-```python
-@celery_app.task(bind=True, name="transcription.gpu_transcribe", queue=CeleryQueues.GPU)
-def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
-    """
-    Run WhisperX transcription + PyAnnote speaker diarization.
+### Key behaviours
+- **Admin-pinned model**: the local Whisper model comes from the `SystemSettings` key `asr.local_model`, falling back to `WHISPER_MODEL`. GPU workers preload models at startup (`worker_ready`) when `PRELOAD_GPU_MODELS=true`.
+- **Progress**: stages report through `progress_tracker.py` (EWMA ETA); every progress frame names its sub-stage (`TranscriptionStage` in `core/enums.py`).
+- **One retry policy**: `services/transcription_retry.py` decides retry vs. fail for every way a run can end early. Permanent errors fail fast; transient ones are requeued with backoff.
+- **Liveness and recovery**: every stage holds a run lease (`core/task_liveness.py`); lost stages are reclaimed (`core/broker_orphans.py`, `system.reclaim_lost_tasks`) and a stale message stands down through `run_ownership.py`.
 
-    Steps:
-    1. Load audio from temp storage
-    2. Run WhisperX with configured model (admin-pinned via SystemSettings)
-    3. Run PyAnnote speaker diarization
-    4. Process and store transcript segments
-    5. Chain into finalize_transcription
-    """
-```
+## Speaker Tasks
 
-**Key Features:**
-- **Admin-pinned model**: Reads model from `SystemSettings` key `asr.local_model`, falls back to `WHISPER_MODEL` env var
-- **Model preloading**: Worker preloads model at startup via `worker_ready` signal (CUDA workers)
-- **GPU memory management**: `torch.cuda.empty_cache()` after processing
-- **Progress tracking**: Real-time updates via `progress_tracker.py` (EWMA ETA)
-
-### Stage 3: Postprocess (`postprocess.py`)
-- Indexes content in OpenSearch
-- Sends WebSocket completion notification
-- Dispatches async enrichment: speaker embedding, LLM identification (does not block GPU)
-
-### Metadata Extraction (`metadata_extractor.py`)
-Extracts comprehensive media metadata using ExifTool:
-
-```python
-def extract_media_metadata(file_path: str) -> Optional[Dict[str, Any]]:
-    """Extract metadata from media file using ExifTool."""
-
-def get_important_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
-    """Filter and normalize important metadata fields."""
-
-def update_media_file_metadata(media_file, extracted_metadata: Dict[str, Any],
-                              content_type: str, file_path: str) -> None:
-    """Update MediaFile object with extracted metadata."""
-```
-
-**Extracted Information:**
-- **File Properties**: Size, format, type, duration
-- **Video Specs**: Resolution, frame rate, codec, aspect ratio
-- **Audio Specs**: Channels, sample rate, bit depth
-- **Creation Data**: Timestamps, device information
-- **Content Info**: Title, author, description, GPS data
-
-### Audio Processing (`audio_processor.py`)
-Handles audio extraction and format conversion:
-
-```python
-def prepare_audio_for_transcription(temp_file_path: str, content_type: str,
-                                  temp_dir: str) -> str:
-    """Prepare audio file for transcription by extracting from video or converting format."""
-
-def extract_audio_from_video(video_path: str, output_path: str) -> None:
-    """Extract audio from video using FFmpeg."""
-
-def convert_audio_format(input_path: str, output_path: str) -> None:
-    """Convert audio to WAV format for optimal WhisperX processing."""
-```
-
-**Processing Features:**
-- **Format Detection**: Automatic format detection from MIME types
-- **Video Audio Extraction**: Extract audio track from video files
-- **Audio Conversion**: Convert to optimal format (16kHz, mono, PCM)
-- **Quality Optimization**: Prepare audio for best AI recognition results
-
-### Speaker Processing (`speaker_processor.py`)
-Manages speaker identification and database operations:
-
-```python
-def extract_unique_speakers(segments: List[Dict[str, Any]]) -> Set[str]:
-    """Extract unique speaker IDs from transcription segments."""
-
-def create_speaker_mapping(db: Session, user_id: int, unique_speakers: Set[str]) -> Dict[str, int]:
-    """Create mapping of speaker labels to database IDs."""
-
-def process_segments_with_speakers(segments: List[Dict[str, Any]],
-                                 speaker_mapping: Dict[str, int]) -> List[Dict[str, Any]]:
-    """Process transcription segments and add speaker database IDs."""
-```
-
-**Speaker Features:**
-- **Consistent Labeling**: Standardized speaker ID format (SPEAKER_XX)
-- **Cross-file Tracking**: UUID-based speaker identification
-- **Database Integration**: Automatic speaker record creation
-- **User Management**: Speaker verification and display names
-
-### Database Storage (`storage.py`)
-Handles all database operations for transcription results:
-
-```python
-def save_transcript_segments(db: Session, file_id: int, segments: List[Dict[str, Any]]) -> None:
-    """Save transcript segments to database."""
-
-def update_media_file_transcription_status(db: Session, file_id: int,
-                                         segments: List[Dict[str, Any]], language: str = "en") -> None:
-    """Update media file with transcription completion metadata."""
-```
-
-**Storage Features:**
-- **Bulk Operations**: Efficient segment insertion
-- **Transaction Management**: Atomic operations with rollback
-- **Status Updates**: File status progression tracking
-- **Relationship Management**: Speaker-segment associations
-
-### Notifications (`notifications.py`)
-Real-time WebSocket notifications for UI updates:
-
-```python
-def send_notification_with_retry(user_id: int, file_id: int, status: FileStatus,
-                                message: str, progress: int = 0, max_retries: int = 3) -> bool:
-    """Send notification with retry logic."""
-
-def send_processing_notification(user_id: int, file_id: int) -> None:
-    """Send processing started notification."""
-
-def send_completion_notification(user_id: int, file_id: int) -> None:
-    """Send transcription completed notification."""
-```
-
-**Notification Features:**
-- **Real-time Updates**: Instant UI notifications via WebSocket
-- **Progress Tracking**: Step-by-step progress updates
-- **Error Notifications**: User-friendly error messages
-- **Retry Logic**: Robust delivery with automatic retries
-
-## Speaker Tasks (Split Architecture)
-
-`speaker_tasks.py` is a thin re-export module only. Real implementations live in dedicated files:
-
-### `speaker_identification_task.py`
-LLM-powered speaker name suggestions based on conversation context. Suggestions are never auto-applied — they require manual user verification.
-
-### `speaker_update_task.py`
-Background updates to speaker records (display names, profile links, verification status).
-
-### `speaker_embedding_task.py`
-Extracts voice embeddings and handles speaker profile reassignment. Runs on the embedding worker (`celery-embedding-worker`), keeping GPU memory free.
+`speaker_tasks.py` is a re-export shim only. The implementations live in dedicated modules:
+- `speaker_identification_task.py`: LLM name suggestions from conversation context (`ai.identify_speakers`, nlp queue). Suggestions are never auto-applied; they need manual verification.
+- `speaker_update_task.py` / `speaker_merge_task.py`: background speaker record updates and merges.
+- `speaker_embedding_task.py`: voiceprint extraction (`extract_speaker_embeddings`) and reassignment updates, on the `cpu` queue.
+- `rename_propagation_task.py`: propagate speaker and title renames into the search chunk index.
 
 ## Analytics Tasks (`analytics.py`)
 
-### Purpose
-Generate insights and analytics from transcribed content:
+`analytics.analyze_transcript` computes per-file analytics (word counts, speaker talk time, turn-taking, interruptions, pace) through `services/analytics_service.py` and stores them in the `analytics` table. `POST /api/files/{uuid}/analytics/refresh` recomputes on demand.
 
-```python
-@celery_app.task(name="analyze_transcript")
-def analyze_transcript_task(file_id: int):
-    """
-    Analyze a transcript for additional metadata and insights.
+## AI Summarization Tasks (`summarization.py`)
 
-    Generates:
-    - Word count statistics
-    - Speaker distribution
-    - Segment analysis
-    - Duration metrics
-    """
-```
+`ai.generate_summary` (nlp queue) generates the BLUF-format summary through `LLMService`: it reads the transcript and speakers, sizes sections against the model's context window, summarizes long transcripts section by section and stitches the results, then stores them in `media_file.summary_data` and indexes a derived summary document for search. Output languages are `LLM_OUTPUT_LANGUAGES` (12). The no-LLM path reports `skipped`, not success. `topic_extraction.py` (`ai.extract_topics`, `ai.extract_topics_batch`) and `auto_labeling.py` produce tag/collection suggestions; the per-user opt-outs for the automatic AI steps are in `services/auto_llm_settings.py`.
 
-**Analytics Features:**
-- **Content Metrics**: Word counts, segment counts, speaker distribution
-- **Time Analysis**: Speaking time per speaker, segment duration patterns
-- **Language Insights**: Vocabulary analysis, complexity metrics
-- **Engagement Metrics**: Turn-taking patterns, interruption analysis
+## 🧹 Cleanup, Recovery and Maintenance (`cleanup.py`, `recovery.py`)
 
-## 📝 AI Summarization Tasks (`summarization.py`)
+`cleanup.py` tasks:
+- `cleanup.run_periodic_cleanup`: detect and recover stuck files (not on the beat schedule; invoked by operators or other tasks)
+- `cleanup.deep_cleanup(dry_run)`: admin-triggered orphan removal
+- `cleanup.health_check`, `cleanup.emergency_recovery(file_ids)`: health report and targeted recovery
+- `cleanup.orphan_upload_sweeper`, `cleanup.scratch_janitor`: abandoned uploads and scratch volume (scheduled)
+- `cleanup_expired_files`: admin-configured file retention (scheduled hourly)
 
-### Purpose
-Generate comprehensive BLUF-format summaries using multi-provider LLMs with intelligent context processing:
+`recovery.py` holds `system.reclaim_lost_tasks` and `system.reclaim_orphaned_deliveries` (scheduled) and the startup and periodic health recovery (`system.health_check`). The stuck-file logic lives in `services/file_cleanup_service.py` and `utils/task_utils.py`.
 
-```python
-@celery_app.task(name="summarize_transcript")
-def summarize_transcript_task(file_id: int):
-    """
-    Generate AI-powered summary with intelligent section processing.
-
-    Workflow:
-    1. Retrieve transcript and speaker data from database
-    2. Query LLM model for context length capabilities
-    3. Automatically chunk long transcripts at natural boundaries
-    4. Process each section individually for comprehensive analysis
-    5. Stitch section summaries into final BLUF format
-    6. Store results in both PostgreSQL and OpenSearch for search
-    """
-```
-
-### Intelligent Context Processing
-
-```python
-# Example: Long transcript processing
-context_length = await llm_service.get_model_context_length()  # 4096 for small Ollama model
-transcript_chunks = chunk_transcript_intelligently(transcript, context_length)
-
-if len(chunks) == 1:
-    # Single-pass processing
-    summary = await llm_service.generate_summary(transcript_chunks[0])
-else:
-    # Multi-section processing
-    section_summaries = []
-    for i, chunk in enumerate(transcript_chunks):
-        section_summary = await llm_service.summarize_transcript_section(chunk, i+1, len(chunks))
-        section_summaries.append(section_summary)
-
-    # Stitch into comprehensive BLUF summary
-    summary = await llm_service.stitch_section_summaries(section_summaries)
-```
-
-**AI Summarization Features:**
-- **BLUF Format**: Bottom Line Up Front executive summaries
-- **Multi-Provider Support**: vLLM, OpenAI, Ollama, Claude, OpenRouter
-- **Intelligent Chunking**: Natural boundaries (speaker changes, topics, sentences)
-- **Context-Aware Processing**: Automatic model capability detection
-- **Universal Compatibility**: Works with 4K to 200K+ token models
-- **No Content Loss**: Complete transcript analysis regardless of length
-- **Structured Output**: Action items, decisions, speaker analysis, key points
-
-## 🧹 File Cleanup Tasks (`cleanup.py`)
-
-### Purpose
-Automated background tasks for system maintenance, file recovery, and health monitoring:
-
-```python
-@celery_app.task(bind=True, name="cleanup.run_periodic_cleanup")
-def run_periodic_cleanup(self):
-    """
-    Periodic task to clean up stuck files and maintain system health.
-
-    This task should be run regularly (e.g., every 30 minutes) to:
-    - Detect and recover stuck files
-    - Mark orphaned files for cleanup
-    - Generate system health reports
-    """
-
-@celery_app.task(bind=True, name="cleanup.deep_cleanup")
-def run_deep_cleanup(self, dry_run: bool = False):
-    """
-    Deep cleanup task for removing orphaned files (admin-triggered).
-
-    Args:
-        dry_run: If True, only preview what would be cleaned up
-    """
-
-@celery_app.task(bind=True, name="cleanup.health_check")
-def system_health_check(self):
-    """
-    Generate a system health report with file processing metrics.
-    """
-
-@celery_app.task(bind=True, name="cleanup.emergency_recovery")
-def emergency_file_recovery(self, file_ids: list):
-    """
-    Emergency recovery task for specific files (admin-triggered).
-
-    Args:
-        file_ids: List of file IDs to attempt recovery on
-    """
-```
-
-### Auto-Recovery Features
-The cleanup tasks provide comprehensive file recovery capabilities:
-
-**Stuck File Detection:**
-- Files processing longer than threshold (default: 2 hours)
-- Files pending longer than threshold without starting
-- Files with failed tasks that can be retried
-- Files marked as orphaned needing recovery
-
-**Recovery Actions:**
-- Cancel stuck/failed Celery tasks
-- Reset file status and retry counters
-- Clear partial processing artifacts
-- Restart transcription with fresh task
-- Update recovery attempt tracking
-
-**System Health Monitoring:**
-- Calculate error rates and processing statistics
-- Generate actionable health recommendations
-- Monitor worker capacity and queue health
-- Track cleanup success/failure rates
-
-### Periodic Cleanup Configuration
-```python
-# Celery Beat configuration for automatic scheduling
-from celery.schedules import crontab
-
-celery_app.conf.beat_schedule = {
-    'run-periodic-cleanup': {
-        'task': 'cleanup.run_periodic_cleanup',
-        'schedule': crontab(minute='*/30'),  # Every 30 minutes
-    },
-    'system-health-check': {
-        'task': 'cleanup.health_check',
-        'schedule': crontab(minute=0, hour='*/6'),  # Every 6 hours
-    },
-}
-```
-
-### Integration with Enhanced File Safety
-The cleanup tasks work with the enhanced file management system:
-
-**Enhanced Status States:**
-- `PENDING` → `PROCESSING` → `COMPLETED`/`ERROR`
-- New states: `CANCELLING`, `CANCELLED`, `ORPHANED`
-- Task tracking with `active_task_id` and timing metadata
-
-**Safe Operations:**
-- Pre-deletion safety checks for active processing
-- Force deletion options for admin users
-- Retry limits and intelligent recovery logic
-- Transaction safety with proper rollback handling
-
-**Real-time Monitoring:**
-- WebSocket notifications for recovery operations
-- Progress tracking for bulk operations
-- User-friendly error messages and recommendations
+### Periodic schedule
+`celery_app.conf.beat_schedule` in `app/core/celery.py` is the authoritative schedule (about 20 entries: health check every 10 minutes, lost-task reclaim every 2 minutes, search maintenance and sweeps, OpenSearch orphan cleanup, embedding consistency check, GPU stats, retention, scratch janitor, upload sweeper, watch-source scans, backup and mirror checks, directory sync check, chat retention, account-inactivity sweep, session-cap sweep, GDPR erasure reconcile). Read it there rather than from this list. The `celery-beat` service runs it.
 
 ## Task Naming & Queue Convention
 
 ### Naming Rules
 
-All Celery tasks **MUST** use explicit `name=` in their decorator with dotted namespace format:
+All Celery tasks use an explicit `name=` in the decorator. New tasks use a dotted `<domain>.<action>` name:
 
-```
-<domain>.<action>
-```
-
-**Domains:**
 | Domain | Purpose | Example |
 |--------|---------|---------|
-| `transcription.*` | Core transcription pipeline | `transcription.process_file` |
+| `transcription.*` | Core transcription pipeline | `transcription.gpu_transcribe` |
 | `ai.*` | LLM/AI enrichment | `ai.generate_summary` |
-| `media.*` | Media processing (waveform, thumbnails) | `media.generate_waveform` |
-| `download.*` | URL/playlist downloads | `download.media_url` |
-| `speaker.*` | Speaker analysis (clustering, embeddings) | `speaker.cluster_for_file` |
-| `search.*` | Search indexing and maintenance | (future tasks) |
+| `media.*` | Media processing | `media.generate_waveform` |
+| `download.*` | URL/playlist downloads, prepared exports | `download.media_url` |
 | `analytics.*` | Transcript analytics | `analytics.analyze_transcript` |
 | `system.*` | Health checks, recovery, GPU stats | `system.health_check` |
-| `cleanup.*` | File cleanup and retention | `cleanup.run_periodic_cleanup` |
-| `migration.*` | Data migration tasks | `migration.normalize_embeddings` |
+| `cleanup.*` | File cleanup | `cleanup.run_periodic_cleanup` |
+| `redaction.*`, `artifacts.*`, `asr.*`, `search.*`, `migration.*`, `directory.*`, `account.*`, `gdpr.*`, `backup.*`, `watch_source.*`, `chat.*` | Other subsystems | `redaction.detect`, `artifacts.generate_file_facts` |
 
-**Legacy flat names** (e.g., `rediarize`, `generate_thumbnail`) are stable — do not rename, but do not create new flat names.
+Legacy flat names (for example `generate_thumbnail`, `extract_speaker_embeddings`, `reindex_transcripts`) are stable. Do not rename them (routing and in-flight messages depend on the name), and do not create new flat names.
 
 ### Queue Assignment Rules
 
-1. **Define queue routing in `task_routes` only** (`backend/app/core/celery.py`) — this is the single source of truth
-2. **Do NOT put `queue=` in task decorators** — a decorator queue silently overrides `task_routes` (Celery merges the route under the task's own options), so the routing table stops being the source of truth. Enforced by `tests/unit/test_task_routes_complete.py`
-3. **Use `CeleryQueues.*` constants** from `app.core.constants` — never raw queue name strings
-4. **Exception:** Dynamically-routed tasks (e.g., `transcription.gpu_transcribe`) that are intentionally NOT in `task_routes` may use `.set(queue=CeleryQueues.X)` at call time
+1. **Define queue routing in `task_routes` only** (`backend/app/core/celery.py`), the single source of truth
+2. **Do NOT put `queue=` in task decorators.** A decorator queue silently overrides `task_routes`. Enforced by `tests/unit/test_task_routes_complete.py`
+3. **Use `CeleryQueues.*` constants** from `app.core.constants`, never raw queue-name strings
+4. **Exception**: tasks routed at call time (for example `transcription.gpu_transcribe`, `cpu_transcribe`, the plan's post stage) are listed with a reason in `INTENTIONALLY_UNROUTED_TASKS` in `core/celery.py`
+5. **Lite deployments**: work that prefers a GPU but is correct without one is listed in `GPU_PREFERRED_TASKS` and routed through `gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
 
 ### Queue Definitions
 
-All valid queues are declared in `CeleryQueues` class (`backend/app/core/constants.py`).
-`task_create_missing_queues=False` is set — any typo in a queue name raises an error at dispatch time.
+All valid queues are declared in `CeleryQueues` (`backend/app/core/constants.py`); `task_create_missing_queues=False` makes a queue-name typo raise at dispatch time. Worker services and concurrency come from `docker-compose.yml` (concurrency values are environment-tunable):
 
-| Queue | Worker | Concurrency | Purpose |
-|-------|--------|-------------|---------|
-| `gpu` | `celery-worker` | 1 | GPU-intensive AI tasks (WhisperX, PyAnnote, embeddings) |
-| `download` | `celery-download-worker` | 3 | Network I/O for yt-dlp media downloads |
-| `cpu` | `celery-cpu-worker` | 8 | CPU-intensive processing (waveform, thumbnails, reindex) |
-| `nlp` | `celery-nlp-worker` | 4 | LLM API calls (summarization, topics, speaker ID) |
-| `embedding` | `celery-embedding-worker` | 1 | OpenSearch neural search indexing |
-| `utility` | `celery-cpu-worker` | 8 | Lightweight maintenance (health checks, cleanup) |
-| `cloud-asr` | `celery-cpu-worker` | 8 | Cloud ASR provider HTTP calls (dynamic routing) |
-| `cpu-transcribe` | `celery-cpu-worker` | 8 | Lightweight CPU transcription (dynamic routing) |
+| Queue | Worker service | Concurrency | Purpose |
+|-------|----------------|-------------|---------|
+| `gpu` | `celery-worker` | 1 | Local GPU transcription and diarization |
+| `gpu-transcribe`, `gpu-diarize` | `celery-worker-gpu-transcribe`, `celery-worker-gpu-diarize` | 1 each | Split GPU stages (`gpu-split` profile) |
+| `download` | `celery-download-worker` | 5 | yt-dlp downloads, prepared exports, model downloads |
+| `cpu` | `celery-cpu-worker` | 8 | Preprocess/postprocess, waveform, thumbnails, speaker embeddings, reindex |
+| `utility` | `celery-cpu-worker` | 8 | Lightweight maintenance and scheduled sweeps |
+| `cpu-transcribe` | `celery-cpu-worker` | 8 | CPU transcription (full image) |
+| `cloud-asr` | `celery-cloud-asr-worker` | 16 | Cloud ASR provider calls |
+| `nlp` | `celery-nlp-worker` | 4 | LLM calls (summaries, topics, speaker ID) and ingest artifacts |
 | `celery` | `celery-nlp-worker` | 4 | Default fallback queue |
+| `embedding` | `celery-embedding-worker` | 1 | Transcript search indexing |
+| `redaction` | `celery-redaction` | 2 | Content-redaction detection |
+
+Priorities are per queue (`GPUPriority`, `CPUPriority`, `NLPPriority`, `UtilityPriority`, ... in `core/constants.py`); the scheme is documented above `task_routes` in `core/celery.py`.
 
 ### Startup Validation
-
-`tests/unit/test_task_routes_complete.py` fails on any registered task missing from `task_routes` and not listed (with a reason) in `INTENTIONALLY_UNROUTED_TASKS`; on worker startup, `_validate_task_routes()` logs the same check as a WARNING. An unrouted task would otherwise go to the default `celery` queue.
+`tests/unit/test_task_routes_complete.py` fails on any registered task missing from `task_routes` and not listed (with a reason) in `INTENTIONALLY_UNROUTED_TASKS`. On worker startup `_validate_task_routes()` logs the same check as a WARNING, because an unrouted task would otherwise land on the default `celery` queue.
 
 ### Task Registration
-Tasks are registered via explicit `include=` list in `celery_app` initialization (`backend/app/core/celery.py`). When adding a new task module, add it to this list.
+Tasks are registered through the explicit `include=[...]` list in the `celery_app` initialization (`backend/app/core/celery.py`). When adding a task module, add it to that list.
 
 ## 📊 Task Monitoring
 
 ### Flower Dashboard
-- **URL**: http://localhost:5175/flower
-- **Features**: Task monitoring, worker status, performance metrics
-- **Real-time**: Live task progress and completion rates
+- **URL**: http://localhost:5175/flower (basic auth: `FLOWER_USER` / `FLOWER_PASSWORD`)
+- Task monitoring, worker status, performance metrics
 
 ### Task Status Tracking
-```python
-# Task status in database
-class Task(Base):
-    id: str  # Celery task ID
-    status: str  # pending, in_progress, completed, failed
-    progress: float  # 0.0 to 1.0
-    error_message: Optional[str]
-    created_at: datetime
-    completed_at: Optional[datetime]
-```
+Each tracked task has a row in the `task` table (`models/media.py`): `id` (the Celery task id, a string), `task_type`, `status` (`pending`, `in_progress`, `completed`, `failed`), `progress` (0.0 to 1.0), `error_message`, timestamps, plus the owning `media_file_id` and `user_id`. A file has at most one active (`pending` / `in_progress`) row per `task_type`.
 
-### Progress Updates
 ```python
-# Update task progress during processing
+from app.db.session_utils import session_scope
+from app.utils.task_utils import update_task_status
+
 with session_scope() as db:
     update_task_status(db, task_id, "in_progress", progress=0.5)
 ```
 
+Related API: `GET /api/tasks`, `GET /api/tasks/{task_id}`, `GET /api/tasks/progress/active` (live per-stage progress from Redis).
+
 ## 🛡️ Error Handling
 
-### Error Recovery Patterns
-```python
-@celery_app.task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3})
-def robust_task(self, file_id: int):
-    """Task with automatic retry on failure."""
-    try:
-        # Task logic
-        return process_file(file_id)
-    except RecoverableError as e:
-        # Retry for recoverable errors
-        raise self.retry(countdown=60, exc=e)
-    except FatalError as e:
-        # Don't retry for fatal errors
-        logger.error(f"Fatal error in task: {e}")
-        raise
-```
+### Retry
+Pipeline tasks declare `autoretry_for` with a narrow exception tuple (for example `ConnectionError`, `TimeoutError`), `acks_late=True`, `reject_on_worker_lost=True` and bounded `max_retries` with backoff; see `transcription/preprocess.py` for the decorator. Whole-run retry after a failure is decided by `services/transcription_retry.py`, not by ad-hoc `self.retry()` calls.
 
 ### Error Notification
-```python
-def handle_task_failure(task_id: str, file_id: int, user_id: int, error: Exception):
-    """Handle task failure with proper cleanup and notification."""
-    try:
-        # Update database status
-        with session_scope() as db:
-            update_task_status(db, task_id, "failed", error_message=str(error))
-            update_media_file_status(db, file_id, FileStatus.ERROR)
+Failure handlers classify the error once (`ErrorCategorizationService.classify_failure`), store the fixed user-facing sentence on the task and file, log the raw text server-side only, and notify the user through `transcription/notifications.send_error_notification`. Never put raw exception text on the wire.
 
-        # Notify user
-        send_error_notification(user_id, file_id, str(error))
+## 🚀 Performance Notes
 
-    except Exception as cleanup_error:
-        logger.error(f"Error during failure cleanup: {cleanup_error}")
-```
-
-## 🚀 Performance Optimization
-
-### GPU Utilization
-```python
-# Optimize for GPU processing
-device = "cuda" if torch.cuda.is_available() else "cpu"
-compute_type = "float16" if device == "cuda" else "float32"
-
-# Memory management
-if device == "cuda":
-    gc.collect()
-    torch.cuda.empty_cache()
-```
-
-### Batch Processing
-```python
-# Process multiple files efficiently
-@celery_app.task
-def batch_transcribe_task(file_ids: List[int]):
-    """Process multiple files in a single task for efficiency."""
-    for file_id in file_ids:
-        try:
-            process_single_file(file_id)
-        except Exception as e:
-            logger.error(f"Error processing file {file_id}: {e}")
-            continue  # Continue with other files
-```
-
-### Resource Management
-```python
-# Temporary file cleanup
-with tempfile.TemporaryDirectory() as temp_dir:
-    # Processing within temporary directory
-    # Automatic cleanup on exit
-    pass
-
-# Database session management
-with session_scope() as db:
-    # Database operations
-    # Automatic commit/rollback
-    pass
-```
+- **Never hold a database session across slow work** (MinIO, ffmpeg, model loads, LLM or HTTP calls). Read in a short `session_scope`, return plain data, do the slow work with no session open, then write in a short session. `scripts/audit-session-lifetime.py` enforces this and is part of the commit gate. Details and worked example: `app/tasks/CLAUDE.md`.
+- **GPU memory**: models load per worker; do not import a model-loading module into a task that runs on the wrong queue.
+- **Temporary files**: use `tempfile.TemporaryDirectory()` or the shared scratch volume helpers (`utils/scratch_volume.py`, `utils/temp_file_utils.py`).
 
 ## 🧪 Testing Tasks
 
-### Task Testing Patterns
-```python
-def test_preprocess_task_success(celery_app, db_session, sample_file):
-    """Test successful preprocess task (stage 1)."""
-    from app.tasks.transcription.preprocess import preprocess_for_transcription
+Task tests live in `backend/tests/` (mostly `tests/unit/`), run against the live dev stack's PostgreSQL. Call the task function directly (a bound task's `.run(...)`, or `.apply(...)` to go through Celery's eager machinery) and mock only external network services. The stage tasks take a pipeline-plan dict; build one with `services/pipeline_plan.resolve_pipeline_plan(...).to_context()` rather than hand-writing it.
 
-    with patch('app.services.minio_service.download_file') as mock_download:
-        mock_download.return_value = (sample_audio_data, 1024, "audio/wav")
-
-        result = preprocess_for_transcription.apply(args=[sample_file.id])
-
-        assert result.successful()
-
-def test_gpu_transcription_task_failure(celery_app, db_session, invalid_file):
-    """Test GPU transcription task failure handling (stage 2)."""
-    from app.tasks.transcription.core import transcribe_gpu_task
-
-    result = transcribe_gpu_task.apply(args=[invalid_file.id])
-    assert result.failed()
-    # Verify file status set to ERROR and user notified
-```
-
-### Integration Testing
-```python
-def test_full_transcription_pipeline(client, auth_headers, sample_video):
-    """Test complete pipeline from upload to completion."""
-    # 1. Upload file
-    response = client.post("/api/files", files={"file": sample_video}, headers=auth_headers)
-    file_id = response.json()["id"]
-
-    # 2. Wait for processing (with timeout)
-    # 3. Verify transcription results
-    # 4. Check database state
-    # 5. Verify search indexing
-```
+Useful structural tests: `test_task_routes_complete.py` (routing), `test_task_session_lifetime.py` (session scope), `test_pipeline_execution_matrix.py` (pipeline plan cells). Run with `./scripts/run-backend-tests.sh tests/unit`; see `backend/README.md`.
 
 ## 🔧 Adding New Tasks
 
-### Task Creation Checklist
-1. **Define Purpose**: Clear single responsibility
-2. **Design Interface**: Input parameters and return values
-3. **Error Handling**: Comprehensive error recovery
-4. **Progress Tracking**: Regular progress updates
-5. **Resource Management**: Proper cleanup
-6. **Testing**: Unit and integration tests
-7. **Documentation**: Clear docstrings and examples
+### Checklist
+1. **Define the purpose**: one responsibility; pick a `<domain>.<action>` name
+2. **Register**: add the module to `include=[...]` and a `task_routes` entry in `app/core/celery.py` (and a `CeleryQueues` constant if you need a new queue)
+3. **Sessions**: follow the three-phase session rule above
+4. **Progress and errors**: report progress with `update_task_status` / `progress_tracker`; classify failures once
+5. **WebSocket events** that name a media file go through `utils/websocket_notify.send_ws_event_for_file`
+6. **Tests**: add a routing/behaviour test; run the task-route and session-lifetime tests
 
 ### Task Template
 ```python
-@celery_app.task(bind=True, name="new_task")
-def new_task(self, input_data: Dict[str, Any]):
-    """
-    New task description.
+from app.core.celery import celery_app
+from app.core.constants import CPUPriority
+from app.db.session_utils import session_scope
+from app.utils.task_utils import update_task_status
+
+
+@celery_app.task(bind=True, name="domain.action", priority=CPUPriority.USER_TRIGGERED)
+def domain_action(self, file_uuid: str) -> dict:
+    """One-line description of what the task does.
 
     Args:
-        input_data: Task input parameters
+        file_uuid: UUID of the media file to process.
 
     Returns:
-        Dict with task results
+        A dict with a ``status`` key (``success``, ``skipped``, or ``error``).
     """
     task_id = self.request.id
 
-    try:
-        # 1. Initialize and validate
-        validate_input(input_data)
+    # 1. Short read session returning plain data (no ORM instances escape)
+    with session_scope() as db:
+        update_task_status(db, task_id, "in_progress", progress=0.1)
+        inputs = load_inputs(db, file_uuid)
 
-        # 2. Update progress
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.1)
+    # 2. Slow work with no session open
+    result = do_slow_work(inputs)
 
-        # 3. Perform main processing
-        result = perform_main_operation(input_data)
+    # 3. Short write session
+    with session_scope() as db:
+        save_result(db, file_uuid, result)
+        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
-        # 4. Update progress
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.8)
-
-        # 5. Finalize and return
-        with session_scope() as db:
-            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-        return {"status": "success", "result": result}
-
-    except Exception as e:
-        # Error handling
-        with session_scope() as db:
-            update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-
-        logger.error(f"Task {task_id} failed: {e}")
-        return {"status": "error", "message": str(e)}
+    return {"status": "success"}
 ```
 
----
-
-The background task system provides a robust, scalable foundation for AI-powered media processing with comprehensive error handling, progress tracking, and real-time user feedback.
+`load_inputs`, `do_slow_work` and `save_result` stand for your own functions. Routing is in `task_routes`, so the decorator carries no `queue=`.

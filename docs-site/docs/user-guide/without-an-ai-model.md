@@ -70,7 +70,7 @@ consolation prize.
 
 ## Chat is the one feature that genuinely stops
 
-Without a provider the **Chat** page shows a setup prompt — *"Connect an AI provider to start
+Without a provider the **AI Chat** page shows a setup prompt — *"Connect an AI provider to start
 chatting"* — instead of a composer. There is no fallback mode: retrieval can find the right
 passages, but nothing can write an answer about them.
 

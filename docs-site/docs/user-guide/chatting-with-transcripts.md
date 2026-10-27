@@ -7,13 +7,13 @@ sidebar_position: 8
 Ask questions across your recordings and get answers grounded in what was
 actually said, with citations that jump to the exact moment in the player.
 
-**Chat** is a page in the main navigation, alongside Search and Speakers.
+**AI Chat** is a page in the main navigation, alongside Transcript Search and Speakers.
 
 ![Chat empty state with suggested questions and conversation history](/img/screenshots/chat/01-chat-empty-state-suggestions.png)
 
 ## Your first conversation
 
-1. Open **Chat** and type a question.
+1. Open **AI Chat** and type a question.
 2. The assistant searches your transcripts, then streams an answer with numbered
    citations like `[1]`.
 3. Click any source card to open that recording **at that timestamp**.

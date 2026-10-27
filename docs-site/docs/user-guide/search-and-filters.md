@@ -10,7 +10,7 @@ OpenTranscribe provides powerful hybrid search combining full-text and semantic 
 
 ## The Search Page
 
-Click **Search** in the top navigation bar to open the **Search Transcripts** page. Type a query and press Enter (or click the magnifier button); suggestions appear as you type, and choosing a title suggestion opens that file directly.
+Click **Transcript Search** in the top navigation bar to open the **Search Transcripts** page. Type a query and press Enter (or click the magnifier button); suggestions appear as you type, and choosing a title suggestion opens that file directly.
 
 ### Result sources
 

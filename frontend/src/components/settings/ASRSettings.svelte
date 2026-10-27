@@ -29,6 +29,11 @@
   export let isAdmin = false;
   // The local-model endpoints are super_admin only; admins see them locked.
   export let isSuperAdmin = false;
+  // `asr.user_providers`: bring-your-own cloud ASR. Off hides the provider list and policy and
+  // skips their (404ing) endpoints, leaving the local model.
+  export let userProvidersCap = true;
+  // `asr.model_selection`: the local-model endpoints. Off skips them and hides the local model.
+  export let modelSelectionCap = true;
 
   let loading = false;
   let saving = false;
@@ -118,11 +123,12 @@
   async function loadData() {
     loading = true;
     try {
+      const noSettings = { configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 };
       const [providersResp, settingsResp, localModelResp, statusResp, speakerSettings] = await Promise.all([
-        ASRSettingsApi.getProviders(),
-        ASRSettingsApi.getSettings().catch(() => ({ configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 })),
-        ASRSettingsApi.getActiveLocalModel().catch(() => null),
-        ASRSettingsApi.getStatus().catch(() => null),
+        userProvidersCap ? ASRSettingsApi.getProviders() : Promise.resolve({ providers: [] }),
+        userProvidersCap ? ASRSettingsApi.getSettings().catch(() => noSettings) : Promise.resolve(noSettings),
+        modelSelectionCap ? ASRSettingsApi.getActiveLocalModel().catch(() => null) : Promise.resolve(null),
+        userProvidersCap ? ASRSettingsApi.getStatus().catch(() => null) : Promise.resolve(null),
         getTranscriptionSettings().catch(() => null),
       ]);
       isLite = statusResp?.deployment_mode === 'lite';
@@ -424,6 +430,7 @@
       {/if}
     {/if}
 
+    {#if userProvidersCap}
     <!-- Active provider status bar -->
     <div class="status-bar" class:local={usingLocalDefault && !isLite}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -660,9 +667,10 @@
         </button>
       </div>
     {/if}
+    {/if}
   {/if}
 
-  {#if isAdmin}
+  {#if isAdmin && userProvidersCap}
     <CloudProviderPolicy bind:this={policyPanel} locked={!isSuperAdmin} on:addshared={(e) => openSharedModal(e.detail.providerId)} />
   {/if}
 </div>

@@ -9,6 +9,7 @@ import {
 const access = (over: Partial<TranscriptionAccess> = {}): TranscriptionAccess => ({
   prefsCap: true,
   asrCap: true,
+  modelSelectionCap: true,
   vocabCap: true,
   ...over,
 });
@@ -25,8 +26,17 @@ describe('transcriptionTabs', () => {
     ]);
   });
 
-  it('drops the provider tab without the ASR capability', () => {
-    expect(ids(access({ asrCap: false }))).toEqual(['tx-language', 'tx-vocabulary', 'tx-accuracy']);
+  it('drops the provider tab only when neither ASR capability is on', () => {
+    expect(ids(access({ asrCap: false, modelSelectionCap: false }))).toEqual([
+      'tx-language',
+      'tx-vocabulary',
+      'tx-accuracy',
+    ]);
+  });
+
+  it('keeps the provider tab for local-model pinning when bring-your-own providers are off (#1207)', () => {
+    expect(ids(access({ asrCap: false }))).toContain('tx-provider');
+    expect(ids(access({ modelSelectionCap: false }))).toContain('tx-provider');
   });
 
   it('drops language and accuracy without the prefs capability', () => {
@@ -38,7 +48,12 @@ describe('transcriptionTabs', () => {
   });
 
   it('hides the whole section when every capability is off', () => {
-    const none = access({ prefsCap: false, asrCap: false, vocabCap: false });
+    const none = access({
+      prefsCap: false,
+      asrCap: false,
+      modelSelectionCap: false,
+      vocabCap: false,
+    });
     expect(transcriptionVisible(none)).toBe(false);
     expect(transcriptionVisible(access())).toBe(true);
   });

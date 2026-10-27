@@ -972,6 +972,19 @@ off by default.
   rule above, then the newest active row of a group wins and its older siblings are failed as
   superseded) and never deletes a row.
 
+- **Turning off bring-your-own ASR providers no longer removes local-model pinning, and an inactive
+  ASR configuration no longer runs (#1207).** The super_admin local-model routes
+  (`/api/asr-settings/local-model/*`, same paths) now sit behind `asr.model_selection` instead of
+  `asr.user_providers`, and the Provider tab stays for a super_admin when only the latter is off.
+  `UserASRSettings.is_active` is now honoured: an inactive configuration falls back to the
+  deployment default for jobs and as a speaker detector, `POST /api/asr-settings/set-active` refuses
+  it (409 `asr_config_inactive`), and it is not auto-activated or promoted.
+- **Chat and Watch Sources settings tabs work with a keyboard and a screen reader (#1210).** Each
+  tab now controls a real `tabpanel` named by it (the panels were missing, so `aria-controls`
+  pointed at nothing), the chat tab ids are namespaced (`chat-general`, `chat-advanced`), and the
+  Advanced chat panel keeps its unsaved edits when you switch tabs. Watch Sources accepts an
+  `initialTab`, and `watch-sources-email` / `watch-sources-global` open those tabs for a
+  super_admin (settings search finds Email Notifications directly).
 - **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
   server refused (redaction scan unfinished, policy unavailable) used to log to the console and
   leave a button that did nothing; each now shows a translated message. The gallery's bulk export

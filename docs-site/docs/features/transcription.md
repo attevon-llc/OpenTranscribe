@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Transcription Engine
 
-OpenTranscribe uses WhisperX 3.8.1 with the faster-whisper backend for state-of-the-art speech recognition. The transcription pipeline uses a 3-stage architecture that separates CPU and GPU work for maximum throughput, and supports both local Whisper models and cloud ASR providers.
+OpenTranscribe uses WhisperX 3.8.6 with the faster-whisper backend for state-of-the-art speech recognition. The transcription pipeline uses a 3-stage architecture that separates CPU and GPU work for maximum throughput, and supports both local Whisper models and cloud ASR providers.
 
 ## WhisperX Technology
 
@@ -340,16 +340,18 @@ Cloud providers have vendor-specific quirks that are easy to trip over:
 ### Supported Formats
 
 **Audio**:
-- MP3, WAV, FLAC, M4A, OGG, WMA
+- MP3, WAV, FLAC, M4A, OGG, Opus, AAC, WMA, AIFF and more
 - Any format FFmpeg can decode
 
 **Video**:
-- MP4, MOV, AVI, MKV, WebM, FLV
+- MP4, MOV, AVI, MKV, WebM, FLV, MPEG, 3GP and more
 - Audio extracted automatically
+
+Which formats play in the browser, which are converted for playback and which get an audio-only preview is listed in [Uploading Files: Supported Formats](../user-guide/uploading-files.md#supported-formats).
 
 ### File Size Limits
 
-- Maximum upload: **4GB**
+- Maximum upload: **15 GB** by default (an administrator can change it with `MAX_UPLOAD_BYTES`)
 - Suitable for GoPro and high-quality recordings
 - No duration limits
 - Handles multi-hour recordings
@@ -440,10 +442,13 @@ Use for quality control and review.
 
 ### Export Formats
 
-- **Plain Text**: Simple transcript
-- **SRT**: Subtitles with timestamps
-- **VTT**: Web video subtitles
-- **JSON**: Full data with metadata
+- **Plain Text** (.txt): Simple transcript, with optional timestamps, speaker names and comments
+- **JSON** and **CSV**: Full data, or segments for a spreadsheet
+- **SRT** and **VTT**: Subtitles with timestamps
+- **Markdown** (.md): Front matter plus speaker turns, for note-taking tools
+- **Word** (.docx) and **PDF** (.pdf): Printable transcripts with numbered lines
+
+See [Uploading Files: Export Options](../user-guide/uploading-files.md#export-options) and [Document export](./document-export.md).
 
 ### API Access
 

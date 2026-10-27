@@ -93,17 +93,17 @@ Administrators can set a deployment-wide default by adding the system settings `
 
 Users can disable automatic AI summarization:
 
-- **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for a specific file
-- **User default**: Set your default in Settings → LLM Provider Configuration → AI Summary Settings to prevent automatic summarization on all uploads
-- Disabling auto-summarize does not prevent manual summarization — users can still click "Generate Summary" on any transcript at any time
+- **Per-upload**: Turn **Generate AI summary** off on the **Options** step of the upload dialog to skip summarization for a specific file
+- **User default**: Turn off **Auto-generate summaries** in Settings → LLM Provider Configuration → AI Summary Settings to prevent automatic summarization after every transcription
+- Disabling auto-summarize does not prevent manual summarization — users can still click **Generate AI Summary** on any transcript at any time
 
 ### Prompt Sharing
 
 Custom AI prompts can be shared between users:
 
-- Users can share their custom summarization prompts with other users or groups via the sharing system
-- Shared prompts appear in the recipient's prompt selection dropdown alongside their own prompts
-- Sharing is managed from Settings → AI Summarization Prompts → Share
+- Users can share a custom summarization prompt with all users (**Share with all users**)
+- Shared prompts appear for the other users under **Shared by Others**, and in the prompt selection dropdown alongside their own prompts
+- Sharing is managed from Settings → AI Summarization Prompts
 - Useful for standardizing summarization output across a team without each member creating identical prompts
 
 ### Speaker Identification
@@ -131,17 +131,17 @@ Automatic model discovery for multiple providers:
 
 ## Configuration
 
-Set your preferred provider in `.env`:
+Configure providers in **Settings → AI & Chat → LLM Provider Configuration** (**Create Configuration**, **Test Connection**, then **Activate**). Each user can have their own configurations. The `.env` variables below are only the deployment's fallback defaults; a configuration saved in the UI takes precedence:
 
 ```bash
 # LLM Provider Selection
 LLM_PROVIDER=vllm  # or: openai, anthropic, ollama, openrouter
 
 # Provider-specific settings
-VLLM_API_URL=http://your-vllm-server:8000/v1
+VLLM_BASE_URL=http://your-vllm-server:8000/v1
 OPENAI_API_KEY=sk-xxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxx
-OLLAMA_API_URL=http://localhost:11434
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ## Provider-Specific Guides
@@ -156,10 +156,10 @@ docker run --gpus all -p 8000:8000 vllm/vllm-openai:latest \
   --model meta-llama/Llama-2-70b-chat-hf
 ```
 
-Configure in `.env`:
+Configure in the UI, or set the fallback defaults in `.env`:
 ```bash
 LLM_PROVIDER=vllm
-VLLM_API_URL=http://localhost:8000/v1
+VLLM_BASE_URL=http://localhost:8000/v1
 VLLM_MODEL_NAME=meta-llama/Llama-2-70b-chat-hf
 ```
 
@@ -170,7 +170,7 @@ Quick setup with commercial API:
 ```bash
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxxxx
-OPENAI_MODEL=gpt-4o
+OPENAI_MODEL_NAME=gpt-4o
 ```
 
 ### Amazon Bedrock
@@ -270,10 +270,10 @@ Claude models with automatic model discovery:
 ```bash
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-xxxxx
-ANTHROPIC_MODEL=claude-opus-4-5-20251101  # or claude-sonnet-4-20250514
+ANTHROPIC_MODEL_NAME=claude-haiku-4-5  # or any model your key can use
 ```
 
-**Default model:** claude-opus-4-5-20251101 (Claude Opus 4.5)
+**Default model:** claude-haiku-4-5
 
 ### Ollama
 
@@ -288,11 +288,11 @@ ollama pull llama3.2:latest
 
 # Configure OpenTranscribe
 LLM_PROVIDER=ollama
-OLLAMA_API_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:latest
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL_NAME=llama3.2:latest
 ```
 
-**Default model:** llama3.2:latest
+**Default model** (when `OLLAMA_MODEL_NAME` is not set): llama2:7b-chat
 
 ## No LLM Mode
 

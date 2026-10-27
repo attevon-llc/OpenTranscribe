@@ -62,8 +62,8 @@ their own ("everything Dana said, anywhere"). The assistant is told about an
 active speaker filter, so it says a person is out of scope rather than claiming
 they were never discussed.
 
-You can also start from the gallery: select recordings and choose **Chat with N**
-from the bulk actions menu.
+You can also start from the gallery: click **Select Files**, tick recordings and
+choose **AI chat with N** from the **Process** menu.
 
 :::tip[Narrower is usually better]
 Retrieval quality drops when a question has to compete with an entire library.
@@ -116,8 +116,9 @@ A turn becomes one excerpt, with three adjustments:
   citations land on the exact moment.
 
 For each question, retrieval pulls a pool of candidates, reranks them, and keeps
-roughly **12 excerpts, at most 4 from any one recording**. That per-recording cap
-is why a two-hour monologue can't crowd out the other four meetings you selected.
+up to **40 excerpts, at most 12 from any one recording** (the defaults; an
+administrator can change them). That per-recording cap is why a two-hour
+monologue can't crowd out the other meetings you selected.
 
 The practical consequence: **the assistant sees passages, not the whole story.**
 It answers well when the answer lives in a few specific moments, and poorly when
@@ -144,12 +145,12 @@ it took:
 ● Rewritten      Model                       612ms
 ▪ Cache          miss                          1ms
 ● Search         chunk plane   48 found       214ms
-● Reranked       12                            91ms
-● Sampled        12 kept · 36 dropped · max 4/file
+● Reranked       48                            91ms
+● Sampled        40 kept · 8 dropped · max 12/file
 – Expanded       disabled
-● Filtered       masking       12 kept · 0 dropped
-● Budgeted       12 kept · 0 dropped
-● Answered       12 excerpts
+● Filtered       masking       40 kept · 0 dropped
+● Budgeted       40 kept · 0 dropped
+● Answered       40 excerpts
 ```
 
 **The marks matter more than they look.** Six states, and three of them look
@@ -170,8 +171,8 @@ for **Failed**: if search breaks, the assistant still answers — from whatever 
 had — and the reply looks entirely normal. The trace is what makes that visible.
 
 :::tip[What to look for when an answer seems thin]
-Check **Sampled** and **Filtered**. `48 found` followed by `12 kept · 36 dropped`
-is normal narrowing. But `12 kept · 0 dropped` at Filtered followed by
+Check **Sampled** and **Filtered**. `48 found` followed by `40 kept · 8 dropped`
+is normal narrowing. But `40 kept · 0 dropped` at Filtered followed by
 `0 excerpts` at Answered means the evidence was found and then removed — usually
 by redaction — and the answer was written without it.
 :::
@@ -258,7 +259,7 @@ leaks into the visible answer.
 | **Regenerate** | Hover the latest answer → circular arrow. |
 | **Stop generating** | The send button becomes Stop while streaming, or press `Escape`. |
 | **Copy** | Hover any message → copy. Code blocks get their own copy button. |
-| **Export** | Download icon in the chat header — Markdown or JSON, with sources as deep links. |
+| **Export** | Download icon in the chat header — downloads the conversation as Markdown, with sources as deep links. (The API also offers a JSON export.) |
 | **Rename / archive / delete** | Hover a conversation in the sidebar. Archived chats stay available under *Show archived*. |
 
 Keyboard shortcuts follow the usual conventions: `Cmd/Ctrl+Shift+O` starts a new
@@ -292,7 +293,9 @@ Under **Advanced**, collapsed by default because most people never need them:
   predictable. Leave it alone unless answers wander; it is omitted entirely when
   unset, because some models reject it.
 
-Account-wide defaults for new conversations live in **Settings → Chat**. Any
+Account-wide defaults for new conversations live in **Settings → Chat** (under
+**AI & Chat**): **Use my transcripts by default**, **Default retrieval mode**,
+**Default instructions**, **Excerpts per answer** and **Rerank excerpts**. Any
 individual conversation can override them.
 
 ### How instructions combine
@@ -393,7 +396,7 @@ Your question
   → ~48 candidates
   → reranked by a cross-encoder for relevance
   → sampled across files so no single recording dominates
-  → ~12 excerpts, max 4 per recording
+  → up to 40 excerpts, max 12 per recording
   → re-masked under your redaction policy
   → sent to your model with citation instructions, plus recent history
   → streamed back token by token

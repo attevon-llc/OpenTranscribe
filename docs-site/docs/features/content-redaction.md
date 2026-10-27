@@ -222,6 +222,8 @@ cannot be disabled by individual users — they may only add *more* redaction. A
 
 - Force PII / toxicity / profanity redaction org-wide (individually)
 - Mandate censored exports (no user can export the original)
+- Mandate masking before every LLM provider, including self-hosted ones. Without it, only remote providers receive masked text, and a model that runs on your own infrastructure receives the transcript unmasked
+- Re-scan all existing files (e.g., after a model upgrade)
 
 Word and PDF exports follow the same rules as every other format, with one difference in
 timing: they are built by a background job, so the policy is read **when the job runs**, for the
@@ -232,8 +234,6 @@ original text), and if the policy cannot be read at all the export is withheld. 
 header says **Redacted** whenever any text in it is masked. An administrator's non-owner reveal
 is not offered for Word and PDF, because it applies to a live request that a background job does
 not have.
-- Mandate masking before external AI/LLM providers
-- Re-scan all existing files (e.g., after a model upgrade)
 
 ## Privacy & security
 

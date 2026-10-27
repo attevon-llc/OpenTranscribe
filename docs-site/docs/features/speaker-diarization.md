@@ -153,15 +153,15 @@ Each speaker gets a unique voice embedding:
 
 - Voice embedding comparison
 - Similarity scoring (0-100%)
-- High-confidence auto-linking (greater than 85%)
-- Manual verification for medium confidence
+- High-confidence auto-linking (75% or more): the matching profile's name is applied
+- Below 75%, no name is applied automatically
 - Speaker appears in multiple recordings
 
 **Example**:
 ```
 Video 1: John Doe speaks
 Video 2: Unknown speaker detected
-System: 92% match → Suggests "John Doe"
+System: 92% match → Links the speaker to "John Doe"
 ```
 
 ## Speaker Analytics
@@ -286,8 +286,8 @@ Identifies when multiple speakers talk simultaneously:
 OpenTranscribe can automatically detect speaker attributes to improve identification and cluster quality:
 
 **Gender Classification**:
-- Neural network-based gender prediction from voice characteristics
-- Runs automatically after transcription (configurable per-user)
+- Neural network-based gender prediction from voice characteristics. It is an estimate, always labeled as one in the UI, and is never used to name a speaker
+- Runs automatically after transcription (configurable per-user, and can be switched off)
 - Confidence scoring for each prediction
 - Results stored on speaker profiles for cross-video consistency
 
@@ -297,7 +297,7 @@ OpenTranscribe can automatically detect speaker attributes to improve identifica
 - Minority-gender members in a cluster are flagged for review
 - Gender outlier analysis available per cluster
 
-**Configuration**: Enable/disable speaker attribute detection in Settings → Speaker Identification → Voice Attributes.
+**Configuration**: Enable/disable speaker attribute detection (**Enable speaker attribute detection**, **Predict gender from voice**) and the badges on speaker cards (**Show predictions on speaker cards**) in Settings → Speaker Identification → Voice Attributes. A switch-off at the deployment or organization level takes precedence over a user's own setting, because the privacy policy only ever restricts.
 
 The same tab has a separate switch, **Suggest speaker names automatically with AI**. When it is on (the default) and an AI provider is configured, the transcript text is sent to that provider after transcription to suggest speaker names; suggestions are never applied automatically. It works independently of attribute detection, and it does not affect the manual suggest button.
 
@@ -473,7 +473,7 @@ Track identification confidence:
 
 - ✅ **Verified**: Manually confirmed
 - **AI Suggested**: LLM identification
-- **Auto-Matched**: Voice fingerprint match (greater than 85%)
+- **Auto-Matched**: Voice fingerprint match (75% or more)
 - **Unverified**: Default detection
 
 ### Merge & Split (Enhanced in v0.2.0)
@@ -627,13 +627,12 @@ Speaker matching thresholds were calibrated against industry benchmarks from Pin
 
 | Threshold | Action | Rationale |
 |-----------|--------|-----------|
-| >= 0.90 | Auto-accept (automated merging) | Extremely high confidence; false positive rate negligible |
-| 0.75 - 0.90 | Strong suggestion, user confirmation | Matches OpenTranscribe's `SPEAKER_CONFIDENCE_HIGH`; conservative to prevent false merges |
+| >= 0.75 | Auto-accept: the matching profile's name is applied | Matches OpenTranscribe's `SPEAKER_CONFIDENCE_HIGH`; conservative to prevent false merges |
 | 0.65 - 0.75 | Cluster formation | Follows WeSpeaker's UMAP + HDBSCAN recipe threshold; groups likely-same speakers |
 | 0.50 - 0.65 | Weak suggestion | Presented as option but not auto-applied |
 | < 0.50 | Different speakers | Industry standard cutoff |
 
-The conservative auto-merge threshold (0.90) was chosen specifically to prevent false positive merges, which are harder to recover from than missed matches. Profile coherence monitoring flags profiles where constituent embeddings have minimum pairwise similarity below 0.60, indicating a potential false merge.
+The conservative auto-accept threshold (0.75) was chosen specifically to prevent false positive merges, which are harder to recover from than missed matches. Profile coherence monitoring flags profiles where constituent embeddings have minimum pairwise similarity below 0.60, indicating a potential false merge.
 
 ### Why 256-Dimensional WeSpeaker Embeddings
 

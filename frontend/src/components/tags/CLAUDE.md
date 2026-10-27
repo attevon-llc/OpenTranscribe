@@ -9,20 +9,22 @@ selection is not here — that is `gallery/BulkTagModal.svelte`.
 ## Key files
 
 - `TagManagerModal.svelte` — the coordinator, and the only component here that
-  fetches. It is a **body**, not a modal: `routes/+page.svelte` wraps it in the same
-  hand-rolled chrome the collections dialog uses, so the two siblings cannot drift on
-  backdrop, radius, header or close affordance.
+  fetches the tag library. It is a **body**, not a modal: `routes/+page.svelte` wraps it in
+  `ui/BaseModal`, the same chrome the collections dialog uses, so the two siblings cannot
+  drift on backdrop, radius, header or close affordance. Opened from the gallery's
+  **Tags** button when nothing is selected (a selection opens the bulk flow instead),
+  mirroring `CollectionsPanel`'s `viewMode`. Owns the selection and the mutation
+  lifecycle; the other components here are presentational and dispatch intent up.
 - `TagShareModal.svelte` — grants to users/groups (`v386`), reusing
-  `sharing/ShareTargetSearch` so finding a target works as it does for a collection. Owns the selection, the mutation lifecycle and every API call; the
-  rest are presentational and dispatch intent up. Opened from the gallery's
-  **Tags** button when nothing is selected (a selection opens the bulk flow
-  instead), mirroring `CollectionsPanel`'s `viewMode`.
+  `sharing/ShareTargetSearch` so finding a target works as it does for a collection. Owns its own share
+  requests (`listTagShares` / `shareTag` / `revokeTagShare`); opened from
+  `TagManagerModal`, which reloads the tag list on its `changed` event.
 - `TagList.svelte` — the listbox, in flat or collision-cluster mode. Exports
   `TagListEntry`, `TagSelectDetail` and `tagOriginKey` from its module script.
   Owns roving tabindex, Shift-range and cluster-group selection.
 - `TagDetailPanel.svelte` — one selected tag. `TagBulkSummary.svelte` — several,
   including the survivor picker that fronts a merge.
-- `TagFilterBar.svelte` — the four view tabs plus the ownership scope picker.
+- `TagFilterBar.svelte` — the three view tabs (all / unused / colliding) plus the ownership scope picker.
 
 ## Conventions / patterns
 

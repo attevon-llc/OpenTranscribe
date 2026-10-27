@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Nine files of TypeScript interfaces describing what the API actually returns. Import via
+Eleven files of TypeScript interfaces describing what the API actually returns. Import via
 `$lib/types/...`. **This is not the home for every type in the app** — put one here only when
 it is shared by several unrelated components.
 
@@ -12,7 +12,7 @@ Where the rest live: search types → `$stores/search.ts` · upload queue types 
 
 ## Key files
 
-- `groups.ts` — the most-imported (19 sites); merges **two** backend schemas,
+- `groups.ts` — merges **two** backend schemas,
   `backend/app/schemas/group.py` + `sharing.py`, into one file.
 - `speakerCluster.ts` — mirrors `schemas/speaker_cluster.py` but **renames** the types
   (`SpeakerCluster` ← `SpeakerClusterResponse`, `PaginatedResponse<T>` ← `PaginatedClusterResponse`),

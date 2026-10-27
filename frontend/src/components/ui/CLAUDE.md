@@ -4,7 +4,9 @@
 
 Small, reusable, theme-aware, accessible building blocks. Prefer these over hand-rolling
 the same pattern in a feature component. Import via `$components/ui/...`. Every primitive
-supports light/dark via CSS custom properties and ships with a colocated `*.test.ts`.
+supports light/dark via CSS custom properties and most ship with a colocated `*.test.ts`
+(the pure-markup ones — `Spinner`, `ProgressBar`, `SkeletonLoader`, `ListRowSkeleton`,
+`CardGridSkeleton`, `MetadataChips`, `TagInput`, `FilterPanelToggle` — have none).
 
 ## Catalog
 
@@ -166,7 +168,8 @@ clipped by any `overflow: auto` ancestor.
   `src/test-setup.ts` to be unit-testable (jsdom lacks the Web Animations API).
 - **There is no generic `Dropdown.svelte` primitive.** One existed (trigger + menu,
   `aria-haspopup`, Escape-to-close, click-outside) but had zero consumers — `UserDropdown`,
-  `SegmentSpeakerDropdown`, and the sort dropdowns all hand-roll their own menu logic (with
+  `SegmentSpeakerDropdown`, and the sort dropdowns all hand-roll their own menu logic (the
+  first two with their own `document` click listeners, the sort dropdowns with
   `$lib/actions/clickOutside` directly) — and migrating four live, working dropdowns onto an
   untested-in-production primitive was judged higher risk than the duplication it would have
   removed. It was deleted rather than adopted (H2). Don't re-add one speculatively; build it

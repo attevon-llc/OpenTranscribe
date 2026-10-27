@@ -219,23 +219,24 @@ def _refuse_if_introduced(outcome: SwitchOutcome) -> None:
 
 
 def _refuse_if_switching_off_strands_holders(
-    db: Session, config: Any, request: Request | None
+    db: Session, config: Any, request: Request | None, *, exclude_user_id: int | None = None
 ) -> None:
-    """409 when turning ``config`` off would send a user who runs on it to a broken default.
+    """409 when taking ``config`` away would send a user who runs on it to a broken default.
 
     An inactive configuration is treated as absent (#1207), so switching one off IS a switch
     for every user whose active pointer names it: its owner, and anyone it is shared with.
-    Each is assessed like ``clear-active`` (#1225, #1228); the first refusal wins.
+    Unsharing or deleting a shared configuration moves its members the same way, which is why
+    those paths call this too, with ``exclude_user_id`` set to the owner (whose own pointer is
+    handled by the caller). Each holder is assessed like ``clear-active`` (#1225, #1228); the
+    first refusal wins.
     """
-    holders = [
-        int(row[0])
-        for row in db.query(models.UserSetting.user_id)
-        .filter(
-            models.UserSetting.setting_key == "active_asr_config_id",
-            models.UserSetting.setting_value == str(config.id),
-        )
-        .all()
-    ]
+    query = db.query(models.UserSetting.user_id).filter(
+        models.UserSetting.setting_key == "active_asr_config_id",
+        models.UserSetting.setting_value == str(config.id),
+    )
+    if exclude_user_id is not None:
+        query = query.filter(models.UserSetting.user_id != exclude_user_id)
+    holders = [int(row[0]) for row in query.all()]
     for holder_id in holders:
         _refuse_if_introduced(assess_asr_switch(db, holder_id, None, request=request))
 
@@ -711,6 +712,15 @@ def update_asr_config(  # noqa: C901
     turning_off = "is_active" in settings_in.model_fields_set and settings_in.is_active is False
     if turning_off and config.is_active:
         _refuse_if_switching_off_strands_holders(db, config, request)
+    elif (
+        config.is_shared
+        and "is_shared" in settings_in.model_fields_set
+        and not settings_in.is_shared
+    ):
+        # Unsharing moves every member to the default, exactly as switching it off does.
+        _refuse_if_switching_off_strands_holders(
+            db, config, request, exclude_user_id=current_user.id
+        )
     supplies_key = any(
         isinstance(getattr(settings_in, field), str) and getattr(settings_in, field).strip()
         for field in ("api_key", "access_key_id")
@@ -915,6 +925,9 @@ def delete_asr_config(
 
     # Clean up other users who had this shared config active (preserve owner's for auto-promote)
     if config.is_shared:
+        _refuse_if_switching_off_strands_holders(
+            db, config, request, exclude_user_id=current_user.id
+        )
         _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
     reverted = _reset_diarizer_references(db, [str(config.uuid)], current_user.id)
 

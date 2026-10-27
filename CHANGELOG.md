@@ -1527,6 +1527,16 @@ off by default.
 
 ### Security
 
+- **Tag edits, the shared tag vocabulary and watch-source assignment follow tenant boundaries.**
+  Renaming, merging or deleting a tag rewrites the stored watch-source tag names of that tag's own
+  tenant only. In a multi-tenant deployment the shared (system) vocabulary, tag promotion and
+  `DELETE /tags/cleanup?scope=all_users` need a `super_admin` (a single-tenant deployment keeps
+  its instance-wide behaviour), and promotion folds only the promoted tag's own tenant. Assigning
+  a new watch source to another account is refused there unless the request's bypass allows a
+  write in that tenant. Unsharing or deleting a shared ASR configuration now assesses the members
+  who use it (409) instead of silently moving them to the default. The platform access matrix
+  now scans every route for an inline role test, so a handler that takes the request context and
+  also asks `current_user.is_admin` needs a written entry.
 - **Platform staff access is now a committed, tested matrix (#1281).** Every route and code site
   through which `admin` or `super_admin` can act on a tenant's data is listed in
   `docs/security/platform-access-matrix.tsv`, derived from the route table and an AST scan, and

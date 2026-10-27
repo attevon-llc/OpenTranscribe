@@ -323,8 +323,29 @@ def preview_tag_impact(
     )
 
 
+def _sources_in_tenant(db: Session, tenant: tuple):
+    """Watch sources holding a stored name list, bounded to one tag tenant.
+
+    A tag's name is only meaningful inside the tenant that owns the tag, so the
+    rewrite reaches the sources of that tenant and no others: an organization's
+    sources for an organization tag, the owner's organization-less sources for a
+    personal one, and every source for a system tag (the shared vocabulary).
+    """
+    query = db.query(WatchSource).filter(WatchSource.tag_names.isnot(None))
+    kind = tenant[0]
+    if kind == "org":
+        return query.filter(WatchSource.organization_id == tenant[1])
+    if kind == "user":
+        return query.filter(WatchSource.user_id == tenant[1], WatchSource.organization_id.is_(None))
+    return query
+
+
 def rewrite_stored_tag_names(
-    db: Session, doomed_normalized: set[str], replacement: str | None
+    db: Session,
+    doomed_normalized: set[str],
+    replacement: str | None,
+    *,
+    tenant: tuple,
 ) -> int:
     """Rewrite tag names stored outside the tag table.
 
@@ -340,6 +361,8 @@ def rewrite_stored_tag_names(
         db: Database session.
         doomed_normalized: Normalized names to rewrite or strip.
         replacement: Name to substitute, or ``None`` to strip the entry.
+        tenant: The :func:`tenant_key` of the tag being changed. Only sources of
+            that tenant are touched.
 
     Returns:
         The number of watch sources changed.
@@ -350,7 +373,7 @@ def rewrite_stored_tag_names(
     replacement_normalized = normalize_tag_name(replacement) if replacement else ""
     changed = 0
 
-    for source in db.query(WatchSource).filter(WatchSource.tag_names.isnot(None)).all():
+    for source in _sources_in_tenant(db, tenant).all():
         stored = source.tag_names
         if not isinstance(stored, list):
             continue
@@ -388,6 +411,17 @@ def rewrite_stored_tag_names(
     if changed:
         db.flush()
     return changed
+
+
+def _rewrite_for_tags(db: Session, tags: Iterable[Tag], replacement: str | None) -> int:
+    """Rewrite stored names for ``tags``, each within its own tenant."""
+    by_tenant: dict[tuple, set[str]] = {}
+    for tag in tags:
+        by_tenant.setdefault(tenant_key(tag), set()).add(stored_normalized_name(tag))
+    return sum(
+        rewrite_stored_tag_names(db, names, replacement, tenant=tenant)
+        for tenant, names in by_tenant.items()
+    )
 
 
 def _reassign_associations(db: Session, target: Tag, doomed_ids: Sequence[int]) -> None:
@@ -499,7 +533,7 @@ def merge_tags(
     if target.source == TAG_SOURCE_AUTO_AI:
         target.source = TAG_SOURCE_AI_ACCEPTED
 
-    rewrite_stored_tag_names(db, {stored_normalized_name(tag) for tag in doomed}, target.name)
+    _rewrite_for_tags(db, doomed, target.name)
 
     system_scope = touches_system_tag([target, *doomed])
     deleted_uuids = [tag.uuid for tag in doomed]
@@ -587,7 +621,7 @@ def rename_tag(
     system_scope = touches_system_tag([tag])
     tag.name = cleaned
     tag.normalized_name = normalized
-    rewrite_stored_tag_names(db, {old_normalized}, cleaned)
+    rewrite_stored_tag_names(db, {old_normalized}, cleaned, tenant=tenant_key(tag))
     db.flush()
     db.commit()
 
@@ -632,7 +666,7 @@ def delete_tags(
     impact = preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
     affected_file_ids = _affected_file_ids(db, wanted)
 
-    rewrite_stored_tag_names(db, {stored_normalized_name(tag) for tag in doomed}, None)
+    _rewrite_for_tags(db, doomed, None)
 
     system_scope = touches_system_tag(doomed)
     db.query(FileTag).filter(FileTag.tag_id.in_(wanted)).delete(synchronize_session=False)
@@ -714,6 +748,7 @@ def promote_tags_to_shared(
     *,
     user_id: int,
     organization_id: int | None = None,
+    fold_across_tenants: bool = True,
 ) -> TagMutationOutcome:
     """Publish tenant tags into the shared vocabulary (``user_id`` and org → NULL).
 
@@ -740,6 +775,10 @@ def promote_tags_to_shared(
         tag_ids: Tags to publish.
         user_id: The acting admin, for cache invalidation.
         organization_id: Tenant scope for the impact preview.
+        fold_across_tenants: Fold every same-named tag in the deployment into the
+            promoted row (single-tenant behaviour). When False only same-named tags
+            of the promoted tag's own tenant are folded, and another tenant's rows
+            are left exactly as they were.
 
     Returns:
         The outcome, whose ``impact`` covers the promoted tags and everything
@@ -788,17 +827,16 @@ def promote_tags_to_shared(
             )
             continue
 
+        origin = tenant_key(tag)
         tag.user_id = None
         tag.organization_id = None
         affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
 
         # Fold every other account's same-named row into the new shared one, so
         # promotion collapses the duplicates rather than sitting beside them.
+        candidates = db.query(Tag).filter(Tag.normalized_name == normalized, Tag.id != tag.id)
         duplicates = [
-            row.id
-            for row in db.query(Tag)
-            .filter(Tag.normalized_name == normalized, Tag.id != tag.id)
-            .all()
+            row.id for row in candidates.all() if fold_across_tenants or tenant_key(row) == origin
         ]
         if duplicates:
             merge_tags(db, tag.id, duplicates, user_id=user_id, organization_id=organization_id)

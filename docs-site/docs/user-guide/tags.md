@@ -80,6 +80,10 @@ reaching the tag by name in the picker goes away.
 folds other people's identically-named tags into it, so the deployment converges on
 one `Interview` instead of accumulating one per person. Their files keep the tag.
 
+On a deployment that hosts several organizations, changing the shared vocabulary needs a
+super admin, and only identically-named tags of the promoted tag's own workspace are folded
+into it; other organizations' tags are left as they are.
+
 Every install also seeds a small shared vocabulary — `Important`, `Meeting`,
 `Interview`, `Personal` — and typing one of those names attaches the shared tag rather
 than forking a private copy.

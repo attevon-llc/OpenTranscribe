@@ -84,15 +84,35 @@ def test_the_owner_can_toggle_their_own_prompt(support_world, tenants):
     assert _snapshot(w.db, prompt)[0] is True
 
 
-def test_an_admin_of_the_same_tenant_can_toggle(support_world, tenants):
+def test_an_org_admin_can_toggle_a_members_prompt(support_world, tenants):
     w = support_world
-    owner_a, admin_a = tenants["a"]
+    owner_a, _ = tenants["a"]
+    org_admin = make_user(w.db, role="user", label="orgadm")
+    w.db.add(
+        OrganizationMembership(organization_id=w.org.id, user_id=org_admin.id, role="org:admin")
+    )
+    w.db.commit()
+    w.roles[int(org_admin.id)] = (w.org.id, "org:admin")
     prompt = _prompt(w.db, owner_a)
-    response = _toggle(w.client, login_headers(w.client, admin_a), prompt, shared=True)
+    response = _toggle(w.client, login_headers(w.client, org_admin), prompt, shared=True)
     assert response.status_code == 200, response.text
     is_shared, _, shared_by = _snapshot(w.db, prompt)
     assert is_shared is True
-    assert shared_by == admin_a.id
+    assert shared_by == org_admin.id
+
+
+@pytest.mark.parametrize("shared", [True, False])
+def test_a_platform_admin_who_is_only_an_org_member_cannot_toggle_a_members_prompt(
+    support_world, tenants, shared
+):
+    """Authority inside an organization comes from the org role or a write grant, not the platform role."""
+    w = support_world
+    owner_a, admin_a = tenants["a"]
+    prompt = _prompt(w.db, owner_a, shared=not shared)
+    before = _snapshot(w.db, prompt)
+    response = _toggle(w.client, login_headers(w.client, admin_a), prompt, shared=shared)
+    assert response.status_code == 403, response.text
+    assert _snapshot(w.db, prompt) == before
 
 
 @pytest.mark.parametrize("shared", [True, False])
@@ -222,3 +242,95 @@ def test_a_single_tenant_admin_toggles_any_users_prompt(
         assert shared_by == admin_user.id
     finally:
         reset_tenancy_mode_cache()
+
+
+@pytest.mark.parametrize("who", ["admin", "super_admin"])
+def test_a_platform_role_without_a_grant_cannot_toggle_a_personal_prompt(
+    support_world, tenants, who
+):
+    """A personal workspace is its own tenant: its prompts answer 404 to a stranger."""
+    w = support_world
+    prompt = _prompt(w.db, w.owner)  # w.owner belongs to no organization
+    before = _snapshot(w.db, prompt)
+    headers = w.admin_headers if who == "admin" else w.super_headers
+    response = _toggle(w.client, headers, prompt, shared=True)
+    assert response.status_code == 404, response.text
+    assert str(prompt.uuid) not in response.text
+    assert _snapshot(w.db, prompt) == before
+
+
+def test_another_personal_user_gets_404_for_a_personal_prompt(support_world, tenants):
+    w = support_world
+    stranger = make_user(w.db, role="user", label="stranger")
+    prompt = _prompt(w.db, w.owner)
+    before = _snapshot(w.db, prompt)
+    response = _toggle(w.client, login_headers(w.client, stranger), prompt, shared=True)
+    assert response.status_code == 404, response.text
+    assert _snapshot(w.db, prompt) == before
+
+
+def test_a_personal_write_grant_reaches_only_the_granted_users_prompt(support_world, tenants):
+    w = support_world
+    granted = _prompt(w.db, w.owner)
+    stranger = make_user(w.db, role="user", label="other")
+    elsewhere = _prompt(w.db, stranger)
+    grant = w.request(level="write", subject_user_uuid=str(w.owner.uuid))["uuid"]
+    approved = w.client.post(
+        f"/api/users/me/support-access/{grant}/approve", headers=w.owner_headers, json={}
+    )
+    assert approved.status_code == 200, approved.text
+
+    allowed = _toggle(w.client, w.with_grant(grant), granted, shared=True)
+    assert allowed.status_code == 200, allowed.text
+    assert _snapshot(w.db, granted)[0] is True
+
+    before = _snapshot(w.db, elsewhere)
+    refused = _toggle(w.client, w.with_grant(grant), elsewhere, shared=True)
+    assert refused.status_code == 404, refused.text
+    assert _snapshot(w.db, elsewhere) == before
+
+
+def test_the_owner_can_still_toggle_a_personal_prompt_in_a_multi_tenant_deployment(
+    support_world, tenants
+):
+    w = support_world
+    prompt = _prompt(w.db, w.owner)
+    response = _toggle(w.client, w.owner_headers, prompt, shared=True)
+    assert response.status_code == 200, response.text
+    assert _snapshot(w.db, prompt)[0] is True
+
+
+def test_a_prompt_stamped_for_another_organization_is_out_of_tenant_for_an_org_admin(
+    support_world, tenants
+):
+    """An owner in two organizations: a prompt stamped for one is not the other's to administer."""
+    w = support_world
+    owner_a, _ = tenants["a"]
+    w.db.add(
+        OrganizationMembership(
+            organization_id=w.other_org.id, user_id=owner_a.id, role="org:member"
+        )
+    )
+    org_admin = make_user(w.db, role="user", label="stampadm")
+    w.db.add(
+        OrganizationMembership(organization_id=w.org.id, user_id=org_admin.id, role="org:admin")
+    )
+    w.db.commit()
+    w.roles[int(org_admin.id)] = (w.org.id, "org:admin")
+    headers = login_headers(w.client, org_admin)
+
+    unstamped = _prompt(w.db, owner_a)
+    stamped_here = _prompt(w.db, owner_a)
+    stamped_here.organization_id = w.org.id
+    stamped_elsewhere = _prompt(w.db, owner_a)
+    stamped_elsewhere.organization_id = w.other_org.id
+    w.db.commit()
+
+    for control in (unstamped, stamped_here):
+        served = _toggle(w.client, headers, control, shared=True)
+        assert served.status_code == 200, served.text
+
+    before = _snapshot(w.db, stamped_elsewhere)
+    refused = _toggle(w.client, headers, stamped_elsewhere, shared=True)
+    assert refused.status_code == 404, refused.text
+    assert _snapshot(w.db, stamped_elsewhere) == before

@@ -969,9 +969,11 @@ off by default.
 
 ### Fixed
 
-- **The prompt sharing toggle is scoped to the caller's tenant.** An admin can change sharing on
-  another user's prompt only inside their own tenant; a prompt in another tenant answers 404, and
-  the owner can still toggle their own.
+- **The prompt sharing toggle is scoped to the caller's tenant.** The owner can toggle their own
+  prompt. In an organization, an organization admin (or a write support grant) can change sharing
+  on a member's prompt; the platform admin role alone cannot. A personal workspace is its own
+  tenant, so in a multi-tenant deployment another person's personal prompt answers 404. A prompt
+  in another tenant answers 404. A deployment without organizations keeps administrator access.
 - **A superseded task row no longer stays "in progress" forever (#1185).** A late write from an
   older run could leave a row `pending` or `in_progress` after a newer run of the same step had
   completed for the same file, so monitoring alerted for good while recovery did nothing (the

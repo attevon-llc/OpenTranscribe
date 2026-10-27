@@ -150,7 +150,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/my-files/request-recovery": "caller",
     "POST /api/my-files/{file_uuid}/retry": "bypass",
     "POST /api/prompts/active/set": "caller",
-    "POST /api/prompts/shared/{prompt_uuid}/toggle": "caller",
+    "POST /api/prompts/shared/{prompt_uuid}/toggle": "bypass",
     "POST /api/prompts/{prompt_uuid}/clone": "caller",
     "POST /api/speaker-clusters/batch-verify": "caller",
     "POST /api/speaker-clusters/{cluster_uuid}/analyze-outliers": "caller",
@@ -316,11 +316,6 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
     "PUT /api/user-settings/media-sources/{source_uuid}": (
         "display-hint",
         "a helper reads the owner's role to fill the owner_role label on the response; no access decision",
-    ),
-    "POST /api/prompts/shared/{prompt_uuid}/toggle": (
-        "owner-or-tenant-admin",
-        "the owner, or an admin of the prompt's own tenant, may change sharing; a prompt outside the "
-        "caller's tenant answers 404 via _in_tenant, and a write support grant assumes the granted tenant",
     ),
 }
 

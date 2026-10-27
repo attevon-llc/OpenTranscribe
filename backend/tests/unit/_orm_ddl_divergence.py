@@ -76,6 +76,12 @@ _DB_TABLES_SQL = "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
 #: reference with its cast, and a hand-written declaration never carries one.
 _CAST = re.compile(r"::[a-z][a-z ]*(?:\[\])?", re.IGNORECASE)
 
+#: ``col = ANY (ARRAY[a, b])`` — how Postgres reprints a declared ``col IN (a, b)`` (after the
+#: casts above are gone it still carries up to three layers of parentheses). Without folding it
+#: back, a partial index declared with ``IN`` on the model reads as a different predicate from
+#: the one the database stores, and shows up as db-only AND orm-only at once.
+_ANY_ARRAY = re.compile(r"\(*([\w.]+)\)*\s*=\s*ANY\s*\(+\s*ARRAY\s*\[(.*?)\]\s*\)+", re.IGNORECASE)
+
 #: Single-quoted literals, i.e. the *value set* a ``CHECK ... IN (...)`` enforces.
 _LITERAL = re.compile(r"'([^']*)'")
 
@@ -88,11 +94,14 @@ def normalise(expression: Any) -> str | None:
     only in casts and parentheses. Parentheses are dropped rather than balanced because
     Postgres adds them at every level and the declaration adds none — keeping them would
     make a correct declaration read as a divergence, which is the failure mode that turns
-    a detector into noise nobody acts on.
+    a detector into noise nobody acts on. ``col = ANY (ARRAY[a, b])`` is folded back to
+    ``col IN (a, b)`` first, because Postgres rewrites every ``IN`` list that way and the
+    parenthesis-dropping above cannot reconcile the two spellings.
     """
     if expression is None:
         return None
     collapsed = _CAST.sub("", str(expression)).replace('"', "")
+    collapsed = _ANY_ARRAY.sub(r"\1 IN \2", collapsed)
     collapsed = re.sub(r"\s+", "", collapsed)
     return collapsed.replace("(", "").replace(")", "").lower()
 

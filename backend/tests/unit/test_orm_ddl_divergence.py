@@ -326,3 +326,61 @@ def test_the_database_side_sees_a_constraint_created_after_import(db_session):
     # would leave a table nothing owns in the live dev database, whose only symptom would be
     # this suite reporting a permanent divergence for it.
     assert "_orm_ddl_divergence_probe" not in derive.db_tables(db_session.connection())
+
+
+# --- predicate spelling: ``IN (...)`` against the ``= ANY (ARRAY[...])`` Postgres stores -------
+
+#: Verbatim from ``pg_get_expr(indpred, indrelid)`` on PostgreSQL 16 for the v448 index.
+_STORED_ACTIVE = (
+    "((status)::text = ANY ((ARRAY['pending'::character varying, "
+    "'in_progress'::character varying])::text[]))"
+)
+
+
+def test_a_declared_in_list_equals_the_any_array_postgres_stores():
+    """MUST STAY CLEAN. Same column, same values, two spellings of one predicate."""
+    declared = derive.normalise(text("status IN ('pending', 'in_progress')"))
+    assert derive.normalise(_STORED_ACTIVE) == declared
+
+
+def test_the_fold_survives_an_extra_clause_in_the_predicate():
+    """A conjunction must not stop the ``IN`` half from being recognised."""
+    stored = (
+        "((deleted_at IS NULL) AND ((status)::text = ANY ((ARRAY['a'::character varying, "
+        "'b'::character varying])::text[])))"
+    )
+    assert derive.normalise(stored) == derive.normalise(
+        "deleted_at IS NULL AND status IN ('a','b')"
+    )
+
+
+def test_a_different_value_list_still_diverges():
+    """MUST FIRE. Folding the spelling must not fold away the values."""
+    other = derive.normalise(text("status IN ('pending', 'completed')"))
+    assert derive.normalise(_STORED_ACTIVE) != other
+
+
+def test_a_different_column_still_diverges():
+    """MUST FIRE. Nor the column the list applies to."""
+    other = derive.normalise(text("task_type IN ('pending', 'in_progress')"))
+    assert derive.normalise(_STORED_ACTIVE) != other
+
+
+def test_a_different_value_list_makes_the_index_a_finding_end_to_end():
+    """MUST FIRE through ``find_divergences``, not just through the string helper."""
+    keys = ("media_file_id", "task_type")
+    db_rule = ("task", keys, derive.normalise(_STORED_ACTIVE))
+    same = ("task", keys, derive.normalise(text("status IN ('pending', 'in_progress')")))
+    other = ("task", keys, derive.normalise(text("status IN ('pending', 'completed')")))
+
+    def found(orm_rule):
+        return derive.find_divergences(
+            db_uniques={db_rule: ["uq_task_active_per_file_type"]},
+            orm_uniques={orm_rule: ["uq_task_active_per_file_type"]},
+            db_checks={},
+            orm_checks={},
+            orm_table_names=frozenset({"task"}),
+        )
+
+    assert found(same) == []
+    assert {d.category for d in found(other)} == {"db-only-unique", "orm-only-unique"}

@@ -30,6 +30,10 @@ call these functions, not `axios` directly.
   `localModels.ts` covers `/admin/local-models` (+ `/download`, `/download/cancel`; #1246, super administrator only): the
   Whisper model catalog with what is on disk and the one download. Literal URLs on purpose: the route-has-a-caller scanner
   reads them.
+  `privacy.ts` covers `/privacy/*` and `/admin/privacy-policy` (#1280: effective policy, the caller's own
+  voiceprint switch, instance switches, the three purges and the purge status); the organization routes
+  (`/org-admin/policy`) are `OrgAdminApi.getPolicy/updatePolicy/purgePolicyData`. Every purge sends the
+  literal `confirm: 'PURGE'` (`PURGE_CONFIRM_WORD`); the UI makes the person type it.
   `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
   (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 

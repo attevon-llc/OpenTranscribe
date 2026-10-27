@@ -49,3 +49,7 @@ caches of API responses.
 - `supportSession.ts` is the tab-scoped (sessionStorage) support-access session: it owns the grant
   header, the skew-corrected countdown and the purge/flip ordering on start and end. Do not mirror
   it in another store; read `supportSessionGate` for hide/readonly decisions (#1122).
+
+- `privacyPolicy.ts` (#1280) caches `GET /privacy/effective` per file (15 s) for the speaker-surface notice. Per-tenant
+  data, so it is cleared by `purgeTenantDataCaches`; a failed read resolves to `null` and the notice renders nothing.
+  Not imported by the root layout (bundle budget).

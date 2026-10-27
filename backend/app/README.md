@@ -111,7 +111,7 @@ def get_resource(
 Complex file operations are split by concern:
 - `prepare_upload.py`, `upload.py`, `multipart.py`, `complete_upload.py`, `cancel_upload.py` - upload flows (direct and browser-side presigned multipart)
 - `crud.py`, `filtering.py`, `management.py` - listing, filtering, recovery and force-delete
-- `streaming.py`, `waveform.py`, `captions.py`, `subtitles.py` - playback, waveform and caption/subtitle output
+- `waveform.py`, `captions.py`, `subtitles.py` - waveform data and caption/subtitle output (playback uses presigned URLs from `/files/{uuid}/stream-url`; `streaming.py` is the thumbnail streaming helper)
 - `transcript_export.py`, `transcript_document_export.py` - text/JSON/CSV/SRT/VTT/Markdown and DOCX/PDF transcript export
 - `url_processing.py` - yt-dlp URL ingestion
 - `reprocess.py`, `post_processing.py`, `summary_status.py`, `segments.py` - re-runs, post-processing status, summary status, segment edits

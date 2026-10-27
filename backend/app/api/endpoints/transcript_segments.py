@@ -119,9 +119,10 @@ def _get_new_speaker_id(
             detail="Speaker does not belong to the same media file as this segment",
         )
 
-    # Verify the user owns this speaker (the platform role and shared editors bypass)
+    # Verify the user owns this speaker (the platform role and shared editors bypass).
+    # The speaker's tenant is its file's: the speaker row's own organization_id is never stamped.
     if speaker.user_id != current_user.id and not bypass.allows(
-        org_id=speaker.organization_id,
+        org_id=speaker.media_file.organization_id,
         owner_id=speaker.user_id,
         need="write",
         resource_type="speaker",

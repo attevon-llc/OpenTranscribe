@@ -11,13 +11,16 @@ presentation can change without touching the generator and vice versa. An earlie
 version emitted a large Markdown page with a Mermaid diagram; it was accurate but
 unreadable — a wall of tables and a diagram five screens tall.
 
-Run after any milestone or epic-label change:
+The docs deploy workflow (`.github/workflows/deploy-docs.yml`) regenerates it on every run
+and on a daily schedule, so the published page self-heals. If the GitHub API is unreachable
+that step only warns and the COMMITTED file is deployed, which may be stale. To refresh the
+committed snapshot after a milestone or epic-label change:
 
     python3 scripts/generate-roadmap.py
     cd docs-site && npm run build
 
-Requires an authenticated `gh`. Exits 2 under ``--check`` if the tracker and the
-checked-in data have drifted, which is what the CI job calls.
+Requires an authenticated `gh`. ``--check`` exits 2 if the tracker and the checked-in data have
+drifted; no workflow calls it, it is a manual drift probe.
 """
 
 from __future__ import annotations

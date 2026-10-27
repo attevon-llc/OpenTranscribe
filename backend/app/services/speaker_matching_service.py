@@ -26,6 +26,10 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
+from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
+from app.utils.speaker_identity_source import record_human_identity
+from app.utils.speaker_identity_source import record_machine_identity
+from app.utils.speaker_identity_source import record_machine_link
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -605,6 +609,7 @@ class SpeakerMatchingService:
         lift_profile_blacklist(self.db, int(speaker_id), int(profile_id))
         speaker.profile_id = profile_id  # type: ignore[assignment]
         speaker.verified = True  # type: ignore[assignment]
+        record_human_identity(speaker)  # before the tracker computes the "after" label
         if confidence is not None:
             speaker.confidence = confidence  # type: ignore[assignment]
 
@@ -911,11 +916,15 @@ class SpeakerMatchingService:
             logger.info(
                 f"Auto-accepting match for speaker {int(speaker.id)} -> {match['suggested_name']}"
             )
+            previous_display_name = speaker.display_name
             speaker.display_name = match["suggested_name"]
             speaker.verified = True  # type: ignore[assignment]
             # Assign to profile if this match came from a profile
             if match.get("profile_id"):
                 speaker.profile_id = match["profile_id"]
+            # A voiceprint wrote this identity, not a person (issue #1280): recorded before the
+            # tracker computes the "after" label, which depends on it while voiceprints are off.
+            record_machine_identity(speaker, previous_display_name=previous_display_name)
 
         # One record call covers both paths above: a suggestion-only bump (no
         # `display_name` write) and a full auto-accept. Captured while the old
@@ -1190,6 +1199,17 @@ class SpeakerMatchingService:
             query = query.filter(tenant_pred)
         speakers = query.all()
 
+        # A link a voiceprint made is hidden while its FILE's voiceprints are off (issue #1280),
+        # so the file is not an occurrence of the profile; the scope is the speaker's file's,
+        # never the caller's argument. A person's own link is never hidden.
+        view = PrivacyView(self.db)
+        speakers = [
+            s
+            for s in speakers
+            if s.identity_source not in MACHINE_IDENTITY_SOURCES
+            or view.voiceprints(int(s.media_file_id)).enabled
+        ]
+
         occurrences = []
         for speaker in speakers:
             media_file = speaker.media_file
@@ -1367,6 +1387,7 @@ class SpeakerMatchingService:
                 similarity = match_by_id[int(speaker.id)]
                 speaker.profile_id = profile_id  # type: ignore[assignment]
                 speaker.verified = True  # type: ignore[assignment]
+                record_machine_link(speaker)  # the name was already there; only the link is new
                 speaker.confidence = similarity
                 updated_speakers.append(speaker)
 

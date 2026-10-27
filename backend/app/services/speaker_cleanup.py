@@ -73,10 +73,14 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SearchIndexError
+from app.utils.speaker_identity_source import after_unlink
+from app.utils.speaker_identity_source import record_human_identity
+from app.utils.speaker_identity_source import record_machine_identity
 
 if TYPE_CHECKING:
     from app.models.media import Speaker
@@ -894,6 +898,8 @@ def unlink_from_profile(
         if name is not None and speaker.suggested_name == name:
             speaker.suggested_name = None  # type: ignore[assignment]
             speaker.confidence = None  # type: ignore[assignment]
+        # Settle who made what is left, before the "after" label below depends on it (#1280).
+        after_unlink(speaker)
         tracker.record(
             int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker)
         )
@@ -902,12 +908,22 @@ def unlink_from_profile(
 
 
 def join_cluster_identity(
-    db: Session, speaker: Speaker, cluster: SpeakerCluster, tracker: SpeakerRenameTracker
+    db: Session,
+    speaker: Speaker,
+    cluster: SpeakerCluster,
+    tracker: SpeakerRenameTracker,
+    *,
+    source: Literal["voiceprint", "human"],
 ) -> set[int]:
     """Joining a promoted cluster links its profile and takes its name.
 
     The one way every assignment path propagates a cluster's identity. Refuses (returns
     an empty set, writes nothing) when the speaker is blocked from the profile.
+
+    ``source`` says who decided the join (issue #1280): ``"voiceprint"`` when a voice
+    comparison placed the speaker in the cluster (upload-time clustering, Re-cluster),
+    ``"human"`` when a person did (merging clusters). It is required so that no caller can
+    forget to say.
 
     Returns:
         The profiles whose membership changed (the new one and any it left), for the
@@ -924,9 +940,14 @@ def join_cluster_identity(
         return set()
     old = int(speaker.profile_id) if speaker.profile_id is not None else None
     indexed_as = canonical_speaker_label_for_row(speaker)
+    previous_display_name = speaker.display_name
     speaker.profile_id = int(profile_id)  # type: ignore[assignment]
     speaker.display_name = name  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    if source == "voiceprint":
+        record_machine_identity(speaker, previous_display_name=previous_display_name)
+    else:
+        record_human_identity(speaker)
     tracker.record(int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker))
     return {p for p in (old, int(profile_id)) if p is not None}
 

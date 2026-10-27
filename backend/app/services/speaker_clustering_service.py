@@ -51,6 +51,7 @@ from app.services.speaker_cleanup import speaker_blocked_from_profile
 from app.services.speaker_cleanup import unlink_from_profile
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
+from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,11 @@ class SpeakerClusteringService:
         self._add_speaker_to_cluster(speaker, cluster, confidence, margin=margin)
         self._assigned.owner_ids.add(int(cluster.user_id))
         self._assigned.cluster_uuids.add(str(cluster.uuid))
-        touched_profiles = join_cluster_identity(self.db, speaker, cluster, self._rename_tracker)
+        # Every caller places a speaker by comparing voices (upload-time clustering, Re-cluster),
+        # so the identity it takes is a voiceprint's, not a person's (issue #1280).
+        touched_profiles = join_cluster_identity(
+            self.db, speaker, cluster, self._rename_tracker, source="voiceprint"
+        )
         if touched_profiles:
             self._assigned.profile_ids |= touched_profiles
             self._assigned.relabel_speaker_ids.add(int(speaker.id))
@@ -1405,7 +1410,7 @@ class SpeakerClusteringService:
                 for speaker in moved:
                     if speaker.profile_id is None or speaker.profile_id == source_profile_id:
                         touched = join_cluster_identity(
-                            self.db, speaker, target, self._rename_tracker
+                            self.db, speaker, target, self._rename_tracker, source="human"
                         )
                         if touched:
                             self._assigned.profile_ids |= touched
@@ -1656,6 +1661,8 @@ class SpeakerClusteringService:
                     )
                     speaker.display_name = name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
+                    # A person named the cluster: its members are theirs (issue #1280, Q2).
+                    record_human_identity(speaker)
 
             self.db.commit()
             self._rename_tracker.flush(self.db)
@@ -2110,6 +2117,7 @@ class SpeakerClusteringService:
                     self._rename_tracker.record(int(speaker.media_file_id), indexed_as, str(name))
                     speaker.display_name = str(name)  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
+                    record_human_identity(speaker)
                     updated += 1
 
                 elif action == "accept":
@@ -2136,6 +2144,7 @@ class SpeakerClusteringService:
                     )
                     speaker.display_name = profile.name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
+                    record_human_identity(speaker)
                     updated += 1
 
                 elif action == "skip":

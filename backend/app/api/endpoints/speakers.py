@@ -33,7 +33,10 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import redact_speaker_rows
+from app.services.privacy.redact_view import visible_display_name_expr
+from app.services.privacy.redact_view import visible_profile_id_expr
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import carry_blacklist
@@ -44,8 +47,12 @@ from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_identity_source import after_name_cleared
+from app.utils.speaker_identity_source import after_unlink
+from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import PLACEHOLDER_SPEAKER_NAME_PATTERN
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.speaker_labels import is_assigned_speaker_name
 from app.utils.uuid_helpers import require_profile_in_scope
 from app.utils.uuid_helpers import require_speaker_access
 
@@ -105,6 +112,7 @@ def create_speaker(
     # If display_name is provided, mark as verified
     if speaker.display_name and speaker.display_name.strip():
         new_speaker.verified = True  # type: ignore[assignment]
+        record_human_identity(new_speaker)
 
     db.add(new_speaker)
     db.commit()
@@ -267,26 +275,36 @@ def _get_unique_speakers_for_filter(
     from sqlalchemy import not_
     from sqlalchemy import select
 
+    # The files this caller may list speakers of: a caller who sees all in scope gets the
+    # tenant's speakers, others see accessible files only.
+    if bypass.sees_all_in_scope:
+        scope_files = file_ids_in_scope(organization_id)
+    else:
+        scope_files = select(
+            PermissionService.get_accessible_file_ids_subquery(
+                db, current_user.id, organization_id=organization_id
+            )
+        )
+
+    # A name or link a voiceprint made is not offered while that file's voiceprints are off
+    # (issue #1280): the row is listed under its diarizer label like any unnamed speaker, and
+    # reads as unlinked. A person's own name and link are never touched.
+    name_hidden, link_hidden = machine_identity_clauses(PrivacyView(db), scope_files)
+    visible_name = visible_display_name_expr(name_hidden)
+    visible_profile = visible_profile_id_expr(link_hidden)
+
     # "A human gave this speaker a real name." A raw ``SPEAKER_nn`` written into
     # display_name (what an auto-label pass emits) is not one.
     has_human_name = and_(
-        Speaker.display_name.isnot(None),
-        Speaker.display_name != "",
-        not_(Speaker.display_name.op("~")(PLACEHOLDER_SPEAKER_NAME_PATTERN)),
+        visible_name.isnot(None),
+        visible_name != "",
+        not_(visible_name.op("~")(PLACEHOLDER_SPEAKER_NAME_PATTERN)),
     )
     # The exact string this row is offered under, and sent back as ``?speaker=``.
-    label_col = func.coalesce(func.nullif(Speaker.display_name, ""), Speaker.name)
+    label_col = func.coalesce(func.nullif(visible_name, ""), Speaker.name)
 
-    # Build base filters — a caller who sees all in scope gets the tenant's speakers, others
-    # see accessible files only
     base_filter = [] if include_unnamed else [has_human_name]
-    if bypass.sees_all_in_scope:
-        base_filter.append(Speaker.media_file_id.in_(file_ids_in_scope(organization_id)))
-    else:
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
-            db, current_user.id, organization_id=organization_id
-        )
-        base_filter.append(Speaker.media_file_id.in_(select(accessible_sq)))
+    base_filter.append(Speaker.media_file_id.in_(scope_files))
 
     quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
     base_filter.append(~Speaker.media_file_id.in_(quarantined_ids))
@@ -296,11 +314,11 @@ def _get_unique_speakers_for_filter(
         # "SPEAKER_01" into the picker matches nothing it is showing.
         base_filter.append(label_col.ilike(f"%{q.strip()}%"))
     if profile_id is not None:
-        base_filter.append(Speaker.profile_id == profile_id)
+        base_filter.append(visible_profile == profile_id)
     if is_profile is True:
-        base_filter.append(Speaker.profile_id.isnot(None))
+        base_filter.append(visible_profile.isnot(None))
     elif is_profile is False:
-        base_filter.append(Speaker.profile_id.is_(None))
+        base_filter.append(visible_profile.is_(None))
 
     bounded_limit = max(1, min(limit, SPEAKER_FILTER_MAX_LIMIT))
     media_count_col = func.count(func.distinct(Speaker.media_file_id))
@@ -313,7 +331,7 @@ def _get_unique_speakers_for_filter(
             unnamed_col.label("is_unnamed"),
             media_count_col.label("media_count"),
             func.min(Speaker.id).label("rep_id"),
-            func.min(Speaker.profile_id).label("profile_id"),
+            func.min(visible_profile).label("profile_id"),
         )
         .filter(*base_filter)
         .group_by(label_col)
@@ -1840,6 +1858,7 @@ def _handle_create_new_profile_action(
     db.flush()  # Get the ID
 
     speaker.profile_id = new_profile.id
+    record_human_identity(speaker)
     logger.info(
         f"Created new profile {new_profile.id} '{new_name}' and assigned speaker {speaker.id}"
     )
@@ -1973,6 +1992,23 @@ def _apply_verification_on_display_name(speaker: Speaker, speaker_update: Speake
         speaker.confidence = None  # type: ignore[assignment]
 
 
+def _record_identity_source_on_edit(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
+    """Record who made the speaker's identity after a ``PUT`` (issue #1280).
+
+    A typed name, a profile action (which needs a name) or an explicit ``verified: true`` is a
+    person's word: ``human``. A cleared name keeps a machine link as ``voiceprint_link`` (it
+    stays hideable and purgeable) and leaves nothing to describe when no link remains.
+    Called before the chunk label is recomputed, which depends on it.
+    """
+    if "display_name" in speaker_update.model_fields_set:
+        if is_assigned_speaker_name(speaker_update.display_name):
+            record_human_identity(speaker)
+        else:
+            after_name_cleared(speaker)
+    elif speaker_update.verified is True and (speaker.display_name or speaker.profile_id):
+        record_human_identity(speaker)
+
+
 def _propagate_speaker_rename_to_chunks(
     *,
     file_uuid: str | None,
@@ -2081,6 +2117,7 @@ def update_speaker(
 
     # Handle verification when display name is set
     _apply_verification_on_display_name(speaker, speaker_update)
+    _record_identity_source_on_edit(speaker, speaker_update)
 
     # Commit to PostgreSQL immediately
     db.commit()
@@ -2220,6 +2257,7 @@ def _accept_speaker_profile_match(
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    record_human_identity(speaker)
     db.commit()
 
     # The new profile gains the voice; a profile the speaker leaves loses it (#1214).
@@ -2349,6 +2387,7 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
+    after_unlink(speaker)  # idempotent after unlink_from_profile; covers a speaker with no link
     speaker.verified = True  # type: ignore[assignment]
     speaker.suggested_name = None  # type: ignore[assignment]
     speaker.confidence = None  # type: ignore[assignment]
@@ -2411,6 +2450,7 @@ def _create_new_speaker_profile(
     # Assign speaker to new profile - use setattr for proper type handling
     speaker.profile_id = new_profile.id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    record_human_identity(speaker)
     db.commit()
 
     # The new profile gains the voice; a profile the speaker leaves loses it (#1214).

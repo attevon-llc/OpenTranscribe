@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = REPO_ROOT / 'docs' / 'legal' / 'sbom'
+OUT_DIR = REPO_ROOT / 'security-reports' / 'license-compliance'
 
 # --- Commercial-use policy (permissive-only) -------------------------------
 # Confirmed with the user 2026-09-24: standard permissive-only policy.

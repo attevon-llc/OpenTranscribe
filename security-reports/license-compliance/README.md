@@ -42,10 +42,8 @@ backend/venv/bin/pip-licenses --format=json --with-authors --with-urls \
 backend/venv/bin/python scripts/generate-sbom-report.py
 ```
 
-The script writes its `.csv`, `.md` and `SBOM-SUMMARY.md` files to the `OUT_DIR` set near the top
-of `scripts/generate-sbom-report.py`, which is currently `docs/legal/sbom/`, not this
-directory. Move the generated files here (and delete the stray `docs/legal/sbom/`) until that
-constant is corrected.
+The script writes its `.csv`, `.md` and `SBOM-SUMMARY.md` files to this directory
+(`security-reports/license-compliance/`).
 
 ## Why trivy image scans, not `pip freeze` / `npm ls`
 

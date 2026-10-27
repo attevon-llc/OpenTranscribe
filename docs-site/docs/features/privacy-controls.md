@@ -67,12 +67,19 @@ profile), not for whoever is looking at it or whoever started a job.
 | **Pipeline plan** (at upload and reprocess) | The speaker-recognition step is not scheduled. The pipeline view shows an informational notice: speaker recognition across recordings is off for this recording, speakers are still told apart within it. The diarizer is told not to return voiceprint vectors, so they never leave the worker. | The diarization sidecar is not asked for gender. |
 | **Entry gates** (every stage, fresh read, no cache) | Each stage that produces or uses a voiceprint checks again when it starts, so a recording already in flight when a switch flipped is stopped too. A stopped stage reports "skipped by policy", not an error. | The same check in the gender attribute task, the sidecar gender write and the speaker-name step. |
 | **Write backstop** (every OpenSearch write) | Every write of a speaker, profile or cluster document is checked again. A refused write is logged once per scope and returns without writing. The answer is cached for 10 seconds per process, so a switch change reaches every process within 10 seconds. A failed check denies and is not cached. | Not applicable (gender is stored in the database, not in a voiceprint document). |
-| **Reads and serialization** | Voiceprint-based name suggestions are not made. A stored suggestion that a voiceprint match wrote and nobody verified is left out of responses. Cluster lists are empty for that scope. A transcript-derived AI suggestion is still offered. | Inferred gender is returned as `null` wherever speakers and profiles are serialized. A profile's gender is voted on by confirmed genders only. |
+| **Reads and serialization** | Voiceprint-based name suggestions are not made. A stored suggestion that a voiceprint match wrote and nobody verified is left out of responses. Cluster lists are empty for that scope. A transcript-derived AI suggestion is still offered. | Inferred gender is returned as `null` wherever a response embeds a speaker (see [Where inferred gender is withheld](#where-inferred-gender-is-withheld)). A profile's gender is voted on by confirmed genders only. |
 | **Actions that would create or recompute voiceprints** | The cluster actions re-cluster, analyze outliers, promote, merge and split answer **409** `voiceprints_disabled` with `locked_by`. The admin profile-embedding repair answers the same when every profile is off, and otherwise skips the profiles that are off. | Not applicable. |
 | **Batch jobs** | The admin v4 embedding migration, the consistency repair, the speaker merge task's voiceprint averaging, cluster tasks, profile rebuilds, retroactive matching and `batch_speaker_matching` skip scopes that are off and report a `skipped_by_policy` count. | The admin gender migration and the combined speaker analysis skip files whose owner or organization forbids it, and a forced reset leaves those files' values alone. |
 | **Clusters** | A speaker is not placed in a cluster, and the cluster reads return nothing for the scope. | Gender no longer influences cluster joins or evictions unless a person confirmed it. |
 | **Suggestions and the speaker-name LLM** | Profile and voice suggestions are not computed. | The voice-versus-name gender comparison is not added to the speaker-name prompt. |
 | **Sharing** | Another user's profile that you can reach through a shared collection is dropped from your matching candidates when its owner's scope has voiceprints off, or when a consent hook denies sharing. | Not applicable. |
+
+Plan previews follow the same rule as real recordings, with one difference in whose organization
+counts. A request that names no recording, such as `GET /user-settings/pipeline` or the preview that
+runs before you switch transcription providers, is judged in the organization the request is
+working in, so a settings page never shows a speaker-recognition step as enabled while that
+organization forbids it. A real recording is judged in the organization stored on its own row,
+whichever organization the person who started the job has active.
 
 Two behaviors are independent of the switches. First, the gender comparison is never added to the
 speaker-name prompt for a **remote** LLM provider, even when gender inference is on; a local model
@@ -89,6 +96,24 @@ it holds no voiceprints for those scopes. Their old documents stay in the preser
 are not restored. Rebuild them later, after switching the layer back on, with the existing
 re-run speaker identification reprocess stage.
 
+### Where inferred gender is withheld
+
+While gender is off for a recording's owner and organization, a response never carries the
+inferred value, wherever it embeds a speaker. A segment embeds its full speaker, so the speaker
+list and each segment's speaker are redacted together, by one function
+(`redact_response_speakers` in `backend/app/api/endpoints/files/crud.py`). It covers:
+
+- the file detail (`GET /files/{file_uuid}`),
+- `GET /files/{file_uuid}/segments`,
+- the response of a segment text edit (`PUT /files/{file_uuid}/transcript/segments/{segment_uuid}`),
+- the response of a segment speaker reassignment (`PUT /transcripts/segments/{segment_uuid}/speaker`).
+
+The stored attribute data keeps the inference under three keys of `attribute_confidence`: `gender`
+(the model's confidence), `alignment` and `alignment_hint` (the voice-versus-first-name comparison,
+which is itself derived from the inferred gender). All three are withheld together, and the
+alignment fields the API serves (`gender_alignment`, `gender_alignment_hint`) disappear with them.
+The [purge](#purging-stored-data) drops the same three keys.
+
 ## Purging stored data
 
 A purge deletes what a switch only hides. It is **irreversible**.
@@ -98,7 +123,12 @@ A purge deletes what a switch only hides. It is **irreversible**.
 | Target | Deleted | Kept |
 |---|---|---|
 | `voiceprints` | Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included). Speaker match rows. Unpromoted clusters and their members. Unverified voiceprint-based name suggestions (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted) |
-| `inferred_gender` | The predicted gender, the gender confidence and the gender-versus-name alignment on speakers whose gender no person confirmed, and the time the attributes were predicted | Genders a person confirmed, and the gender stored on a speaker profile (it is only ever set by a person confirming it) |
+| `inferred_gender` | On speakers whose gender no person confirmed: the predicted gender, the three `attribute_confidence` keys `gender`, `alignment` and `alignment_hint`, and the time the attributes were predicted | Genders a person confirmed, and the gender stored on a speaker profile |
+
+**A gender purge does not clear a profile's gender.** `speaker_profile.predicted_gender` is set only
+when a person confirms a gender, so it is a person's statement and not an inference. The
+`inferred_gender` target leaves it in place, and it is not deleted by any purge. Only the values the
+model inferred on individual speakers are removed.
 
 **Confirmation.** The request must carry the literal `"confirm": "PURGE"`. The interface makes the
 person tick a box and type `PURGE`. The API answers 422 to anything else.
@@ -163,8 +193,31 @@ recording's owner and organization. A recording you cannot see, or one that does
 `PUT` takes `{"voiceprint_matching_enabled": false}` (a real boolean; `"no"` or `0` is a 422) and
 returns the same shape. `locked_by` is `platform`, `instance` or `organization` when a layer above
 you has the feature off; `PUT` then answers 409 `{"code": "policy_locked", "locked_by": "..."}`.
-The gender switch is the existing per-user speaker attribute setting; its lock reason comes from
-`GET /privacy/effective`.
+
+### Your own gender switch
+
+The gender switch is the existing per-user speaker attribute setting, `GET /user-settings/speaker-attributes`
+and `PUT /user-settings/speaker-attributes`. Both resolve for the organization the request is working
+in (the personal workspace when there is none).
+
+```json
+{
+  "detection_enabled": true,
+  "gender_detection_enabled": false,
+  "gender_locked_by": "organization",
+  "age_detection_enabled": true,
+  "show_attributes_on_cards": true,
+  "auto_llm_speaker_identification": true
+}
+```
+
+`gender_detection_enabled` is the **effective** value: it is false when a layer above you forbids
+gender inference, whatever you chose, and also false when you turned it off yourself. Your stored
+choice is untouched, so it applies again once the restriction is lifted. `gender_locked_by` is
+`platform`, `instance`, `organization` or `null`. Your own switch is never reported as a lock, so it
+is `null` when only you turned the feature off. It is read-only: a `PUT` ignores it, and a `PUT`
+stores your choice even while a layer above has the feature off (unlike the voiceprint switch, it
+does not answer 409).
 
 ### Instance layer (super admin)
 
@@ -211,6 +264,12 @@ here); `effective` is what applies once the layers above are counted. `updated_a
 administrator saves a policy. `redaction_floor` is `null` while the `redaction.policy` capability is
 off for the request.
 
+The organization redaction floor has an API but **no screen in this release**: the organization
+privacy panel shows the two switches only. A floor screen is part of
+[#1279](https://github.com/attevon-llc/OpenTranscribe/issues/1279), planned for v0.7.0. Until then
+an administrator sets a floor through the API, and the stored floor is combined with the
+deployment's floor (strictest wins).
+
 `PATCH` is partial and needs at least one field: `voiceprint_matching_enabled`,
 `gender_inference_enabled` and/or `redaction_floor`. Sending `redaction_floor` while
 `redaction.policy` is off answers 404. A floor can only **add** to the deployment's floor (see
@@ -219,6 +278,38 @@ off for the request.
 200 words of at most 100 characters; the toxicity threshold is between 0 and 1 (an explicit `null`
 clears it); other floor fields do not accept `null`. Each `PATCH` writes an `org.policy.change`
 audit event listing field **names** only, never values, because a custom word can be sensitive.
+
+### Admin migration and consistency checks
+
+The admin migration and consistency routes report what the policy makes a batch job skip. The
+policy adds fields to existing routes and creates no new route.
+
+`GET /embeddings/migration/status` (super admin) carries `policy_skipped`, so the admin sees what
+a migration would skip before starting it:
+
+```json
+{
+  "files_total": 240,
+  "files_skipped": 31,
+  "scopes_total": 12,
+  "scopes_skipped": 2,
+  "locked_by": ["organization"]
+}
+```
+
+`files_total` counts completed recordings, and `files_skipped` those whose owner and organization
+have voiceprints off. `locked_by` lists the layers responsible.
+
+`POST /embeddings/migration/start` answers **409** `{"code": "voiceprints_disabled", "locked_by":
+"<layer>"}` only when **every** recording is in a forbidden scope, because then nothing could be
+migrated. Otherwise it starts, and its response carries the same `policy_skipped` object (only when
+something is skipped) naming what the run will leave out.
+
+The embedding consistency check reports `skipped_by_policy` in the orchestrator's return value and
+its stored last run, in the progress payload of a repair, and in the dry-run counts
+(`GET /admin/embedding-consistency/counts`). A speaker with no document in a scope whose voiceprints
+are off is the policy working, not damage, so it is not counted in `main_missing` or `v4_missing`
+and no repair is queued for it.
 
 ### Purge routes and status
 
@@ -259,6 +350,12 @@ a pass has finished and sums both passes. Counts can include `voiceprint_docs_de
 
 ### Audit events
 
+An organization administrator sees the organization's events in **Settings, organization
+group, Audit log** (titled "Organization audit log"; managed editions with the `org.audit_logs`
+capability, route `GET /org-admin/audit-logs`). The three events below are stamped with the organization, so they
+appear there and in its event filter, labelled "Changed the privacy policy", "Deleted stored
+voiceprints" and "Deleted inferred gender data".
+
 | Event | When |
 |---|---|
 | `admin.settings.change` | An instance switch changed (setting name, old and new value) |
@@ -279,6 +376,23 @@ What the two features store, and what each purge target removes. This is the sta
 | Voiceprint-based name suggestion | `speaker.suggested_name`, `suggestion_source` (`voice_match`, `profile_match`), `confidence` | Matching | Voiceprint switch (when unverified) | `voiceprints` (when unverified) |
 | Inferred gender and confidence | `speaker.predicted_gender`, `attribute_confidence`, `attributes_predicted_at` | The gender step, or the diarizer sidecar | Gender switch | `inferred_gender` (when not confirmed) |
 | Confirmed gender, named profiles, avatars, verified assignments | Database | A person's action | Never | Never by a purge |
+
+## For operators
+
+- **Remote LLM speaker-ID prompts no longer receive the gender cross-reference.** The speaker-name
+  step used to add a voice-versus-first-name comparison ("voice: female 92%") to its prompt. It now
+  adds it only when the configured LLM is local (a loopback, private-network or compose-hostname
+  endpoint); a remote provider gets the prompt without it, even with gender inference on. The
+  check fails closed: any ambiguity reads as remote. Sending an inferred biometric attribute to a
+  third party is a data-egress event, and this follows the same local-versus-remote rule as masked
+  transcript text.
+- **A community install has no organization layer.** `org.defaults` is off there, so
+  `/api/org-admin/policy` and its purge route answer 404, and only the instance and user layers
+  apply.
+- **After upgrading an install that uses organizations,** run the tenant backfill described in
+  [Upgrading to 0.6.0](../operations/upgrading-to-0-6-0.md#tenancy-mode). It also re-stamps the
+  cluster documents of single-organization clusters that an earlier release rewrote without their
+  organization. Clusters whose members span scopes stay unstamped until the next re-cluster.
 
 ## Related
 

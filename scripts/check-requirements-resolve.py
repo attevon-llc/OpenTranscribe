@@ -26,6 +26,7 @@ Usage::
 
     python3 scripts/check-requirements-resolve.py            # all files
     python3 scripts/check-requirements-resolve.py --only requirements-lite.txt
+        # also resolves requirements.txt: it is the reference the drift check needs
 
 Run it with the interpreter that matches the images (3.13); a different minor can resolve
 differently. Exit codes: 0 pass, 1 conflict or drift, 2 usage / pip too old.
@@ -113,6 +114,22 @@ def find_drift(
     return drift
 
 
+def select_steps(only: list[str] | None) -> list[tuple[str, tuple[str, ...]]]:
+    """The steps to run for ``--only``; every step when it is not given.
+
+    The drift check compares a variant against what ``requirements.txt`` resolves, so a
+    selection that names a parity file pulls ``requirements.txt`` in as the reference.
+    Without that, ``--only requirements-lite.txt`` resolved lite and then skipped the
+    drift comparison without a word, which reads as "matches prod".
+    """
+    if not only:
+        return list(STEPS)
+    wanted = set(only)
+    if wanted & set(PARITY_FILES):
+        wanted.add(STEPS[0][0])
+    return [step for step in STEPS if step[0] in wanted]
+
+
 def _conflict_excerpt(output: str) -> str:
     """The part of pip's output a human needs: the conflict block, else the last lines."""
     lines = output.splitlines()
@@ -153,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--only', action='append', metavar='FILE', help='limit to these files')
     args = parser.parse_args(argv)
 
-    steps = [s for s in STEPS if not args.only or s[0] in args.only]
+    steps = select_steps(args.only)
     unknown = set(args.only or ()) - {s[0] for s in STEPS}
     if unknown:
         print(f'unknown requirements file(s): {sorted(unknown)}', file=sys.stderr)

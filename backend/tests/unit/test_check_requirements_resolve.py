@@ -73,3 +73,17 @@ def test_every_exemption_carries_a_reason() -> None:
 def test_requirements_txt_is_resolved_first_because_it_is_the_reference() -> None:
     assert check.STEPS[0][0] == "requirements.txt"
     assert ("requirements-nodeps.txt", ("--no-deps",)) in check.STEPS
+
+
+def test_selecting_a_variant_also_resolves_the_reference_it_is_compared_with() -> None:
+    names = [name for name, _ in check.select_steps(["requirements-lite.txt"])]
+    assert names == ["requirements.txt", "requirements-lite.txt"]
+
+
+def test_a_selection_without_a_parity_file_is_taken_as_given() -> None:
+    names = [name for name, _ in check.select_steps(["requirements-nodeps.txt"])]
+    assert names == ["requirements-nodeps.txt"]
+
+
+def test_no_selection_runs_every_step_in_order() -> None:
+    assert check.select_steps(None) == list(check.STEPS)

@@ -169,7 +169,7 @@ def test_embedding_status_reports_live_progress(client, admin_token_headers, fak
 # GET /embedding-consistency/counts
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def faked_index():
+def faked_index(db_session, normal_user):
     """Replace the Postgres and OpenSearch reads of ``counts`` with a known scenario.
 
     Two speakers with segments (indexed, missing), one more without, and an index
@@ -181,7 +181,20 @@ def faked_index():
 
     ``get_opensearch_client`` returns None so the v3/v4 ``indices.exists`` probes
     short-circuit; nothing here touches a cluster, so it runs in CI too.
+
+    The speakers belong to a real recording, because the count asks the privacy policy about
+    the recording's owner and a recording that does not exist reads as "not allowed".
     """
+    from contextlib import contextmanager
+
+    from tests.fixtures.speaker_cleanup_seams import make_file
+
+    file_id = make_file(db_session, normal_user).id
+
+    @contextmanager
+    def _session():
+        yield db_session
+
     indexed = str(uuid_pkg.uuid4())
     missing = str(uuid_pkg.uuid4())
     segmentless = str(uuid_pkg.uuid4())
@@ -191,8 +204,9 @@ def faked_index():
     with (
         patch(
             f"{module}._get_pg_speaker_uuids_with_segments",
-            return_value={indexed: 1, missing: 1},
+            return_value={indexed: file_id, missing: file_id},
         ),
+        patch(f"{module}.session_scope", _session),
         patch(
             f"{module}._get_all_pg_speaker_uuids",
             return_value={indexed, missing, segmentless},

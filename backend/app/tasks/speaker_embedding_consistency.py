@@ -162,6 +162,28 @@ def _filter_unrepairable_speakers(missing_uuids: set[str]) -> set[str]:
     return unrepairable
 
 
+def _split_by_voiceprint_policy(
+    missing_uuids: set[str], uuid_to_file: dict[str, int]
+) -> tuple[set[str], set[str]]:
+    """Split missing speakers into ``(repairable, skipped by policy)``.
+
+    A speaker with no document in a scope whose voiceprint switch is off is the policy
+    working (a purge, a skipped migration, a write the backstop refused), not damage: it is
+    neither reported as missing nor handed to the repair, which would only skip it again
+    after the orchestrator had queued GPU work. The decision is the file owner's scope and
+    is read fresh; a scope that cannot be read counts as off (the policy fails closed).
+    """
+    from app.services.privacy.redact_view import PrivacyView
+
+    file_ids = {uuid_to_file[u] for u in missing_uuids if u in uuid_to_file}
+    if not file_ids:
+        return set(missing_uuids), set()
+    with session_scope() as db:
+        off_files = PrivacyView(db).voiceprints_off_file_ids(file_ids)
+    skipped = {u for u in missing_uuids if uuid_to_file.get(u) in off_files}
+    return set(missing_uuids) - skipped, skipped
+
+
 def _group_by_file(missing_uuids: set[str], uuid_to_file: dict[str, int]) -> dict[str, list[str]]:
     """Group missing speaker UUIDs by their media file UUID.
 
@@ -244,7 +266,7 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
     os_main = _get_opensearch_speaker_uuids(main_index)
     if os_main is None:
         return {"error": "opensearch_query_failed", "total_pg_speakers": len(pg_uuids)}
-    missing_main = pg_uuids - os_main
+    missing_main, skipped_main = _split_by_voiceprint_policy(pg_uuids - os_main, pg_speakers)
 
     # Also query v3 concrete index directly if it exists and is different from alias target
     os_v3: set[str] = set()
@@ -268,7 +290,9 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
             logger.warning("Cannot query OpenSearch v4 index — reporting v3 data only")
         else:
             os_v4 = _os_v4_result
-        missing_v4_set = pg_uuids - os_v4
+        missing_v4_set, skipped_v4 = _split_by_voiceprint_policy(pg_uuids - os_v4, pg_speakers)
+    else:
+        skipped_v4 = set()
 
     # Identify unrepairable speakers (segments too short for embedding extraction)
     # Filter both main (v3/v4 alias target) and v4 staging consistently
@@ -287,6 +311,7 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
         "orphans": len(os_orphans),
         "v4_exists": v4_exists,
         "v4_missing": len(missing_v4_set - unrepairable),
+        "skipped_by_policy": len(skipped_main | skipped_v4),
     }
 
 
@@ -395,13 +420,14 @@ def speaker_embedding_consistency_check_task(
             r.delete(_REDIS_LOCK_KEY)
             logger.error("Cannot query main speaker index — skipping consistency check")
             return {"status": "skipped", "reason": "opensearch_query_failed"}
-        missing_v3 = pg_uuids - os_main
+        missing_v3, skipped_v3 = _split_by_voiceprint_policy(pg_uuids - os_main, pg_speakers)
 
         # Check v4 if the system is actively using v4 mode
         v4_index = get_speaker_index_v4()
         v4_active = current_mode == "v4"
         v4_exists = v4_active and bool(client and client.indices.exists(index=v4_index))
         missing_v4: set[str] = set()
+        skipped_v4: set[str] = set()
         os_v4: set[str] = set()
         if v4_exists:
             _os_v4_result = _get_opensearch_speaker_uuids(v4_index)
@@ -410,7 +436,8 @@ def speaker_embedding_consistency_check_task(
                 logger.error("Cannot query OpenSearch v4 index — skipping consistency check")
                 return {"status": "skipped", "reason": "opensearch_query_failed"}
             os_v4 = _os_v4_result
-            missing_v4 = pg_uuids - os_v4
+            missing_v4, skipped_v4 = _split_by_voiceprint_policy(pg_uuids - os_v4, pg_speakers)
+        skipped_by_policy = len(skipped_v3 | skipped_v4)
 
         # Phase 1b: Cleanup stale OS entries (speakers indexed but no longer
         # have segments, or don't exist in PG at all). This is CPU-only work.
@@ -447,6 +474,7 @@ def speaker_embedding_consistency_check_task(
                 "v3_missing": 0,
                 "v4_missing": 0,
                 "cleaned": cleaned,
+                "skipped_by_policy": skipped_by_policy,
                 "total_pg_speakers": len(pg_uuids),
                 "duration_seconds": duration,
             }
@@ -461,6 +489,7 @@ def speaker_embedding_consistency_check_task(
                 "status": "healthy",
                 "total_pg_speakers": len(pg_uuids),
                 "cleaned": cleaned,
+                "skipped_by_policy": skipped_by_policy,
             }
 
         # Filter out unrepairable speakers (segments too short for embeddings)
@@ -479,6 +508,7 @@ def speaker_embedding_consistency_check_task(
                 "v3_missing": 0,
                 "v4_missing": 0,
                 "unrepairable": len(unrepairable),
+                "skipped_by_policy": skipped_by_policy,
                 "total_pg_speakers": len(pg_uuids),
                 "duration_seconds": duration,
             }
@@ -493,6 +523,7 @@ def speaker_embedding_consistency_check_task(
                 "status": "healthy",
                 "total_pg_speakers": len(pg_uuids),
                 "unrepairable": len(unrepairable),
+                "skipped_by_policy": skipped_by_policy,
             }
 
         logger.info(
@@ -533,6 +564,7 @@ def speaker_embedding_consistency_check_task(
             "v4_missing": len(missing_v4),
             "v4_exists": v4_exists,
             "unrepairable": len(unrepairable),
+            "skipped_by_policy": skipped_by_policy,
             "failed_files": [],
             "repaired": 0,
             "skipped": 0,
@@ -577,6 +609,7 @@ def speaker_embedding_consistency_check_task(
             "total_files": total_files,
             "v3_missing": len(missing_v3),
             "v4_missing": len(missing_v4),
+            "skipped_by_policy": skipped_by_policy,
             "batches": len(batches),
         }
 

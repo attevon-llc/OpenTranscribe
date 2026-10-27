@@ -41,8 +41,8 @@ Normally unnecessary: backend startup creates the bucket and indexes.
 
 | Script | Purpose |
 |--------|---------|
-| `create_minio_bucket.py` | Creates the MinIO bucket. Reads `MINIO_SERVER` (default `localhost`), `MINIO_PORT` (default `9090`), `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_NAME`, `MINIO_SECURE`. Note `MINIO_SERVER` is read by no other file in the repo (the application uses `MINIO_HOST`), and the default port is not the stack's, so set the variables explicitly. |
-| `create_opensearch_indexes.py` | Creates indexes named `transcripts` and `speakers` using the shared connection builder. Those are not the names the current application indexes into (it uses `transcript_chunks` and versioned `speakers_v*` indexes managed at startup), so do not use this to repair a deployment. |
+| `create_minio_bucket.py` | Creates the media bucket (`MEDIA_BUCKET_NAME`) through the application's own storage client, so it honours `MINIO_HOST`/`MINIO_PORT`/`MINIO_SECURE` and the S3 backend settings. No public policy is set; media is served by presigned URL. Run inside the backend container. |
+| `create_opensearch_indexes.py` | Calls the same bootstrap as backend startup (`ensure_indices_exist`, `ensure_v4_index_exists`, `ensure_chunks_index_exists`), so it creates `transcripts`, the versioned `speakers_v*` indexes with their `speakers` alias, and `transcript_chunks`. Run inside the backend container. |
 | `celery_pool_healthcheck.py` | Docker healthcheck for the GPU transcription worker (wired in `docker-compose.yml`): fails when the Celery prefork pool is dead or in a respawn storm. |
 | `blackwell_patches.py` | Applies Blackwell (SM_121) compatibility patches at Docker build time for `Dockerfile.blackwell`. |
 

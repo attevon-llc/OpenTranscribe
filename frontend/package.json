@@ -32,8 +32,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@svelte-plugins/datepicker": "^1.0.11",
-    "@sveltejs/adapter-static": "^3.0.9",
-    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/adapter-static": "^4.0.0",
+    "@sveltejs/kit": "^3.1.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/svelte": "^5.4.2",

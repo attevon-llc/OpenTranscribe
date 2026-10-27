@@ -44,7 +44,7 @@ class _ScopeGate:
     def __init__(self) -> None:
         self._memo: dict[tuple[int, int | None], bool] = {}
 
-    def allows(self, source: dict[str, Any]) -> bool:
+    def permits(self, source: dict[str, Any]) -> bool:
         user_id = source.get("user_id")
         if user_id is None:
             return False
@@ -93,7 +93,7 @@ def _process_hits_batch(
         if embedding is None:
             continue
 
-        if not _is_normalized(embedding) and not gate.allows(source):
+        if not _is_normalized(embedding) and not gate.permits(source):
             summary["skipped_by_policy"] = summary.get("skipped_by_policy", 0) + 1
             continue
 

@@ -422,23 +422,30 @@ def apply_sidecar_gender(db: Session, media_file_id: int, speaker_gender: dict |
 def apply_sidecar_gender_for_user(
     db: Session, media_file_id: int, user_id: int, speaker_gender: dict | None
 ) -> int:
-    """``apply_sidecar_gender``, but only when the file's owner allows gender prediction.
+    """``apply_sidecar_gender``, but only when gender inference is allowed for this file.
 
-    The sidecar classifies gender whether or not the user wants it, so the opt-out has to
-    be honoured here, at the write (issue #1200): both "speaker attribute detection" and
-    "gender detection" must be on. The diarizer's own ``DIAR_NATIVE_GENDER`` env switch
-    stays an additional hard off (nothing arrives in ``speaker_gender`` when it is off).
+    The sidecar classifies gender whether or not anyone wants it, so the opt-out has to be
+    honoured here, at the write (issue #1200): "speaker attribute detection" and "gender
+    detection" must both be on for the file's owner, AND the privacy policy (platform,
+    instance, organization; issue #1280) must allow it for the file's organization. A
+    verdict that arrives while any of those is off is dropped, not stored: the sidecar may
+    have been asked before the switch flipped, and the switch is the authority. The
+    diarizer's own ``DIAR_NATIVE_GENDER`` env switch stays an additional hard off (nothing
+    arrives in ``speaker_gender`` when it is off).
     """
     if not speaker_gender:
         return 0
 
-    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
 
-    if not resolve_speaker_attribute_flags(db, user_id).gender_prediction_allowed:
+    flags = resolve_speaker_attribute_flags_for_file(db, media_file_id, user_id=user_id)
+    if not flags.gender_prediction_allowed:
         logger.info(
-            "Not storing sidecar gender for file %d: gender prediction is off for user %d",
+            "Not storing sidecar gender for file %d: gender prediction is off for user %d "
+            "(locked_by=%s)",
             media_file_id,
             user_id,
+            flags.gender_locked_by,
         )
         return 0
     return apply_sidecar_gender(db, media_file_id, speaker_gender)

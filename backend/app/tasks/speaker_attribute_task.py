@@ -35,6 +35,7 @@ from app.services.audio_segment_utils import center_window
 from app.services.audio_segment_utils import extract_audio_segment_np
 from app.services.audio_segment_utils import merge_adjacent_segments
 from app.services.audio_segment_utils import select_top_segments
+from app.services.speaker_attribute_settings import SpeakerAttributeFlags
 from app.utils.host_slots import host_slot
 from app.utils.websocket_notify import send_ws_event_for_file
 
@@ -110,12 +111,22 @@ def _is_speaker_attribute_detection_enabled(user_id: int) -> bool:
         return resolve_speaker_attribute_flags(db, user_id).detection_enabled
 
 
-def _is_gender_detection_enabled(user_id: int) -> bool:
-    """Check if gender prediction is enabled for a user (user > system > default True)."""
-    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+def _gender_gate(user_id: int, file_uuid: str) -> SpeakerAttributeFlags | None:
+    """Gender flags for this file, scoped by the file's own organization (issue #1280).
+
+    Returns None when the file does not exist: there is nothing to write to, and the caller's
+    own file-not-found path reports it. ``gender_detection_enabled`` is False when the user
+    switched gender off OR a higher privacy layer (platform, instance, organization) forbids
+    it; ``gender_locked_by`` names that layer. A policy that cannot be read denies.
+    """
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
+    from app.utils.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
-        return resolve_speaker_attribute_flags(db, user_id).gender_detection_enabled
+        media_file = get_file_by_uuid(db, file_uuid)
+        if media_file is None:
+            return None
+        return resolve_speaker_attribute_flags_for_file(db, int(media_file.id), user_id=user_id)
 
 
 def dispatch_speaker_attribute_pipeline(
@@ -581,6 +592,29 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
     }
 
 
+def _skip_gender(task_id: str, file_uuid: str, user_id: int, locked_by: str | None) -> dict:
+    """Finish a run that must not infer gender: record it skipped and hand off to the LLM step.
+
+    ``locked_by`` is the privacy layer above the user that forbids it (None = the user's own
+    switch). Nothing is stamped on the speakers, so a later opt-in can still run detection.
+    """
+    if locked_by:
+        logger.info(
+            "Gender inference forbidden by %s policy for %s; skipping (user %s)",
+            locked_by,
+            file_uuid,
+            user_id,
+        )
+    else:
+        logger.info("Gender detection disabled for user %s, skipping", user_id)
+    _update_attr_task(task_id, "skipped", progress=1.0)
+    _dispatch_llm_speaker_identification(file_uuid)
+    return {
+        "status": "skipped",
+        "reason": "gender_policy_disabled" if locked_by else "gender_disabled",
+    }
+
+
 def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
     """Inner implementation of detect_speaker_attributes_task.
 
@@ -602,6 +636,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
     from app.services.minio_service import minio_client
     from app.services.speaker_attribute_service import get_cached_attribute_service
     from app.services.speaker_attribute_service import max_clip_seconds
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
 
     try:
         if not _is_speaker_attribute_detection_enabled(user_id):
@@ -610,13 +645,12 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "disabled"}
 
-        if not _is_gender_detection_enabled(user_id):
+        gate = _gender_gate(user_id, file_uuid)
+        if gate is not None and not gate.gender_detection_enabled:
             # Gender is the only attribute with a model; with it off there is nothing to
             # compute. Stamp nothing: a later opt-in must still be able to run detection.
-            logger.info("Gender detection disabled for user %s, skipping", user_id)
-            _update_attr_task(task_id, "skipped", progress=1.0)
-            _dispatch_llm_speaker_identification(file_uuid)
-            return {"status": "skipped", "reason": "gender_disabled"}
+            # Returning "skipped" is what lets the post-processing card finish (#1313).
+            return _skip_gender(task_id, file_uuid, user_id, gate.gender_locked_by)
 
         # Phase 1 — read (DB session open, Postgres only).
         inputs = _load_detection_inputs(file_uuid)
@@ -682,10 +716,18 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
         # Phase 3 — write (DB session reopened, Postgres only). Speakers are
         # re-read here because the objects from phase 1 belong to a session that
         # is already closed.
+        updated_count = 0
+        total_speakers = 0
         with session_scope() as db:
-            speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-            updated_count = _store_gender_results(speakers, speaker_probs, speaker_clip_counts)
-            total_speakers = len(speakers)
+            # Inference took minutes; the switch may have flipped since the gate above.
+            # Re-read it at the write and drop the verdicts rather than store them (#1280).
+            late = resolve_speaker_attribute_flags_for_file(db, file_id, user_id=user_id)
+            if late.gender_detection_enabled:
+                speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+                updated_count = _store_gender_results(speakers, speaker_probs, speaker_clip_counts)
+                total_speakers = len(speakers)
+        if not late.gender_detection_enabled:
+            return _skip_gender(task_id, file_uuid, user_id, late.gender_locked_by)
 
         logger.info(
             f"Speaker attribute detection complete for file {file_uuid}: "

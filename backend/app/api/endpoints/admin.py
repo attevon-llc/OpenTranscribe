@@ -2884,19 +2884,31 @@ def repair_profile_embeddings(
         return {"status": "ok", "message": "No profiles found", "total": 0}
 
     profile_ids = [p.id for p in profiles]
-    results = ProfileEmbeddingService.batch_update_profile_embeddings(db, profile_ids)
+
+    # Privacy policy (#1280, plan D8): this recomputes voiceprints, so a profile whose owner
+    # scope has them off is skipped, never written. When EVERY profile is off there is
+    # nothing this request could do, and it says why (409) instead of reporting an empty ok.
+    from app.services.privacy.redact_view import voiceprints_disabled_error
+
+    skipped = ProfileEmbeddingService.profiles_off_by_policy(db, profile_ids)
+    if skipped and len(skipped) == len(profile_ids):
+        raise voiceprints_disabled_error(next(iter(skipped.values())))
+    allowed_ids = [pid for pid in profile_ids if pid not in skipped]
+    results = ProfileEmbeddingService.batch_update_profile_embeddings(db, allowed_ids)
 
     success = sum(1 for v in results.values() if v)
     failed = len(results) - success
 
     logger.info(
-        f"Profile embedding repair: {success} updated, {failed} failed out of {len(results)}"
+        f"Profile embedding repair: {success} updated, {failed} failed, "
+        f"{len(skipped)} skipped by privacy policy out of {len(profile_ids)}"
     )
     return {
         "status": "ok",
-        "total": len(results),
+        "total": len(profile_ids),
         "updated": success,
         "failed": failed,
+        "skipped_by_policy": len(skipped),
     }
 
 

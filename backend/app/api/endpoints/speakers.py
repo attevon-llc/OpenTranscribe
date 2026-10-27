@@ -32,6 +32,8 @@ from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import carry_blacklist
@@ -888,10 +890,18 @@ def list_speakers(
         from app.services.smart_speaker_suggestion_service import _media_file_org_ids
 
         file_org_map = _media_file_org_ids(db, {int(s.media_file_id) for s in speakers})
+        # Privacy policy (#1280): a file whose owner or organization has voiceprints off gets
+        # no kNN suggestions, its stored unverified voice suggestions are not shown, and an
+        # inferred gender is withheld wherever the gender switch is off. Existing data is
+        # hidden, never deleted (re-enabling the layer brings it back).
+        privacy = PrivacyView(db)
+        voiceprints_off = privacy.voiceprints_off_file_ids(int(s.media_file_id) for s in speakers)
+        redact_speaker_rows(privacy, speakers)
         batch_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
             speakers=speakers,
             user_id=current_user.id,
             file_org_map=file_org_map,
+            voiceprints_off_file_ids=voiceprints_off,
             confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
             max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
         )
@@ -1605,6 +1615,7 @@ def merge_speakers(
     raise_if_incomplete(source_residual)
 
     # Add computed status fields
+    redact_speaker_rows(db, [target_speaker])
     SpeakerStatusService.add_computed_status(target_speaker)
 
     return target_speaker
@@ -1628,7 +1639,8 @@ def get_speaker(
         db, speaker_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
     )
 
-    # Add computed status fields
+    # Privacy policy (#1280): hide what the owner's current switches forbid showing.
+    redact_speaker_rows(db, [speaker])
     SpeakerStatusService.add_computed_status(speaker)
 
     return speaker
@@ -1657,6 +1669,17 @@ def _handle_profile_embedding_updates(
         The cleanup's residuals; empty when every aggregate was rebuilt or erased.
     """
     from app.services.speaker_cleanup import SpeakerImpact
+
+    # Privacy policy (#1280): rebuilding a profile or cluster voiceprint is a voiceprint
+    # write. The label and profile link the user just made are theirs and stay; the aggregate
+    # is simply not recomputed (and not erased) while the speaker's file has voiceprints off,
+    # so re-enabling the layer finds it as it was.
+    file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+    if file_id is None or not PrivacyView(db).voiceprints(int(file_id)).enabled:
+        logger.info(
+            "Profile embedding rebuild for speaker %s skipped by privacy policy", speaker_id
+        )
+        return []
 
     if old_profile_id == new_profile_id:
         if not (display_name_changed and new_profile_id):
@@ -2181,6 +2204,7 @@ def update_speaker(
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
     # Add computed status for immediate response
+    redact_speaker_rows(db, [speaker])
     SpeakerStatusService.add_computed_status(speaker)
     _set_no_cache_headers(response)
 

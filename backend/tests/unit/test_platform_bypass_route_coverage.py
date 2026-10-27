@@ -33,7 +33,6 @@ EXACT: dict[str, str] = {
     "GET /api/speakers/debug/cross-media-data": (
         "self-scoped to current_user.id even for an admin; reads only the caller's own speakers"
     ),
-    "POST /api/speaker-clusters/recluster": "re-clusters the caller's own speaker embeddings",
     "GET /api/custom-vocabulary/domains": "static vocabulary domain list, no tenant content",
 }
 

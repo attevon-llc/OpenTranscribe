@@ -32,6 +32,9 @@ from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import organizations_with_voiceprints_off
+from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import blacklisted_profile_ids
 from app.services.speaker_cleanup import blocked_profile_names
@@ -105,6 +108,7 @@ class SpeakerClusteringService:
         # The members the last ``merge_clusters`` left in the source because an
         # unassignment forbids them from the target; the endpoint reports them.
         self.blocked_speaker_uuids: list[str] = []
+        self._privacy_view: PrivacyView | None = None
 
     def _settle_assignments(self) -> list[dict[str, Any]]:
         """Rebuild what this instance's committed assignments touched. Never raises.
@@ -151,6 +155,50 @@ class SpeakerClusteringService:
         return int(row[0]) if row and row[0] is not None else None
 
     # ------------------------------------------------------------------
+    # Privacy policy (#1280)
+    # ------------------------------------------------------------------
+
+    @property
+    def _privacy(self) -> PrivacyView:
+        """The per-instance policy view. One service instance is one unit of work."""
+        if self._privacy_view is None:
+            self._privacy_view = PrivacyView(self.db)
+        return self._privacy_view
+
+    def _voiceprint_off_scopes(
+        self, user_id: int, organization_id: OrgScope = UNSCOPED
+    ) -> set[int | None]:
+        """Organization scopes (None = personal) of this user's clusters with voiceprints off.
+
+        A concrete ``organization_id`` asks about that one scope. ``UNSCOPED`` asks about
+        every scope the user has a cluster in, which is what a read that spans scopes needs.
+        """
+        if isinstance(organization_id, _Unscoped):
+            candidates: set[int | None] = {
+                (int(r[0]) if r[0] is not None else None)
+                for r in self.db.query(SpeakerCluster.organization_id)
+                .filter(SpeakerCluster.user_id == user_id)
+                .distinct()
+                .all()
+            }
+        else:
+            candidates = {organization_id}
+        return organizations_with_voiceprints_off(self.db, user_id, candidates)
+
+    @staticmethod
+    def _scope_not_in(column: Any, off: set[int | None]) -> Any:
+        """A filter keeping rows whose organization is NOT one of ``off`` (None = personal)."""
+        from sqlalchemy import and_
+        from sqlalchemy import or_
+
+        ints = [o for o in off if o is not None]
+        if None in off and ints:
+            return and_(column.isnot(None), column.notin_(ints))
+        if None in off:
+            return column.isnot(None)
+        return or_(column.is_(None), column.notin_(ints))
+
+    # ------------------------------------------------------------------
     # Real-time cluster assignment (called after transcription)
     # ------------------------------------------------------------------
 
@@ -190,6 +238,14 @@ class SpeakerClusteringService:
                     .first()
                 )
                 return cluster  # type: ignore[no-any-return]
+
+            # Privacy policy (#1280): clustering stores a centroid per speaker, so a file
+            # whose owner or organization has voiceprints off gets none (asked fresh).
+            if not self._privacy.voiceprints(int(speaker.media_file_id)).enabled:
+                logger.info(
+                    "Speaker %s not clustered: voiceprints off by privacy policy", speaker_id
+                )
+                return None
 
             # Search for matching cluster centroids (gated by the file's org)
             from app.services.opensearch_service import find_matching_clusters
@@ -231,18 +287,21 @@ class SpeakerClusteringService:
                         continue
 
                     # Gender-aware threshold: cross-gender matches need higher similarity
-                    if speaker.predicted_gender and (cluster.member_count or 0) >= 2:
+                    # Inferred gender only counts while the privacy policy allows it
+                    # (a person-confirmed gender always does).
+                    speaker_gender = self._privacy.speaker_gender(speaker)
+                    if speaker_gender and (cluster.member_count or 0) >= 2:
                         dominant = self._get_cluster_dominant_gender(cluster)
                         if (
                             dominant
-                            and dominant != speaker.predicted_gender
+                            and dominant != speaker_gender
                             and candidate["similarity"] < GENDER_CROSS_THRESHOLD
                         ):
                             logger.debug(
                                 "Speaker %s gender (%s) differs from cluster %s dominant (%s), "
                                 "sim %.3f < cross-gender threshold %.3f — skipping",
                                 speaker_id,
-                                speaker.predicted_gender,
+                                speaker_gender,
                                 cluster_uuid,
                                 dominant,
                                 candidate["similarity"],
@@ -294,6 +353,10 @@ class SpeakerClusteringService:
 
         if not speakers:
             logger.info("No speakers found for media file %s", media_file_id)
+            return []
+
+        if not self._privacy.voiceprints(media_file_id).enabled:
+            logger.info("File %s not clustered: voiceprints off by privacy policy", media_file_id)
             return []
 
         clusters: list[SpeakerCluster] = []
@@ -368,6 +431,19 @@ class SpeakerClusteringService:
 
             from app.services.opensearch_service import iter_speaker_embeddings
 
+            # Privacy policy (#1280): a scope (organization, or personal) with voiceprints
+            # off is left exactly as it is. Its clusters are neither cleared nor rebuilt
+            # and its speakers are neither grouped nor matched; only scopes that are on are
+            # reclustered. Read fresh, at run time, so a switch flipped after this was
+            # queued is honoured.
+            off_scopes = self._voiceprint_off_scopes(user_id)
+            if off_scopes:
+                logger.info(
+                    "Re-clustering user %d skips scopes with voiceprints off: %s",
+                    user_id,
+                    sorted(off_scopes, key=lambda o: -1 if o is None else o),
+                )
+
             def _report(step: int, total: int, msg: str, pct: float) -> None:
                 if progress_callback:
                     try:
@@ -380,9 +456,14 @@ class SpeakerClusteringService:
             # Phase 1 will recreate promoted clusters from profiles.
             # ----------------------------------------------------------
             _report(1, 5, "Clearing old clusters...", 0.05)
-            old_clusters = (
-                self.db.query(SpeakerCluster).filter(SpeakerCluster.user_id == user_id).all()
+            old_clusters_query = self.db.query(SpeakerCluster).filter(
+                SpeakerCluster.user_id == user_id
             )
+            if off_scopes:
+                old_clusters_query = old_clusters_query.filter(
+                    self._scope_not_in(SpeakerCluster.organization_id, off_scopes)
+                )
+            old_clusters = old_clusters_query.all()
             for oc in old_clusters:
                 # Remove centroid from OpenSearch
                 try:
@@ -406,14 +487,15 @@ class SpeakerClusteringService:
             # Pure DB query — no embeddings loaded.
             # ----------------------------------------------------------
             _report(2, 5, "Grouping by verified profiles...", 0.15)
-            profile_speakers = (
-                self.db.query(Speaker)
-                .filter(
-                    Speaker.user_id == user_id,
-                    Speaker.profile_id.isnot(None),
-                )
-                .all()
+            profile_speakers_query = self.db.query(Speaker).filter(
+                Speaker.user_id == user_id,
+                Speaker.profile_id.isnot(None),
             )
+            if off_scopes:
+                profile_speakers_query = profile_speakers_query.join(
+                    MediaFile, MediaFile.id == Speaker.media_file_id
+                ).filter(self._scope_not_in(MediaFile.organization_id, off_scopes))
+            profile_speakers = profile_speakers_query.all()
 
             # A speaker still linked to a profile it was unassigned from is data written
             # before #1233 made the unassign unlink: the blacklist is the later decision,
@@ -502,14 +584,15 @@ class SpeakerClusteringService:
             #    linkage) — see _compute_similarity_groups
             # ----------------------------------------------------------
             _report(3, 5, "Loading unlabeled embeddings...", 0.25)
-            unlabeled_rows = (
-                self.db.query(Speaker.id, Speaker.uuid)
-                .filter(
-                    Speaker.user_id == user_id,
-                    Speaker.profile_id.is_(None),
-                )
-                .all()
+            unlabeled_query = self.db.query(Speaker.id, Speaker.uuid).filter(
+                Speaker.user_id == user_id,
+                Speaker.profile_id.is_(None),
             )
+            if off_scopes:
+                unlabeled_query = unlabeled_query.join(
+                    MediaFile, MediaFile.id == Speaker.media_file_id
+                ).filter(self._scope_not_in(MediaFile.organization_id, off_scopes))
+            unlabeled_rows = unlabeled_query.all()
             unlabeled_uuid_to_id: dict[str, int] = {str(r.uuid): int(r.id) for r in unlabeled_rows}
             unlabeled_uuids = list(unlabeled_uuid_to_id.keys())
             total_unlabeled = len(unlabeled_uuids)
@@ -676,6 +759,7 @@ class SpeakerClusteringService:
                     self.db.query(Speaker).filter(Speaker.id.in_(multi_member_ids)).all()
                 )
                 speakers_by_id = {int(s.id): s for s in batch_speakers}
+                self._privacy.preload_files(int(s.media_file_id) for s in batch_speakers)
 
             # Gender-aware eviction: for each group, if there's a clear
             # dominant gender, evict minority-gender members whose embedding
@@ -690,7 +774,8 @@ class SpeakerClusteringService:
                 g_counts: dict[str, list[int]] = {}
                 for sid in member_ids_g:
                     s = speakers_by_id.get(sid)
-                    g = s.predicted_gender if s else None
+                    # Inferred gender only counts while the privacy policy allows it.
+                    g = self._privacy.speaker_gender(s) if s else None
                     if g:
                         g_counts.setdefault(g, []).append(sid)
                 if len(g_counts) < 2:
@@ -899,14 +984,15 @@ class SpeakerClusteringService:
 
                 # Build map: include Phase 1 clusters + any pre-existing promoted clusters
                 profile_cluster_map: dict[str, SpeakerCluster] = dict(phase1_profile_clusters)
-                for pc in (
-                    self.db.query(SpeakerCluster)
-                    .filter(
-                        SpeakerCluster.user_id == user_id,
-                        SpeakerCluster.promoted_to_profile_id.isnot(None),
+                promoted_query = self.db.query(SpeakerCluster).filter(
+                    SpeakerCluster.user_id == user_id,
+                    SpeakerCluster.promoted_to_profile_id.isnot(None),
+                )
+                if off_scopes:
+                    promoted_query = promoted_query.filter(
+                        self._scope_not_in(SpeakerCluster.organization_id, off_scopes)
                     )
-                    .all()
-                ):
+                for pc in promoted_query.all():
                     profile_cluster_map[str(pc.uuid)] = pc
 
                 if profile_cluster_map:
@@ -970,14 +1056,15 @@ class SpeakerClusteringService:
             # ----------------------------------------------------------
             all_cluster_centroids: list[np.ndarray] = []
             all_clusters_for_sep: list[SpeakerCluster] = []
-            for cluster_record in (
-                self.db.query(SpeakerCluster)
-                .filter(
-                    SpeakerCluster.user_id == user_id,
-                    SpeakerCluster.member_count >= 2,
+            separation_query = self.db.query(SpeakerCluster).filter(
+                SpeakerCluster.user_id == user_id,
+                SpeakerCluster.member_count >= 2,
+            )
+            if off_scopes:
+                separation_query = separation_query.filter(
+                    self._scope_not_in(SpeakerCluster.organization_id, off_scopes)
                 )
-                .all()
-            ):
+            for cluster_record in separation_query.all():
                 member_ids_q = [
                     int(m.speaker_id)
                     for m in self.db.query(SpeakerClusterMember)
@@ -1043,6 +1130,7 @@ class SpeakerClusteringService:
                 "singletons": singletons,
                 "centroid_failures": centroid_failures,
                 "cleanup_residual_stages": sorted({str(r["stage"]) for r in cleanup_residual}),
+                "skipped_by_policy_scopes": len(off_scopes),
             }
 
         except Exception as e:
@@ -1606,11 +1694,18 @@ class SpeakerClusteringService:
         speaker_map = {s.id: s for s in speakers}
         uuid_to_id = {str(s.uuid): s.id for s in speakers}
 
+        # Privacy policy (#1280): the endpoint refuses (409) while voiceprints are off for the
+        # cluster's scope. This analysis is also driven by inferred gender, so a member whose
+        # inferred gender is withheld takes no part in it.
+        self._privacy.preload_files(int(s.media_file_id) for s in speakers)
+        member_gender = {s.id: self._privacy.speaker_gender(s) for s in speakers}
+
         # Determine majority/minority gender
         gender_counts: dict[str, int] = {}
         for s in speakers:
-            if s.predicted_gender:
-                gender_counts[s.predicted_gender] = gender_counts.get(s.predicted_gender, 0) + 1
+            g = member_gender[s.id]
+            if g:
+                gender_counts[g] = gender_counts.get(g, 0) + 1
 
         if len(gender_counts) < 2:
             return {
@@ -1648,10 +1743,10 @@ class SpeakerClusteringService:
         centroid /= np.linalg.norm(centroid) + 1e-10
 
         majority_ids = [
-            s.id for s in speakers if s.predicted_gender == majority_gender and s.id in embeddings
+            s.id for s in speakers if member_gender[s.id] == majority_gender and s.id in embeddings
         ]
         minority_ids = [
-            s.id for s in speakers if s.predicted_gender == minority_gender and s.id in embeddings
+            s.id for s in speakers if member_gender[s.id] == minority_gender and s.id in embeddings
         ]
 
         # Build matrices for vectorized similarity
@@ -1697,7 +1792,7 @@ class SpeakerClusteringService:
                 {
                     "speaker_uuid": str(s.uuid),
                     "speaker_name": s.display_name or s.name,
-                    "predicted_gender": s.predicted_gender,
+                    "predicted_gender": member_gender[s.id],
                     "sim_to_centroid": round(sim_c, 4),
                     "avg_sim_to_majority": round(float(avg_sims_to_majority[i]), 4),
                     "avg_sim_to_minority_peers": round(float(avg_sims_to_peers[i]), 4)
@@ -1841,10 +1936,18 @@ class SpeakerClusteringService:
         offset = (page - 1) * per_page
         speakers = query.offset(offset).limit(per_page).all()
 
+        # Privacy policy (#1280): withhold stored voice suggestions and inferred gender the
+        # owner's switches forbid, and the cluster a file's speaker sits in while voiceprints
+        # are off for it. The inbox itself (unnamed speakers to review) stays.
+        redact_speaker_rows(self._privacy, speakers)
+        voiceprints_off = self._privacy.voiceprints_off_file_ids(
+            int(s.media_file_id) for s in speakers
+        )
+
         items = []
         for speaker in speakers:
             media_file = speaker.media_file
-            cluster = speaker.cluster
+            cluster = None if int(speaker.media_file_id) in voiceprints_off else speaker.cluster
 
             items.append(
                 {
@@ -2108,6 +2211,11 @@ class SpeakerClusteringService:
         tenant_pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
         if tenant_pred is not None:
             tenant_filters.append(tenant_pred)
+        # Privacy policy (#1280): clusters are voiceprint-derived, so a scope with voiceprints
+        # off lists none (they are hidden, not deleted: re-enabling brings them back).
+        off_scopes = self._voiceprint_off_scopes(user_id, organization_id)
+        if off_scopes:
+            tenant_filters.append(self._scope_not_in(SpeakerCluster.organization_id, off_scopes))
         # A cluster is a GROUP. Upload-time clustering keeps a one-speaker cluster per unmatched
         # speaker so a later file can match it, but "Re-cluster All" rebuilds only groups of
         # two or more; listing the singletons made the tab fill up after an upload and empty
@@ -2169,7 +2277,9 @@ class SpeakerClusteringService:
         offset = (page - 1) * per_page
         clusters = query.offset(offset).limit(per_page).all()
 
-        # Batch-query gender composition for this page's clusters
+        # Batch-query gender composition for this page's clusters. Inferred gender counts
+        # only while the member's owner/organization allows it (#1280); a person-confirmed
+        # gender always does, so the query keeps the two apart.
         cluster_ids = [int(c.id) for c in clusters]
         gender_by_cluster: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         if cluster_ids:
@@ -2179,16 +2289,31 @@ class SpeakerClusteringService:
                 self.db.query(
                     SpeakerClusterMember.cluster_id,
                     Speaker.predicted_gender,
+                    Speaker.gender_confirmed_by_user,
+                    MediaFile.user_id,
+                    MediaFile.organization_id,
                     sa_func.count().label("cnt"),
                 )
                 .join(Speaker, SpeakerClusterMember.speaker_id == Speaker.id)
+                .join(MediaFile, MediaFile.id == Speaker.media_file_id)
                 .filter(SpeakerClusterMember.cluster_id.in_(cluster_ids))
-                .group_by(SpeakerClusterMember.cluster_id, Speaker.predicted_gender)
+                .group_by(
+                    SpeakerClusterMember.cluster_id,
+                    Speaker.predicted_gender,
+                    Speaker.gender_confirmed_by_user,
+                    MediaFile.user_id,
+                    MediaFile.organization_id,
+                )
                 .all()
             )
             for row in gender_rows:
-                gender_key = row[1] if row[1] else "__unknown__"
-                gender_by_cluster[int(row[0])][gender_key] = int(row[2])
+                shown = row[1]
+                if shown and not row[2]:
+                    org = int(row[4]) if row[4] is not None else None
+                    if not self._privacy.gender_for_scope(int(row[3]), org).enabled:
+                        shown = None
+                gender_key = shown if shown else "__unknown__"
+                gender_by_cluster[int(row[0])][gender_key] += int(row[5])
 
         items = []
         for cluster in clusters:
@@ -2286,7 +2411,14 @@ class SpeakerClusteringService:
         if not cluster:
             return None
 
+        # Privacy policy (#1280): a cluster of a scope with voiceprints off is hidden, and
+        # answers exactly like a missing one.
+        if not self._privacy.voiceprints_for_scope(user_id, cluster.organization_id).enabled:
+            return None
+
         members = cluster.members
+        member_speakers = [m.speaker for m in members if m.speaker]
+        redact_speaker_rows(self._privacy, member_speakers)
 
         # Check which members have transcript segments (= playable
         # via source media URL + seek to segment timestamps).
@@ -2312,6 +2444,8 @@ class SpeakerClusteringService:
 
             media_file = speaker.media_file
 
+            # `redact_speaker_rows` above already withheld an inferred gender and its
+            # confidence the policy forbids, so these reads are the policy-filtered values.
             gender_conf = (
                 speaker.attribute_confidence.get("gender") if speaker.attribute_confidence else None
             )
@@ -2409,22 +2543,29 @@ class SpeakerClusteringService:
     # ------------------------------------------------------------------
 
     def _get_cluster_dominant_gender(self, cluster: SpeakerCluster) -> str | None:
-        """Get the dominant predicted gender of a cluster's members."""
-        from sqlalchemy import func as sa_func
+        """Get the dominant gender of a cluster's members, as the privacy policy allows it.
 
-        rows = (
-            self.db.query(Speaker.predicted_gender, sa_func.count())
+        An inferred gender whose owner or organization has gender inference off does not
+        vote (a gender a person confirmed always does).
+        """
+        counts: dict[str, int] = defaultdict(int)
+        members = (
+            self.db.query(Speaker)
             .join(SpeakerClusterMember, SpeakerClusterMember.speaker_id == Speaker.id)
             .filter(
                 SpeakerClusterMember.cluster_id == cluster.id,
                 Speaker.predicted_gender.isnot(None),
             )
-            .group_by(Speaker.predicted_gender)
             .all()
         )
-        if not rows:
+        self._privacy.preload_files(int(m.media_file_id) for m in members)
+        for member in members:
+            gender = self._privacy.speaker_gender(member)
+            if gender:
+                counts[gender] += 1
+        if not counts:
             return None
-        dominant: str | None = max(rows, key=lambda r: r[1])[0]
+        dominant: str | None = max(counts.items(), key=lambda kv: kv[1])[0]
         return dominant
 
     def _add_speaker_to_cluster(

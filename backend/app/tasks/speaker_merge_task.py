@@ -40,6 +40,7 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
 
     Returns ``None`` when the surviving speaker no longer exists.
     """
+    from app.services.privacy.redact_view import PrivacyView
     from app.utils.uuid_helpers import get_speaker_by_uuid
 
     with session_scope() as db:
@@ -48,6 +49,12 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
             return None
 
         return {
+            # Privacy policy (#1280): read fresh, at run time, for the surviving speaker's
+            # file. A merge that was queued before a layer was switched off must not write
+            # an averaged voiceprint after it. Unknown file or unreadable policy = False.
+            "voiceprints_allowed": PrivacyView(db)
+            .voiceprints(int(target_speaker.media_file_id))
+            .enabled,
             "uuid": str(target_speaker.uuid),
             "id": int(target_speaker.id),
             "user_id": int(target_speaker.user_id),
@@ -119,7 +126,14 @@ def process_speaker_merge_background(
 
         # 1. Average the two voiceprints onto the survivor (reads the source doc).
         #    NO session held — two OpenSearch reads and a write.
-        _merge_speaker_embeddings(source_speaker_uuid, target)
+        if target["voiceprints_allowed"]:
+            _merge_speaker_embeddings(source_speaker_uuid, target)
+        else:
+            logger.info(
+                "Speaker merge %s -> %s: voiceprint averaging skipped by privacy policy",
+                source_speaker_uuid,
+                target_speaker_uuid,
+            )
 
         # 2. Clear video cache for affected media files. One SHORT session per
         #    file, opened inside; nothing is held across the object deletes.
@@ -176,6 +190,7 @@ def process_speaker_merge_background(
             "source_speaker_uuid": source_speaker_uuid,
             "target_speaker_uuid": target_speaker_uuid,
             "cleanup_incomplete_stages": cleanup_stages,
+            "voiceprint_average": "done" if target["voiceprints_allowed"] else "skipped_by_policy",
         }
 
     except Exception as e:

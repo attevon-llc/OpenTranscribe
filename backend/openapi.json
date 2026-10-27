@@ -43597,7 +43597,7 @@
     },
     "/api/speaker-clusters/recluster": {
       "post": {
-        "description": "Trigger full re-clustering of all speakers.",
+        "description": "Trigger full re-clustering of all speakers.\n\nAnswers **409** ``voiceprints_disabled`` (with the layer that turned it off in\n``locked_by``) when the caller's active scope has voiceprint matching switched off\n(issue #1280). The task itself re-checks every scope it touches at run time and\nleaves a scope that is off exactly as it is.",
         "operationId": "trigger_recluster_api_speaker_clusters_recluster_post",
         "requestBody": {
           "content": {
@@ -43699,7 +43699,7 @@
     },
     "/api/speaker-clusters/stats": {
       "get": {
-        "description": "Get aggregate speaker clustering statistics for the active tenant.",
+        "description": "Get aggregate speaker clustering statistics for the active tenant.\n\nWhile voiceprint matching is off for the caller's active scope the clusters are hidden\n(issue #1280), so no speaker counts as clustered and there are no clusters to count.",
         "operationId": "get_clustering_stats_api_speaker_clusters_stats_get",
         "responses": {
           "200": {
@@ -43935,7 +43935,7 @@
     },
     "/api/speaker-clusters/{cluster_uuid}/analyze-outliers": {
       "post": {
-        "description": "Analyze minority-gender speakers for potential outliers.",
+        "description": "Analyze minority-gender speakers for potential outliers.\n\nAnswers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint\nmatching switched off (issue #1280): it compares the members' voiceprints.",
         "operationId": "analyze_outliers_api_speaker_clusters__cluster_uuid__analyze_outliers_post",
         "parameters": [
           {
@@ -43981,7 +43981,7 @@
     },
     "/api/speaker-clusters/{cluster_uuid}/promote": {
       "post": {
-        "description": "Promote a cluster to a speaker profile.",
+        "description": "Promote a cluster to a speaker profile.\n\nAnswers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint\nmatching switched off (issue #1280): the profile is seeded with the cluster's voiceprint.",
         "operationId": "promote_cluster_api_speaker_clusters__cluster_uuid__promote_post",
         "parameters": [
           {
@@ -44041,7 +44041,7 @@
     },
     "/api/speaker-clusters/{cluster_uuid}/split": {
       "post": {
-        "description": "Split speakers from a cluster into a new cluster.",
+        "description": "Split speakers from a cluster into a new cluster.\n\nAnswers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint\nmatching switched off (issue #1280): the new cluster gets a computed centroid.",
         "operationId": "split_cluster_api_speaker_clusters__cluster_uuid__split_post",
         "parameters": [
           {
@@ -44157,7 +44157,7 @@
     },
     "/api/speaker-clusters/{source_uuid}/merge/{target_uuid}": {
       "post": {
-        "description": "Merge source cluster into target cluster.\n\nA source member the user unassigned from the target (or its profile, or one of its\nmembers) is not moved; it stays in the source, which survives with it, and its UUID\nis listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).",
+        "description": "Merge source cluster into target cluster.\n\nA source member the user unassigned from the target (or its profile, or one of its\nmembers) is not moved; it stays in the source, which survives with it, and its UUID\nis listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).\n\nAnswers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint\nmatching switched off (issue #1280): the merged centroid is a recomputed voiceprint.",
         "operationId": "merge_clusters_api_speaker_clusters__source_uuid__merge__target_uuid__post",
         "parameters": [
           {

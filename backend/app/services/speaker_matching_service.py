@@ -20,6 +20,7 @@ from app.models.media import SpeakerProfile
 from app.services.opensearch_service import add_speaker_embedding
 from app.services.opensearch_service import find_matching_speaker
 from app.services.permission_service import org_scope_pred
+from app.services.privacy import policy as privacy_policy
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
@@ -83,6 +84,16 @@ class SpeakerMatchingService:
         row = self.db.query(MediaFile.organization_id).filter(MediaFile.id == media_file_id).first()
         return int(row[0]) if row and row[0] is not None else None
 
+    def _voiceprints_allowed(self, user_id: int, organization_id: int | None) -> bool:
+        """Privacy policy (#1280): may voiceprints be matched or stored for this scope?
+
+        Asked fresh at every public entry point (never cached on the instance), so a
+        switch flipped while a task was queued or running is honoured. Fails closed.
+        """
+        return privacy_policy.voiceprint_decision(
+            self.db, user_id=user_id, organization_id=organization_id
+        ).enabled
+
     def get_confidence_level(self, confidence: float) -> str:
         """
         Determine the confidence level for UI display.
@@ -123,6 +134,9 @@ class SpeakerMatchingService:
         Returns:
             Dictionary with speaker info and confidence, or None
         """
+        if not self._voiceprints_allowed(user_id, organization_id):
+            return None
+
         # First, try to match against profile embeddings for better accuracy
         profile_match = self.match_speaker_to_profiles(
             embedding,
@@ -194,6 +208,9 @@ class SpeakerMatchingService:
         Returns:
             Dictionary with profile match info and confidence, or None
         """
+        if not self._voiceprints_allowed(user_id, organization_id):
+            return None
+
         try:
             from app.services.profile_embedding_service import ProfileEmbeddingService
 
@@ -296,6 +313,8 @@ class SpeakerMatchingService:
             organization_id = self._media_file_org_id(
                 int(source_speaker.media_file_id) if source_speaker else None
             )
+            if not self._voiceprints_allowed(user_id, organization_id):
+                return matches
 
             query = {
                 "size": 10,  # Get more potential matches for unlabeled speakers
@@ -405,6 +424,9 @@ class SpeakerMatchingService:
         Returns:
             Dictionary with profile info and confidence, or None
         """
+        if not self._voiceprints_allowed(user_id, organization_id):
+            return None
+
         # Search for matching speaker in OpenSearch
         match = find_matching_speaker(
             embedding.tolist(),
@@ -569,15 +591,20 @@ class SpeakerMatchingService:
         Returns:
             List of speaker match results
         """
+        # Tenant scope for all stores/queries follows the file's org.
+        organization_id = self._media_file_org_id(media_file_id)
+
+        # Privacy policy (#1280): no embedding is even extracted for a scope that is off.
+        if not self._voiceprints_allowed(user_id, organization_id):
+            logger.info("Speaker matching for file %s skipped by privacy policy", media_file_id)
+            return []
+
         # Extract embeddings for all speakers
         if self.embedding_service is None:
             raise ValueError("Embedding service is required for processing speaker segments")
         speaker_embeddings = self.embedding_service.extract_embeddings_for_segments(
             audio_path, segments, speaker_mapping
         )
-
-        # Tenant scope for all stores/queries follows the file's org.
-        organization_id = self._media_file_org_id(media_file_id)
 
         results = []
 
@@ -621,6 +648,13 @@ class SpeakerMatchingService:
         # Tenant scope for all stores/queries follows the file's org.
         organization_id = self._media_file_org_id(media_file_id)
 
+        # Privacy policy (#1280): the centroids are discarded, never matched or stored.
+        if not self._voiceprints_allowed(user_id, organization_id):
+            logger.info(
+                "Native speaker matching for file %s skipped by privacy policy", media_file_id
+            )
+            return []
+
         results = []
         for speaker_id, embedding in native_embeddings.items():
             result = self._process_single_speaker(
@@ -663,6 +697,11 @@ class SpeakerMatchingService:
 
         if not embeddings:
             logger.warning(f"No valid embeddings for speaker {speaker_id}")
+            return None
+
+        # A no-match result STORES the voiceprint, so the policy is asked again here rather
+        # than trusting that every caller already did.
+        if not self._voiceprints_allowed(user_id, organization_id):
             return None
 
         # Aggregate embeddings for this speaker
@@ -1225,6 +1264,8 @@ class SpeakerMatchingService:
             profile_org_id = (
                 int(profile_row[0]) if profile_row and profile_row[0] is not None else None
             )
+            if not self._voiceprints_allowed(user_id, profile_org_id):
+                return
 
             similar_matches = SimilarityService.opensearch_similarity_search(
                 embedding=embedding,
@@ -1320,6 +1361,9 @@ class SpeakerMatchingService:
                 return False
 
             # Extract reference embedding
+            if not self._voiceprints_allowed(int(profile.user_id), profile.organization_id):
+                logger.info("Profile %s reference embedding skipped by privacy policy", profile_id)
+                return False
             if self.embedding_service is None:
                 logger.error("Embedding service is not available")
                 return False
@@ -1603,6 +1647,9 @@ class SpeakerMatchingService:
         """
         matches: list[dict[str, Any]] = []
 
+        if not self._voiceprints_allowed(user_id, organization_id):
+            return matches
+
         try:
             search_results = find_matching_speaker(
                 embedding.tolist(),
@@ -1646,6 +1693,14 @@ class SpeakerMatchingService:
         matches: list[dict[str, Any]] = []
 
         try:
+            # Privacy policy (#1280): stored match pairs are voiceprint-derived, so they are
+            # hidden (not deleted) while the speaker's file scope has voiceprints off.
+            from app.services.privacy.redact_view import PrivacyView
+
+            owner = self.db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+            if owner is None or not PrivacyView(self.db).voiceprints(int(owner)).enabled:
+                return matches
+
             # Query matches where speaker is either speaker1 or speaker2
             speaker_matches = (
                 self.db.query(SpeakerMatch)

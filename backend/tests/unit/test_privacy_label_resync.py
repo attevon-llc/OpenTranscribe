@@ -345,6 +345,38 @@ def test_an_incomplete_scope_is_audited_as_partial_with_its_failures(
     assert completed["details"]["files_queued"] == 0
 
 
+def test_a_scope_whose_listing_failed_midway_stays_pending_and_is_audited_partial(
+    db_session, normal_user, seams, audit, monkeypatch
+):
+    """No file failed to queue, yet the scope is not done: the listing itself raised."""
+    org = make_org(db_session)
+    build_world(db_session, normal_user, organization=org)
+    db_session.commit()
+    _org_off(db_session, org, normal_user)
+    real = label_reindex.files_labelled_by_voiceprints
+    calls = {"n": 0}
+
+    def listing_that_dies_on_the_second_page(db, scope, *, after_id=0, limit=0):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("listing failed")
+        return real(db, scope, after_id=after_id, limit=1)
+
+    monkeypatch.setattr(
+        label_reindex, "files_labelled_by_voiceprints", listing_that_dies_on_the_second_page
+    )
+    monkeypatch.setattr(label_reindex, "PAGE_SIZE", 1)
+
+    (outcome,) = run_label_resync(db_session)
+
+    assert (outcome.files_selected, outcome.files_failed) == (1, 0), "control: nothing else failed"
+    assert outcome.error == "RuntimeError" and not outcome.finished
+    assert label_reindex.read_pending(db_session), "the scope is still pending"
+    completed = _resync_events(audit)[-1]
+    assert (completed["details"]["phase"], completed["outcome"]) == ("incomplete", "partial")
+    assert completed["details"]["error"] == "RuntimeError"
+
+
 def test_a_user_switch_is_scoped_to_that_users_files(
     db_session, normal_user, other_user, seams, audit
 ):

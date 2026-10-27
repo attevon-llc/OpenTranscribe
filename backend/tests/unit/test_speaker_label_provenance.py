@@ -580,6 +580,33 @@ def test_the_backfill_reindexes_exactly_the_files_whose_label_came_from_an_llm_g
     assert llm_speaker.resolved_display_name == "SPEAKER_00"
 
 
+def test_the_backfill_persists_the_policy_free_status_never_a_per_reader_answer(
+    db_session, normal_user, backfill_world, monkeypatch
+):
+    """The column holds what the data says; whether to show it is decided on every read."""
+    from app.services.speaker_status_service import SpeakerStatusService
+
+    _with_segment(
+        db_session,
+        normal_user,
+        suggested_name="Joe Rogan",
+        confidence=0.95,
+        suggestion_source="llm_analysis",
+    )
+    asked: list[object] = []
+    real = SpeakerStatusService.compute_speaker_status
+
+    def spy(speaker, *, voiceprint_names=None):
+        asked.append(voiceprint_names)
+        return real(speaker, voiceprint_names=voiceprint_names)
+
+    monkeypatch.setattr(SpeakerStatusService, "compute_speaker_status", staticmethod(spy))
+
+    backfill_world.backfill.backfill_llm_suggested_labels(db_session, {})
+
+    assert asked == [True]
+
+
 def test_the_backfill_finishes_and_then_does_nothing(db_session, normal_user, backfill_world):
     _with_segment(
         db_session,

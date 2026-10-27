@@ -481,3 +481,106 @@ def test_an_unresolvable_account_id_stops_the_job_before_anything_is_uploaded(
         provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
 
     s3.upload_file.assert_not_called()
+
+
+# ── 9. The bucket-owner lookup (STS) is cached and classified ──────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _fresh_owner_cache():
+    aws_provider_module.clear_bucket_owner_cache()
+    yield
+    aws_provider_module.clear_bucket_owner_cache()
+
+
+def test_the_account_lookup_is_made_once_per_credentials_not_once_per_job(monkeypatch):
+    sts = _sts()
+    first, second = _provider(), _provider()
+    for provider in (first, second):
+        monkeypatch.setattr(provider, "_boto_client", lambda service: sts)
+
+    assert first._bucket_owner() == TEST_ACCOUNT
+    assert first._bucket_owner() == TEST_ACCOUNT
+    assert second._bucket_owner() == TEST_ACCOUNT
+
+    sts.get_caller_identity.assert_called_once_with()
+
+
+def test_different_credentials_are_looked_up_separately(monkeypatch):
+    """Control for the cache above: it must be keyed by who is asking."""
+    sts_a, sts_b = _sts("111111111111"), _sts("222222222222")
+    a = _provider(access_key_id="fixture-id-a", secret_access_key="x")
+    b = _provider(access_key_id="fixture-id-b", secret_access_key="y")
+    monkeypatch.setattr(a, "_boto_client", lambda service: sts_a)
+    monkeypatch.setattr(b, "_boto_client", lambda service: sts_b)
+
+    assert (a._bucket_owner(), b._bucket_owner()) == ("111111111111", "222222222222")
+
+
+def test_an_expired_entry_is_looked_up_again(monkeypatch):
+    sts = _sts()
+    sts.get_caller_identity.side_effect = [{"Account": "111111111111"}, {"Account": "222222222222"}]
+    provider = _provider()
+    monkeypatch.setattr(provider, "_boto_client", lambda service: sts)
+    now = [1000.0]
+    monkeypatch.setattr(aws_provider_module, "_monotonic", lambda: now[0])
+
+    assert provider._bucket_owner() == "111111111111"
+    now[0] += aws_provider_module.BUCKET_OWNER_CACHE_SECONDS - 1
+    assert provider._bucket_owner() == "111111111111", "still trusted just before it expires"
+    now[0] += 2
+    assert provider._bucket_owner() == "222222222222", "looked up again once it has expired"
+
+
+def test_sts_throttling_is_a_rate_limit_and_is_not_cached(monkeypatch, audio_file):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    provider = _provider()
+    s3, tc = _stub_clients(job_response={})
+    sts = _sts()
+    sts.get_caller_identity.side_effect = [_client_error("Throttling"), {"Account": TEST_ACCOUNT}]
+    _wire_provider(provider, monkeypatch, s3, tc, sts=sts)
+
+    with pytest.raises(ASRRateLimitedError) as excinfo:
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    assert excinfo.value.provider == "aws"
+    s3.upload_file.assert_not_called()
+    assert provider._bucket_owner() == TEST_ACCOUNT, "the failure must not have been cached"
+
+
+def test_an_unreachable_sts_endpoint_is_a_clear_error_naming_the_override(monkeypatch, audio_file):
+    """A VPC with no STS endpoint: say what to set, not a botocore connection trace."""
+    from botocore.exceptions import BotoCoreError
+    from botocore.exceptions import EndpointConnectionError
+
+    provider = _provider()
+    s3, tc = _stub_clients(job_response={})
+    sts = _sts()
+    sts.get_caller_identity.side_effect = EndpointConnectionError(
+        endpoint_url="https://sts.us-east-1.amazonaws.com"
+    )
+    _wire_provider(provider, monkeypatch, s3, tc, sts=sts)
+
+    with pytest.raises(RuntimeError, match="AWS_TRANSCRIBE_BUCKET_OWNER") as excinfo:
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    assert not isinstance(excinfo.value, BotoCoreError)
+    assert "STS" in str(excinfo.value)
+    s3.upload_file.assert_not_called()
+
+
+def test_an_sts_access_denied_is_a_clear_error_not_a_rate_limit(monkeypatch, audio_file):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    provider = _provider()
+    s3, tc = _stub_clients(job_response={})
+    sts = _sts()
+    sts.get_caller_identity.side_effect = _client_error("AccessDenied")
+    _wire_provider(provider, monkeypatch, s3, tc, sts=sts)
+
+    with pytest.raises(RuntimeError, match="AWS_TRANSCRIBE_BUCKET_OWNER") as excinfo:
+        provider.transcribe(audio_file, ASRConfig(language="en", enable_diarization=False))
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)
+    s3.upload_file.assert_not_called()

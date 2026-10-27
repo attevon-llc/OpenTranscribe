@@ -70,7 +70,10 @@ off by default.
   `AWS_REGION`), set `AWS_TRANSCRIBE_BUCKET` to its name and restart, or AWS jobs and the Test
   connection button will fail with a message naming the setting. The credentials must be able to
   read, write and delete objects in that bucket. If the bucket belongs to a different account than
-  the credentials, also set `AWS_TRANSCRIBE_BUCKET_OWNER` to that account id. Objects left in the
+  the credentials, also set `AWS_TRANSCRIBE_BUCKET_OWNER` to that account id. A deployment whose
+  network has no route to STS (for example a VPC with no STS endpoint) must set
+  `AWS_TRANSCRIBE_BUCKET_OWNER` too: without it the account id is looked up from STS, and jobs fail
+  with a message naming the setting. Objects left in the
   old `opentranscribe-tmp-<region>` bucket, if you own it, can be deleted.
 - **Twenty-one migrations, `v397` to `v447`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,

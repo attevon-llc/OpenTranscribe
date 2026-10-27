@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.deps_context import RequestContext
+from app.api.deps_context import get_base_context
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.capabilities import require_capability
@@ -1296,8 +1297,16 @@ _SPEAKER_ATTR_DB_KEYS = [
 def get_speaker_attribute_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_base_context),
 ) -> SpeakerAttributeSettings:
-    """Get user's speaker attribute detection settings."""
+    """Get user's speaker attribute detection settings.
+
+    ``gender_detection_enabled`` is what will actually happen for the caller's active
+    organization: it is false when the instance or that organization forbids gender
+    inference (issue #1280), whatever the user chose, and ``gender_locked_by`` names which
+    layer. The user's own stored choice is untouched, so it applies again once the
+    restriction is lifted.
+    """
     user_settings = (
         db.query(models.UserSetting)
         .filter(
@@ -1310,11 +1319,12 @@ def get_speaker_attribute_settings(
     settings_map: dict[str, str] = {str(s.setting_key): str(s.setting_value) for s in user_settings}
     # The same resolver the pipeline uses (user > system default > default), so the form
     # shows what will actually happen.
-    flags = resolve_speaker_attribute_flags(db, current_user.id)
+    flags = resolve_speaker_attribute_flags(db, current_user.id, organization_id=ctx.org_id)
 
     return SpeakerAttributeSettings(
         detection_enabled=flags.detection_enabled,
         gender_detection_enabled=flags.gender_detection_enabled,
+        gender_locked_by=flags.gender_locked_by,
         age_detection_enabled=settings_map.get(
             "speaker_attribute_age_detection_enabled", "true"
         ).lower()
@@ -1332,12 +1342,13 @@ def update_speaker_attribute_settings(
     db: Session = Depends(get_db),
     settings_data: SpeakerAttributeSettingsUpdate,
     current_user: models.User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_base_context),
 ) -> SpeakerAttributeSettings:
     """Update user's speaker attribute detection settings (partial update)."""
     update_data = settings_data.model_dump(exclude_none=True)
 
     if not update_data:
-        return get_speaker_attribute_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+        return get_speaker_attribute_settings(db=db, current_user=current_user, ctx=ctx)  # type: ignore[no-any-return]
 
     setting_mappings = {
         "detection_enabled": "speaker_attribute_detection_enabled",
@@ -1352,7 +1363,7 @@ def update_speaker_attribute_settings(
 
     db.commit()
 
-    return get_speaker_attribute_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+    return get_speaker_attribute_settings(db=db, current_user=current_user, ctx=ctx)  # type: ignore[no-any-return]
 
 
 @router.delete("/speaker-attributes")

@@ -16725,6 +16725,18 @@
             "title": "Gender Detection Enabled",
             "type": "boolean"
           },
+          "gender_locked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The privacy layer above the user (platform, instance or organization) that forbids gender inference for the caller's active organization, or null. When set, gender_detection_enabled is false whatever the user chose. Read-only: a PUT ignores it.",
+            "title": "Gender Locked By"
+          },
           "show_attributes_on_cards": {
             "default": true,
             "title": "Show Attributes On Cards",
@@ -34278,7 +34290,7 @@
     },
     "/api/embeddings/migration/start": {
       "post": {
-        "description": "Start the speaker embedding migration from v3 to v4.\n\nThis is an async operation - it dispatches Celery tasks and returns immediately.\nUse the /status or /progress endpoints to monitor progress.\n\nArgs:\n    user_id: Optional user ID to migrate (None for all users)\n    force: If True, clear existing v4 embeddings and re-extract all from\n        scratch. Use after code changes that improve extraction quality.\n\nReturns:\n    - status: \"started\", \"skipped\", or \"error\"\n    - task_id: Celery task ID (if started)\n    - message: Human-readable status message\n    - progress: Current progress info (if migration already running)",
+        "description": "Start the speaker embedding migration from v3 to v4.\n\nThis is an async operation - it dispatches Celery tasks and returns immediately.\nUse the /status or /progress endpoints to monitor progress.\n\nArgs:\n    user_id: Optional user ID to migrate (None for all users)\n    force: If True, clear existing v4 embeddings and re-extract all from\n        scratch. Use after code changes that improve extraction quality.\n\nReturns:\n    - status: \"started\", \"skipped\", or \"error\"\n    - task_id: Celery task ID (if started)\n    - message: Human-readable status message\n    - progress: Current progress info (if migration already running)\n    - policy_skipped: counts of files and scopes the run will skip because their\n      voiceprint switch is off (only when there are any)\n\nRaises:\n    HTTPException 409: ``{\"code\": \"voiceprints_disabled\", \"locked_by\": <layer>}`` when\n        every recording is in a scope whose voiceprints are switched off.",
         "operationId": "start_migration_api_embeddings_migration_start_post",
         "parameters": [
           {
@@ -34341,7 +34353,7 @@
     },
     "/api/embeddings/migration/status": {
       "get": {
-        "description": "Get the current speaker embedding migration status.\n\nReturns information about:\n- Current embedding mode (v3 or v4)\n- Whether migration is needed\n- Document counts in each index\n- Progress tracking (if migration is running)\n- Stalled migration detection (when Redis data expired)\n\nDegrades gracefully when OpenSearch is unavailable: still 200, with\n``{\"status\": \"error\", \"message\": \"OpenSearch not available\"}`` in place of\nthe index fields; ``mode_info``/``progress``/``stalled`` are always present\n(mode defaults to v4, progress to the not-running envelope).",
+        "description": "Get the current speaker embedding migration status.\n\nReturns information about:\n- Current embedding mode (v3 or v4)\n- Whether migration is needed\n- Document counts in each index\n- Progress tracking (if migration is running)\n- Stalled migration detection (when Redis data expired)\n- ``policy_skipped``: how many files and scopes a migration would skip because their\n  voiceprint switch is off, so the admin is warned before starting\n\nDegrades gracefully when OpenSearch is unavailable: still 200, with\n``{\"status\": \"error\", \"message\": \"OpenSearch not available\"}`` in place of\nthe index fields; ``mode_info``/``progress``/``stalled`` are always present\n(mode defaults to v4, progress to the not-running envelope).",
         "operationId": "get_migration_status_api_embeddings_migration_status_get",
         "responses": {
           "200": {
@@ -49255,7 +49267,7 @@
         ]
       },
       "get": {
-        "description": "Get user's speaker attribute detection settings.",
+        "description": "Get user's speaker attribute detection settings.\n\n``gender_detection_enabled`` is what will actually happen for the caller's active\norganization: it is false when the instance or that organization forbids gender\ninference (issue #1280), whatever the user chose, and ``gender_locked_by`` names which\nlayer. The user's own stored choice is untouched, so it applies again once the\nrestriction is lifted.",
         "operationId": "get_speaker_attribute_settings_api_user_settings_speaker_attributes_get",
         "responses": {
           "200": {

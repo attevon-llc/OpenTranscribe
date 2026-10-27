@@ -22,30 +22,49 @@ What
   under the lock the ``ADD COLUMN`` already holds; a ``NOT VALID`` + ``VALIDATE`` pair buys
   nothing inside one migration transaction.
 * No index: the purge and the label resync filter by scope first.
+* ``SET LOCAL lock_timeout = '30s'`` first: ``ADD COLUMN`` and ``ADD CONSTRAINT`` take
+  ``ACCESS EXCLUSIVE`` on ``speaker``, and an unbounded wait would queue every reader behind a
+  long-running transaction. A busy table fails the upgrade loudly instead; re-run it.
 
-Backfill (owner decision Q1, 2026-10-27)
-----------------------------------------
-Existing rows are unknown, i.e. a person's, except one shape that only the voiceprint
-matcher produces. The only live writer of ``suggestion_source = 'profile_match'`` is
-``speaker_matching_service._handle_speaker_match``, and it stores that suggestion only at
-confidence >= 0.75, the same comparison that decides ``auto_accept``; so every such row was
-auto-accepted when written. A later human rename clears ``suggested_name``, so a row still
-showing the shape has not been renamed since. Stamped ``voiceprint`` only where ALL hold:
-the row is still unmarked, ``suggestion_source = 'profile_match'``, ``verified IS TRUE``, a
-profile is linked, the suggestion is non-empty, ``display_name`` equals it, and the linked
-profile carries that name. Confidence is deliberately not in the predicate: a re-match can
-lower it without touching the suggestion.
+Backfill (owner decision Q1, 2026-10-27; narrowed after audit)
+--------------------------------------------------------------
+Existing rows are unknown, i.e. a person's, unless there is POSITIVE evidence that a voiceprint
+wrote them. Mistaking a person's name for a machine's is data loss (a later purge clears it and
+nothing restores it); mistaking a machine's for a person's only leaves a name visible, so the
+backfill errs toward NULL.
 
-Residual false positives (disclosed in the upgrade note): rows ``v439`` stamped from data
-written before ``v091`` where a person had linked the same-named profile, and a person who
-later re-assigned the identical profile in a batch. Under-recognised (left NULL, so treated
-as a person's, never hidden or purged): ``voice_match`` auto-accepts (identical to an Inbox
-accept), propagation links, retroactive matches and upload cluster joins. Postgres cannot
-tell those apart.
+The one shape the voiceprint matcher produces: ``speaker_matching_service._handle_speaker_match``
+stores a ``profile_match`` suggestion only at confidence >= 0.75, the comparison that decides
+``auto_accept``, and then writes ``display_name``, ``verified`` and ``profile_id``. But before
+v449 that function also RE-MATCHED a speaker that already had a name (a re-extracted voiceprint),
+rewriting the same fields over a name a person had typed -- and a person typing a new name creates
+a profile named for it and links the speaker. That row is byte-identical to an auto-accept, so
+the shape alone is not evidence. A shape row is stamped ``voiceprint`` only when ALL hold:
 
-The number of rows stamped is logged and recorded in ``system_settings`` under
-``privacy.identity_source_backfill`` (JSON ``{"revision", "stamped", "recorded_at"}``) so
-the upgrade note can point operators at it. The record is written once (``ON CONFLICT DO
+* the shape: still unmarked, ``suggestion_source = 'profile_match'``, ``verified IS TRUE``, a
+  profile linked, a non-empty suggestion, ``display_name`` equal to it, and the linked profile
+  carrying that name (confidence is deliberately not in the predicate: a re-match can lower it
+  without touching the suggestion); AND
+* the profile already existed when the speaker was created (``speaker.created_at`` after
+  ``speaker_profile.created_at``). A person who names a speaker creates the profile AFTER the
+  speaker exists, so the speaker that originated a profile never qualifies; AND
+* another speaker linked to that profile was created before this one. A match compares against
+  the profile's embedding, which only exists once a speaker has been linked to it.
+
+Left NULL (read as a person's, never hidden, never purged): every shape row failing either
+condition; ``voice_match`` auto-accepts (identical to an Inbox accept); propagation links and
+retroactive matches onto speakers older than their profile; upload cluster joins.
+
+Residual, disclosed in the upgrade note: a person who assigned an EXISTING profile to a later
+speaker and whose voiceprint was then re-extracted still has the stamped shape, and so does a
+batch assignment of the same profile that a person made. A later purge would clear those names.
+The count of rows that had the shape but were NOT stamped is recorded next to the stamped count,
+so an operator can see how many ambiguous rows were left alone.
+
+The number of rows stamped, and of shape rows left unmarked, is logged and recorded in
+``system_settings`` under ``privacy.identity_source_backfill`` (JSON ``{"revision", "stamped",
+"shape_left_unmarked", "recorded_at"}``) so the upgrade note can point operators at it
+(``SELECT value FROM system_settings WHERE key = 'privacy.identity_source_backfill'``). The record is written once (``ON CONFLICT DO
 NOTHING``): a re-run stamps nothing and keeps the first count. Downgrade removes it.
 
 Downgrade drops the constraint, the column and the record. Names and links are untouched;
@@ -84,6 +103,9 @@ logger = logging.getLogger("alembic.runtime.migration")
 #: consistency test; a migration does not import application code).
 BACKFILL_RECORD_KEY = "privacy.identity_source_backfill"
 
+#: Bounds every lock wait of this revision's transaction (see the docstring).
+LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '30s'"
+
 ADD_COLUMN_SQL = """
     DO $$
     BEGIN
@@ -110,9 +132,9 @@ ADD_CHECK_SQL = """
     END $$;
 """
 
-#: The one pre-upgrade shape provably written by the voiceprint auto-accept. ``s`` is
-#: ``speaker``.
-BACKFILL_WHERE = """
+#: The pre-upgrade shape a voiceprint auto-accept writes. ``s`` is ``speaker``. A person's
+#: name that a later re-match rewrote has the same shape; :data:`EVIDENCE_WHERE` tells them apart.
+SHAPE_WHERE = """
     s.identity_source IS NULL
     AND s.suggestion_source = 'profile_match'
     AND s.verified IS TRUE
@@ -124,6 +146,25 @@ BACKFILL_WHERE = """
     )
 """
 
+#: Positive evidence that the PROFILE came first and that a voice was already linked to it, which
+#: an automatic match needs and a person naming a speaker (who creates the profile after the
+#: speaker) does not provide. NULL timestamps prove nothing and fail it.
+EVIDENCE_WHERE = """
+    EXISTS (
+        SELECT 1 FROM speaker_profile p
+         WHERE p.id = s.profile_id
+           AND s.created_at > p.created_at
+           AND EXISTS (
+               SELECT 1 FROM speaker o
+                WHERE o.profile_id = p.id AND o.id <> s.id AND o.created_at < s.created_at
+           )
+    )
+"""
+
+BACKFILL_WHERE = f"{SHAPE_WHERE} AND {EVIDENCE_WHERE}"
+
+SHAPE_COUNT_SQL = f"SELECT count(*) FROM speaker s WHERE {SHAPE_WHERE}"
+
 BACKFILL_SQL = f"UPDATE speaker s SET identity_source = 'voiceprint' WHERE {BACKFILL_WHERE}"
 
 RECORD_SQL = """
@@ -133,8 +174,8 @@ RECORD_SQL = """
 """
 
 RECORD_DESCRIPTION = (
-    "Rows the v449 upgrade recognised as named by a voiceprint auto-accept (issue #1280). "
-    "Written once by the migration; informational."
+    "Rows the v449 upgrade recognised as named by a voiceprint auto-accept, and rows with that "
+    "shape it left unmarked for lack of evidence (issue #1280). Written once; informational."
 )
 
 DOWNGRADE_SQL = """
@@ -146,33 +187,43 @@ DELETE_RECORD_SQL = "DELETE FROM system_settings WHERE key = :key"
 
 
 def backfill_and_record(conn) -> int:
-    """Stamp the provable shape, record and log the count. Returns the rows stamped.
+    """Stamp the evidenced shape, record and log the counts. Returns the rows stamped.
 
     Module-level so the consistency test runs exactly what the upgrade runs.
     """
+    shape_rows = int(conn.execute(sa.text(SHAPE_COUNT_SQL)).scalar() or 0)
     stamped = int(conn.execute(sa.text(BACKFILL_SQL)).rowcount or 0)
+    left_unmarked = max(shape_rows - stamped, 0)
     recorded_at = conn.execute(sa.text("SELECT now()")).scalar()
     conn.execute(
         sa.text(RECORD_SQL),
         {
             "key": BACKFILL_RECORD_KEY,
             "value": json.dumps(
-                {"revision": revision, "stamped": stamped, "recorded_at": str(recorded_at)}
+                {
+                    "revision": revision,
+                    "stamped": stamped,
+                    "shape_left_unmarked": left_unmarked,
+                    "recorded_at": str(recorded_at),
+                }
             ),
             "description": RECORD_DESCRIPTION,
         },
     )
     logger.info(
-        "v449: recognised %d existing speaker identit%s as voiceprint-made "
-        "(recorded in system_settings %r)",
+        "v449: recognised %d existing speaker identit%s as voiceprint-made and left %d "
+        "ambiguous one%s unmarked (recorded in system_settings %r)",
         stamped,
         "y" if stamped == 1 else "ies",
+        left_unmarked,
+        "" if left_unmarked == 1 else "s",
         BACKFILL_RECORD_KEY,
     )
     return stamped
 
 
 def upgrade():
+    op.execute(LOCK_TIMEOUT_SQL)
     op.execute(ADD_COLUMN_SQL)
     op.execute(ADD_CHECK_SQL)
     backfill_and_record(op.get_bind())

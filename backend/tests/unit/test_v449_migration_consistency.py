@@ -5,6 +5,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -13,6 +16,8 @@ from sqlalchemy import Table
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+
+from app.models.media import Speaker
 
 REVISION = "v449_add_speaker_identity_source"
 #: v448_task_one_active_row_per_file_step is also a child of v447 on another integration
@@ -132,8 +137,26 @@ def test_check_accepts_every_documented_value(db_session, normal_user, value):
 # --- the backfill (owner decision Q1) ----------------------------------------------------
 
 
-def _shape(db_session, normal_user, *, profile_name="Alice", **overrides):
-    """A row in the profile auto-accept shape, with ``overrides`` breaking one condition."""
+_T0 = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def _shape(
+    db_session,
+    normal_user,
+    *,
+    profile_name="Alice",
+    created_after_profile=True,
+    earlier_carrier=True,
+    carrier_created_at=None,
+    **overrides,
+):
+    """A row in the profile auto-accept shape, with ``overrides`` breaking one condition.
+
+    By default the evidence a real auto-accept leaves is present: the profile (created at
+    ``_T0``) existed before the speaker, and an earlier speaker was already linked to it.
+    ``carrier_created_at`` moves that first carrier in time. ``created_after_profile=False`` makes the speaker older than its profile (what a person
+    typing a name produces); ``earlier_carrier=False`` leaves the profile with no other voice.
+    """
     from app.models.media import SpeakerProfile
     from tests.fixtures.speaker_cleanup_seams import make_profile
 
@@ -141,7 +164,27 @@ def _shape(db_session, normal_user, *, profile_name="Alice", **overrides):
         db_session.query(SpeakerProfile)
         .filter_by(user_id=normal_user.id, organization_id=None, name=profile_name)
         .one_or_none()
-    ) or make_profile(db_session, normal_user, name=profile_name)
+    )
+    if profile is None:
+        profile = make_profile(db_session, normal_user, name=profile_name)
+        profile.created_at = _T0
+        db_session.flush()
+    if earlier_carrier:
+        carried = (
+            db_session.query(Speaker)
+            .filter(Speaker.profile_id == profile.id, Speaker.identity_source == "human")
+            .count()
+        )
+        if not carried:
+            _speaker_row(
+                db_session,
+                normal_user,
+                display_name=profile_name,
+                verified=True,
+                profile_id=profile.id,
+                identity_source="human",
+                created_at=carrier_created_at or _T0 - timedelta(days=3),
+            )
     fields = {
         "display_name": "Alice",
         "suggested_name": "Alice",
@@ -149,6 +192,7 @@ def _shape(db_session, normal_user, *, profile_name="Alice", **overrides):
         "confidence": 0.82,
         "verified": True,
         "profile_id": profile.id,
+        "created_at": _T0 + timedelta(days=1) if created_after_profile else _T0 - timedelta(days=1),
     }
     fields.update(overrides)
     return _speaker_row(db_session, normal_user, **fields)
@@ -182,6 +226,10 @@ def test_backfill_stamps_only_the_profile_auto_accept_shape(db_session, normal_u
             _shape(db_session, normal_user, display_name="Alicia"),
             None,
         ),
+        "a different name was auto-accepted, then a person assigned this profile": (
+            _shape(db_session, normal_user, suggested_name="Bob"),
+            None,
+        ),
         "not verified": (_shape(db_session, normal_user, verified=False), None),
         "no profile linked": (_shape(db_session, normal_user, profile_id=None), None),
         "already a person's": (_shape(db_session, normal_user, identity_source="human"), "human"),
@@ -193,6 +241,149 @@ def test_backfill_stamps_only_the_profile_auto_accept_shape(db_session, normal_u
     assert stamped >= 1
     got = {label: _source(db_session, sp) for label, (sp, _) in cases.items()}
     assert got == {label: want for label, (_, want) in cases.items()}
+
+
+def test_a_name_a_person_typed_and_a_later_rematch_rewrote_is_not_stamped(db_session, normal_user):
+    """A typed name creates its profile AFTER the speaker; a re-extracted voiceprint then wrote
+    the auto-accept fields over it. Stamping it would let a purge delete the person's word."""
+    typed_creator = _shape(
+        db_session, normal_user, created_after_profile=False, earlier_carrier=False
+    )
+    typed_creator_with_followers = _shape(
+        db_session,
+        normal_user,
+        profile_name="Carol",
+        created_after_profile=False,
+        display_name="Carol",
+        suggested_name="Carol",
+    )
+    db_session.flush()
+
+    _module().backfill_and_record(db_session.connection())
+
+    assert _source(db_session, typed_creator) is None
+    assert _source(db_session, typed_creator_with_followers) is None
+
+
+def test_a_genuine_later_auto_accept_is_stamped_and_its_originator_is_not(db_session, normal_user):
+    """The same profile: its first carrier (a person's) stays unmarked, the speaker the matcher
+    linked to it later is stamped."""
+    later = _shape(db_session, normal_user)
+    originator = (
+        db_session.query(Speaker)
+        .filter(Speaker.profile_id == later.profile_id, Speaker.id != later.id)
+        .one()
+    )
+    db_session.flush()
+
+    _module().backfill_and_record(db_session.connection())
+
+    assert _source(db_session, later) == "voiceprint"
+    assert _source(db_session, originator) == "human"
+
+
+def test_a_speaker_older_than_its_profile_is_not_stamped_even_with_an_older_voice_linked(
+    db_session, normal_user
+):
+    """The profile did not exist when this speaker was created, so it did not auto-accept it."""
+    older = _shape(db_session, normal_user, created_after_profile=False)
+    db_session.flush()
+
+    _module().backfill_and_record(db_session.connection())
+
+    assert _source(db_session, older) is None
+
+
+@pytest.mark.parametrize("offset", [timedelta(days=1), timedelta(days=2)])
+def test_a_voice_linked_at_the_same_time_or_later_is_not_earlier_evidence(
+    db_session, normal_user, offset
+):
+    """Only a speaker that existed BEFORE this one can have contributed the profile's voice."""
+    speaker = _shape(db_session, normal_user, carrier_created_at=_T0 + offset)
+    db_session.flush()
+
+    _module().backfill_and_record(db_session.connection())
+
+    assert _source(db_session, speaker) is None
+
+
+def test_a_profile_no_voice_was_linked_to_before_cannot_have_matched_anyone(
+    db_session, normal_user
+):
+    """A match compares against the profile's embedding, which needs an earlier linked speaker."""
+    alone = _shape(db_session, normal_user, earlier_carrier=False)
+    db_session.flush()
+
+    _module().backfill_and_record(db_session.connection())
+
+    assert _source(db_session, alone) is None
+
+
+def test_a_speaker_without_a_creation_time_is_never_stamped(db_session, normal_user):
+    undated = _shape(db_session, normal_user)
+    db_session.connection().execute(
+        text("UPDATE speaker SET created_at = NULL WHERE id = :i"), {"i": undated.id}
+    )
+
+    _module().backfill_and_record(db_session.connection())
+
+    assert _source(db_session, undated) is None
+
+
+def test_the_record_counts_the_shape_rows_it_left_unmarked(db_session, normal_user):
+    module = _module()
+    conn = db_session.connection()
+    conn.execute(
+        text("DELETE FROM system_settings WHERE key = :k"), {"k": module.BACKFILL_RECORD_KEY}
+    )
+    _shape(db_session, normal_user)
+    _shape(
+        db_session,
+        normal_user,
+        profile_name="Dana",
+        display_name="Dana",
+        suggested_name="Dana",
+        created_after_profile=False,
+    )
+    _shape(
+        db_session,
+        normal_user,
+        profile_name="Erin",
+        display_name="Erin",
+        suggested_name="Erin",
+        earlier_carrier=False,
+    )
+    db_session.flush()
+    before = conn.execute(text(module.SHAPE_COUNT_SQL)).scalar()
+
+    stamped = module.backfill_and_record(conn)
+
+    record = _record(conn)
+    assert record is not None
+    assert record["stamped"] == stamped
+    assert record["shape_left_unmarked"] == before - stamped
+    assert record["shape_left_unmarked"] >= 2
+
+
+def test_the_upgrade_bounds_its_lock_waits_before_the_first_alter(db_session):
+    import ast
+    import inspect
+
+    module = _module()
+    tree = ast.parse(inspect.getsource(module.upgrade))
+    executed = [
+        node.args[0].id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "execute"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+    ]
+    assert executed[:3] == ["LOCK_TIMEOUT_SQL", "ADD_COLUMN_SQL", "ADD_CHECK_SQL"]
+    conn = db_session.connection()
+    conn.execute(text(module.LOCK_TIMEOUT_SQL))
+    assert conn.execute(text("SHOW lock_timeout")).scalar() == "30s"
 
 
 def test_backfill_is_idempotent(db_session, normal_user):

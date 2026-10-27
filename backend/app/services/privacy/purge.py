@@ -11,19 +11,25 @@ the separate, explicit, audited deletion, and it is irreversible by design. Thre
 
 What is deleted
 ---------------
-``voiceprints``: the speaker and profile embedding documents in every speaker index (the legacy
-backup index included, exactly as erasure does); ``speaker_profile.embedding_count`` and
-``last_embedding_update`` are reset; ``speaker_match`` rows and unpromoted ``speaker_cluster`` rows
-(with their members) in scope go, and ``speaker.cluster_id`` is cleared; unverified voiceprint
-suggestions are cleared and the speaker's derived status and label are refreshed. Kept: profiles,
-names, avatars, user-verified speaker-to-profile links and promoted clusters (user assertions, not
-biometrics).
+``voiceprints``: see :mod:`app.services.privacy.purge_voiceprints` (names and links a voiceprint
+made revert to unnamed and unlinked; unverified voiceprint suggestions, ``speaker_match`` rows with
+either side in scope, unpromoted clusters, profile embedding counters and the speaker, profile and
+cluster-centroid documents of the scope's Postgres ids go; a person's typed or confirmed names and
+links, profiles, avatars and promoted clusters stay).
 
 ``inferred_gender``: ``speaker.predicted_gender`` and the ``gender`` / ``alignment`` /
 ``alignment_hint`` keys of ``attribute_confidence`` (the latter two are the name-versus-voice
 comparison, itself an inference from gender) where ``gender_confirmed_by_user`` is not true, and
 ``attributes_predicted_at``. ``speaker_profile.predicted_gender`` is NOT touched: its only writer is
 the user's own "confirm gender" action, so it is a human assertion, not an inference.
+
+Measured and verified
+---------------------
+Every pass returns the exact count removed per store (``postgres`` / ``opensearch`` groups; what
+OpenSearch REPORTS as deleted, never the number of ids asked for) and then measures what it was
+supposed to remove, in a fresh session after an index refresh (:mod:`purge_residual`). A non-zero
+residual at the final pass makes the purge FAIL, never succeed; a measure that could not be taken is
+reported as unverified, never as zero. Both go into the audit event and the status response.
 
 Safety
 ------
@@ -51,7 +57,6 @@ from typing import cast
 
 from sqlalchemy import Text
 from sqlalchemy import cast as sql_cast
-from sqlalchemy import delete
 from sqlalchemy import literal
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -60,6 +65,14 @@ from sqlalchemy import update
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.services.privacy.purge_residual import GENDER_RESIDUAL_KEYS
+from app.services.privacy.purge_residual import VOICEPRINT_RESIDUAL_KEYS
+from app.services.privacy.purge_residual import Residual
+from app.services.privacy.purge_residual import measure_gender_residual
+from app.services.privacy.purge_residual import measure_voiceprint_residual
+from app.services.privacy.purge_voiceprints import purge_voiceprint_docs
+from app.services.privacy.purge_voiceprints import purge_voiceprints_postgres
+from app.services.privacy.purge_voiceprints import rebuild_trimmed_clusters
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import CursorResult
@@ -157,20 +170,6 @@ class PurgeScope:
         return [Speaker.media_file_id.in_(file_ids)]
 
 
-@dataclass
-class PurgeCounts:
-    """What a purge removed. Counts only; nothing here names a person or a recording."""
-
-    values: dict[str, int] = field(default_factory=dict)
-
-    def add(self, key: str, amount: int) -> None:
-        self.values[key] = self.values.get(key, 0) + int(amount)
-
-    def merge(self, other: dict[str, int]) -> None:
-        for key, amount in other.items():
-            self.add(key, amount)
-
-
 # --- Is the purge allowed? ---------------------------------------------------------------
 
 
@@ -203,96 +202,6 @@ def targets_still_enabled(db: Session, scope: PurgeScope, targets: Iterable[str]
 def _rowcount(db: Session, statement: Any) -> int:
     """Execute a DML statement and return how many rows it touched."""
     return int(cast("CursorResult[Any]", db.execute(statement)).rowcount or 0)
-
-
-def _scope_speaker_ids(scope: PurgeScope) -> Any:
-    from app.models.media import Speaker
-
-    return select(Speaker.id).where(*scope.speaker_filters())
-
-
-def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> tuple[dict[str, int], list[int]]:
-    """The relational half of a voiceprint purge. Commits.
-
-    Returns:
-        The counts, and the ids of speakers whose voiceprint suggestion was cleared (their
-        status and label need refreshing; see :func:`refresh_cleared_speakers`).
-    """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
-    from app.models.media import SpeakerMatch
-    from app.models.media import SpeakerProfile
-    from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
-
-    counts: dict[str, int] = {}
-    in_scope = _scope_speaker_ids(scope)
-
-    counts["matches_deleted"] = _rowcount(
-        db,
-        delete(SpeakerMatch).where(
-            or_(SpeakerMatch.speaker1_id.in_(in_scope), SpeakerMatch.speaker2_id.in_(in_scope))
-        ),
-    )
-
-    # Promoted clusters belong to a named profile and stay (the profile is a user assertion); their
-    # centroid documents go with the OpenSearch delete.
-    unpromoted = select(SpeakerCluster.id).where(
-        *scope.sql_filters(SpeakerCluster), SpeakerCluster.promoted_to_profile_id.is_(None)
-    )
-    counts["speakers_unclustered"] = _rowcount(
-        db,
-        update(Speaker)
-        .where(Speaker.cluster_id.in_(unpromoted))
-        .values(cluster_id=None)
-        .execution_options(synchronize_session=False),
-    )
-    counts["cluster_members_deleted"] = _rowcount(
-        db, delete(SpeakerClusterMember).where(SpeakerClusterMember.cluster_id.in_(unpromoted))
-    )
-    counts["clusters_deleted"] = _rowcount(
-        db,
-        delete(SpeakerCluster).where(
-            SpeakerCluster.id.in_(
-                select(SpeakerCluster.id).where(
-                    *scope.sql_filters(SpeakerCluster),
-                    SpeakerCluster.promoted_to_profile_id.is_(None),
-                )
-            )
-        ),
-    )
-
-    counts["profiles_reset"] = _rowcount(
-        db,
-        update(SpeakerProfile)
-        .where(
-            *scope.sql_filters(SpeakerProfile),
-            or_(
-                SpeakerProfile.embedding_count > 0,
-                SpeakerProfile.last_embedding_update.isnot(None),
-            ),
-        )
-        .values(embedding_count=0, last_embedding_update=None)
-        .execution_options(synchronize_session=False),
-    )
-
-    cleared = [
-        int(row[0])
-        for row in db.execute(
-            update(Speaker)
-            .where(
-                *scope.speaker_filters(),
-                Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
-                or_(Speaker.verified.is_(None), Speaker.verified.is_(False)),
-            )
-            .values(suggested_name=None, suggestion_source=None, confidence=None)
-            .returning(Speaker.id)
-            .execution_options(synchronize_session=False)
-        )
-    ]
-    counts["suggestions_cleared"] = len(cleared)
-    db.commit()
-    return counts, cleared
 
 
 def purge_inferred_gender_postgres(db: Session, scope: PurgeScope) -> dict[str, int]:
@@ -358,7 +267,8 @@ def refresh_cleared_speakers(
     for start in range(0, len(speaker_ids), _SPEAKER_BATCH):
         batch = speaker_ids[start : start + _SPEAKER_BATCH]
         for speaker in db.query(Speaker).filter(Speaker.id.in_(batch)).all():
-            status = SpeakerStatusService.compute_speaker_status(speaker)
+            # Persisted status describes the data; hiding is decided per read (#1280 D5).
+            status = SpeakerStatusService.compute_speaker_status(speaker, voiceprint_names=True)
             speaker.computed_status = status["computed_status"]  # type: ignore[assignment]
             speaker.status_text = status["status_text"]  # type: ignore[assignment]
             speaker.status_color = status["status_color"]  # type: ignore[assignment]
@@ -390,31 +300,57 @@ def _queue_reindexes(files: list[tuple[int, str, int]]) -> int:
     return failed
 
 
-# --- OpenSearch --------------------------------------------------------------------------
-
-
-def purge_voiceprint_docs(scope: PurgeScope, errors: list[dict[str, Any]]) -> int:
-    """Delete the scope's speaker and profile embedding documents. Holds no database session."""
-    from app.services.gdpr_erasure_service import _erase_speaker_voiceprints
-    from app.services.gdpr_erasure_service import delete_speaker_docs_by_query
-
-    if scope.kind == "instance_all":
-        return delete_speaker_docs_by_query(
-            {"query": {"match_all": {}}}, errors=errors, label="the whole instance"
-        )
-    if scope.kind == "instance_personal":
-        return _erase_speaker_voiceprints(personal_only=True, errors=errors)
-    if scope.kind == "organization":
-        return _erase_speaker_voiceprints(organization_id=scope.organization_id, errors=errors)
-    return _erase_speaker_voiceprints(
-        user_id=scope.user_id,
-        organization_id=scope.organization_id,
-        personal_only=scope.organization_id is None,
-        errors=errors,
-    )
-
-
 # --- One pass ----------------------------------------------------------------------------
+
+POSTGRES = "postgres"
+OPENSEARCH = "opensearch"
+
+#: Counts of a store group, by the name the audit event and the status response use.
+GroupedCounts = dict[str, dict[str, int]]
+
+
+@dataclass
+class TargetOutcome:
+    """What one target's pass removed (counts per store) and what it measured afterwards."""
+
+    counts: GroupedCounts = field(default_factory=lambda: {POSTGRES: {}, OPENSEARCH: {}})
+    residual: Residual = field(default_factory=Residual)
+
+
+@dataclass
+class PassResult:
+    """One full pass over the targets.
+
+    ``errors`` is non-empty when a store could not be fully purged or measured; the caller must
+    record the purge as partial, not complete.
+    """
+
+    outcomes: dict[str, TargetOutcome] = field(default_factory=dict)
+    errors: list[dict[str, Any]] = field(default_factory=list)
+
+    def counts(self) -> GroupedCounts:
+        """All targets' counts, grouped per store."""
+        merged: GroupedCounts = {POSTGRES: {}, OPENSEARCH: {}}
+        for outcome in self.outcomes.values():
+            for store, values in outcome.counts.items():
+                for key, amount in values.items():
+                    merged[store][key] = merged[store].get(key, 0) + amount
+        return merged
+
+    def residual(self) -> Residual:
+        merged = Residual()
+        for outcome in self.outcomes.values():
+            merged.merge(outcome.residual)
+        return merged
+
+
+def merge_grouped(total: GroupedCounts, more: GroupedCounts) -> GroupedCounts:
+    """Add ``more`` into ``total`` (pass 2 adds to pass 1)."""
+    for store, values in more.items():
+        bucket = total.setdefault(store, {})
+        for key, amount in values.items():
+            bucket[key] = bucket.get(key, 0) + int(amount)
+    return total
 
 
 def run_purge_pass(
@@ -423,44 +359,54 @@ def run_purge_pass(
     *,
     session_factory: Callable[[], Session],
     reindex: Callable[[list[tuple[int, str, int]]], int] | None = None,
-) -> tuple[dict[str, int], list[dict[str, Any]]]:
-    """One full pass over the targets: relational rows first, then the OpenSearch documents.
+) -> PassResult:
+    """One full pass over the targets: relational rows, OpenSearch documents, then verification.
 
     Each relational step opens its own short session and closes it before the next, and the
     OpenSearch delete (slow) holds none. Idempotent, which is what lets the task run it twice.
-
-    Returns:
-        ``(counts, errors)``. ``errors`` is non-empty when a store could not be fully purged; the
-        caller must record the purge as partial, not complete.
     """
     wanted = set(targets)
-    counts = PurgeCounts()
-    errors: list[dict[str, Any]] = []
+    result = PassResult()
 
     if VOICEPRINTS in wanted:
+        outcome = TargetOutcome()
         db = session_factory()
         try:
-            relational, cleared = purge_voiceprints_postgres(db, scope)
-            counts.merge(relational)
-            counts.merge(refresh_cleared_speakers(db, cleared, reindex))
+            done = purge_voiceprints_postgres(db, scope)
+            outcome.counts[POSTGRES].update(done.counts)
+            refreshed = refresh_cleared_speakers(db, done.cleared, reindex)
+            outcome.counts[POSTGRES]["statuses_refreshed"] = refreshed["statuses_refreshed"]
+            if refreshed["reindex_queue_failed"]:
+                result.errors.append(
+                    {"stage": "reindex", "failed": refreshed["reindex_queue_failed"]}
+                )
+            for residue in rebuild_trimmed_clusters(db, done.targets):
+                result.errors.append(dict(residue))
         except Exception:
             db.rollback()
             raise
         finally:
             db.close()
-        counts.add("voiceprint_docs_deleted", purge_voiceprint_docs(scope, errors))
+        outcome.counts[OPENSEARCH].update(purge_voiceprint_docs(scope, done.targets, result.errors))
+        outcome.residual = measure_voiceprint_residual(
+            scope, done.targets, session_factory=session_factory, errors=result.errors
+        )
+        result.outcomes[VOICEPRINTS] = outcome
 
     if INFERRED_GENDER in wanted:
+        outcome = TargetOutcome()
         db = session_factory()
         try:
-            counts.merge(purge_inferred_gender_postgres(db, scope))
+            outcome.counts[POSTGRES].update(purge_inferred_gender_postgres(db, scope))
         except Exception:
             db.rollback()
             raise
         finally:
             db.close()
+        outcome.residual = measure_gender_residual(scope, session_factory=session_factory)
+        result.outcomes[INFERRED_GENDER] = outcome
 
-    return counts.values, errors
+    return result
 
 
 # --- Audit and status record -------------------------------------------------------------
@@ -469,6 +415,9 @@ _EVENT_FOR_TARGET = {
     VOICEPRINTS: AuditEventType.PRIVACY_VOICEPRINT_PURGE,
     INFERRED_GENDER: AuditEventType.PRIVACY_GENDER_PURGE,
 }
+
+#: Residual measures per target, for the status response's fixed shape.
+RESIDUAL_KEYS = {VOICEPRINTS: VOICEPRINT_RESIDUAL_KEYS, INFERRED_GENDER: GENDER_RESIDUAL_KEYS}
 
 
 def audit_purge(
@@ -481,14 +430,34 @@ def audit_purge(
     outcome: AuditOutcome = AuditOutcome.SUCCESS,
     source_ip: str | None = None,
     user_agent: str | None = None,
-    counts: dict[str, int] | None = None,
+    task_id: str | None = None,
+    outcomes: dict[str, TargetOutcome] | None = None,
     reason: str | None = None,
 ) -> None:
-    """One audit event per target. Org-stamped; ``details`` hold the scope kind and counts only."""
-    for target in dict.fromkeys(targets):
-        details: dict[str, Any] = {"phase": phase, "scope": scope.kind}
-        if counts is not None:
-            details["counts"] = counts
+    """One audit event per target, org-stamped, so an administrator can verify a purge from it.
+
+    ``details`` hold the task id, phase, the purge's targets, the scope (kind and ids), and, for
+    a pass that ran, that target's exact counts per store plus the residual it measured and
+    whether it was all zero. Counts and ids of the scope only; never a name.
+    """
+    wanted = list(dict.fromkeys(targets))
+    for target in wanted:
+        details: dict[str, Any] = {
+            "task_id": task_id,
+            "phase": phase,
+            "targets": wanted,
+            "scope": {
+                "kind": scope.kind,
+                "organization_id": scope.organization_id,
+                "user_id": scope.user_id,
+            },
+        }
+        measured = (outcomes or {}).get(target)
+        if measured is not None:
+            details["counts"] = measured.counts
+            details["residual"] = measured.residual.counts
+            details["residual_unverified"] = sorted(set(measured.residual.unverified))
+            details["residual_ok"] = measured.residual.ok
         if reason is not None:
             details["reason"] = reason
         audit_logger.log(
@@ -504,15 +473,34 @@ def audit_purge(
         )
 
 
-def write_record(task_id: str, user_id: int, counts: dict[str, int]) -> None:
-    """Remember a purge's initiator and running counts, for ``GET /privacy/purge/{task_id}``."""
+def purge_audit_event_types(targets: Iterable[str] | None) -> list[AuditEventType]:
+    """The audit event type of each target, in order (what the status response points at)."""
+    return [_EVENT_FOR_TARGET[t] for t in dict.fromkeys(targets or []) if t in _EVENT_FOR_TARGET]
+
+
+def write_record(
+    task_id: str,
+    user_id: int,
+    counts: GroupedCounts | dict[str, Any],
+    *,
+    targets: list[str] | None = None,
+    residual: dict[str, int] | None = None,
+    residual_ok: bool | None = None,
+    residual_unverified: list[str] | None = None,
+) -> None:
+    """Remember a purge's initiator, running counts and residual, for ``GET /privacy/purge/{id}``."""
     try:
         from app.core.redis import get_redis
 
+        record: dict[str, Any] = {"user_id": user_id, "counts": counts}
+        if targets is not None:
+            record["targets"] = list(targets)
+        if residual is not None:
+            record["residual"] = residual
+            record["residual_ok"] = bool(residual_ok)
+            record["residual_unverified"] = list(residual_unverified or [])
         get_redis().set(
-            _RECORD_KEY.format(task_id=task_id),
-            json.dumps({"user_id": user_id, "counts": counts}),
-            ex=_RECORD_TTL_SECONDS,
+            _RECORD_KEY.format(task_id=task_id), json.dumps(record), ex=_RECORD_TTL_SECONDS
         )
     except Exception:
         logger.warning("privacy purge: could not store the status record for %s", task_id)

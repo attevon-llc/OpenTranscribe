@@ -20,7 +20,9 @@ from datetime import UTC
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
+import numpy as np
 import pytest
 from fastapi import status
 
@@ -40,6 +42,7 @@ from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
 from app.services.privacy import purge
 from app.services.privacy.policy import clear_write_backstop_cache
+from app.services.speaker_matching_service import SpeakerMatchingService
 from app.tasks import privacy_purge_task as task_module
 from app.tasks.privacy_purge_task import privacy_purge_task
 from app.tasks.transcription.speaker_processor import create_or_get_speaker
@@ -224,8 +227,16 @@ def seed(gov, os_, owner, org, tag: str) -> SimpleNamespace:
     db.add(SpeakerMatch(speaker1_id=first, speaker2_id=second, confidence=0.9))
     db.commit()
 
-    for label in ("speaker", "profile", "cluster"):
-        os_.add(f"{label}-{tag}", owner.id, org_id)
+    # One voiceprint document per speaker, the profile's, and each cluster's centroid, under the
+    # ids the application writes them with.
+    doc_ids = {
+        *(str(row.uuid) for row in (guess, other, confirmed)),
+        f"profile_{profile.uuid}",
+        f"cluster_{loose.uuid}",
+        f"cluster_{named.uuid}",
+    }
+    for doc_id in sorted(doc_ids):
+        os_.add(doc_id, owner.id, org_id)
     assert guess.organization_id is None, "speakers are not stamped with a tenant in production"
     return SimpleNamespace(
         tag=tag,
@@ -238,7 +249,7 @@ def seed(gov, os_, owner, org, tag: str) -> SimpleNamespace:
         profile=profile.id,
         loose=loose.id,
         named=named.id,
-        doc_ids={f"{label}-{tag}" for label in ("speaker", "profile", "cluster")},
+        doc_ids=doc_ids,
     )
 
 
@@ -348,7 +359,11 @@ def test_an_org_purge_deletes_that_organization_and_only_that_organization(
     assert_purged(gov.db, a2, opensearch)
     assert_untouched(gov.db, b, opensearch)
     assert_untouched(gov.db, personal, opensearch)
-    assert result["counts"]["voiceprint_docs_deleted"] == 6
+    assert result["counts"]["opensearch"] == {
+        "speaker_docs_deleted": 6,
+        "profile_docs_deleted": 2,
+        "cluster_docs_deleted": 4,
+    }
 
 
 def test_an_administrator_of_another_organization_cannot_purge_this_one(
@@ -419,7 +434,7 @@ def test_without_the_exact_confirmation_nothing_is_queued(client, gov, opensearc
     turn_off(gov.db, gov.org)
     response = purge_via_api(client, gov, gov.admin, ORG_PURGE, body)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-    assert not broker and len(opensearch.docs) == 3
+    assert not broker and len(opensearch.docs) == 6
 
 
 def test_a_member_and_an_anonymous_caller_cannot_purge(client, gov, opensearch, broker):
@@ -427,7 +442,7 @@ def test_a_member_and_an_anonymous_caller_cannot_purge(client, gov, opensearch, 
     turn_off(gov.db, gov.org)
     assert purge_via_api(client, gov, gov.alice, ORG_PURGE).status_code == status.HTTP_403_FORBIDDEN
     assert client.post(ORG_PURGE, json=BODY).status_code == status.HTTP_401_UNAUTHORIZED
-    assert not broker and len(opensearch.docs) == 3
+    assert not broker and len(opensearch.docs) == 6
 
 
 # --------------------------------------------------------------------------- #
@@ -438,7 +453,7 @@ def test_a_member_and_an_anonymous_caller_cannot_purge(client, gov, opensearch, 
 def test_the_second_pass_catches_a_document_that_raced_the_switch(
     client, gov, opensearch, broker, in_process_task, reindexed
 ):
-    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    seeded = seed(gov, opensearch, gov.alice, gov.org, "orgA")
     turn_off(gov.db, gov.org)
     task_id = purge_via_api(client, gov, gov.admin, ORG_PURGE).json()["task_id"]
 
@@ -451,10 +466,13 @@ def test_the_second_pass_catches_a_document_that_raced_the_switch(
     row = gov.db.get(Task, task_id)
     assert row.status == "in_progress", "the purge is not finished after pass 1"
 
-    opensearch.add("raced-write", gov.alice.id, gov.org.id)  # written after pass 1 ran
+    raced = str(gov.db.get(Speaker, seeded.guess).uuid)
+    opensearch.add(raced, gov.alice.id, gov.org.id)  # a voiceprint written after pass 1 ran
+    assert raced in opensearch.ids(), "control: the late write is there"
     result = in_process_task(second_dispatch)
     assert result["status"] == "completed"
-    assert "raced-write" not in opensearch.ids()
+    assert raced not in opensearch.ids()
+    assert result["counts"]["opensearch"]["speaker_docs_deleted"] == 1
     gov.db.expire_all()
     assert gov.db.get(Task, task_id).status == "completed"
 
@@ -515,7 +533,7 @@ def test_a_store_that_could_not_be_purged_is_reported_partial_not_complete(
     in_process_task(broker[0])
     done = [e for e in events if e["details"].get("phase") == "pass_1_completed"]
     assert done and done[0]["outcome"].value == "partial"
-    assert len(opensearch.docs) == 3, "the documents the store refused to delete are still there"
+    assert len(opensearch.docs) == 6, "the documents the store refused to delete are still there"
 
 
 def test_a_cleared_suggestion_that_was_the_label_refreshes_the_label_and_the_index(
@@ -585,9 +603,13 @@ def test_every_purge_is_audited_with_counts_and_no_names(
         for e in by_type[event_type]:
             assert e["organization_id"] == gov.org.id
             assert e["user_id"] == gov.admin.id
-            assert e["details"]["scope"] == "organization"
+            assert e["details"]["scope"] == {
+                "kind": "organization",
+                "organization_id": gov.org.id,
+                "user_id": None,
+            }
     completed = by_type[AuditEventType.PRIVACY_VOICEPRINT_PURGE][1]
-    assert completed["details"]["counts"]["voiceprint_docs_deleted"] == 3
+    assert sum(completed["details"]["counts"]["opensearch"].values()) == 6
     assert "Ann" not in repr(events) and gov.alice.email not in repr(events)
 
 
@@ -652,9 +674,10 @@ def test_the_personal_workspace_purge_leaves_the_same_persons_organization_data(
     assert_untouched(gov.db, mine_org, opensearch)
     assert_untouched(gov.db, others_personal, opensearch)
     # Only the personal workspace's rows were counted: 2 speakers carry inferred gender, 1 match.
-    assert result["counts"]["gender_speakers_cleared"] == 2
-    assert result["counts"]["matches_deleted"] == 1
-    assert result["counts"]["suggestions_cleared"] == 1
+    postgres = result["counts"]["postgres"]
+    assert postgres["gender_speakers_cleared"] == 2
+    assert postgres["speaker_matches_deleted"] == 1
+    assert postgres["suggestions_cleared"] == 1
 
 
 # One store at a time: what each of the four stores holds for a seeded scope, as "kept?" Each
@@ -720,9 +743,10 @@ def test_an_organization_purge_counts_the_organizations_speakers_not_zero(
 
     # Two seeds in the organization, each with two inferred-gender speakers, a match and a
     # voiceprint suggestion; the personal workspace's identical rows are not in these numbers.
-    assert result["counts"]["gender_speakers_cleared"] == 4
-    assert result["counts"]["matches_deleted"] == 2
-    assert result["counts"]["suggestions_cleared"] == 2
+    postgres = result["counts"]["postgres"]
+    assert postgres["gender_speakers_cleared"] == 4
+    assert postgres["speaker_matches_deleted"] == 2
+    assert postgres["suggestions_cleared"] == 2
 
 
 def test_a_person_may_purge_once_their_organization_turned_it_off_without_changing_their_switch(
@@ -878,17 +902,464 @@ def test_only_the_initiator_can_read_a_purge_status(
 
     with gov.acting_as(gov.admin):
         pending = client.get(url).json()
-    assert pending == {"task_id": task_id, "status": "pending", "counts": None}
+    assert pending == {
+        "task_id": task_id,
+        "status": "pending",
+        "counts": None,
+        "residual": None,
+        "residual_ok": None,
+        "residual_unverified": [],
+        "audit": [],
+    }
 
     in_process_task(broker[0])
     in_process_task(broker[1])
     with gov.acting_as(gov.admin):
         done = client.get(url).json()
     assert done["status"] == "completed"
-    assert done["counts"]["voiceprint_docs_deleted"] == 3
+    assert sum(done["counts"]["opensearch"].values()) == 6
+    assert done["residual_ok"] is True
 
     with gov.acting_as(gov.alice):
         assert client.get(url).status_code == status.HTTP_404_NOT_FOUND
     with gov.acting_as(gov.admin):
         assert client.get("/api/privacy/purge/not-a-task").status_code == status.HTTP_404_NOT_FOUND
     assert client.get(url).status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# --------------------------------------------------------------------------- #
+# Names and links a voiceprint made are reverted; a person's are kept (#1280)
+# --------------------------------------------------------------------------- #
+
+
+def make_speaker_row(gov, owner, org, label: str, **fields) -> Speaker:
+    """A speaker in a fresh file of ``org`` (None = personal), built as diarization builds it."""
+    media_file = gov.file(owner, org=org)
+    row = create_or_get_speaker(gov.db, owner.id, media_file.id, label)
+    for column, value in fields.items():
+        setattr(row, column, value)
+    gov.db.commit()
+    return row
+
+
+def make_profile_row(gov, owner, org, name: str) -> SpeakerProfile:
+    profile = SpeakerProfile(
+        user_id=owner.id, organization_id=org.id if org is not None else None, name=name
+    )
+    gov.db.add(profile)
+    gov.db.commit()
+    return profile
+
+
+def auto_accept_through_the_matcher(gov, owner, speaker: Speaker, profile: SpeakerProfile) -> None:
+    """Make ``speaker`` a voiceprint-named one the way upload-time matching does."""
+    match = {
+        "confidence": 0.93,
+        "suggested_name": profile.name,
+        "auto_accept": True,
+        "profile_id": profile.id,
+    }
+    with (
+        patch("app.services.speaker_matching_service.add_speaker_embedding"),
+        patch("app.services.opensearch_service.update_speaker_profile"),
+        patch.object(SpeakerMatchingService, "find_and_store_speaker_matches"),
+        patch.object(SpeakerMatchingService, "_propagate_profile_assignment"),
+        patch.object(SpeakerMatchingService, "match_speaker_to_known_speakers", return_value=match),
+        patch("app.tasks.rename_propagation_task.propagate_speaker_rename.delay"),
+    ):
+        SpeakerMatchingService(gov.db, None).process_speaker_embeddings_native(
+            media_file_id=int(speaker.media_file_id),
+            user_id=int(owner.id),
+            native_embeddings={int(speaker.id): np.ones(256, dtype=np.float32) / 16.0},
+        )
+    gov.db.expire_all()
+
+
+def run_org_purge(client, gov, broker, in_process_task, targets=("voiceprints",)):
+    body = {"targets": list(targets), "confirm": "PURGE"}
+    response = purge_via_api(client, gov, gov.admin, ORG_PURGE, body)
+    assert response.status_code == status.HTTP_202_ACCEPTED, response.text
+    return response.json()["task_id"], in_process_task(broker[-1])
+
+
+def test_a_purge_removes_an_auto_accepted_name_and_link(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    profile = make_profile_row(gov, gov.alice, gov.org, "Alice")
+    speaker = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
+    auto_accept_through_the_matcher(gov, gov.alice, speaker, profile)
+    row = gov.db.get(Speaker, speaker.id)
+    assert (row.display_name, row.profile_id, row.verified) == ("Alice", profile.id, True)
+    assert row.identity_source == "voiceprint", "control: the matcher recorded its authorship"
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    row = gov.db.get(Speaker, speaker.id)
+    assert (row.display_name, row.profile_id, row.verified, row.identity_source) == (
+        None,
+        None,
+        False,
+        None,
+    )
+    assert row.resolved_display_name == "SPEAKER_00", "the label is the diarizer's again"
+    assert result["counts"]["postgres"]["speaker_identities_reverted"] == 1
+    assert [f[1] for f in reindexed] == [str(speaker.media_file.uuid)], "its file is reindexed"
+    assert gov.db.get(SpeakerProfile, profile.id).name == "Alice", "the profile itself stays"
+
+
+def test_a_purge_keeps_a_typed_name_and_removes_only_a_machine_link(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    profile = make_profile_row(gov, gov.alice, gov.org, "Zed")
+    typed = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Zed",
+        verified=True,
+        profile_id=profile.id,
+        identity_source="voiceprint_link",
+    )
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    row = gov.db.get(Speaker, typed.id)
+    assert (row.display_name, row.verified, row.profile_id) == ("Zed", True, None)
+    assert row.identity_source is None
+    assert result["counts"]["postgres"]["speaker_links_removed"] == 1
+    assert result["counts"]["postgres"]["speaker_identities_reverted"] == 0
+
+
+def test_a_purge_never_touches_a_human_or_unknown_identity(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    profile = make_profile_row(gov, gov.alice, gov.org, "Bea")
+    kept = {
+        source: make_speaker_row(
+            gov,
+            gov.alice,
+            gov.org,
+            "SPEAKER_00",
+            display_name="Bea",
+            verified=True,
+            profile_id=profile.id,
+            identity_source=source,
+        )
+        for source in ("human", None)
+    }
+    machine = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Bea",
+        verified=True,
+        profile_id=profile.id,
+        identity_source="voiceprint",
+    )
+    turn_off(gov.db, gov.org, gender=False)
+
+    run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    for source, row in kept.items():
+        fresh = gov.db.get(Speaker, row.id)
+        assert (fresh.display_name, fresh.verified, fresh.profile_id) == ("Bea", True, profile.id)
+        assert fresh.identity_source == source
+    assert gov.db.get(Speaker, machine.id).display_name is None, "control: the machine one went"
+
+
+def test_a_purge_in_one_organization_leaves_another_organizations_machine_identities(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    mine = make_speaker_row(
+        gov, gov.alice, gov.org, "SPEAKER_00", display_name="Ann", identity_source="voiceprint"
+    )
+    theirs = make_speaker_row(
+        gov,
+        gov.outsider,
+        gov.other_org,
+        "SPEAKER_00",
+        display_name="Ann",
+        identity_source="voiceprint",
+    )
+    personal = make_speaker_row(
+        gov, gov.alice, None, "SPEAKER_00", display_name="Ann", identity_source="voiceprint"
+    )
+    turn_off(gov.db, gov.org, gender=False)
+
+    run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    assert gov.db.get(Speaker, mine.id).display_name is None
+    for other in (theirs, personal):
+        row = gov.db.get(Speaker, other.id)
+        assert (row.display_name, row.identity_source) == ("Ann", "voiceprint")
+
+
+def test_a_purge_takes_machine_members_out_of_a_promoted_cluster(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    profile = make_profile_row(gov, gov.alice, gov.org, "Ann")
+    machine = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Ann",
+        verified=True,
+        profile_id=profile.id,
+        identity_source="voiceprint",
+    )
+    human = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Ann",
+        verified=True,
+        profile_id=profile.id,
+        identity_source="human",
+    )
+    solo_machine = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Ann",
+        verified=True,
+        profile_id=profile.id,
+        identity_source="voiceprint",
+    )
+
+    def promoted(label, *members):
+        cluster = SpeakerCluster(
+            user_id=gov.alice.id,
+            organization_id=gov.org.id,
+            label=label,
+            member_count=len(members),
+            promoted_to_profile_id=profile.id,
+        )
+        gov.db.add(cluster)
+        gov.db.flush()
+        for member in members:
+            gov.db.add(SpeakerClusterMember(cluster_id=cluster.id, speaker_id=member.id))
+            member.cluster_id = cluster.id
+        gov.db.commit()
+        return cluster
+
+    mixed_id = promoted("mixed", machine, human).id
+    only_machine_id = promoted("only-machine", solo_machine).id
+    machine_id, human_id = machine.id, human.id
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    members = {
+        m.speaker_id
+        for m in gov.db.query(SpeakerClusterMember).filter(
+            SpeakerClusterMember.cluster_id == mixed_id
+        )
+    }
+    assert members == {human_id}, "the machine member left; the human one stayed"
+    assert gov.db.get(SpeakerCluster, mixed_id).member_count == 1
+    assert gov.db.get(Speaker, machine_id).cluster_id is None
+    assert gov.db.get(Speaker, human_id).cluster_id == mixed_id
+    assert gov.db.get(SpeakerCluster, only_machine_id) is None, "an emptied cluster is deleted"
+    postgres = result["counts"]["postgres"]
+    assert postgres["promoted_cluster_members_removed"] == 2
+    assert postgres["promoted_clusters_deleted"] == 1
+
+
+def test_a_cross_scope_match_is_deleted_and_counted_and_the_other_speaker_is_untouched(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    inside_a = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
+    inside_b = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
+    outside = make_speaker_row(
+        gov,
+        gov.outsider,
+        gov.other_org,
+        "SPEAKER_00",
+        display_name="Ann",
+        verified=True,
+        identity_source="voiceprint",
+    )
+    other_outside = make_speaker_row(gov, gov.outsider, gov.other_org, "SPEAKER_00")
+
+    def match(first, second):
+        low, high = sorted((first.id, second.id))
+        gov.db.add(SpeakerMatch(speaker1_id=low, speaker2_id=high, confidence=0.9))
+
+    match(inside_a, inside_b)  # both sides in scope
+    match(inside_a, outside)  # joins the scope to the same person elsewhere (id order: either)
+    match(outside, inside_b)  # the other id order
+    match(outside, other_outside)  # entirely another tenant's
+    gov.db.commit()
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    gov.db.expire_all()
+    postgres = result["counts"]["postgres"]
+    assert postgres["speaker_matches_deleted"] == 1
+    assert postgres["cross_scope_matches"] == 2
+    remaining = [
+        (m.speaker1_id, m.speaker2_id)
+        for m in gov.db.query(SpeakerMatch).filter(
+            SpeakerMatch.speaker1_id.in_([outside.id, other_outside.id, inside_a.id, inside_b.id])
+        )
+    ]
+    assert remaining == [tuple(sorted((outside.id, other_outside.id)))]
+    survivor = gov.db.get(Speaker, outside.id)
+    assert (survivor.display_name, survivor.identity_source, survivor.verified) == (
+        "Ann",
+        "voiceprint",
+        True,
+    ), "the other scope's speaker row is never modified"
+
+
+def test_a_clean_purge_reports_an_all_zero_residual(
+    client, gov, opensearch, broker, in_process_task, reindexed, events
+):
+    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org)
+
+    task_id, _result = run_org_purge(
+        client, gov, broker, in_process_task, ("voiceprints", "inferred_gender")
+    )
+
+    completed = [e for e in events if e["details"].get("phase") == "pass_1_completed"]
+    assert len(completed) == 2
+    for event in completed:
+        details = event["details"]
+        assert details["residual_ok"] is True and details["residual_unverified"] == []
+        assert all(v == 0 for v in details["residual"].values()), details["residual"]
+    voiceprints = next(
+        e["details"]
+        for e in completed
+        if e["event_type"] == AuditEventType.PRIVACY_VOICEPRINT_PURGE
+    )
+    assert set(voiceprints["residual"]) == set(purge.VOICEPRINT_RESIDUAL_KEYS)
+    assert task_id
+
+
+def test_a_residual_makes_the_response_and_the_audit_event_report_failure(
+    client, gov, opensearch, broker, in_process_task, reindexed, events, monkeypatch
+):
+    """A voiceprint that survives the purge (here: the store silently skips one delete)."""
+    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org, gender=False)
+    survivor = next(doc["id"] for doc in opensearch.docs if doc["id"].startswith("profile_"))
+    real_delete = opensearch.delete_by_query
+
+    def skipping(index, body, refresh=True, conflicts="proceed"):
+        saved = [d for d in opensearch.docs if d["id"] == survivor]
+        result = real_delete(index, body, refresh, conflicts)
+        if saved and survivor not in opensearch.ids():
+            opensearch.docs.extend(saved)  # the store reported success and kept the document
+            result["deleted"] -= 1
+        return result
+
+    monkeypatch.setattr(opensearch, "delete_by_query", skipping)
+    store: dict[str, str] = {}
+    monkeypatch.setattr(
+        "app.core.redis.get_redis",
+        lambda: SimpleNamespace(
+            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+        ),
+    )
+    body = {"targets": ["voiceprints"], "confirm": "PURGE"}
+    task_id = purge_via_api(client, gov, gov.admin, ORG_PURGE, body).json()["task_id"]
+
+    first = in_process_task(broker[0])
+    assert first["status"] == "completed", "pass 1 records the residual and leaves pass 2 to try"
+    final = in_process_task(broker[1])
+
+    assert final["status"] == "failed" and final["reason"] == "residual"
+    assert final["residual"]["profile_docs"] == 1
+    gov.db.expire_all()
+    assert gov.db.get(Task, task_id).status == "failed"
+    finals = [e for e in events if e["details"].get("phase") == "pass_2_completed"]
+    assert finals and finals[0]["outcome"].value == "failure"
+    assert finals[0]["details"]["reason"] == "residual"
+    assert finals[0]["details"]["residual_ok"] is False
+    assert finals[0]["details"]["residual"]["profile_docs"] == 1
+    with gov.acting_as(gov.admin):
+        shown = client.get(f"/api/privacy/purge/{task_id}").json()
+    assert shown["status"] == "failed"
+    assert shown["residual_ok"] is False and shown["residual"]["profile_docs"] == 1
+    assert shown["audit"] == [{"event_type": "privacy.voiceprints.purge", "task_id": task_id}]
+
+
+def test_a_store_that_cannot_be_measured_is_unverified_not_zero(
+    client, gov, opensearch, broker, in_process_task, reindexed, events, monkeypatch
+):
+    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org, gender=False)
+
+    def unreachable(index, body):
+        raise ConnectionError("cluster down")
+
+    monkeypatch.setattr(opensearch, "count", unreachable, raising=False)
+    body = {"targets": ["voiceprints"], "confirm": "PURGE"}
+    purge_via_api(client, gov, gov.admin, ORG_PURGE, body)
+
+    in_process_task(broker[0])
+
+    done = next(e for e in events if e["details"].get("phase") == "pass_1_completed")
+    details = done["details"]
+    assert details["residual_ok"] is False
+    assert details["residual_unverified"] == ["cluster_docs", "profile_docs", "speaker_docs"]
+    assert "speaker_docs" not in details["residual"]
+    assert done["outcome"].value != "success"
+
+
+def test_the_audit_record_carries_actor_scope_targets_counts_and_residual(
+    client, gov, opensearch, broker, in_process_task, reindexed, events
+):
+    seed(gov, opensearch, gov.alice, gov.org, "orgA")
+    turn_off(gov.db, gov.org)
+    task_id, _ = run_org_purge(
+        client, gov, broker, in_process_task, ("voiceprints", "inferred_gender")
+    )
+
+    voiceprints = next(
+        e
+        for e in events
+        if e["event_type"] == AuditEventType.PRIVACY_VOICEPRINT_PURGE
+        and e["details"].get("phase") == "pass_1_completed"
+    )
+    assert voiceprints["user_id"] == gov.admin.id and voiceprints["username"] == gov.admin.email
+    assert voiceprints["organization_id"] == gov.org.id
+    details = voiceprints["details"]
+    assert details["task_id"] == task_id
+    assert details["targets"] == ["voiceprints", "inferred_gender"]
+    assert details["scope"] == {
+        "kind": "organization",
+        "organization_id": gov.org.id,
+        "user_id": None,
+    }
+    assert set(details["counts"]) == {"postgres", "opensearch"}
+    assert details["counts"]["opensearch"] == {
+        "speaker_docs_deleted": 3,
+        "profile_docs_deleted": 1,
+        "cluster_docs_deleted": 2,
+    }
+    assert details["counts"]["postgres"]["speaker_matches_deleted"] == 1
+    assert details["counts"]["postgres"]["clusters_deleted"] == 1
+    assert details["residual_ok"] is True
+    gender = next(
+        e
+        for e in events
+        if e["event_type"] == AuditEventType.PRIVACY_GENDER_PURGE
+        and e["details"].get("phase") == "pass_1_completed"
+    )
+    assert gender["details"]["counts"]["postgres"] == {"gender_speakers_cleared": 2}
+    assert gender["details"]["residual"] == {"speakers_with_inferred_gender": 0}

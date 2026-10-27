@@ -279,24 +279,37 @@ def test_a_prepared_file_carries_the_organization_of_its_media_file_row(
 def test_an_organizations_repaired_voiceprint_goes_with_its_purge_and_not_the_personal_one(
     privacy_world, cluster, normal_user, monkeypatch
 ):
+    """The purge selects documents by the ids of the scope's speakers (Postgres), so the stamp
+    the writer puts on the document no longer decides which purge finds it; the stamp is still
+    pinned above because the read gates and the write backstop depend on it."""
     from app.services.privacy.purge import PurgeScope
-    from app.services.privacy.purge import purge_voiceprint_docs
+    from app.services.privacy.purge_voiceprints import VoiceprintTargets
+    from app.services.privacy.purge_voiceprints import purge_voiceprint_docs
     from tests.fixtures.fake_speaker_index import FakeOpenSearch
+    from tests.fixtures.speaker_cleanup_seams import make_speaker
 
     org = privacy_world.new_org()
+    speaker = make_speaker(
+        privacy_world.db, normal_user, privacy_world.new_file(normal_user, org.id)
+    )
+    privacy_world.db.commit()
     monkeypatch.setattr(repair_task, "_voiceprints_allowed", lambda _file_id: True)
-    speaker_uuid = str(uuid_pkg.uuid4())
+    speaker_uuid = str(speaker.uuid)
     repair_task._v4_result_writer(
         _prepared(org.id, normal_user.id, speaker_uuid), _results(), {speaker_uuid}
     )
     (doc,) = _indexed(cluster)
+    assert doc["organization_id"] == org.id
     search = FakeOpenSearch()
-    search.add("written-by-the-repair", doc["user_id"], doc.get("organization_id"))
+    search.add(speaker_uuid, doc["user_id"], doc.get("organization_id"))
     monkeypatch.setattr("app.services.opensearch_service.opensearch_client", search)
 
     personal = PurgeScope("user", user_id=normal_user.id, organization_id=None)
-    assert purge_voiceprint_docs(personal, []) == 0
-    assert search.ids() == {"written-by-the-repair"}
+    nothing = VoiceprintTargets()  # a personal purge selects no speaker of this organization file
+    assert purge_voiceprint_docs(personal, nothing, [])["speaker_docs_deleted"] == 0
+    assert search.ids() == {speaker_uuid}
 
-    assert purge_voiceprint_docs(PurgeScope("organization", organization_id=org.id), []) == 1
+    in_org = VoiceprintTargets(speaker_uuids=[speaker_uuid])
+    organization = PurgeScope("organization", organization_id=org.id)
+    assert purge_voiceprint_docs(organization, in_org, [])["speaker_docs_deleted"] == 1
     assert search.ids() == set()

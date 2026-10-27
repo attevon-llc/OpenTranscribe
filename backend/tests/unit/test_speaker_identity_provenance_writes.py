@@ -383,6 +383,19 @@ def test_promoting_a_cluster_makes_its_members_human(db_session, normal_user):
     assert _shown_while_off(db_session, normal_user, speaker.id) == "Zed"
 
 
+def test_creating_a_new_profile_from_a_typed_name_is_a_human_identity(db_session, normal_user):
+    from app.api.endpoints.speakers import _handle_create_new_profile_action
+
+    speaker, _ = _machine_named(db_session, normal_user, linked=False)
+
+    _handle_create_new_profile_action(speaker, "Zed", normal_user, db_session)
+    db_session.commit()
+
+    row = _fresh(db_session, speaker.id)
+    assert row.profile_id is not None, "control: the profile was created and linked"
+    assert row.identity_source == "human"
+
+
 def test_creating_a_named_speaker_is_a_human_identity_and_an_unnamed_one_is_not(
     client, user_token_headers, db_session, normal_user
 ):
@@ -411,13 +424,17 @@ def test_creating_a_named_speaker_is_a_human_identity_and_an_unnamed_one_is_not(
     assert sources == {"SPEAKER_07": "human", "SPEAKER_08": None}
 
 
+@pytest.mark.parametrize("profile_exists", [False, True])
 def test_a_name_typed_for_a_speaker_with_no_profile_yet_is_human(
-    client, user_token_headers, db_session, normal_user
+    profile_exists, db_session, normal_user
 ):
-    """``auto_create_or_assign_profile`` links the typed name to a profile; the link is theirs."""
+    """``auto_create_or_assign_profile`` links the typed name to a profile (an existing
+    same-named one, or a new one); either way the link is the person's."""
     from app.api.endpoints.speaker_update import auto_create_or_assign_profile
 
     speaker, _ = _machine_named(db_session, normal_user, linked=False)
+    if profile_exists:
+        make_profile(db_session, normal_user, "Zed")
     speaker.display_name = "Zed"
     with patch("app.api.endpoints.speaker_update._update_profile_embedding"):
         assert auto_create_or_assign_profile(speaker, "Zed", db_session)

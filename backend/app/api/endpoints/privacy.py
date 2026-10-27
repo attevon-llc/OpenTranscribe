@@ -45,6 +45,7 @@ from app.schemas.privacy import InstancePrivacyPolicy
 from app.schemas.privacy import InstancePrivacyPolicyUpdate
 from app.schemas.privacy import PrivacyDecision
 from app.schemas.privacy import PurgeAccepted
+from app.schemas.privacy import PurgeAuditRef
 from app.schemas.privacy import PurgeRequest
 from app.schemas.privacy import PurgeStatus
 from app.schemas.privacy import UserPrivacyPolicy
@@ -55,6 +56,7 @@ from app.services.privacy import policy_admin
 from app.services.privacy.policy import gender_decision
 from app.services.privacy.policy import voiceprint_decision
 from app.services.privacy.purge import PurgeScope
+from app.services.privacy.purge import purge_audit_event_types
 from app.services.privacy.purge import read_record
 from app.tasks.privacy_purge_task import TASK_TYPE
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -240,12 +242,20 @@ def get_purge_status(
     task = db.get(Task, task_id)
     if task is None or task.task_type != TASK_TYPE or int(task.user_id) != int(ctx.user.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purge not found")
-    record = read_record(task_id)
-    counts = record.get("counts") if record else None
+    record = read_record(task_id) or {}
+    counts = record.get("counts")
+    residual = record.get("residual")
     return PurgeStatus(
         task_id=task_id,
         status=_purge_status(task.status),
-        counts=counts if isinstance(counts, dict) and counts else None,
+        counts=counts if isinstance(counts, dict) and any(counts.values()) else None,
+        residual=residual if isinstance(residual, dict) else None,
+        residual_ok=record.get("residual_ok") if isinstance(residual, dict) else None,
+        residual_unverified=list(record.get("residual_unverified") or []),
+        audit=[
+            PurgeAuditRef(event_type=str(event_type.value), task_id=task_id)
+            for event_type in purge_audit_event_types(record.get("targets"))
+        ],
     )
 
 

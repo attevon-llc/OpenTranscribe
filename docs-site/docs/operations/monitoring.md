@@ -39,6 +39,10 @@ Key metric names (stable; dashboards are built against these):
 | `celery_queue_oldest_message_age_seconds` | Gauge | `queue` |
 | `transcription_runs_without_lease` | Gauge | — |
 | `transcription_files_infra_requeued` | Gauge | — |
+| `security_state_degraded_total` | Counter | `control`, `fallback` (`database`, `deny` or `local`). Incremented when a security control (revocation, lockout, MFA replay protection) cannot reach Redis and falls back. Alert on any increase. |
+| `search_indexing_failures_total` | Counter | `reason` (`retrying`, `exhausted`, `terminal`). Incremented in the indexing task, so it is served on `WORKER_METRICS_PORT` when enabled. |
+| `search_indexing_retries_total` | Counter | — (worker metrics port, like the failures counter) |
+| `search_indexing_files_awaiting_reindex` | Gauge | — (API `/metrics`; completed files that are not yet searchable; alert if it stays above zero) |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 | `diarization_runs_total` | Counter | `backend` (`native`/`pyannote`), `reason` (`served`, `pinned`, or the cause of a fallback: `unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`). Incremented in the GPU worker, so it is served on `WORKER_METRICS_PORT` when that is enabled. Alert on `backend="pyannote"` with any reason other than `pinned`. |
@@ -91,6 +95,7 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
   `acks_late=True`) is exposed on `/metrics` but has no panel of its own yet. Autoscale on
   `celery_queue_depth + celery_queue_reserved` — depth alone trends to zero as the fleet
   saturates. `GET /metrics/queues` serves the queue gauges for an autoscaler.
+- **Signups / uploads rate** product counters (API-process events).
 
 ### Per-task worker metrics
 
@@ -210,14 +215,13 @@ for the same file (a late write from the older run reopened it). The periodic he
 
 | Metric | Meaning |
 |---|---|
-| `task_rows_superseded_active` | rows the next sweep will resolve, from the same query the sweep uses; alert if it stays above zero for longer than 15 minutes (the sweep is not running) |
+| `task_rows_superseded_active` | gauge on the API `/metrics`: rows the next sweep will resolve, from the same query the sweep uses; alert if it stays above zero for longer than 15 minutes (the sweep is not running) |
 | `task_rows_superseded_total{task_type}` | rows resolved, by task type; a counter incremented in the Celery worker, so it is served on the worker metrics port (`WORKER_METRICS_PORT`), not by the API |
 
 The database also allows only one active (`pending` or `in_progress`) task row per file and task
 type. Starting a step again supersedes the file's older active row of that step.
 
 Recovery behaviour and its settings: [Environment variables → Task Recovery](../configuration/environment-variables.md#task-recovery).
-- **Signups / uploads rate** product counters (API-process events).
 
 **OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):
 
@@ -332,12 +336,14 @@ Every service in OpenTranscribe has a Docker health check. These are defined in 
 | Redis | `opentranscribe-redis` | `redis-cli ping` (with auth if configured) | 5s | Cache/broker responds to PING |
 | OpenSearch | `opentranscribe-opensearch` | `curl -sS http://localhost:9200` | 5s | Search cluster is reachable |
 | Backend | `opentranscribe-backend` | `curl -f http://localhost:8080/health` | 10s | FastAPI app is serving requests |
-| GPU Worker | `opentranscribe-celery-worker` | `celery inspect ping -d gpu-transcription@$HOSTNAME` | 30s | Worker is connected to broker and responsive |
-| Download Worker | `opentranscribe-celery-download-worker` | `celery inspect ping -d media-downloader@$HOSTNAME` | 30s | Worker is connected and processing downloads |
-| CPU Worker | `opentranscribe-celery-cpu-worker` | `celery inspect ping -d cpu-processor@$HOSTNAME` | 30s | Worker handles CPU-bound tasks |
-| NLP Worker | `opentranscribe-celery-nlp-worker` | `celery inspect ping -d ai-nlp@$HOSTNAME` | 30s | Worker handles LLM/NLP tasks |
-| Embedding Worker | `opentranscribe-celery-embedding-worker` | `celery inspect ping -d search-indexer@$HOSTNAME` | 30s | Worker handles search embedding tasks |
-| Celery Beat | `opentranscribe-celery-beat` | Checks `/app/celerybeat-schedule` modification time < 300s | 30s | Scheduler is writing schedule file |
+| GPU Worker | `opentranscribe-celery-worker` | `python3 scripts/celery_pool_healthcheck.py gpu-transcription@$HOSTNAME` | 30s | Worker answers `inspect ping` **and** its child pool is alive (not a dead pool or respawn storm, issue #631) |
+| Download Worker | `opentranscribe-celery-download-worker` | `python3 scripts/celery_pool_healthcheck.py media-downloader@$HOSTNAME` | 30s | Worker is connected and processing downloads |
+| CPU Worker | `opentranscribe-celery-cpu-worker` | `python3 scripts/celery_pool_healthcheck.py cpu-processor@$HOSTNAME` | 30s | Worker handles CPU-bound tasks |
+| NLP Worker | `opentranscribe-celery-nlp-worker` | `python3 scripts/celery_pool_healthcheck.py ai-nlp@$HOSTNAME` | 30s | Worker handles LLM/NLP tasks |
+| Embedding Worker | `opentranscribe-celery-embedding-worker` | `python3 scripts/celery_pool_healthcheck.py search-indexer@$HOSTNAME` | 30s | Worker handles search embedding tasks |
+| Redaction Worker | `opentranscribe-celery-redaction` | `python3 scripts/celery_pool_healthcheck.py redaction@$HOSTNAME` | 30s | Worker handles content-redaction scans |
+| Cloud ASR Worker | `opentranscribe-celery-cloud-asr-worker` | `python3 scripts/celery_pool_healthcheck.py cloud-asr@$HOSTNAME` | 30s | Worker handles cloud ASR provider calls |
+| Celery Beat | `opentranscribe-celery-beat` | Newest `/app/celerybeat-schedule*` file modified < 300s ago | 30s | Scheduler is writing schedule file |
 | Flower | `opentranscribe-flower` | `curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck` | 30s | Flower's own healthcheck endpoint responds |
 
 Check all health statuses at once:
@@ -367,13 +373,18 @@ Flower provides real-time monitoring of all Celery workers and tasks.
 
 OpenTranscribe uses dedicated queues for different workload types:
 
-| Queue | Worker | Concurrency | Purpose |
+| Queue | Worker | Concurrency (default) | Purpose |
 |-------|--------|-------------|---------|
-| `gpu` | `celery-worker` | 1 (default) | Transcription + diarization (GPU-bound) |
-| `download` | `celery-download-worker` | 3 | Media URL downloads (I/O-bound) |
-| `cpu,utility` | `celery-cpu-worker` | 8 | CPU-bound processing tasks |
-| `nlp,celery` | `celery-nlp-worker` | 4 | LLM summarization, speaker ID |
+| `gpu` | `celery-worker` | 1 (`GPU_CONCURRENT_REQUESTS`) | Transcription + diarization (GPU-bound) |
+| `download` | `celery-download-worker` | 5 (`DOWNLOAD_CONCURRENCY`) | Media URL downloads (I/O-bound) |
+| `cpu,utility,cpu-transcribe` | `celery-cpu-worker` | 8 (`CPU_WORKER_CONCURRENCY`) | CPU-bound processing tasks |
+| `redaction` | `celery-redaction` | 2 (`REDACTION_CONCURRENCY`) | Content-redaction scans |
+| `cloud-asr` | `celery-cloud-asr-worker` | 16 (`CLOUD_ASR_CONCURRENCY`) | Cloud ASR provider calls |
+| `nlp,celery` | `celery-nlp-worker` | 4 (`NLP_CONCURRENCY`) | LLM summarization, speaker ID |
 | `embedding` | `celery-embedding-worker` | 1 | Search index embedding generation |
+
+With the `--with-gpu-split` overlay the `gpu` queue is replaced by `gpu-transcribe` and `gpu-diarize`
+(one worker each).
 
 ### Flower Configuration
 

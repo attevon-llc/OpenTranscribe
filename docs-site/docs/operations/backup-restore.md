@@ -518,8 +518,8 @@ For filesystem snapshots, you need to mount a backup directory into the OpenSear
 If you skip OpenSearch backups, you can rebuild indices after restoring PostgreSQL:
 
 1. Start all services
-2. Go to **Admin Settings** in the UI
-3. Use the **Reindex All** function to rebuild search indices from the database
+2. Open **Settings → Data & Storage → Search & Indexing** in the UI
+3. Click **Re-index All Transcripts** to rebuild search indices from the database
 
 ## Configuration Backup
 
@@ -644,7 +644,7 @@ This command automatically:
 :::note[MinIO / OpenSearch are not rolled back]
 `opentranscribe.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media
 files) and OpenSearch (search indices) may be ahead of or behind the restored database —
-media with no row, rows with no media, stale search hits. Reindex from **Admin → Search**
+media with no row, rows with no media, stale search hits. Reindex from **Settings → Data & Storage → Search & Indexing**
 if the restored database's file list differs from what MinIO/OpenSearch currently have.
 :::
 
@@ -712,7 +712,8 @@ tradeoff explicitly:
 ```bash
 # Stop services that use the database
 docker compose stop backend celery-worker celery-download-worker \
-  celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+  celery-cpu-worker celery-redaction celery-cloud-asr-worker \
+  celery-nlp-worker celery-embedding-worker celery-beat
 
 # Guarantee an empty target first — pg_restore --clean is NOT enough (it only drops
 # objects the dump itself knows about, so a later migration's table would survive).
@@ -727,7 +728,8 @@ docker compose exec -T postgres pg_restore -U postgres -d opentranscribe -j 4 \
 
 # Restart services
 docker compose start backend celery-worker celery-download-worker \
-  celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+  celery-cpu-worker celery-redaction celery-cloud-asr-worker \
+  celery-nlp-worker celery-embedding-worker celery-beat
 ```
 
 ### Restoring MinIO Data

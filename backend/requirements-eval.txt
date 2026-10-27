@@ -66,11 +66,11 @@ rouge-score==0.1.2
 # import for the deterministic floor.
 bert-score==0.3.13
 
-# Already a hard `requirements.txt` pin (nltk==3.10.3, the #492 NLTK
+# Already a hard `requirements.txt` pin (nltk==3.10.4, the #492 NLTK
 # `pathsec`-hardening version) — repeated here, at the SAME version, only so
 # this file's own dependency list is self-describing without cross-reading
 # requirements.txt. Never bump this independently of requirements.txt's pin.
-nltk==3.10.3
+nltk==3.10.4
 
 # ---------------------------------------------------------------------------
 # LLM-judged tier (RAGAS): moved OUT of this file entirely — see

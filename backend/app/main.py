@@ -878,6 +878,11 @@ async def lifespan(app: FastAPI):
     logger.info("Starting application...")
     _validate_production_secrets()
 
+    # See app.core.celery: nltk >= 3.10.4 reads a group/world-writable data tree as absent.
+    from app.utils.nltk_offline import ensure_nltk_data_private
+
+    ensure_nltk_data_private()
+
     # Migrations run on startup for self-host (a single container owns the DB). On
     # an orchestrated deploy a dedicated migrate Job owns them instead, and every API
     # replica racing Alembic is exactly what RUN_MIGRATIONS_ON_STARTUP=false prevents

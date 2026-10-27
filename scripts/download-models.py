@@ -441,6 +441,12 @@ def download_nltk_data():
         nltk_data_path = Path(os.environ.get('NLTK_DATA') or (Path.home() / '.cache' / 'nltk_data'))
         nltk_data_path.mkdir(parents=True, exist_ok=True)
 
+        # nltk >= 3.10.4 refuses to install into (or later read from) a directory that is
+        # group/world-writable, and the host-created bind mount usually is (umask 002).
+        from app.utils.nltk_offline import ensure_nltk_data_private
+
+        ensure_nltk_data_private([str(nltk_data_path)])
+
         # Add to NLTK's data path
         if str(nltk_data_path) not in nltk.data.path:
             nltk.data.path.insert(0, str(nltk_data_path))

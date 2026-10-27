@@ -1529,6 +1529,18 @@ off by default.
 
 ### Security
 
+- **nltk 3.10.4 (GHSA-j456-xh4h-cpf2).** Pinned in every requirements file. The advisory concerns
+  `WekaClassifier`, which this app never imports; the bump clears the release scan gate. 3.10.4
+  also reads a group- or world-writable (or foreign-owned) `nltk_data` tree as an absent corpus,
+  which a bind-mounted model cache created under umask 002 is, so the API and every worker now
+  run `ensure_nltk_data_private` at start (and `download-models.py` before it downloads) to remove
+  the group/world write bits from files the process owns. A tree owned by another account is
+  reported once with the `fix-model-permissions.sh` remedy.
+- **Image OS packages are patched by the existing `APT_SECURITY_REFRESH` build argument.** A bare
+  `docker build` reuses a months-old `apt-get upgrade` layer (the 2026-10-27 trial build still
+  carried curl, libexpat, libbrotli1, libpcre2, librsvg2 and openssl findings); building with
+  `--build-arg APT_SECURITY_REFRESH=$(date -u +%F)`, which `docker-build-push.sh` and the release
+  `build` stage already do, clears them.
 - **A failed audit of a transcript edit on a legally held file is logged as an error.** The edit
   has already committed when the audit runs, so it cannot be refused; the log line now carries the
   file's uuid at ERROR level instead of a warning, and the function's documentation says it is

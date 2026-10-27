@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 
 logger = logging.getLogger(__name__)
 
@@ -95,3 +96,84 @@ def nltk_downloads_permitted(*, corpus: str = "NLTK data") -> bool:
         corpus,
     )
     return False
+
+
+#: Group- and world-write bits. nltk 3.10.4 refuses a data directory or corpus file
+#: carrying either one (see :func:`ensure_nltk_data_private`).
+_OTHER_WRITE = stat.S_IWGRP | stat.S_IWOTH
+
+
+def _data_roots() -> list[str]:
+    """The NLTK data directories this deployment configured through ``NLTK_DATA``."""
+    return [p for p in os.environ.get("NLTK_DATA", "").split(os.pathsep) if p]
+
+
+def ensure_nltk_data_private(roots: list[str] | None = None) -> list[str]:
+    """Strip group/world write from the configured NLTK data tree, where we own it.
+
+    nltk 3.10.4 extends the ``pathsec`` hardening of 3.10 to the
+    data directories themselves: ``nltk.data.find`` refuses a root, or any file under
+    it, that is writable by group or world or owned by neither the running user nor
+    root, and ``nltk.download`` refuses to install into one. The refusal surfaces as
+    ``LookupError`` ("Resource 'punkt_tab' not found ... Refused, writable by other
+    accounts"), which every caller here treats as an absent corpus -- so a bind-mounted
+    ``models/nltk_data`` created with an Ubuntu-default umask of 002 (mode 775) would
+    silently turn sentence splitting, stopwords and topic extraction into their
+    degraded modes.
+
+    The cache is this process's own data, so make it private to its owner rather than
+    ask every operator to ``chmod``. Only entries owned by the effective user are
+    changed (``chmod go-w``); symlinks are skipped, since NLTK judges a link by its own
+    owner and a ``chmod`` would follow it to its target.
+
+    Args:
+        roots: Data directories to fix. Defaults to the ``NLTK_DATA`` entries, which is
+            what every image sets.
+
+    Returns:
+        The paths still unusable to NLTK, either because another account owns them or
+        because the mount is read-only; the first is named in a warning with the
+        remedy. An empty list means every configured root is now private.
+    """
+    euid = os.geteuid()
+    unfixable: list[str] = []
+    fixed = 0
+    roots = _data_roots() if roots is None else roots
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        # The root itself, then every entry beneath it exactly once.
+        paths = [root]
+        for current, dirs, files in os.walk(root):
+            paths.extend(os.path.join(current, name) for name in dirs + files)
+        for path in paths:
+            try:
+                info = os.lstat(path)
+            except OSError:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                continue
+            if info.st_uid not in (euid, 0):
+                unfixable.append(path)
+                continue
+            if not info.st_mode & _OTHER_WRITE:
+                continue
+            try:
+                os.chmod(path, stat.S_IMODE(info.st_mode) & ~_OTHER_WRITE)
+                fixed += 1
+            except OSError:
+                unfixable.append(path)
+    if fixed:
+        logger.info("NLTK data: removed group/world write from %d path(s) (nltk >= 3.10.4)", fixed)
+    if unfixable:
+        logger.warning(
+            "NLTK data: %d path(s) under %s are owned by another account or on a "
+            "read-only mount, which nltk >= 3.10.4 refuses to read, so sentence "
+            "splitting and stopwords fall back to their degraded modes. First: %s. "
+            "Fix on the host: ./scripts/fix-model-permissions.sh (chown to "
+            "CONTAINER_UID_GID) and chmod -R go-w the nltk_data directory.",
+            len(unfixable),
+            os.pathsep.join(roots),
+            unfixable[0],
+        )
+    return unfixable

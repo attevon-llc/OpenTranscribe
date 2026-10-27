@@ -58,7 +58,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Per-File Speaker Settings**: Configure min/max speaker count per upload or reprocess operation
 - **User-Level Speaker Preferences**: Save default speaker detection settings (always prompt, use defaults, use custom values)
 - **GPU-Accelerated Clustering**: Fast speaker clustering using GPU-accelerated embeddings
-- **Gender Detection**: Automatic speaker gender detection for improved labeling suggestions
+- **Gender Detection**: Automatic speaker gender detection for improved labeling suggestions (each user can switch **Predict gender from voice** off in Settings → Speaker Identification)
 - **Profile Avatars**: Visual speaker profile avatars for easy identification across the media library
 - **Corrections That Stick**: Unassigning a speaker from a cluster means "this voice is not that person" — with *Prevent from rejoining this cluster* ticked (the default), no automatic path puts it back, and the correction survives re-processing the file. You can name a speaker inline from the transcript's speaker menu, and removing a speaker removes every stored copy of its voice
 
@@ -211,7 +211,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Multiple Detectors**: Presidio + spaCy/GLiNER (PII), toxic-bert / multilingual XLM-R (toxicity), wordlist (profanity), plus an optional LLM detector
 - **Audit Log**: A super admin can review and export (CSV or JSON) security and authentication events under Settings → Administration → Audit Logs, and can switch on content-access auditing (who opened a recording, requested its media or exported a transcript; off by default)
 - **Quarantine & Takedown Review**: Admins can quarantine a file and review it under Settings → Administration → Quarantine; each takedown is recorded with the notice it acts on, owners see why in *My takedown notices*, and a held file cannot be reprocessed or retried
-- **Tenant and Organization Features (off in the community edition)**: The organization admin surfaces — member management, an organization audit log (`org.audit_logs`), organization legal holds (`org.legal_hold`) and an organization takedown queue (`org.takedown`) — are capability-gated and the community edition leaves them off. Where an install does use organizations, tags and collections belong to one organization (collections can be restricted to their creator, the organization's admins and the people they are shared with), and `TENANCY_MODE` (default `auto`) makes administrators use audited, time-boxed support-access grants instead of opening tenant content directly; see [Support access](docs-site/docs/operations/support-access.md)
+- **Organization Features (managed edition only)**: Organizations, team and member management, the organization audit log (`org.audit_logs`), organization legal holds (`org.legal_hold`) and the organization takedown queue (`org.takedown`) are available in the managed edition only; the open-source build ships the capability gates with these off. Where an install does use organizations, tags and collections belong to one organization (collections can be restricted to their creator, the organization's admins and the people they are shared with), and `TENANCY_MODE` (default `auto`) makes administrators use audited, time-boxed support-access grants instead of opening tenant content directly; see [Support access](docs-site/docs/operations/support-access.md)
 
 ### ⚙️ **Speech Processing (Super Admin)**
 - **Runtime-Tunable Engine Settings**: Super admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Speaker Identification → Speaker Engine with no container restart
@@ -1055,10 +1055,11 @@ preflight → bump → verify → test → build → scan → rehearse
 ```
 
 The last four are the only ones that reach Docker Hub or GitHub, and each needs
-an explicit `--yes`. Before they run, two rehearsal scenarios prove the release
-end to end on real data: a **fresh install** via the documented one-liner, and an
+an explicit `--yes`. Before they run, three rehearsal scenarios prove the release
+end to end on real data: a **fresh install** via the documented one-liner, an
 **in-place upgrade from the previous published release** — including a file
-uploaded *after* the upgrade, to prove the upgraded stack still does its job.
+uploaded *after* the upgrade, to prove the upgraded stack still does its job — and the
+**lite** (CPU-only, cloud-ASR) deployment.
 
 📖 **Full guide: [Developer Guide → Releasing](https://docs.opentranscribe.app/docs/developer-guide/releasing)**
 
